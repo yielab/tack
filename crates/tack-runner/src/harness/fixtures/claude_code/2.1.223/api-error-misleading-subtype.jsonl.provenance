@@ -1,0 +1,7 @@
+captured
+claude 2.1.223 (Claude Code)
+
+Encodes the real, observed CLI quirk this adapter's success/failure
+determination depends on: an invalid-model 404 API error was returned with
+"is_error":true and "subtype":"success" in the same object. A parser keying
+off `subtype` instead of `is_error` would misreport this as a success.

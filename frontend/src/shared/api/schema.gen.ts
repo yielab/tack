@@ -5028,32 +5028,20 @@ export interface components {
         };
         /**
          * @description Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
-         *     (`docs/contracts/runner-v1/errors/*.json`) for every operator execution/
-         *     fleet/runner/profile route, which returns that envelope — not
-         *     `crate::openapi::ErrorEnvelope`, a different, incompatible shape
-         *     (`{status,message,code?}` vs `{code,message,request_id,retryable,
-         *     details}`). This is a doc-only mirror, not a second runtime authority:
-         *     `tack-orch` must stay free of an OpenAPI-generation dependency (see that
-         *     crate's own architecture boundary), so the real type cannot derive
-         *     `ToSchema` itself. Defined here (not in `crate::openapi`) so this file
-         *     keeps compiling standalone when its regression tests load it via
-         *     `#[path = "../src/handlers/executions.rs"]` from a separate test-binary
-         *     crate root, where a `crate::openapi` import would not resolve. `code` is
-         *     documented as a free
-         *     string rather than an enum because `StableErrorCode` lives in
-         *     `tack-orch` for the same reason; its fifteen frozen values are
+         *     (`docs/contracts/runner-v1/errors/*.json`) for every operator
+         *     execution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,
+         *     a different, incompatible shape. A doc-only mirror, not a second runtime
+         *     authority: `tack-orch` must stay free of an OpenAPI dependency, so the
+         *     real type cannot derive `ToSchema` itself. Defined here rather than in
+         *     `crate::openapi` so this file keeps compiling standalone when loaded via
+         *     `#[path]` from a separate test-binary crate root. `code` is a free
+         *     string, not an enum, for the same reason — its fifteen frozen values are
          *     enumerated in `docs/contracts/runner-v1/README.md`.
          *
-         *     `allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's
-         *     `#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`
-         *     annotations reference it by *type* (calling `ToSchema`'s associated
-         *     functions) but no code anywhere ever constructs a *value* of it, since
-         *     every real error response is built from the actual runtime type,
-         *     `tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`
-         *     library crate this is invisible to `dead_code` (a `pub` item in a
-         *     library is assumed reachable by external callers); it only surfaces
-         *     when this file is compiled standalone into a test *binary* via
-         *     `#[path]`, which has no external callers at all.
+         *     `allow(dead_code)`: referenced only by *type* (utoipa's `ToSchema`), never
+         *     constructed as a value — real responses build the runtime type instead.
+         *     Invisible to `dead_code` in the library crate; only surfaces when this
+         *     file is compiled standalone into a test binary with no external callers.
          */
         RunnerV1ErrorEnvelope: {
             error: components["schemas"]["RunnerV1Error"];

@@ -1,0 +1,9 @@
+constructed
+Built to exercise the gateway-provider branch of `parsed_from_result_line`:
+a fast `result` line naming a gateway-style model id
+("anthropic/claude-opus-4.6"), used to prove that a gateway-routed run is
+never upgraded to `harness_reported` just because a terminal result line
+arrived quickly — the init line it came from fires before any network call
+reaches the gateway. The claude_code_version differs from the other
+fixtures only because it was captured during a later exploration pass; the
+shape itself is representative of stream-json's format at either version.

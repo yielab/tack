@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
+use crate::common;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
+use sqlx::sqlite::SqliteRow;
 use tack_core::{
     models::{CreateItem, CreateProject, ItemType, Priority, ProjectType},
     vocabulary,
@@ -9,10 +11,11 @@ use tack_core::{
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        Completion, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
-        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
-        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
-        RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
+        ClaimedExecution, Completion, EnrollmentToken, EventApplyResult, EventBatch,
+        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent,
+        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
+        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
+        RequestSelection,
     },
 };
 use uuid::Uuid;
@@ -190,24 +193,39 @@ async fn enqueue(fixture: &Fixture) {
         .expect("enqueue");
 }
 
-async fn claim(fixture: &Fixture) {
+/// Runs a `SELECT` expected to return exactly one `i64` row.
+async fn scalar_i64(pool: &sqlx::SqlitePool, sql: &'static str) -> i64 {
+    sqlx::query_scalar(sql).fetch_one(pool).await.expect(sql)
+}
+
+/// Runs a `SELECT` expected to return exactly one `String` row.
+async fn scalar_string(pool: &sqlx::SqlitePool, sql: &'static str) -> String {
+    sqlx::query_scalar(sql).fetch_one(pool).await.expect(sql)
+}
+
+/// `claim_execution_idempotent_with_snapshot` against the fixed `runner-crash`, varying
+/// only the claim/attempt ids so a test can claim more than once without hard-coding the
+/// other four arguments at every call site.
+async fn try_claim(
+    fixture: &Fixture,
+    claim_request_id: &str,
+    attempt_id: &str,
+) -> Result<Option<ClaimedExecution>, sqlx::Error> {
     fixture
         .repo
         .claim_execution_idempotent_with_snapshot(
             "runner-crash",
-            "claim-crash",
-            "attempt-crash",
+            claim_request_id,
+            attempt_id,
             Duration::seconds(60),
             &fixture.clock,
             RequestSelection::Naive,
         )
         .await
-        .expect("claim query")
-        .expect("lease");
 }
 
 #[tokio::test]
-async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
+async fn claim_crash_rolls_back_then_retry_keeps_fence_at_one() {
     let fixture = fixture().await;
     enqueue(&fixture).await;
     sqlx::query(
@@ -218,34 +236,21 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
     .await
     .expect("install trigger");
 
-    let crashed = fixture
-        .repo
-        .claim_execution_idempotent_with_snapshot(
-            "runner-crash",
-            "claim-crash",
-            "attempt-crash",
-            Duration::seconds(60),
-            &fixture.clock,
-            RequestSelection::Naive,
-        )
-        .await;
+    let crashed = try_claim(&fixture, "claim-crash", "attempt-crash").await;
     assert!(crashed.is_err(), "fault injection must reach claim commit");
 
-    let request_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = 'request-crash'")
-            .fetch_one(fixture.repo.pool())
-            .await
-            .expect("request state");
-    let capacity: i64 = sqlx::query_scalar(
+    let pool = fixture.repo.pool();
+    let request_state = scalar_string(
+        pool,
+        "SELECT state FROM execution_requests WHERE id = 'request-crash'",
+    )
+    .await;
+    let capacity = scalar_i64(
+        pool,
         "SELECT available_capacity FROM agent_runners WHERE id = 'runner-crash'",
     )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("capacity");
-    let attempts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts")
-        .fetch_one(fixture.repo.pool())
-        .await
-        .expect("attempt count");
+    .await;
+    let attempts = scalar_i64(pool, "SELECT COUNT(*) FROM execution_attempts").await;
     assert_eq!(request_state, "queued");
     assert_eq!(capacity, 1);
     assert_eq!(attempts, 0);
@@ -254,91 +259,83 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
         .execute(fixture.repo.pool())
         .await
         .expect("drop trigger");
-    let lease = fixture
-        .repo
-        .claim_execution_idempotent_with_snapshot(
-            "runner-crash",
-            "claim-after-crash",
-            "attempt-after-retry",
-            Duration::seconds(60),
-            &fixture.clock,
-            RequestSelection::Naive,
-        )
+    let lease = try_claim(&fixture, "claim-after-crash", "attempt-after-retry")
         .await
         .expect("claim retry")
         .expect("lease after retry");
     assert_eq!(lease.lease.fencing_token, 1, "rollback cannot burn a fence");
 }
 
-#[tokio::test]
-async fn post_spawn_recovery_audits_needs_operator_and_never_grants_a_second_fence() {
-    let fixture = fixture().await;
-    enqueue(&fixture).await;
-    claim(&fixture).await;
-    let recovery = fixture
+/// Records a recovery observation for the fixed `attempt-crash`/fence 1.
+async fn recover(
+    fixture: &Fixture,
+    observation: RecoveryObservation,
+    recovery_key: &'static str,
+    details: &'static str,
+) -> RecoveryObservationResult {
+    fixture
         .repo
         .recover_attempt(
             RecoveryObservationInput {
                 runner_id: "runner-crash",
                 attempt_id: "attempt-crash",
                 fencing_token: 1,
-                recovery_key: "recovery:attempt-crash:1:ambiguous",
-                observation: RecoveryObservation::Ambiguous,
-                details: r#"{"journal_state":"process_observed_running","process_observed":true}"#,
+                recovery_key,
+                observation,
+                details,
             },
             &fixture.clock,
         )
         .await
-        .expect("record recovery");
+        .expect("record recovery")
+}
+
+#[tokio::test]
+async fn ambiguous_recovery_needs_operator_and_blocks_reclaim() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    let recovery = recover(
+        &fixture,
+        RecoveryObservation::Ambiguous,
+        "recovery:attempt-crash:1:ambiguous",
+        r#"{"journal_state":"process_observed_running","process_observed":true}"#,
+    )
+    .await;
     assert!(matches!(
         recovery,
         RecoveryObservationResult::Applied(ref response)
             if response.disposition == RecoveryDisposition::NeedsOperator
     ));
-    let state: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = 'attempt-crash'")
-            .fetch_one(fixture.repo.pool())
-            .await
-            .expect("attempt state");
+    let state = scalar_string(
+        fixture.repo.pool(),
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-crash'",
+    )
+    .await;
     assert_eq!(state, "needs_operator");
     assert!(
-        fixture
-            .repo
-            .claim_execution_idempotent_with_snapshot(
-                "runner-crash",
-                "claim-invalid-second-fence",
-                "attempt-invalid-second-fence",
-                Duration::seconds(60),
-                &fixture.clock,
-                RequestSelection::Naive,
-            )
-            .await
-            .expect("second claim query")
-            .is_none(),
+        try_claim(
+            &fixture,
+            "claim-invalid-second-fence",
+            "attempt-invalid-second-fence"
+        )
+        .await
+        .expect("second claim query")
+        .is_none(),
         "ambiguous side effects must never be blind-retried"
     );
-    let fences: i64 = sqlx::query_scalar(
+    let fences = scalar_i64(
+        fixture.repo.pool(),
         "SELECT COUNT(DISTINCT fencing_token) FROM execution_attempts WHERE request_id = 'request-crash'",
     )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("fence count");
+    .await;
     assert_eq!(fences, 1);
 }
 
-#[tokio::test]
-async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_once() {
-    let fixture = fixture().await;
-    enqueue(&fixture).await;
-    claim(&fixture).await;
-    sqlx::query(
-        "CREATE TRIGGER inject_second_event_crash BEFORE INSERT ON execution_events \
-         WHEN NEW.sequence = 2 BEGIN SELECT RAISE(ABORT, 'injected second event crash'); END",
-    )
-    .execute(fixture.repo.pool())
-    .await
-    .expect("install second-row trigger");
-    let events = [
+/// Fixed two-event batch shared by the event-batch tests below; only the crash trigger
+/// (or its absence) varies between them.
+fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
+    [
         NewEvent {
             id: "event-row-1",
             event_id: "event-1",
@@ -357,68 +354,101 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
             payload: r#"{"phase":"running"}"#,
             occurred_at: fixture.clock.now(),
         },
-    ];
-    let batch = || EventBatch {
+    ]
+}
+
+fn crash_event_batch() -> EventBatch<'static> {
+    EventBatch {
         runner_id: "runner-crash",
         attempt_id: "attempt-crash",
         fencing_token: 1,
         previous_checkpoint: None,
         checkpoint: "checkpoint-1",
-    };
+    }
+}
 
-    assert!(
-        fixture
-            .repo
-            .append_execution_events_result(batch(), &events, &fixture.clock)
-            .await
-            .is_err()
-    );
-    let row = sqlx::query(
-        "SELECT event_checkpoint, (SELECT COUNT(*) FROM execution_events) AS event_count \
-         FROM execution_attempts WHERE id = 'attempt-crash'",
-    )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("checkpoint state");
-    assert_eq!(row.get::<Option<String>, _>("event_checkpoint"), None);
-    assert_eq!(row.get::<i64, _>("event_count"), 0);
-
-    sqlx::query("DROP TRIGGER inject_second_event_crash")
-        .execute(fixture.repo.pool())
-        .await
-        .expect("drop second-row trigger");
+async fn event_checkpoint_state(fixture: &Fixture) -> SqliteRow {
     sqlx::query(
-        "CREATE TRIGGER inject_checkpoint_crash BEFORE UPDATE OF event_checkpoint \
-         ON execution_attempts BEGIN SELECT RAISE(ABORT, 'injected checkpoint crash'); END",
-    )
-    .execute(fixture.repo.pool())
-    .await
-    .expect("install checkpoint trigger");
-    assert!(
-        fixture
-            .repo
-            .append_execution_events_result(batch(), &events, &fixture.clock)
-            .await
-            .is_err()
-    );
-    let row = sqlx::query(
         "SELECT event_checkpoint, (SELECT COUNT(*) FROM execution_events) AS event_count \
          FROM execution_attempts WHERE id = 'attempt-crash'",
     )
     .fetch_one(fixture.repo.pool())
     .await
-    .expect("checkpoint state after checkpoint fault");
-    assert_eq!(row.get::<Option<String>, _>("event_checkpoint"), None);
-    assert_eq!(row.get::<i64, _>("event_count"), 0);
+    .expect("checkpoint state")
+}
 
-    sqlx::query("DROP TRIGGER inject_checkpoint_crash")
+/// One crash-injection point for the event-batch fault matrix: where the trigger fires
+/// and how to remove it once the rolled-back state has been checked.
+struct EventBatchFault {
+    label: &'static str,
+    install: &'static str,
+    remove: &'static str,
+}
+
+const EVENT_BATCH_FAULTS: &[EventBatchFault] = &[
+    EventBatchFault {
+        label: "second_event_insert",
+        install: "CREATE TRIGGER inject_second_event_crash BEFORE INSERT ON execution_events \
+                   WHEN NEW.sequence = 2 BEGIN SELECT RAISE(ABORT, 'injected second event crash'); END",
+        remove: "DROP TRIGGER inject_second_event_crash",
+    },
+    EventBatchFault {
+        label: "checkpoint_update",
+        install: "CREATE TRIGGER inject_checkpoint_crash BEFORE UPDATE OF event_checkpoint \
+                   ON execution_attempts BEGIN SELECT RAISE(ABORT, 'injected checkpoint crash'); END",
+        remove: "DROP TRIGGER inject_checkpoint_crash",
+    },
+];
+
+async fn assert_event_batch_fault_rolls_back(fault: &EventBatchFault) {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    sqlx::query(fault.install)
         .execute(fixture.repo.pool())
         .await
-        .expect("drop checkpoint trigger");
+        .expect("install trigger");
+    let events = crash_events(&fixture);
+    assert!(
+        fixture
+            .repo
+            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .await
+            .is_err(),
+        "{}",
+        fault.label
+    );
+    let row = event_checkpoint_state(&fixture).await;
+    assert_eq!(
+        row.get::<Option<String>, _>("event_checkpoint"),
+        None,
+        "{}",
+        fault.label
+    );
+    assert_eq!(row.get::<i64, _>("event_count"), 0, "{}", fault.label);
+    sqlx::query(fault.remove)
+        .execute(fixture.repo.pool())
+        .await
+        .expect("drop trigger");
+}
+
+#[tokio::test]
+async fn event_batch_fault_leaves_no_partial_write() {
+    for fault in EVENT_BATCH_FAULTS {
+        assert_event_batch_fault_rolls_back(fault).await;
+    }
+}
+
+#[tokio::test]
+async fn event_batch_replay_writes_events_exactly_once() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    let events = crash_events(&fixture);
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
             .await
             .expect("first report"),
         EventApplyResult::Applied(ref result) if !result.replayed
@@ -426,7 +456,7 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
             .await
             .expect("replay"),
         EventApplyResult::Applied(ref result) if result.replayed
@@ -438,19 +468,8 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert_eq!(count, 2);
 }
 
-#[tokio::test]
-async fn crash_during_completion_rolls_back_attempt_and_request_then_replays_once() {
-    let fixture = fixture().await;
-    enqueue(&fixture).await;
-    claim(&fixture).await;
-    sqlx::query(
-        "CREATE TRIGGER inject_completion_crash BEFORE UPDATE OF state ON execution_requests \
-         WHEN NEW.state = 'succeeded' BEGIN SELECT RAISE(ABORT, 'injected completion crash'); END",
-    )
-    .execute(fixture.repo.pool())
-    .await
-    .expect("install trigger");
-    let completion = || Completion {
+fn completion_crash() -> Completion<'static> {
+    Completion {
         runner_id: "runner-crash",
         attempt_id: "attempt-crash",
         fencing_token: 1,
@@ -460,12 +479,26 @@ async fn crash_during_completion_rolls_back_attempt_and_request_then_replays_onc
         terminal_reason: "completed",
         actual_execution: "{}",
         usage: "{}",
-    };
+    }
+}
+
+#[tokio::test]
+async fn completion_crash_rolls_back_attempt_and_request() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    sqlx::query(
+        "CREATE TRIGGER inject_completion_crash BEFORE UPDATE OF state ON execution_requests \
+         WHEN NEW.state = 'succeeded' BEGIN SELECT RAISE(ABORT, 'injected completion crash'); END",
+    )
+    .execute(fixture.repo.pool())
+    .await
+    .expect("install trigger");
 
     assert!(
         fixture
             .repo
-            .complete_execution(completion(), &fixture.clock)
+            .complete_execution(completion_crash(), &fixture.clock)
             .await
             .is_err()
     );
@@ -480,22 +513,24 @@ async fn crash_during_completion_rolls_back_attempt_and_request_then_replays_onc
     assert_eq!(row.get::<String, _>("attempt_state"), "leased");
     assert_eq!(row.get::<Option<String>, _>("completion_id"), None);
     assert_eq!(row.get::<String, _>("request_state"), "leased");
+}
 
-    sqlx::query("DROP TRIGGER inject_completion_crash")
-        .execute(fixture.repo.pool())
-        .await
-        .expect("drop trigger");
+#[tokio::test]
+async fn completion_replay_is_idempotent_and_terminal_once() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
     assert!(
         fixture
             .repo
-            .complete_execution(completion(), &fixture.clock)
+            .complete_execution(completion_crash(), &fixture.clock)
             .await
             .expect("completion")
     );
     assert!(
         fixture
             .repo
-            .complete_execution(completion(), &fixture.clock)
+            .complete_execution(completion_crash(), &fixture.clock)
             .await
             .expect("completion replay")
     );
@@ -508,11 +543,30 @@ async fn crash_during_completion_rolls_back_attempt_and_request_then_replays_onc
     assert_eq!(terminal_rows, 1);
 }
 
+/// Requests cancellation of the fixed `request-crash` request.
+async fn request_cancellation(fixture: &Fixture) -> Result<bool, sqlx::Error> {
+    fixture
+        .repo
+        .request_execution_cancellation("request-crash", &fixture.clock)
+        .await
+}
+
+/// The request-crash row's `(state, cancellation_requested_at)`.
+async fn cancellation_state(pool: &sqlx::SqlitePool) -> (String, Option<String>) {
+    let row = sqlx::query(
+        "SELECT state, cancellation_requested_at FROM execution_requests WHERE id = 'request-crash'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("cancellation state");
+    (row.get("state"), row.get("cancellation_requested_at"))
+}
+
 #[tokio::test]
-async fn crash_during_cancellation_request_is_retryable_without_false_terminal_state() {
+async fn cancellation_crash_retries_without_false_terminal_state() {
     let fixture = fixture().await;
     enqueue(&fixture).await;
-    claim(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
     sqlx::query(
         "CREATE TRIGGER inject_cancel_crash BEFORE UPDATE OF cancellation_requested_at \
          ON execution_requests BEGIN SELECT RAISE(ABORT, 'injected cancellation crash'); END",
@@ -521,78 +575,55 @@ async fn crash_during_cancellation_request_is_retryable_without_false_terminal_s
     .await
     .expect("install trigger");
 
-    assert!(
-        fixture
-            .repo
-            .request_execution_cancellation("request-crash", &fixture.clock)
-            .await
-            .is_err()
-    );
-    let row = sqlx::query(
-        "SELECT state, cancellation_requested_at FROM execution_requests WHERE id = 'request-crash'",
-    )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("cancellation state");
-    assert_eq!(row.get::<String, _>("state"), "leased");
-    assert_eq!(
-        row.get::<Option<String>, _>("cancellation_requested_at"),
-        None
-    );
+    assert!(request_cancellation(&fixture).await.is_err());
+    let (state, cancelled_at) = cancellation_state(fixture.repo.pool()).await;
+    assert_eq!(state, "leased");
+    assert_eq!(cancelled_at, None);
 
     sqlx::query("DROP TRIGGER inject_cancel_crash")
         .execute(fixture.repo.pool())
         .await
         .expect("drop trigger");
     assert!(
-        fixture
-            .repo
-            .request_execution_cancellation("request-crash", &fixture.clock)
+        request_cancellation(&fixture)
             .await
             .expect("cancellation retry")
     );
-    let row = sqlx::query(
-        "SELECT state, cancellation_requested_at FROM execution_requests WHERE id = 'request-crash'",
-    )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("cancellation state after retry");
-    assert_eq!(row.get::<String, _>("state"), "leased");
+    let (state, cancelled_at) = cancellation_state(fixture.repo.pool()).await;
+    assert_eq!(state, "leased");
     assert!(
-        row.get::<Option<String>, _>("cancellation_requested_at")
-            .is_some(),
+        cancelled_at.is_some(),
         "requesting cancellation must not pretend the attempt is terminal"
     );
 }
 
-#[tokio::test]
-async fn enrollment_redemption_has_one_concurrent_winner_and_consumes_the_hash_only_token() {
-    let fixture = fixture().await;
+fn pending_enroll_runner() -> NewRunner<'static> {
+    NewRunner {
+        id: "runner-enroll-crash",
+        name: "Pending crash runner",
+        credential_hash: "ignored-for-pending",
+        labels: "{}",
+        total_capacity: 1,
+        available_capacity: 1,
+        capability_snapshot: "{}",
+        protocol_version: 1,
+    }
+}
+
+fn pending_enroll_token(clock: &FakeClock) -> EnrollmentToken<'static> {
+    EnrollmentToken {
+        id: "token-enroll-crash",
+        runner_id: "runner-enroll-crash",
+        token_hash: "hash:enroll-crash",
+        expires_at: clock.now() + Duration::minutes(5),
+    }
+}
+
+/// Redeems the fixed `hash:enroll-crash` enrollment token.
+async fn redeem(fixture: &Fixture) -> Result<RedeemEnrollmentResult, sqlx::Error> {
     fixture
         .repo
-        .create_pending_runner_and_issue_token(
-            NewRunner {
-                id: "runner-enroll-crash",
-                name: "Pending crash runner",
-                credential_hash: "ignored-for-pending",
-                labels: "{}",
-                total_capacity: 1,
-                available_capacity: 1,
-                capability_snapshot: "{}",
-                protocol_version: 1,
-            },
-            EnrollmentToken {
-                id: "token-enroll-crash",
-                runner_id: "runner-enroll-crash",
-                token_hash: "hash:enroll-crash",
-                expires_at: fixture.clock.now() + Duration::minutes(5),
-            },
-            &fixture.clock,
-        )
-        .await
-        .expect("pending runner and token");
-    let redeem = || {
-        fixture.repo.redeem_enrollment_token(
+        .redeem_enrollment_token(
             "hash:enroll-crash",
             "credential-hash-only",
             fixture.clock.now() + Duration::hours(1),
@@ -605,20 +636,35 @@ async fn enrollment_redemption_has_one_concurrent_winner_and_consumes_the_hash_o
             1,
             &fixture.clock,
         )
-    };
-    let (left, right) = tokio::join!(redeem(), redeem());
+        .await
+}
+
+#[tokio::test]
+async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
+    let fixture = fixture().await;
+    fixture
+        .repo
+        .create_pending_runner_and_issue_token(
+            pending_enroll_runner(),
+            pending_enroll_token(&fixture.clock),
+            &fixture.clock,
+        )
+        .await
+        .expect("pending runner and token");
+    let (left, right) = tokio::join!(redeem(&fixture), redeem(&fixture));
     let results = [
         left.expect("left redemption"),
         right.expect("right redemption"),
     ];
+    let winners = results
+        .iter()
+        .filter(|r| matches!(r, RedeemEnrollmentResult::Redeemed(_)))
+        .count();
     assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(result, RedeemEnrollmentResult::Redeemed(_)))
-            .count(),
-        1,
+        winners, 1,
         "only one concurrent redemption can consume the token"
     );
+
     let metadata = fixture
         .repo
         .enrollment_token_metadata("runner-enroll-crash", "token-enroll-crash")
@@ -626,27 +672,50 @@ async fn enrollment_redemption_has_one_concurrent_winner_and_consumes_the_hash_o
         .expect("token metadata")
         .expect("token row");
     assert!(metadata.consumed_at.is_some());
-    let token_rows: i64 = sqlx::query_scalar(
+    let token_rows = scalar_i64(
+        fixture.repo.pool(),
         "SELECT COUNT(*) FROM agent_enrollment_tokens WHERE token_hash = 'hash:enroll-crash'",
     )
-    .fetch_one(fixture.repo.pool())
-    .await
-    .expect("hash-only token row");
+    .await;
     assert_eq!(token_rows, 1);
 }
 
-#[tokio::test]
-async fn heartbeat_fault_rolls_back_then_replays_the_authoritative_response_once() {
-    let fixture = fixture().await;
-    enqueue(&fixture).await;
-    claim(&fixture).await;
-    let lease = [HeartbeatLease {
+fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
+    [HeartbeatLease {
         attempt_id: "attempt-crash",
         fencing_token: 1,
         state: "running",
         journal_state: "process_observed_running",
         last_event_checkpoint: None,
-    }];
+    }]
+}
+
+/// `heartbeat_batch` against the fixed `runner-crash`/`hb-crash-1` lease, varying only the
+/// observed timestamp — keeping call sites to two arguments dodges rustfmt exploding the
+/// underlying 7-argument call onto one line per argument.
+async fn crash_heartbeat(
+    fixture: &Fixture,
+    observed_at: DateTime<Utc>,
+) -> Result<HeartbeatBatchResult, sqlx::Error> {
+    fixture
+        .repo
+        .heartbeat_batch(
+            "runner-crash",
+            "hb-crash-1",
+            observed_at,
+            0,
+            &crash_heartbeat_lease(),
+            Duration::seconds(60),
+            &fixture.clock,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn heartbeat_crash_rolls_back_and_writes_no_replay_row() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
     sqlx::query(
         "CREATE TRIGGER inject_heartbeat_crash BEFORE UPDATE OF last_heartbeat_at \
          ON execution_attempts BEGIN SELECT RAISE(ABORT, 'injected heartbeat crash'); END",
@@ -655,17 +724,7 @@ async fn heartbeat_fault_rolls_back_then_replays_the_authoritative_response_once
     .await
     .expect("heartbeat fault trigger");
     assert!(
-        fixture
-            .repo
-            .heartbeat_batch(
-                "runner-crash",
-                "hb-crash-1",
-                fixture.clock.now(),
-                0,
-                &lease,
-                Duration::seconds(60),
-                &fixture.clock,
-            )
+        crash_heartbeat(&fixture, fixture.clock.now())
             .await
             .is_err()
     );
@@ -674,49 +733,21 @@ async fn heartbeat_fault_rolls_back_then_replays_the_authoritative_response_once
         .await
         .expect("no failed replay row");
     assert_eq!(replays, 0);
-    sqlx::query("DROP TRIGGER inject_heartbeat_crash")
-        .execute(fixture.repo.pool())
-        .await
-        .expect("drop heartbeat fault");
-    let accepted = fixture
-        .repo
-        .heartbeat_batch(
-            "runner-crash",
-            "hb-crash-1",
-            fixture.clock.now(),
-            0,
-            &lease,
-            Duration::seconds(60),
-            &fixture.clock,
-        )
-        .await
-        .expect("heartbeat");
-    let replay = fixture
-        .repo
-        .heartbeat_batch(
-            "runner-crash",
-            "hb-crash-1",
-            fixture.clock.now(),
-            0,
-            &lease,
-            Duration::seconds(60),
-            &fixture.clock,
-        )
+}
+
+#[tokio::test]
+async fn heartbeat_replay_is_idempotent_then_conflicts_on_new_state() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    let now = fixture.clock.now();
+    let accepted = crash_heartbeat(&fixture, now).await.expect("heartbeat");
+    let replay = crash_heartbeat(&fixture, now)
         .await
         .expect("heartbeat replay");
     assert!(matches!(accepted, HeartbeatBatchResult::Accepted(_)));
     assert!(matches!(replay, HeartbeatBatchResult::Replayed(_)));
-    let conflict = fixture
-        .repo
-        .heartbeat_batch(
-            "runner-crash",
-            "hb-crash-1",
-            fixture.clock.now() + Duration::seconds(1),
-            0,
-            &lease,
-            Duration::seconds(60),
-            &fixture.clock,
-        )
+    let conflict = crash_heartbeat(&fixture, now + Duration::seconds(1))
         .await
         .expect("heartbeat replay conflict");
     assert!(matches!(conflict, HeartbeatBatchResult::Conflict));

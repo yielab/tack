@@ -34,6 +34,10 @@ use tack_runner::{
     },
 };
 
+mod common;
+use common::temp_dir as temp_root;
+use common::usage;
+
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///
 /// Not paranoia: `harness::claude_code`'s discovery test overwrites the
@@ -56,15 +60,6 @@ fn git_program() -> PathBuf {
         }
     }
     PathBuf::from("git")
-}
-
-/// A scratch directory that removes itself, and everything written under it,
-/// when the returned guard drops — including when an assertion panics first.
-fn temp_root(label: &str) -> tempfile::TempDir {
-    tempfile::Builder::new()
-        .prefix(label)
-        .tempdir()
-        .expect("temporary directory")
 }
 
 fn run_git(directory: &Path, args: &[&str]) -> String {
@@ -315,18 +310,6 @@ fn actual_execution() -> tack_orch::execution::ActualExecution {
     .expect("actual execution")
 }
 
-fn usage() -> tack_orch::execution::Usage {
-    serde_json::from_str(
-        r#"{
-            "tokens_in":{"value":1,"source":"measured"},
-            "tokens_out":{"value":2,"source":"measured"},
-            "duration_ms":{"value":3,"source":"measured"},
-            "cost_usd":{"value":null,"source":"not_measured"}
-        }"#,
-    )
-    .expect("usage")
-}
-
 /// The frozen claim fixture, retargeted at a repository that actually exists
 /// on this machine. Only the repository coordinates and the ids change — the
 /// snapshot shape stays the contract's.
@@ -376,21 +359,71 @@ fn claim(attempt: &str) -> ClaimRequest {
     }
 }
 
+/// Every test in this file but one runs against a real `git` checkout; this
+/// is that wiring, shared so each test states only what varies: the
+/// protocol, the adapter, the journal, and the workspace root.
+fn git_engine<A: HarnessAdapter>(
+    protocol: FakeProtocol,
+    adapter: A,
+    journal: OwnerOnlyJournal,
+    workspaces: &Path,
+) -> RunnerEngine<FakeProtocol, A, GitWorktreeProvisioner> {
+    RunnerEngine::new(
+        protocol,
+        adapter,
+        journal,
+        WorkspaceManager::new(
+            workspaces,
+            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
+        ),
+    )
+}
+
+/// Drives an attempt into the "killed after checkout, before anything
+/// terminal is reported" state that both restart tests below resume from,
+/// and asserts the checkout that a restart must later decide about is really
+/// there. Shared because it is not what either test is proving — what each
+/// proves is what its own restart does next.
+async fn crash_before_terminal_report(
+    label: &str,
+    source: &Path,
+    commit: &str,
+    journal: &OwnerOnlyJournal,
+    workspaces: &Path,
+) -> PathBuf {
+    let killed = git_engine(
+        FakeProtocol::new(work(label, source, commit), false),
+        FailingStartAdapter {
+            reconcile_is_ambiguous: false,
+        },
+        journal.clone(),
+        workspaces,
+    );
+    assert!(killed.run_once(&session(), claim(label)).await.is_err());
+    let orphan = std::fs::read_dir(workspaces)
+        .expect("workspace root")
+        .map(|entry| entry.expect("entry").path())
+        .next()
+        .expect("the interrupted attempt left a checkout");
+    assert!(
+        orphan.join(CHECKOUT_MARKER).exists(),
+        "the interrupted attempt had already completed its checkout"
+    );
+    orphan
+}
+
 #[tokio::test]
-async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout() {
+async fn a_claimed_attempt_reaches_the_harness_in_its_own_checkout() {
     let (source_dir, commit) = source_repository();
     let source = source_dir.path();
     let root_dir = temp_root("run");
     let root = root_dir.path();
     let adapter = RealProcessAdapter::default();
-    let engine = RunnerEngine::new(
+    let engine = git_engine(
         FakeProtocol::new(work("attempt-h3", source, &commit), false),
         adapter.clone(),
         OwnerOnlyJournal::new(root.join("journal")),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
+        &root.join("workspaces"),
     );
 
     let cycle = engine
@@ -420,7 +453,7 @@ async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout(
 /// identical run cannot reach the harness at all. Reverting the fix is
 /// therefore proven to break the claim, rather than assumed to.
 #[tokio::test]
-async fn without_a_real_provisioner_the_same_attempt_never_reaches_the_harness() {
+async fn without_a_provisioner_the_attempt_never_reaches_the_harness() {
     let (source_dir, commit) = source_repository();
     let source = source_dir.path();
     let root_dir = temp_root("unavailable");
@@ -459,14 +492,11 @@ async fn a_completed_attempt_leaves_no_checkout_behind() {
     let root_dir = temp_root("cleanup");
     let root = root_dir.path();
     let workspaces = root.join("workspaces");
-    let engine = RunnerEngine::new(
+    let engine = git_engine(
         FakeProtocol::new(work("attempt-h3-done", source, &commit), false),
         RealProcessAdapter::default(),
         OwnerOnlyJournal::new(root.join("journal")),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
+        &workspaces,
     );
 
     engine
@@ -491,14 +521,11 @@ async fn a_cancelled_attempt_leaves_no_checkout_behind() {
     let root_dir = temp_root("cancelled");
     let root = root_dir.path();
     let workspaces = root.join("workspaces");
-    let engine = RunnerEngine::new(
+    let engine = git_engine(
         FakeProtocol::new(work("attempt-h3-cancel", source, &commit), true),
         RealProcessAdapter::default(),
         OwnerOnlyJournal::new(root.join("journal")),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
+        &workspaces,
     );
 
     let cycle = engine
@@ -530,45 +557,16 @@ async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {
     let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let journal = OwnerOnlyJournal::new(root.join("journal"));
-    let killed = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-killed", source, &commit), false),
-        // The adapter fails to start, which is where a `kill -9` most often
-        // lands: after the checkout exists, before anything terminal is
-        // reported. The journal record survives; so does the checkout.
-        FailingStartAdapter {
-            reconcile_is_ambiguous: false,
-        },
-        journal.clone(),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
-    );
-    assert!(
-        killed
-            .run_once(&session(), claim("attempt-h3-killed"))
-            .await
-            .is_err()
-    );
-    let orphan = std::fs::read_dir(&workspaces)
-        .expect("workspace root")
-        .map(|entry| entry.expect("entry").path())
-        .next()
-        .expect("the interrupted attempt left a checkout");
-    assert!(
-        orphan.join(CHECKOUT_MARKER).exists(),
-        "the interrupted attempt had already completed its checkout"
-    );
+    let orphan =
+        crash_before_terminal_report("attempt-h3-killed", source, &commit, &journal, &workspaces)
+            .await;
     assert_eq!(journal.unresolved().expect("journal").len(), 1);
 
-    let restarted = RunnerEngine::new(
+    let restarted = git_engine(
         FakeProtocol::new(work("attempt-h3-killed", source, &commit), false),
         RealProcessAdapter::default(),
         journal.clone(),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
+        &workspaces,
     );
     let outcomes = restarted.recover(&session()).await.expect("recovery");
     assert_eq!(outcomes.len(), 1);
@@ -591,39 +589,22 @@ async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
     let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let journal = OwnerOnlyJournal::new(root.join("journal"));
-    let killed = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-quarantine", source, &commit), false),
-        FailingStartAdapter {
-            reconcile_is_ambiguous: false,
-        },
-        journal.clone(),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
-    );
-    assert!(
-        killed
-            .run_once(&session(), claim("attempt-h3-quarantine"))
-            .await
-            .is_err()
-    );
-    let orphan = std::fs::read_dir(&workspaces)
-        .expect("workspace root")
-        .map(|entry| entry.expect("entry").path())
-        .next()
-        .expect("the interrupted attempt left a checkout");
+    let orphan = crash_before_terminal_report(
+        "attempt-h3-quarantine",
+        source,
+        &commit,
+        &journal,
+        &workspaces,
+    )
+    .await;
 
-    let restarted = RunnerEngine::new(
+    let restarted = git_engine(
         FakeProtocol::new(work("attempt-h3-quarantine", source, &commit), false),
         FailingStartAdapter {
             reconcile_is_ambiguous: true,
         },
         journal.clone(),
-        WorkspaceManager::new(
-            &workspaces,
-            GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600)),
-        ),
+        &workspaces,
     );
     let outcomes = restarted.recover(&session()).await.expect("recovery");
     assert!(matches!(

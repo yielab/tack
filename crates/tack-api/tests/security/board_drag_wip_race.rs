@@ -1,25 +1,14 @@
-//! Tests `handlers::items::update_item` — the ordinary board-drag / API
-//! PATCH path — must not read a WIP-limited column's item count and then
-//! write the new status as two separate, unlocked steps
-//! (`Repository::count_items_by_status` followed by a plain
-//! `Repository::update_item`), the same race
-//! `crates/tack-api/tests/security/wip_limit_race.rs` guards against on the
-//! dispatch path, but only on that one call site. This is the everyday
-//! path: a human dragging cards on the board, or any API client calling
-//! `PATCH /api/items/{id}` directly.
+//! `handlers::items::update_item` (the ordinary board-drag / PATCH path)
+//! must not read a WIP-limited column's item count and then write the new
+//! status as two separate, unlocked steps — the same race `wip_limit_race.rs`
+//! guards on the dispatch path, but on this call site.
 //!
-//! This drives `N` genuinely concurrent `PATCH /api/items/{id}` requests —
-//! `N` distinct items, all eligible, all targeting the same WIP-limited
-//! column — through the real HTTP path and asserts the column's final count
-//! never exceeds its configured limit.
-//!
-//! Unlike the dispatch race test, there is no outbound HTTP round trip on
-//! this path to hold open with a mock delay — the whole request is
-//! in-process. The race window here is the handful of `.await` points
-//! between the count read and the status write, plus contention over the
-//! pool's five connections when twelve requests arrive at once on a
-//! multi-thread runtime; that's enough to reproduce the race reliably.
+//! Drives `N` genuinely concurrent `PATCH /api/items/{id}` requests, all
+//! targeting the same WIP-limited column, through the real HTTP path; the
+//! race window here is in-process `.await` points and connection-pool
+//! contention, not an outbound HTTP delay.
 
+use crate::common;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
@@ -90,23 +79,6 @@ async fn req(
         .unwrap()
 }
 
-async fn create_project(app: &Router) -> Uuid {
-    // "software" -> scrum_workflow(): "In Progress" has wip_limit = Some(5),
-    // `transitions: None` (no explicit-transition restriction), so every
-    // item created here can go straight from the initial status ("Backlog")
-    // to "In Progress".
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Board Drag WIP Race Test", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
     let res = req(
         app,
@@ -125,14 +97,17 @@ async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
 /// `N` distinct items, all sitting in "Backlog", all `PATCH`ed to "In
 /// Progress" (scrum's WIP-limited column, limit 5) at the same moment.
 /// However many of the `N` requests win the race, the column must never end
-/// up holding more than its configured limit.
+/// up holding more than its configured limit. "software" -> scrum_workflow():
+/// "In Progress" has wip_limit = Some(5) and `transitions: None` (no
+/// explicit-transition restriction), so every item created here can go
+/// straight from the initial status ("Backlog") to "In Progress".
 #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
-async fn concurrent_board_drags_into_the_same_wip_limited_column_never_exceed_the_limit() {
+async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
     const N: usize = 12;
     const WIP_LIMIT: i64 = 5;
 
     let (app, state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Board Drag WIP Race Test", "software").await;
 
     let mut item_ids = Vec::with_capacity(N);
     for i in 0..N {
@@ -205,9 +180,9 @@ async fn concurrent_board_drags_into_the_same_wip_limited_column_never_exceed_th
 /// as it did before, going straight through the ordinary field-by-field
 /// `Repository::update_item`.
 #[tokio::test]
-async fn patch_without_a_status_change_is_unaffected() {
+async fn patch_without_status_change_is_unaffected() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Board Drag WIP Race Test", "software").await;
     let item_id = create_item(&app, project_id, "Untouched status").await;
 
     let res = req(

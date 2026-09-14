@@ -1,46 +1,22 @@
-//! Self-provisions a one-time enrollment token in-process for `tack serve
-//! --with-runner`'s zero-touch local case, where the operator and the
-//! runner are the same person on the same machine (see
-//! `docs/adr/0058-standalone-single-binary-runner.md`).
-//!
-//! This module only ever creates the *pending* runner and mints its
-//! one-time token — the administrative half of enrollment, the same
-//! operation a human triggers by hand via `POST /api/runners/enrollment`.
-//! Redeeming that token for a durable credential is unchanged: it still
-//! happens over real runner-v1 HTTP inside `tack_runner::bootstrap::run`,
-//! exactly like any remote runner. Nothing here calls a runner-protocol
-//! route or reaches into `crates/tack-runner/src/transport.rs`.
+//! Self-provisions a one-time enrollment token for `tack serve --with-runner`'s
+//! zero-touch local case (ADR 0058). Only mints the token; redemption still
+//! goes over real runner-v1 HTTP.
 
 use std::path::Path;
 
 use tack_api::handlers::runner_admin;
 use tack_runner::EnrollmentCredential;
 
-/// Filename `tack_runner::transport` persists the durable session under,
-/// inside a runner's `state_dir`. That module's own constant (`SESSION_FILE`)
-/// is private, so this is a light, documented coupling to a stable-looking
-/// name rather than a shared constant — chosen over adding a new public
-/// method to `transport.rs` for the sake of one boolean check.
+/// `tack_runner::transport`'s private session filename, duplicated here.
 const SESSION_FILE_NAME: &str = "session.json";
 
-/// Whether `state_dir` already holds a durable runner session from a
-/// previous enrollment redemption. When true, the embedded runner should
-/// reuse it unchanged rather than self-provisioning a new one — manual
-/// enrollment or an earlier self-provisioned run both leave the same file.
+/// Whether a durable session from a prior enrollment already exists on disk.
 pub fn has_stored_session(state_dir: &Path) -> bool {
     state_dir.join(SESSION_FILE_NAME).is_file()
 }
 
-/// Whether the session already on disk under `state_dir` names a runner id
-/// that `database_url` — the exact database this server just opened — has
-/// no row for at all. This is what separates "this credential belongs to a
-/// database that was replaced" from "the database is momentarily
-/// unreachable": by the time this runs, the caller's own server has already
-/// opened `database_url` successfully, so there is no unreachable case left
-/// to confuse this with. A session this function cannot even identify a
-/// runner id for (missing, or unparseable) is reported as not orphaned —
-/// there is nothing here to positively pin on a replaced database, so the
-/// caller falls back to whatever it already does for that file.
+/// Whether the on-disk session names a runner id with no row in `database_url`
+/// — its database was replaced, not merely unreachable; unidentifiable → `false`.
 pub async fn stored_session_orphaned(state_dir: &Path, database_url: &str) -> anyhow::Result<bool> {
     let Some(runner_id) = tack_runner::client::persisted_session_runner_id(state_dir) else {
         return Ok(false);
@@ -51,34 +27,16 @@ pub async fn stored_session_orphaned(state_dir: &Path, database_url: &str) -> an
     Ok(!exists)
 }
 
-/// Stands in for `enrollment_credential` when [`has_stored_session`] is
-/// true, so the caller does not have to touch the config's real credential
-/// (and does not have to self-provision, which would mint an unused token
-/// and a second `pending_enrollment` runner row) just to restart against an
-/// already-enrolled `state_dir`.
-///
-/// This exists to satisfy `tack_runner::bootstrap::build_runtime`, which
-/// requires *some* `enrollment_credential` before it looks at `state_dir` at
-/// all — `build_runtime` itself does not check
-/// for a stored session first. The placeholder is
-/// never transmitted on a normal restart: `establish_session` in
-/// `crates/tack-runner/src/transport.rs` tries the stored session's
-/// `refresh` first and only reads `enrollment_credential` if that refresh is
-/// rejected, at which point failing loudly — the session was invalid and no
-/// real token was supplied — is the correct outcome, not a silent recovery.
-/// [`EnrollmentCredential`]'s `Debug`/`Display` are unconditionally redacted
-/// regardless of content, so this value is exactly as safe to hold as a real
-/// one even though it is never real.
+/// Placeholder for `enrollment_credential` when a stored session already
+/// exists, since `build_runtime` requires *some* credential up front. Never
+/// transmitted: `establish_session` tries the stored session's `refresh`
+/// first and only reads this on rejection, where failing loudly is correct.
 pub(crate) fn stored_session_placeholder() -> EnrollmentCredential {
     EnrollmentCredential::new("stored-session-on-disk-no-token-needed")
 }
 
-/// Self-provisions a single local runner and returns its one-time
-/// enrollment token as a redacted [`EnrollmentCredential`] — never logged,
-/// printed, or written anywhere by this function. The caller hands it
-/// directly to `tack_runner::bootstrap::run`, which redeems it over
-/// loopback HTTP through the ordinary protocol path, identically to a
-/// manually issued token.
+/// Self-provisions a runner and returns its one-time token, redacted and
+/// never logged; the caller redeems it over loopback HTTP like any runner.
 pub async fn self_provision(database_url: &str) -> anyhow::Result<EnrollmentCredential> {
     let response = runner_admin::provision_local_runner(database_url)
         .await
@@ -118,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn has_stored_session_is_false_when_state_dir_does_not_exist_yet() {
+    fn has_stored_session_is_false_when_state_dir_is_absent() {
         let guard = tempfile::tempdir().expect("temporary directory");
         // A path under the guard that was never created: `has_stored_session`
         // must answer for a state directory that does not exist at all.
@@ -134,7 +92,7 @@ mod tests {
     /// rather than guessing, and a real (unreachable) `database_url` proves
     /// neither branch tries to open it.
     #[tokio::test]
-    async fn stored_session_orphaned_is_false_with_nothing_on_disk_to_check() {
+    async fn stored_session_orphaned_is_false_with_nothing_on_disk() {
         let guard = tempfile::tempdir().expect("temporary directory");
         let dir = guard.path();
 

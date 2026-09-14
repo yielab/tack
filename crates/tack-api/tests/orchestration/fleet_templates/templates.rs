@@ -1,16 +1,11 @@
 //! Tests for the template `orchestration` block: `POST /api/templates`'s
 //! save-time validation.
 //!
-//! Covers two hard requirements: `orchestration.status_map` is rejected
-//! with a 400 naming the bad key when it references a status the
-//! template's *own* workflow doesn't have (reusing
-//! `handlers::orch::validate_status_map` — the same function `PUT
-//! /orch-link` uses); and `orchestration.pipeline_yaml`, when supplied
-//! inline, is rejected when it isn't even parseable YAML. Also covers
-//! backward compatibility: a template with no `orchestration` key at all
-//! behaves exactly as before, with no `TACK_ORCH_ENABLE` dependency
-//! anywhere in this path — nothing here is gated, because nothing here does
-//! anything beyond storing a JSON blob.
+//! Covers: `orchestration.status_map` rejected with a 400 naming the bad
+//! key when it references a status the template's own workflow doesn't
+//! have; `orchestration.pipeline_yaml` rejected when it isn't parseable
+//! YAML; and backward compatibility — an absent/null `orchestration` key
+//! behaves exactly as before, with no `TACK_ORCH_ENABLE` dependency.
 
 use crate::common;
 
@@ -35,53 +30,49 @@ async fn req(app: &Router, method: Method, uri: &str, body: Value) -> axum::resp
         .unwrap()
 }
 
+async fn create_template(app: &Router, body: Value) -> axum::response::Response {
+    req(app, Method::POST, "/api/templates", body).await
+}
+
+async fn get_template(app: &Router, template_id: &str) -> axum::response::Response {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/templates/{template_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
 async fn body_json(res: axum::response::Response) -> Value {
     let bytes = to_bytes(res.into_body(), 4 * 1024 * 1024).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
 /// A template with no `orchestration` key at all — the shape every template
-/// had before `orchestration` was added, and the shape every built-in still
-/// has — must keep working unchanged. This is TACK_ORCH_ENABLE-independent: the
-/// default test app has orchestration disabled entirely, and this must
-/// still succeed.
+/// had before `orchestration` was added — and one with an explicit
+/// `"orchestration": null` are the same absent-means-nothing case: both must
+/// keep working unchanged. This is TACK_ORCH_ENABLE-independent: the default
+/// test app has orchestration disabled entirely, and both must still
+/// succeed.
 #[tokio::test]
-async fn create_template_without_orchestration_key_still_works() {
-    let (app, _workspace_id) = common::test_app().await;
+async fn create_template_without_or_with_null_orchestration_works() {
+    let cases = [None, Some(Value::Null)];
+    for orchestration in cases {
+        let (app, _workspace_id) = common::test_app().await;
+        let mut body = json!({"name": "Plain Template", "project_type": "software"});
+        if let Some(v) = orchestration {
+            body["orchestration"] = v;
+        }
 
-    let res = req(
-        &app,
-        Method::POST,
-        "/api/templates",
-        json!({
-            "name": "Plain Template",
-            "project_type": "software",
-        }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let body = body_json(res).await;
-    assert!(body.get("orchestration").is_none_or(|v| v.is_null()));
-}
-
-/// An explicit `"orchestration": null` is the same as omitting the key —
-/// both are the absent-means-nothing case.
-#[tokio::test]
-async fn create_template_with_null_orchestration_still_works() {
-    let (app, _workspace_id) = common::test_app().await;
-
-    let res = req(
-        &app,
-        Method::POST,
-        "/api/templates",
-        json!({
-            "name": "Explicit Null Orchestration",
-            "project_type": "software",
-            "orchestration": null,
-        }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
+        let res = req(&app, Method::POST, "/api/templates", body).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let created = body_json(res).await;
+        assert!(created.get("orchestration").is_none_or(|v| v.is_null()));
+    }
 }
 
 /// The main requirement: an unknown status name in
@@ -123,11 +114,10 @@ async fn create_template_rejects_unknown_status_map_name() {
 /// `dispatch_from` at "Backlog" must succeed; pointing it at "To Do" (a
 /// `simple_workflow()` name that isn't in *this* template's workflow) must
 /// fail.
-#[tokio::test]
-async fn create_template_validates_status_map_against_its_own_workflow() {
-    let (app, _workspace_id) = common::test_app().await;
-
-    let custom_workflow = json!({
+/// A kanban workflow whose only statuses are Backlog/Building/Shipped —
+/// deliberately not `simple_workflow()`'s To Do/In Progress/Done names.
+fn custom_kanban_workflow() -> Value {
+    json!({
         "workflow_type": "kanban",
         "statuses": [
             { "name": "Backlog", "category": "todo", "wip_limit": null, "order": 0 },
@@ -135,14 +125,18 @@ async fn create_template_validates_status_map_against_its_own_workflow() {
             { "name": "Shipped", "category": "done", "wip_limit": null, "order": 2 },
         ],
         "transitions": null,
-    });
+    })
+}
+
+#[tokio::test]
+async fn create_template_validates_status_map_against_own_workflow() {
+    let (app, _workspace_id) = common::test_app().await;
+    let custom_workflow = custom_kanban_workflow();
 
     // References a status that exists only in `simple_workflow()`, not in
     // this template's own custom workflow -> rejected.
-    let bad = req(
+    let bad = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Custom Workflow, Wrong Status Map",
             "project_type": "software",
@@ -154,10 +148,8 @@ async fn create_template_validates_status_map_against_its_own_workflow() {
     assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
 
     // References a status that IS in this template's own workflow -> ok.
-    let good = req(
+    let good = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Custom Workflow, Right Status Map",
             "project_type": "software",
@@ -205,10 +197,8 @@ async fn create_template_rejects_unparseable_pipeline_yaml() {
 async fn create_template_with_valid_orchestration_round_trips() {
     let (app, _workspace_id) = common::test_app().await;
 
-    let res = req(
+    let res = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Agentic Product Template",
             "project_type": "software",
@@ -237,17 +227,7 @@ async fn create_template_with_valid_orchestration_round_trips() {
     assert_eq!(orch["status_map"]["dispatch_from"][0], "To Do");
 
     let template_id = created["id"].as_str().unwrap();
-    let get_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(format!("/api/templates/{template_id}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let get_res = get_template(&app, template_id).await;
     assert_eq!(get_res.status(), StatusCode::OK);
     let fetched = body_json(get_res).await;
     assert_eq!(fetched["orchestration"]["blueprint"], "agentic-product");

@@ -206,7 +206,7 @@ fn opaque_model_ids_survive_punctuation_byte_for_byte() {
 }
 
 #[test]
-fn requested_and_actual_model_values_are_distinct_types() {
+fn requested_vs_actual_model_and_provider_types_differ() {
     assert_ne!(
         TypeId::of::<RequestedModelId>(),
         TypeId::of::<ActualModelId>()

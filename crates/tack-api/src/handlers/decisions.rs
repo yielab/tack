@@ -1,77 +1,24 @@
-//! Operator decision-resolution repository/service/handler
-//! module. Registered in `handlers.rs` and merged into the operator router
-//! in `router.rs`'s `operator_execution_routes` — **before** the
-//! `require_token` layer is applied and **with** `inject_operator_principal`
-//! layered directly on top, exactly like every other route that function
-//! merges.
+//! Operator decision-resolution repository/service/handler module.
+//! Registered in `handlers.rs` and merged into the operator router in
+//! `router.rs`'s `operator_execution_routes` — **before** `require_token`
+//! is applied and **with** `inject_operator_principal` layered directly on
+//! top, exactly like every other route that function merges.
 //!
-//! # `TACK_EXECUTION_DECISION_TOKEN`
+//! **Security boundary: runner may raise/read, never resolve.** This
+//! module reads exactly one identity signal, the `x-tack-principal` header
+//! (see [`principal`]) — never `Authorization`, so no runner bearer
+//! credential can authenticate here even if presented. A runner may raise
+//! and read its own attempt's decision (`handlers/runner_protocol.rs`),
+//! but resolution lives on this structurally separate route family, mounted
+//! behind `require_token` — proven in `tests/runner_protocol/decisions.rs`'s
+//! `self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing`.
 //!
-//! [`require_decision_token`] mirrors
-//! `handlers::orch::require_approval_token` exactly, closing a real
-//! contract-vs-implementation gap:
-//! `docs/contracts/runner-v1/protocol.json` names decision
-//! resolution a `"separately_scoped_operator_credential"` (distinct from the
-//! plain `operator_session_or_api_token` every other operator route uses),
-//! and `errors/forbidden.json`'s frozen example carries
-//! `"required_scope":"operator:decisions"`. `TACK_EXECUTION_DECISION_TOKEN`
-//! is that second, independent credential — checked here, on top of (not
-//! instead of) the `x-tack-principal` check below, fail-closed when unset
-//! exactly like `TACK_ORCH_APPROVAL_TOKEN`. See `require_decision_token`'s
-//! own doc comment for the full rationale and `CLAUDE.md`'s config table for
-//! the environment variable.
-//!
-//! # Security boundary: runner may raise/read, never resolve
-//!
-//! This module reads exactly one identity signal: the `x-tack-principal`
-//! header (see [`principal`]). It never reads `Authorization` at all — no
-//! code path here can authenticate, or even inspect, a runner bearer
-//! credential. That is the entire enforcement mechanism for "a runner may
-//! raise and read its own attempt's decision (`POST .../decisions`, `POST
-//! .../decisions/poll`, both in `handlers/runner_protocol.rs`) but
-//! never resolve it": resolution lives on a structurally separate route
-//! family (mounted on `/api` behind `require_token`, a sibling of
-//! `/api/runner/v1` exactly as `CLAUDE.md`'s "Two authentication surfaces,
-//! separated structurally" describes for every other operator/runner pair),
-//! not an exemption entry on the runner surface, and the runner credential
-//! carries zero privilege here even if presented — proven in
-//! `crates/tack-api/tests/runner_protocol/decisions.rs`'s
-//! `self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing`
-//! test.
-//!
-//! `docs/contracts/runner-v1/protocol.json`'s `authentication` block names
-//! `decision_resolution` a "separately_scoped_operator_credential" — distinct
-//! wording from the plain `operator_session_or_api_token` every other
-//! operator route uses, and `errors/forbidden.json`'s example carries
-//! `"required_scope":"operator:decisions"`. Tack's actual operator-auth model
-//! (`middleware::require_token`) is a single shared bearer token with no
-//! scope/claim system at all (see `middleware.rs`'s own
-//! `operator_principal_value` doc comment: "a single shared bearer token, not
-//! per-user sessions"). This route is mounted behind the same `require_token`
-//! gate every other operator route uses — the stricter scoped-credential
-//! reading the contract describes remains an open contract-vs-implementation
-//! gap, not silently resolved.
-//!
-//! # No item-status mapping
-//!
-//! `execution_requests.status_map_policy_id` (migration 044) is a bare
-//! nullable `TEXT` column with **zero interpreter anywhere in this
-//! codebase** — grep confirms it is threaded verbatim through every layer
-//! (CLI args, request snapshot, DB column) and never once read back to
-//! decide anything. Nothing defines what a policy id resolves to: which
-//! decision kinds/answers map to which item statuses, or even what shape a
-//! "policy" is. Inventing that mapping now would mean fabricating an
-//! unrequested, uncontracted format.
-//! This module therefore treats "status mapping only
-//! after commit through the workflow engine" as a **structural
-//! guarantee with nothing to hang a policy off of yet**: no function in this
-//! file ever writes `items.status`, directly or indirectly, full stop —
-//! `resolve` never touches the `items` table at all, and
-//! `crates/tack-api/tests/runner_protocol/decisions.rs`'s own expiry tests
-//! assert the item's status is unchanged across both the fail-closed-conflict
-//! and bulk-sweep paths. Wiring a
-//! real mapping is future work that first needs a policy schema/format
-//! decision from whoever owns `status_map_policy_id`'s contract.
+//! **No item-status mapping.** `execution_requests.status_map_policy_id`
+//! (migration 044) is threaded through every layer but read back nowhere —
+//! nothing defines what a policy id resolves to. No function in this file
+//! writes `items.status`, directly or indirectly: `resolve` never touches
+//! the `items` table. Wiring a real mapping needs a policy schema decision
+//! from whoever owns that column's contract first.
 
 use axum::{
     Json, Router,
@@ -198,25 +145,15 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Resolving a decision releases whatever the harness/runner is blocked on
 /// — a materially higher-privilege action than the ordinary operator
-/// `x-tack-principal` gate already covers (which only proves "this caller
-/// cleared `require_token`"), exactly the same argument
-/// `handlers::orch::require_approval_token`'s doc comment makes for granting
-/// a docket approval. This function mirrors that one's implementation and
-/// rationale exactly, including the safe-default direction:
+/// `x-tack-principal` gate covers. Mirrors
+/// `handlers::orch::require_approval_token` exactly, including the safe
+/// default: an unconfigured `TACK_EXECUTION_DECISION_TOKEN` always
+/// rejects, never "anyone holding the ordinary API token can."
 ///
-/// **The safe default when `TACK_EXECUTION_DECISION_TOKEN` is unset: always
-/// reject.** There is deliberately no "no secret configured, so skip the
-/// check" branch the way `middleware::require_token`'s ordinary Bearer gate
-/// has for an unset `TACK_API_TOKEN` ("pure-local mode, allow everything").
-/// An unconfigured `TACK_EXECUTION_DECISION_TOKEN` must mean "nothing on
-/// this server is configured to resolve a decision" — never "anyone holding
-/// the ordinary API token can."
-///
-/// The error details carry `required_scope: "operator:decisions"`, matching
-/// `docs/contracts/runner-v1/errors/forbidden.json`'s frozen example
-/// byte-for-byte in shape — this is the real, separately-scoped credential
-/// that fixture's wording calls for (see the module doc comment's
-/// `TACK_EXECUTION_DECISION_TOKEN` section).
+/// The error details carry `required_scope: "operator:decisions"`,
+/// matching `docs/contracts/runner-v1/errors/forbidden.json`'s frozen
+/// example — the real, separately-scoped credential that fixture's wording
+/// calls for (see this file's module doc comment).
 fn require_decision_token(
     state: &DecisionOperatorState,
     headers: &HeaderMap,
@@ -751,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_answer_rejects_missing_and_empty_option_id_and_bad_text() {
+    fn validate_answer_rejects_missing_empty_option_id_and_bad_text() {
         assert!(validate_answer(&json!({})).is_err());
         assert!(validate_answer(&json!({"answer": "not-an-object"})).is_err());
         assert!(validate_answer(&json!({"answer": {"option_id": ""}})).is_err());

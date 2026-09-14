@@ -1218,7 +1218,7 @@ impl Repository {
     }
 
     /// Writes back docket's real decision once
-    /// [`tack_orch::ControlPlane::decide_approval`] has actually resumed or
+    /// `tack_orch::ControlPlane::decide_approval` has actually resumed or
     /// killed the gated task on docket's side — this is a **local mirror
     /// update only**, called after that HTTP call already succeeded, never
     /// instead of it (the decision is real the moment docket accepts it;
@@ -1478,34 +1478,18 @@ pub struct RollupStats {
 
 impl Repository {
     /// Rolls every `orch_events` row with `occurred_at < cutoff` into
-    /// `orch_events_daily` (grouped by day/control_plane_id/event_type) and deletes
-    /// the raw rows — **in the same transaction**, one bounded batch of up to
-    /// `batch_size` rows at a time, looping until nothing older than `cutoff`
-    /// remains.
+    /// `orch_events_daily` (grouped by day/control_plane_id/event_type) and
+    /// deletes the raw rows — in the same transaction, batched up to
+    /// `batch_size` rows at a time, looping until nothing older remains.
     ///
-    /// **Why batched, not one transaction for the whole sweep:**
-    /// SQLite allows exactly one writer at a
-    /// time, so a single transaction spanning a large backlog (e.g. the first
-    /// sweep after upgrading a long-running install with years of history) would
-    /// hold that lock for its entire duration, blocking every other write in the
-    /// process (item moves, the reconciler's own health writes, ...) for as long
-    /// as it takes. Bounding each transaction to `batch_size` rows keeps any single
-    /// write short, at the cost of the overall sweep taking several round trips —
-    /// an entirely acceptable trade for a background job with no user waiting on
-    /// it.
+    /// Batched because SQLite allows only one writer at a time: an unbounded
+    /// transaction over a large backlog would hold that lock for its whole
+    /// duration, blocking every other write in the process.
     ///
-    /// **Why the aggregate write and the delete are in the *same* transaction, not
-    /// two separately-committed steps ordered "aggregate first, delete second":**
-    /// the requirement is that a crash between them loses nothing. Two independently
-    /// committed steps cannot fully satisfy that: a crash after the aggregate
-    /// commits but before the delete commits leaves the raw rows still present,
-    /// and a naive retry would re-aggregate and double-count them. Putting both in
-    /// one transaction removes the in-between state entirely — either neither
-    /// effect is visible (a retry re-reads the same untouched raw rows: safe, just
-    /// redone) or both are (the raw rows are gone, so a retry can never see them
-    /// again to double-count). That is strictly stronger than "ordered so a crash
-    /// loses nothing": it makes the lossy window impossible rather than merely
-    /// bounding what could be lost in it.
+    /// The aggregate write and the delete share one transaction: a crash
+    /// between two separately-committed steps would leave raw rows present
+    /// after the aggregate already committed, and a naive retry would
+    /// double-count them. One transaction makes that state impossible.
     #[instrument(skip(self))]
     pub async fn rollup_and_purge_orch_events(
         &self,
@@ -2005,33 +1989,20 @@ impl Repository {
         Ok(row.0 != 0)
     }
 
-    /// `Some((remote_task_id, remote_status))` iff `item_id` has an `orch_tasks` row
-    /// whose `remote_status` is `pending`, `running`, or `waiting_approval` — legacy
-    /// Docket is still working on it, or waiting on a human; `None` otherwise. This
-    /// is the exact set `dispatcher.rs`'s `ACTIVE_TASK_STATUSES` names and the only
-    /// set `Self::reconcile_stale_orch_tasks`'s own `WHERE` clause treats as active;
-    /// every other value, including `stale`, a terminal docket status, or one this
-    /// version of Tack has never seen, is *not* active — a redispatch (or, here, a
-    /// new runner-v1 request) is safe against it. **Defined once, in this query**,
-    /// rather than filtering rows in Rust after a broader read, so a caller can never
-    /// see a set that drifts from `ACTIVE_TASK_STATUSES` by accident. This is the
-    /// mirror-direction read for "one scheduling owner": [`Self::
-    /// has_active_execution_request_for_item`] lets legacy Docket dispatch defer to a
-    /// live runner-v1 request; this lets a new runner-v1 request defer to a live
-    /// legacy Docket task, and name it. A caller that only needs the boolean binds
-    /// this `Option` and calls `.is_some()` rather than a separate existence query.
+    /// `Some((remote_task_id, remote_status))` iff `item_id` has an
+    /// `orch_tasks` row whose `remote_status` is `pending`, `running`, or
+    /// `waiting_approval`; `None` otherwise. This is the exact set
+    /// `dispatcher.rs`'s `ACTIVE_TASK_STATUSES` names, defined once in this
+    /// query rather than filtered in Rust, so a caller can never drift from
+    /// it by accident.
     ///
-    /// Multiple active rows for one item are possible across dispatch attempts; the
-    /// most-recently-dispatched one is named, breaking any tie deterministically.
-    /// `dispatched_at` is `NOT NULL` (see `migrations.rs`'s `orch_tasks` definition),
-    /// so `ORDER BY dispatched_at DESC` cannot pick a row `EXISTS` would not have
-    /// counted — which row is returned is the only thing the ordering affects; the
-    /// `Some`/`None` distinction depends solely on the `WHERE` clause above, so
-    /// `.is_some()` and the `EXISTS` form this query replaced are the same truth for
-    /// every row shape this table permits.
+    /// Mirrors [`Self::has_active_execution_request_for_item`] in the other
+    /// direction: that lets legacy Docket defer to a live runner-v1 request;
+    /// this lets a new runner-v1 request defer to a live legacy Docket task.
     ///
-    /// Read-only against a table this file already writes elsewhere (`Self::
-    /// upsert_orch_tasks`).
+    /// Multiple active rows are possible across dispatch attempts;
+    /// `ORDER BY dispatched_at DESC` (`NOT NULL`) names the most recent one
+    /// deterministically without affecting the `Some`/`None` result.
     #[instrument(skip(self))]
     pub async fn active_docket_task_for_item(
         &self,

@@ -91,7 +91,6 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
 /// reachable while the feature is off — see that route's own comment.
 fn orch_routes(state: AppState) -> Router<AppState> {
     Router::new()
-        // ─── Control planes ───────────────────────────
         .route(
             "/control-planes",
             post(orch::create_control_plane).get(orch::list_control_planes),
@@ -102,16 +101,12 @@ fn orch_routes(state: AppState) -> Router<AppState> {
                 .patch(orch::update_control_plane)
                 .delete(orch::delete_control_plane),
         )
-        // ─── Project ↔ control-plane link ─────────────
         .route(
             "/projects/{id}/orch-link",
             get(orch::get_orch_link).put(orch::put_orch_link),
         )
-        // ─── Fleet view aggregate ──────────────────────
         .route("/fleet", get(orch::get_fleet))
-        // ─── Metrics ──────────────────────────────────────────────
         .route("/metrics", get(orch::get_metrics))
-        // ─── Item/project agent activity ───────────────────────────
         .route(
             "/items/{id}/agent-activity",
             get(orch::get_item_agent_activity),
@@ -120,14 +115,12 @@ fn orch_routes(state: AppState) -> Router<AppState> {
             "/projects/{id}/agent-activity",
             get(orch::get_project_agent_activity),
         )
-        // ─── Dispatch ─────────────────────────────────────────────
         .route("/items/{id}/dispatch", post(orch::dispatch_item))
         .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint))
         .route(
             "/sprints/{id}/dispatch/dry-run",
             get(orch::dry_run_sprint_dispatch),
         )
-        // ─── Approvals + provisioning ───────────────────────────────
         .route("/approvals", get(orch::list_pending_approvals)) // fleet-wide inbox, read-only
         .route("/approvals/{token}", post(orch::decide_approval)) // also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
         .route(
@@ -174,52 +167,21 @@ fn local_runner_routes() -> Router<AppState> {
         )
 }
 
-/// The operator execution/fleet routes — `/api/executions`,
+/// Mounts the operator execution/fleet API (`/api/executions`,
 /// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
-/// `/api/model-profiles` (`crate::handlers::executions`,
-/// `crate::handlers::runner_admin`) — plus two additions mounted the
-/// same way: decision resolution (`crate::handlers::decisions`) and
-/// operator artifact download
-/// (`crate::handlers::runner_protocol::artifact_download`), both of which
-/// shipped as deliberately unwired card-local modules with a suggested
-/// integration snippet in their own doc comments — this function is
-/// what performs that integration. Every card-local
-/// router already calls `with_state` internally (per its own `pub fn
-/// routes(state) -> Router` signature), producing a fully-resolved
-/// `Router<()>`; this re-labels that "no state missing" router's phantom
-/// type parameter to `AppState` via a second `with_state` call — the
-/// officially documented pattern for merging routers whose state types
-/// differ (see `axum::Router::merge`'s own doc example) — so it can be
-/// flat-`merge`d into `api` below at the same level as every other `/api/*`
-/// route, rather than nested under an extra path segment neither card
-/// chose.
+/// `/api/model-profiles`) plus decision resolution and operator artifact
+/// download, merged into `api` *before* `require_token` — so they share
+/// operator authentication, never the runner router's bearer-credential
+/// check. `inject_operator_principal` runs on this whole sub-router,
+/// stripping any client-supplied `x-tack-principal` and replacing it with a
+/// value derived from the authenticated context; every handler here trusts
+/// that header completely for idempotency/audit scoping.
 ///
-/// Merged into `api` *before* `require_token` is layered on, so these
-/// routes share the same operator authentication as the rest of `/api/*`
-/// (`operator_session_or_api_token` per
-/// `docs/contracts/runner-v1/protocol.json`) — never the runner router's
-/// distinct bearer-credential check. `inject_operator_principal`
-/// (`middleware.rs`) is layered directly on this sub-router so it runs for
-/// every request these handlers see, strips any client-supplied
-/// `x-tack-principal`, and replaces it with a value derived from the
-/// request's own authenticated context — the operator execution/fleet
-/// handlers, and the decision-resolve and artifact-download handlers
-/// alongside them, trust that header completely for idempotency/
-/// audit scoping, so an external caller must never be able to set it.
-///
-/// **The decision-resolve route carries a second, independent gate on top**
-/// (`TACK_EXECUTION_DECISION_TOKEN`, checked inside
-/// `decisions::require_decision_token` — see that function's doc comment):
-/// a deliberate security boundary, since decision resolution is
-/// contractually a `"separately_scoped_operator_credential"`
-/// (`docs/contracts/runner-v1/protocol.json`), distinct from the plain
-/// operator gate every other route here uses. Mirrors
-/// `handlers::orch::require_approval_token`/`TACK_ORCH_APPROVAL_TOKEN`
-/// exactly, including its fail-closed-when-unset default.
-///
-/// The artifact-download route points at the same operator-configured
-/// `TACK_STORAGE_DIR`-derived storage root as `runner_protocol_routes`'s own
-/// artifact storage below, for consistency.
+/// Decision-resolve carries a second, independent gate
+/// (`TACK_EXECUTION_DECISION_TOKEN` via
+/// `decisions::require_decision_token`, fail-closed when unset) — a
+/// `"separately_scoped_operator_credential"` per `protocol.json`. Artifact
+/// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     // Closes over the startup env default so `create_execution`'s dual-scheduling
@@ -265,42 +227,21 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
         .with_state::<AppState>(())
 }
 
-/// The runner-protocol v1 router
-/// (`crate::handlers::runner_protocol`), mounted at
-/// `docs/contracts/runner-v1/protocol.json`'s `base_path`
-/// (`/api/runner/v1`). Nested as its own top-level branch in `build_router`
-/// — a sibling of the `/api` nest, not a sub-path merged into it — so it
-/// sits structurally **outside** the `require_token` layer applied to
-/// `api`. That is the whole security property this function exists to
-/// preserve: an operator Bearer token can never reach these routes, and a
-/// runner credential can never reach the operator routes above, because the
-/// two route families do not share a single gate that either could satisfy
-/// — every runner-protocol write authenticates independently, per request,
-/// against a hashed runner bearer credential
-/// (`runner_protocol::runner_auth::authenticate`), matching
-/// `protocol.json`'s `credentials_are_not_substitutable: true`. It still
-/// inherits every layer applied to `outer` in `build_router` (CORS,
-/// security headers, tracing) — only the operator-token check is skipped.
+/// The runner-protocol v1 router, mounted at `/api/runner/v1`
+/// (`docs/contracts/runner-v1/protocol.json`'s `base_path`) as a sibling
+/// nest of `/api`, not merged into it, so it sits **outside** the
+/// `require_token` layer. Every write authenticates independently against a
+/// hashed runner bearer credential
+/// (`runner_protocol::runner_auth::authenticate`): an operator token can
+/// never reach these routes and a runner credential can never reach the
+/// operator routes, matching `protocol.json`'s
+/// `credentials_are_not_substitutable: true`. It still inherits `outer`'s
+/// CORS/security/tracing layers — only the operator-token check is skipped.
 ///
-/// The global body limit is a partial exception: this router
-/// carries its own, more-specific `DefaultBodyLimit` layer (a fixed 4 MiB
-/// protocol ceiling), and axum always applies whichever `DefaultBodyLimit`
-/// is closest to the handler — so the plain global layer on `outer` alone
-/// would never actually bind here. `state.config.max_body_size_bytes` is
-/// threaded into `runner_protocol::routes` so its own layer enforces
-/// `min(configured, 4 MiB)` instead: an operator who tightens the global
-/// limit below 4 MiB gets a genuinely smaller runner-v1 surface, while a
-/// loose or unset global limit can never widen it past the protocol
-/// ceiling. Re-labelled to `Router<AppState>` via the same `with_state`
-/// trick as `operator_execution_routes`, so it can be `nest`ed alongside
-/// `api` without an extra `Service`-erasure layer.
-///
-/// Artifact content storage is rooted at the operator-configured
-/// `TACK_STORAGE_DIR` (`state.config.storage_dir`), one level deeper than
-/// attachments (`<storage_dir>/execution-artifacts`) so the two never
-/// collide; without this,
-/// `RunnerProtocolState::new` alone would fall back to a hardcoded,
-/// process-CWD-relative default (see its own doc comment).
+/// Carries its own `DefaultBodyLimit` enforcing
+/// `min(state.config.max_body_size_bytes, 4 MiB)` — axum applies whichever
+/// limit is closest to the handler, so `outer`'s global layer never binds
+/// here. Artifact storage sits one level under `TACK_STORAGE_DIR`.
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
@@ -383,29 +324,23 @@ pub fn build_router(state: AppState) -> Router {
 
     // ── API routes ───────────────────────────────────────────────────────────
     let api = Router::new()
-        // ─── OpenAPI contract (public — no auth to read the schema) ──────
         .route("/openapi.json", get(crate::openapi::openapi_json))
-        // ─── Health & Debug (always public) ──────────────────────────────
         .route("/health", get(debug::health))
         .route("/debug/info", get(debug::debug_info))
         .route("/debug/db-stats", get(debug::db_stats))
-        // ─── Backup / restore ────────────────────────────────────────────
         .route("/backup", get(backup::get_backup))
         .route(
             "/restore",
             post(backup::post_restore.layer(DefaultBodyLimit::max(ATTACH_LIMIT))),
         )
-        // ─── Remote cloud backup ──────────────────────────────────────────
         .route("/backup/remote", post(backup::post_remote_backup))
         .route("/backup/remote", get(backup::get_remote_backups))
         .route("/backup/remote/restore", post(backup::post_remote_restore))
         .route("/backup/remote/verify", post(backup::post_remote_verify))
-        // ─── Cloud backup settings (UI-editable) ──────────────────────────
         .route(
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
         )
-        // ─── Orchestration settings (UI-editable) ──────────────────────────
         // Deliberately **outside** `orch_routes`'/`require_orch_enabled`'s
         // gate: this is the one orchestration-adjacent endpoint that must
         // stay reachable while orchestration is off — it's how an operator
@@ -415,13 +350,11 @@ pub fn build_router(state: AppState) -> Router {
             "/settings/orchestration",
             get(settings::get_orch_settings).put(settings::put_orch_settings),
         )
-        // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
         .route("/projects/{id}", get(projects::get_project))
         .route("/projects/{id}", patch(projects::update_project))
         .route("/projects/{id}", delete(projects::delete_project))
-        // ─── Export/Import ───────────────────────────────────────────────
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
         .route("/projects/{id}/import-csv", post(export::import_csv))
@@ -433,7 +366,6 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{id}/import-linear",
             post(import_linear::import_linear),
         )
-        // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))
         .route(
@@ -445,7 +377,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{id}", get(items::get_item))
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
-        // ─── Sprints ─────────────────────────────────────────────────────
         .route(
             "/projects/{project_id}/sprints",
             post(sprints::create_sprint),
@@ -456,7 +387,6 @@ pub fn build_router(state: AppState) -> Router {
             get(sprints::get_sprint).patch(sprints::update_sprint),
         )
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
-        // ─── Roles ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route("/roles/{id}", delete(roles::delete_role))
@@ -465,10 +395,8 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/roles/{role_id}",
             delete(roles::remove_role),
         )
-        // ─── Comments ────────────────────────────────────────────────────
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
-        // ─── Dependencies ────────────────────────────────────────────────
         .route(
             "/items/{item_id}/dependencies",
             post(dependencies::create_dependency),
@@ -481,7 +409,6 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/dependencies/{dep_id}",
             delete(dependencies::delete_dependency),
         )
-        // ─── Attachments (upload has its own higher body limit) ──────────
         .route(
             "/items/{item_id}/attachments",
             post(attachments::upload_attachment.layer(DefaultBodyLimit::max(ATTACH_LIMIT)))
@@ -489,7 +416,6 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/attachments/{id}", get(attachments::download_attachment))
         .route("/attachments/{id}", delete(attachments::delete_attachment))
-        // ─── Project Templates ───────────────────────────────────────────
         .route("/templates", post(templates::create_template))
         .route("/templates", get(templates::list_templates))
         .route("/templates/{id}", get(templates::get_template))
@@ -502,7 +428,6 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{id}/save-as-template",
             post(templates::save_project_as_template),
         )
-        // ─── Custom Fields ───────────────────────────────────────────────
         .route(
             "/projects/{project_id}/custom-fields",
             post(custom_fields::create_field),
@@ -530,7 +455,6 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/custom-fields",
             get(custom_fields::get_all_field_values),
         )
-        // ─── Multiple Boards ─────────────────────────────────────────────
         .route(
             "/projects/{project_id}/boards",
             post(boards_multi::create_board),
@@ -544,7 +468,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
-        // ─── Orchestration control center (gated) ──────────────────────────
         // Every orchestration route is batched into `orch_routes` below
         // rather than restructuring this file. `require_orch_enabled` returns a 409
         // with `error.code: "orchestration_disabled"` for every route here
@@ -564,7 +487,6 @@ pub fn build_router(state: AppState) -> Router {
         // `require_token` below. See `operator_execution_routes`'s doc
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
-        // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         // ─── Unmatched-route 404 — added after the auth layer above
         // so it is never itself gated behind a token (an unmatched path

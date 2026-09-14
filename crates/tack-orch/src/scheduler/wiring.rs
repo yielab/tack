@@ -2,40 +2,17 @@
 //! functions and real `agent_runners`/`agent_fleet_members`/
 //! `execution_requests` rows.
 //!
-//! [`choose_request_for_runner`] is the one entry point:
-//! `crates/tack-api/src/handlers/runner_protocol.rs`'s `claim` handler calls
-//! it with a live `&tack_db::Repository`, gets back the single request id
-//! (if any) this runner should attempt to claim, and passes that decision
-//! into `tack_db::repo::execution::Repository::claim_execution_idempotent_with_snapshot`
-//! via `tack_db::repo::execution::RequestSelection::Scheduled(...)` — the
-//! only thing that actually grants a fenced lease. This module never writes
-//! to the database; every query here is a plain `SELECT`. See
-//! `RequestSelection`'s own doc comment (`tack-db`) for the full reasoning
-//! on why this two-step shape exists (`tack-db` cannot depend on
-//! `tack-orch`, so the pure scheduler cannot be called from inside the
-//! claim transaction itself).
+//! [`choose_request_for_runner`] is the one entry point: the claim handler
+//! calls it with a live `&Repository`, gets back the request id (if any) to
+//! claim, and passes that into `claim_execution_idempotent_with_snapshot` —
+//! the only thing that actually grants a fenced lease. This module never
+//! writes to the database; every query here is a plain `SELECT` (`tack-db`
+//! cannot depend on `tack-orch`, so the scheduler can't run inside the claim
+//! transaction itself — see `RequestSelection`'s doc in `tack-db`).
 //!
-//! # Two gaps this module resolves
-//!
-//! - **No `priority` column exists on `execution_requests`.** Adding one
-//!   needs its own migration; until then, this module derives a policy
-//!   from `execution_requests.metadata` instead: [`priority_from_metadata`]
-//!   reads an optional `{"priority": "low" | "normal" | "high"}` key
-//!   (case-insensitive), defaulting to [`super::types::Priority::Normal`] —
-//!   i.e. FIFO — for a missing key, a non-object `metadata`, or any other
-//!   value. This is a convention this module introduces and documents, not
-//!   a contract any other caller is required to honor; a request created
-//!   without this key schedules exactly as it always has (FIFO among
-//!   same-priority peers).
-//! - **`agent_fleets.concurrency_limit` is not enforced by the pure
-//!   scheduler.** [`fleet_is_saturated`] checks a fleet-selector request's
-//!   target fleet against [`tack_db::repo::execution::FleetConcurrencySnapshot`]
-//!   before that request is ever handed to the pure scheduler at all — a
-//!   saturated fleet's requests are filtered out up front rather than
-//!   taught to the scheduler's per-runner eligibility model, which has no
-//!   notion of a cross-runner fleet ceiling and is not the layer to add one
-//!   to. This keeps `crates/tack-orch/src/scheduler/select.rs`/`batch.rs`
-//!   completely unmodified.
+//! Papers over two schema gaps: no `priority` column on `execution_requests`
+//! yet ([`priority_from_metadata`]), and no cross-runner fleet concurrency
+//! ceiling in the pure scheduler's eligibility model ([`fleet_is_saturated`]).
 
 use std::collections::BTreeMap;
 
@@ -52,13 +29,11 @@ use crate::execution::{
     RequestedModelProvider, RunnerId,
 };
 
-/// Maps `agent_runners.state`'s three literal values
-/// (`crates/tack-db/src/migrations.rs`, migration 040) to the typed
-/// [`RunnerState`]. An unrecognised string (never written by this codebase,
-/// but a raw `TEXT` column has no enum constraint) maps to
-/// [`RunnerState::Revoked`] — the most conservative reading: unsupported is
-/// typed, unknown is explicit, rather than treating unknown data as
-/// schedulable.
+/// Maps `agent_runners.state`'s three literal values (migration 040) to the
+/// typed [`RunnerState`]. An unrecognised string (never written by this
+/// codebase, but the raw `TEXT` column has no enum constraint) maps to
+/// [`RunnerState::Revoked`] — unsupported is typed, unknown is explicit,
+/// rather than treating unknown data as schedulable.
 fn runner_state_from_str(state: &str) -> RunnerState {
     match state {
         "pending_enrollment" => RunnerState::PendingEnrollment,
@@ -67,11 +42,10 @@ fn runner_state_from_str(state: &str) -> RunnerState {
     }
 }
 
-/// Reads an optional `{"priority": "low"|"normal"|"high"}` convention out of
-/// a request's `metadata` JSON — see this module's doc comment. Never
-/// errors: anything that isn't exactly one of the three recognised strings
-/// (missing key, wrong type, malformed JSON, unrecognised value) yields
-/// [`Priority::Normal`].
+/// Reads an optional `{"priority": "low"|"normal"|"high"}` convention out
+/// of a request's `metadata` JSON — no `execution_requests` column carries
+/// priority today. Never errors: anything else (missing key, wrong type,
+/// malformed JSON, unrecognised value) yields [`Priority::Normal`].
 fn priority_from_metadata(metadata_json: &str) -> Priority {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(metadata_json) else {
         return Priority::Normal;
@@ -84,24 +58,20 @@ fn priority_from_metadata(metadata_json: &str) -> Priority {
 }
 
 /// Parses `created_at` (always RFC 3339 — every write path in
-/// `crates/tack-db/src/repo/execution.rs` stores `DateTime<Utc>::to_rfc3339()`)
-/// falling back to `now` only if a row is somehow malformed, so a single bad
-/// row degrades to "scheduled as if it just arrived" instead of panicking or
-/// dropping it from consideration.
+/// `tack-db/src/repo/execution.rs` stores `DateTime<Utc>::to_rfc3339()`),
+/// falling back to `now` only if a row is somehow malformed, so one bad row
+/// degrades to "scheduled as if it just arrived" rather than panicking.
 fn parse_created_at(raw: &str, now: DateTime<Utc>) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(raw)
         .map(|value| value.with_timezone(&Utc))
         .unwrap_or(now)
 }
 
-/// Whether `fleet_id`'s configured `concurrency_limit` has already been
-/// reached or exceeded by its members' aggregate in-use capacity. `None`
-/// `concurrency_limit` (the default — migration 039) means "no ceiling,"
-/// never saturated. A fleet with no `FleetConcurrencySnapshot` at all
-/// (should not happen for a `fleet`-selector request that passed
-/// `POST /executions`' existing validation, but data can outlive validation)
-/// is treated as saturated — the conservative reading for "we could not
-/// prove this fleet has room."
+/// Whether `fleet_id`'s configured `concurrency_limit` is already reached or
+/// exceeded, pre-filtering fleet-selector requests before they reach the
+/// pure scheduler (whose per-runner model has no fleet-wide ceiling). `None`
+/// limit means no ceiling; no snapshot at all is treated as saturated — the
+/// conservative reading for "could not prove this fleet has room."
 fn fleet_is_saturated(snapshot: Option<&FleetConcurrencySnapshot>) -> bool {
     match snapshot {
         None => true,
@@ -116,15 +86,12 @@ fn fleet_is_saturated(snapshot: Option<&FleetConcurrencySnapshot>) -> bool {
     }
 }
 
-/// Builds a [`SchedulingRequest`] from a raw queued-request row, or `None`
-/// if the row cannot be turned into one — a malformed/partial model
-/// selector (`ModelSelector::from_parts`'s `SchedulingError`) or an absent
-/// `requested_harness_kind` (never produced by `enqueue_execution`'s own
-/// snapshot validation, but the raw column has no `NOT NULL`; see
-/// `QueuedRequestForScheduling`'s doc comment). Either case removes this one
-/// request from consideration rather than failing the whole claim — the
-/// request simply stays queued, visible to an operator via `GET
-/// /executions`, until it is fixed or explicitly requeued.
+/// Builds a [`SchedulingRequest`] from a raw queued-request row, or `None` if
+/// the row can't be turned into one (a malformed/partial model selector, or
+/// an absent `requested_harness_kind` — never produced by validated writes,
+/// but the raw column has no `NOT NULL`). Either case removes this one
+/// request from consideration rather than failing the whole claim; it stays
+/// queued and visible via `GET /executions` until fixed or requeued.
 fn build_scheduling_request(
     row: &QueuedRequestForScheduling,
     now: DateTime<Utc>,
@@ -161,14 +128,9 @@ fn build_scheduling_request(
 /// selector-eligible for, runs the pure scheduler, and returns the single
 /// request id (if any) this runner should attempt to claim.
 ///
-/// Returns `Ok(None)` for "no eligible work" (the runner does not exist,
-/// reported no harnesses, is not `active`, every candidate request is
-/// ineligible, or there were no queued requests at all) — the caller must
-/// treat that identically to "report `no work`," never a naive fallback
-/// (see `tack_db::repo::execution::RequestSelection::Scheduled`'s doc
-/// comment). Returns `Err` only for a genuine database error, which the
-/// caller should map to `internal_error`, exactly as it already does for
-/// every other `sqlx::Error` in the claim handler.
+/// `Ok(None)` covers every "no eligible work" case (unknown runner, no
+/// declared harnesses, not `active`, every candidate ineligible, nothing
+/// queued) — the caller treats all of these identically to "no work."
 pub async fn choose_request_for_runner(
     repo: &Repository,
     runner_id: &str,
@@ -185,30 +147,18 @@ pub async fn choose_request_for_runner(
 
     let parsed_capabilities =
         serde_json::from_str::<EmbeddedCapabilitySnapshot>(&runner.capability_snapshot).ok();
-    // A runner that has never enrolled/refreshed carries the column default
-    // `'{}'`, which does not parse as `EmbeddedCapabilitySnapshot` (several
-    // fields are required) — "no declared harnesses" is the honest reading,
-    // not a database error.
+    // A runner that never enrolled/refreshed carries the column default
+    // `'{}'`, which doesn't parse — "no declared harnesses" is the honest
+    // reading, not a database error.
     let harnesses = parsed_capabilities
         .as_ref()
         .map(|snapshot| snapshot.harnesses.clone())
         .unwrap_or_default();
-    // `agent_runners.last_heartbeat_at` is set only by the runner-v1
-    // `/heartbeat` batch, which reports *active attempt lease* renewals
-    // (`crates/tack-db/src/repo/execution.rs`'s `heartbeat_batch`) — a
-    // runner with zero active attempts never calls it, so a freshly
-    // enrolled runner polling for its very first claim has `NULL` here.
-    // Reading that `NULL` as "stale" (`evaluate_candidate` does, for
-    // any `None`) would make every runner permanently unschedulable until
-    // it had already been granted a lease once — a deadlock this module
-    // resolves by falling back to the capability snapshot's own
-    // `reported_at`: enroll/refresh already requires the runner to attest
-    // "as of this instant, I am alive and this is what I support"
-    // (`docs/contracts/runner-v1/enrollment.request.json`/
-    // `refresh.request.json`), which is exactly the same liveness claim a
-    // heartbeat makes, just under a different operation name. Both are
-    // still subject to `policy.max_heartbeat_age` — a runner that neither
-    // heartbeats nor refreshes for that long still goes stale.
+    // `last_heartbeat_at` is set only by `/heartbeat`, which reports active-
+    // lease renewals, so a freshly enrolled runner's first claim sees `NULL`
+    // here. Falls back to the capability snapshot's `reported_at` (enroll/
+    // refresh already attests "alive"), rather than reading `NULL` as stale
+    // and making every runner unschedulable until its first lease.
     let last_heartbeat_at = runner
         .last_heartbeat_at
         .as_deref()
@@ -231,11 +181,9 @@ pub async fn choose_request_for_runner(
         harnesses,
     };
 
-    // Pre-filter fleet-selector requests whose target fleet is already at
-    // (or over) its `concurrency_limit` — see this module's doc comment for
-    // why this happens here rather than inside the pure scheduler. Fleet
-    // snapshots are fetched once per distinct fleet id referenced, not once
-    // per request.
+    // Fetch each distinct fleet's concurrency snapshot once, not once per
+    // request, then drop any fleet-selector request whose fleet is already
+    // saturated before it ever reaches the pure scheduler.
     let mut fleet_status: BTreeMap<String, Option<FleetConcurrencySnapshot>> = BTreeMap::new();
     for row in &queued {
         if row.selector_kind == "fleet" && !fleet_status.contains_key(&row.selector_id) {
@@ -254,9 +202,9 @@ pub async fn choose_request_for_runner(
         .collect();
 
     if requests.len() == 1 {
-        // The common case — avoid `batch::schedule`'s capacity-ledger
-        // machinery (built for many requests sharing many runners) for the
-        // overwhelmingly common single-candidate poll.
+        // Avoid `batch::schedule`'s capacity-ledger machinery — built for
+        // many requests sharing many runners — for the overwhelmingly common
+        // single-candidate poll.
         return Ok(
             match select_runner(&requests[0], &[candidate], now, policy) {
                 SelectionOutcome::Selected(_) => Some(requests[0].request_id.as_str().to_string()),
@@ -324,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_runner_state_maps_to_the_conservative_revoked_reading() {
+    fn unknown_runner_state_maps_to_the_conservative_revoked_state() {
         assert_eq!(runner_state_from_str("active"), RunnerState::Active);
         assert_eq!(
             runner_state_from_str("pending_enrollment"),
@@ -335,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn build_scheduling_request_skips_a_partial_model_selector_row_instead_of_panicking() {
+    fn partial_model_selector_row_is_skipped_not_panicked() {
         let row = QueuedRequestForScheduling {
             id: "req-1".into(),
             selector_kind: "exact_runner".into(),

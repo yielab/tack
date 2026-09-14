@@ -8,6 +8,7 @@
 //! slice, and that runner routes sit outside the operator auth exemption,
 //! hold for the *actual* mounted app, not a stand-in.
 
+use crate::common;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use chrono::Utc;
@@ -113,37 +114,6 @@ async fn restart(pool: sqlx::SqlitePool, config: AppConfig, workspace_id: Uuid) 
     build_router(state)
 }
 
-async fn send(
-    app: &axum::Router,
-    method: &str,
-    uri: &str,
-    body: Value,
-    headers: &[(&str, &str)],
-) -> (StatusCode, Value) {
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("content-type", "application/json");
-    for (name, value) in headers {
-        builder = builder.header(*name, *value);
-    }
-    let response = app
-        .clone()
-        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), 8 * 1024 * 1024)
-        .await
-        .unwrap();
-    let value = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
-    };
-    (status, value)
-}
-
 fn operator_headers() -> Vec<(&'static str, &'static str)> {
     vec![("authorization", "Bearer c5-operator-secret-token")]
 }
@@ -227,7 +197,7 @@ fn completion_body(runner_id: &str, attempt_id: &str, fencing_token: i64) -> Val
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn production_router_completes_the_mock_vertical_slice_and_survives_restart() {
+async fn mock_vertical_slice_completes_and_survives_restart() {
     let config = AppConfig {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
@@ -236,7 +206,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     let op = operator_headers();
 
     // Operator: create an agent profile.
-    let (status, profile) = send(
+    let (status, profile) = common::send(
         &app,
         "POST",
         "/api/agent-profiles",
@@ -248,7 +218,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     let agent_profile_id = profile["agent_profile_id"].as_str().unwrap().to_owned();
 
     // Operator: create a pending runner and issue a one-time enrollment token.
-    let (status, pending) = send(
+    let (status, pending) = common::send(
         &app,
         "POST",
         "/api/runners/enrollment",
@@ -262,7 +232,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
 
     // Runner: enroll (no operator credential; the enrollment token in the
     // body is the only authentication for this one exchange).
-    let (status, enrolled) = send(
+    let (status, enrolled) = common::send(
         &app,
         "POST",
         "/api/runner/v1/enroll",
@@ -284,7 +254,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
         runner_auth.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     // Operator: create the execution request, exact-runner selected.
-    let (status, created) = send(
+    let (status, created) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -313,7 +283,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(created["state"], "queued");
 
     // Runner: claim.
-    let (status, claimed) = send(
+    let (status, claimed) = common::send(
         &app,
         "POST",
         "/api/runner/v1/claim",
@@ -327,7 +297,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
 
     // Runner: accept (preparing) then start (running).
-    let (status, accepted) = send(
+    let (status, accepted) = common::send(
         &app,
         "POST",
         &format!("/api/runner/v1/attempts/{attempt_id}/accept"),
@@ -338,7 +308,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(status, StatusCode::OK, "{accepted}");
     assert_eq!(accepted["state"], "preparing");
 
-    let (status, started) = send(
+    let (status, started) = common::send(
         &app,
         "POST",
         &format!("/api/runner/v1/attempts/{attempt_id}/start"),
@@ -350,7 +320,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(started["state"], "running");
 
     // Runner: stream one event batch.
-    let (status, batch) = send(
+    let (status, batch) = common::send(
         &app,
         "POST",
         &format!("/api/runner/v1/attempts/{attempt_id}/events"),
@@ -366,7 +336,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(batch["committed_checkpoint"], "checkpoint-0001");
 
     // Runner: complete.
-    let (status, completed) = send(
+    let (status, completed) = common::send(
         &app,
         "POST",
         &format!("/api/runner/v1/attempts/{attempt_id}/completion"),
@@ -379,7 +349,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(completed["replayed"], false);
 
     // Operator: the production router reflects the terminal state.
-    let (status, detail) = send(
+    let (status, detail) = common::send(
         &app,
         "GET",
         &format!("/api/executions/{request_id}"),
@@ -393,7 +363,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     // --- Restart: rebuild the router/AppState from the same pool. ---
     let app = restart(pool, config, workspace_id).await;
 
-    let (status, detail_after_restart) = send(
+    let (status, detail_after_restart) = common::send(
         &app,
         "GET",
         &format!("/api/executions/{request_id}"),
@@ -407,7 +377,7 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     // A runner completion replay against the *new* router instance is still
     // idempotent — proves the terminal record and fencing state genuinely
     // live in the database, not in anything the old process held in memory.
-    let (status, replayed) = send(
+    let (status, replayed) = common::send(
         &app,
         "POST",
         &format!("/api/runner/v1/attempts/{attempt_id}/completion"),
@@ -470,14 +440,14 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
+async fn x_tack_principal_from_client_is_stripped_and_overridden() {
     let config = AppConfig {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
     };
     let (app, repo, _pool, _workspace_id, item_id) = setup(config).await;
 
-    let (status, profile) = send(
+    let (status, profile) = common::send(
         &app,
         "POST",
         "/api/agent-profiles",
@@ -509,7 +479,7 @@ async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
     // A client claiming to be "victim" via the header a real client can set.
     let mut victim_headers = operator_headers();
     victim_headers.push(("x-tack-principal", "victim"));
-    let (status, as_victim) = send(
+    let (status, as_victim) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -526,7 +496,7 @@ async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
     // first — proof the server never read the client's claimed identity.
     let mut attacker_headers = operator_headers();
     attacker_headers.push(("x-tack-principal", "attacker"));
-    let (status, as_attacker) = send(
+    let (status, as_attacker) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -544,7 +514,7 @@ async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
     // Sending no header at all produces the identical persisted principal —
     // the header's presence or absence never changes the outcome, because
     // it is unconditionally overwritten before the handler ever runs.
-    let (status, no_header) = send(
+    let (status, no_header) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -573,7 +543,7 @@ async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
     // A genuinely different idempotency key from the same (real, injected)
     // principal creates a distinct request — proves scoping still works at
     // all, just never from client input.
-    let (status, second) = send(
+    let (status, second) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -590,7 +560,7 @@ async fn x_tack_principal_from_an_external_client_is_stripped_and_overridden() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn operator_and_runner_credentials_are_not_substitutable_on_the_production_router() {
+async fn production_router_rejects_substituted_credentials() {
     let config = AppConfig {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
@@ -623,7 +593,7 @@ async fn operator_and_runner_credentials_are_not_substitutable_on_the_production
     // rejected by `runner_auth`, which never even looks at whether the
     // bearer value equals TACK_API_TOKEN — it looks up a runner by hashed
     // credential and finds none.
-    let (status, body) = send(
+    let (status, body) = common::send(
         &app,
         "POST",
         "/api/runner/v1/claim",
@@ -638,7 +608,7 @@ async fn operator_and_runner_credentials_are_not_substitutable_on_the_production
     // route: rejected by `require_token`, which never looks up runner
     // credentials at all — it does a constant-time compare against
     // TACK_API_TOKEN and nothing else.
-    let (status, _) = send(
+    let (status, _) = common::send(
         &app,
         "POST",
         "/api/executions",
@@ -650,9 +620,9 @@ async fn operator_and_runner_credentials_are_not_substitutable_on_the_production
 
     // No credential at all on either family: both reject, neither silently
     // opens up.
-    let (status, _) = send(&app, "POST", "/api/executions", json!({}), &[]).await;
+    let (status, _) = common::send(&app, "POST", "/api/executions", json!({}), &[]).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, body) = send(
+    let (status, body) = common::send(
         &app,
         "POST",
         "/api/runner/v1/claim",
@@ -674,7 +644,7 @@ async fn operator_and_runner_credentials_are_not_substitutable_on_the_production
 /// every operator and runner-v1 route genuinely requires authentication —
 /// not merely that the exemption list's source text excludes them.
 #[tokio::test]
-async fn every_execution_and_runner_v1_path_requires_authentication_live() {
+async fn every_execution_and_runner_v1_path_requires_auth_live() {
     let config = AppConfig {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
@@ -696,7 +666,7 @@ async fn every_execution_and_runner_v1_path_requires_authentication_live() {
         ("POST", "/api/model-profiles"),
         ("GET", "/api/model-profiles"),
     ] {
-        let (status, body) = send(&app, method, path, json!({}), &[]).await;
+        let (status, body) = common::send(&app, method, path, json!({}), &[]).await;
         assert_eq!(
             status,
             StatusCode::UNAUTHORIZED,
@@ -712,7 +682,7 @@ async fn every_execution_and_runner_v1_path_requires_authentication_live() {
         ("POST", "/api/runner/v1/attempts/att_missing/events"),
         ("POST", "/api/runner/v1/attempts/att_missing/completion"),
     ] {
-        let (status, body) = send(&app, method, path, json!({}), &[]).await;
+        let (status, body) = common::send(&app, method, path, json!({}), &[]).await;
         assert_eq!(
             status,
             StatusCode::UNAUTHORIZED,
@@ -725,7 +695,7 @@ async fn every_execution_and_runner_v1_path_requires_authentication_live() {
     // an empty body still reaches `runner_auth`-free JSON parsing, but never
     // succeeds without a valid single-use enrollment token, and is never
     // treated as a public/no-auth route either.
-    let (status, _) = send(&app, "POST", "/api/runner/v1/enroll", json!({}), &[]).await;
+    let (status, _) = common::send(&app, "POST", "/api/runner/v1/enroll", json!({}), &[]).await;
     assert_ne!(status, StatusCode::OK);
 }
 
@@ -733,7 +703,7 @@ async fn every_execution_and_runner_v1_path_requires_authentication_live() {
 /// what's actually mounted: every operator/runner-v1 route appears at
 /// exactly the expected, fully-composed location.
 #[tokio::test]
-async fn openapi_document_enumerates_the_mounted_operator_and_runner_v1_routes() {
+async fn openapi_enumerates_mounted_operator_and_runner_v1_routes() {
     let doc = ApiDoc::openapi();
     let raw = serde_json::to_value(&doc).unwrap();
     let paths = raw["paths"].as_object().expect("paths object");
@@ -798,7 +768,7 @@ async fn openapi_document_enumerates_the_mounted_operator_and_runner_v1_routes()
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn runner_v1_and_execution_routes_share_the_global_cors_policy() {
+async fn runner_v1_and_execution_routes_share_global_cors_policy() {
     let (app, _repo, _pool, _workspace_id, _item_id) = setup(AppConfig::default()).await;
     let allowed_origin = "http://localhost:8080"; // AppConfig::default()'s allow-list.
 
@@ -850,7 +820,7 @@ async fn queue_one_claimable_runner_v1_request(
     item_id: &str,
 ) -> (String, String, String) {
     let op = operator_headers();
-    let (status, profile) = send(
+    let (status, profile) = common::send(
         app,
         "POST",
         "/api/agent-profiles",
@@ -861,7 +831,7 @@ async fn queue_one_claimable_runner_v1_request(
     assert_eq!(status, StatusCode::OK, "{profile}");
     let agent_profile_id = profile["agent_profile_id"].as_str().unwrap().to_owned();
 
-    let (status, pending) = send(
+    let (status, pending) = common::send(
         app,
         "POST",
         "/api/runners/enrollment",
@@ -873,7 +843,7 @@ async fn queue_one_claimable_runner_v1_request(
     let runner_id = pending["runner_id"].as_str().unwrap().to_owned();
     let raw_enrollment_token = pending["enrollment_token"].as_str().unwrap().to_owned();
 
-    let (status, enrolled) = send(
+    let (status, enrolled) = common::send(
         app,
         "POST",
         "/api/runner/v1/enroll",
@@ -891,7 +861,7 @@ async fn queue_one_claimable_runner_v1_request(
     assert_eq!(enrolled["runner_id"], runner_id);
     let credential = enrolled["runner_credential"].as_str().unwrap().to_owned();
 
-    let (status, created) = send(
+    let (status, created) = common::send(
         app,
         "POST",
         "/api/executions",
@@ -963,29 +933,42 @@ async fn post_oversized_claim(
 }
 
 #[tokio::test]
-async fn runner_v1_body_limit_is_the_lesser_of_configured_and_protocol_ceiling() {
-    // ---- Direction 1: a configured limit *below* the 4 MiB ceiling is
-    // genuinely enforced. Before this fix, this router's own 4 MiB layer
-    // always won, so a 512 KiB body sailed through a 2 KiB configured limit.
-    {
+async fn runner_v1_router_enforces_configured_body_limit() {
+    // Two directions on the same claim, "the runner-v1 body limit is
+    // min(configured, 4 MiB ceiling)": a configured limit *below* the
+    // ceiling is genuinely enforced (before this fix, the router's own
+    // 4 MiB layer always won, so a 512 KiB body sailed through a 2 KiB
+    // configured limit); a configured limit *above* the ceiling never
+    // loosens the runner-v1 surface past the protocol's own cap.
+    let cases = [
+        ("configured limit below the ceiling", 2 * 1024, 512 * 1024),
+        (
+            "configured limit above the ceiling",
+            10 * 1024 * 1024,
+            5 * 1024 * 1024,
+        ),
+    ];
+    for (name, configured_limit, oversized_padding) in cases {
         let config = AppConfig {
-            max_body_size_bytes: 2 * 1024, // 2 KiB — the exact live-reproduction value.
+            max_body_size_bytes: configured_limit,
             ..AppConfig::default()
         };
         let (app, repo, _pool, _workspace_id, item_id) = setup(config).await;
         let (runner_id, request_id, credential) =
             queue_one_claimable_runner_v1_request(&app, &item_id).await;
 
-        // 512 KiB: above the 2 KiB configured limit, but comfortably below
-        // both `limits.json`'s own `json_body_bytes_max` (1 MiB — so a 413
-        // here can't be mistaken for that pre-existing handler-level check)
-        // and the 4 MiB protocol ceiling.
-        let (status, body_bytes) =
-            post_oversized_claim(&app, &runner_id, &credential, "oversized", 512 * 1024).await;
+        let (status, body_bytes) = post_oversized_claim(
+            &app,
+            &runner_id,
+            &credential,
+            "oversized",
+            oversized_padding,
+        )
+        .await;
         assert_eq!(
             status,
             StatusCode::PAYLOAD_TOO_LARGE,
-            "{}",
+            "{name}: {}",
             String::from_utf8_lossy(&body_bytes)
         );
         // Genuine layer-level rejection, not merely a handler-level error:
@@ -998,7 +981,7 @@ async fn runner_v1_body_limit_is_the_lesser_of_configured_and_protocol_ceiling()
         let as_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
         assert!(
             as_value.as_ref().and_then(|v| v.get("error")).is_none(),
-            "expected axum's own body-limit rejection, not the handler's JSON error envelope: {}",
+            "{name}: expected axum's own body-limit rejection, not the handler's JSON error envelope: {}",
             String::from_utf8_lossy(&body_bytes)
         );
 
@@ -1012,19 +995,19 @@ async fn runner_v1_body_limit_is_the_lesser_of_configured_and_protocol_ceiling()
             .fetch_one(repo.pool())
             .await
             .unwrap();
-        assert_eq!(state, "queued");
+        assert_eq!(state, "queued", "{name}");
         let attempt_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id=?")
                 .bind(&request_id)
                 .fetch_one(repo.pool())
                 .await
                 .unwrap();
-        assert_eq!(attempt_count, 0);
+        assert_eq!(attempt_count, 0, "{name}");
 
         // Sanity: the identical runner/request, with a normal small body,
         // succeeds — proving the rejection above was genuinely about size
         // and not a broken fixture.
-        let (status, claimed) = send(
+        let (status, claimed) = common::send(
             &app,
             "POST",
             "/api/runner/v1/claim",
@@ -1032,69 +1015,7 @@ async fn runner_v1_body_limit_is_the_lesser_of_configured_and_protocol_ceiling()
             &[("authorization", bearer(&credential).as_str())],
         )
         .await;
-        assert_eq!(status, StatusCode::OK, "{claimed}");
-        assert_eq!(claimed["request"]["request_id"], request_id);
-    }
-
-    // ---- Direction 2: a configured limit *above* the 4 MiB ceiling never
-    // loosens the runner-v1 surface past the protocol's own cap.
-    {
-        let config = AppConfig {
-            max_body_size_bytes: 10 * 1024 * 1024, // 10 MiB — looser than the 4 MiB ceiling.
-            ..AppConfig::default()
-        };
-        let (app, repo, _pool, _workspace_id, item_id) = setup(config).await;
-        let (runner_id, request_id, credential) =
-            queue_one_claimable_runner_v1_request(&app, &item_id).await;
-
-        // 5 MiB: above the fixed 4 MiB ceiling, comfortably below the 10 MiB
-        // configured global limit.
-        let (status, body_bytes) = post_oversized_claim(
-            &app,
-            &runner_id,
-            &credential,
-            "over-ceiling",
-            5 * 1024 * 1024,
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "{}",
-            String::from_utf8_lossy(&body_bytes)
-        );
-        let as_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
-        assert!(
-            as_value.as_ref().and_then(|v| v.get("error")).is_none(),
-            "expected axum's own body-limit rejection, not the handler's JSON error envelope: {}",
-            String::from_utf8_lossy(&body_bytes)
-        );
-
-        let state: String = sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-        assert_eq!(state, "queued");
-        let attempt_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id=?")
-                .bind(&request_id)
-                .fetch_one(repo.pool())
-                .await
-                .unwrap();
-        assert_eq!(attempt_count, 0);
-
-        // Sanity: a normal-sized claim against the same fixture still
-        // succeeds under the looser config.
-        let (status, claimed) = send(
-            &app,
-            "POST",
-            "/api/runner/v1/claim",
-            json!({"protocol_version": 1, "runner_id": runner_id, "claim_request_id": "normal-sized", "available_capacity": 1, "wait_ms": 0}),
-            &[("authorization", bearer(&credential).as_str())],
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "{claimed}");
-        assert_eq!(claimed["request"]["request_id"], request_id);
+        assert_eq!(status, StatusCode::OK, "{name}: {claimed}");
+        assert_eq!(claimed["request"]["request_id"], request_id, "{name}");
     }
 }

@@ -79,16 +79,60 @@ under `crates/*/tests/` and every `#[cfg(test)] mod tests`.
 
 | Crate | Where | Harness | What belongs here |
 |---|---|---|---|
-| `tack-core` | `#[cfg(test)]` next to the code | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above |
+| `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above |
 | `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
-| `tack-orch` | `#[cfg(test)]` and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; the `docket_*_contract_test` pair regenerates golden files | control-plane logic, reconciler, the neutral execution domain. A fixture edit updates `tests/runner_contract/fixtures.rs` in the same change |
+| `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; the `docket_*_contract_test` pair regenerates golden files | control-plane logic, reconciler, the neutral execution domain. A fixture edit updates `tests/runner_contract/fixtures.rs` in the same change |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable |
-| `tack-runner` | mostly `#[cfg(test)]`; `crates/tack-runner/tests/` | fake harness binaries under `src/harness/fixtures/`; the crash matrix | credential handling, journal, subprocess boundary. Live-harness tests are `#[ignore]` and billed |
+| `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | fake harness binaries under `src/harness/fixtures/`; the crash matrix | credential handling, journal, subprocess boundary. Live-harness tests are `#[ignore]` and billed |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
 
 Each `tests/*.rs` file is its own binary — its own crate, its own full link, seconds of CPU
 and tens of megabytes on disk per file. **Add a test to the existing file whose subject
 fits; do not add a file per feature.** (ADR 0064 groups the existing files by subject.)
+
+## Where a test lives, and how big it may be
+
+```
+crates/<crate>/
+  src/<module>.rs              production; a trailing `mod tests` of ≤ 150 lines may stay
+  src/<module>/tests.rs        that module's unit tests once they outgrow 150 lines
+                               (`#[cfg(test)] mod tests;` — `use super::*` still works)
+  tests/common/mod.rs          the crate's shared fixtures — the only place a helper lives
+  tests/<subject>.rs + dir     one binary per subject
+  tests/contract/, tests/live/ byte-pinned fixtures; real binaries or billed runs, #[ignore]d
+  tests/scratch_*.rs           gitignored: your local proof, never tracked
+crates/tack-test-support/      fixtures for the layers below the API (arrives with Part IX card M3)
+```
+
+Rules a test is held to, measured by `python3 scripts/maintainability.py check` (bare, every
+file) and `check --changed` (only what a card touched). Each is a hard cap; a file named in
+`EXCLUSIONS` (`scripts/maintainability.py`) is the one exception and instead ratchets
+against `scripts/maintainability-baseline.json` — it may exceed its budget only if it
+already did and is not worse. A new file meets every budget, excluded or not:
+
+| Rule | Budget |
+|---|---|
+| One claim per test; variants are rows of a table-driven test | — |
+| The name states the claim, no articles or narrative | ≤ 60 characters |
+| The body, signature to closing brace | ≤ 40 lines outside `EXCLUSIONS` |
+| A test file's `//!` preamble: what it proves, how to run it | ≤ 10 lines |
+| A trailing `#[cfg(test)] mod tests` in a production file | ≤ 150 lines, else `<module>/tests.rs` |
+| A test file | ≤ 1 000 lines outside `EXCLUSIONS` |
+| An invariant is pinned at the repository and at one router-level test, not a third time | 2 layers |
+| Fixed waits (`sleep`) in test code | 0 — poll with a bound, or pause time |
+| A test that early-returns on an env var inside a unit module | 0 — it belongs under `tests/live/`, `#[ignore]`d |
+| New tests / new test lines per card | ≤ 15 / ≤ 600, recorded in the handoff |
+
+`measure` prints the per-file table, `comment-worklist` and `duplicate-tests` print what
+is over. The plan behind the numbers, and the cards bringing the tree under them, is
+`docs/plans/human-maintainability.md`.
+
+The workspace test : production ratio ceiling is **1.266** (`measure --totals`), IX-M8's
+measured landing (1.261) raised only by deleting production comments, which count as
+production lines, not the plan's original 0.8 aspiration: the exclusion list's own
+four-figure-line state machines, migrations and contract fixtures carry real weight 0.8
+assumed would be gone. `docs/plans/human-maintainability.md` §1 still records 0.8 as the
+target; a card that brings an excluded file down moves this ceiling too.
 
 Conventions that hold everywhere: `assert_matches!` for enum variants; `#[tokio::test]` for
 async; a test of "writes nothing" or "rejects before X" asserts the absence directly (row
@@ -140,7 +184,7 @@ pull request, and by hand (`workflow_dispatch`).
 
 | Job | What it runs | When |
 |---|---|---|
-| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
+| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
 | `frontend` | schema drift, type-check, token lint, build, entry-bundle budget | every push and PR |
 | `docs` | `mdbook build` + link check | every push and PR |
 | `msrv` | `cargo build --workspace --locked` on the pinned dependency floor | every push and PR |

@@ -5,6 +5,8 @@ echo "→ comments carry no board archaeology"
 ./scripts/check-comments.sh
 echo "→ tests take their temporary paths from a guard"
 ./scripts/check-test-hygiene.sh
+echo "→ tests and comments stay inside their size budgets"
+python3 scripts/maintainability.py check --changed
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
 # `--all` means the workspace, and tack-desktop is deliberately not in it, so this
@@ -31,6 +33,12 @@ if [ -d frontend/node_modules ]; then
     echo "  schema.gen.ts was stale — it has just been regenerated; commit the result" >&2
     exit 1
   fi
+fi
+
+python3 scripts/gen-api-reference.py >/dev/null
+if ! git diff --quiet -- docs/book/src/developer/api-reference.md; then
+  echo "  developer/api-reference.md was stale — it has just been regenerated; commit the result" >&2
+  exit 1
 fi
 
 echo "✓ pre-push checks passed"

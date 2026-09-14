@@ -13,6 +13,7 @@ crates/tack-desktop/Cargo.lock        merge=tack-generated linguist-generated=tr
 frontend/package-lock.json            merge=tack-generated linguist-generated=true
 docs/openapi.json                     merge=tack-generated linguist-generated=true
 frontend/src/shared/api/schema.gen.ts merge=tack-generated linguist-generated=true
+docs/book/src/developer/api-reference.md merge=tack-generated linguist-generated=true
 
 # Committed because `generate_context!` reads them while tack-desktop compiles.
 crates/tack-desktop/icons/*.png  binary

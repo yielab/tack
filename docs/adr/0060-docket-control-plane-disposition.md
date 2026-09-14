@@ -225,3 +225,24 @@ already tested) — to justify that migration now, against real, live-verified c
   between its test suite and its actual use, or a security/maintenance burden distinct
   from raw size — this decision should be revisited with fresh numbers, not with this
   ADR's numbers re-cited unchanged.
+
+## Provider-scoped ids and the normalized-attempt projection
+
+An `orch_tasks` row's `remote_task_id` is a bare string minted by Docket, with no
+namespace of its own — nothing stops it colliding, in principle, with an opaque model
+id or a runner-v1 attempt id if either were ever displayed side by side.
+`legacy_bridge::provider_scoped_task_id` prefixes it with the fixed provider tag
+`"docket"` (`docket:<remote_task_id>`), mirroring the shape a genuine runner-v1 request
+snapshot uses for its requested model-provider and opaque model id, without claiming to
+*be* one. `legacy_bridge::LegacyAttemptProjection` is a read-only, in-memory view that
+maps an `OrchTask` into that provider-scoped shape for display — it does not write into
+`execution_attempts`, does not claim runner-v1 provenance, and is not consulted by the
+scheduler. It exists so a future operator surface has one normalized place to render
+"what is this legacy row, using which provider-scoped id, under which scheduling owner"
+without re-deriving the mapping.
+
+## Amendments
+
+*(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-14 — Superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. ADR 0068 decision 2 retires the bridge this ADR chose to maintain. Two of this ADR's three reasons against deletion no longer hold: the `TODO.md` citations are gone (0 today), and ADR 0066 moves per-tool guardrails into docket's own harness. The third, DAG-ordered sprint dispatch, is re-measured in ADR 0068's plan and re-implemented on runner-v1 only if it has a user. The measurements above stay as the record of why the bridge was kept until then.

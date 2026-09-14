@@ -9,9 +9,8 @@ mod capabilities;
 mod lifecycle;
 mod types;
 
-// `CapabilityLimits` is exported here because it's the type of the public
-// field `RunnerCapabilities::limits` — without it, no downstream crate can
-// name the type to construct a capability report.
+// `CapabilityLimits` is exported here since it's the type of the public
+// field `RunnerCapabilities::limits`, so downstream crates can name it.
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
     FeatureCapabilities, HarnessCapability, ModelCombination, ModelMetadata, RunnerCapabilities,

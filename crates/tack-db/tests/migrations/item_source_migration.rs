@@ -89,27 +89,32 @@ async fn create_item_with_source_persists_and_only_manual_is_trusted() {
 
 // ─── Sticky: update_item never mutates source ──────────────────────────────
 
+async fn create_untrusted_item(
+    repo: &Repository,
+    ws: Uuid,
+    title: &str,
+) -> tack_core::models::Item {
+    let project = make_project(repo, ws).await;
+    let status = project.workflow.initial_status().unwrap().to_string();
+    repo.create_item_with_source(
+        project.id,
+        &status,
+        minimal_create_item(title),
+        ItemSource::Github,
+    )
+    .await
+    .expect("create item")
+}
+
+/// Edits several unrelated fields, including the very fields whose text is the actual
+/// injection surface (title/description) — if anything were ever to accidentally
+/// "launder" trust on edit, this is where it would show up.
 #[tokio::test]
 async fn update_item_never_changes_source() {
     let repo = setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
-    let project = make_project(&repo, ws).await;
-    let status = project.workflow.initial_status().unwrap().to_string();
+    let item = create_untrusted_item(&repo, ws, "Untrusted item").await;
 
-    let item = repo
-        .create_item_with_source(
-            project.id,
-            &status,
-            minimal_create_item("Untrusted item"),
-            ItemSource::Github,
-        )
-        .await
-        .expect("create item");
-
-    // Edit several unrelated fields, including the very fields whose text is
-    // the actual injection surface (title/description) — if anything were
-    // ever to accidentally "launder" trust on edit, this is where it would
-    // show up.
     let updated = repo
         .update_item(
             item.id,
@@ -135,28 +140,16 @@ async fn update_item_never_changes_source() {
 
 // ─── Upgrade-in-place: a pre-migration item resolves to untrusted ──────────
 
-#[tokio::test]
-async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-
-    // Simulate an installed tack.db stopped at "028_orch_trace_cursors" —
-    // i.e. every migration before 029 (and its `items.source` column) ever
-    // existed. This also covers
-    // installs where an item was imported from GitHub *before the
-    // `items.source` column existed* (migration 018/github_links predates
-    // it) — exactly the case this migration's default must not silently
-    // trust.
-    migrations::run_up_to(&pool, "028_orch_trace_cursors")
-        .await
-        .expect("apply migrations up to 028");
-
-    // Insert a workspace/project/item by hand, matching the pre-029 schema
-    // exactly — no `source` column exists on this pool yet, so this is what
-    // a real row on an existing install looks like at this point in time.
+/// Inserts a workspace/project/item row directly with raw SQL, matching the
+/// pre-029 schema exactly (no `source` column) — what a real row on an
+/// existing install looks like at this point in migration history, including
+/// one imported from GitHub before the column existed (migration
+/// 018/github_links predates it).
+async fn seed_pre_029_item(pool: &sqlx::SqlitePool) -> Uuid {
     let ws_id = Uuid::new_v4();
     sqlx::query("INSERT INTO workspaces (id, name) VALUES (?, 'Legacy Workspace')")
         .bind(ws_id.to_string())
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("insert workspace");
 
@@ -164,7 +157,7 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
     sqlx::query("INSERT INTO projects (id, workspace_id, name) VALUES (?, ?, 'Legacy Project')")
         .bind(project_id.to_string())
         .bind(ws_id.to_string())
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("insert project");
 
@@ -175,17 +168,28 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
     )
     .bind(item_id.to_string())
     .bind(project_id.to_string())
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("insert legacy item");
 
-    // Now run the full migration set again, as `tack serve` does on every
-    // startup — this is the actual upgrade-in-place path.
+    item_id
+}
+
+/// Simulates an installed `tack.db` stopped at "028_orch_trace_cursors" (every migration
+/// before 029 and its `items.source` column), seeds a legacy item, then runs the full
+/// migration set again — the actual upgrade-in-place path `tack serve` takes on every
+/// startup. Asserted at the raw SQL level first (the column backfills to the literal
+/// `'unknown'` value migration 029 writes, not NULL and not `'manual'`), then through the
+/// repository layer every real caller, including the dispatcher's trust check, uses.
+#[tokio::test]
+async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "028_orch_trace_cursors")
+        .await
+        .expect("apply migrations up to 028");
+    let item_id = seed_pre_029_item(&pool).await;
     migrations::run_all(&pool).await.expect("upgrade in place");
 
-    // Assert at the raw SQL level first: the column exists and backfilled
-    // to the literal 'unknown' value migration 029 writes, not NULL and not
-    // 'manual'.
     let raw_source: String = sqlx::query_scalar("SELECT source FROM items WHERE id = ?")
         .bind(item_id.to_string())
         .fetch_one(&pool)
@@ -193,8 +197,6 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
         .expect("select raw source column");
     assert_eq!(raw_source, "unknown");
 
-    // And through the repository layer, which is what every real caller
-    // (including the dispatcher's trust check) actually uses.
     let repo = Repository::new(pool);
     let item = repo
         .get_item(item_id)
@@ -216,7 +218,7 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
 }
 
 #[tokio::test]
-async fn migration_029_is_applied_on_a_fresh_db() {
+async fn migration_029_is_applied_on_fresh_db() {
     let repo = setup_test_db().await;
     let applied: Vec<String> = sqlx::query_scalar("SELECT name FROM _migrations ORDER BY id")
         .fetch_all(repo.pool())

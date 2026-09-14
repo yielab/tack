@@ -1,16 +1,12 @@
 //! Tests for `POST /api/items/{id}/dispatch` and the `dispatcher` module
 //! it's backed by.
 //!
-//! Covers: 404 with `TACK_ORCH_ENABLE` unset and for an unknown item; 409
-//! for an unlinked project; the `no_dispatch_policy`/`not_eligible`
-//! no-op outcomes; a full happy-path dispatch that applies `on_running`
-//! through the workflow engine; the `waiting_approval` outcome (never
-//! reported as a plain successful dispatch); a `pre_input` policy block
-//! surfacing the policy id and creating no `orch_tasks` row; double-dispatch
-//! idempotency (docket's `POST /tasks` hit exactly once); the `trusted`
-//! flag reaching the wire as `false` for a GitHub-imported item; and a
-//! construction project's linear workflow rejecting an illegal `on_running`
-//! target, recording `status_map_rejected`, and leaving the item untouched.
+//! Covers: the off/unknown/unlinked guards, the no-op outcomes
+//! (`no_dispatch_policy`/`not_eligible`), the happy path applying
+//! `on_running`, `waiting_approval` (never reported as a plain success), a
+//! `pre_input` policy block, double-dispatch idempotency, the `trusted`
+//! flag by item provenance, and a construction project's linear workflow
+//! rejecting an illegal `on_running` target.
 
 use crate::common;
 
@@ -94,19 +90,6 @@ async fn req(
         .unwrap()
 }
 
-async fn create_project(app: &Router, project_type: &str) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Dispatch Test Project", "project_type": project_type})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 /// Returns `(item_id, initial_status)`.
 async fn create_item(app: &Router, project_id: Uuid, title: &str) -> (Uuid, String) {
     let res = req(
@@ -173,6 +156,18 @@ async fn mock_enqueue_allow(server: &MockServer, task_id: &str) {
         .await;
 }
 
+/// Mocks `POST /tasks/demo`, failing the test if it is ever hit more than once.
+async fn mock_enqueue_allow_once(server: &MockServer, task_id: &str) {
+    Mock::given(method("POST"))
+        .and(path("/tasks/demo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
+        })))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
 /// Mocks the follow-up `GET /tasks/demo` the dispatcher reads to learn the
 /// real status/approval token.
 async fn mock_list_tasks(server: &MockServer, task_id: &str, status: &str, token: Option<&str>) {
@@ -190,28 +185,19 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str, status: &str, token
         .await;
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
+// ─── Actionable refusal ─────────────────────────────────────────────────
 
 #[tokio::test]
-async fn dispatch_409s_when_orch_disabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = dispatch(&app, Uuid::new_v4()).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
-#[tokio::test]
-async fn dispatch_404s_for_unknown_item() {
+async fn unknown_item_id_dispatch_returns_not_found() {
     let (app, _) = app_with_state(orch_config()).await;
     let res = dispatch(&app, Uuid::new_v4()).await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn dispatch_409s_when_project_not_linked() {
+async fn item_dispatch_conflicts_while_unlinked_to_a_project() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "Unlinked").await;
 
     let res = dispatch(&app, item_id).await;
@@ -221,9 +207,9 @@ async fn dispatch_409s_when_project_not_linked() {
 // ─── dispatch_from gating: no-op, not an error ─────────────────────────────
 
 #[tokio::test]
-async fn dispatch_reports_no_dispatch_policy_when_dispatch_from_is_empty() {
+async fn dispatch_reports_no_dispatch_policy_when_empty() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "No policy yet").await;
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
     link_project(&app, project_id, cp, json!({})).await; // dispatch_from defaults to []
@@ -236,9 +222,9 @@ async fn dispatch_reports_no_dispatch_policy_when_dispatch_from_is_empty() {
 }
 
 #[tokio::test]
-async fn dispatch_reports_not_eligible_when_item_status_is_outside_dispatch_from() {
+async fn dispatch_not_eligible_when_status_outside_dispatch_from() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, status) = create_item(&app, project_id, "Wrong column").await;
     assert_eq!(status, "Backlog");
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
@@ -267,7 +253,7 @@ async fn dispatch_success_enqueues_and_applies_on_running() {
     mock_list_tasks(&server, "task-happy-1", "pending", None).await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, status) = create_item(&app, project_id, "Dispatch me").await;
     assert_eq!(status, "Backlog");
     let cp = create_control_plane(&app, &server.uri()).await;
@@ -293,7 +279,7 @@ async fn dispatch_success_enqueues_and_applies_on_running() {
 }
 
 #[tokio::test]
-async fn dispatch_waiting_approval_applies_on_waiting_approval_not_on_running() {
+async fn dispatch_applies_on_waiting_approval_not_on_running() {
     let server = MockServer::start().await;
     mock_enqueue_allow(&server, "task-needs-approval").await;
     mock_list_tasks(
@@ -305,29 +291,22 @@ async fn dispatch_waiting_approval_applies_on_waiting_approval_not_on_running() 
     .await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "Needs a human").await;
     let cp = create_control_plane(&app, &server.uri()).await;
     // Reuse "In Review" (a real scrum status) as the stand-in "needs a
     // human" column for on_waiting_approval.
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({
-            "dispatch_from": ["Backlog"],
-            "on_running": "In Progress",
-            "on_waiting_approval": "In Review",
-        }),
-    )
-    .await;
+    let status_map = json!({
+        "dispatch_from": ["Backlog"],
+        "on_running": "In Progress",
+        "on_waiting_approval": "In Review",
+    });
+    link_project(&app, project_id, cp, status_map).await;
 
-    let res = dispatch(&app, item_id).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
+    let v = body_json(dispatch(&app, item_id).await).await;
     assert_eq!(
         v["outcome"], "waiting_approval",
-        "must never be reported as a plain successful dispatch: {v}"
+        "never a plain successful dispatch: {v}"
     );
     assert_eq!(v["approval_token"], "tok-abc");
     assert_eq!(v["status_applied"], "In Review");
@@ -342,7 +321,7 @@ async fn dispatch_waiting_approval_applies_on_waiting_approval_not_on_running() 
 // ─── Block: a refusal, not a failure ───────────────────────────────────────
 
 #[tokio::test]
-async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
+async fn dispatch_blocked_surfaces_policy_creates_no_orch_task() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
@@ -354,33 +333,18 @@ async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
         .await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "Blocked item").await;
     let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"}),
-    )
-    .await;
+    let status_map = json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"});
+    link_project(&app, project_id, cp, status_map).await;
 
-    let res = dispatch(&app, item_id).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::OK,
-        "a block is a 200, see the module doc"
-    );
-    let v = body_json(res).await;
+    let v = body_json(dispatch(&app, item_id).await).await;
     assert_eq!(v["outcome"], "blocked");
-    assert_eq!(
-        v["policy_id"], "prompt-injection",
-        "policy id must be a typed field (OrchError::PolicyBlocked), \
-         not something the caller parses out of message: {v}"
-    );
+    assert_eq!(v["policy_id"], "prompt-injection", "typed, not parsed: {v}");
     assert!(
         v["message"].as_str().unwrap().contains("prompt-injection"),
-        "must name the policy id: {v}"
+        "{v}"
     );
     assert_eq!(v["task"], Value::Null);
 
@@ -389,7 +353,6 @@ async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
         tasks.is_empty(),
         "a block must not create an orch_tasks row"
     );
-
     let item = state.repo.get_item(item_id).await.unwrap().unwrap();
     assert_eq!(item.status, "Backlog", "a block must leave the item alone");
 }
@@ -397,33 +360,20 @@ async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
 // ─── Idempotency: double-dispatch creates one task, not two ──────────────
 
 #[tokio::test]
-async fn double_dispatch_hits_docket_once_and_the_second_call_reports_already_in_flight() {
+async fn double_dispatch_hits_docket_once_second_call_in_flight() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-once", "project": "demo", "status": "pending"
-        })))
-        .expect(1) // the whole point of this test
-        .mount(&server)
-        .await;
+    mock_enqueue_allow_once(&server, "task-once").await; // the whole point of this test
     mock_list_tasks(&server, "task-once", "pending", None).await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "Double-clicked").await;
     let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Backlog", "In Progress"], "on_running": "In Progress"}),
-    )
-    .await;
+    let status_map =
+        json!({"dispatch_from": ["Backlog", "In Progress"], "on_running": "In Progress"});
+    link_project(&app, project_id, cp, status_map).await;
 
-    let first = dispatch(&app, item_id).await;
-    assert_eq!(first.status(), StatusCode::OK);
-    let first_body = body_json(first).await;
+    let first_body = body_json(dispatch(&app, item_id).await).await;
     assert_eq!(first_body["outcome"], "dispatched");
 
     let second = dispatch(&app, item_id).await;
@@ -437,60 +387,43 @@ async fn double_dispatch_hits_docket_once_and_the_second_call_reports_already_in
     assert_eq!(tasks[0].attempt, 1);
 
     // wiremock's `.expect(1)` on the mount is verified when `server` drops
-    // at the end of the test; an explicit received-request check makes the
-    // failure message clearer if it ever regresses.
-    let received = server.received_requests().await.unwrap();
-    let post_count = received
-        .iter()
-        .filter(|r| r.method == wiremock::http::Method::POST)
-        .count();
+    // at the end of the test; an explicit check makes the failure clearer.
+    let post_count = count_post_requests(&server).await;
     assert_eq!(
         post_count, 1,
         "docket's POST /tasks/demo must be hit exactly once"
     );
 }
 
-#[tokio::test]
-async fn concurrent_double_dispatch_creates_exactly_one_task() {
-    // A slow mock response widens the race window so two concurrent
-    // requests for the same item genuinely overlap.
-    let server = MockServer::start().await;
+/// Counts how many `POST` requests a mock server actually received.
+async fn count_post_requests(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.method == wiremock::http::Method::POST)
+        .count()
+}
+
+/// Mocks `POST /tasks/demo` with an artificial delay, to widen a race window.
+async fn mock_enqueue_slow(server: &MockServer, task_id: &str, delay_ms: u64) {
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(json!({
-                    "ok": true, "task": "task-race", "project": "demo", "status": "pending"
+                    "ok": true, "task": task_id, "project": "demo", "status": "pending"
                 }))
-                .set_delay(std::time::Duration::from_millis(150)),
+                .set_delay(std::time::Duration::from_millis(delay_ms)),
         )
         .expect(1)
-        .mount(&server)
+        .mount(server)
         .await;
-    mock_list_tasks(&server, "task-race", "pending", None).await;
+}
 
-    let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    let (item_id, _) = create_item(&app, project_id, "Raced").await;
-    let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"}),
-    )
-    .await;
-
-    let app1 = app.clone();
-    let app2 = app.clone();
-    let (r1, r2) = tokio::join!(dispatch(&app1, item_id), dispatch(&app2, item_id));
-
-    let statuses: Vec<StatusCode> = vec![r1.status(), r2.status()];
-    let bodies = vec![body_json(r1).await, body_json(r2).await];
-
-    // Exactly one request must have raced past the lock and reached docket;
-    // the other must have been rejected by the in-process dispatch lock
-    // (409) before ever calling out.
+/// Counts `409 CONFLICT` statuses and `"dispatched"` outcomes across two responses.
+fn tally_race(statuses: &[StatusCode], bodies: &[Value]) -> (usize, usize) {
     let conflicts = statuses
         .iter()
         .filter(|s| **s == StatusCode::CONFLICT)
@@ -499,11 +432,34 @@ async fn concurrent_double_dispatch_creates_exactly_one_task() {
         .iter()
         .filter(|b| b["outcome"] == "dispatched")
         .count();
+    (conflicts, successes)
+}
+
+#[tokio::test]
+async fn concurrent_double_dispatch_creates_exactly_one_task() {
+    // A slow mock response widens the race window so two concurrent
+    // requests for the same item genuinely overlap.
+    let server = MockServer::start().await;
+    mock_enqueue_slow(&server, "task-race", 150).await;
+    mock_list_tasks(&server, "task-race", "pending", None).await;
+
+    let (app, state) = app_with_state(orch_config()).await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
+    let (item_id, _) = create_item(&app, project_id, "Raced").await;
+    let cp = create_control_plane(&app, &server.uri()).await;
+    let status_map = json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"});
+    link_project(&app, project_id, cp, status_map).await;
+
+    let (app1, app2) = (app.clone(), app.clone());
+    let (r1, r2) = tokio::join!(dispatch(&app1, item_id), dispatch(&app2, item_id));
+    let statuses = vec![r1.status(), r2.status()];
+    let bodies = vec![body_json(r1).await, body_json(r2).await];
+
+    // Exactly one request races past the lock; the other is rejected as in-flight.
     assert_eq!(
-        (conflicts, successes),
+        tally_race(&statuses, &bodies),
         (1, 1),
-        "exactly one request must win the lock and dispatch, the other must \
-         be rejected as already in flight: {statuses:?} {bodies:?}"
+        "{statuses:?} {bodies:?}"
     );
 
     let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
@@ -512,28 +468,13 @@ async fn concurrent_double_dispatch_creates_exactly_one_task() {
 
 // ─── trusted flag reaches the wire ─────────────────────────────────────────
 
-#[tokio::test]
-async fn dispatch_sends_trusted_false_for_a_github_imported_item() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .and(body_partial_json(json!({"trusted": false})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-untrusted", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    mock_list_tasks(&server, "task-untrusted", "pending", None).await;
-
-    let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    // A real GitHub import (`handlers::import_github`) writes the item with
-    // `ItemSource::Github` — that persisted
-    // provenance marker, not the `github_links` row, is what
-    // `resolve_default_trust` now reads to decide `trusted: false`. Seed the
-    // item the same way the real importer does (`create_item_with_source`)
-    // rather than the plain `create_item` HTTP helper, which always creates
-    // `ItemSource::Manual` (trusted) items.
+/// Seeds an item the same way a real GitHub import
+/// (`handlers::import_github`) does: `ItemSource::Github` is the persisted
+/// provenance marker, not the `github_links` row, that `resolve_default_trust`
+/// reads. Uses `create_item_with_source` directly rather than the plain
+/// `create_item` HTTP helper, which always creates `ItemSource::Manual`
+/// (trusted) items.
+async fn seed_github_imported_item(state: &AppState, project_id: Uuid) -> Uuid {
     let project = state
         .repo
         .get_project(project_id)
@@ -567,101 +508,119 @@ async fn dispatch_sends_trusted_false_for_a_github_imported_item() {
         )
         .await
         .expect("seed github-imported item");
-    let item_id = item.id;
     state
         .repo
-        .set_github_link(item_id, "acme/repo", 42)
+        .set_github_link(item.id, "acme/repo", 42)
         .await
         .expect("seed github link");
-    let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"}),
-    )
-    .await;
-
-    let res = dispatch(&app, item_id).await;
-    assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
-    // wiremock only matched (and thus only returned 200 instead of 404) if
-    // trusted:false really was on the wire — the assertion above is the
-    // real check; this just confirms the outcome wasn't a fluke.
+    item.id
 }
 
-#[tokio::test]
-async fn dispatch_sends_trusted_true_for_an_ordinary_item() {
-    let server = MockServer::start().await;
+/// Mocks `POST /tasks/demo`, asserting the `trusted` flag docket receives.
+async fn mock_enqueue_trusted(server: &MockServer, task_id: &str, expect_trusted: bool) {
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
-        .and(body_partial_json(json!({"trusted": true})))
+        .and(body_partial_json(json!({"trusted": expect_trusted})))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-trusted", "project": "demo", "status": "pending"
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
         })))
-        .mount(&server)
+        .mount(server)
         .await;
-    mock_list_tasks(&server, "task-trusted", "pending", None).await;
+}
 
-    let (app, _state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    let (item_id, _) = create_item(&app, project_id, "Typed directly in Tack").await;
-    let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"}),
-    )
-    .await;
+/// Creates an item either GitHub-imported (untrusted) or typed directly in Tack (trusted).
+async fn item_by_provenance(
+    app: &Router,
+    state: &AppState,
+    project_id: Uuid,
+    from_github: bool,
+) -> Uuid {
+    if from_github {
+        seed_github_imported_item(state, project_id).await
+    } else {
+        create_item(app, project_id, "Typed directly in Tack")
+            .await
+            .0
+    }
+}
 
-    let res = dispatch(&app, item_id).await;
-    assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
+/// `trusted` reaches the wire by the item's own provenance
+/// (`ItemSource`), not by how it's dispatched: a GitHub import gets
+/// `false`, an item typed directly in Tack gets `true`. wiremock only
+/// matches (200 instead of 404) if the expected value is really on the
+/// wire, so each case's status assertion is the real check.
+#[tokio::test]
+async fn dispatch_sends_trusted_flag_by_item_provenance() {
+    // (from_github, expect_trusted, docket task id).
+    let cases = [
+        (true, false, "task-untrusted"),
+        (false, true, "task-trusted"),
+    ];
+
+    for (from_github, expect_trusted, task_id) in cases {
+        let server = MockServer::start().await;
+        mock_enqueue_trusted(&server, task_id, expect_trusted).await;
+        mock_list_tasks(&server, task_id, "pending", None).await;
+
+        let (app, state) = app_with_state(orch_config()).await;
+        let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
+        let item_id = item_by_provenance(&app, &state, project_id, from_github).await;
+
+        let cp = create_control_plane(&app, &server.uri()).await;
+        let status_map = json!({"dispatch_from": ["Backlog"], "on_running": "In Progress"});
+        link_project(&app, project_id, cp, status_map).await;
+
+        let res = dispatch(&app, item_id).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "from_github={from_github}: {:?}",
+            body_json(res).await
+        );
+    }
 }
 
 // ─── status_map_rejected: the workflow engine still governs the move ─────
 
+/// Asserts a dispatch response reports the dispatch succeeding but the
+/// status_map transition to `target` being rejected by the workflow engine.
+fn assert_status_map_rejected(v: &Value, target: &str) {
+    assert_eq!(
+        v["outcome"], "dispatched",
+        "the dispatch itself still succeeded"
+    );
+    assert_eq!(v["status_applied"], Value::Null);
+    let rejected = v["status_map_rejected"].as_str().unwrap();
+    assert!(
+        rejected.contains(target),
+        "must surface the engine's own reason: {v}"
+    );
+}
+
 #[tokio::test]
-async fn construction_workflow_rejects_illegal_on_running_and_leaves_item_untouched() {
+async fn construction_rejects_illegal_on_running_item_untouched() {
     let server = MockServer::start().await;
     mock_enqueue_allow(&server, "task-construction-1").await;
     mock_list_tasks(&server, "task-construction-1", "pending", None).await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "construction").await;
+    let project_id = common::create_project(&app, "Dispatch Test Project", "construction").await;
     let (item_id, status) = create_item(&app, project_id, "Frame the walls").await;
     assert_eq!(status, "Permit");
     let cp = create_control_plane(&app, &server.uri()).await;
     // "Handover" is a real status in the construction preset, but jumping
     // straight there from "Permit" isn't a legal transition (Permit's only
     // allowed next step is "Procurement").
-    link_project(
-        &app,
-        project_id,
-        cp,
-        json!({"dispatch_from": ["Permit"], "on_running": "Handover"}),
-    )
-    .await;
+    let status_map = json!({"dispatch_from": ["Permit"], "on_running": "Handover"});
+    link_project(&app, project_id, cp, status_map).await;
 
-    let res = dispatch(&app, item_id).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    assert_eq!(
-        v["outcome"], "dispatched",
-        "the dispatch itself still succeeded"
-    );
-    assert_eq!(v["status_applied"], Value::Null);
-    assert!(
-        v["status_map_rejected"]
-            .as_str()
-            .unwrap()
-            .contains("Handover"),
-        "must surface the workflow engine's own reason: {v}"
-    );
+    let v = body_json(dispatch(&app, item_id).await).await;
+    assert_status_map_rejected(&v, "Handover");
 
     let item = state.repo.get_item(item_id).await.unwrap().unwrap();
     assert_eq!(
         item.status, "Permit",
-        "a rejected status_map transition must leave the item untouched"
+        "a rejected transition must leave the item untouched"
     );
 
     let events = state

@@ -1,21 +1,12 @@
-//! Tests for migrations 025 (`orch_metrics`), 026 (`orch_events_daily`), 027
-//! (`orch_metrics_daily`), and the repository functions built on them
-//! (`upsert_orch_metrics`, `list_latest_orch_metrics`, `rollup_and_purge_orch_events`,
-//! `rollup_and_purge_orch_metrics`, `list_orch_events_daily`, `list_orch_metrics_daily`).
-//!
-//! Covers:
-//!   - a fresh database migrates cleanly through 027;
-//!   - an existing database stopped at "024_orch_approvals" upgrades in place;
-//!   - FK enforcement holds for every new table;
-//!   - `orch_metrics` batch insert is append-only (never collides / overwrites);
-//!   - a 91-day-old event/metric is purged but its day's aggregate survives with the
-//!     same totals;
-//!   - re-running the rollup after everything old has already been purged is a
-//!     documented no-op (nothing left to double-count) — the externally observable
-//!     half of the atomicity guarantee described in `rollup_and_purge_orch_events`'s
-//!     doc comment (`crates/tack-db/src/repo/orch.rs`);
-//!   - batching: a backlog larger than one batch is fully swept across multiple
-//!     bounded transactions, not just the first `batch_size` rows.
+//! Tests for migrations 025-027 (`orch_metrics`, `orch_events_daily`,
+//! `orch_metrics_daily`) and the repository functions built on them:
+//! `upsert_orch_metrics`, `list_latest_orch_metrics`,
+//! `rollup_and_purge_orch_events`/`_metrics`, and their `list_*_daily` readers.
+//! Covers fresh install, upgrade-in-place, FK enforcement, append-only
+//! insert, and retention: a 91-day-old row is purged but its day's
+//! aggregate keeps the same totals, a re-run after everything is already
+//! purged is a documented no-op, and a backlog larger than one batch is
+//! swept across multiple bounded transactions.
 
 use crate::common::setup_test_db;
 use chrono::{Duration, Utc};
@@ -70,6 +61,74 @@ async fn insert_raw_event(
     .expect("insert raw orch_event");
 }
 
+async fn applied_migrations(pool: &sqlx::SqlitePool) -> Vec<String> {
+    sqlx::query("SELECT name FROM _migrations ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .expect("select migrations")
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect()
+}
+
+/// Asserts every name in `names` appears in `applied` (in any position).
+fn assert_all_applied(applied: &[String], names: &[&str]) {
+    for name in names {
+        assert!(
+            applied.iter().any(|a| a == name),
+            "expected {name} to be recorded as applied; got {applied:?}"
+        );
+    }
+}
+
+/// Asserts each name in `names` appears in `applied`, in that same relative order.
+fn assert_applied_in_order(applied: &[String], names: &[&str]) {
+    assert_all_applied(applied, names);
+    let positions: Vec<usize> = names
+        .iter()
+        .map(|name| applied.iter().position(|a| a == name).unwrap())
+        .collect();
+    assert!(
+        positions.windows(2).all(|w| w[0] < w[1]),
+        "{names:?} must apply in their declared order: {applied:?}"
+    );
+}
+
+async fn assert_tables_missing(pool: &sqlx::SqlitePool, tables: &[&str]) {
+    for table in tables {
+        assert!(
+            !table_exists(pool, table).await,
+            "table {table} should not exist yet"
+        );
+    }
+}
+
+async fn assert_tables_present(pool: &sqlx::SqlitePool, tables: &[&str]) {
+    for table in tables {
+        assert!(
+            table_exists(pool, table).await,
+            "table {table} should exist"
+        );
+    }
+}
+
+async fn count_rows(pool: &sqlx::SqlitePool, table: &str) -> i64 {
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
+        .fetch_one(pool)
+        .await
+        .expect("count")
+}
+
+async fn daily_event_count(repo: &tack_db::Repository, plane_id: Uuid, event_type: &str) -> i64 {
+    repo.list_orch_events_daily(plane_id)
+        .await
+        .expect("list daily")
+        .iter()
+        .filter(|d| d.event_type == event_type)
+        .map(|d| d.event_count)
+        .sum()
+}
+
 /// Same idea as [`insert_raw_event`], for `orch_metrics` (backdating `scraped_at`).
 async fn insert_raw_metric(
     pool: &sqlx::SqlitePool,
@@ -95,7 +154,7 @@ async fn insert_raw_metric(
 // ─── Fresh install / upgrade-in-place ──────────────────────────────────────
 
 #[tokio::test]
-async fn test_fresh_db_migrates_all_metrics_tables() {
+async fn a_fresh_install_has_migrations_025_026_and_027_applied() {
     let repo = setup_test_db().await;
 
     for table in NEW_TABLES {
@@ -105,42 +164,25 @@ async fn test_fresh_db_migrates_all_metrics_tables() {
         );
     }
 
-    let applied: Vec<String> = sqlx::query("SELECT name FROM _migrations ORDER BY id")
-        .fetch_all(repo.pool())
-        .await
-        .expect("select migrations")
-        .into_iter()
-        .map(|row| row.get::<String, _>("name"))
-        .collect();
-
     // Migrations 025, 026 and 027 must all be present and applied in their
     // declared order. Deliberately *not* asserting anything about what comes
     // after 027 — that is a fact about the whole project's migration
     // history, not about metrics, and would break as soon as a later
     // migration lands. Presence-and-order here means a future migration
     // never breaks this test.
-    let this_cards_migrations = [
-        "025_orch_metrics",
-        "026_orch_events_daily",
-        "027_orch_metrics_daily",
-    ];
-    let positions: Vec<Option<usize>> = this_cards_migrations
-        .iter()
-        .map(|name| applied.iter().position(|a| a == name))
-        .collect();
-    assert!(
-        positions.iter().all(Option::is_some),
-        "expected all of {this_cards_migrations:?} to be applied; got {applied:?}"
-    );
-    let positions: Vec<usize> = positions.into_iter().flatten().collect();
-    assert!(
-        positions.windows(2).all(|w| w[0] < w[1]),
-        "025/026/027 must apply in their declared order: {applied:?}"
+    let applied = applied_migrations(repo.pool()).await;
+    assert_applied_in_order(
+        &applied,
+        &[
+            "025_orch_metrics",
+            "026_orch_events_daily",
+            "027_orch_metrics_daily",
+        ],
     );
 }
 
 #[tokio::test]
-async fn test_upgrade_from_024_applies_metrics_migrations_in_place() {
+async fn upgrading_a_pre_025_db_adds_the_metrics_migrations() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db that only ever saw migrations 001-024
@@ -153,112 +195,72 @@ async fn test_upgrade_from_024_applies_metrics_migrations_in_place() {
         table_exists(&pool, "orch_approvals").await,
         "024_orch_approvals should have applied"
     );
-    for table in NEW_TABLES {
-        assert!(
-            !table_exists(&pool, table).await,
-            "table {table} must not exist before the upgrade runs"
-        );
-    }
+    assert_tables_missing(&pool, &NEW_TABLES).await;
 
     migrations::run_all(&pool).await.expect("upgrade in place");
-
-    for table in NEW_TABLES {
-        assert!(
-            table_exists(&pool, table).await,
-            "table {table} must exist after upgrading an existing db in place"
-        );
-    }
+    assert_tables_present(&pool, &NEW_TABLES).await;
 
     // Migrations 025, 026 and 027 must be recorded as applied on top of the
     // pre-existing 001-024 set — not a specific total count, which is a fact
     // about the whole project's migration history rather than about this
     // upgrade path, and breaks every time a later migration adds one more.
-    // See the equivalent note on `test_fresh_db_migrates_all_metrics_tables`
-    // above.
-    let applied: Vec<String> = sqlx::query("SELECT name FROM _migrations")
-        .fetch_all(&pool)
-        .await
-        .expect("select migrations")
-        .into_iter()
-        .map(|row| row.get::<String, _>("name"))
-        .collect();
-    for name in [
-        "025_orch_metrics",
-        "026_orch_events_daily",
-        "027_orch_metrics_daily",
-    ] {
-        assert!(
-            applied.iter().any(|a| a == name),
-            "expected {name} to be recorded as applied after upgrading in place; got {applied:?}"
-        );
-    }
+    let applied = applied_migrations(&pool).await;
+    assert_all_applied(
+        &applied,
+        &[
+            "025_orch_metrics",
+            "026_orch_events_daily",
+            "027_orch_metrics_daily",
+        ],
+    );
 }
 
 // ─── FK enforcement ─────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_orch_metrics_rejects_orphan_control_plane() {
+async fn metrics_and_events_daily_reject_an_orphan_control_plane_fk() {
     let repo = setup_test_db().await;
     let bogus_plane = Uuid::new_v4();
 
-    let result = sqlx::query(
-        "INSERT INTO orch_metrics (id, control_plane_id, name, value) VALUES (?, ?, 'x', 1.0)",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bogus_plane.to_string())
-    .execute(repo.pool())
-    .await;
+    let cases = [
+        (
+            "orch_metrics.control_plane_id",
+            format!(
+                "INSERT INTO orch_metrics (id, control_plane_id, name, value) \
+                 VALUES ('{}', '{bogus_plane}', 'x', 1.0)",
+                Uuid::new_v4()
+            ),
+        ),
+        (
+            "orch_events_daily.control_plane_id",
+            format!(
+                "INSERT INTO orch_events_daily (id, day, control_plane_id, event_type) \
+                 VALUES ('{}', '2026-01-01', '{bogus_plane}', 'tool_call')",
+                Uuid::new_v4()
+            ),
+        ),
+        (
+            "orch_metrics_daily.control_plane_id",
+            format!(
+                "INSERT INTO orch_metrics_daily (id, day, control_plane_id, metric_name) \
+                 VALUES ('{}', '2026-01-01', '{bogus_plane}', 'docket_agents_total')",
+                Uuid::new_v4()
+            ),
+        ),
+    ];
 
-    assert!(
-        result.is_err(),
-        "inserting an orch_metric with a dangling control_plane_id must be rejected by the FK constraint"
-    );
-}
-
-#[tokio::test]
-async fn test_orch_events_daily_rejects_orphan_control_plane() {
-    let repo = setup_test_db().await;
-    let bogus_plane = Uuid::new_v4();
-
-    let result = sqlx::query(
-        "INSERT INTO orch_events_daily (id, day, control_plane_id, event_type) \
-         VALUES (?, '2026-01-01', ?, 'tool_call')",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bogus_plane.to_string())
-    .execute(repo.pool())
-    .await;
-
-    assert!(
-        result.is_err(),
-        "inserting an orch_events_daily row with a dangling control_plane_id must be rejected"
-    );
-}
-
-#[tokio::test]
-async fn test_orch_metrics_daily_rejects_orphan_control_plane() {
-    let repo = setup_test_db().await;
-    let bogus_plane = Uuid::new_v4();
-
-    let result = sqlx::query(
-        "INSERT INTO orch_metrics_daily (id, day, control_plane_id, metric_name) \
-         VALUES (?, '2026-01-01', ?, 'docket_agents_total')",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bogus_plane.to_string())
-    .execute(repo.pool())
-    .await;
-
-    assert!(
-        result.is_err(),
-        "inserting an orch_metrics_daily row with a dangling control_plane_id must be rejected"
-    );
+    for (label, sql) in cases {
+        let result = sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(repo.pool())
+            .await;
+        assert!(result.is_err(), "{label}: dangling FK must be rejected");
+    }
 }
 
 // ─── upsert_orch_metrics ─────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_upsert_orch_metrics_is_append_only_not_deduplicated() {
+async fn upsert_orch_metrics_is_append_only_not_deduplicated() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
 
@@ -292,7 +294,7 @@ async fn test_upsert_orch_metrics_is_append_only_not_deduplicated() {
 }
 
 #[tokio::test]
-async fn test_upsert_orch_metrics_empty_slice_is_a_noop() {
+async fn upsert_orch_metrics_empty_slice_is_noop() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
 
@@ -308,30 +310,23 @@ async fn test_upsert_orch_metrics_empty_slice_is_a_noop() {
 }
 
 #[tokio::test]
-async fn test_list_latest_orch_metrics_returns_the_most_recent_sample_per_series() {
+async fn list_latest_orch_metrics_returns_most_recent_sample() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
 
     // Three scrapes of the same series with different values, at strictly
     // increasing (backdated, to make ordering unambiguous) scraped_at.
     let base = Utc::now() - Duration::hours(1);
-    insert_raw_metric(repo.pool(), plane_id, "docket_agents_total", 1.0, base).await;
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_agents_total",
-        2.0,
-        base + Duration::minutes(1),
-    )
-    .await;
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_agents_total",
-        3.0,
-        base + Duration::minutes(2),
-    )
-    .await;
+    for (value, offset) in [(1.0, 0), (2.0, 1), (3.0, 2)] {
+        insert_raw_metric(
+            repo.pool(),
+            plane_id,
+            "docket_agents_total",
+            value,
+            base + Duration::minutes(offset),
+        )
+        .await;
+    }
 
     let latest = repo.list_latest_orch_metrics().await.expect("list latest");
     assert_eq!(latest.len(), 1, "one series should yield one latest row");
@@ -345,65 +340,47 @@ async fn test_list_latest_orch_metrics_returns_the_most_recent_sample_per_series
 // ─── Retention: rollup-before-purge, and the "same totals survive" bar ────────
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_events_preserves_totals_and_deletes_raw_rows() {
+async fn rollup_and_purge_orch_events_preserves_totals_deletes_raw() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
+    let pool = repo.pool();
 
     // A 91-day-old event (must be purged, but counted into the day's aggregate)
     // and a fresh one (must survive untouched — inside the retention window).
     let old = Utc::now() - Duration::days(91);
     let fresh = Utc::now();
-    insert_raw_event(repo.pool(), plane_id, "tool_call", old).await;
-    insert_raw_event(
-        repo.pool(),
-        plane_id,
-        "tool_call",
-        old + Duration::minutes(5),
-    )
-    .await;
-    insert_raw_event(repo.pool(), plane_id, "approval_granted", old).await;
-    insert_raw_event(repo.pool(), plane_id, "tool_call", fresh).await;
+    insert_raw_event(pool, plane_id, "tool_call", old).await;
+    insert_raw_event(pool, plane_id, "tool_call", old + Duration::minutes(5)).await;
+    insert_raw_event(pool, plane_id, "approval_granted", old).await;
+    insert_raw_event(pool, plane_id, "tool_call", fresh).await;
 
     let cutoff = Utc::now() - Duration::days(90);
     let stats = repo
         .rollup_and_purge_orch_events(cutoff, 500)
         .await
         .expect("rollup");
-
     assert_eq!(
         stats.rows_purged, 3,
         "only the three 91-day-old rows are stale"
     );
 
-    // The 91-day-old raw rows are gone...
-    let raw_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_events")
-        .fetch_one(repo.pool())
-        .await
-        .expect("count raw events");
-    assert_eq!(raw_count, 1, "only the fresh event should remain raw");
-
-    // ...but the day's aggregate survives with the same totals (34.6's literal
-    // acceptance wording).
-    let daily = repo
-        .list_orch_events_daily(plane_id)
-        .await
-        .expect("list daily");
-    let tool_call_count: i64 = daily
-        .iter()
-        .filter(|d| d.event_type == "tool_call")
-        .map(|d| d.event_count)
-        .sum();
-    let approval_count: i64 = daily
-        .iter()
-        .filter(|d| d.event_type == "approval_granted")
-        .map(|d| d.event_count)
-        .sum();
-    assert_eq!(tool_call_count, 2, "both purged tool_call events counted");
-    assert_eq!(approval_count, 1);
+    // The 91-day-old raw rows are gone, but the day's aggregate survives with
+    // the same totals.
+    assert_eq!(
+        count_rows(pool, "orch_events").await,
+        1,
+        "only the fresh event remains raw"
+    );
+    let (tool_calls, approvals) = (
+        daily_event_count(&repo, plane_id, "tool_call").await,
+        daily_event_count(&repo, plane_id, "approval_granted").await,
+    );
+    assert_eq!(tool_calls, 2, "both purged tool_call events counted");
+    assert_eq!(approvals, 1);
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_events_rerun_with_no_new_data_is_a_noop() {
+async fn rollup_and_purge_orch_events_rerun_is_noop() {
     // The externally observable half of the atomicity guarantee: once a batch's
     // aggregate write and delete have committed together, nothing is left for a
     // re-run to reprocess — so re-running immediately must never double-count,
@@ -439,19 +416,13 @@ async fn test_rollup_and_purge_orch_events_rerun_with_no_new_data_is_a_noop() {
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_events_sweeps_a_backlog_larger_than_one_batch() {
+async fn rollup_and_purge_orch_events_sweeps_backlog_over_one_batch() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
     let old = Utc::now() - Duration::days(91);
-
+    let pool = repo.pool();
     for i in 0..12 {
-        insert_raw_event(
-            repo.pool(),
-            plane_id,
-            "tool_call",
-            old + Duration::seconds(i),
-        )
-        .await;
+        insert_raw_event(pool, plane_id, "tool_call", old + Duration::seconds(i)).await;
     }
 
     // Small batch size forces multiple transactions to fully sweep the backlog.
@@ -459,21 +430,15 @@ async fn test_rollup_and_purge_orch_events_sweeps_a_backlog_larger_than_one_batc
         .rollup_and_purge_orch_events(Utc::now() - Duration::days(90), 5)
         .await
         .expect("rollup");
-
     assert_eq!(
         stats.rows_purged, 12,
-        "every stale row must be swept, not just the first batch"
+        "every stale row must be swept, not just one batch"
     );
     assert_eq!(
         stats.batches_run, 3,
         "12 rows at batch_size=5 takes 3 batches (5+5+2)"
     );
-
-    let raw_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_events")
-        .fetch_one(repo.pool())
-        .await
-        .expect("count");
-    assert_eq!(raw_count, 0);
+    assert_eq!(count_rows(pool, "orch_events").await, 0);
 
     let daily = repo
         .list_orch_events_daily(plane_id)
@@ -488,7 +453,7 @@ async fn test_rollup_and_purge_orch_events_sweeps_a_backlog_larger_than_one_batc
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_events_leaves_fresh_rows_untouched() {
+async fn rollup_and_purge_orch_events_leaves_fresh_rows_untouched() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
     insert_raw_event(repo.pool(), plane_id, "tool_call", Utc::now()).await;
@@ -510,56 +475,29 @@ async fn test_rollup_and_purge_orch_events_leaves_fresh_rows_untouched() {
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_metrics_preserves_sum_min_max_and_deletes_raw_rows() {
+async fn rollup_and_purge_orch_metrics_preserves_sum_min_max() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
     let old = Utc::now() - Duration::days(91);
-
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_turn_duration_seconds",
-        1.0,
-        old,
-    )
-    .await;
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_turn_duration_seconds",
-        5.0,
-        old + Duration::minutes(1),
-    )
-    .await;
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_turn_duration_seconds",
-        3.0,
-        old + Duration::minutes(2),
-    )
-    .await;
+    let pool = repo.pool();
+    let series = "docket_turn_duration_seconds";
+    for (value, offset) in [(1.0, 0), (5.0, 1), (3.0, 2)] {
+        let at = old + Duration::minutes(offset);
+        insert_raw_metric(pool, plane_id, series, value, at).await;
+    }
     // A fresh sample of the same series must survive, untouched by the sweep.
-    insert_raw_metric(
-        repo.pool(),
-        plane_id,
-        "docket_turn_duration_seconds",
-        99.0,
-        Utc::now(),
-    )
-    .await;
+    insert_raw_metric(pool, plane_id, series, 99.0, Utc::now()).await;
 
     let stats = repo
         .rollup_and_purge_orch_metrics(Utc::now() - Duration::days(90), 500)
         .await
         .expect("rollup");
     assert_eq!(stats.rows_purged, 3);
-
-    let raw_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_metrics")
-        .fetch_one(repo.pool())
-        .await
-        .expect("count");
-    assert_eq!(raw_count, 1, "only the fresh sample remains raw");
+    assert_eq!(
+        count_rows(pool, "orch_metrics").await,
+        1,
+        "only the fresh sample remains raw"
+    );
 
     let daily = repo
         .list_orch_metrics_daily(plane_id)
@@ -574,7 +512,7 @@ async fn test_rollup_and_purge_orch_metrics_preserves_sum_min_max_and_deletes_ra
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_metrics_excludes_non_finite_values_from_sum_min_max() {
+async fn rollup_and_purge_orch_metrics_excludes_non_finite_values() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
     let old = Utc::now() - Duration::days(91);
@@ -615,7 +553,7 @@ async fn test_rollup_and_purge_orch_metrics_excludes_non_finite_values_from_sum_
 }
 
 #[tokio::test]
-async fn test_rollup_and_purge_orch_events_and_orch_metrics_are_independent() {
+async fn rollup_and_purge_orch_events_and_metrics_are_independent() {
     // A regression guard: purging orch_events must never touch orch_metrics and
     // vice versa — they're separate tables with separate cutoff comparisons.
     let repo = setup_test_db().await;
@@ -654,7 +592,7 @@ async fn test_rollup_and_purge_orch_events_and_orch_metrics_are_independent() {
 // respects the retention sweep, not just directly-inserted raw rows).
 
 #[tokio::test]
-async fn test_events_inserted_via_upsert_orch_events_are_also_swept() {
+async fn events_inserted_via_upsert_are_also_swept() {
     let repo = setup_test_db().await;
     let plane_id = make_control_plane(&repo).await;
     let old = Utc::now() - Duration::days(91);

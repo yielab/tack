@@ -1,15 +1,9 @@
-//! CORS coverage. There was no CORS test anywhere in this repo
-//! before this file — the three gaps below shipped invisibly because nothing
-//! ever drove a real preflight against the router.
-//!
-//! `AllowHeaders`/`ExposeHeaders` are configured as fixed lists
-//! (`tower_http::cors::CorsLayer::allow_headers`/`expose_headers` called with
-//! an explicit array), so the response always carries the full configured
-//! set regardless of what the preflight's own
-//! `Access-Control-Request-Headers` asked for — see
-//! `tower-http`'s `AllowHeaders::to_header`. A real cross-origin browser
-//! still requires each header it needs to be in that fixed list, which is
-//! exactly what this test pins down.
+//! CORS preflight coverage: `AllowHeaders`/`ExposeHeaders` are configured as
+//! fixed lists (`CorsLayer::allow_headers`/`expose_headers` with an explicit
+//! array), so the response always carries the full configured set regardless
+//! of what the preflight's own `Access-Control-Request-Headers` asked for —
+//! see `tower-http`'s `AllowHeaders::to_header`. A real cross-origin browser
+//! still requires each header it needs to be in that fixed list.
 
 use axum::Router;
 use axum::body::Body;
@@ -71,8 +65,33 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
 /// `fetch()` can read it back off a `GET`. Without `expose_headers` naming
 /// `ETag`, a browser can read zero non-safelisted response headers from
 /// this API, full stop.
+/// Asserts a real (non-preflight) GET exposes `ETag` via
+/// `Access-Control-Expose-Headers` — `tower_http`'s CORS layer only
+/// attaches it to a real response, never a preflight.
+async fn assert_etag_exposed(app: &Router) {
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/health")
+        .header(header::ORIGIN, ALLOWED_ORIGIN)
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let expose_headers = resp
+        .headers()
+        .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+        .expect("Access-Control-Expose-Headers must be present on a real CORS response")
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(
+        expose_headers.contains("etag"),
+        "etag missing from Access-Control-Expose-Headers: {expose_headers}"
+    );
+}
+
 #[tokio::test]
-async fn preflight_allows_if_match_and_approval_token_and_exposes_etag() {
+async fn preflight_allows_if_match_approval_token_exposes_etag() {
     let (app, _workspace_id) = test_app().await;
     let item_uri = "/api/items/00000000-0000-0000-0000-000000000000";
 
@@ -100,29 +119,8 @@ async fn preflight_allows_if_match_and_approval_token_and_exposes_etag() {
     );
 
     // (a): ETag must be readable by JS on the real response, not just sent
-    // on the wire. `Access-Control-Expose-Headers` is only attached to
-    // non-preflight responses (`tower_http`'s `Cors::call` applies it in
-    // the `CorsCall` branch, never `PreflightCall`), so this has to be a
-    // plain GET, not another OPTIONS round-trip.
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/health")
-        .header(header::ORIGIN, ALLOWED_ORIGIN)
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let expose_headers = resp
-        .headers()
-        .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
-        .expect("Access-Control-Expose-Headers must be present on a real CORS response")
-        .to_str()
-        .unwrap()
-        .to_ascii_lowercase();
-    assert!(
-        expose_headers.contains("etag"),
-        "etag missing from Access-Control-Expose-Headers: {expose_headers}"
-    );
+    // on the wire — this has to be a plain GET, not another OPTIONS round-trip.
+    assert_etag_exposed(&app).await;
 }
 
 /// Negative control: proves `allow_headers` is a fixed, named list (not
@@ -131,7 +129,7 @@ async fn preflight_allows_if_match_and_approval_token_and_exposes_etag() {
 /// route rather than only the specific headers this configuration actually
 /// allows.
 #[tokio::test]
-async fn preflight_does_not_allow_an_arbitrary_header() {
+async fn preflight_does_not_allow_arbitrary_header() {
     let (app, _workspace_id) = test_app().await;
     let allow_headers = preflight_allow_headers(
         &app,

@@ -1,23 +1,12 @@
-//! Tests for the auto-dispatch hook:
-//! `handlers::items::maybe_auto_dispatch`, wired into `PATCH /api/items/{id}`
-//! beside `maybe_sync_github`/`propagate_parent_completion`. When
-//! `orch_links.auto_dispatch` is on and an item's status changes into one of
-//! `status_map.dispatch_from`, the hook calls `dispatcher::dispatch_item`
-//! off the request path, passing the item's own **persisted** trust value
-//! (`item.source.is_trusted()` — migration 029).
-//!
-//! The test that matters most here: an item imported from GitHub,
-//! auto-dispatched, reaches docket with
-//! `trusted: false` **on the wire** — asserted with a wiremock matcher that
-//! only responds 200 if the flag is genuinely present in the request body,
-//! not by inspecting what a function was called with.
-//!
-//! Also covers the hazards this hook must guard against: it stays off unless
-//! `TACK_ORCH_ENABLE` is set and unless the link's
-//! `auto_dispatch` is on; and it must not dispatch on every update — an item
-//! edited while it's already sitting in a `dispatch_from` status must not
-//! re-dispatch.
+//! Tests for the auto-dispatch hook (`handlers::items::maybe_auto_dispatch`,
+//! wired into `PATCH /api/items/{id}`). When `orch_links.auto_dispatch` is
+//! on and an item's status enters `status_map.dispatch_from`, the hook
+//! dispatches off the request path, passing the item's own **persisted**
+//! trust value (`item.source.is_trusted()` — migration 029; see the trust
+//! test below for why). Also covers: the off/auto_dispatch-off guards, and
+//! that an edit sitting in an already-dispatched status must not re-fire.
 
+use crate::common;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
@@ -97,19 +86,6 @@ async fn req(
         .oneshot(builder.body(body).unwrap())
         .await
         .unwrap()
-}
-
-async fn create_project(app: &Router, project_type: &str) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Auto-dispatch Test Project", "project_type": project_type})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
 async fn patch_status(app: &Router, item_id: Uuid, status: &str) -> axum::response::Response {
@@ -213,76 +189,57 @@ fn mock_list_tasks_body(task_id: &str) -> serde_json::Value {
     }]})
 }
 
-/// The hook runs on a background `tokio::spawn` — poll wiremock's received
-/// request log for up to ~2s, the same pattern `handlers/crud.rs`'s GitHub
-/// push-back test already uses for exactly the same "fire and forget"
-/// reason. Returns the number of matching hits observed.
-async fn wait_for_hits(server: &MockServer, path_suffix: &str, at_least: usize) -> usize {
-    for _ in 0..40 {
-        let reqs = server.received_requests().await.unwrap_or_default();
-        let count = reqs
-            .iter()
-            .filter(|r| r.url.path().ends_with(path_suffix))
-            .count();
-        if count >= at_least {
-            return count;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    server
-        .received_requests()
-        .await
-        .unwrap_or_default()
-        .iter()
-        .filter(|r| r.url.path().ends_with(path_suffix))
-        .count()
-}
-
-/// Poll `list_orch_tasks_for_item` for up to ~2s — used instead of
-/// `wait_for_hits` when a test needs to assert on the persisted task (e.g.
-/// its `trusted` column), not just that a request landed.
-async fn wait_for_orch_task(state: &AppState, item_id: Uuid) -> Vec<tack_db::repo::orch::OrchTask> {
-    for _ in 0..40 {
-        let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
-        if !tasks.is_empty() {
-            return tasks;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    state.repo.list_orch_tasks_for_item(item_id).await.unwrap()
-}
-
-// ─── The headline test: trusted:false on the wire for a GitHub-imported item ─
-
-#[tokio::test]
-async fn auto_dispatch_sends_trusted_false_on_the_wire_for_a_github_imported_item() {
-    let server = MockServer::start().await;
+/// Mounts the dispatch POST/GET pair, matching on `trusted` in the POST
+/// body so the mock only lets the dispatcher through if the flag genuinely
+/// matches `expect_trusted`.
+async fn mount_dispatch_mocks(server: &MockServer, task_id: &str, expect_trusted: bool) {
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
-        .and(body_partial_json(json!({"trusted": false})))
+        .and(body_partial_json(json!({"trusted": expect_trusted})))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-auto-untrusted", "project": "demo", "status": "pending"
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
         })))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/tasks/demo"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_list_tasks_body("task-auto-untrusted")),
-        )
-        .mount(&server)
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_list_tasks_body(task_id)))
+        .mount(server)
         .await;
+}
 
+/// Mounts the dispatch POST/GET pair, failing the test if POST is ever hit
+/// more than once.
+async fn mount_dispatch_mocks_once(server: &MockServer, task_id: &str) {
+    Mock::given(method("POST"))
+        .and(path("/tasks/demo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
+        })))
+        .expect(1)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/demo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_list_tasks_body(task_id)))
+        .mount(server)
+        .await;
+}
+
+/// A project + auto-dispatch-linked item, ready to be moved into `dispatch_from`
+/// — the setup every trust-flag case shares, differing only in the seeded
+/// item's source and the mocked task id/trust value.
+async fn setup_auto_dispatch_case(
+    source: ItemSource,
+    title: &str,
+    task_id: &str,
+    expect_trusted: bool,
+) -> (Router, AppState, Uuid, MockServer) {
+    let server = MockServer::start().await;
+    mount_dispatch_mocks(&server, task_id, expect_trusted).await;
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    let item_id = seed_item(
-        &state,
-        project_id,
-        "Backlog",
-        ItemSource::Github,
-        "Imported from GitHub",
-    )
-    .await;
+    let project_id = common::create_project(&app, "Auto-dispatch Test Project", "software").await;
+    let item_id = seed_item(&state, project_id, "Backlog", source, title).await;
     link_project(
         &state,
         project_id,
@@ -291,55 +248,22 @@ async fn auto_dispatch_sends_trusted_false_on_the_wire_for_a_github_imported_ite
         json!({"dispatch_from": ["To Do"], "on_running": "In Progress"}),
     )
     .await;
-
-    let res = patch_status(&app, item_id, "To Do").await;
-    assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
-
-    // wiremock's POST matcher only responds 200 (letting the dispatcher
-    // proceed to persist an orch_tasks row) if `trusted: false` was
-    // genuinely in the request body — this is the real check, not the
-    // assertions below, which just confirm the outcome wasn't a fluke.
-    let tasks = wait_for_orch_task(&state, item_id).await;
-    assert_eq!(tasks.len(), 1, "expected exactly one auto-dispatched task");
-    assert_eq!(tasks[0].remote_task_id, "task-auto-untrusted");
-    assert!(
-        !tasks[0].trusted,
-        "a GitHub-imported item's persisted trust must reach docket as trusted:false"
-    );
-
-    // And the mapped status (on_running) really applied through the engine.
-    let item = state.repo.get_item(item_id).await.unwrap().unwrap();
-    assert_eq!(item.status, "In Progress");
+    (app, state, item_id, server)
 }
 
-#[tokio::test]
-async fn auto_dispatch_sends_trusted_true_for_a_manually_created_item() {
+/// A project + auto-dispatch-linked, manually-created item, mocked to
+/// fail the test if dispatched more than once.
+async fn setup_no_refire_case(task_id: &str) -> (Router, AppState, Uuid, MockServer) {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .and(body_partial_json(json!({"trusted": true})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-auto-trusted", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/tasks/demo"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_list_tasks_body("task-auto-trusted")),
-        )
-        .mount(&server)
-        .await;
-
+    mount_dispatch_mocks_once(&server, task_id).await;
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    // ItemSource::Manual — the default for the ordinary create-item path.
+    let project_id = common::create_project(&app, "Auto-dispatch Test Project", "software").await;
     let item_id = seed_item(
         &state,
         project_id,
         "Backlog",
         ItemSource::Manual,
-        "Typed directly in Tack",
+        "Edited repeatedly",
     )
     .await;
     link_project(
@@ -350,16 +274,127 @@ async fn auto_dispatch_sends_trusted_true_for_a_manually_created_item() {
         json!({"dispatch_from": ["To Do"], "on_running": "In Progress"}),
     )
     .await;
+    (app, state, item_id, server)
+}
 
-    let res = patch_status(&app, item_id, "To Do").await;
-    assert_eq!(res.status(), StatusCode::OK);
+/// The hook runs on a background `tokio::spawn`, doing real (loopback) HTTP
+/// I/O against `server`. A plain `tokio::task::yield_now()` retry loop is
+/// not enough here: it only re-queues this task, it never forces the
+/// current-thread runtime to park and let its I/O driver poll for the
+/// spawn's actual socket readiness, so the spawn can starve indefinitely.
+/// `Interval::tick` does force that park on every iteration, which is the
+/// bounded-poll mechanism this waits on. Returns the number of matching
+/// hits observed.
+async fn wait_for_hits(server: &MockServer, path_suffix: &str, at_least: usize) -> usize {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    for _ in 0..80 {
+        ticker.tick().await;
+        let reqs = server.received_requests().await.unwrap_or_default();
+        let count = reqs
+            .iter()
+            .filter(|r| r.url.path().ends_with(path_suffix))
+            .count();
+        if count >= at_least {
+            return count;
+        }
+    }
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|r| r.url.path().ends_with(path_suffix))
+        .count()
+}
 
-    let tasks = wait_for_orch_task(&state, item_id).await;
-    assert_eq!(tasks.len(), 1);
-    assert!(
-        tasks[0].trusted,
-        "an operator-authored item must dispatch as trusted"
-    );
+/// Poll `list_orch_tasks_for_item`, bounded the same way and for the same
+/// reason as `wait_for_hits` — used instead of it when a test needs to
+/// assert on the persisted task (e.g. its `trusted` column), not just that
+/// a request landed.
+async fn wait_for_orch_task(state: &AppState, item_id: Uuid) -> Vec<tack_db::repo::orch::OrchTask> {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    for _ in 0..80 {
+        ticker.tick().await;
+        let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
+        if !tasks.is_empty() {
+            return tasks;
+        }
+    }
+    state.repo.list_orch_tasks_for_item(item_id).await.unwrap()
+}
+
+/// Waits out a bounded, real settle window so a wrongly-firing or
+/// wrongly-refiring background spawn has a genuine chance to land before an
+/// absence/steady-state assertion is trusted — always the full window, not
+/// an early-exit poll, since there is no single condition to poll for here
+/// (some callers already have one prior hit on record and are watching for
+/// a second that must never come). Uses `Interval::tick`, not a bare
+/// `yield_now` loop, for the same reason `wait_for_hits` does: only a real
+/// timer forces this current-thread runtime to park and let its I/O driver
+/// service the spawn's actual socket I/O.
+async fn drain_background_spawns() {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    for _ in 0..8 {
+        ticker.tick().await;
+    }
+}
+
+/// Asserts no auto-dispatch happened: no request reached `server` and no
+/// orch_tasks row exists for `item_id`, after draining any background spawn.
+async fn assert_no_auto_dispatch(state: &AppState, server: &MockServer, item_id: Uuid, why: &str) {
+    drain_background_spawns().await;
+    let hits = server.received_requests().await.unwrap_or_default();
+    assert!(hits.is_empty(), "{why}: {hits:?}");
+    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
+    assert!(tasks.is_empty());
+}
+
+// ─── The headline claim: persisted trust reaches the wire, per item source ──
+
+/// A GitHub-imported item's persisted trust (migration 029) reaches docket
+/// as `trusted: false`; a manually created item's reaches it as `true` —
+/// asserted with a wiremock matcher that only responds 200 (letting the
+/// dispatcher proceed to persist an `orch_tasks` row) if the flag is
+/// genuinely present in the request body, not by inspecting what a
+/// function was called with. The false case is the one that matters most:
+/// it's why this hook reads persisted trust at all, not a per-call flag.
+#[tokio::test]
+async fn auto_dispatch_sends_persisted_trust_flag_on_the_wire() {
+    // (source, expect_trusted, task_id, title).
+    let cases = [
+        (
+            ItemSource::Github,
+            false,
+            "task-auto-untrusted",
+            "Imported from GitHub",
+        ),
+        (
+            ItemSource::Manual,
+            true,
+            "task-auto-trusted",
+            "Typed directly in Tack",
+        ),
+    ];
+
+    for (source, expect_trusted, task_id, title) in cases {
+        let (app, state, item_id, _server) =
+            setup_auto_dispatch_case(source.clone(), title, task_id, expect_trusted).await;
+
+        let res = patch_status(&app, item_id, "To Do").await;
+        assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
+
+        let tasks = wait_for_orch_task(&state, item_id).await;
+        assert_eq!(tasks.len(), 1, "expected exactly one auto-dispatched task");
+        assert_eq!(tasks[0].remote_task_id, task_id);
+        assert_eq!(
+            tasks[0].trusted, expect_trusted,
+            "{source:?} item must dispatch as trusted={expect_trusted}"
+        );
+
+        // The mapped status (on_running) applies through the engine either way.
+        let item = state.repo.get_item(item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "In Progress");
+    }
 }
 
 // ─── Off by default ─────────────────────────────────────────────────────────
@@ -373,7 +408,7 @@ async fn auto_dispatch_does_not_fire_when_orch_disabled() {
 
     // `AppConfig::default()` has `orch_enable: false`.
     let (app, state) = app_with_state(AppConfig::default()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Auto-dispatch Test Project", "software").await;
     let item_id = seed_item(
         &state,
         project_id,
@@ -390,23 +425,20 @@ async fn auto_dispatch_does_not_fire_when_orch_disabled() {
         json!({"dispatch_from": ["To Do"], "on_running": "In Progress"}),
     )
     .await;
-
     let res = patch_status(&app, item_id, "To Do").await;
     assert_eq!(
         res.status(),
         StatusCode::OK,
         "the ordinary item PATCH must still succeed even though orch is disabled"
     );
-
-    // Give a wrongly-firing hook time to show up, then assert nothing did.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let hits = server.received_requests().await.unwrap_or_default();
-    assert!(
-        hits.is_empty(),
-        "TACK_ORCH_ENABLE unset must mean no dispatch, no exceptions: {hits:?}"
-    );
-    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
-    assert!(tasks.is_empty());
+    // Give a wrongly-firing hook a chance to show up, then assert nothing did.
+    assert_no_auto_dispatch(
+        &state,
+        &server,
+        item_id,
+        "TACK_ORCH_ENABLE unset must mean no dispatch, no exceptions",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -414,7 +446,7 @@ async fn auto_dispatch_does_not_fire_when_link_auto_dispatch_is_off() {
     let server = MockServer::start().await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id = common::create_project(&app, "Auto-dispatch Test Project", "software").await;
     let item_id = seed_item(
         &state,
         project_id,
@@ -435,7 +467,7 @@ async fn auto_dispatch_does_not_fire_when_link_auto_dispatch_is_off() {
     let res = patch_status(&app, item_id, "To Do").await;
     assert_eq!(res.status(), StatusCode::OK);
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_background_spawns().await;
     let hits = server.received_requests().await.unwrap_or_default();
     assert!(
         hits.is_empty(),
@@ -446,40 +478,9 @@ async fn auto_dispatch_does_not_fire_when_link_auto_dispatch_is_off() {
 // ─── Don't dispatch on every update ─────────────────────────────────────────
 
 #[tokio::test]
-async fn auto_dispatch_does_not_refire_on_an_edit_that_does_not_change_status() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-once", "project": "demo", "status": "pending"
-        })))
-        .expect(1) // the whole point of this test
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(mock_list_tasks_body("task-once")))
-        .mount(&server)
-        .await;
-
-    let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
-    let item_id = seed_item(
-        &state,
-        project_id,
-        "Backlog",
-        ItemSource::Manual,
-        "Edited repeatedly",
-    )
-    .await;
-    link_project(
-        &state,
-        project_id,
-        &server.uri(),
-        true,
-        json!({"dispatch_from": ["To Do"], "on_running": "In Progress"}),
-    )
-    .await;
+async fn auto_dispatch_does_not_refire_on_edit_with_no_status_change() {
+    // The mocked once-only dispatch is the whole point of this test.
+    let (app, state, item_id, server) = setup_no_refire_case("task-once").await;
 
     // Enter the dispatch_from status — this fires the hook once.
     let res = patch_status(&app, item_id, "To Do").await;
@@ -495,8 +496,8 @@ async fn auto_dispatch_does_not_refire_on_an_edit_that_does_not_change_status() 
         assert_eq!(res.status(), StatusCode::OK);
     }
 
-    // Give a wrongly-refiring hook time to show up.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // Give a wrongly-refiring hook a chance to show up.
+    drain_background_spawns().await;
 
     let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
     assert_eq!(

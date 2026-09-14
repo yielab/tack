@@ -32,8 +32,7 @@ pub async fn push_issue_state(
     let client = reqwest::Client::builder()
         .user_agent("Tack/1.0 (github.com/yielab/tack)")
         .timeout(std::time::Duration::from_secs(15))
-        // GitHub Enterprise endpoints are configurable. A redirect is remote
-        // input, so never forward the repository token to its target.
+        // A redirect target is remote input — never forward the token to it.
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
 
@@ -132,7 +131,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redirect_does_not_leak_github_token_to_private_destination() {
+    async fn push_issue_redirect_never_forwards_token() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 

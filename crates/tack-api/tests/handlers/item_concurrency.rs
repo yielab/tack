@@ -1,27 +1,14 @@
 //! Optimistic concurrency for items —
 //! `GET /api/items/{id}` returns an `ETag` derived from the item's id +
 //! `version` (migration 034); `PATCH /api/items/{id}` honours `If-Match`,
-//! rejecting a stale value with `412 Precondition Failed`.
+//! rejecting a stale value with `412 Precondition Failed`. A `PATCH` with no
+//! `If-Match` header still succeeds unchanged, for callers that predate it.
 //!
-//! **The gate is the sequential tests, not the concurrent ones** — see
-//! `docs/plans/agnostic-control-plane.md` for the reasoning.
-//! `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
-//! `patch_with_an_if_match_for_a_different_item_is_rejected`, and
-//! `a_stale_if_match_is_rejected_with_412_with_no_racer_involved` each capture
-//! an `ETag`, let a write land and complete, then replay a now-stale value and
-//! require `412` — deterministically, with no scheduler dependence. An
-//! implementation that drops the header-*value* comparison but keeps
-//! `claim_item_version`'s atomic `UPDATE ... WHERE version = ?` underneath
-//! still passes the two-racer test below most of the time, because two
-//! racers sharing one still-valid version coincidentally reproduce the
-//! "one 200, one 412" shape that test watches for — see that test's own doc
-//! comment for the full explanation of what it does and does not prove.
-//!
-//! Also required: a plain `PATCH` with no `If-Match` header at all must
-//! still succeed exactly as it did before — the non-breaking guarantee that
-//! keeps the MCP tools working unchanged until they're updated to send the
-//! header.
+//! **The gate is the sequential tests, not the concurrent ones** — each
+//! sequential test's own doc comment explains what it proves and why; see
+//! `docs/plans/agnostic-control-plane.md` for the full reasoning.
 
+use crate::common;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
@@ -105,19 +92,6 @@ async fn req_with_if_match(
         .unwrap()
 }
 
-async fn create_project(app: &Router) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Item Concurrency Test", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
     let res = req(
         app,
@@ -144,12 +118,29 @@ async fn get_etag(app: &Router, item_id: Uuid) -> String {
         .to_string()
 }
 
+/// `PATCH`es an item's title with the given `If-Match` value.
+async fn patch_title(
+    app: &Router,
+    item_id: Uuid,
+    title: &str,
+    etag: &str,
+) -> axum::response::Response {
+    req_with_if_match(
+        app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(json!({"title": title})),
+        Some(etag),
+    )
+    .await
+}
+
 // ─── GET returns an ETag ────────────────────────────────────────────────
 
 #[tokio::test]
 async fn get_item_returns_an_etag_derived_from_id_and_version() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Has an ETag").await;
 
     let etag = get_etag(&app, item_id).await;
@@ -162,9 +153,9 @@ async fn get_item_returns_an_etag_derived_from_id_and_version() {
 // ─── Absent If-Match: unchanged behavior ───────────────────────────────
 
 #[tokio::test]
-async fn patch_with_no_if_match_header_succeeds_exactly_as_before_this_card() {
+async fn patch_with_no_if_match_header_succeeds_unchanged() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "No If-Match sent").await;
 
     let res = req(
@@ -197,7 +188,7 @@ async fn patch_with_no_if_match_header_succeeds_exactly_as_before_this_card() {
 #[tokio::test]
 async fn patch_with_a_matching_if_match_succeeds() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Matching If-Match").await;
 
     let etag = get_etag(&app, item_id).await;
@@ -213,33 +204,19 @@ async fn patch_with_a_matching_if_match_succeeds() {
 }
 
 #[tokio::test]
-async fn patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope() {
+async fn stale_if_match_is_rejected_with_412_and_standard_envelope() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Stale If-Match").await;
 
     let etag = get_etag(&app, item_id).await;
 
     // First PATCH with the fresh ETag succeeds and moves the version.
-    let res = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "First edit"})),
-        Some(&etag),
-    )
-    .await;
+    let res = patch_title(&app, item_id, "First edit", &etag).await;
     assert_eq!(res.status(), StatusCode::OK);
 
     // Reusing the now-stale ETag must be rejected, not silently accepted.
-    let res2 = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "Second edit, stale precondition"})),
-        Some(&etag),
-    )
-    .await;
+    let res2 = patch_title(&app, item_id, "Second edit, stale precondition", &etag).await;
     assert_eq!(
         res2.status(),
         StatusCode::PRECONDITION_FAILED,
@@ -261,7 +238,7 @@ async fn patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envel
 #[tokio::test]
 async fn patch_with_an_if_match_for_a_different_item_is_rejected() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_a = create_item(&app, project_id, "Item A").await;
     let item_b = create_item(&app, project_id, "Item B").await;
 
@@ -299,23 +276,16 @@ async fn patch_with_an_if_match_for_a_different_item_is_rejected() {
 /// verified deterministic over 20+ local runs (see
 /// `docs/plans/agnostic-control-plane.md` for the full reasoning).
 #[tokio::test]
-async fn a_stale_if_match_is_rejected_with_412_with_no_racer_involved() {
+async fn stale_if_match_is_rejected_with_412_with_no_racer() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "No racer, just a stale header").await;
 
     let etag = get_etag(&app, item_id).await;
 
     // The first PATCH lands and fully completes before the second is even
     // constructed — sequential, not concurrent.
-    let first = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "First write, using the fresh ETag"})),
-        Some(&etag),
-    )
-    .await;
+    let first = patch_title(&app, item_id, "First write, using the fresh ETag", &etag).await;
     assert_eq!(
         first.status(),
         StatusCode::OK,
@@ -326,14 +296,7 @@ async fn a_stale_if_match_is_rejected_with_412_with_no_racer_involved() {
     // Reusing the pre-write ETag now must be rejected on its value alone —
     // nothing is racing this request, so there is no CAS-layer coincidence
     // available to explain a 412 away.
-    let second = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "Second write, stale ETag, no racer"})),
-        Some(&etag),
-    )
-    .await;
+    let second = patch_title(&app, item_id, "Second write, stale ETag, no racer", &etag).await;
     assert_eq!(
         second.status(),
         StatusCode::PRECONDITION_FAILED,
@@ -362,13 +325,13 @@ async fn a_stale_if_match_is_rejected_with_412_with_no_racer_involved() {
 /// time in practice (caught only 5/15 runs). For a deterministic proof that
 /// the header's value — not merely the presence of a race — decides the
 /// outcome, see the sequential tests instead:
-/// `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
+/// `stale_if_match_is_rejected_with_412_and_standard_envelope`,
 /// `patch_with_an_if_match_for_a_different_item_is_rejected`, and
-/// `a_stale_if_match_is_rejected_with_412_with_no_racer_involved`.
+/// `stale_if_match_is_rejected_with_412_with_no_racer`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-async fn two_concurrent_patches_sharing_one_still_valid_version_yield_exactly_one_cas_winner() {
+async fn two_concurrent_patches_on_one_version_yield_one_cas_winner() {
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Race target").await;
     let etag = get_etag(&app, item_id).await;
 
@@ -420,14 +383,14 @@ async fn two_concurrent_patches_sharing_one_still_valid_version_yield_exactly_on
 /// (7/10 runs) than with the pair test above, but still not every time.
 /// Treat this as a more sensitive smoke
 /// test for the same failure mode, not a deterministic gate — see
-/// `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
+/// `stale_if_match_is_rejected_with_412_and_standard_envelope`,
 /// `patch_with_an_if_match_for_a_different_item_is_rejected`, and
-/// `a_stale_if_match_is_rejected_with_412_with_no_racer_involved` for that.
+/// `stale_if_match_is_rejected_with_412_with_no_racer` for that.
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-async fn concurrent_patches_at_higher_fanout_still_yield_exactly_one_winner() {
+async fn concurrent_patches_at_higher_fanout_yield_one_winner() {
     const N: usize = 6;
     let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Race target, N racers").await;
     let etag = get_etag(&app, item_id).await;
 
@@ -464,9 +427,9 @@ async fn concurrent_patches_at_higher_fanout_still_yield_exactly_one_winner() {
 // ─── Atomic PATCH invariants ────────────────────────────────────────────────
 
 #[tokio::test]
-async fn multi_field_wip_rejection_writes_nothing_and_does_not_bump_version() {
+async fn multi_field_wip_rejection_writes_nothing_no_version_bump() {
     let (app, state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     for i in 0..5 {
         let item_id = create_item(&app, project_id, &format!("Capacity {i}")).await;
         let moved = req(
@@ -500,61 +463,77 @@ async fn multi_field_wip_rejection_writes_nothing_and_does_not_bump_version() {
     );
 }
 
-#[tokio::test]
-async fn nullable_patch_fields_clear_and_patch_body_etag_describe_one_snapshot() {
-    let (app, _state) = app_with_state().await;
-    let project_id = create_project(&app).await;
-    let item_id = create_item(&app, project_id, "Nullable fields").await;
-    let etag = get_etag(&app, item_id).await;
-
-    let seeded = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"description": "note", "assignee": "Ada", "estimate": 3.5})),
-        Some(&etag),
-    )
-    .await;
-    assert_eq!(seeded.status(), StatusCode::OK);
-    let seed_etag = seeded
-        .headers()
+fn etag_of(res: &axum::response::Response) -> String {
+    res.headers()
         .get("etag")
         .unwrap()
         .to_str()
         .unwrap()
-        .to_owned();
+        .to_owned()
+}
 
-    let cleared = req_with_if_match(
-        &app,
+fn assert_etag_version(res: &axum::response::Response, item_id: Uuid, version: u32) {
+    assert_eq!(etag_of(res), format!("\"{item_id}-{version}\""));
+}
+
+async fn patch_fields(
+    app: &Router,
+    item_id: Uuid,
+    fields: Value,
+    etag: &str,
+) -> axum::response::Response {
+    req_with_if_match(
+        app,
         Method::PATCH,
         &format!("/api/items/{item_id}"),
-        Some(json!({"description": null, "assignee": null, "estimate": null})),
-        Some(&seed_etag),
+        Some(fields),
+        Some(etag),
     )
-    .await;
-    assert_eq!(cleared.status(), StatusCode::OK);
-    assert_eq!(
-        cleared.headers().get("etag").unwrap().to_str().unwrap(),
-        format!("\"{item_id}-3\""),
-        "one multi-field PATCH increments version once"
-    );
-    let body = body_json(cleared).await;
-    assert!(body["description"].is_null());
-    assert!(body["assignee"].is_null());
-    assert!(body["estimate"].is_null());
-
-    let fresh = req(&app, Method::GET, &format!("/api/items/{item_id}"), None).await;
-    assert_eq!(
-        fresh.headers().get("etag").unwrap().to_str().unwrap(),
-        format!("\"{item_id}-3\""),
-        "GET observes the same version as the PATCH body/ETag snapshot"
-    );
+    .await
 }
 
 #[tokio::test]
-async fn before_update_failure_cannot_partially_apply_a_multi_field_patch() {
+async fn nullable_fields_clear_and_body_etag_match_one_snapshot() {
+    let (app, _state) = app_with_state().await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
+    let item_id = create_item(&app, project_id, "Nullable fields").await;
+    let etag = get_etag(&app, item_id).await;
+
+    let seeded = patch_fields(
+        &app,
+        item_id,
+        json!({"description": "note", "assignee": "Ada", "estimate": 3.5}),
+        &etag,
+    )
+    .await;
+    assert_eq!(seeded.status(), StatusCode::OK);
+    let seed_etag = etag_of(&seeded);
+
+    let cleared = patch_fields(
+        &app,
+        item_id,
+        json!({"description": null, "assignee": null, "estimate": null}),
+        &seed_etag,
+    )
+    .await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    // One multi-field PATCH increments the version once, not once per field.
+    assert_etag_version(&cleared, item_id, 3);
+    let body = body_json(cleared).await;
+    let all_null = ["description", "assignee", "estimate"]
+        .iter()
+        .all(|f| body[*f].is_null());
+    assert!(all_null, "{body}");
+
+    // GET must observe the same version as the PATCH body/ETag snapshot.
+    let fresh = req(&app, Method::GET, &format!("/api/items/{item_id}"), None).await;
+    assert_etag_version(&fresh, item_id, 3);
+}
+
+#[tokio::test]
+async fn before_update_failure_cannot_partially_apply_patch() {
     let (app, state) = app_with_state().await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Item Concurrency Test", "software").await;
     let item_id = create_item(&app, project_id, "Original").await;
     let before = state.repo.get_item_version(item_id).await.unwrap().unwrap();
 

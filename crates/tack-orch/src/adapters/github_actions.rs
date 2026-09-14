@@ -1,10 +1,10 @@
 //! `GithubActionsAdapter` — a **compile-only stub** for a second
-//! [`ControlPlane`] implementor.
+//! [`ControlPlane`](crate::ControlPlane) implementor.
 //!
 //! Its only job is to make "both adapters compile against the trait" a fact
 //! CI can check, ahead of wiring the real thing. Every method but
-//! [`kind`](GithubActionsAdapter::kind) and
-//! [`capabilities`](GithubActionsAdapter::capabilities) is `unimplemented!()`
+//! `kind` and
+//! `capabilities` is `unimplemented!()`
 //! — there is no HTTP client, no request/response handling, nothing that
 //! could plausibly talk to a real GitHub Actions instance. Don't add any
 //! until the real adapter is actually being wired.
@@ -14,7 +14,7 @@
 //! adapter whose methods all panic would let an operator create a control
 //! plane that blows up the first time the reconciler polls it.
 //!
-//! [`capabilities`](GithubActionsAdapter::capabilities) is filled in for
+//! `capabilities` is filled in for
 //! real, though, and deliberately so: it's the one method this stub can
 //! answer honestly without making a network call, and having it right now
 //! lets `docs/plans/agnostic-control-plane.md` §II.1.3's `RunState`
@@ -44,14 +44,10 @@ impl ControlPlane for GithubActionsAdapter {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            // `POST .../actions/workflows/{id}/dispatches` — a real,
-            // documented endpoint (§II.1.4).
+            // `POST .../actions/workflows/{id}/dispatches` (§II.1.4).
             dispatch: true,
             // `POST .../runs/{id}/cancel` -> `202` (§II.1.4).
             cancel: true,
-            // No pause/suspend/hold endpoint exists anywhere in the GitHub
-            // REST API for a workflow run — not a gap in this adapter, a
-            // gap in the provider (§II.1.4: "no endpoint exists").
             pause: Rated::new(
                 Support::Unsupported,
                 "the GitHub REST API has no pause endpoint for a workflow run",
@@ -60,58 +56,36 @@ impl ControlPlane for GithubActionsAdapter {
                 Support::Unsupported,
                 "the GitHub REST API has no resume endpoint for a workflow run",
             ),
-            // Derived from `GET .../runs/{id}/jobs` step data, one run at a
-            // time — run logs (`GET .../runs/{id}/logs`) are a 302 whose
-            // link expires in 1 minute, so they cannot be treated as an
-            // event stream (§II.1.4). Unlike docket, GitHub has no
-            // project-wide or plane-wide event feed at all.
             event_scope: Rated::new(
                 EventScope::Run,
                 "events are derived from GET .../runs/{id}/jobs step data, one run at a \
                  time; GitHub has no project- or plane-wide event stream, and run logs are \
                  a 302 redirect that expires in 1 minute, not a stream",
             ),
-            // `GET .../actions/runs/{id}/artifacts` is a real, documented
-            // endpoint; retention is bounded (default 90 days) but the
-            // capability itself is real.
+            // `GET .../actions/runs/{id}/artifacts`; retention is bounded
+            // (default 90 days) but the capability itself is real.
             artifacts: true,
-            // `GET`/`POST .../runs/{id}/pending_deployments` is GitHub
-            // Actions' decision store (§II.1.4) — read on the reconciler's
-            // poll cadence, same as docket's approvals; GitHub has no push
-            // mechanism for a newly pending deployment gate either.
             decisions: Rated::new(
                 DecisionSupport::Poll,
                 "pending deployment gates are read via GET .../runs/{id}/pending_deployments \
                  on the reconciler's poll cadence; there is no push/webhook path for a new \
                  gate opening",
             ),
-            // GitHub Actions bills and reports runner minutes, never model
-            // or token usage — there is no usage figure to report here at
-            // all.
             usage: Rated::new(
                 UsageSupport::NotMeasured,
                 "GitHub Actions reports runner minutes, not model/token usage; no usage \
                  metering exists for this provider",
             ),
-            // A dispatched workflow receives its inputs (including a model
-            // identifier, if the workflow defines one) verbatim — this
-            // adapter does not intercept or reinterpret them, and GitHub
-            // itself has no routing layer to override them.
             model_selection: Rated::new(
                 ModelSelection::Honoured,
                 "a dispatched workflow receives its inputs verbatim; this adapter does not \
                  intercept or reinterpret a model identifier passed as one",
             ),
-            // A workflow file names the runtimes (self-hosted labels,
-            // GitHub-hosted OS images) a dispatch can target.
+            // A workflow file names the runtimes a dispatch can target.
             runtimes: true,
-            // No plane-wide scrape exists — GitHub Actions has nothing
-            // resembling docket's `/metrics` (§II.1.4).
             plane_metrics: false,
-            // No provisioning primitive exists — a workflow runs against
-            // whatever runner infrastructure already exists (GitHub-hosted,
-            // or a self-hosted runner registered out of band); there is no
-            // "create me a fresh execution environment" call.
+            // No "create me a fresh execution environment" call exists — a
+            // workflow runs against infrastructure that already exists.
             provisioning: false,
         }
     }

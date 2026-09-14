@@ -1,15 +1,13 @@
 //! Tests for `GET /api/orch-runs/{run_id}` — a pipeline run's mirrored
 //! state, read back by its own id rather than through a Tack item.
 //!
-//! Covers: `409 orchestration_disabled` with `TACK_ORCH_ENABLE` off; a run
-//! id with no `orch_runs` row reports `mirrored: false` with every other
-//! field `null` — `200`, never `404`, since Tack cannot tell an un-polled
-//! run apart from an unknown one; a mirrored row (with and without an
-//! attributed item) round-trips its fields, including a `null` `item_id`
-//! for the CLI-pipeline-dispatch case ADR 0065 decision 5 describes; and
-//! the route reuses `Repository::get_orch_run` rather than adding a second
-//! `orch_runs` query — proved by reverting the handler to always answer
-//! `mirrored: false` and watching the round-trip test go red.
+//! Covers: the off guard; a run id with no `orch_runs` row reports
+//! `mirrored: false` with every other field `null` — `200`, never `404`,
+//! since Tack cannot tell an un-polled run apart from an unknown one; a
+//! mirrored row (with and without an attributed item) round-trips its
+//! fields, including a `null` `item_id` for the CLI-pipeline-dispatch case
+//! (ADR 0065 decision 5); and no response field ever claims a permission
+//! verdict.
 
 use crate::common;
 
@@ -87,39 +85,45 @@ async fn get_run(app: &Router, run_id: &str) -> axum::response::Response {
         .unwrap()
 }
 
-async fn create_project(app: &Router) -> Uuid {
-    let res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/projects")
-                .header("Content-Type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({
-                        "name": "Run Readback Test Project",
-                        "project_type": "software",
-                    }))
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
+async fn create_plane(state: &AppState) -> Uuid {
+    state
+        .repo
+        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
+            name: "docket-1".to_string(),
+            kind: None,
+            base_url: "http://docket.local".to_string(),
+            token: None,
+        })
         .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
+        .expect("create plane")
+        .id
+}
+
+async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
+    let uri = format!("/api/projects/{project_id}/items");
+    let (status, v) = common::send(app, "POST", &uri, json!({"title": title}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
-// ─── Off by default ─────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn run_readback_409s_when_orch_disabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = get_run(&app, "run-whatever").await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
+#[allow(clippy::too_many_arguments)]
+fn new_run(
+    run_id: &str,
+    item_id: Option<Uuid>,
+    source: &str,
+    state: &str,
+    ended: bool,
+) -> NewOrchRun {
+    NewOrchRun {
+        run_id: run_id.to_string(),
+        item_id,
+        remote_project: "demo-pipeline".to_string(),
+        source: source.to_string(),
+        state: state.to_string(),
+        started_at: Some(Utc::now()),
+        ended_at: ended.then(Utc::now),
+        error: None,
+    }
 }
 
 // ─── Unmirrored run: a legitimate 200, never a 404 ─────────────────────────
@@ -162,34 +166,13 @@ async fn run_readback_reports_unmirrored_run_as_200_not_404() {
 #[tokio::test]
 async fn run_readback_round_trips_a_mirrored_run_with_no_item() {
     let (app, state) = app_with_state(orch_config()).await;
-    let plane = state
-        .repo
-        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
-            name: "docket-1".to_string(),
-            kind: None,
-            base_url: "http://docket.local".to_string(),
-            token: None,
-        })
-        .await
-        .expect("create plane");
+    let plane_id = create_plane(&state).await;
 
+    // The CLI-dispatched-pipeline case (ADR 0065 decision 5): no item ever supplied.
+    let run = new_run("run-cli-1", None, "cli", "running", false);
     state
         .repo
-        .upsert_orch_runs(
-            plane.id,
-            &[NewOrchRun {
-                run_id: "run-cli-1".to_string(),
-                // The CLI-dispatched-pipeline case (ADR 0065 decision 5):
-                // no item is ever supplied.
-                item_id: None,
-                remote_project: "demo-pipeline".to_string(),
-                source: "cli".to_string(),
-                state: "running".to_string(),
-                started_at: Some(Utc::now()),
-                ended_at: None,
-                error: None,
-            }],
-        )
+        .upsert_orch_runs(plane_id, &[run])
         .await
         .expect("seed run");
 
@@ -214,50 +197,20 @@ async fn run_readback_round_trips_a_mirrored_run_with_no_item() {
 #[tokio::test]
 async fn run_readback_carries_an_attributed_item_id_when_one_exists() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
-    let item_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri(format!("/api/projects/{project_id}/items"))
-                .header("Content-Type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({"title": "Attributed item"})).unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(item_res.status(), StatusCode::OK);
-    let item_id = Uuid::parse_str(body_json(item_res).await["id"].as_str().unwrap()).unwrap();
+    let project_id = common::create_project(&app, "Run Readback Test Project", "software").await;
+    let item_id = create_item(&app, project_id, "Attributed item").await;
+    let plane_id = create_plane(&state).await;
 
-    let plane = state
-        .repo
-        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
-            name: "docket-1".to_string(),
-            kind: None,
-            base_url: "http://docket.local".to_string(),
-            token: None,
-        })
-        .await
-        .expect("create plane");
-
+    let run = new_run(
+        "run-attributed-1",
+        Some(item_id),
+        "webhook",
+        "succeeded",
+        true,
+    );
     state
         .repo
-        .upsert_orch_runs(
-            plane.id,
-            &[NewOrchRun {
-                run_id: "run-attributed-1".to_string(),
-                item_id: Some(item_id),
-                remote_project: "demo-pipeline".to_string(),
-                source: "webhook".to_string(),
-                state: "succeeded".to_string(),
-                started_at: Some(Utc::now()),
-                ended_at: Some(Utc::now()),
-                error: None,
-            }],
-        )
+        .upsert_orch_runs(plane_id, &[run])
         .await
         .expect("seed run");
 
@@ -269,34 +222,15 @@ async fn run_readback_carries_an_attributed_item_id_when_one_exists() {
 }
 
 #[tokio::test]
-async fn run_readback_reports_a_failed_run_state_without_calling_it_a_permission_verdict() {
+async fn run_readback_failed_state_carries_no_permission_verdict() {
     let (app, state) = app_with_state(orch_config()).await;
-    let plane = state
-        .repo
-        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
-            name: "docket-1".to_string(),
-            kind: None,
-            base_url: "http://docket.local".to_string(),
-            token: None,
-        })
-        .await
-        .expect("create plane");
+    let plane_id = create_plane(&state).await;
 
+    let mut run = new_run("run-blocked-1", None, "cli", "failed", true);
+    run.error = Some("guardrail policy denied the request".to_string());
     state
         .repo
-        .upsert_orch_runs(
-            plane.id,
-            &[NewOrchRun {
-                run_id: "run-blocked-1".to_string(),
-                item_id: None,
-                remote_project: "demo-pipeline".to_string(),
-                source: "cli".to_string(),
-                state: "failed".to_string(),
-                started_at: Some(Utc::now()),
-                ended_at: Some(Utc::now()),
-                error: Some("guardrail policy denied the request".to_string()),
-            }],
-        )
+        .upsert_orch_runs(plane_id, &[run])
         .await
         .expect("seed run");
 
@@ -324,11 +258,7 @@ async fn run_readback_reports_a_failed_run_state_without_calling_it_a_permission
     ]
     .into_iter()
     .collect();
+    // Equality with the fixed allow-list already proves none of
+    // "permitted"/"allowed"/"approved" (or anything else) snuck in.
     assert_eq!(keys, allowed, "response carries an undocumented field");
-    for forbidden in ["permitted", "allowed", "approved"] {
-        assert!(
-            !keys.contains(forbidden),
-            "response must never claim permission via field {forbidden}"
-        );
-    }
 }

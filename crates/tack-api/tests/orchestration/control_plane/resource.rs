@@ -90,19 +90,6 @@ async fn req(
         .unwrap()
 }
 
-async fn create_project(app: &Router) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Orch Test Project", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 async fn create_control_plane(app: &Router, token: Option<&str>) -> Value {
     let mut body = json!({"name": "docket-1", "base_url": "http://docket.local:9999"});
     if let Some(t) = token {
@@ -133,7 +120,7 @@ fn assert_no_token_leak(v: &Value, secret: &str) {
 #[tokio::test]
 async fn every_orch_route_409s_with_a_stable_code_when_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let fake_id = Uuid::new_v4();
 
     let cases: Vec<(Method, String)> = vec![
@@ -224,69 +211,54 @@ async fn token_never_appears_in_list_or_get_response() {
     assert_eq!(got["token_set"], true);
 }
 
-#[tokio::test]
-async fn patch_with_absent_token_field_preserves_stored_token() {
-    let (app, _) = common::test_app_with_config(orch_config()).await;
-    let created = create_control_plane(&app, Some("preserve-me")).await;
-    let id = created["id"].as_str().unwrap();
+/// (initial_token, patch_body, expect_token_set, also_check, note) rows for
+/// [`patch_token_field_is_tri_state`].
+type PatchTokenCase = (&'static str, Value, bool, fn(&Value), &'static str);
 
-    // Patch only the name — no `token` key in the body at all.
-    let res = req(
-        &app,
-        Method::PATCH,
-        &format!("/api/control-planes/{id}"),
-        Some(json!({"name": "docket-renamed"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let updated = body_json(res).await;
-    assert_eq!(updated["name"], "docket-renamed");
-    assert_eq!(
-        updated["token_set"], true,
-        "token must survive a patch that never mentions it"
-    );
-    assert_no_token_leak(&updated, "preserve-me");
+fn patch_token_cases() -> [PatchTokenCase; 3] {
+    [
+        (
+            "preserve-me",
+            json!({"name": "docket-renamed"}),
+            true,
+            |v| assert_eq!(v["name"], "docket-renamed"),
+            "token must survive a patch that never mentions it",
+        ),
+        (
+            "clear-me",
+            json!({"token": null}),
+            false,
+            |_| {},
+            "an explicit null must clear the stored token",
+        ),
+        (
+            "old-token",
+            json!({"token": "new-token"}),
+            true,
+            |v| assert_no_token_leak(v, "new-token"),
+            "a string value must replace the stored token without leaking it",
+        ),
+    ]
 }
 
+/// The tri-state PATCH semantics for `token`: omitting the field preserves
+/// the stored token; an explicit `null` clears it; a string value replaces
+/// it without ever leaking the old or new value in the response.
 #[tokio::test]
-async fn patch_with_explicit_null_token_clears_it() {
-    let (app, _) = common::test_app_with_config(orch_config()).await;
-    let created = create_control_plane(&app, Some("clear-me")).await;
-    let id = created["id"].as_str().unwrap();
+async fn patch_token_field_is_tri_state() {
+    for (initial_token, patch_body, expect_token_set, also_check, note) in patch_token_cases() {
+        let (app, _) = common::test_app_with_config(orch_config()).await;
+        let created = create_control_plane(&app, Some(initial_token)).await;
+        let id = created["id"].as_str().unwrap();
 
-    let res = req(
-        &app,
-        Method::PATCH,
-        &format!("/api/control-planes/{id}"),
-        Some(json!({"token": null})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let updated = body_json(res).await;
-    assert_eq!(
-        updated["token_set"], false,
-        "an explicit null must clear the stored token"
-    );
-}
-
-#[tokio::test]
-async fn patch_with_token_value_replaces_it() {
-    let (app, _) = common::test_app_with_config(orch_config()).await;
-    let created = create_control_plane(&app, Some("old-token")).await;
-    let id = created["id"].as_str().unwrap();
-
-    let res = req(
-        &app,
-        Method::PATCH,
-        &format!("/api/control-planes/{id}"),
-        Some(json!({"token": "new-token"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let updated = body_json(res).await;
-    assert_eq!(updated["token_set"], true);
-    assert_no_token_leak(&updated, "old-token");
-    assert_no_token_leak(&updated, "new-token");
+        let uri = format!("/api/control-planes/{id}");
+        let res = req(&app, Method::PATCH, &uri, Some(patch_body)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let updated = body_json(res).await;
+        assert_eq!(updated["token_set"], expect_token_set, "{note}");
+        assert_no_token_leak(&updated, initial_token);
+        also_check(&updated);
+    }
 }
 
 #[tokio::test]
@@ -332,7 +304,7 @@ async fn get_unknown_control_plane_is_404() {
 #[tokio::test]
 async fn orch_link_absent_by_default() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
 
     let res = req(
         &app,
@@ -350,7 +322,7 @@ async fn orch_link_absent_by_default() {
 #[tokio::test]
 async fn orch_link_round_trips_with_valid_status_map() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
     let plane_id = plane["id"].as_str().unwrap();
 
@@ -378,7 +350,7 @@ async fn orch_link_round_trips_with_valid_status_map() {
 #[tokio::test]
 async fn orch_link_rejects_unknown_status_name() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
     let plane_id = plane["id"].as_str().unwrap();
 
@@ -399,7 +371,7 @@ async fn orch_link_rejects_unknown_status_name() {
 #[tokio::test]
 async fn orch_link_get_reflects_saved_link() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
     let plane_id = plane["id"].as_str().unwrap();
 
@@ -429,13 +401,25 @@ async fn orch_link_get_reflects_saved_link() {
     assert_eq!(v["link"]["control_plane_id"], plane_id);
 }
 
-/// The wire label must come from `legacy_bridge`'s constant, never a
-/// re-typed literal — a copied string would silently stop tracking the
-/// decision if the constant ever changed.
+/// Asserts `v` carries the legacy-docket compatibility label/policy pair,
+/// read from `legacy_bridge`'s own constants rather than a re-typed
+/// literal — a copy would silently stop tracking the decision if the
+/// constant ever changed.
+fn assert_legacy_compat_fields(v: &Value) {
+    assert_eq!(
+        v["compatibility_label"],
+        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
+    );
+    assert_eq!(
+        v["compatibility_policy"],
+        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
+    );
+}
+
 #[tokio::test]
 async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
     let plane_id = plane["id"].as_str().unwrap();
 
@@ -452,14 +436,7 @@ async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     .await;
     assert_eq!(put_res.status(), StatusCode::OK);
     let put_body = body_json(put_res).await;
-    assert_eq!(
-        put_body["compatibility_label"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
-    );
-    assert_eq!(
-        put_body["compatibility_policy"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
-    );
+    assert_legacy_compat_fields(&put_body);
 
     let get_res = req(
         &app,
@@ -469,14 +446,7 @@ async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     )
     .await;
     let v = body_json(get_res).await;
-    assert_eq!(
-        v["link"]["compatibility_label"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
-    );
-    assert_eq!(
-        v["link"]["compatibility_policy"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
-    );
+    assert_legacy_compat_fields(&v["link"]);
 }
 
 // ─── Fleet aggregate ────────────────────────────────────────────────────────
@@ -490,10 +460,31 @@ async fn fleet_is_empty_with_no_links() {
     assert_eq!(v["rows"].as_array().unwrap().len(), 0);
 }
 
+async fn fleet_entries(app: &Router) -> Vec<Value> {
+    let res = req(app, Method::GET, "/api/fleet", None).await;
+    body_json(res).await["rows"].as_array().unwrap().clone()
+}
+
+/// Asserts a reachable plane's rollup reports real zeros, not nulls.
+fn assert_reachable_zero_costs(entry: &Value) {
+    assert_eq!(entry["health"], "unknown");
+    assert_eq!(
+        entry["cost_usd_estimated"],
+        json!(0.0),
+        "a reachable plane with nothing dispatched yet must report a real Some(0.0), not null"
+    );
+    assert_eq!(entry["tokens_in"], json!(0));
+    assert_eq!(entry["tokens_out"], json!(0));
+    assert_eq!(entry["pending_approval_count"], json!(0));
+    assert!(entry["last_activity_at"].is_null());
+    assert_eq!(entry["gateway"], "unknown");
+    assert_eq!(entry["roster"], json!([]));
+}
+
 #[tokio::test]
-async fn fleet_reports_zero_cost_distinctly_from_unreachable() {
+async fn fleet_listing_reports_a_real_zero_not_an_unreachable_gap() {
     let (app, state, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
     let plane_id = Uuid::parse_str(plane["id"].as_str().unwrap()).unwrap();
 
@@ -511,22 +502,9 @@ async fn fleet_reports_zero_cost_distinctly_from_unreachable() {
 
     // Freshly created plane: health defaults to "unknown" (not yet polled),
     // which is reachable-enough to report a real, current zero.
-    let res = req(&app, Method::GET, "/api/fleet", None).await;
-    let v = body_json(res).await;
-    let entries = v["rows"].as_array().unwrap();
+    let entries = fleet_entries(&app).await;
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0]["health"], "unknown");
-    assert_eq!(
-        entries[0]["cost_usd_estimated"],
-        json!(0.0),
-        "a reachable plane with nothing dispatched yet must report a real Some(0.0), not null"
-    );
-    assert_eq!(entries[0]["tokens_in"], json!(0));
-    assert_eq!(entries[0]["tokens_out"], json!(0));
-    assert_eq!(entries[0]["pending_approval_count"], json!(0));
-    assert!(entries[0]["last_activity_at"].is_null());
-    assert_eq!(entries[0]["gateway"], "unknown");
-    assert_eq!(entries[0]["roster"], json!([]));
+    assert_reachable_zero_costs(&entries[0]);
 
     // Now simulate the reconciler marking the plane unreachable.
     state
@@ -535,9 +513,7 @@ async fn fleet_reports_zero_cost_distinctly_from_unreachable() {
         .await
         .expect("record health");
 
-    let res = req(&app, Method::GET, "/api/fleet", None).await;
-    let v = body_json(res).await;
-    let entries = v["rows"].as_array().unwrap();
+    let entries = fleet_entries(&app).await;
     assert_eq!(entries[0]["health"], "unreachable");
     assert!(
         entries[0]["cost_usd_estimated"].is_null(),

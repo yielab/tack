@@ -1,49 +1,17 @@
 //! Live wiring between the pure [`super::resolve_model_policy`] and real
 //! `agent_profiles.limits` / `agent_fleets.default_policy` rows.
 //!
-//! # Where each tier's data actually lives today
+//! A request override reads straight off the request row — nothing to
+//! fetch. An agent-profile or fleet default is
+//! [`parse_model_default_convention`]'s optional `{"default_model": {...}}`
+//! key out of an operator-settable JSON blob (mirrors
+//! `crate::scheduler::wiring`'s convention over an unenforced column). A
+//! project default differs: `projects.default_model` is a typed enum, so
+//! [`parse_project_default_model`] treats a decode failure as a real error
+//! rather than folding it into "no opinion" like the convention parser does.
 //!
-//! - **Request override**: `execution_requests.requested_model_provider`/
-//!   `requested_model_id` (migration 044) — already read directly by the
-//!   caller (there is nothing for this module to fetch).
-//! - **Agent profile default**: [`parse_model_default_convention`] reads an
-//!   optional `{"default_model": {"provider": ..., "model_id": ...}}` (or
-//!   `{"default_model": "auto"}`) key out of `agent_profiles.limits`
-//!   (migration 042) — a JSON blob already fully operator-settable via
-//!   `POST /api/agent-profiles`' existing `limits` field
-//!   (`crates/tack-api/src/handlers/runner_admin.rs`). No schema change.
-//! - **Fleet default**: the same convention, read out of
-//!   `agent_fleets.default_policy` (migration 039) — likewise already
-//!   operator-settable via `POST /api/runner-fleets`.
-//! - **Project default**: `projects.default_model` (migration 062) — the
-//!   exact JSON serialization of a `tack_core::models::ProjectModelDefault`,
-//!   set via `PATCH /api/projects/{id}`. Unlike the two tiers above, this
-//!   column is never an untyped, unenforced convention: the API's JSON
-//!   extractor deserializes a request body directly into that typed enum,
-//!   so [`parse_project_default_model`] never needs to treat a malformed
-//!   shape as "no opinion" the way [`parse_model_default_convention`] does
-//!   for an opaque `limits`/`default_policy` blob — a decode failure here
-//!   means the column holds something no write path produced, and is
-//!   reported as a real error instead.
-//!
-//! This mirrors `crate::scheduler::wiring`'s own established shape
-//! (`priority_from_metadata` reading a documented, non-binding convention
-//! out of `execution_requests.metadata` because no real `priority` column
-//! exists) — a documented stopgap, not a second frozen contract.
-//!
-//! # Capability intersection before claim
-//!
-//! This module does not itself check a resolved model against any runner's
-//! declared capability — that check already exists, untouched, in
-//! `crate::scheduler::select::select_runner` and is wired to
-//! live data by `crate::scheduler::wiring::choose_request_for_runner`.
-//! Once a [`ResolvedModelPolicy`](super::ResolvedModelPolicy)'s
-//! selector is persisted as an `execution_requests` row's
-//! `requested_model_provider`/`requested_model_id` (or left `NULL` for
-//! `AutoSelect`), the existing, unmodified claim path enforces "unavailable
-//! choice never leases" automatically — proven end-to-end, using only
-//! already-existing repository methods, in
-//! `crates/tack-orch/tests/scheduling/policy.rs`.
+//! Never checks a resolved model against a runner's capability — that
+//! happens, unmodified, in `select_runner` once the selector is persisted.
 
 use tack_core::models::ProjectModelDefault;
 use tack_db::Repository;
@@ -52,8 +20,8 @@ use super::{ModelPolicySources, ResolvedModelPolicy, resolve_model_policy};
 use crate::execution::{RequestedModelId, RequestedModelProvider};
 use crate::scheduler::types::ModelSelector;
 
-/// The JSON key this module reads a tier's default model from. See this
-/// module's doc comment for the exact shapes accepted.
+/// The JSON key this module reads a tier's default model from. See
+/// [`parse_model_default_convention`] for the exact shapes accepted.
 pub const DEFAULT_MODEL_KEY: &str = "default_model";
 
 /// Parses the `{"default_model": ...}` convention out of a raw JSON blob
@@ -77,10 +45,8 @@ pub fn parse_model_default_convention(raw_json: &str) -> Option<ModelSelector> {
 }
 
 /// Decodes `projects.default_model`'s JSON into the [`ModelSelector`] this
-/// module resolves against. `None` when the column itself is `None` (the
-/// project expressed no opinion) — a genuine decode failure is returned as
-/// an error, not folded into that same `None`, per this module's doc
-/// comment.
+/// module resolves against. A genuine decode failure is returned as an
+/// error, not folded into "no opinion" like the caller's `None` check.
 fn parse_project_default_model(raw_json: &str) -> Result<ModelSelector, sqlx::Error> {
     let parsed: ProjectModelDefault =
         serde_json::from_str(raw_json).map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
@@ -95,12 +61,8 @@ fn parse_project_default_model(raw_json: &str) -> Result<ModelSelector, sqlx::Er
 
 /// Fetches each tier's configured default (agent profile, project, fleet)
 /// and resolves the final [`ResolvedModelPolicy`] via [`resolve_model_policy`].
-///
-/// `agent_profile_id`/`project_id`/`fleet_id` are each `None` whenever the
-/// request has nothing to read that tier from — no agent profile, no
-/// project on the underlying item, or a selector that isn't `fleet` (there
-/// is no fleet to read a default from in that case). An absent tier is
-/// simply skipped, exactly as if no default had been configured.
+/// Each id is `None` whenever the request has nothing to read that tier
+/// from; an absent tier is skipped, as if no default had been configured.
 pub async fn resolve_request_model_policy(
     repo: &Repository,
     agent_profile_id: Option<&str>,

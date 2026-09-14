@@ -1,20 +1,14 @@
 //! `handlers::items::maybe_auto_dispatch` must gate on
 //! `crate::handlers::settings::effective_orch_enabled`, never on the raw
-//! `state.config.orch_enable` (`TACK_ORCH_ENABLE`'s startup-only env value):
-//! every HTTP orchestration route (and the Settings UI) reads
-//! `effective_orch_enabled`, which prefers whatever was most recently stored
-//! in `app_meta` via `PUT /api/settings/orchestration`. Gating on the raw
-//! env value instead would mean an operator who started the server with
-//! `TACK_ORCH_ENABLE=1` and then switched orchestration off in Settings
-//! still gets auto-dispatch on every eligible status change — the raw env
-//! flag never notices the UI toggle.
-//!
-//! This is the regression test: with `TACK_ORCH_ENABLE=1` in config but
-//! orchestration toggled *off* in `app_meta`, moving an item into a
-//! `dispatch_from` status must not dispatch. It fails against a gate that
-//! reads `!state.config.orch_enable` directly (which never consults
-//! `app_meta`) and passes once the gate reads `effective_orch_enabled`.
+//! `state.config.orch_enable` (`TACK_ORCH_ENABLE`'s startup-only env
+//! value): every HTTP orchestration route reads `effective_orch_enabled`,
+//! which prefers whatever was most recently stored in `app_meta` via
+//! `PUT /api/settings/orchestration`. The regression this guards: an
+//! operator who started with `TACK_ORCH_ENABLE=1` and then switched
+//! orchestration off in Settings must not keep getting auto-dispatch —
+//! and the reverse (env off, UI on) must still dispatch.
 
+use crate::common;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
@@ -86,19 +80,6 @@ async fn req(
         .oneshot(builder.body(body).unwrap())
         .await
         .unwrap()
-}
-
-async fn create_project(app: &Router) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Auto-dispatch Gate Test", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
 async fn patch_status(app: &Router, item_id: Uuid, status: &str) -> axum::response::Response {
@@ -174,6 +155,33 @@ async fn seed_item(state: &AppState, project_id: Uuid, status: &str, title: &str
     item.id
 }
 
+/// Poll `list_orch_tasks_for_item`, bounded. `Interval::tick` (not a bare
+/// `yield_now` loop) forces this current-thread runtime to actually park
+/// between checks — see `auto_dispatch/hook.rs`'s `wait_for_hits` for why
+/// that distinction matters for a background spawn doing real (loopback)
+/// HTTP I/O.
+async fn wait_for_orch_task(state: &AppState, item_id: Uuid) -> Vec<tack_db::repo::orch::OrchTask> {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    for _ in 0..80 {
+        let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
+        if !tasks.is_empty() {
+            return tasks;
+        }
+        ticker.tick().await;
+    }
+    state.repo.list_orch_tasks_for_item(item_id).await.unwrap()
+}
+
+/// Waits out a bounded, real settle window (same `Interval::tick` reasoning
+/// as `wait_for_orch_task`) so a wrongly-firing background spawn has a
+/// genuine chance to land before an absence assertion is trusted.
+async fn drain_background_spawns() {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    for _ in 0..8 {
+        ticker.tick().await;
+    }
+}
+
 /// Flip the same switch the Settings UI does. `enabled: false` is written
 /// to `app_meta` regardless of `TACK_ORCH_ENABLE`'s startup value — that's
 /// the whole point of `effective_orch_enabled` preferring the stored value.
@@ -188,16 +196,28 @@ async fn turn_orchestration_off_via_the_ui_toggle(app: &Router) {
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
 }
 
+/// Asserts no auto-dispatch happened: no request reached `server` and no
+/// orch_tasks row exists for `item_id`, after draining any background spawn.
+async fn assert_no_auto_dispatch(state: &AppState, server: &MockServer, item_id: Uuid, why: &str) {
+    drain_background_spawns().await;
+    let hits = server.received_requests().await.unwrap_or_default();
+    assert!(hits.is_empty(), "{why}: {hits:?}");
+    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
+    assert!(
+        tasks.is_empty(),
+        "no orch_tasks row should have been created either"
+    );
+}
+
 // ─── The regression test ───────────────────────────────────────────────────
 
 #[tokio::test]
-async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_toggle_is_off() {
+async fn auto_dispatch_respects_ui_toggle_off_despite_env_enable() {
     let server = MockServer::start().await;
     // Deliberately no mocks registered: if `maybe_auto_dispatch` reaches the
     // control plane at all, wiremock has nothing to answer with and the
     // dispatch attempt fails loudly — but the real assertion is the
     // received-request count below, not that failure mode.
-
     // TACK_ORCH_ENABLE=1 at the process level...
     let (app, state) = app_with_state(AppConfig {
         orch_enable: true,
@@ -209,7 +229,7 @@ async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_togg
     // is the exact sequence: env on, UI off.
     turn_orchestration_off_via_the_ui_toggle(&app).await;
 
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Auto-dispatch Gate Test", "software").await;
     let item_id = seed_item(&state, project_id, "Backlog", "Should not auto-dispatch").await;
     link_project(&state, project_id, &server.uri()).await;
 
@@ -221,22 +241,38 @@ async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_togg
         body_json(res).await
     );
 
-    // Give a wrongly-firing hook time to show up, then assert nothing did —
-    // same polling shape `orchestration/auto_dispatch/hook.rs` uses for the
+    // Give a wrongly-firing hook a chance to show up, then assert nothing
+    // did — same shape `orchestration/auto_dispatch/hook.rs` uses for the
     // equivalent "off by default" case.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let hits = server.received_requests().await.unwrap_or_default();
-    assert!(
-        hits.is_empty(),
-        "orchestration toggled off in the UI must mean no auto-dispatch, even with \
-         TACK_ORCH_ENABLE=1 at the process level — the raw env flag must not override the \
-         UI's explicit off: {hits:?}"
-    );
-    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
-    assert!(
-        tasks.is_empty(),
-        "no orch_tasks row should have been created either"
-    );
+    assert_no_auto_dispatch(
+        &state,
+        &server,
+        item_id,
+        "TACK_ORCH_ENABLE=1 must not override the UI's explicit off",
+    )
+    .await;
+}
+
+/// Mocks docket's enqueue (`POST`) and follow-up list (`GET`) for `task_id`,
+/// both reporting it `pending`.
+async fn mock_enqueue_and_list(server: &MockServer, task_id: &str) {
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/tasks/demo"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
+        })))
+        .mount(server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/tasks/demo"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "tasks": [{
+                "id": task_id, "description": "x", "priority": "normal",
+                "status": "pending", "created": "2026-08-05T00:00:00Z", "source": "operator",
+            }]
+        })))
+        .mount(server)
+        .await;
 }
 
 /// Sanity check in the opposite direction, so this file proves the gate
@@ -244,25 +280,9 @@ async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_togg
 /// env off, UI explicitly on, must dispatch. If this test fails while the
 /// one above passes, the fix over-corrected into "never dispatch."
 #[tokio::test]
-async fn auto_dispatch_fires_when_the_ui_toggle_is_on_even_with_the_env_flag_unset() {
+async fn auto_dispatch_respects_ui_toggle_on_despite_env_unset() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::path("/tasks/demo"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-ui-enabled", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/tasks/demo"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
-            "tasks": [{
-                "id": "task-ui-enabled", "description": "x", "priority": "normal",
-                "status": "pending", "created": "2026-08-05T00:00:00Z", "source": "operator",
-            }]
-        })))
-        .mount(&server)
-        .await;
+    mock_enqueue_and_list(&server, "task-ui-enabled").await;
 
     // `AppConfig::default()` has `orch_enable: false` — the env flag is
     // unset — but the orchestration-settings route stays reachable
@@ -279,21 +299,14 @@ async fn auto_dispatch_fires_when_the_ui_toggle_is_on_even_with_the_env_flag_uns
     .await;
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
 
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Auto-dispatch Gate Test", "software").await;
     let item_id = seed_item(&state, project_id, "Backlog", "Should auto-dispatch").await;
     link_project(&state, project_id, &server.uri()).await;
 
     let res = patch_status(&app, item_id, "To Do").await;
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
 
-    let mut tasks = Vec::new();
-    for _ in 0..40 {
-        tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
-        if !tasks.is_empty() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
+    let tasks = wait_for_orch_task(&state, item_id).await;
     assert_eq!(
         tasks.len(),
         1,

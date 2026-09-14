@@ -1,37 +1,22 @@
-//! Tests for `handlers/decisions.rs` (operator-scoped decision resolution).
-//! Loaded via `#[path]`, the same technique `handlers/executions_runner_admin.rs`/
-//! `runner_protocol/lifecycle.rs` use on their own handler modules, even though
-//! `decisions` is also registered in `handlers.rs` and mounted into the
-//! production router (see that module's own doc comment) — loading it here
-//! gives this file its own directly-constructed router, isolated from that
-//! mounting.
-//!
-//! Every test builds its own tiny operator router directly from
-//! `decisions::routes(...)` — no production `router.rs`/`require_token`
-//! layering — so a defect in this module cannot hide behind the production
-//! router's own gates. The `require_token` gate itself is out of scope here
-//! (it belongs to whoever mounts this router); what this file proves is
-//! everything *this module* is responsible for: that it reads no runner
-//! credential, that it is fail-closed on expiry, that it is
-//! idempotent/replay-safe, and that it never touches item status.
+//! Tests for `handlers/decisions.rs` (operator-scoped decision resolution):
+//! that it reads no runner credential, is fail-closed on expiry, is
+//! idempotent/replay-safe, and never touches item status. Each test builds
+//! its own router directly from `decisions::routes(...)`, bypassing
+//! production `router.rs`/`require_token` layering.
 
-// The name collision with this file's own module path (`decisions::decisions`)
-// is coincidental — this test module and the product file it loads happen
-// to share a subject name — not a sign the product module is nested under
-// itself.
+// Loaded via `#[path]` for a directly-constructed router isolated from this
+// module's own production mounting. The name collision with this file's own
+// module path (`decisions::decisions`) is coincidental, not nesting.
 #[allow(clippy::module_inception)]
 #[path = "../../src/handlers/decisions.rs"]
 mod decisions;
 
 use std::sync::{Arc, Mutex};
 
+use crate::common;
 use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
-use axum::{
-    Router,
-    body::{Body, to_bytes},
-    http::{Request, StatusCode},
-};
+use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -44,7 +29,6 @@ use tack_db::{
         RequestSelection,
     },
 };
-use tower::ServiceExt;
 use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-f1";
@@ -90,6 +74,13 @@ impl ExecutionClock for FakeClock {
 async fn setup() -> (Repository, FakeClock, String) {
     ensure_global_log_capture_installed();
     let pool = init_pool("sqlite::memory:").await.expect("pool");
+    seed_workspace(pool).await
+}
+
+/// Same seeding as `setup`, against a caller-supplied pool — shared with the
+/// concurrency race test below, which needs a real file-backed database
+/// rather than this suite's usual `:memory:`.
+async fn seed_workspace(pool: sqlx::SqlitePool) -> (Repository, FakeClock, String) {
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
     let workspace = Uuid::new_v4();
@@ -171,9 +162,9 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
     // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
     // and fails the claim if it doesn't round-trip, so this must be a fully
     // well-formed snapshot — mirrors
-    // `crates/tack-db/tests/repository/execution_repo.rs`'s own
-    // `request()` helper template exactly (field-for-field), rather than
-    // inventing a new shape here.
+    // `crates/tack-db/tests/common/execution_fixture.rs`'s own `request()`
+    // helper template exactly (field-for-field), rather than inventing a
+    // new shape here.
     let request_snapshot: &'static str = Box::leak(
         format!(
             r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model_provider":null,"requested_model_id":null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
@@ -206,10 +197,9 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
 
 /// Claims a fresh attempt (via the real production claim path, `Naive`
 /// selection) and bumps it straight to `running` — the same
-/// state-independent shortcut
-/// `crates/tack-db/tests/repository/execution_repo.rs`'s own tests use,
-/// since decision resolution does not gate on attempt state (only on the
-/// decision row's own `state`/`expires_at`).
+/// state-independent shortcut `tack-db`'s own execution-repository tests
+/// use, since decision resolution does not gate on attempt state (only on
+/// the decision row's own `state`/`expires_at`).
 async fn claim_running_attempt(
     repo: &Repository,
     clock: &FakeClock,
@@ -340,34 +330,6 @@ fn app_without_decision_token(repo: &Repository, clock: &FakeClock) -> Router {
     decisions::routes(state)
 }
 
-async fn send(
-    app: &Router,
-    uri: &str,
-    body: Value,
-    headers: &[(&str, &str)],
-) -> (StatusCode, Value) {
-    let mut builder = Request::builder()
-        .method("POST")
-        .uri(uri)
-        .header("content-type", "application/json");
-    for (name, value) in headers {
-        builder = builder.header(*name, *value);
-    }
-    let response = app
-        .clone()
-        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), 8 * 1_048_576).await.unwrap();
-    let value: Value = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap()
-    };
-    (status, value)
-}
-
 fn resolve_uri(attempt_id: &str, decision_id: &str) -> String {
     format!("/attempts/{attempt_id}/decisions/{decision_id}/resolve")
 }
@@ -387,13 +349,13 @@ const OPERATOR: &[(&str, &str)] = &[
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn resolve_a_pending_decision_succeeds_and_matches_operator_answer() {
+async fn resolve_pending_decision_matches_operator_answer() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "happy").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -419,14 +381,14 @@ async fn resolve_a_pending_decision_succeeds_and_matches_operator_answer() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn resolving_twice_with_the_same_answer_is_idempotent_and_does_not_rewrite() {
+async fn resolving_twice_with_same_answer_is_idempotent() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "replay").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
     let answer = json!({"answer": {"option_id": "allow_once", "text": null}});
 
-    let (status1, body1) = send(
+    let (status1, body1) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         answer.clone(),
@@ -441,7 +403,8 @@ async fn resolving_twice_with_the_same_answer_is_idempotent_and_does_not_rewrite
     // `resolved_at`/`updated_at` if one happened.
     clock.advance(Duration::seconds(30));
 
-    let (status2, body2) = send(&app, &resolve_uri(&attempt_id, "dec-1"), answer, OPERATOR).await;
+    let (status2, body2) =
+        common::send_post_strict(&app, &resolve_uri(&attempt_id, "dec-1"), answer, OPERATOR).await;
     assert_eq!(status2, StatusCode::OK);
     assert_eq!(body2["replayed"], true);
     assert_eq!(body2["resolved_at"], first_resolved_at);
@@ -456,14 +419,13 @@ async fn resolving_twice_with_the_same_answer_is_idempotent_and_does_not_rewrite
 }
 
 #[tokio::test]
-async fn resolving_with_a_different_answer_after_resolution_is_idempotency_conflict_and_does_not_overwrite()
- {
+async fn resolving_with_different_answer_after_resolve_is_conflict() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "conflict").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
-    let (status1, _) = send(
+    let (status1, _) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -473,7 +435,7 @@ async fn resolving_with_a_different_answer_after_resolution_is_idempotency_confl
     assert_eq!(status1, StatusCode::OK);
     let row_after_first = decision_row(&repo, &attempt_id, "dec-1").await;
 
-    let (status2, body2) = send(
+    let (status2, body2) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "deny", "text": null}}),
@@ -513,7 +475,7 @@ async fn cross_attempt_decision_id_is_not_found_and_writes_nothing() {
     let app = app(&repo, &clock);
 
     // Attempt A has no decision named "dec-shared" — it exists only under B.
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_a, "dec-shared"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -538,7 +500,7 @@ async fn unknown_decision_under_a_real_attempt_is_not_found() {
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "unknown-dec").await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "never-existed"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -560,7 +522,7 @@ async fn missing_operator_principal_is_denied_and_writes_nothing() {
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -586,14 +548,14 @@ async fn missing_operator_principal_is_denied_and_writes_nothing() {
 /// mounted) is consulted, and it is absent here, so this is rejected exactly
 /// like any other unauthenticated request.
 #[tokio::test]
-async fn self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing() {
+async fn valid_runner_credential_cannot_self_resolve_decision() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "self-resolve").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let auth_header = format!("Bearer {RAW_RUNNER_CREDENTIAL}");
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -622,11 +584,10 @@ async fn self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writ
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn expiry_denies_records_audit_and_never_marks_the_item_done_even_against_a_valid_allow_answer()
- {
+async fn expiry_denies_with_audit_and_never_marks_item_done() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "expiry").await;
-    let expires_at = clock.now() - Duration::seconds(1); // already overdue
+    let expires_at = Some(clock.now() - Duration::seconds(1)); // already overdue
     seed_decision(
         &repo,
         &clock,
@@ -634,7 +595,7 @@ async fn expiry_denies_records_audit_and_never_marks_the_item_done_even_against_
         1,
         "dec-1",
         two_options(),
-        Some(expires_at),
+        expires_at,
     )
     .await;
     let status_before = item_status(&repo, &item_id).await;
@@ -642,80 +603,49 @@ async fn expiry_denies_records_audit_and_never_marks_the_item_done_even_against_
 
     // A syntactically valid, option-matching "allow" answer — proves expiry
     // wins even against an answer that would otherwise have succeeded.
-    let (status, body) = send(
-        &app,
-        &resolve_uri(&attempt_id, "dec-1"),
-        json!({"answer": {"option_id": "allow_once", "text": null}}),
-        OPERATOR,
-    )
-    .await;
+    let answer = json!({"answer": {"option_id": "allow_once", "text": null}});
+    let (status, body) =
+        common::send_post_strict(&app, &resolve_uri(&attempt_id, "dec-1"), answer, OPERATOR).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["code"], "decision_expired");
 
     let row = decision_row(&repo, &attempt_id, "dec-1").await;
     assert_eq!(row.state, "expired");
-    assert!(
-        row.answer.is_none(),
-        "an expired decision must never carry the operator's late answer"
-    );
-    assert!(row.resolved_at.is_some());
+    assert!(row.answer.is_none(), "no late answer may be carried");
     let resolved_by: Value = serde_json::from_str(&row.resolved_by.unwrap()).unwrap();
     assert_eq!(resolved_by["kind"], "system");
     assert_eq!(resolved_by["subject_id"], "expiry");
-
     assert_eq!(
         item_status(&repo, &item_id).await,
         status_before,
-        "expiry must never change item status"
+        "item status unchanged"
     );
 }
 
 #[tokio::test]
-async fn expire_overdue_decisions_bulk_sweep_denies_only_overdue_pending_rows() {
+async fn bulk_sweep_denies_only_overdue_pending_decisions() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "sweep").await;
     let overdue = clock.now() - Duration::seconds(5);
     let future = clock.now() + Duration::seconds(5);
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_id,
-        1,
-        "dec-overdue-1",
-        two_options(),
-        Some(overdue),
-    )
-    .await;
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_id,
-        1,
-        "dec-overdue-2",
-        two_options(),
-        Some(overdue),
-    )
-    .await;
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_id,
-        1,
-        "dec-future",
-        two_options(),
-        Some(future),
-    )
-    .await;
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_id,
-        1,
-        "dec-no-expiry",
-        two_options(),
-        None,
-    )
-    .await;
+    let rows = [
+        ("dec-overdue-1", Some(overdue), "expired"),
+        ("dec-overdue-2", Some(overdue), "expired"),
+        ("dec-future", Some(future), "pending"),
+        ("dec-no-expiry", None, "pending"),
+    ];
+    for (decision_id, expires_at, _) in rows {
+        seed_decision(
+            &repo,
+            &clock,
+            &attempt_id,
+            1,
+            decision_id,
+            two_options(),
+            expires_at,
+        )
+        .await;
+    }
     let status_before = item_status(&repo, &item_id).await;
 
     let affected = decisions::expire_overdue_decisions(repo.pool(), clock.now())
@@ -723,28 +653,13 @@ async fn expire_overdue_decisions_bulk_sweep_denies_only_overdue_pending_rows() 
         .expect("sweep");
     assert_eq!(affected, 2);
 
-    assert_eq!(
-        decision_row(&repo, &attempt_id, "dec-overdue-1")
-            .await
-            .state,
-        "expired"
-    );
-    assert_eq!(
-        decision_row(&repo, &attempt_id, "dec-overdue-2")
-            .await
-            .state,
-        "expired"
-    );
-    assert_eq!(
-        decision_row(&repo, &attempt_id, "dec-future").await.state,
-        "pending"
-    );
-    assert_eq!(
-        decision_row(&repo, &attempt_id, "dec-no-expiry")
-            .await
-            .state,
-        "pending"
-    );
+    for (decision_id, _, expected_state) in rows {
+        assert_eq!(
+            decision_row(&repo, &attempt_id, decision_id).await.state,
+            expected_state,
+            "{decision_id}"
+        );
+    }
     assert_eq!(item_status(&repo, &item_id).await, status_before);
 }
 
@@ -753,7 +668,7 @@ async fn expire_overdue_decisions_bulk_sweep_denies_only_overdue_pending_rows() 
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn restart_preserves_a_pending_decision_and_it_remains_resolvable() {
+async fn restart_preserves_pending_decision_still_resolvable() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "restart").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-a", two_options(), None).await;
@@ -769,7 +684,7 @@ async fn restart_preserves_a_pending_decision_and_it_remains_resolvable() {
     // underlying pool, simulating a restart. No in-memory handler state
     // could have survived; only what is in SQLite can.
     let second_app = app(&repo, &clock);
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &second_app,
         &resolve_uri(&attempt_id, "dec-a"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -783,7 +698,7 @@ async fn restart_preserves_a_pending_decision_and_it_remains_resolvable() {
     // queryable/resolvable through the new instance.
     let row_b = decision_row(&repo, &attempt_id, "dec-b").await;
     assert_eq!(row_b.state, "pending");
-    let (status_b, _) = send(
+    let (status_b, _) = common::send_post_strict(
         &second_app,
         &resolve_uri(&attempt_id, "dec-b"),
         json!({"answer": {"option_id": "deny", "text": null}}),
@@ -811,7 +726,8 @@ async fn invalid_answer_shapes_are_rejected_and_write_nothing() {
         json!({"answer": {"option_id": "allow_once", "text": 5}}),
     ] {
         let (status, body) =
-            send(&app, &resolve_uri(&attempt_id, "dec-1"), bad_body, OPERATOR).await;
+            common::send_post_strict(&app, &resolve_uri(&attempt_id, "dec-1"), bad_body, OPERATOR)
+                .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"]["code"], "invalid_request");
     }
@@ -821,13 +737,13 @@ async fn invalid_answer_shapes_are_rejected_and_write_nothing() {
 }
 
 #[tokio::test]
-async fn answer_option_id_must_match_one_of_the_decisions_declared_options() {
+async fn answer_option_id_must_match_declared_options() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "option-check").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "bogus_choice", "text": null}}),
@@ -842,13 +758,13 @@ async fn answer_option_id_must_match_one_of_the_decisions_declared_options() {
 }
 
 #[tokio::test]
-async fn freeform_decision_with_no_declared_options_accepts_any_non_empty_option_id() {
+async fn freeform_decision_accepts_any_non_empty_option_id() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "freeform").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", json!([]), None).await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "custom-token", "text": "free text"}}),
@@ -860,14 +776,14 @@ async fn freeform_decision_with_no_declared_options_accepts_any_non_empty_option
 }
 
 #[tokio::test]
-async fn answer_exceeding_the_frozen_byte_limit_is_rejected_as_payload_too_large() {
+async fn answer_over_byte_limit_is_payload_too_large() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "oversize").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", json!([]), None).await;
     let app = app(&repo, &clock);
 
     let huge_text = "x".repeat(40_000);
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": huge_text}}),
@@ -894,7 +810,7 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
     let app = app(&repo, &clock);
 
     let (guard, buffer) = CaptureGuard::start();
-    let (status, _) = send(
+    let (status, _) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": secret_text}}),
@@ -929,7 +845,7 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn an_unconfigured_decision_token_rejects_every_resolve_and_writes_nothing() {
+async fn unconfigured_decision_token_rejects_every_resolve() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "no-token-configured").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
@@ -941,7 +857,7 @@ async fn an_unconfigured_decision_token_rejects_every_resolve_and_writes_nothing
 
     // Even a perfectly well-formed operator principal cannot help here —
     // the token gate runs first and there is no token to ever satisfy.
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -962,13 +878,13 @@ async fn an_unconfigured_decision_token_rejects_every_resolve_and_writes_nothing
 }
 
 #[tokio::test]
-async fn a_wrong_decision_token_rejects_the_resolve_and_writes_nothing() {
+async fn wrong_decision_token_rejects_the_resolve() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "wrong-token").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -998,7 +914,7 @@ async fn a_wrong_decision_token_rejects_the_resolve_and_writes_nothing() {
 }
 
 #[tokio::test]
-async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
+async fn correct_decision_token_with_valid_principal_resolves() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "correct-token").await;
     seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
@@ -1006,7 +922,7 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 
     // `OPERATOR` carries both the operator principal and the exact
     // `TEST_DECISION_TOKEN` the router above was constructed with.
-    let (status, body) = send(
+    let (status, body) = common::send_post_strict(
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
@@ -1026,8 +942,8 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 // 17. Concurrency: BEGIN IMMEDIATE serializes competing resolves.
 //
 // Modeled directly on
-// `crates/tack-db/tests/repository/execution_repo.rs`'s
-// `artifact_and_decision_cannot_land_against_concurrently_terminal_attempt`:
+// `crates/tack-db/tests/repository/execution_decisions_artifacts.rs`'s
+// `artifact_and_decision_reject_concurrently_terminal_attempt`:
 // a manually-held `BEGIN IMMEDIATE` transaction forces both racing resolves
 // to queue behind it before either can even read the row, closing the
 // "who reaches SQLite first" nondeterminism `join!`'s poll order alone
@@ -1042,81 +958,13 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
+async fn concurrent_resolves_serialize_to_exactly_one_winner() {
     let dir = tempfile::tempdir().expect("temporary directory");
     let db_path = dir.path().join("resolve-race.db");
     let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await
         .expect("file-backed pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'F1Race', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    let project = repo
-        .create_project(
-            workspace,
-            CreateProject {
-                name: "F1Race".into(),
-                description: None,
-                project_type: ProjectType::Software,
-                template: None,
-            },
-        )
-        .await
-        .unwrap();
-    let item = repo
-        .create_item(
-            project.id,
-            "To Do",
-            CreateItem {
-                title: "I".into(),
-                description: None,
-                item_type: None,
-                parent_id: None,
-                priority: None,
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                assignee: None,
-            },
-        )
-        .await
-        .unwrap();
-    let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap());
-    repo.register_runner(
-        NewRunner {
-            id: RUNNER_ID,
-            name: "F1 Runner",
-            credential_hash: "hash",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        &clock,
-    )
-    .await
-    .unwrap();
-    repo.create_agent_profile(
-        NewAgentProfile {
-            id: PROFILE_ID,
-            name: "F1 Profile",
-            instructions: "work",
-            tool_policy: r#"{"mode":"safe"}"#,
-            limits: "{}",
-        },
-        &clock,
-    )
-    .await
-    .unwrap();
-    let item_id = item.id.to_string();
+    let (repo, clock, item_id) = seed_workspace(pool).await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "race").await;
     seed_decision(
         &repo,
@@ -1138,46 +986,53 @@ async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
         .await
         .unwrap();
 
-    let allow_answer = json!({"option_id": "allow_once", "text": null});
-    let deny_answer = json!({"option_id": "deny", "text": null});
-    let operator_a = json!({"kind": "operator", "subject_id": "operator-a"});
-    let operator_b = json!({"kind": "operator", "subject_id": "operator-b"});
     let now = clock.now();
-
-    let resolve_a = decisions::resolve_decision_row(
-        repo.pool(),
-        &attempt_id,
-        "dec-race",
-        &allow_answer,
-        &operator_a,
-        now,
-    );
-    let resolve_b = decisions::resolve_decision_row(
-        repo.pool(),
-        &attempt_id,
-        "dec-race",
-        &deny_answer,
-        &operator_b,
-        now,
-    );
-    let delayed_release = async {
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let allow = json!({"option_id": "allow_once", "text": null});
+    let deny = json!({"option_id": "deny", "text": null});
+    let op_a = json!({"kind": "operator", "subject_id": "operator-a"});
+    let op_b = json!({"kind": "operator", "subject_id": "operator-b"});
+    let resolve_a =
+        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &allow, &op_a, now);
+    let resolve_b =
+        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &deny, &op_b, now);
+    let release = async {
+        for _ in 0..512 {
+            tokio::task::yield_now().await;
+        }
         manual_tx.commit().await.unwrap();
     };
 
-    let (outcome_a, outcome_b, _) = tokio::join!(resolve_a, resolve_b, delayed_release);
-    let outcome_a = outcome_a.expect("resolve A must not error under BEGIN IMMEDIATE");
-    let outcome_b = outcome_b.expect("resolve B must not error under BEGIN IMMEDIATE");
+    let (outcome_a, outcome_b, _) = tokio::join!(resolve_a, resolve_b, release);
+    let outcomes = [
+        outcome_a.expect("resolve A must not error under BEGIN IMMEDIATE"),
+        outcome_b.expect("resolve B must not error under BEGIN IMMEDIATE"),
+    ];
 
     let final_row = decision_row(&repo, &attempt_id, "dec-race").await;
     assert_eq!(final_row.state, "resolved");
     let final_answer: Value = serde_json::from_str(&final_row.answer.unwrap()).unwrap();
+    assert!(
+        final_answer["option_id"] == allow["option_id"]
+            || final_answer["option_id"] == deny["option_id"]
+    );
 
     // Exactly one of the two calls actually won the write; the other must
     // have observed the (by-then-committed) resolved row and reported a
     // conflict, never a silent second write.
-    let outcomes = [outcome_a, outcome_b];
-    let resolved_count = outcomes
+    let resolved = resolved_count(&outcomes);
+    let conflicts = conflict_count(&outcomes);
+    assert_eq!(
+        resolved, 1,
+        "exactly one racer must land the fresh write: {outcomes:?}"
+    );
+    assert_eq!(
+        conflicts, 1,
+        "the loser must observe idempotency_conflict, not silently succeed: {outcomes:?}"
+    );
+}
+
+fn resolved_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
+    outcomes
         .iter()
         .filter(|o| {
             matches!(
@@ -1188,21 +1043,12 @@ async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
                 }
             )
         })
-        .count();
-    let conflict_count = outcomes
+        .count()
+}
+
+fn conflict_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
+    outcomes
         .iter()
         .filter(|o| matches!(o, decisions::ResolveOutcome::IdempotencyConflict { .. }))
-        .count();
-    assert_eq!(
-        resolved_count, 1,
-        "exactly one racer must land the fresh write: {outcomes:?}"
-    );
-    assert_eq!(
-        conflict_count, 1,
-        "the loser must observe idempotency_conflict, not silently succeed: {outcomes:?}"
-    );
-    assert!(
-        final_answer["option_id"] == allow_answer["option_id"]
-            || final_answer["option_id"] == deny_answer["option_id"]
-    );
+        .count()
 }

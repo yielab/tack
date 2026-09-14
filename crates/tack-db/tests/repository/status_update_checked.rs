@@ -20,7 +20,7 @@ const TARGET: &str = "In Progress";
 const WIP_LIMIT: usize = 5;
 
 #[tokio::test]
-async fn applies_the_transition_when_under_the_limit() {
+async fn applies_transition_under_limit() {
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;
@@ -44,42 +44,70 @@ async fn applies_the_transition_when_under_the_limit() {
     assert_eq!(reloaded.status, TARGET);
 }
 
+fn titled_item(title: String) -> CreateItem {
+    CreateItem {
+        title,
+        description: None,
+        item_type: Some(ItemType::Task),
+        parent_id: None,
+        priority: Some(Priority::Medium),
+        estimate: None,
+        estimate_unit: None,
+        tags: None,
+        due_date: None,
+        sprint_id: None,
+        assignee: None,
+    }
+}
+
+/// Fills `status` with `count` freshly created items, asserting each lands there.
+async fn fill_column(repo: &tack_db::Repository, project_id: Uuid, status: &str, count: usize) {
+    for i in 0..count {
+        let filler = repo
+            .create_item(project_id, status, titled_item(format!("Filler {i}")))
+            .await
+            .unwrap();
+        assert_eq!(filler.status, status);
+    }
+}
+
+async fn assert_column_count(
+    repo: &tack_db::Repository,
+    project_id: Uuid,
+    status: &str,
+    want: i64,
+) {
+    assert_eq!(
+        repo.count_items_by_status(project_id, status)
+            .await
+            .unwrap(),
+        want
+    );
+}
+
+fn assert_wip_limit_exceeded(outcome: StatusUpdateOutcome, column: &str, limit: usize) {
+    match outcome {
+        StatusUpdateOutcome::Rejected(CoreError::WipLimitExceeded {
+            column: c,
+            limit: l,
+            current,
+        }) => {
+            assert_eq!(c, column);
+            assert_eq!(l, limit);
+            assert_eq!(current, limit);
+        }
+        StatusUpdateOutcome::Rejected(other) => panic!("expected WipLimitExceeded, got {other}"),
+        StatusUpdateOutcome::Applied(_) => panic!("expected Rejected, the column is already full"),
+    }
+}
+
 #[tokio::test]
-async fn rejects_and_leaves_the_item_untouched_once_the_column_is_at_its_limit() {
+async fn rejects_at_limit_leaves_item_and_count_untouched() {
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;
-
-    // Fill the column to exactly its limit with WIP_LIMIT other items.
-    for i in 0..WIP_LIMIT {
-        let filler = repo
-            .create_item(
-                project.id,
-                TARGET,
-                CreateItem {
-                    title: format!("Filler {i}"),
-                    description: None,
-                    item_type: Some(ItemType::Task),
-                    parent_id: None,
-                    priority: Some(Priority::Medium),
-                    estimate: None,
-                    estimate_unit: None,
-                    tags: None,
-                    due_date: None,
-                    sprint_id: None,
-                    assignee: None,
-                },
-            )
-            .await
-            .unwrap();
-        assert_eq!(filler.status, TARGET);
-    }
-    assert_eq!(
-        repo.count_items_by_status(project.id, TARGET)
-            .await
-            .unwrap(),
-        WIP_LIMIT as i64
-    );
+    fill_column(&repo, project.id, TARGET, WIP_LIMIT).await;
+    assert_column_count(&repo, project.id, TARGET, WIP_LIMIT as i64).await;
 
     let item = common::make_item(&repo, &project).await;
     let outcome = repo
@@ -87,60 +115,24 @@ async fn rejects_and_leaves_the_item_untouched_once_the_column_is_at_its_limit()
         .await
         .expect("db call")
         .expect("item exists");
+    assert_wip_limit_exceeded(outcome, TARGET, WIP_LIMIT);
 
-    match outcome {
-        StatusUpdateOutcome::Rejected(CoreError::WipLimitExceeded {
-            column,
-            limit,
-            current,
-        }) => {
-            assert_eq!(column, TARGET);
-            assert_eq!(limit, WIP_LIMIT);
-            assert_eq!(current, WIP_LIMIT);
-        }
-        StatusUpdateOutcome::Rejected(other) => {
-            panic!("expected WipLimitExceeded, got {other}")
-        }
-        StatusUpdateOutcome::Applied(_) => panic!("expected Rejected, the column is already full"),
-    }
-
-    // The item itself was left exactly where it started — no partial write.
+    // The item itself was left exactly where it started — no partial write — and the
+    // column's count didn't move either.
     let reloaded = repo.get_item(item.id).await.unwrap().unwrap();
     assert_eq!(reloaded.status, "Backlog");
-    // And the column's count didn't move either.
-    assert_eq!(
-        repo.count_items_by_status(project.id, TARGET)
-            .await
-            .unwrap(),
-        WIP_LIMIT as i64
-    );
+    assert_column_count(&repo, project.id, TARGET, WIP_LIMIT as i64).await;
 }
 
 #[tokio::test]
-async fn a_status_with_no_configured_limit_always_applies() {
+async fn status_with_no_limit_always_applies() {
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;
     // "Done" has no wip_limit in scrum_workflow().
     for i in 0..50 {
         let item = repo
-            .create_item(
-                project.id,
-                "Backlog",
-                CreateItem {
-                    title: format!("Item {i}"),
-                    description: None,
-                    item_type: Some(ItemType::Task),
-                    parent_id: None,
-                    priority: Some(Priority::Medium),
-                    estimate: None,
-                    estimate_unit: None,
-                    tags: None,
-                    due_date: None,
-                    sprint_id: None,
-                    assignee: None,
-                },
-            )
+            .create_item(project.id, "Backlog", titled_item(format!("Item {i}")))
             .await
             .unwrap();
         let outcome = repo
@@ -158,8 +150,28 @@ async fn a_status_with_no_configured_limit_always_applies() {
     );
 }
 
+async fn apply_checked(
+    repo: &tack_db::Repository,
+    item_id: Uuid,
+    project_id: Uuid,
+    status: &str,
+    category: tack_core::workflow::StatusCategory,
+    workflow: &tack_core::workflow::WorkflowConfig,
+) -> tack_core::models::Item {
+    let outcome = repo
+        .update_item_status_checked(item_id, project_id, status, Some(category), workflow)
+        .await
+        .unwrap()
+        .unwrap();
+    match outcome {
+        StatusUpdateOutcome::Applied(i) => *i,
+        StatusUpdateOutcome::Rejected(e) => panic!("unexpected rejection: {e}"),
+    }
+}
+
 #[tokio::test]
-async fn status_category_updates_started_at_and_completed_at_the_same_way_update_item_does() {
+async fn status_category_stamps_started_and_completed_at() {
+    use tack_core::workflow::StatusCategory;
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;
@@ -168,46 +180,34 @@ async fn status_category_updates_started_at_and_completed_at_the_same_way_update
     assert!(item.completed_at.is_none());
 
     // Entering an InProgress-category status stamps started_at.
-    let outcome = repo
-        .update_item_status_checked(
-            item.id,
-            project.id,
-            TARGET,
-            Some(tack_core::workflow::StatusCategory::InProgress),
-            &project.workflow,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let updated = match outcome {
-        StatusUpdateOutcome::Applied(i) => *i,
-        StatusUpdateOutcome::Rejected(e) => panic!("unexpected rejection: {e}"),
-    };
+    let updated = apply_checked(
+        &repo,
+        item.id,
+        project.id,
+        TARGET,
+        StatusCategory::InProgress,
+        &project.workflow,
+    )
+    .await;
     assert!(updated.started_at.is_some());
     assert!(updated.completed_at.is_none());
 
     // Entering a Done-category status stamps completed_at, keeps started_at.
-    let outcome = repo
-        .update_item_status_checked(
-            item.id,
-            project.id,
-            "Done",
-            Some(tack_core::workflow::StatusCategory::Done),
-            &project.workflow,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let done = match outcome {
-        StatusUpdateOutcome::Applied(i) => *i,
-        StatusUpdateOutcome::Rejected(e) => panic!("unexpected rejection: {e}"),
-    };
+    let done = apply_checked(
+        &repo,
+        item.id,
+        project.id,
+        "Done",
+        StatusCategory::Done,
+        &project.workflow,
+    )
+    .await;
     assert!(done.started_at.is_some());
     assert!(done.completed_at.is_some());
 }
 
 #[tokio::test]
-async fn an_unknown_item_id_returns_none_rather_than_an_error() {
+async fn unknown_item_id_returns_none_not_error() {
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;

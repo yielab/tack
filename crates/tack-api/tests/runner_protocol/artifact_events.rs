@@ -1,30 +1,17 @@
 //! HTTP tests: artifact content upload/download and the redaction guarantee
-//! over event/artifact payloads.
-//!
-//! Loads `handlers/runner_protocol.rs` (and, through it, its own
-//! `artifact_storage`/`retention`/`artifact_download` submodules) the same
-//! way `lifecycle.rs` does — via `#[path]`, independently of that file's
-//! own copy (see the `#[allow(clippy::duplicate_mod)]` below).
-//! `artifact_download::routes(...)` is proven here as its own,
-//! separately-constructed local router (never merged with the runner-only
-//! `runner_protocol::routes(...)` router), isolating this file's
-//! fencing/immutability/path-safety/redaction claims from the production
-//! router's own auth and mounting. That route is also mounted in the real
-//! production router (`router.rs#operator_execution_routes`) and proven end
-//! to end by `artifact.rs` (the `wiring` binary).
-//!
-//! Repository-level atomicity/retention proofs (forced insert failure,
-//! bounded-batch purge) live in
-//! `crates/tack-db/tests/repository/event_artifact_retention.rs`; the deep
-//! bounded-memory / "compression bomb" proof lives in
-//! `artifact_storage.rs`'s own colocated unit tests. This file proves the
-//! HTTP wiring: the real route, the real per-route body-limit override, the
-//! real fencing/immutability/path-safety behavior end to end, and log
-//! redaction over a real captured `tracing` subscriber.
+//! over event/artifact payloads. Repository-level atomicity/retention
+//! proofs live in `tack-db`'s `repository/event_artifact_retention.rs`;
+//! the storage primitive's own unit tests live beside it in
+//! `artifact_storage.rs`. This file proves the HTTP wiring end to end.
 
 // `lifecycle`'s own copy of this same `#[path]` load is a second,
 // independent module tree over the identical file — allowed deliberately,
-// see that module's own comment on its copy.
+// see that module's own comment on its copy. `artifact_download::routes(...)`
+// below is proven as its own, separately-constructed local router (never
+// merged with the runner-only `runner_protocol::routes(...)` router),
+// isolating this file's claims from the production router's own auth and
+// mounting — that route is also mounted in the real production router and
+// proven end to end by the `wiring` binary's `artifact.rs`.
 #[allow(clippy::duplicate_mod)]
 #[path = "../../src/handlers/runner_protocol.rs"]
 mod runner_protocol;
@@ -428,6 +415,149 @@ async fn ready_running_attempt(
     }
 }
 
+/// The router/repo, a running attempt ready for artifact/event writes, and
+/// its storage root — the setup every test below starts from.
+struct Fixture {
+    app: Router,
+    repo: Repository,
+    storage_root_dir: tempfile::TempDir,
+    attempt: RunningAttempt,
+}
+
+impl Fixture {
+    async fn new(label: &str) -> Self {
+        let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+        let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, label).await;
+        Fixture {
+            app,
+            repo,
+            storage_root_dir,
+            attempt,
+        }
+    }
+
+    fn storage_root(&self) -> &std::path::Path {
+        self.storage_root_dir.path()
+    }
+
+    async fn manifest(&self, artifact_id: &str, content: &[u8], media_type: Option<&str>) -> Value {
+        manifest_artifact(&self.app, &self.attempt, artifact_id, content, media_type).await
+    }
+
+    async fn put(
+        &self,
+        uri: &str,
+        body: Vec<u8>,
+        extra_headers: &[(&str, &str)],
+    ) -> (StatusCode, Value) {
+        put_content(&self.app, uri, body, extra_headers).await
+    }
+
+    fn auth(&self) -> (String, String) {
+        auth_header(&self.attempt)
+    }
+
+    fn fence(&self) -> (String, String) {
+        fencing_header(&self.attempt)
+    }
+
+    /// [`Fixture::auth`]/[`Fixture::fence`] as the `&[(&str, &str)]` header
+    /// pair every content PUT sends.
+    /// PUT `content` to `artifact_id`'s content endpoint with the correct
+    /// auth/fencing headers plus whatever `extra_headers` a test needs
+    /// (e.g. `content-type`, or a deliberately wrong fencing token).
+    async fn upload(
+        &self,
+        artifact_id: &str,
+        content: Vec<u8>,
+        extra_headers: &[(&str, &str)],
+    ) -> (StatusCode, Value) {
+        let (auth, fence) = (self.auth(), self.fence());
+        let mut headers = vec![
+            (auth.0.as_str(), auth.1.as_str()),
+            (fence.0.as_str(), fence.1.as_str()),
+        ];
+        headers.extend_from_slice(extra_headers);
+        self.put(&self.content_uri(artifact_id), content, &headers)
+            .await
+    }
+
+    async fn cleanup(&self) {
+        let _ = tokio::fs::remove_dir_all(self.storage_root()).await;
+    }
+
+    fn content_uri(&self, artifact_id: &str) -> String {
+        content_uri(&self.attempt, artifact_id)
+    }
+
+    /// `(attempt_number, request_id)`, the two ids an operator-facing
+    /// download URI is built from.
+    async fn attempt_location(&self) -> (i64, String) {
+        let attempt_id = &self.attempt.attempt_id;
+        let attempt_number: i64 =
+            sqlx::query_scalar("SELECT attempt_number FROM execution_attempts WHERE id=?")
+                .bind(attempt_id)
+                .fetch_one(self.repo.pool())
+                .await
+                .unwrap();
+        let request_id: String =
+            sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id=?")
+                .bind(attempt_id)
+                .fetch_one(self.repo.pool())
+                .await
+                .unwrap();
+        (attempt_number, request_id)
+    }
+
+    fn download_router(&self) -> Router {
+        download_router(&self.repo, self.storage_root())
+    }
+
+    async fn stored_reference(&self, artifact_id: &str) -> Option<String> {
+        sqlx::query_scalar(
+            "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id=?",
+        )
+        .bind(&self.attempt.attempt_id)
+        .bind(artifact_id)
+        .fetch_one(self.repo.pool())
+        .await
+        .unwrap()
+    }
+
+    async fn attempt_dir_is_empty(&self) -> bool {
+        let dir = self
+            .storage_root()
+            .join(hex_encode(&self.attempt.attempt_id));
+        dir_is_empty_or_absent(&dir).await
+    }
+}
+
+/// The operator-facing download sub-router, constructed locally per
+/// `artifact_download.rs`'s own doc comment (never merged into the
+/// runner-only protocol router).
+fn download_router(repo: &Repository, storage_root: &std::path::Path) -> Router {
+    let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
+        repo: repo.clone(),
+        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
+            storage_root,
+        )),
+    };
+    runner_protocol::artifact_download::routes(download_state)
+}
+
+/// `GET uri` against a download router, as the operator principal when
+/// `as_operator` is set.
+async fn get_download(app: &Router, uri: &str, as_operator: bool) -> axum::http::Response<Body> {
+    let mut builder = Request::builder().method("GET").uri(uri);
+    if as_operator {
+        builder = builder.header("x-tack-principal", "operator-test");
+    }
+    app.clone()
+        .oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(Sha256::digest(bytes))
@@ -502,26 +632,14 @@ async fn dir_is_empty_or_absent(path: &std::path::Path) -> bool {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn artifact_content_round_trips_through_upload_and_download() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "roundtrip").await;
+async fn artifact_content_upload_commits_verified_state() {
+    let fx = Fixture::new("roundtrip").await;
     let content = b"diff --git a/x b/x\n+hello\n".to_vec();
-    manifest_artifact(&app, &attempt, "art-1", &content, Some("text/x-diff")).await;
+    fx.manifest("art-1", &content, Some("text/x-diff")).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let (status, uploaded) = put_content(
-        &app,
-        &content_uri(&attempt, "art-1"),
-        content.clone(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-            ("content-type", "text/x-diff"),
-        ],
-    )
-    .await;
+    let (status, uploaded) = fx
+        .upload("art-1", content.clone(), &[("content-type", "text/x-diff")])
+        .await;
     assert_eq!(status, StatusCode::OK, "{uploaded}");
     assert_eq!(uploaded["state"], "content_verified");
     assert_eq!(uploaded["size_bytes"], content.len());
@@ -529,167 +647,106 @@ async fn artifact_content_round_trips_through_upload_and_download() {
     let stored_reference: Option<String> = sqlx::query_scalar(
         "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-1'",
     )
-    .bind(&attempt.attempt_id)
-    .fetch_one(repo.pool())
+    .bind(&fx.attempt.attempt_id)
+    .fetch_one(fx.repo.pool())
     .await
     .unwrap();
     assert!(stored_reference.is_some());
+    fx.cleanup().await;
+}
 
-    // Download via the operator-facing router, constructed locally per
-    // `artifact_download.rs`'s own doc comment (not merged into the
-    // runner-only `app` router above).
-    let attempt_number: i64 =
-        sqlx::query_scalar("SELECT attempt_number FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    let request_id: String =
-        sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+/// Via the operator-facing router, constructed locally per
+/// `artifact_download.rs`'s own doc comment (never merged into the
+/// runner-only protocol router `Fixture::upload` posts through).
+#[tokio::test]
+async fn operator_download_returns_the_uploaded_bytes_and_headers() {
+    let fx = Fixture::new("download").await;
+    let content = b"diff --git a/x b/x\n+hello\n".to_vec();
+    fx.manifest("art-1", &content, Some("text/x-diff")).await;
+    fx.upload("art-1", content.clone(), &[("content-type", "text/x-diff")])
+        .await;
 
-    let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
-        repo: repo.clone(),
-        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root,
-        )),
-    };
-    let download_app = runner_protocol::artifact_download::routes(download_state);
-    let response = download_app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!(
-                    "/executions/{request_id}/attempts/{attempt_number}/artifacts/art-1/content"
-                ))
-                .header("x-tack-principal", "operator-test")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (attempt_number, request_id) = fx.attempt_location().await;
+    let uri = format!("/executions/{request_id}/attempts/{attempt_number}/artifacts/art-1/content");
+    let response = get_download(&fx.download_router(), &uri, true).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let headers = response.headers().clone();
+    let content_type = headers.get("content-type").unwrap().to_str().unwrap();
     assert_eq!(content_type, "text/x-diff");
-    let disposition = response
-        .headers()
+    let disposition = headers
         .get("content-disposition")
         .unwrap()
         .to_str()
-        .unwrap()
-        .to_owned();
+        .unwrap();
     assert!(disposition.contains("changes.patch"));
     let downloaded = to_bytes(response.into_body(), 1_048_576).await.unwrap();
     assert_eq!(downloaded.as_ref(), content.as_slice());
-
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 // ---------------------------------------------------------------------
 // 2. Acceptance: checksum mismatch stages nothing.
 // ---------------------------------------------------------------------
 
-/// Load-bearing proof performed by hand (not left in the tree): temporarily
-/// changed `put_artifact_content` to call
-/// `set_execution_artifact_content_reference` unconditionally (skipping the
-/// `match stored { Err(ChecksumMismatch) => ... }` early return) before the
-/// checksum was actually verified. Re-ran this test: it failed (a
-/// `content_reference` was committed despite the mismatch). Reverted the
-/// change and confirmed the test passes again.
-#[tokio::test]
-async fn checksum_mismatch_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "checksum").await;
-    let declared_content = b"the real bytes".to_vec();
-    manifest_artifact(&app, &attempt, "art-mismatch", &declared_content, None).await;
-
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let wrong_content = b"the WRONG bytes!!".to_vec(); // different length too
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-mismatch"),
-        wrong_content,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
-    assert!(
-        status == StatusCode::CONFLICT || status == StatusCode::PAYLOAD_TOO_LARGE,
-        "{status}: {response}"
-    );
-
-    let stored_reference: Option<String> = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-mismatch'",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(
-        stored_reference, None,
-        "no content_reference may be committed"
-    );
-
-    let attempt_dir = storage_root.join(hex_encode(&attempt.attempt_id));
-    assert!(
-        dir_is_empty_or_absent(&attempt_dir).await,
-        "no blob may be left on disk after a checksum mismatch"
-    );
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+/// Load-bearing (proven by hand, not left in the tree): temporarily made
+/// `put_artifact_content` call `set_execution_artifact_content_reference`
+/// unconditionally, skipping the checksum-mismatch early return — this test
+/// failed (a `content_reference` was committed despite the mismatch).
+/// Reverted, and it passes again. Two cases isolate the checksum check from
+/// the size check: mismatched length, and same length with wrong bytes.
+struct ChecksumCase {
+    label: &'static str,
+    artifact_id: &'static str,
+    declared: &'static [u8],
+    wrong: &'static [u8],
+    /// True isolates the checksum check from the size check (a
+    /// mismatched-length wrong body could conflict on either).
+    same_length: bool,
 }
 
-/// Same-length wrong content — isolates the checksum check from the size
-/// check, which the mismatched-length case above cannot.
 #[tokio::test]
-async fn same_size_wrong_bytes_is_a_pure_checksum_mismatch_and_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "checksum-samesize").await;
-    let declared_content = b"AAAAAAAAAA".to_vec();
-    manifest_artifact(&app, &attempt, "art-samesize", &declared_content, None).await;
+async fn artifact_content_put_stages_nothing_on_checksum_mismatch() {
+    let cases = [
+        ChecksumCase {
+            label: "checksum",
+            artifact_id: "art-mismatch",
+            declared: b"the real bytes",
+            wrong: b"the WRONG bytes!!",
+            same_length: false,
+        },
+        ChecksumCase {
+            label: "checksum-samesize",
+            artifact_id: "art-samesize",
+            declared: b"AAAAAAAAAA",
+            wrong: b"BBBBBBBBBB",
+            same_length: true,
+        },
+    ];
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let wrong_but_same_length = b"BBBBBBBBBB".to_vec();
-    assert_eq!(wrong_but_same_length.len(), declared_content.len());
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-samesize"),
-        wrong_but_same_length,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{response}");
-    assert_eq!(response["error"]["code"], "artifact_checksum_mismatch");
-    assert_eq!(response["error"]["retryable"], true);
-
-    let stored_reference: Option<String> = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-samesize'",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(stored_reference, None);
-    let attempt_dir = storage_root.join(hex_encode(&attempt.attempt_id));
-    assert!(dir_is_empty_or_absent(&attempt_dir).await);
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    for case in cases {
+        let fx = Fixture::new(case.label).await;
+        fx.manifest(case.artifact_id, case.declared, None).await;
+        let (status, response) = fx.upload(case.artifact_id, case.wrong.to_vec(), &[]).await;
+        assert!(
+            status == StatusCode::CONFLICT || status == StatusCode::PAYLOAD_TOO_LARGE,
+            "{status}: {response}"
+        );
+        if case.same_length {
+            assert_eq!(status, StatusCode::CONFLICT, "{response}");
+            assert_eq!(response["error"]["code"], "artifact_checksum_mismatch");
+            assert_eq!(response["error"]["retryable"], true);
+        }
+        assert_eq!(
+            fx.stored_reference(case.artifact_id).await,
+            None,
+            "no content_reference committed"
+        );
+        assert!(
+            fx.attempt_dir_is_empty().await,
+            "no blob left on disk after a checksum mismatch"
+        );
+        fx.cleanup().await;
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -697,45 +754,23 @@ async fn same_size_wrong_bytes_is_a_pure_checksum_mismatch_and_stages_nothing() 
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn oversize_upload_is_rejected_and_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "oversize").await;
+async fn oversize_artifact_body_yields_413_and_stages_nothing() {
+    let fx = Fixture::new("oversize").await;
     let declared_content = b"tiny".to_vec(); // manifest declares 4 bytes
-    manifest_artifact(&app, &attempt, "art-oversize", &declared_content, None).await;
+    fx.manifest("art-oversize", &declared_content, None).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
     // Actually sends far more than declared — the "compression bomb" shape:
     // a small declared size, a much larger real body.
     let bomb = vec![0u8; 5 * 1024 * 1024]; // 5 MiB actually sent vs. 4 bytes declared
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-oversize"),
-        bomb,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
+    let (status, response) = fx.upload("art-oversize", bomb, &[]).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{response}");
     assert_eq!(response["error"]["code"], "payload_too_large");
-
-    let stored_reference: Option<String> = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-oversize'",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(stored_reference, None);
-    let attempt_dir = storage_root.join(hex_encode(&attempt.attempt_id));
+    assert_eq!(fx.stored_reference("art-oversize").await, None);
     assert!(
-        dir_is_empty_or_absent(&attempt_dir).await,
+        fx.attempt_dir_is_empty().await,
         "no partial bomb content may remain on disk"
     );
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 // ---------------------------------------------------------------------
@@ -743,61 +778,45 @@ async fn oversize_upload_is_rejected_and_stages_nothing() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn crafted_traversal_artifact_id_lands_safely_inside_the_storage_root() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "traversal").await;
+async fn single_crafted_traversal_id_stays_inside_storage_root() {
+    let fx = Fixture::new("traversal").await;
     let content = b"safe content".to_vec();
     // The manifest step takes `artifact_id` from a JSON string field — no
     // URL decoding involved, so the literal traversal-shaped value is
     // exactly what gets stored.
     let malicious_artifact_id = "../../../etc/passwd";
-    manifest_artifact(&app, &attempt, malicious_artifact_id, &content, None).await;
+    fx.manifest(malicious_artifact_id, &content, None).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
     // The PUT URI, by contrast, must percent-encode the same literal value
     // into its `{artifact_id}` path segment (`axum::extract::Path` decodes
     // captured segments) so this test exercises the same request shape a
-    // real client sending this artifact_id would produce — a raw literal
-    // `/` in the URI would not even route to this handler at all, so
-    // percent-encoding is not a test-only workaround, it is what a genuine
-    // attacker attempting this traversal shape would have to send too.
+    // real client — or a genuine attacker attempting this traversal —
+    // would have to send; a raw literal `/` would not even route here.
     let uri = format!(
         "/attempts/{}/artifacts/..%2f..%2f..%2fetc%2fpasswd/content",
-        attempt.attempt_id
+        fx.attempt.attempt_id
     );
-    let (status, response) = put_content(
-        &app,
-        &uri,
-        content.clone(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
+    let (auth, fence) = (fx.auth(), fx.fence());
+    let headers = [
+        (auth.0.as_str(), auth.1.as_str()),
+        (fence.0.as_str(), fence.1.as_str()),
+    ];
+    let (status, response) = fx.put(&uri, content.clone(), &headers).await;
     assert_eq!(status, StatusCode::OK, "{response}");
 
     // Confirm the write landed strictly inside the canonical storage root.
-    let canonical_root = tokio::fs::canonicalize(&storage_root).await.unwrap();
-    let content_reference: Option<String> = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id=?",
-    )
-    .bind(&attempt.attempt_id)
-    .bind(malicious_artifact_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let content_reference =
-        content_reference.expect("content_reference must be set after a successful upload");
-    let full_path = storage_root.join(&content_reference);
+    let canonical_root = tokio::fs::canonicalize(fx.storage_root()).await.unwrap();
+    let content_reference = fx
+        .stored_reference(malicious_artifact_id)
+        .await
+        .expect("content_reference must be set after a successful upload");
+    let full_path = fx.storage_root().join(&content_reference);
     let canonical_full = tokio::fs::canonicalize(full_path.parent().unwrap())
         .await
         .unwrap();
     assert!(canonical_full.starts_with(&canonical_root));
     assert!(!content_reference.contains(".."));
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 // ---------------------------------------------------------------------
@@ -806,40 +825,18 @@ async fn crafted_traversal_artifact_id_lands_safely_inside_the_storage_root() {
 
 #[tokio::test]
 async fn content_is_immutable_once_verified() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "immutable").await;
+    let fx = Fixture::new("immutable").await;
     let content = b"first and only".to_vec();
-    manifest_artifact(&app, &attempt, "art-immutable", &content, None).await;
+    fx.manifest("art-immutable", &content, None).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let (status, _) = put_content(
-        &app,
-        &content_uri(&attempt, "art-immutable"),
-        content.clone(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
+    let (status, _) = fx.upload("art-immutable", content.clone(), &[]).await;
     assert_eq!(status, StatusCode::OK);
 
     // A byte-identical second upload is still refused — content is
     // recorded once, not "once per distinct value."
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-immutable"),
-        content,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
+    let (status, response) = fx.upload("art-immutable", content, &[]).await;
     assert_eq!(status, StatusCode::CONFLICT, "{response}");
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 // ---------------------------------------------------------------------
@@ -848,76 +845,54 @@ async fn content_is_immutable_once_verified() {
 
 #[tokio::test]
 async fn stale_fencing_token_is_rejected_before_any_write() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "stale-fence").await;
+    let fx = Fixture::new("stale-fence").await;
     let content = b"content".to_vec();
-    manifest_artifact(&app, &attempt, "art-stale", &content, None).await;
+    fx.manifest("art-stale", &content, None).await;
 
-    let auth = auth_header(&attempt);
-    let wrong_fence = (attempt.fencing_token + 999).to_string();
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-stale"),
-        content,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            ("x-tack-fencing-token", &wrong_fence),
-        ],
-    )
-    .await;
+    let auth = fx.auth();
+    let wrong_fence = (fx.attempt.fencing_token + 999).to_string();
+    let headers = [
+        (auth.0.as_str(), auth.1.as_str()),
+        ("x-tack-fencing-token", wrong_fence.as_str()),
+    ];
+    let (status, response) = fx
+        .put(&fx.content_uri("art-stale"), content, &headers)
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "{response}");
     assert_eq!(response["error"]["code"], "stale_lease");
-    let attempt_dir = storage_root.join(hex_encode(&attempt.attempt_id));
-    assert!(dir_is_empty_or_absent(&attempt_dir).await);
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    assert!(fx.attempt_dir_is_empty().await);
+    fx.cleanup().await;
 }
 
 #[tokio::test]
 async fn missing_fencing_header_is_invalid_request() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "missing-fence").await;
+    let fx = Fixture::new("missing-fence").await;
     let content = b"content".to_vec();
-    manifest_artifact(&app, &attempt, "art-missing-fence", &content, None).await;
+    fx.manifest("art-missing-fence", &content, None).await;
 
-    let auth = auth_header(&attempt);
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-missing-fence"),
-        content,
-        &[(auth.0.as_str(), auth.1.as_str())],
-    )
-    .await;
+    let auth = fx.auth();
+    let headers = [(auth.0.as_str(), auth.1.as_str())];
+    let (status, response) = fx
+        .put(&fx.content_uri("art-missing-fence"), content, &headers)
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
     assert_eq!(response["error"]["code"], "invalid_request");
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 #[tokio::test]
 async fn content_type_mismatch_with_declared_media_type_is_rejected() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "content-type").await;
+    let fx = Fixture::new("content-type").await;
     let content = b"diff content".to_vec();
-    manifest_artifact(&app, &attempt, "art-ct", &content, Some("text/x-diff")).await;
+    fx.manifest("art-ct", &content, Some("text/x-diff")).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-ct"),
-        content,
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-            ("content-type", "application/json"), // does not match manifest's text/x-diff
-        ],
-    )
-    .await;
+    // "application/json" does not match the manifest's declared text/x-diff.
+    let (status, response) = fx
+        .upload("art-ct", content, &[("content-type", "application/json")])
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
     assert_eq!(response["error"]["code"], "invalid_request");
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 // ---------------------------------------------------------------------
@@ -925,97 +900,42 @@ async fn content_type_mismatch_with_declared_media_type_is_rejected() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn download_of_an_unverified_manifest_is_a_named_conflict_not_a_404() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "download-unverified").await;
-    manifest_artifact(&app, &attempt, "art-unverified", b"content", None).await;
+async fn unverified_manifest_download_is_named_conflict_not_404() {
+    let fx = Fixture::new("download-unverified").await;
+    fx.manifest("art-unverified", b"content", None).await;
 
-    let attempt_number: i64 =
-        sqlx::query_scalar("SELECT attempt_number FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    let request_id: String =
-        sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
-        repo: repo.clone(),
-        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root,
-        )),
-    };
-    let response = runner_protocol::artifact_download::routes(download_state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!(
-                    "/executions/{request_id}/attempts/{attempt_number}/artifacts/art-unverified/content"
-                ))
-                .header("x-tack-principal", "operator-test")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (attempt_number, request_id) = fx.attempt_location().await;
+    let uri = format!(
+        "/executions/{request_id}/attempts/{attempt_number}/artifacts/art-unverified/content"
+    );
+    let response = get_download(&fx.download_router(), &uri, true).await;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     let bytes = to_bytes(response.into_body(), 1_048_576).await.unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["error"]["code"], "conflict");
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 #[tokio::test]
 async fn download_without_an_operator_principal_is_unauthorized() {
     let (_app, repo, _clock, _item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
-        repo: repo.clone(),
-        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root,
-        )),
-    };
-    let response = runner_protocol::artifact_download::routes(download_state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/executions/req-x/attempts/1/artifacts/art-x/content")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let download_app = download_router(&repo, storage_root_dir.path());
+    let response = get_download(
+        &download_app,
+        "/executions/req-x/attempts/1/artifacts/art-x/content",
+        false,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
 }
 
 #[tokio::test]
-async fn download_of_an_unknown_artifact_is_not_found() {
+async fn artifact_download_subrouter_404s_for_unknown_artifact() {
     let (_app, repo, _clock, _item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
-        repo: repo.clone(),
-        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root,
-        )),
-    };
-    let response = runner_protocol::artifact_download::routes(download_state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/executions/does-not-exist/attempts/1/artifacts/art-x/content")
-                .header("x-tack-principal", "operator-test")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let download_app = download_router(&repo, storage_root_dir.path());
+    let uri = "/executions/does-not-exist/attempts/1/artifacts/art-x/content";
+    let response = get_download(&download_app, uri, true).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
 }
 
 // ---------------------------------------------------------------------
@@ -1026,31 +946,18 @@ async fn download_of_an_unknown_artifact_is_not_found() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn an_upload_larger_than_the_default_json_body_ceiling_still_succeeds() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "large").await;
+async fn upload_over_default_json_body_ceiling_still_succeeds() {
+    let fx = Fixture::new("large").await;
     // 6 MiB: comfortably over the 4 MiB router-wide DefaultBodyLimit meant
     // for JSON control-plane bodies, comfortably under the 50 MiB protocol
     // ceiling.
     let large_content = vec![7u8; 6 * 1024 * 1024];
-    manifest_artifact(&app, &attempt, "art-large", &large_content, None).await;
+    fx.manifest("art-large", &large_content, None).await;
 
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let (status, response) = put_content(
-        &app,
-        &content_uri(&attempt, "art-large"),
-        large_content.clone(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
+    let (status, response) = fx.upload("art-large", large_content.clone(), &[]).await;
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(response["size_bytes"], large_content.len());
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
 }
 
 fn hex_encode(value: &str) -> String {
@@ -1078,109 +985,102 @@ fn hex_encode(value: &str) -> String {
 const SECRET_EVENT_MARKER: &str = "SECRET_EVENT_PAYLOAD_MARKER_1f9c7";
 const SECRET_ARTIFACT_MARKER: &[u8] = b"SECRET_ARTIFACT_BYTES_MARKER_9e21c";
 
-#[tokio::test]
-async fn logs_never_leak_event_payloads_or_artifact_content_only_ids() {
-    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
-    let storage_root = storage_root_dir.path();
-    let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "redaction").await;
-
-    let (guard, captured) = CaptureGuard::start();
-
-    // Event batch carrying a distinctive payload string.
-    let (status, batch) = send_json(
-        &app,
-        "POST",
-        &format!("/attempts/{}/events", attempt.attempt_id),
-        json!({
-            "protocol_version": 1, "runner_id": attempt.runner_id, "attempt_id": attempt.attempt_id,
-            "fencing_token": attempt.fencing_token,
-            "previous_checkpoint": Value::Null, "checkpoint": "checkpoint-redaction",
-            "events": [{
-                "event_id": "evt-redaction", "sequence": 1, "occurred_at": clock.now().to_rfc3339(),
-                "source": "runner", "kind": "message", "payload": {"text": SECRET_EVENT_MARKER},
-            }],
-        })
-        .to_string(),
-        &[("authorization", &format!("Bearer {}", attempt.credential))],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{batch}");
-
-    // Artifact manifest + content upload carrying distinctive bytes.
-    manifest_artifact(
-        &app,
-        &attempt,
-        "art-redaction",
-        SECRET_ARTIFACT_MARKER,
-        None,
-    )
-    .await;
-    let auth = auth_header(&attempt);
-    let fence = fencing_header(&attempt);
-    let (status, uploaded) = put_content(
-        &app,
-        &content_uri(&attempt, "art-redaction"),
-        SECRET_ARTIFACT_MARKER.to_vec(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{uploaded}");
-
-    // Also force a rejection path (checksum mismatch) — the error path's
-    // `details` (e.g. `{"artifact_id": ...}`) must stay id-only too. Same
-    // length as the mismatch marker so this exercises a pure checksum
-    // mismatch, not the oversize path.
-    let mismatch_marker: &[u8] = b"SECRET_MISMATCH_BYTES_MARKER_44a1";
-    let declared_but_never_sent = vec![0u8; mismatch_marker.len()];
-    manifest_artifact(
-        &app,
-        &attempt,
-        "art-redaction-2",
-        &declared_but_never_sent,
-        None,
-    )
-    .await;
-    let (status, _) = put_content(
-        &app,
-        &content_uri(&attempt, "art-redaction-2"),
-        mismatch_marker.to_vec(),
-        &[
-            (auth.0.as_str(), auth.1.as_str()),
-            (fence.0.as_str(), fence.1.as_str()),
-        ],
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-
-    drop(guard);
-    let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
-
+/// Common tail: the capture rig must have observed real output (non-vacuous:
+/// the runner id, not a secret, is expected in genuine handler logs), and
+/// none of it may be `secret`.
+fn assert_redacted(text: &str, runner_id: &str, secret: &str, secret_label: &str) {
     assert!(
         !text.is_empty(),
         "capture rig must have observed real log output"
     );
     assert!(
-        !text.contains(SECRET_EVENT_MARKER),
-        "event payload text leaked into logs:\n{text}"
+        !text.contains(secret),
+        "{secret_label} leaked into logs:\n{text}"
     );
     assert!(
-        !text.contains(std::str::from_utf8(SECRET_ARTIFACT_MARKER).unwrap()),
-        "artifact content bytes leaked into logs:\n{text}"
+        text.contains(runner_id),
+        "expected the runner id to appear in captured logs:\n{text}"
     );
-    assert!(
-        !text.contains("SECRET_MISMATCH_BYTES_MARKER_44a1"),
-        "mismatched artifact content leaked into logs on the error path:\n{text}"
+}
+
+#[tokio::test]
+async fn logs_never_leak_event_payload_text_only_ids() {
+    let fx = Fixture::new("redaction-events").await;
+    let (guard, captured) = CaptureGuard::start();
+    let events = json!({
+        "protocol_version": 1, "runner_id": fx.attempt.runner_id, "attempt_id": fx.attempt.attempt_id,
+        "fencing_token": fx.attempt.fencing_token, "previous_checkpoint": Value::Null,
+        "checkpoint": "checkpoint-redaction",
+        "events": [{"event_id": "evt-redaction", "sequence": 1, "occurred_at": Utc::now().to_rfc3339(),
+            "source": "runner", "kind": "message", "payload": {"text": SECRET_EVENT_MARKER}}],
+    })
+    .to_string();
+    let uri = format!("/attempts/{}/events", fx.attempt.attempt_id);
+    let auth = format!("Bearer {}", fx.attempt.credential);
+    let (status, batch) =
+        send_json(&fx.app, "POST", &uri, events, &[("authorization", &auth)]).await;
+    assert_eq!(status, StatusCode::OK, "{batch}");
+    drop(guard);
+
+    let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
+    assert_redacted(
+        &text,
+        &fx.attempt.runner_id,
+        SECRET_EVENT_MARKER,
+        "event payload text",
     );
-    // Non-vacuous: the runner id (an id, not a secret) is expected to appear
-    // somewhere in real handler logs, confirming the capture rig is actually
-    // observing genuine production log lines from this request, not just an
-    // empty/unreached subscriber.
-    assert!(
-        text.contains(&attempt.runner_id),
-        "expected the runner id to appear in captured logs as evidence the rig observed real output:\n{text}"
+    fx.cleanup().await;
+}
+
+#[tokio::test]
+async fn logs_never_leak_artifact_content_bytes_only_ids() {
+    let fx = Fixture::new("redaction-artifact").await;
+    fx.manifest("art-redaction", SECRET_ARTIFACT_MARKER, None)
+        .await;
+
+    let (guard, captured) = CaptureGuard::start();
+    let (status, uploaded) = fx
+        .upload("art-redaction", SECRET_ARTIFACT_MARKER.to_vec(), &[])
+        .await;
+    assert_eq!(status, StatusCode::OK, "{uploaded}");
+    drop(guard);
+
+    let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
+    let secret = std::str::from_utf8(SECRET_ARTIFACT_MARKER).unwrap();
+    assert_redacted(
+        &text,
+        &fx.attempt.runner_id,
+        secret,
+        "artifact content bytes",
     );
-    let _ = tokio::fs::remove_dir_all(&storage_root).await;
+    fx.cleanup().await;
+}
+
+/// The error path's `details` (e.g. `{"artifact_id": ...}`) must stay
+/// id-only too. Same length as the mismatch marker so this exercises a
+/// pure checksum mismatch, not the oversize path.
+#[tokio::test]
+async fn logs_never_leak_mismatched_content_on_error_path_only_ids() {
+    let fx = Fixture::new("redaction-mismatch").await;
+    let mismatch_marker: &[u8] = b"SECRET_MISMATCH_BYTES_MARKER_44a1";
+    let declared_but_never_sent = vec![0u8; mismatch_marker.len()];
+    fx.manifest("art-redaction-2", &declared_but_never_sent, None)
+        .await;
+
+    let (guard, captured) = CaptureGuard::start();
+    let (status, _) = fx
+        .upload("art-redaction-2", mismatch_marker.to_vec(), &[])
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    drop(guard);
+
+    let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
+    let secret = std::str::from_utf8(mismatch_marker).unwrap();
+    assert_redacted(
+        &text,
+        &fx.attempt.runner_id,
+        secret,
+        "mismatched artifact content",
+    );
+    fx.cleanup().await;
 }

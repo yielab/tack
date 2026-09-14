@@ -58,10 +58,23 @@ jobs:
         run: ./scripts/check-comments.sh
       - name: Tests take their temporary paths from a guard
         run: ./scripts/check-test-hygiene.sh
+      # Hard caps on test and comment size; a file listed in EXCLUSIONS
+      # (scripts/maintainability.py) instead ratchets against
+      # scripts/maintainability-baseline.json — it may exceed its budget only if it
+      # already did and is not worse. A new file must meet every budget.
+      # See docs/plans/human-maintainability.md.
+      - name: Tests and comments stay inside their size budgets
+        run: python3 scripts/maintainability.py check
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # Not `missing_docs` — that lint manufactures comments to satisfy the
+      # compiler, the opposite of what docs/plans/human-maintainability.md §3
+      # wants. This only catches an intra-doc `[`link`]` that resolves to
+      # nothing, e.g. after a rename.
+      - name: Doc build (broken intra-doc links deny)
+        run: RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps
       - name: Install nextest (prebuilt)
         uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:

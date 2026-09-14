@@ -1,36 +1,16 @@
 //! Cancellable retention sweep for the execution domain.
 //!
-//! # Why this is a sibling module, not `execution::retention`
+//! A sibling of `execution/`, not part of it: `crate::execution` deliberately
+//! has no transport/persistence/vendor dependencies, while this module is
+//! nothing but persistence and a spawned background task — closer in shape
+//! to `reconciler.rs`'s `spawn_retention_sweep`/`RetentionStore`.
 //!
-//! `crate::execution`'s own module doc says it "deliberately has no
-//! transport, persistence, or vendor adapter dependencies" — it is the pure
-//! runner-v1 protocol domain. This module is the opposite: it is nothing
-//! *but* persistence and a spawned background task. It lives next to
-//! `reconciler.rs` (which has the closest analog already: orch's own
-//! `spawn_retention_sweep`/`RetentionStore`, rolling `orch_events` into
-//! `orch_events_daily`) rather than inside `execution/`.
+//! Unlike that orch sweep, [`RetentionClock`] makes "now" injectable and
+//! [`spawn_execution_retention_sweep`] races a `stop_rx` against its
+//! inter-sweep sleep instead of only stopping via a dropped `JoinHandle`.
 //!
-//! # What's different from orch's own retention sweep
-//!
-//! `reconciler::spawn_retention_sweep` computes its cutoff from `Utc::now()`
-//! directly and has no cancellation signal at all — dropping its
-//! `JoinHandle` is the only way to stop it, which cannot prove "shutdown
-//! joins task". This module fixes both for
-//! the execution domain: [`RetentionClock`] makes "now" injectable (tests
-//! never depend on real wall-clock time to decide what counts as stale),
-//! and [`spawn_execution_retention_sweep`] takes a `stop_rx` raced against
-//! its inter-sweep sleep via `tokio::select!`, mirroring
-//! `reconciler::spawn_one`'s own cancellation shape exactly.
-//!
-//! # No roll-up table for `execution_events` exists yet
-//!
-//! Unlike orch (`orch_events` -> `orch_events_daily`), the execution domain
-//! has no daily-aggregate table for `execution_events`. See
-//! `tack_db::Repository::purge_stale_terminal_execution_events`'s doc
-//! comment: adding one would mirror `orch_events`/`orch_events_daily`, but
-//! until that migration lands, this purges terminal-attempt event rows
-//! outright rather than aggregating them first, and is documented as doing
-//! exactly that, not mislabeled as a "roll up."
+//! No roll-up table for `execution_events` yet (unlike orch's
+//! `orch_events_daily`): this purges terminal-attempt event rows outright.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -187,23 +167,16 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
     }
 }
 
-/// Spawn the cancellable execution-retention sweep, or don't — the same
-/// off-by-default-when-disabled contract as `reconciler::spawn_retention_sweep`:
-/// `enabled = false` returns `None` immediately without ever calling `store`.
+/// Spawn the cancellable execution-retention sweep, or don't: `enabled =
+/// false` returns `None` without ever calling `store` (same contract as
+/// `reconciler::spawn_retention_sweep`).
 ///
-/// Runs immediately (no initial delay), then every
-/// `config.sweep_interval_secs`, until `stop_rx` carries `true` — checked at
-/// the top of every loop iteration and raced against the inter-sweep sleep
-/// via `tokio::select!`. Both are safe points: a purge batch is already a
-/// short, bounded, independently-committed transaction (see
-/// `ExecutionRetentionStore`'s doc comment), so a stop signal is observed
-/// between sweeps, never mid-transaction.
-///
-/// This function only arranges for the task to *notice* the stop signal and
-/// exit; it does not join the returned handle itself. The caller proves
-/// "shutdown joins task" by awaiting the handle after signalling —
-/// `crates/tack-api/src/execution_runtime.rs::ExecutionRuntime::stop` does
-/// exactly that.
+/// Runs immediately, then every `config.sweep_interval_secs`, until
+/// `stop_rx` carries `true` — checked at the top of the loop and raced
+/// against the inter-sweep sleep, both safe points since a purge batch is
+/// already a short, independently-committed transaction. This function only
+/// arranges for the task to *notice* the signal; the caller proves
+/// "shutdown joins task" by awaiting the returned handle after signalling.
 pub fn spawn_execution_retention_sweep(
     enabled: bool,
     store: Arc<dyn ExecutionRetentionStore>,
@@ -266,189 +239,5 @@ pub fn spawn_execution_retention_sweep(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    struct FakeClock(Mutex<DateTime<Utc>>);
-
-    impl FakeClock {
-        fn new(now: DateTime<Utc>) -> Self {
-            Self(Mutex::new(now))
-        }
-    }
-
-    impl RetentionClock for FakeClock {
-        fn now(&self) -> DateTime<Utc> {
-            *self.0.lock().unwrap()
-        }
-    }
-
-    #[derive(Default)]
-    struct FakeStore {
-        replay_calls: Mutex<Vec<(DateTime<Utc>, i64)>>,
-        event_calls: Mutex<Vec<(DateTime<Utc>, i64)>>,
-        fail_replays: Mutex<bool>,
-    }
-
-    #[async_trait]
-    impl ExecutionRetentionStore for FakeStore {
-        async fn purge_stale_replays(
-            &self,
-            cutoff: DateTime<Utc>,
-            batch_size: i64,
-        ) -> Result<PurgeOutcome, OrchError> {
-            self.replay_calls.lock().unwrap().push((cutoff, batch_size));
-            if *self.fail_replays.lock().unwrap() {
-                return Err(OrchError::Unavailable("simulated failure".into()));
-            }
-            Ok(PurgeOutcome::default())
-        }
-
-        async fn purge_stale_terminal_events(
-            &self,
-            cutoff: DateTime<Utc>,
-            batch_size: i64,
-        ) -> Result<PurgeOutcome, OrchError> {
-            self.event_calls.lock().unwrap().push((cutoff, batch_size));
-            Ok(PurgeOutcome::default())
-        }
-    }
-
-    /// Bounded, deterministic wait for a background task's first tick to
-    /// land — not a business-logic assertion via sleep (CLAUDE.md's "no
-    /// blocking sleeps" targets that), just yielding to the real tokio
-    /// scheduler so the real spawned task can run. Panics (fails the test)
-    /// rather than hanging if the condition is never met.
-    async fn wait_for(mut condition: impl FnMut() -> bool) {
-        for _ in 0..200 {
-            if condition() {
-                return;
-            }
-            tokio::time::sleep(StdDuration::from_millis(10)).await;
-        }
-        panic!("condition not met within the 2s test timeout");
-    }
-
-    #[tokio::test]
-    async fn disabled_sweep_spawns_nothing_and_never_touches_the_store() {
-        let store = Arc::new(FakeStore::default());
-        let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
-        let (_tx, rx) = watch::channel(false);
-
-        let handle = spawn_execution_retention_sweep(
-            false,
-            store.clone(),
-            clock,
-            ExecutionRetentionConfig::default(),
-            rx,
-        );
-        assert!(handle.is_none());
-
-        // Give a hypothetical (bugged) task a chance to run before asserting
-        // silence — this is the "never even queries" proof, mirroring
-        // reconciler's own `disabled_orchestration_spawns_no_tasks...` test.
-        tokio::time::sleep(StdDuration::from_millis(30)).await;
-        assert!(store.replay_calls.lock().unwrap().is_empty());
-        assert!(store.event_calls.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn enabled_sweep_calls_both_purges_with_the_configured_cutoff_and_batch_size() {
-        let now = DateTime::parse_from_rfc3339("2026-08-12T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let store = Arc::new(FakeStore::default());
-        let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(now));
-        let (tx, rx) = watch::channel(false);
-        let config = ExecutionRetentionConfig {
-            retention_days: 90,
-            batch_size: 250,
-            sweep_interval_secs: 3600,
-        };
-
-        let handle = spawn_execution_retention_sweep(true, store.clone(), clock, config, rx)
-            .expect("spawned");
-
-        wait_for(|| !store.replay_calls.lock().unwrap().is_empty()).await;
-
-        let expected_cutoff = now - Duration::days(90);
-        {
-            let calls = store.replay_calls.lock().unwrap();
-            assert_eq!(calls.len(), 1);
-            assert_eq!(calls[0], (expected_cutoff, 250));
-        }
-        {
-            let calls = store.event_calls.lock().unwrap();
-            assert_eq!(calls.len(), 1);
-            assert_eq!(calls[0], (expected_cutoff, 250));
-        }
-
-        let _ = tx.send(true);
-        handle.await.expect("task joins cleanly");
-    }
-
-    #[tokio::test]
-    async fn shutdown_joins_the_task_and_no_further_purge_happens_after() {
-        // A 1s interval means a second tick would fire if the stop signal
-        // were not observed — this is what makes "no further writes after
-        // shutdown" a real assertion instead of a vacuous one (the sweep
-        // never got a second chance to write regardless).
-        let store = Arc::new(FakeStore::default());
-        let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
-        let (tx, rx) = watch::channel(false);
-        let config = ExecutionRetentionConfig {
-            retention_days: 90,
-            batch_size: 500,
-            sweep_interval_secs: 1,
-        };
-
-        let handle = spawn_execution_retention_sweep(true, store.clone(), clock, config, rx)
-            .expect("spawned");
-        wait_for(|| !store.replay_calls.lock().unwrap().is_empty()).await;
-        let calls_before_stop = store.replay_calls.lock().unwrap().len();
-
-        let _ = tx.send(true);
-        // Load-bearing: this is a real `.await` on the `JoinHandle`, not
-        // just a signal-and-return. If the task never actually observed the
-        // stop signal (e.g. the `tokio::select!` were wired wrong), this
-        // line would hang until the test harness times out rather than
-        // silently "passing."
-        handle.await.expect("task joins cleanly after stop signal");
-
-        // Wait out more than one full interval past shutdown and confirm
-        // no new call landed — proves the task is truly gone, not merely
-        // slow to notice.
-        tokio::time::sleep(StdDuration::from_millis(1_300)).await;
-        let calls_after_wait = store.replay_calls.lock().unwrap().len();
-        assert_eq!(
-            calls_before_stop, calls_after_wait,
-            "no purge call should happen after the join handle completed"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_failing_purge_is_logged_and_retried_next_cycle_not_panicked() {
-        let store = Arc::new(FakeStore::default());
-        *store.fail_replays.lock().unwrap() = true;
-        let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
-        let (tx, rx) = watch::channel(false);
-        let config = ExecutionRetentionConfig {
-            retention_days: 90,
-            batch_size: 500,
-            sweep_interval_secs: 1,
-        };
-
-        let handle = spawn_execution_retention_sweep(true, store.clone(), clock, config, rx)
-            .expect("spawned");
-        wait_for(|| !store.replay_calls.lock().unwrap().is_empty()).await;
-        // The event purge still runs even though the replay purge failed —
-        // one failing sub-step must not abort the tick.
-        wait_for(|| !store.event_calls.lock().unwrap().is_empty()).await;
-
-        let _ = tx.send(true);
-        handle
-            .await
-            .expect("a failing purge must not panic the task — it logs and retries next cycle");
-    }
-}
+#[path = "execution_retention/tests.rs"]
+mod tests;

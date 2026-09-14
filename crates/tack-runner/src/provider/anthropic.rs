@@ -162,7 +162,7 @@ mod tests {
     }"#;
 
     #[test]
-    fn parses_context_window_and_leaves_price_unset_since_the_vendor_publishes_none() {
+    fn context_window_parses_price_stays_unset_with_no_vendor_price() {
         let entries = parse_catalog(SAMPLE_BODY.as_bytes()).expect("valid catalog body");
         assert_eq!(entries.len(), 2);
 
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_body_is_a_parse_error_not_a_panic() {
+    fn anthropic_model_catalog_rejects_a_non_json_body() {
         assert!(parse_catalog(b"not json").is_err());
     }
 

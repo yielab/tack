@@ -1,16 +1,11 @@
 //! Tests for `POST /api/projects/{id}/orch-dispatch` (ADR 0065) — the
 //! project-level docket pipeline trigger. Distinct from the item/sprint
-//! dispatch routes covered by `item.rs`: this route claims no Tack item,
-//! so its tests assert directly that it never writes `orch_tasks` or
-//! `execution_requests`, never that a status code alone implies it.
+//! dispatch routes (`item.rs`): this route claims no Tack item, so tests
+//! assert directly that it never writes `orch_tasks`/`execution_requests`.
 //!
-//! Covers: `409 orchestration_disabled` with `TACK_ORCH_ENABLE` off;
-//! `403` with `TACK_ORCH_DISPATCH_TOKEN` unset (the safe default) or a
-//! wrong header value, regardless of the ordinary Bearer token; `404` for
-//! an unknown project and for a project with no docket link; the happy
-//! path (`run_id`/`remote_project` in the response, `variables` reaching
-//! docket verbatim, zero `orch_tasks`/`execution_requests` rows written);
-//! and that the `variables` body never reaches the logs.
+//! Covers: the off/token/not-found guards; the happy path (`run_id` in the
+//! response, `variables` reaching docket verbatim, zero item-scoped rows
+//! written); and that `variables` never reaches the logs.
 
 use crate::common;
 
@@ -109,20 +104,6 @@ async fn req(
         .unwrap()
 }
 
-async fn create_project(app: &Router, project_type: &str) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        &[],
-        Some(json!({"name": "Pipeline Dispatch Test Project", "project_type": project_type})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json_val(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 async fn create_control_plane(app: &Router, base_url: &str) -> Uuid {
     let res = req(
         app,
@@ -191,6 +172,21 @@ async fn count_orch_tasks(state: &AppState) -> i64 {
     row.0
 }
 
+/// Asserts a pipeline dispatch wrote no item-scoped orch_tasks/execution_requests row
+/// (ADR 0065 decision 5: a project-level trigger must never claim a Tack item).
+async fn assert_no_item_scoped_writes(state: &AppState, before_tasks: i64, before_executions: i64) {
+    assert_eq!(
+        count_orch_tasks(state).await,
+        before_tasks,
+        "must write no orch_tasks row"
+    );
+    assert_eq!(
+        count_execution_requests(state).await,
+        before_executions,
+        "must write no execution_requests row"
+    );
+}
+
 async fn count_execution_requests(state: &AppState) -> i64 {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM execution_requests")
         .fetch_one(state.repo.pool())
@@ -210,66 +206,58 @@ async fn mock_dispatch_allow(server: &MockServer, project: &str, run_id: &str) {
         .await;
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
-
-#[tokio::test]
-async fn dispatch_409s_when_orch_disabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = dispatch_pipeline(&app, Uuid::new_v4(), Some("whatever"), None).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json_val(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
 // ─── Fail-closed dispatch token — the acceptance-2 / acceptance-10 case ────
 
+/// Every way the dispatch-token gate can fail closed: the token unset in
+/// config at all (the safe default — and the one case whose message must
+/// name the missing gate, not just refuse silently), a wrong header value
+/// against a configured token, and a missing header against a configured
+/// token.
 #[tokio::test]
-async fn dispatch_403s_when_dispatch_token_unset() {
-    // orch_dispatch_token: None — the safe default this test pins.
-    let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app, "software").await;
+async fn dispatch_403s_when_token_unset_wrong_or_missing() {
+    // (config_token, request_token, check_names_missing_gate).
+    let cases = [
+        (None, Some("anything"), true),
+        (Some("correct-token"), Some("wrong-token"), false),
+        (Some("correct-token"), None, false),
+    ];
 
-    let res = dispatch_pipeline(&app, project_id, Some("anything"), None).await;
-    assert_eq!(res.status(), StatusCode::FORBIDDEN);
-    let body = body_json_val(res).await;
-    let message = body["error"]["message"].as_str().unwrap_or_default();
-    assert!(
-        message.contains("TACK_ORCH_DISPATCH_TOKEN"),
-        "must name the missing gate, not just refuse silently: {body}"
-    );
-}
+    for (config_token, request_token, check_names_missing_gate) in cases {
+        let config = match config_token {
+            Some(t) => orch_config_with_dispatch_token(t),
+            None => orch_config(),
+        };
+        let (app, _) = app_with_state(config).await;
+        let project_id =
+            common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
 
-#[tokio::test]
-async fn dispatch_403s_when_dispatch_token_wrong() {
-    let (app, _) = app_with_state(orch_config_with_dispatch_token("correct-token")).await;
-    let project_id = create_project(&app, "software").await;
-
-    let res = dispatch_pipeline(&app, project_id, Some("wrong-token"), None).await;
-    assert_eq!(res.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn dispatch_403s_when_dispatch_token_header_missing() {
-    let (app, _) = app_with_state(orch_config_with_dispatch_token("correct-token")).await;
-    let project_id = create_project(&app, "software").await;
-
-    let res = dispatch_pipeline(&app, project_id, None, None).await;
-    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let res = dispatch_pipeline(&app, project_id, request_token, None).await;
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        if check_names_missing_gate {
+            let body = body_json_val(res).await;
+            let message = body["error"]["message"].as_str().unwrap_or_default();
+            assert!(
+                message.contains("TACK_ORCH_DISPATCH_TOKEN"),
+                "must name the missing gate, not just refuse silently: {body}"
+            );
+        }
+    }
 }
 
 // ─── Project resolution: no second way to name a docket project ───────────
 
 #[tokio::test]
-async fn dispatch_404s_for_unknown_project() {
+async fn pipeline_dispatch_404s_for_a_project_that_does_not_exist() {
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
     let res = dispatch_pipeline(&app, Uuid::new_v4(), Some("tok"), None).await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn dispatch_404s_when_project_not_linked() {
+async fn unlinked_project_makes_pipeline_dispatch_404_not_409() {
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id =
+        common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
 
     let res = dispatch_pipeline(&app, project_id, Some("tok"), None).await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
@@ -278,12 +266,13 @@ async fn dispatch_404s_when_project_not_linked() {
 // ─── Happy path: run started, nothing item-scoped written ─────────────────
 
 #[tokio::test]
-async fn dispatch_success_returns_run_id_and_writes_no_item_scoped_row() {
+async fn dispatch_success_returns_run_id_writes_no_item_scoped_row() {
     let server = MockServer::start().await;
     mock_dispatch_allow(&server, "demo-pipeline", "run-happy-1").await;
 
     let (app, state) = app_with_state(orch_config_with_dispatch_token("tok")).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id =
+        common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, "demo-pipeline").await;
 
@@ -311,18 +300,8 @@ async fn dispatch_success_returns_run_id_and_writes_no_item_scoped_row() {
     assert_eq!(v.get("outcome"), None);
     assert_eq!(v.get("status"), None);
 
-    // Assert the absence directly, not just a 200 — a project-level pipeline
-    // trigger must never claim a Tack item (ADR 0065 decision 5).
-    assert_eq!(
-        count_orch_tasks(&state).await,
-        before_tasks,
-        "must write no orch_tasks row"
-    );
-    assert_eq!(
-        count_execution_requests(&state).await,
-        before_executions,
-        "must write no execution_requests row"
-    );
+    // Assert the absence directly, not just a 200.
+    assert_no_item_scoped_writes(&state, before_tasks, before_executions).await;
 }
 
 #[tokio::test]
@@ -338,7 +317,8 @@ async fn dispatch_sends_variables_to_docket_verbatim() {
         .await;
 
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id =
+        common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, "demo-pipeline").await;
 
@@ -372,7 +352,8 @@ async fn dispatch_omitted_variables_default_to_empty_object() {
         .await;
 
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id =
+        common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, "demo-pipeline").await;
 
@@ -468,13 +449,35 @@ mod log_capture {
 
 const SECRET_VARIABLE_MARKER: &str = "SECRET_DISPATCH_VARIABLE_MARKER_7c1e9";
 
+/// Asserts the log capture observed real output naming `project_id` but
+/// never containing the secret dispatch-variable marker.
+fn assert_variables_redacted(text: &str, project_id: Uuid) {
+    assert!(
+        !text.is_empty(),
+        "capture rig must have observed real log output"
+    );
+    assert!(
+        !text.contains(SECRET_VARIABLE_MARKER),
+        "the variables body leaked into logs:\n{text}"
+    );
+    // Non-vacuous: the project id (an id, not a secret) is expected to
+    // appear somewhere in `#[instrument]`'s own span fields, confirming the
+    // capture rig is observing genuine production log lines, not an empty
+    // or unreached subscriber.
+    assert!(
+        text.contains(&project_id.to_string()),
+        "capture rig did not observe the real handler's own instrumentation:\n{text}"
+    );
+}
+
 #[tokio::test]
 async fn dispatch_variables_never_reach_the_logs() {
     let server = MockServer::start().await;
     mock_dispatch_allow(&server, "demo-pipeline", "run-redaction").await;
 
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
-    let project_id = create_project(&app, "software").await;
+    let project_id =
+        common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, "demo-pipeline").await;
 
@@ -496,21 +499,5 @@ async fn dispatch_variables_never_reach_the_logs() {
 
     drop(guard);
     let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
-
-    assert!(
-        !text.is_empty(),
-        "capture rig must have observed real log output"
-    );
-    assert!(
-        !text.contains(SECRET_VARIABLE_MARKER),
-        "the variables body leaked into logs:\n{text}"
-    );
-    // Non-vacuous: the project id (an id, not a secret) is expected to
-    // appear somewhere in `#[instrument]`'s own span fields, confirming the
-    // capture rig is observing genuine production log lines, not an empty
-    // or unreached subscriber.
-    assert!(
-        text.contains(&project_id.to_string()),
-        "capture rig did not observe the real handler's own instrumentation:\n{text}"
-    );
+    assert_variables_redacted(&text, project_id);
 }

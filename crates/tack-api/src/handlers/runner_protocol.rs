@@ -491,27 +491,20 @@ async fn authenticate_attempt_request(
 }
 
 /// Validates the embedded runner capability payload shared by `/enroll` and
-/// `/refresh` against [`EmbeddedCapabilitySnapshot`] — the type built
-/// exactly for this wire shape (`crates/tack-orch/src/execution/capabilities.rs`),
-/// rather than a hand-rolled, field-by-field walk of the raw `Value`.
+/// `/refresh` against [`EmbeddedCapabilitySnapshot`] — the type built for
+/// exactly this wire shape (`tack-orch`'s `execution/capabilities.rs`),
+/// rather than a hand-rolled walk of the raw `Value`.
 ///
-/// Strict `tack_orch::execution::RunnerCapabilities` parsing rejects
-/// `refresh.request.json`'s sparse `features: {}`/`harnesses: []` example, so
+/// Strict `RunnerCapabilities` parsing rejects `refresh.request.json`'s
+/// sparse `features: {}`/`harnesses: []` example, so
 /// `EmbeddedCapabilitySnapshot` keeps `features` as an opaque
-/// `serde_json::Value` (so the sparse refresh fixture still
-/// parses) while `harnesses`, `limits`, `reported_at` and `concurrency` are
-/// genuinely typed and structurally validated.
-/// `embedded_capability_snapshot_parses_full_and_sparse_fixtures` in
-/// `capabilities.rs` proves both `enrollment.request.json` and
-/// `refresh.request.json` parse; `full_capabilities()` in
-/// `runner_protocol/lifecycle.rs` sends the same full shape.
+/// `serde_json::Value` while `harnesses`, `limits`, `reported_at` and
+/// `concurrency` stay genuinely typed and validated.
 ///
-/// This function still owns exactly two things `EmbeddedCapabilitySnapshot`
-/// does not and should not encode — a shape type has no opinion on protocol
-/// *limits* or *business rules*: the pre-parse `capabilities_bytes_max` byte
-/// cap (checked before the typed parse even runs, so an oversized payload
-/// never pays JSON-deserialization cost) and the `available <= total`
-/// business rule.
+/// Owns exactly two things the shape type does not: the pre-parse
+/// `capabilities_bytes_max` byte cap (checked before the typed parse runs,
+/// so an oversized payload never pays deserialization cost) and the
+/// `available <= total` business rule.
 fn validate_capability_payload(
     capabilities: &Value,
 ) -> runner_auth::ProtocolResult<(String, i64, i64)> {
@@ -686,22 +679,17 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 // ---------------------------------------------------------------------
 
 /// Remaps `authenticate`'s "credential not recognized" failure to the same
-/// retryable `conflict` outcome `rotate_runner_credential`'s CAS already
-/// returns for `CredentialRotationResult::HashMismatch`, but only when the
-/// request body says `rotate_credential: true` — i.e. only for a request
-/// that was itself trying to rotate, where "not recognized" is genuinely
-/// ambiguous between "you lost the race" and "this credential was always
-/// bogus" (see `runner_auth::is_credential_not_recognized`'s doc comment for
-/// why that ambiguity is accepted rather than resolved). A non-rotating
-/// refresh, or any other `authenticate` failure (missing header, revoked,
-/// inactive, expired), is returned unchanged — none of those are the
-/// rotation-race case this fixes.
+/// retryable `conflict` outcome `rotate_runner_credential`'s CAS returns
+/// for `HashMismatch`, but only when the request body says
+/// `rotate_credential: true` — only a request itself trying to rotate has
+/// the genuine ambiguity between "you lost the race" and "this credential
+/// was always bogus" (see `is_credential_not_recognized`'s doc comment). A
+/// non-rotating refresh, or any other `authenticate` failure, is returned
+/// unchanged.
 ///
 /// Peeks `rotate_credential` from the raw, not-yet-validated body — cheap,
-/// side-effect-free, and used only to pick an error code; the real,
-/// validated parse (`parse_body`/`check_protocol_version`) still runs
-/// exactly as before on the authenticated success path below, unchanged by
-/// this peek.
+/// side-effect-free, used only to pick an error code; the real, validated
+/// parse still runs unchanged on the authenticated success path below.
 fn reclassify_refresh_auth_error(
     error: runner_auth::ProtocolErrorResponse,
     raw_body: &[u8],
@@ -2280,7 +2268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effective_body_limit_bytes_is_the_lesser_of_configured_and_ceiling() {
+    fn effective_body_limit_clamps_to_protocol_ceiling() {
         // Direction 1: a tighter operator-configured limit wins.
         assert_eq!(effective_body_limit_bytes(2 * 1024), 2 * 1024);
         // Direction 2: a looser (or default 2 MiB, or a very large) configured
@@ -2360,7 +2348,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_capability_payload_rejects_available_over_total_and_oversized_labels() {
+    fn validate_capability_rejects_over_total_or_oversized_label() {
         // Every case below is otherwise a complete `EmbeddedCapabilitySnapshot`
         // shape (`reported_at`/`limits`/`concurrency`/`labels`/`harnesses`/
         // `features` all present) — the typed parse this handler validates
@@ -2415,7 +2403,7 @@ mod tests {
     /// `features: {}`), which fails strict `RunnerCapabilities` parsing, must
     /// still validate under `EmbeddedCapabilitySnapshot`.
     #[test]
-    fn validate_capability_payload_accepts_refresh_fixtures_sparse_shape() {
+    fn validate_capability_accepts_sparse_refresh_fixtures_shape() {
         let raw = include_str!("../../../../docs/contracts/runner-v1/refresh.request.json");
         let value: Value = serde_json::from_str(raw).expect("refresh fixture");
         let capabilities = &value["capabilities"];

@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"claude-haiku-4-5-20251001","claude_code_version":"2.1.223"}
+{"is_error":true,"terminal_reason":"budget_exhausted","subtype":"error_max_budget_usd","errors":["Reached maximum budget ($1e-7)"],"total_cost_usd":0.013149,"type":"result"}

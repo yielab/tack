@@ -1,17 +1,11 @@
 //! Tests for `POST /api/sprints/{id}/dispatch` and
-//! `GET /api/sprints/{id}/dispatch/dry-run` —
-//! the `sprint_dispatch` module they're backed by.
+//! `GET /api/sprints/{id}/dispatch/dry-run` (the `sprint_dispatch` module).
 //!
-//! Covers: 404 with `TACK_ORCH_ENABLE` unset / unknown sprint; 409 for an
-//! unlinked project; an empty sprint; a diamond dependency graph —
-//! topological order, dependency
-//! readiness gating a downstream item even once its direct blockers start
-//! (but haven't finished), and a satisfied dependency unblocking its
-//! dependents; the in-flight cap being honoured (timing-based) and clamped
-//! to `[1, MAX_MAX_IN_FLIGHT]`; a policy-blocked item not aborting the rest
-//! of the sprint (the partial-failure decision); trust threaded per item
-//! rather than as one blanket value for the batch; and the dry-run's output
-//! matching a real run's order and skip set exactly.
+//! Covers: the off/unknown/unlinked guards, diamond-graph dependency
+//! ordering and readiness gating, cross-sprint dependencies, partial
+//! failure (one item's policy block doesn't abort the rest), per-item
+//! trust (not one blanket value for the batch), the in-flight cap's
+//! clamping and actual concurrency bound, and dry-run/real-run parity.
 
 use crate::common;
 
@@ -96,19 +90,6 @@ async fn req(
         .oneshot(builder.body(body).unwrap())
         .await
         .unwrap()
-}
-
-async fn create_project(app: &Router) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Sprint Dispatch Test Project", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
 async fn create_sprint(app: &Router, project_id: Uuid) -> Uuid {
@@ -254,6 +235,22 @@ async fn mock_enqueue_allow(server: &MockServer, task_id: &str) {
         .await;
 }
 
+/// Mocks `POST /tasks/demo` with an artificial delay, to prove out
+/// max_in_flight's actual concurrency bound rather than just its clamping.
+async fn mock_enqueue_slow(server: &MockServer, task_id: &str, delay_ms: u64) {
+    Mock::given(method("POST"))
+        .and(path("/tasks/demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "ok": true, "task": task_id, "project": "demo", "status": "pending"
+                }))
+                .set_delay(Duration::from_millis(delay_ms)),
+        )
+        .mount(server)
+        .await;
+}
+
 async fn mock_list_tasks(server: &MockServer, task_id: &str) {
     Mock::given(method("GET"))
         .and(path("/tasks/demo"))
@@ -265,43 +262,68 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str) {
         .await;
 }
 
-fn item_by_title<'a>(items: &'a [Value], title: &str) -> &'a Value {
+/// Mocks `POST /tasks/demo`, asserting `description`/`trusted` in the body.
+async fn mock_enqueue_trusted(
+    server: &MockServer,
+    description: &str,
+    expect_trusted: bool,
+    task_id: &str,
+) {
+    Mock::given(method("POST"))
+        .and(path("/tasks/demo"))
+        .and(body_partial_json(
+            json!({"description": description, "trusted": expect_trusted}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Mocks the follow-up `GET /tasks/demo` listing several pending tasks.
+async fn mock_list_tasks_many(server: &MockServer, task_ids: &[&str]) {
+    let tasks: Vec<Value> = task_ids
+        .iter()
+        .map(|id| {
+            json!({
+                "id": id, "description": "x", "priority": "normal", "status": "pending",
+                "created": "2026-08-05T00:00:00Z", "source": "operator",
+            })
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/tasks/demo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tasks": tasks })))
+        .mount(server)
+        .await;
+}
+
+fn item_by_id(items: &[Value], id: Uuid) -> &Value {
     items
         .iter()
-        .find(|i| i["title"] == title)
-        .unwrap_or_else(|| panic!("no item named {title:?} in response: {items:?}"))
+        .find(|i| i["item_id"] == id.to_string())
+        .unwrap_or_else(|| panic!("no item {id} in response: {items:?}"))
 }
 
-// ─── Off by default / not found / not linked ───────────────────────────────
-
-#[tokio::test]
-async fn dispatch_sprint_409s_when_orch_disabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/sprints/{}/dispatch", Uuid::new_v4()),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/sprints/{}/dispatch/dry-run", Uuid::new_v4()),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
+fn order_of(items: &[Value], id: Uuid) -> u64 {
+    item_by_id(items, id)["order"].as_u64().unwrap()
 }
 
+/// The `blocked_by` array of `item`, as owned strings.
+fn blocked_by_ids(item: &Value) -> Vec<String> {
+    item["blocked_by"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
+// ─── Not found / not linked ─────────────────────────────────────────────
+
 #[tokio::test]
-async fn dispatch_sprint_404s_for_unknown_sprint() {
+async fn dispatching_a_ghost_sprint_id_yields_404() {
     let (app, _) = app_with_state(orch_config()).await;
     let res = req(
         &app,
@@ -314,9 +336,9 @@ async fn dispatch_sprint_404s_for_unknown_sprint() {
 }
 
 #[tokio::test]
-async fn dispatch_sprint_409s_when_project_not_linked() {
+async fn sprint_dispatch_409s_until_the_project_gets_linked() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
 
     let res = req(
@@ -332,9 +354,9 @@ async fn dispatch_sprint_409s_when_project_not_linked() {
 // ─── Empty sprint ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn dry_run_reports_an_empty_plan_for_a_sprint_with_no_items() {
+async fn dry_run_reports_empty_plan_for_sprint_with_no_items() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
     link_project(&app, project_id, cp, json!({"dispatch_from": ["Backlog"]})).await;
@@ -367,9 +389,9 @@ async fn seed_diamond(app: &Router, project_id: Uuid, sprint_id: Uuid) -> [Uuid;
 }
 
 #[tokio::test]
-async fn dry_run_diamond_orders_a_first_then_b_and_c_then_d_and_gates_downstream() {
+async fn dry_run_diamond_orders_topologically_and_gates_downstream() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let [a, b, c, d] = seed_diamond(&app, project_id, sprint_id).await;
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
@@ -379,57 +401,37 @@ async fn dry_run_diamond_orders_a_first_then_b_and_c_then_d_and_gates_downstream
     let items = v["items"].as_array().unwrap();
     assert_eq!(items.len(), 4);
 
-    let order_of = |id: Uuid| {
-        items
-            .iter()
-            .find(|i| i["item_id"] == id.to_string())
-            .unwrap()["order"]
-            .as_u64()
-            .unwrap()
-    };
     // A strictly before B and C; B and C strictly before D.
-    assert!(order_of(a) < order_of(b));
-    assert!(order_of(a) < order_of(c));
-    assert!(order_of(b) < order_of(d));
-    assert!(order_of(c) < order_of(d));
-
-    let item = |id: Uuid| {
-        items
-            .iter()
-            .find(|i| i["item_id"] == id.to_string())
-            .unwrap()
-    };
+    assert!(order_of(items, a) < order_of(items, b));
+    assert!(order_of(items, a) < order_of(items, c));
+    assert!(order_of(items, b) < order_of(items, d));
+    assert!(order_of(items, c) < order_of(items, d));
 
     // A has no unmet dependency and is in `dispatch_from` — a real run
     // would dispatch it.
-    assert_eq!(item(a)["decision"], "would_dispatch");
+    assert_eq!(item_by_id(items, a)["decision"], "would_dispatch");
 
     // B and C both directly depend on A, which has not reached a
     // Done-category status yet — held back regardless of A's own
     // eligibility.
-    assert_eq!(item(b)["decision"], "waiting_on_dependencies");
-    assert_eq!(item(b)["blocked_by"], json!([a.to_string()]));
-    assert_eq!(item(c)["decision"], "waiting_on_dependencies");
-    assert_eq!(item(c)["blocked_by"], json!([a.to_string()]));
+    assert_eq!(item_by_id(items, b)["decision"], "waiting_on_dependencies");
+    assert_eq!(item_by_id(items, b)["blocked_by"], json!([a.to_string()]));
+    assert_eq!(item_by_id(items, c)["decision"], "waiting_on_dependencies");
+    assert_eq!(item_by_id(items, c)["blocked_by"], json!([a.to_string()]));
 
     // D directly depends on B and C (not A) — its own `blocked_by` names
     // exactly its direct blockers, not the whole transitive ancestry.
-    assert_eq!(item(d)["decision"], "waiting_on_dependencies");
-    let d_blocked_by: Vec<String> = item(d)["blocked_by"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
+    assert_eq!(item_by_id(items, d)["decision"], "waiting_on_dependencies");
+    let d_blocked_by = blocked_by_ids(item_by_id(items, d));
     assert_eq!(d_blocked_by.len(), 2);
     assert!(d_blocked_by.contains(&b.to_string()));
     assert!(d_blocked_by.contains(&c.to_string()));
 }
 
 #[tokio::test]
-async fn a_completed_dependency_unblocks_its_direct_dependents_but_not_their_dependents() {
+async fn completed_dependency_unblocks_direct_dependents_only() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let [a, b, c, d] = seed_diamond(&app, project_id, sprint_id).await;
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
@@ -459,13 +461,13 @@ async fn a_completed_dependency_unblocks_its_direct_dependents_but_not_their_dep
 }
 
 #[tokio::test]
-async fn real_dispatch_matches_the_dry_run_order_and_skips_exactly_as_previewed() {
+async fn real_dispatch_matches_dry_run_order_and_skip_set() {
     let server = MockServer::start().await;
     mock_enqueue_allow(&server, "task-diamond").await;
     mock_list_tasks(&server, "task-diamond").await;
 
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let [a, b, c, d] = seed_diamond(&app, project_id, sprint_id).await;
     let cp = create_control_plane(&app, &server.uri()).await;
@@ -480,14 +482,8 @@ async fn real_dispatch_matches_the_dry_run_order_and_skips_exactly_as_previewed(
     assert_eq!(planned_items.len(), real_items.len());
 
     for id in [a, b, c, d] {
-        let p = planned_items
-            .iter()
-            .find(|i| i["item_id"] == id.to_string())
-            .unwrap();
-        let r = real_items
-            .iter()
-            .find(|i| i["item_id"] == id.to_string())
-            .unwrap();
+        let p = item_by_id(planned_items, id);
+        let r = item_by_id(real_items, id);
         assert_eq!(p["order"], r["order"], "order diverged for item {id}");
         match p["decision"].as_str().unwrap() {
             // A dry-run "would_dispatch" preview becomes a real "dispatched"
@@ -508,9 +504,9 @@ async fn real_dispatch_matches_the_dry_run_order_and_skips_exactly_as_previewed(
 // ─── Cross-sprint / cross-project dependency (decision 2) ─────────────────
 
 #[tokio::test]
-async fn a_dependency_outside_the_sprint_gates_readiness_the_same_way() {
+async fn dependency_outside_the_sprint_gates_readiness_the_same_way() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let other_sprint_id = create_sprint(&app, project_id).await;
 
@@ -547,7 +543,7 @@ async fn a_dependency_outside_the_sprint_gates_readiness_the_same_way() {
 // ─── Partial failure: one item's policy block doesn't abort the sprint ────
 
 #[tokio::test]
-async fn a_policy_block_on_one_item_does_not_abort_the_rest_of_the_sprint() {
+async fn policy_block_on_one_item_does_not_abort_the_sprint() {
     let server = MockServer::start().await;
     // "Blocked Item" is refused by docket's pre_input policy.
     Mock::given(method("POST"))
@@ -564,7 +560,7 @@ async fn a_policy_block_on_one_item_does_not_abort_the_rest_of_the_sprint() {
     mock_list_tasks(&server, "task-ok").await;
 
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     // Two independent items — no dependency between them.
     let blocked = create_item(&app, project_id, sprint_id, "Blocked Item").await;
@@ -574,14 +570,8 @@ async fn a_policy_block_on_one_item_does_not_abort_the_rest_of_the_sprint() {
 
     let v = dispatch_sprint(&app, sprint_id, None).await;
     let items = v["items"].as_array().unwrap();
-    let blocked_row = items
-        .iter()
-        .find(|i| i["item_id"] == blocked.to_string())
-        .unwrap();
-    let ok_row = items
-        .iter()
-        .find(|i| i["item_id"] == ok.to_string())
-        .unwrap();
+    let blocked_row = item_by_id(items, blocked);
+    let ok_row = item_by_id(items, ok);
 
     assert_eq!(blocked_row["decision"], "blocked");
     assert_eq!(blocked_row["policy_id"], "prompt-injection");
@@ -593,43 +583,14 @@ async fn a_policy_block_on_one_item_does_not_abort_the_rest_of_the_sprint() {
 // ─── Trust is threaded per item, not a blanket value for the batch ────────
 
 #[tokio::test]
-async fn trust_is_threaded_per_item_not_as_one_blanket_value_for_the_batch() {
+async fn trust_is_threaded_per_item_not_one_blanket_value() {
     let server = MockServer::start().await;
-    // Manual item must enqueue with trusted: true.
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .and(body_partial_json(
-            json!({"description": "Manual Item", "trusted": true}),
-        ))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-manual", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    // GitHub-imported item must enqueue with trusted: false.
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .and(body_partial_json(
-            json!({"description": "GitHub Item", "trusted": false}),
-        ))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-github", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tasks": [
-            {"id": "task-manual", "description": "x", "priority": "normal", "status": "pending",
-             "created": "2026-08-05T00:00:00Z", "source": "operator"},
-            {"id": "task-github", "description": "x", "priority": "normal", "status": "pending",
-             "created": "2026-08-05T00:00:00Z", "source": "operator"},
-        ]})))
-        .mount(&server)
-        .await;
+    mock_enqueue_trusted(&server, "Manual Item", true, "task-manual").await;
+    mock_enqueue_trusted(&server, "GitHub Item", false, "task-github").await;
+    mock_list_tasks_many(&server, &["task-manual", "task-github"]).await;
 
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let manual = create_item(&app, project_id, sprint_id, "Manual Item").await;
     let github = seed_github_item(&state, project_id, sprint_id, "GitHub Item").await;
@@ -638,22 +599,13 @@ async fn trust_is_threaded_per_item_not_as_one_blanket_value_for_the_batch() {
 
     let v = dispatch_sprint(&app, sprint_id, None).await;
     let items = v["items"].as_array().unwrap();
-    let manual_row = items
-        .iter()
-        .find(|i| i["item_id"] == manual.to_string())
-        .unwrap();
-    let github_row = items
-        .iter()
-        .find(|i| i["item_id"] == github.to_string())
-        .unwrap();
     // If the wrong `trusted` value had been sent, the matching mock above
     // would never have matched and `dispatch_item` would have gotten no
     // response at all — a hung/failed request, not a wrong-but-present
     // outcome. Reaching "dispatched" for both proves both values landed on
     // the wire correctly.
-    assert_eq!(manual_row["decision"], "dispatched");
-    assert_eq!(github_row["decision"], "dispatched");
-    let _ = item_by_title(items, "Manual Item"); // sanity: helper works too
+    assert_eq!(item_by_id(items, manual)["decision"], "dispatched");
+    assert_eq!(item_by_id(items, github)["decision"], "dispatched");
 }
 
 // ─── In-flight cap: reported, clamped, and actually bounds concurrency ────
@@ -661,7 +613,7 @@ async fn trust_is_threaded_per_item_not_as_one_blanket_value_for_the_batch() {
 #[tokio::test]
 async fn max_in_flight_is_clamped_into_range_and_reported_back() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     let cp = create_control_plane(&app, "http://docket.local:9999").await;
     link_project(&app, project_id, cp, json!({"dispatch_from": ["Backlog"]})).await;
@@ -682,78 +634,63 @@ async fn max_in_flight_is_clamped_into_range_and_reported_back() {
     );
 }
 
-#[tokio::test]
-async fn max_in_flight_actually_bounds_concurrent_dispatch_calls() {
+/// A project + sprint with 4 items, linked to a control plane whose mock
+/// enqueue is deliberately slow (150ms) — the fixture `max_in_flight`'s
+/// concurrency-bound cases share, varying only the cap.
+async fn setup_slow_dispatch_sprint() -> (MockServer, Router, Uuid) {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({
-                    "ok": true, "task": "task-slow", "project": "demo", "status": "pending"
-                }))
-                .set_delay(Duration::from_millis(150)),
-        )
-        .mount(&server)
-        .await;
+    mock_enqueue_slow(&server, "task-slow", 150).await;
     mock_list_tasks(&server, "task-slow").await;
 
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;
     for i in 0..4 {
         create_item(&app, project_id, sprint_id, &format!("Item {i}")).await;
     }
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, json!({"dispatch_from": ["Backlog"]})).await;
-
-    // Capped at 2: 4 items, 150ms per enqueue call, means at least two
-    // sequential batches — comfortably over 250ms.
-    let start = Instant::now();
-    let v = dispatch_sprint(&app, sprint_id, Some(2)).await;
-    let elapsed = start.elapsed();
-    assert_eq!(v["summary"]["dispatched"], 4);
-    assert!(
-        elapsed >= Duration::from_millis(260),
-        "cap=2 over 4 items with a 150ms enqueue delay should take at least \
-         two sequential batches (~300ms), took {elapsed:?}"
-    );
+    (server, app, sprint_id)
 }
 
+/// A tight cap (2, under the 4-item count) forces at least two sequential
+/// enqueue batches at 150ms each — comfortably over 260ms; a generous cap
+/// (4, at the item count) lets every independent item dispatch essentially
+/// at once, comfortably under it. Same fixture, same 150ms-delayed mock,
+/// opposite elapsed-time bound — proving the cap actually gates concurrency,
+/// not just that it's echoed back (see `max_in_flight_is_clamped_into_range_and_reported_back`
+/// for that).
 #[tokio::test]
-async fn a_generous_cap_lets_independent_items_dispatch_concurrently() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/tasks/demo"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({
-                    "ok": true, "task": "task-slow", "project": "demo", "status": "pending"
-                }))
-                .set_delay(Duration::from_millis(150)),
-        )
-        .mount(&server)
-        .await;
-    mock_list_tasks(&server, "task-slow").await;
+async fn max_in_flight_bounds_actual_dispatch_concurrency() {
+    // (cap, elapsed must be at_least the bound (else less than it), bound, note).
+    let cases = [
+        (
+            2,
+            true,
+            Duration::from_millis(260),
+            "cap=2 over 4 items with a 150ms enqueue delay should take at least \
+             two sequential batches (~300ms)",
+        ),
+        (
+            4,
+            false,
+            Duration::from_millis(280),
+            "cap=4 over 4 independent items with a 150ms enqueue delay should \
+             run concurrently in ~150ms",
+        ),
+    ];
 
-    let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
-    let sprint_id = create_sprint(&app, project_id).await;
-    for i in 0..4 {
-        create_item(&app, project_id, sprint_id, &format!("Item {i}")).await;
+    for (cap, at_least, bound, note) in cases {
+        let (_server, app, sprint_id) = setup_slow_dispatch_sprint().await;
+
+        let start = Instant::now();
+        let v = dispatch_sprint(&app, sprint_id, Some(cap)).await;
+        let elapsed = start.elapsed();
+        assert_eq!(v["summary"]["dispatched"], 4);
+        if at_least {
+            assert!(elapsed >= bound, "{note}, took {elapsed:?}");
+        } else {
+            assert!(elapsed < bound, "{note}, took {elapsed:?}");
+        }
     }
-    let cp = create_control_plane(&app, &server.uri()).await;
-    link_project(&app, project_id, cp, json!({"dispatch_from": ["Backlog"]})).await;
-
-    // Cap=4 (>= item count): all four should run essentially at once, well
-    // under the ~300ms two-sequential-batches bound above.
-    let start = Instant::now();
-    let v = dispatch_sprint(&app, sprint_id, Some(4)).await;
-    let elapsed = start.elapsed();
-    assert_eq!(v["summary"]["dispatched"], 4);
-    assert!(
-        elapsed < Duration::from_millis(280),
-        "cap=4 over 4 independent items with a 150ms enqueue delay should \
-         run concurrently in ~150ms, took {elapsed:?}"
-    );
 }

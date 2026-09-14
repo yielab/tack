@@ -5,6 +5,11 @@ This chapter walks through each of the six Rust crates in the main workspace in 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
 > and the `shared/ui` component kit.
+>
+> This chapter is a per-file walkthrough, not a reference. For crate boundaries stated
+> as a condensed table, design patterns, the DB schema, the full API endpoint list, and
+> troubleshooting, see [`docs/ARCHITECTURE.md`](../../../ARCHITECTURE.md) — the
+> authority when the two disagree on a fact rather than depth.
 
 ---
 

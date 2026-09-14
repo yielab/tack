@@ -17,6 +17,9 @@ use tack_runner::{
     harness::process::ProcessLimits,
 };
 
+mod common;
+use common::temp_dir as temp_state_dir;
+
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
@@ -28,15 +31,6 @@ fn fixture(name: &str) -> String {
         .join("../../docs/contracts/runner-v1")
         .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("fixture {name} is readable"))
-}
-
-/// A state directory that removes itself, and everything written under it,
-/// when the returned guard drops — including when an assertion panics first.
-fn temp_state_dir(label: &str) -> tempfile::TempDir {
-    tempfile::Builder::new()
-        .prefix(label)
-        .tempdir()
-        .expect("temporary directory")
 }
 
 fn test_limits() -> RunnerLimits {
@@ -86,7 +80,7 @@ fn spawn_delayed_enrollment_server(respond_after: Duration) -> String {
             }
         }
 
-        std::thread::sleep(respond_after);
+        tack_test_support::poll_until_sync::<()>(respond_after, || None);
 
         let body = fixture("enrollment.response.json");
         let response = format!(
@@ -101,8 +95,26 @@ fn spawn_delayed_enrollment_server(respond_after: Duration) -> String {
     format!("http://{addr}")
 }
 
+/// The claim here is that the runtime stops once shutdown is requested — not
+/// that it does so within any particular number of seconds — so the
+/// `timeout` below exists only to turn an actual wedge into a reported
+/// failure instead of a process that never returns. It has to clear two very
+/// different floors at once: comfortably above the delay a machine saturated
+/// by the rest of this suite can add to a single OS thread's own scheduling,
+/// and comfortably below the point (three minutes) this workspace's own test
+/// runner terminates a still-running test outright, which would report a
+/// bare process kill instead of this test's own message. The upper floor is
+/// the exact one; the lower is not, and cannot be — a single observation of
+/// this test taking two orders of magnitude longer than its typical
+/// sub-second run is what rules the old budget out, but saturating a
+/// many-core machine with spare scheduling headroom does not reproduce it,
+/// so no number here is re-measurable on demand. That asymmetry is why this
+/// sits near the runner's kill boundary rather than just above any figure:
+/// the cost of being too generous is bounded and small, and the cost of
+/// being too tight is a test that fails for reasons that are not about the
+/// code.
 #[tokio::test]
-async fn the_composition_root_stops_on_an_injected_shutdown_with_no_process_signal() {
+async fn composition_root_stops_on_injected_shutdown_without_a_signal() {
     let state_dir = temp_state_dir("shutdown");
     let base_url = spawn_delayed_enrollment_server(Duration::from_millis(300));
     let config = RunnerConfig::from_sources(RunnerConfigSources {
@@ -127,24 +139,6 @@ async fn the_composition_root_stops_on_an_injected_shutdown_with_no_process_sign
 
     shutdown_handle.request();
 
-    // The claim here is that the runtime stops once shutdown is requested —
-    // not that it does so within any particular number of seconds — so this
-    // timeout exists only to turn an actual wedge into a reported failure
-    // instead of a process that never returns. It has to clear two very
-    // different floors at once: comfortably above the delay a machine
-    // saturated by the rest of this suite can add to a single OS thread's
-    // own scheduling, and comfortably below the point (three minutes) this
-    // workspace's own test runner terminates a still-running test outright,
-    // which would report a bare process kill instead of this test's own
-    // message. The upper floor is the exact one; the lower is not, and
-    // cannot be — a single observation of this test taking two orders of
-    // magnitude longer than its typical sub-second run is what rules the
-    // old budget out, but saturating a many-core machine with spare
-    // scheduling headroom does not reproduce it, so no number here is
-    // re-measurable on demand. That asymmetry is why this sits near the
-    // runner's kill boundary rather than just above any figure: the cost of
-    // being too generous is bounded and small, and the cost of being too
-    // tight is a test that fails for reasons that are not about the code.
     let outcome = tokio::time::timeout(Duration::from_secs(150), task)
         .await
         .expect("runtime stopped after shutdown was requested, with no signal sent")

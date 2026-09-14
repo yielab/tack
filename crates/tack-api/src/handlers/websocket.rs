@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_pending_serializes_with_snake_case_tag_and_optional_action() {
+    fn approval_pending_serializes_snake_case_with_optional_action() {
         let event = BoardEvent::ApprovalPending {
             project_id: Uuid::nil(),
             item_id: Uuid::nil(),
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_run_updated_is_filtered_by_project_id_like_every_other_event() {
+    fn agent_run_updated_is_filtered_by_project_id_like_any_event() {
         let project_a = Uuid::new_v4();
         let project_b = Uuid::new_v4();
         let event = BoardEvent::AgentRunUpdated {
@@ -228,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_pending_is_filtered_by_project_id_like_every_other_event() {
+    fn approval_pending_is_filtered_by_project_id_like_any_event() {
         let project_a = Uuid::new_v4();
         let project_b = Uuid::new_v4();
         let event = BoardEvent::ApprovalPending {
@@ -249,7 +249,7 @@ mod tests {
     /// rather than a panic, so callers (like the frontend, and any future
     /// Rust WebSocket client) always get a recoverable `Result`.
     #[test]
-    fn an_unrecognised_event_type_fails_to_deserialize_without_panicking() {
+    fn unrecognised_event_type_fails_to_deserialize_not_panic() {
         let raw = serde_json::json!({"type": "some_future_event", "project_id": Uuid::nil()});
         let result: Result<BoardEvent, _> = serde_json::from_value(raw);
         assert!(result.is_err());

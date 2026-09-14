@@ -1,19 +1,13 @@
 //! Tests for `GET /api/projects/{id}/orch-budget` and
 //! `GET /api/projects/{id}/orch-policy`.
 //!
-//! Covers: 404 with `TACK_ORCH_ENABLE` unset (both routes); an unlinked
-//! project reports `linked: false` while still surfacing any real historical
-//! token/cost totals (never inventing a link); the unreachable-vs-zero
-//! staleness distinction for `cost_usd_estimated` (same rule `GET /api/fleet`
-//! established); real token/cost sums from `orch_tasks`; the policy
-//! endpoint's scoping to exactly the linked control plane's own
-//! `orch_metrics` samples (never leaking a second plane's numbers); denial
-//! rate computed from `docket_tool_calls_total`, `None` (not `0.0`) when no
-//! tool-call data exists at all; and policy-hit / approval-channel grouping.
-//!
-//! Deliberately does **not** test for any "paused" field on either response —
-//! see `handlers/orch.rs`'s module doc above `OrchBudgetResponse` for why that
-//! isn't reachable and isn't built.
+//! Covers: the off/unlinked guards; the unreachable-vs-zero staleness
+//! distinction for `cost_usd_estimated` (same rule `GET /api/fleet`
+//! established); real token/cost sums from `orch_tasks`; policy metrics
+//! scoped to exactly the linked control plane; denial rate as `None` (not
+//! `0.0`) with no tool-call data; and policy-hit/approval-channel grouping.
+//! Deliberately does not test a "paused" field — see `handlers/orch.rs`'s
+//! doc above `OrchBudgetResponse` for why.
 
 use crate::common;
 
@@ -98,19 +92,6 @@ async fn req(
         .unwrap()
 }
 
-async fn create_project(app: &Router) -> Uuid {
-    let res = req(
-        app,
-        Method::POST,
-        "/api/projects",
-        Some(json!({"name": "Orch Budget/Policy Test Project", "project_type": "software"})),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
 async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
     let res = req(
         app,
@@ -185,42 +166,13 @@ fn metric(name: &str, labels: &[(&str, &str)], value: f64) -> NewOrchMetric {
     }
 }
 
-// ─── Off by default ────────────────────────────────────
+// ─── Budget ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn both_new_routes_409_when_orch_disabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let fake = Uuid::new_v4();
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{fake}/orch-budget"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{fake}/orch-policy"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
-// ─── Budget ─────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn orch_budget_unlinked_project_reports_linked_false_and_null_cost() {
+async fn orch_budget_unlinked_reports_linked_false_null_cost() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
 
     let res = req(
         &app,
@@ -243,22 +195,17 @@ async fn orch_budget_unlinked_project_reports_linked_false_and_null_cost() {
 }
 
 #[tokio::test]
-async fn orch_budget_reports_zero_cost_distinctly_from_unreachable() {
+async fn project_budget_lookup_reports_a_true_zero_cost_value() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, Some(50.0)).await;
+    let uri = format!("/api/projects/{project_id}/orch-budget");
 
     // Freshly registered plane: health defaults to "unknown" (not yet
     // polled), which is reachable-enough to report a real, current zero.
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-budget"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["linked"], true);
     assert_eq!(v["health"], "unknown");
     assert_eq!(v["budget_usd"], json!(50.0));
@@ -277,14 +224,7 @@ async fn orch_budget_reports_zero_cost_distinctly_from_unreachable() {
         .await
         .expect("record health");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-budget"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["health"], "unreachable");
     assert!(
         v["cost_usd_estimated"].is_null(),
@@ -296,9 +236,10 @@ async fn orch_budget_reports_zero_cost_distinctly_from_unreachable() {
 }
 
 #[tokio::test]
-async fn orch_budget_reflects_real_token_and_cost_sums_from_orch_tasks() {
+async fn orch_budget_reflects_real_token_and_cost_sums() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let item_a = create_item(&app, project_id, "Item A").await;
     let item_b = create_item(&app, project_id, "Item B").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
@@ -333,7 +274,8 @@ async fn orch_budget_reflects_real_token_and_cost_sums_from_orch_tasks() {
 #[tokio::test]
 async fn orch_policy_unlinked_project_returns_empty_with_linked_false() {
     let (app, _) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
 
     let res = req(
         &app,
@@ -355,44 +297,27 @@ async fn orch_policy_unlinked_project_returns_empty_with_linked_false() {
 #[tokio::test]
 async fn orch_policy_scopes_metrics_to_the_linked_control_plane_only() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let my_plane = create_control_plane(&app, "my-plane").await;
     let other_plane = create_control_plane(&app, "other-plane").await;
     link_project(&app, project_id, my_plane, None).await;
 
+    let allow_metric = metric("docket_tool_calls_total", &[("decision", "allow")], 7.0);
     state
         .repo
-        .upsert_orch_metrics(
-            my_plane,
-            &[metric(
-                "docket_tool_calls_total",
-                &[("decision", "allow")],
-                7.0,
-            )],
-        )
+        .upsert_orch_metrics(my_plane, &[allow_metric])
         .await
         .expect("seed my plane's metrics");
+    let deny_metric = metric("docket_tool_calls_total", &[("decision", "deny")], 99.0);
     state
         .repo
-        .upsert_orch_metrics(
-            other_plane,
-            &[metric(
-                "docket_tool_calls_total",
-                &[("decision", "deny")],
-                99.0,
-            )],
-        )
+        .upsert_orch_metrics(other_plane, &[deny_metric])
         .await
         .expect("seed other plane's metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["linked"], true);
     assert_eq!(v["control_plane_id"], my_plane.to_string());
     let tool_calls = v["tool_calls"].as_array().unwrap();
@@ -410,7 +335,8 @@ async fn orch_policy_scopes_metrics_to_the_linked_control_plane_only() {
 #[tokio::test]
 async fn orch_policy_computes_denial_rate_from_tool_calls() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, None).await;
 
@@ -443,36 +369,26 @@ async fn orch_policy_computes_denial_rate_from_tool_calls() {
 #[tokio::test]
 async fn orch_policy_denial_rate_is_none_with_no_tool_call_data() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, None).await;
 
     // Only policy-hit data, no tool-call samples at all.
+    let labels = [
+        ("policy_id", "no-prod-secrets"),
+        ("hook", "pre_tool_call"),
+        ("action", "deny"),
+    ];
+    let policy_hit = metric("docket_policy_hits_total", &labels, 3.0);
     state
         .repo
-        .upsert_orch_metrics(
-            plane_id,
-            &[metric(
-                "docket_policy_hits_total",
-                &[
-                    ("policy_id", "no-prod-secrets"),
-                    ("hook", "pre_tool_call"),
-                    ("action", "deny"),
-                ],
-                3.0,
-            )],
-        )
+        .upsert_orch_metrics(plane_id, &[policy_hit])
         .await
         .expect("seed metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert!(
         v["denial_rate"].is_null(),
         "no tool-call data observed at all must be None, never a fabricated 0.0: {v:?}"
@@ -488,38 +404,29 @@ async fn orch_policy_denial_rate_is_none_with_no_tool_call_data() {
 #[tokio::test]
 async fn orch_policy_groups_approvals_by_channel_and_outcome() {
     let (app, state) = app_with_state(orch_config()).await;
-    let project_id = create_project(&app).await;
+    let project_id =
+        common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, None).await;
 
+    let granted = metric(
+        "docket_approvals_total",
+        &[("channel", "tack"), ("outcome", "granted")],
+        4.0,
+    );
+    let denied = metric(
+        "docket_approvals_total",
+        &[("channel", "timeout"), ("outcome", "denied")],
+        1.0,
+    );
     state
         .repo
-        .upsert_orch_metrics(
-            plane_id,
-            &[
-                metric(
-                    "docket_approvals_total",
-                    &[("channel", "tack"), ("outcome", "granted")],
-                    4.0,
-                ),
-                metric(
-                    "docket_approvals_total",
-                    &[("channel", "timeout"), ("outcome", "denied")],
-                    1.0,
-                ),
-            ],
-        )
+        .upsert_orch_metrics(plane_id, &[granted, denied])
         .await
         .expect("seed metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     let approvals = v["approvals_by_channel"].as_array().unwrap();
     assert_eq!(approvals.len(), 2);
     assert!(

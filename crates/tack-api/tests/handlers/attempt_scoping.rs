@@ -1,24 +1,14 @@
 //! Cross-execution scoping tests for the two operator-facing routes that
-//! resolve an attempt by `(request_id, attempt_number)` and were not covered
-//! by `attempt_lists.rs`'s own cross-execution tests:
-//! `GET /api/executions/{request_id}/attempts/{attempt_number}/events` and
-//! `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`.
-//!
-//! Mirrors `attempt_lists.rs` exactly: same production router
-//! (`tack_api::router::build_router`), same runner-enrollment/execution/claim
-//! fixture path, same technique for seeding two executions inside one test
-//! (a real, claimed "owner" execution and a real, never-claimed "caller"
-//! execution) so a query that resolves an attempt by `attempt_number` alone
-//! — forgetting which execution it belongs to — can be caught returning the
-//! owner's real row to the caller, not just a wrong status code.
-//!
-//! The artifact-content case is the one worth the extra setup: unlike every
-//! other route here, a successful response is not a JSON envelope but the
-//! artifact's actual bytes streamed back verbatim. Proving the leak for that
-//! route means manifesting and uploading real content through the real
-//! runner-protocol write path and showing those exact bytes come back
-//! through the *other* execution's request id.
+//! resolve an attempt by `(request_id, attempt_number)`, not covered by
+//! `attempt_lists.rs`'s own cross-execution tests: `GET .../attempts/{n}/events`
+//! and `GET .../attempts/{n}/artifacts/{artifact_id}/content`. Mirrors
+//! `attempt_lists.rs`'s fixture path: a real, claimed "owner" execution and a
+//! real, never-claimed "caller" execution, so a query that resolves an
+//! attempt by `attempt_number` alone — forgetting which execution it belongs
+//! to — is caught returning the owner's real row (or, for the streamed
+//! artifact-content route, its real bytes), not just a wrong status code.
 
+use crate::common;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
@@ -105,38 +95,6 @@ async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, Str
     (app, repo, item.id.to_string())
 }
 
-async fn send(
-    app: &axum::Router,
-    method: &str,
-    uri: &str,
-    body: Value,
-    headers: &[(&str, &str)],
-) -> (StatusCode, Value, String) {
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("content-type", "application/json");
-    for (name, value) in headers {
-        builder = builder.header(*name, *value);
-    }
-    let response = app
-        .clone()
-        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), 8 * 1024 * 1024)
-        .await
-        .unwrap();
-    let raw = String::from_utf8_lossy(&bytes).into_owned();
-    let value = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
-    };
-    (status, value, raw)
-}
-
 fn operator_headers() -> Vec<(&'static str, &'static str)> {
     vec![("authorization", "Bearer c8-attempt-scoping-operator-token")]
 }
@@ -173,7 +131,7 @@ fn full_capabilities() -> Value {
 
 /// Enrolls a runner and returns (runner_id, bearer-auth-header-pair).
 async fn enroll_runner(app: &axum::Router, name: &str) -> (String, [(String, String); 1]) {
-    let (status, pending, _) = send(
+    let (status, pending, _) = common::send_with_raw(
         app,
         "POST",
         "/api/runners/enrollment",
@@ -185,7 +143,7 @@ async fn enroll_runner(app: &axum::Router, name: &str) -> (String, [(String, Str
     let runner_id = pending["runner_id"].as_str().unwrap().to_owned();
     let raw_token = pending["enrollment_token"].as_str().unwrap().to_owned();
 
-    let (status, enrolled, _) = send(
+    let (status, enrolled, _) = common::send_with_raw(
         app,
         "POST",
         "/api/runner/v1/enroll",
@@ -218,7 +176,7 @@ fn headers_ref(owned: &[(String, String); 1]) -> Vec<(&str, &str)> {
 /// `attempt_lists.rs`'s own helper — a test that stands up two separate
 /// executions calls this twice.
 async fn create_agent_profile(app: &axum::Router, label: &str) -> String {
-    let (status, profile, _) = send(
+    let (status, profile, _) = common::send_with_raw(
         app,
         "POST",
         "/api/agent-profiles",
@@ -274,7 +232,7 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> Cl
     let auth = headers_ref(&auth_owned);
     let agent_profile_id = create_agent_profile(app, label).await;
 
-    let (status, created, _) = send(
+    let (status, created, _) = common::send_with_raw(
         app,
         "POST",
         "/api/executions",
@@ -285,7 +243,7 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> Cl
     assert_eq!(status, StatusCode::OK, "{created}");
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
-    let (status, claimed, _) = send(
+    let (status, claimed, _) = common::send_with_raw(
         app,
         "POST",
         "/api/runner/v1/claim",
@@ -306,6 +264,39 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> Cl
     }
 }
 
+/// Reports one event batch of a single event as the attempt's owning
+/// runner; returns the response status and raw body text.
+async fn post_event(
+    app: &axum::Router,
+    claim: &ClaimedAttempt,
+    event_id: &str,
+) -> (StatusCode, String) {
+    let (status, _, raw) = common::send_with_raw(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{}/events", claim.attempt_id),
+        json!({
+            "protocol_version": 1,
+            "runner_id": claim.runner_id,
+            "attempt_id": claim.attempt_id,
+            "fencing_token": claim.fencing_token,
+            "checkpoint": "cp-1",
+            "previous_checkpoint": Value::Null,
+            "events": [{
+                "event_id": event_id,
+                "sequence": 1,
+                "source": "runner",
+                "kind": "log",
+                "payload": {"message": format!("{event_id}-payload")},
+                "occurred_at": chrono::Utc::now().to_rfc3339(),
+            }],
+        }),
+        &headers_ref(&claim.auth),
+    )
+    .await;
+    (status, raw)
+}
+
 /// Creates an execution request but never claims it, so its
 /// `execution_attempts` table stays empty for it — the "another execution
 /// exists, but this one never claimed an attempt" half of every
@@ -313,7 +304,7 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> Cl
 async fn request_without_claiming(app: &axum::Router, item_id: &str, label: &str) -> String {
     let (runner_id, _auth_owned) = enroll_runner(app, &format!("{label} runner")).await;
     let agent_profile_id = create_agent_profile(app, label).await;
-    let (status, created, _) = send(
+    let (status, created, _) = common::send_with_raw(
         app,
         "POST",
         "/api/executions",
@@ -331,7 +322,7 @@ async fn request_without_claiming(app: &axum::Router, item_id: &str, label: &str
 /// own eligibility check).
 async fn accept_and_start(app: &axum::Router, attempt: &ClaimedAttempt) {
     let auth = headers_ref(&attempt.auth);
-    let (status, accepted, _) = send(
+    let (status, accepted, _) = common::send_with_raw(
         app,
         "POST",
         &format!("/api/runner/v1/attempts/{}/accept", attempt.attempt_id),
@@ -348,7 +339,7 @@ async fn accept_and_start(app: &axum::Router, attempt: &ClaimedAttempt) {
     .await;
     assert_eq!(status, StatusCode::OK, "{accepted}");
 
-    let (status, started, _) = send(
+    let (status, started, _) = common::send_with_raw(
         app,
         "POST",
         &format!("/api/runner/v1/attempts/{}/start", attempt.attempt_id),
@@ -376,7 +367,7 @@ async fn manifest_artifact(
     content: &[u8],
 ) {
     let auth = headers_ref(&attempt.auth);
-    let (status, manifest, _) = send(
+    let (status, manifest, _) = common::send_with_raw(
         app,
         "POST",
         &format!("/api/runner/v1/attempts/{}/artifacts", attempt.attempt_id),
@@ -449,37 +440,14 @@ async fn attempt_events_from_a_different_execution_is_404() {
     // it, carrying a payload distinctive enough to prove it never reached an
     // unrelated response.
     let owner = request_and_claim(&app, &item_id, "events-cross-owner").await;
-    let owner_auth = headers_ref(&owner.auth);
-    let (status, batch, _) = send(
-        &app,
-        "POST",
-        &format!("/api/runner/v1/attempts/{}/events", owner.attempt_id),
-        json!({
-            "protocol_version": 1,
-            "runner_id": owner.runner_id,
-            "attempt_id": owner.attempt_id,
-            "fencing_token": owner.fencing_token,
-            "checkpoint": "cp-1",
-            "previous_checkpoint": Value::Null,
-            "events": [{
-                "event_id": "cross-execution-event",
-                "sequence": 1,
-                "source": "runner",
-                "kind": "log",
-                "payload": {"message": "cross-execution-event-payload"},
-                "occurred_at": chrono::Utc::now().to_rfc3339(),
-            }],
-        }),
-        &owner_auth,
-    )
-    .await;
+    let (status, batch) = post_event(&app, &owner, "cross-execution-event").await;
     assert_eq!(status, StatusCode::OK, "{batch}");
 
     // Execution Y is real but never claimed anything — it has no attempt 1
     // of its own.
     let request_id = request_without_claiming(&app, &item_id, "events-cross-caller").await;
 
-    let (status, body, raw) = send(
+    let (status, body, raw) = common::send_with_raw(
         &app,
         "GET",
         &format!("/api/executions/{request_id}/attempts/1/events"),
@@ -506,7 +474,7 @@ async fn attempt_events_unknown_attempt_number_is_404() {
 
     // Only attempt 1 was ever claimed for this request; attempt 99 never
     // existed for anyone.
-    let (status, body, _) = send(
+    let (status, body, _) = common::send_with_raw(
         &app,
         "GET",
         &format!("/api/executions/{}/attempts/99/events", owner.request_id),
@@ -539,27 +507,15 @@ async fn attempt_artifact_download_from_a_different_execution_is_404() {
     // of its own, and therefore no artifact "shared-artifact" either.
     let request_id = request_without_claiming(&app, &item_id, "download-cross-caller").await;
 
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!(
-                    "/api/executions/{request_id}/attempts/1/artifacts/shared-artifact/content"
-                ))
-                .header("authorization", "Bearer c8-attempt-scoping-operator-token")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), 8 * 1024 * 1024)
-        .await
-        .unwrap();
-    let raw = String::from_utf8_lossy(&bytes).into_owned();
+    let (status, body, raw) = common::send_with_raw(
+        &app,
+        "GET",
+        &format!("/api/executions/{request_id}/attempts/1/artifacts/shared-artifact/content"),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{raw}");
-    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(body["error"]["details"]["artifact_id"], "shared-artifact");
     // A status code alone would not catch a query that scopes only by
     // attempt_number and forgets request_id: assert X's real artifact bytes
@@ -583,7 +539,7 @@ async fn attempt_artifact_download_unknown_attempt_number_is_404() {
 
     // Only attempt 1 was ever claimed for this request; attempt 99 never
     // existed for anyone.
-    let (status, body, _) = send(
+    let (status, body, _) = common::send_with_raw(
         &app,
         "GET",
         &format!(

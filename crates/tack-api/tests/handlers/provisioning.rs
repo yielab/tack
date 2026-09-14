@@ -1,18 +1,12 @@
 //! Tests for `POST /api/templates/{id}/provision` — the end-to-end "create
 //! a project from a template, provision a docket pod, link the two" flow,
-//! and its rollback behavior on partial failure.
-//!
-//! Covers: 409 `orchestration_disabled` while orchestration is off; a full happy-path run that
-//! creates the project, calls `POST /pods`, and writes `orch_links`; an
-//! unknown `control_plane_id` 404ing before any project is created; a bad
-//! `status_map` name rolling the project back *without* ever calling
-//! docket; docket's `400`/`409` responses each rolling the project back
-//! (per `core/pod_provisioning.py`'s documented "either fully created or
-//! nothing created" contract — see `handlers::provisioning`'s module doc);
-//! and an `orch_links` write failure *after* a successful `POST /pods`
-//! leaving both the project and the pod's record standing, reported as
-//! `pod_created_link_failed` rather than silently dropped or wrongly
-//! treated as a hard failure.
+//! and its rollback behavior on partial failure: a bad `status_map` or a
+//! docket `400`/`409` each roll the project back (per
+//! `core/pod_provisioning.py`'s "either fully created or nothing created"
+//! contract), while an `orch_links` write failure *after* a successful
+//! `POST /pods` leaves both standing as `pod_created_link_failed` — the one
+//! step that is never rolled back, since the pod itself can't be
+//! un-provisioned.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -123,6 +117,85 @@ async fn create_control_plane(app: &Router, base_url: &str) -> Uuid {
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
+/// A fresh app with a template and a control plane pointed at `server_uri`
+/// — the setup every provisioning test in this file starts from.
+async fn setup_with_control_plane(server_uri: &str) -> (Router, AppState, Uuid, Uuid) {
+    let (app, state) = app_with_state(orch_config()).await;
+    let template_id = create_template(&app).await;
+    let control_plane_id = create_control_plane(&app, server_uri).await;
+    (app, state, template_id, control_plane_id)
+}
+
+/// Mocks docket's `POST /pods` with the given status and body.
+async fn mock_pods(server: &MockServer, status: u16, body: Value) {
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+/// Asserts the provisioned project and its orch-link are both real, over
+/// the operator HTTP surface — not just present in the provision response.
+async fn assert_project_and_link_are_real(app: &Router, project_id: &str, remote_project: &str) {
+    let get_res = req(
+        app,
+        Method::GET,
+        &format!("/api/projects/{project_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(get_res.status(), StatusCode::OK);
+
+    let link_res = req(
+        app,
+        Method::GET,
+        &format!("/api/projects/{project_id}/orch-link"),
+        None,
+    )
+    .await;
+    assert_eq!(link_res.status(), StatusCode::OK);
+    let link_body = body_json(link_res).await;
+    assert_eq!(link_body["linked"], true);
+    assert_eq!(link_body["link"]["remote_project"], remote_project);
+}
+
+/// Asserts a failed provision named `message_contains`, confirmed the
+/// rollback in its own message, and left project count unchanged.
+async fn assert_provision_rolled_back(
+    app: &Router,
+    before: usize,
+    message: &str,
+    message_contains: &str,
+    docket_status: u16,
+) {
+    assert!(
+        message.contains(message_contains),
+        "docket {docket_status}: {message}"
+    );
+    assert!(
+        message.contains("rolled back"),
+        "docket {docket_status}: {message}"
+    );
+    assert_eq!(
+        count_projects(app).await,
+        before,
+        "docket {docket_status}: project must roll back even when docket itself created nothing"
+    );
+}
+
+/// Asserts one warning names both `Settings` and `remote_project` — a
+/// concrete manual-link instruction, not a vague failure notice.
+fn assert_warns_manual_link(warnings: &[Value], remote_project: &str) {
+    assert!(
+        warnings.iter().any(|w| {
+            let s = w.as_str().unwrap();
+            s.contains("Settings") && s.contains(remote_project)
+        }),
+        "must name a concrete manual-link instruction: {warnings:?}"
+    );
+}
+
 async fn count_projects(app: &Router) -> usize {
     let res = req(app, Method::GET, "/api/projects", None).await;
     assert_eq!(res.status(), StatusCode::OK);
@@ -146,6 +219,37 @@ fn provision_body(template_ok: bool, control_plane_id: Uuid, remote_project: &st
     })
 }
 
+/// `POST /api/templates/{id}/provision` with the given provision body.
+async fn provision(
+    app: &Router,
+    template_id: Uuid,
+    control_plane_id: Uuid,
+    template_ok: bool,
+    remote_project: &str,
+) -> axum::response::Response {
+    req(
+        app,
+        Method::POST,
+        &format!("/api/templates/{template_id}/provision"),
+        Some(provision_body(
+            template_ok,
+            control_plane_id,
+            remote_project,
+        )),
+    )
+    .await
+}
+
+/// Drops `orch_links`, so the next write against it fails deterministically
+/// — simulates "docket succeeded, Tack's own DB write then failed" without
+/// needing to fault-inject application code.
+async fn break_orch_links_table(pool: &sqlx::SqlitePool) {
+    sqlx::query("DROP TABLE orch_links")
+        .execute(pool)
+        .await
+        .expect("drop orch_links for the test");
+}
+
 // ─── Gating ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -153,13 +257,7 @@ async fn create_project_with_pod_409s_when_orch_disabled() {
     let (app, _state) = app_with_state(AppConfig::default()).await;
     let template_id = create_template(&app).await;
 
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, Uuid::new_v4(), "blog-api")),
-    )
-    .await;
+    let res = provision(&app, template_id, Uuid::new_v4(), true, "blog-api").await;
     assert_eq!(res.status(), StatusCode::CONFLICT);
     let body = body_json(res).await;
     assert_eq!(body["error"]["code"], "orchestration_disabled");
@@ -170,30 +268,23 @@ async fn create_project_with_pod_409s_when_orch_disabled() {
 #[tokio::test]
 async fn happy_path_creates_project_provisions_pod_and_links_it() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/pods"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+    mock_pods(
+        &server,
+        201,
+        json!({
             "ok": true,
             "project": "blog-api",
             "blueprint": "software",
             "members": [
                 {"id": "blog-api-lead", "role": "lead", "model": "anthropic/claude-opus-4-5"}
             ]
-        })))
-        .mount(&server)
-        .await;
-
-    let (app, _state) = app_with_state(orch_config()).await;
-    let template_id = create_template(&app).await;
-    let control_plane_id = create_control_plane(&app, &server.uri()).await;
-
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, control_plane_id, "blog-api")),
+        }),
     )
     .await;
+    let (app, _state, template_id, control_plane_id) =
+        setup_with_control_plane(&server.uri()).await;
+
+    let res = provision(&app, template_id, control_plane_id, true, "blog-api").await;
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
     let body = body_json(res).await;
 
@@ -201,29 +292,7 @@ async fn happy_path_creates_project_provisions_pod_and_links_it() {
     assert_eq!(body["provisioning"]["remote_project"], "blog-api");
     assert_eq!(body["provisioning"]["members"][0]["role"], "lead");
     let project_id = body["project"]["id"].as_str().unwrap();
-
-    // The project is real.
-    let get_res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}"),
-        None,
-    )
-    .await;
-    assert_eq!(get_res.status(), StatusCode::OK);
-
-    // The link is real.
-    let link_res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-link"),
-        None,
-    )
-    .await;
-    assert_eq!(link_res.status(), StatusCode::OK);
-    let link_body = body_json(link_res).await;
-    assert_eq!(link_body["linked"], true);
-    assert_eq!(link_body["link"]["remote_project"], "blog-api");
+    assert_project_and_link_are_real(&app, project_id, "blog-api").await;
 }
 
 // ─── Validation before anything is created ─────────────────────────────────
@@ -234,13 +303,7 @@ async fn unknown_control_plane_404s_before_creating_any_project() {
     let template_id = create_template(&app).await;
     let before = count_projects(&app).await;
 
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, Uuid::new_v4(), "blog-api")),
-    )
-    .await;
+    let res = provision(&app, template_id, Uuid::new_v4(), true, "blog-api").await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
     assert_eq!(
         count_projects(&app).await,
@@ -272,7 +335,7 @@ async fn empty_remote_project_400s_before_creating_any_project() {
 // ─── Rollback: a failure strictly before POST /pods succeeds ──────────────
 
 #[tokio::test]
-async fn bad_status_map_rolls_back_the_project_without_ever_calling_docket() {
+async fn bad_status_map_rolls_back_without_calling_docket() {
     // Deliberately no `/pods` mock mounted — if the handler incorrectly
     // called docket before validating status_map, it would hit this
     // MockServer's default 404-for-unmatched-route response, and the
@@ -280,19 +343,11 @@ async fn bad_status_map_rolls_back_the_project_without_ever_calling_docket() {
     // instead of naming the bad status. Asserting the message's shape
     // below is what actually proves docket was never reached.
     let server = MockServer::start().await;
-
-    let (app, _state) = app_with_state(orch_config()).await;
-    let template_id = create_template(&app).await;
-    let control_plane_id = create_control_plane(&app, &server.uri()).await;
+    let (app, _state, template_id, control_plane_id) =
+        setup_with_control_plane(&server.uri()).await;
     let before = count_projects(&app).await;
 
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(false, control_plane_id, "blog-api")),
-    )
-    .await;
+    let res = provision(&app, template_id, control_plane_id, false, "blog-api").await;
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = body_json(res).await;
     let message = body["error"]["message"].as_str().unwrap();
@@ -316,116 +371,59 @@ async fn bad_status_map_rolls_back_the_project_without_ever_calling_docket() {
 }
 
 #[tokio::test]
-async fn docket_400_rolls_back_the_project() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/pods"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "ok": false, "error": "unknown blueprint 'made-up'"
-        })))
-        .mount(&server)
-        .await;
+async fn docket_error_rolls_back_the_project() {
+    let cases = [
+        (
+            400,
+            StatusCode::BAD_REQUEST,
+            json!({"ok": false, "error": "unknown blueprint 'made-up'"}),
+            "unknown blueprint",
+        ),
+        (
+            409,
+            StatusCode::CONFLICT,
+            json!({"ok": false, "error": "'blog-api' already exists"}),
+            "already exists",
+        ),
+    ];
+    for (docket_status, expected_status, docket_body, message_contains) in cases {
+        let server = MockServer::start().await;
+        mock_pods(&server, docket_status, docket_body).await;
+        let (app, _state, template_id, control_plane_id) =
+            setup_with_control_plane(&server.uri()).await;
+        let before = count_projects(&app).await;
 
-    let (app, _state) = app_with_state(orch_config()).await;
-    let template_id = create_template(&app).await;
-    let control_plane_id = create_control_plane(&app, &server.uri()).await;
-    let before = count_projects(&app).await;
-
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, control_plane_id, "blog-api")),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let body = body_json(res).await;
-    let message = body["error"]["message"].as_str().unwrap();
-    assert!(message.contains("unknown blueprint"), "{message}");
-    assert!(message.contains("rolled back"), "{message}");
-    assert_eq!(count_projects(&app).await, before);
-}
-
-#[tokio::test]
-async fn docket_409_already_exists_rolls_back_the_project() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/pods"))
-        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
-            "ok": false, "error": "'blog-api' already exists"
-        })))
-        .mount(&server)
-        .await;
-
-    let (app, _state) = app_with_state(orch_config()).await;
-    let template_id = create_template(&app).await;
-    let control_plane_id = create_control_plane(&app, &server.uri()).await;
-    let before = count_projects(&app).await;
-
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, control_plane_id, "blog-api")),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    let message = body["error"]["message"].as_str().unwrap();
-    assert!(message.contains("already exists"), "{message}");
-    assert!(message.contains("rolled back"), "{message}");
-    assert_eq!(
-        count_projects(&app).await,
-        before,
-        "a 409 must roll back the project even though docket itself created nothing"
-    );
+        let res = provision(&app, template_id, control_plane_id, true, "blog-api").await;
+        assert_eq!(res.status(), expected_status, "docket {docket_status}");
+        let body = body_json(res).await;
+        let message = body["error"]["message"].as_str().unwrap();
+        assert_provision_rolled_back(&app, before, message, message_contains, docket_status).await;
+    }
 }
 
 // ─── The one step that is never rolled back ────────────────────────────────
 
 #[tokio::test]
-async fn orch_link_write_failure_after_a_successful_pod_leaves_both_standing() {
+async fn orch_link_write_failure_after_pod_leaves_both_standing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/pods"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
-            "ok": true, "project": "blog-api", "blueprint": "software", "members": []
-        })))
-        .mount(&server)
-        .await;
-
-    let (app, state) = app_with_state(orch_config()).await;
-    let template_id = create_template(&app).await;
-    let control_plane_id = create_control_plane(&app, &server.uri()).await;
-
-    // Force the one remaining write to fail deterministically, simulating
-    // the rare "docket succeeded, Tack's own DB write then failed" case
-    // this test is about — without needing to fault-inject application
-    // code.
-    sqlx::query("DROP TABLE orch_links")
-        .execute(state.pool())
-        .await
-        .expect("drop orch_links for the test");
-
-    let before = count_projects(&app).await;
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/templates/{template_id}/provision"),
-        Some(provision_body(true, control_plane_id, "blog-api")),
+    mock_pods(
+        &server,
+        201,
+        json!({"ok": true, "project": "blog-api", "blueprint": "software", "members": []}),
     )
     .await;
+    let (app, state, template_id, control_plane_id) = setup_with_control_plane(&server.uri()).await;
+    break_orch_links_table(state.pool()).await;
+
+    let before = count_projects(&app).await;
+    let res = provision(&app, template_id, control_plane_id, true, "blog-api").await;
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
     let body = body_json(res).await;
 
     assert_eq!(body["provisioning"]["status"], "pod_created_link_failed");
-    let warnings = body["provisioning"]["warnings"].as_array().unwrap();
-    assert!(
-        warnings.iter().any(|w| {
-            let s = w.as_str().unwrap();
-            s.contains("Settings") && s.contains("blog-api")
-        }),
-        "must name a concrete manual-link instruction: {warnings:?}"
+    assert_warns_manual_link(
+        body["provisioning"]["warnings"].as_array().unwrap(),
+        "blog-api",
     );
 
     // The project is real and was NOT rolled back — the pod is real too
