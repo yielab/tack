@@ -1,11 +1,7 @@
-//! Runtime start/stop control for the orchestration reconciler: makes the enable flag
-//! a runtime setting (`PUT /api/settings/orchestration`) instead of boot-time-only.
-//!
-//! [`OrchRuntime::stop`] signals every task via a `tokio::sync::watch`; a task
-//! mid-fetch finishes that tick and exits at its next safe point, never mid-HTTP-call
-//! or mid-transaction. It holds at most one running generation, so a `start()` racing
-//! a `stop()` can never observe "half stopped" state — see `tack_orch::reconciler`
-//! for the per-plane lifecycle, which this module no longer owns.
+//! Runtime start/stop for the orchestration reconciler: makes the enable flag a
+//! runtime setting (`PUT /api/settings/orchestration`) instead of boot-time-only.
+//! [`OrchRuntime::stop`] signals via a `watch`; a task finishes its current tick
+//! before exiting. At most one generation runs, so `start()`/`stop()` never race.
 
 use std::sync::Arc;
 
@@ -13,18 +9,14 @@ use tokio::sync::{Mutex, watch};
 
 use tack_orch::reconciler::{self, ControlPlaneStore, ReconcilerConfig, SupervisedReconciler};
 
-/// A live supervised reconciler run plus the shutdown signal that stops it
-/// (and, transitively, every per-plane poller it's currently tracking — see
-/// `reconciler::supervisor_loop`'s doc comment).
+/// A live reconciler run plus the shutdown signal for it and its pollers.
 struct Running {
     reconciler: SupervisedReconciler,
     stop_tx: watch::Sender<bool>,
 }
 
-/// Shared, toggleable handle to the orchestration reconciler. One instance
-/// lives on `AppState` (`Clone`, cheap — an `Arc<Mutex<..>>` underneath) so
-/// both the boot path (`server.rs`) and `PUT /api/settings/orchestration`
-/// (`handlers/settings.rs`) start and stop the exact same set of tasks.
+/// Shared, toggleable handle to the orchestration reconciler (cheap `Clone`).
+/// One instance on `AppState` shared by the boot path and the settings PUT.
 #[derive(Clone)]
 pub struct OrchRuntime {
     inner: Arc<Mutex<Option<Running>>>,
@@ -43,17 +35,10 @@ impl OrchRuntime {
         }
     }
 
-    /// Start a self-healing reconciler run: one poller per
-    /// currently-registered control plane, kept in sync with
-    /// `control_planes` for as long as this generation stays running — see
-    /// `reconciler::spawn_reconcilers_supervised`'s doc comment for why a
-    /// one-time snapshot isn't enough: a control plane registered *after*
-    /// `start()` would otherwise never get polled, silently.
-    /// Idempotent: a `start()` while a generation is already running is a
-    /// no-op — it does not spawn a duplicate set alongside the live one.
-    /// (Calling `start()` twice in a row happens naturally if the operator
-    /// sends `PUT {"enabled": true}` more than once, or the value was
-    /// already `true` from the environment at boot.)
+    /// Start a self-healing reconciler run: one poller per registered plane,
+    /// kept in sync with `control_planes` for this generation's life (a plane
+    /// registered after `start()` still gets polled). Idempotent: a no-op
+    /// while a generation is already running.
     pub async fn start(&self, store: Arc<dyn ControlPlaneStore>, config: ReconcilerConfig) {
         let mut guard = self.inner.lock().await;
         if guard.is_some() {
@@ -67,36 +52,23 @@ impl OrchRuntime {
         });
     }
 
-    /// Signal every running task to stop at its next safe point, and drop
-    /// this runtime's reference to them. A no-op (not an error) when
-    /// nothing is running — mirrors `start()`'s idempotency.
-    ///
-    /// Does not block waiting for the tasks to actually exit: a toggle-off
-    /// HTTP request must not hang on whatever docket's response latency
-    /// happens to be for an in-flight poll. Signalling `stop_tx` stops both
-    /// the supervisor loop itself (so it starts polling no *new* planes)
-    /// and, via the supervisor's own shutdown path, every per-plane poller
-    /// it was tracking at that moment — see the module doc and
-    /// `reconciler::supervisor_loop`'s doc comment.
+    /// Signal every running task to stop at its next safe point and drop this
+    /// runtime's reference to them. No-op when nothing is running. Does not
+    /// block for the tasks to exit, so a toggle-off request can't hang on an
+    /// in-flight poll; stops the supervisor and every poller it was tracking.
     pub async fn stop(&self) {
         let mut guard = self.inner.lock().await;
         if let Some(running) = guard.take() {
-            // The supervisor (and its pollers) may already have exited on
-            // their own in principle (they don't today — reconciler tasks
-            // don't exit on poll failure — but this keeps `send` from being
-            // treated as a bug if a future change ever makes one). Ignore a
-            // failed send: every receiver being gone just means everything
-            // already stopped.
+            // Ignore a failed send: reconciler tasks don't exit on poll
+            // failure today, but a receiver already gone just means stopped.
             let _ = running.stop_tx.send(true);
         }
     }
 
-    /// Number of per-plane pollers currently alive (spawned and not yet
-    /// observed to have exited). `0` both when disabled and when enabled
-    /// with zero registered control planes — this method reports whether a
-    /// task is actually polling something, not whether the feature is
-    /// switched on. `GET /api/settings/orchestration`'s `reconciler_running`
-    /// is `live_task_count() > 0`; see `handlers/settings.rs`.
+    /// Number of per-plane pollers currently alive. `0` both when disabled
+    /// and when enabled with zero registered planes — reports whether a task
+    /// is actually polling, not whether the feature is switched on.
+    /// `GET /api/settings/orchestration`'s `reconciler_running` is `> 0` here.
     pub async fn live_task_count(&self) -> usize {
         let guard = self.inner.lock().await;
         match guard.as_ref() {

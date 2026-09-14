@@ -32,8 +32,7 @@ pub async fn push_issue_state(
     let client = reqwest::Client::builder()
         .user_agent("Tack/1.0 (github.com/yielab/tack)")
         .timeout(std::time::Duration::from_secs(15))
-        // GitHub Enterprise endpoints are configurable. A redirect is remote
-        // input, so never forward the repository token to its target.
+        // A redirect target is remote input — never forward the token to it.
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
 
