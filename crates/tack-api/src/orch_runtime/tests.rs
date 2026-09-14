@@ -314,17 +314,11 @@ async fn a_plane_registered_after_start_gets_polled() {
 
     // Bounded poll rather than a fixed sleep: fast when the fix works,
     // and doesn't hang forever if it doesn't.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        if runtime.live_task_count().await == 1 {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "a control plane registered after start() was never picked up for polling"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        (runtime.live_task_count().await == 1).then_some(())
+    })
+    .await
+    .expect("a control plane registered after start() was never picked up for polling");
 
     runtime.stop().await;
 }
@@ -338,24 +332,20 @@ async fn start_then_stop_leaves_no_live_task() {
     let runtime = OrchRuntime::new();
 
     runtime.start(store.clone(), fast_config()).await;
-    // Give the spawned task a moment to reach its first sleep/select.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        (runtime.live_task_count().await == 1).then_some(())
+    })
+    .await;
     assert_eq!(runtime.live_task_count().await, 1);
 
     runtime.stop().await;
     // Bounded poll rather than a fixed sleep: cooperative shutdown observes
     // the signal via select! promptly, but is not guaranteed instantaneous.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        if runtime.live_task_count().await == 0 {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "task must have exited after stop()"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        (runtime.live_task_count().await == 0).then_some(())
+    })
+    .await
+    .expect("task must have exited after stop()");
 }
 
 #[tokio::test]
@@ -367,12 +357,18 @@ async fn orch_runtime_ignores_a_start_while_already_running() {
     let runtime = OrchRuntime::new();
 
     runtime.start(store.clone(), fast_config()).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        (runtime.live_task_count().await == 1).then_some(())
+    })
+    .await;
     assert_eq!(runtime.live_task_count().await, 1);
 
     // A second start() while running must not spawn a duplicate task.
     runtime.start(store.clone(), fast_config()).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        (runtime.live_task_count().await == 1).then_some(())
+    })
+    .await;
     assert_eq!(
         runtime.live_task_count().await,
         1,
@@ -399,11 +395,17 @@ async fn orch_runtime_repeated_toggle_cycles_leave_no_extra_task() {
 
     for _ in 0..3 {
         runtime.start(store.clone(), fast_config()).await;
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        tack_test_support::poll_until(Duration::from_secs(5), async || {
+            (runtime.live_task_count().await == 1).then_some(())
+        })
+        .await;
         assert_eq!(runtime.live_task_count().await, 1);
 
         runtime.stop().await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tack_test_support::poll_until(Duration::from_secs(5), async || {
+            (runtime.live_task_count().await == 0).then_some(())
+        })
+        .await;
         assert_eq!(runtime.live_task_count().await, 0);
     }
 }

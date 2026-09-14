@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn server_folders_applies_a_database_override_and_leaves_the_rest_pinned() {
+    fn server_folders_apply_a_database_override_leaves_rest_pinned() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("data-home");
         let paths = DataPaths::from_base(&base).unwrap();

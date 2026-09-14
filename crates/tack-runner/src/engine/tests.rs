@@ -442,7 +442,7 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
         if !self.wait_delay.is_zero() {
-            tokio::time::sleep(self.wait_delay).await;
+            tack_test_support::poll_until::<()>(self.wait_delay, async || None).await;
         }
         Ok(HarnessOutcome {
             terminal_state: AttemptState::Succeeded,

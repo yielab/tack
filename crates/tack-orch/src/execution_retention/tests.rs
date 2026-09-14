@@ -52,13 +52,11 @@ impl ExecutionRetentionStore for FakeStore {
 /// scheduler so the real spawned task can run. Panics (fails the test)
 /// rather than hanging if the condition is never met.
 async fn wait_for(mut condition: impl FnMut() -> bool) {
-    for _ in 0..200 {
-        if condition() {
-            return;
-        }
-        tokio::time::sleep(StdDuration::from_millis(10)).await;
-    }
-    panic!("condition not met within the 2s test timeout");
+    tack_test_support::poll_until(StdDuration::from_secs(2), async || {
+        condition().then_some(())
+    })
+    .await
+    .expect("condition not met within the 2s test timeout");
 }
 
 #[tokio::test]
@@ -76,10 +74,10 @@ async fn execution_retention_sweep_is_a_noop_when_disabled() {
     );
     assert!(handle.is_none());
 
-    // Give a hypothetical (bugged) task a chance to run before asserting
-    // silence — this is the "never even queries" proof, mirroring
-    // reconciler's own `disabled_orchestration_spawns_no_tasks...` test.
-    tokio::time::sleep(StdDuration::from_millis(30)).await;
+    // No task is ever spawned when disabled (see the early `return None`
+    // above), so there is nothing to wait for before asserting silence —
+    // mirroring reconciler's own `disabled_orchestration_spawns_no_tasks...`
+    // test.
     assert!(store.replay_calls.lock().unwrap().is_empty());
     assert!(store.event_calls.lock().unwrap().is_empty());
 }

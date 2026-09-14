@@ -40,7 +40,7 @@ fn initial_status_event_is_ideas() {
 // ── construction sub-presets ─────────────────────────────
 
 #[test]
-fn construction_subpresets_are_construction_type_and_start_correctly() {
+fn construction_subpresets_have_construction_type_and_start() {
     assert_eq!(
         wood_frame_workflow().workflow_type,
         WorkflowType::Construction
