@@ -2252,6 +2252,20 @@
    "test_sleeps": 0,
    "tests": 8
   },
+  "crates/tack-db/tests/common/execution_fixture.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 728,
+   "test_fn_max_lines": 0,
+   "test_lines": 728,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
   "crates/tack-db/tests/common/mod.rs": {
    "doc_block_max_lines": 0,
    "env_gated_tests": 0,
@@ -4145,12 +4159,12 @@
  },
  "totals": {
   "env_gated_tests": 0,
-  "files": 295,
+  "files": 296,
   "prod_comment_lines": 11144,
   "prod_lines": 55602,
-  "test_lines": 68824,
+  "test_lines": 69552,
   "test_sleeps": 24,
-  "test_to_prod_ratio": 1.238,
+  "test_to_prod_ratio": 1.251,
   "tests": 1415
  }
 }
