@@ -153,7 +153,7 @@ fn topo_order_handles_disjoint_components() {
 }
 
 #[test]
-fn topo_order_fails_loudly_rather_than_hanging_on_an_impossible_cycle() {
+fn topo_order_errors_instead_of_hanging_on_an_impossible_cycle() {
     // Bypasses `validate_new_edge` (which is supposed to make this
     // structurally unreachable in production) to prove the function
     // detects the impossible case and returns an error instead of

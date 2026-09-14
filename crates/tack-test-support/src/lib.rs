@@ -18,6 +18,9 @@ use tack_core::{
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
+mod poll;
+pub use poll::{poll_until, poll_until_sync};
+
 /// Create an in-memory SQLite pool with all migrations applied.
 pub async fn setup_test_db() -> Repository {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");

@@ -348,26 +348,20 @@ async fn every_documented_fixture_mode_behaves_as_documented() {
 /// this module's own primitive-level test does, and shares this exact
 /// polling logic rather than a second copy.
 pub(crate) async fn wait_for_pidfile(path: &Path) -> u32 {
-    for _ in 0..200 {
-        if let Ok(contents) = std::fs::read_to_string(path)
-            && let Ok(pid) = contents.trim().parse::<u32>()
-        {
-            return pid;
-        }
-        time::sleep(Duration::from_millis(25)).await;
-    }
-    panic!("grandchild pidfile was never written: {}", path.display());
+    tack_test_support::poll_until(Duration::from_secs(5), async || {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|contents| contents.trim().parse::<u32>().ok())
+    })
+    .await
+    .unwrap_or_else(|| panic!("grandchild pidfile was never written: {}", path.display()))
 }
 
 /// `pub(crate)`: shared with `harness::tests`'s cross-adapter descendant-tree
 /// cancellation test, for the same reason as [`wait_for_pidfile`] above.
 pub(crate) async fn wait_until_dead(pid: u32, budget: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + budget;
-    while tokio::time::Instant::now() < deadline {
-        if !process_alive(pid) {
-            return true;
-        }
-        time::sleep(Duration::from_millis(25)).await;
-    }
-    !process_alive(pid)
+    tack_test_support::poll_until(budget, async || (!process_alive(pid)).then_some(()))
+        .await
+        .is_some()
+        || !process_alive(pid)
 }

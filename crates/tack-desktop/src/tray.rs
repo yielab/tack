@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_base_url_falls_back_to_the_default_port_with_no_settings_file() {
+    fn resolve_base_url_falls_back_to_default_port_with_no_settings() {
         // `DataPaths::resolve()` only fails when the OS cannot name a data
         // directory at all; on any real host this reads a settings file
         // that (in this test process) was never written, so the fallback

@@ -3411,6 +3411,7 @@ dependencies = [
  "tack-api",
  "tack-orch",
  "tack-runner",
+ "tack-test-support",
  "tempfile",
  "tokio",
  "toml",
@@ -3487,6 +3488,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-orch",
+ "tack-test-support",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3506,6 +3508,7 @@ dependencies = [
  "sqlx",
  "tack-core",
  "tack-db",
+ "tokio",
  "uuid",
 ]
 

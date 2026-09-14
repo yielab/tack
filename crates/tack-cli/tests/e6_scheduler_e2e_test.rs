@@ -8,7 +8,7 @@
 //! the same server, exactly as `tack-runner` would.
 
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -78,27 +78,23 @@ fn start_server() -> ServerGuard {
 
 fn wait_for_ready(base_url: &str, child: &mut Child) {
     let client = reqwest::blocking::Client::new();
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
+    let ready = tack_test_support::poll_until_sync(Duration::from_secs(15), || {
         if let Ok(response) = client
             .get(format!("{base_url}/api/health"))
             .timeout(Duration::from_millis(500))
             .send()
             && response.status().is_success()
         {
-            return;
+            return Some(());
         }
         if let Some(status) = child.try_wait().expect("poll child status") {
             panic!("tack serve exited early during startup: {status}");
         }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            panic!("tack serve did not become ready within 15s");
-        }
-        // Poll interval, not a fixed wait: the loop condition above is the
-        // real thing being awaited (a successful health response), bounded
-        // by the deadline check above it.
-        std::thread::sleep(Duration::from_millis(100));
+        None
+    });
+    if ready.is_none() {
+        let _ = child.kill();
+        panic!("tack serve did not become ready within 15s");
     }
 }
 
