@@ -52,7 +52,7 @@ of these calls; nothing above depends on anything below it.
 
 ---
 
-- **Status:** proposed 2026-09-08.
+- **Status:** accepted 2026-09-14 — recorded as a dated amendment at the bottom of this file.
 - **Date:** 2026-09-08
 - **Plan:** `docs/plans/harnesses.md`, which sequences this after Part IX's IX-M5 (the
   harness core) and alongside ADR 0067 (opencode) on the same wire.
@@ -157,3 +157,9 @@ The residual risk is **effort**: 5,274 lines bought two adapters, and although a
 upstream should cost far less, "far less" is not measured and must not be quoted as though
 it were. The precondition in decision 5 and the contract in decision 4 exist to make the
 number knowable before most of it is spent.
+
+## Amendments
+
+*(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-14 — ACCEPTED.** The user approved this ADR together with ADR 0067 while reviewing ADR 0068. Two alignments follow from ADR 0068 once it is accepted. First, decision 2 ("not the ADR 0060 bridge") still holds, but the bridge itself is retired, so this harness becomes the only way docket and Tack interact. Second, the adapter, its fixtures and its end-to-end test are built under ADR 0068 decisions 5–11 (behaviour tests once per layer, patch coverage, no per-card size budgets) instead of the Part IX budgets `docs/plans/harnesses.md` cites. Nothing is built before docket publishes the harness contract decision 4 requires.

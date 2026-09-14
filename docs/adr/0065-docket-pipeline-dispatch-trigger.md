@@ -120,3 +120,9 @@ The residual risk is a **correctly-authenticated operator dispatching the wrong 
 pipeline**, which costs money and cannot be cancelled (`cancel: false`). That is accepted
 rather than mitigated: the mitigation would be a confirmation step, which belongs to the
 caller, and `tack orch dispatch` is where it should live if it is ever wanted.
+
+## Amendments
+
+*(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-14 — Superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. The trigger this ADR wired lives on the `ControlPlane` bridge that ADR 0068 decision 2 retires. `POST /api/projects/{id}/orch-dispatch`, `TACK_ORCH_DISPATCH_TOKEN` and `tack orch dispatch` are removed with it. Starting docket work from Tack moves to the harness path of ADR 0066.

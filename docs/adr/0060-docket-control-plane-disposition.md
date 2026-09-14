@@ -240,3 +240,9 @@ maps an `OrchTask` into that provider-scoped shape for display — it does not w
 scheduler. It exists so a future operator surface has one normalized place to render
 "what is this legacy row, using which provider-scoped id, under which scheduling owner"
 without re-deriving the mapping.
+
+## Amendments
+
+*(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-14 — Superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. ADR 0068 decision 2 retires the bridge this ADR chose to maintain. Two of this ADR's three reasons against deletion no longer hold: the `TODO.md` citations are gone (0 today), and ADR 0066 moves per-tool guardrails into docket's own harness. The third, DAG-ordered sprint dispatch, is re-measured in ADR 0068's plan and re-implemented on runner-v1 only if it has a user. The measurements above stay as the record of why the bridge was kept until then.

@@ -11,6 +11,9 @@
 > background service. The phase sections below are mostly closed history; each one states
 > its own outcome at the top.
 
+**Current plan (2026-09-14): Phase 64 — a codebase for human maintainers** (ADR 0068, proposed),
+at the bottom of this file. It follows Phase 63 and comes before the release tag.
+
 **Status:** All engineering phases through 61 are delivered. The earlier ground: the
 thirteen original engineering phases, then competitive and growth phases 20 (MCP server),
 22 (dev-native CLI), 23 (Table view), 24 (positioning & presets) and 25 (local-first), then
@@ -886,6 +889,13 @@ both are open, in Waves 32 and 33. `TODO.md`'s Part IX table and its Wave 32 aud
 the authority for current numbers; this page only records intent and does not track
 completion further.
 
+**Status correction (2026-09-14):** closed. Waves 32–33 landed and a follow-up cut the size
+exclusions from 89 to 44. Measured against the tree before this phase
+(`measure --totals`): production code **+416** lines, comments −2 906, tests −4 404 (−6 %),
+fixed sleeps 74 → 3. The exit line below held for sizes and did not hold for its purpose:
+the phase moved code rather than removing it, because it budgeted sizes and excluded
+behaviour change. Phase 64 replaces it.
+
 **The code is fine; what surrounds it is not.** Production Rust is 57k lines. Tests are
 74k lines — 1.29 per production line — and 21k of them sit inside production files, so the
 three largest "source" files are 70–90 % test. Comments are 23 % of production, and 149
@@ -946,3 +956,61 @@ no fixed wait remains; no test claim is written twice. The book builds from
 the authoritative files with a generated API reference, and the closed cycles are under
 `docs/closed-cycles/`, out of the
 working tree. A stranger opens `engine.rs` and reads an engine.
+
+---
+
+# A codebase for human maintainers (Phase 64)
+
+**Status:** planned 2026-09-14. Decision record: ADR 0068 (proposed). Aligned with ADRs
+0066 and 0067, both accepted the same day; it supersedes ADRs 0060 and 0065 and parts of
+0050 and 0064. Nothing here starts until ADR 0068 is accepted. Stages are sequenced
+below; cards are cut per stage when it starts, never all at once.
+
+**The goal is the smallest codebase that does everything a user can do today.** Tack's
+features for AI agents are product and stay: the runner, harnesses, the runner-v1 protocol,
+MCP and the desktop app. What goes is the scaffolding that existed only because agents built
+the tree, the mechanisms nothing calls, and the tests that proved a card was done rather
+than that the product works.
+
+## Why this phase exists
+
+Phase 63 set out to make the tree maintainable by a person and measured the wrong thing.
+File and function size budgets are met by moving code, so production code grew, tests fell
+6 %, and a 10-table control plane nobody enables is still compiled, migrated, tested and
+rendered. Two thirds of the test lines verify agent execution; attachments, custom fields
+and multiple boards have close to none. CI requires 10 jobs on every pull request and fails
+on a coverage measurement, not on lost coverage.
+
+## Stages
+
+| # | Stage | What it removes or changes | Done when |
+|---|---|---|---|
+| 0 | **Measure** | Nothing. Re-measure ADR 0068's tables with their commands: the legacy surface file by file, which `tests/orchestration` files are runner-v1, whether DAG-ordered sprint dispatch has a user. | Every table in ADR 0068 re-measured and dated; one decision recorded for DAG dispatch. |
+| 1 | **CI and coverage first** | Five per-crate coverage builds → one `cargo llvm-cov nextest --workspace` run that is also the test run; one workspace floor; ≥ 80 % patch coverage; three tiers (pull request / merge to `main` / nightly); the `main` ruleset's required checks updated to match. The rustls advisory resolved. | Pull request #56 is green and merged into `main`; a pull-request run completes in under 15 minutes. |
+| 2 | **Agent scaffolding out** | `.claude/`, `TODO.md`'s boards, dispatch plans, per-card handoffs (frozen into `docs/closed-cycles/`), `scripts/maintainability.py` and its baseline, `list-fixed-waits.py`, `check-test-hygiene.sh` → clippy lints; `CLAUDE.md` ≤ 40 lines. | `docs/closed-cycles/` is the only place history lives and no check reads it; `pre-push` runs fmt and clippy only. |
+| 3 | **Mechanisms with no caller** | `model_profiles` (table, routes, MCP tool, panel); the `decisions` path (routes, runner transport, UI, runner-v1 fixtures and pins). | `git grep` finds neither outside migrations that drop them; runner-v1 fixtures and pin table agree. |
+| 4 | **Retire the Docket control plane** | `ControlPlane` trait, reconciler, adapters (docket, github_actions, prometheus, registry, legacy_bridge), orch routes and tokens, `tack orch`, the Fleet/Approvals/Economics/Provision screens, their tests; one migration per dropped table after exporting the rows into the pre-upgrade snapshot. | No `orch_*` table on a fresh install; `TACK_ORCH_*` gone from `docs/CONFIG.md`; upgrade from a populated database tested once. |
+| 5 | **Test suite rebuilt by layer** | Each invariant kept at its lowest layer plus at most one HTTP test; wave gates and narrative multi-claim tests deleted after their real claims move; behaviour tests added for the board features with no coverage; E2E reduced to critical journeys (Chromium on merge, cross-browser nightly); weekly report-only `cargo-mutants` on `tack-core` and `tack-db`. | Workspace line coverage at or above its Stage 1 floor with fewer tests; every public API route has a success, auth and error test; flaky-test quarantine documented in `docs/TESTING.md`. |
+| 6 | **Harnesses on the lean tree** | ADR 0066 (docket, once its upstream contract exists) and ADR 0067 (opencode), built under ADR 0068's rules; `docs/plans/harnesses.md` rewritten against them first. | As in each ADR. |
+
+Stages 1 and 2 touch no product behaviour and can run in parallel. Stage 3 and Stage 4 each
+change the product and each ship with release notes naming what was removed. The release
+tag and `docs/LAUNCH-CHECKLIST.md` resume after Stage 5.
+
+## What this phase deliberately does not do
+
+- **Remove agent-facing product.** Runner, harnesses, runner-v1 (minus `decisions`), MCP and
+  the desktop app stay.
+- **Rewrite history.** Closed boards, handoffs and ADRs stay, frozen.
+- **Chase a number.** No stage is done because a ratio or a percentage moved; each is done
+  when its surface is gone or its behaviour is verified.
+- **Add tooling for its own sake.** Standard tools only: nextest, llvm-cov, clippy, rustfmt,
+  cargo-deny, Playwright, Vitest, cargo-mutants.
+
+## Exit
+
+A person clones the repository, reads `README.md`, `CONTRIBUTING.md` and
+`docs/TESTING.md`, and has everything needed to change any part of Tack. There is one
+orchestration model, no table or route without a caller, a test suite that verifies each
+behaviour once at the right layer, and a pull-request CI that finishes in under 15 minutes
+with honest coverage of the code the change touched.
