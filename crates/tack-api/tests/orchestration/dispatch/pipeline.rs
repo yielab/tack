@@ -172,6 +172,21 @@ async fn count_orch_tasks(state: &AppState) -> i64 {
     row.0
 }
 
+/// Asserts a pipeline dispatch wrote no item-scoped orch_tasks/execution_requests row
+/// (ADR 0065 decision 5: a project-level trigger must never claim a Tack item).
+async fn assert_no_item_scoped_writes(state: &AppState, before_tasks: i64, before_executions: i64) {
+    assert_eq!(
+        count_orch_tasks(state).await,
+        before_tasks,
+        "must write no orch_tasks row"
+    );
+    assert_eq!(
+        count_execution_requests(state).await,
+        before_executions,
+        "must write no execution_requests row"
+    );
+}
+
 async fn count_execution_requests(state: &AppState) -> i64 {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM execution_requests")
         .fetch_one(state.repo.pool())
@@ -200,31 +215,15 @@ async fn mock_dispatch_allow(server: &MockServer, project: &str, run_id: &str) {
 /// token.
 #[tokio::test]
 async fn dispatch_403s_when_token_unset_wrong_or_missing() {
-    struct Case {
-        config_token: Option<&'static str>,
-        request_token: Option<&'static str>,
-        check_names_missing_gate: bool,
-    }
+    // (config_token, request_token, check_names_missing_gate).
     let cases = [
-        Case {
-            config_token: None,
-            request_token: Some("anything"),
-            check_names_missing_gate: true,
-        },
-        Case {
-            config_token: Some("correct-token"),
-            request_token: Some("wrong-token"),
-            check_names_missing_gate: false,
-        },
-        Case {
-            config_token: Some("correct-token"),
-            request_token: None,
-            check_names_missing_gate: false,
-        },
+        (None, Some("anything"), true),
+        (Some("correct-token"), Some("wrong-token"), false),
+        (Some("correct-token"), None, false),
     ];
 
-    for case in cases {
-        let config = match case.config_token {
+    for (config_token, request_token, check_names_missing_gate) in cases {
+        let config = match config_token {
             Some(t) => orch_config_with_dispatch_token(t),
             None => orch_config(),
         };
@@ -232,9 +231,9 @@ async fn dispatch_403s_when_token_unset_wrong_or_missing() {
         let project_id =
             common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;
 
-        let res = dispatch_pipeline(&app, project_id, case.request_token, None).await;
+        let res = dispatch_pipeline(&app, project_id, request_token, None).await;
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
-        if case.check_names_missing_gate {
+        if check_names_missing_gate {
             let body = body_json_val(res).await;
             let message = body["error"]["message"].as_str().unwrap_or_default();
             assert!(
@@ -301,18 +300,8 @@ async fn dispatch_success_returns_run_id_writes_no_item_scoped_row() {
     assert_eq!(v.get("outcome"), None);
     assert_eq!(v.get("status"), None);
 
-    // Assert the absence directly, not just a 200 — a project-level pipeline
-    // trigger must never claim a Tack item (ADR 0065 decision 5).
-    assert_eq!(
-        count_orch_tasks(&state).await,
-        before_tasks,
-        "must write no orch_tasks row"
-    );
-    assert_eq!(
-        count_execution_requests(&state).await,
-        before_executions,
-        "must write no execution_requests row"
-    );
+    // Assert the absence directly, not just a 200.
+    assert_no_item_scoped_writes(&state, before_tasks, before_executions).await;
 }
 
 #[tokio::test]
@@ -460,6 +449,27 @@ mod log_capture {
 
 const SECRET_VARIABLE_MARKER: &str = "SECRET_DISPATCH_VARIABLE_MARKER_7c1e9";
 
+/// Asserts the log capture observed real output naming `project_id` but
+/// never containing the secret dispatch-variable marker.
+fn assert_variables_redacted(text: &str, project_id: Uuid) {
+    assert!(
+        !text.is_empty(),
+        "capture rig must have observed real log output"
+    );
+    assert!(
+        !text.contains(SECRET_VARIABLE_MARKER),
+        "the variables body leaked into logs:\n{text}"
+    );
+    // Non-vacuous: the project id (an id, not a secret) is expected to
+    // appear somewhere in `#[instrument]`'s own span fields, confirming the
+    // capture rig is observing genuine production log lines, not an empty
+    // or unreached subscriber.
+    assert!(
+        text.contains(&project_id.to_string()),
+        "capture rig did not observe the real handler's own instrumentation:\n{text}"
+    );
+}
+
 #[tokio::test]
 async fn dispatch_variables_never_reach_the_logs() {
     let server = MockServer::start().await;
@@ -489,21 +499,5 @@ async fn dispatch_variables_never_reach_the_logs() {
 
     drop(guard);
     let text = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
-
-    assert!(
-        !text.is_empty(),
-        "capture rig must have observed real log output"
-    );
-    assert!(
-        !text.contains(SECRET_VARIABLE_MARKER),
-        "the variables body leaked into logs:\n{text}"
-    );
-    // Non-vacuous: the project id (an id, not a secret) is expected to
-    // appear somewhere in `#[instrument]`'s own span fields, confirming the
-    // capture rig is observing genuine production log lines, not an empty
-    // or unreached subscriber.
-    assert!(
-        text.contains(&project_id.to_string()),
-        "capture rig did not observe the real handler's own instrumentation:\n{text}"
-    );
+    assert_variables_redacted(&text, project_id);
 }
