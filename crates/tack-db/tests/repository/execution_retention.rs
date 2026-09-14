@@ -101,6 +101,39 @@ async fn insert_attempt(
     .unwrap();
 }
 
+/// A second, non-terminal attempt on the same request: attempt_number 2,
+/// fencing_token 2, `running`, with a 1-hour lease from `ts`.
+async fn insert_active_attempt(repo: &Repository, id: &str, request_id: &str, ts: DateTime<Utc>) {
+    insert_attempt(
+        repo,
+        id,
+        request_id,
+        2,
+        2,
+        "running",
+        ts + Duration::hours(1),
+        ts,
+    )
+    .await;
+}
+
+async fn mark_attempt_succeeded(repo: &Repository, attempt_id: &str) {
+    sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = ?")
+        .bind(attempt_id)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+}
+
+async fn assert_remaining_event_ids(repo: &Repository, expected: &[&str], msg: &str) {
+    let remaining: Vec<String> = sqlx::query_scalar("SELECT id FROM execution_events ORDER BY id")
+        .fetch_all(repo.pool())
+        .await
+        .unwrap();
+    let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    assert_eq!(remaining, expected, "{msg}");
+}
+
 async fn insert_request(
     repo: &Repository,
     id: &str,
@@ -259,6 +292,71 @@ async fn count(repo: &Repository, table: &str) -> i64 {
         .unwrap()
 }
 
+const REPLAY_TABLES: [&str; 6] = [
+    "execution_claim_replays",
+    "execution_heartbeat_replays",
+    "execution_cancellation_replays",
+    "execution_event_batch_replays",
+    "execution_completion_replays",
+    "execution_recovery_audits",
+];
+
+/// One stale (`old`) and one fresh row in each of the six replay/audit
+/// tables, all attached to `attempt_id`.
+async fn seed_stale_and_fresh_replays(
+    repo: &Repository,
+    attempt_id: &str,
+    old: DateTime<Utc>,
+    fresh: DateTime<Utc>,
+) {
+    insert_claim_replay(repo, "claim-old", attempt_id, old).await;
+    insert_claim_replay(repo, "claim-fresh", attempt_id, fresh).await;
+    insert_heartbeat_replay(repo, "hb-old", old).await;
+    insert_heartbeat_replay(repo, "hb-fresh", fresh).await;
+    insert_cancellation_replay(repo, attempt_id, "cancel-old", old).await;
+    insert_cancellation_replay(repo, attempt_id, "cancel-fresh", fresh).await;
+    insert_event_batch_replay(repo, attempt_id, "checkpoint-old", old).await;
+    insert_event_batch_replay(repo, attempt_id, "checkpoint-fresh", fresh).await;
+    insert_completion_replay(repo, attempt_id, "completion-old", old).await;
+    insert_completion_replay(repo, attempt_id, "completion-fresh", fresh).await;
+    insert_recovery_audit(repo, attempt_id, "recovery-old", old).await;
+    insert_recovery_audit(repo, attempt_id, "recovery-fresh", fresh).await;
+}
+
+/// Same shape as `agent_runners` in `seed`, generalized over id/state and
+/// the `revoked_at` column (only set when `revoked`).
+async fn insert_runner(repo: &Repository, id: &str, state: &str, ts: DateTime<Utc>, revoked: bool) {
+    let revoked_at = revoked.then(|| rfc(ts));
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, state, labels, total_capacity, \
+         available_capacity, capability_snapshot, protocol_version, revoked_at, created_at, updated_at) \
+         VALUES (?, ?, 'hash', ?, '{}', 1, 0, '{}', 1, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(state)
+    .bind(revoked_at)
+    .bind(rfc(ts))
+    .bind(rfc(ts))
+    .execute(repo.pool())
+    .await
+    .unwrap();
+}
+
+/// Opens a file-backed (WAL, `mode=rwc`) pool under a fresh temp directory —
+/// the concurrency tests below need real file locking, which a shared
+/// in-memory pool would accidentally mask (see the module doc). The
+/// directory guard is returned alongside the repo and must outlive it.
+async fn file_backed_repo(db_name: &str) -> (tempfile::TempDir, Repository) {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join(db_name);
+    let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
+        .await
+        .expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    (dir, Repository::new(pool))
+}
+
 fn now_fixed() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-08-12T12:00:00Z")
         .unwrap()
@@ -274,19 +372,7 @@ async fn purge_replays_deletes_only_rows_older_than_cutoff() {
     let old = now - Duration::days(100);
     let fresh = now - Duration::days(1);
     let cutoff = now - Duration::days(90);
-
-    insert_claim_replay(&repo, "claim-old", &attempt_id, old).await;
-    insert_claim_replay(&repo, "claim-fresh", &attempt_id, fresh).await;
-    insert_heartbeat_replay(&repo, "hb-old", old).await;
-    insert_heartbeat_replay(&repo, "hb-fresh", fresh).await;
-    insert_cancellation_replay(&repo, &attempt_id, "cancel-old", old).await;
-    insert_cancellation_replay(&repo, &attempt_id, "cancel-fresh", fresh).await;
-    insert_event_batch_replay(&repo, &attempt_id, "checkpoint-old", old).await;
-    insert_event_batch_replay(&repo, &attempt_id, "checkpoint-fresh", fresh).await;
-    insert_completion_replay(&repo, &attempt_id, "completion-old", old).await;
-    insert_completion_replay(&repo, &attempt_id, "completion-fresh", fresh).await;
-    insert_recovery_audit(&repo, &attempt_id, "recovery-old", old).await;
-    insert_recovery_audit(&repo, &attempt_id, "recovery-fresh", fresh).await;
+    seed_stale_and_fresh_replays(&repo, &attempt_id, old, fresh).await;
 
     let stats = repo
         .purge_stale_execution_replays(cutoff, 500)
@@ -294,12 +380,13 @@ async fn purge_replays_deletes_only_rows_older_than_cutoff() {
         .unwrap();
 
     assert_eq!(stats.rows_purged, 6, "exactly one stale row per table");
-    assert_eq!(count(&repo, "execution_claim_replays").await, 1);
-    assert_eq!(count(&repo, "execution_heartbeat_replays").await, 1);
-    assert_eq!(count(&repo, "execution_cancellation_replays").await, 1);
-    assert_eq!(count(&repo, "execution_event_batch_replays").await, 1);
-    assert_eq!(count(&repo, "execution_completion_replays").await, 1);
-    assert_eq!(count(&repo, "execution_recovery_audits").await, 1);
+    for table in REPLAY_TABLES {
+        assert_eq!(
+            count(&repo, table).await,
+            1,
+            "table {table}: one fresh row survives"
+        );
+    }
 
     // Rows inside the retention window are untouched — not just "some
     // survived," but the *specific* fresh row, by content.
@@ -343,24 +430,10 @@ async fn purge_terminal_events_only_touches_terminal_attempts() {
     let repo = common::setup_test_db().await;
     let now = now_fixed();
     let (_item_id, request_id, terminal_attempt) = seed(&repo, now).await;
-    sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = ?")
-        .bind(&terminal_attempt)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    mark_attempt_succeeded(&repo, &terminal_attempt).await;
 
     let active_attempt = "attempt-active".to_string();
-    insert_attempt(
-        &repo,
-        &active_attempt,
-        &request_id,
-        2,
-        2,
-        "running",
-        now + Duration::hours(1),
-        now,
-    )
-    .await;
+    insert_active_attempt(&repo, &active_attempt, &request_id, now).await;
 
     let old = now - Duration::days(100);
     let fresh = now - Duration::days(1);
@@ -380,20 +453,13 @@ async fn purge_terminal_events_only_touches_terminal_attempts() {
         stats.rows_purged, 1,
         "only the old event on the terminal attempt is purged"
     );
-    let remaining: Vec<String> = sqlx::query_scalar("SELECT id FROM execution_events ORDER BY id")
-        .fetch_all(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(
-        remaining,
-        vec![
-            "ev-active-fresh".to_string(),
-            "ev-active-old".to_string(),
-            "ev-terminal-fresh".to_string(),
-        ],
+    assert_remaining_event_ids(
+        &repo,
+        &["ev-active-fresh", "ev-active-old", "ev-terminal-fresh"],
         "the active attempt's events survive regardless of age; only the terminal \
-         attempt's stale event is gone"
-    );
+         attempt's stale event is gone",
+    )
+    .await;
 }
 
 /// A second, pending-enrollment runner and a revoked one, so
@@ -404,51 +470,19 @@ async fn runner_state_counts_report_all_three_states() {
     let repo = common::setup_test_db().await;
     let now = now_fixed();
     let (_item_id, _request_id, _running_attempt) = seed(&repo, now).await;
-
-    sqlx::query(
-        "INSERT INTO agent_runners (id, name, credential_hash, state, labels, total_capacity, \
-         available_capacity, capability_snapshot, protocol_version, created_at, updated_at) \
-         VALUES ('runner-b', 'Runner B', 'hash', 'pending_enrollment', '{}', 1, 0, '{}', 1, ?, ?)",
-    )
-    .bind(rfc(now))
-    .bind(rfc(now))
-    .execute(repo.pool())
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO agent_runners (id, name, credential_hash, state, labels, total_capacity, \
-         available_capacity, capability_snapshot, protocol_version, revoked_at, created_at, updated_at) \
-         VALUES ('runner-c', 'Runner C', 'hash', 'revoked', '{}', 1, 0, '{}', 1, ?, ?, ?)",
-    )
-    .bind(rfc(now))
-    .bind(rfc(now))
-    .bind(rfc(now))
-    .execute(repo.pool())
-    .await
-    .unwrap();
+    insert_runner(&repo, "runner-b", "pending_enrollment", now, false).await;
+    insert_runner(&repo, "runner-c", "revoked", now, true).await;
 
     let snapshot = repo
         .execution_fleet_snapshot(now, Duration::hours(1))
         .await
         .unwrap();
 
-    assert_eq!(snapshot.runner_state_counts.get("active").copied(), Some(1));
-    assert_eq!(
-        snapshot
-            .runner_state_counts
-            .get("pending_enrollment")
-            .copied(),
-        Some(1)
-    );
-    assert_eq!(
-        snapshot.runner_state_counts.get("revoked").copied(),
-        Some(1)
-    );
-    assert_eq!(
-        snapshot.runner_state_counts.len(),
-        3,
-        "bounded to the known state vocabulary"
-    );
+    let counts = &snapshot.runner_state_counts;
+    assert_eq!(counts.get("active").copied(), Some(1));
+    assert_eq!(counts.get("pending_enrollment").copied(), Some(1));
+    assert_eq!(counts.get("revoked").copied(), Some(1));
+    assert_eq!(counts.len(), 3, "bounded to the known state vocabulary");
 }
 
 /// Two more requests beyond `seed`'s one `running` request: one
@@ -590,14 +624,7 @@ async fn events_ingested_in_window_counts_only_recent_events() {
 #[tokio::test]
 async fn concurrent_purges_never_deadlock_on_file_backed_db() {
     for i in 0..8 {
-        let dir = tempfile::tempdir().expect("temporary directory");
-        let db_path = dir.path().join("retention-race.db");
-        let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
-            .await
-            .expect("file-backed pool");
-        migrations::run_all(&pool).await.expect("migrations");
-        let repo = Repository::new(pool);
-
+        let (_dir, repo) = file_backed_repo("retention-race.db").await;
         let now = now_fixed();
         let (_item_id, _request_id, attempt_id) = seed(&repo, now).await;
         let old = now - Duration::days(100);
@@ -636,14 +663,7 @@ async fn concurrent_purges_never_deadlock_on_file_backed_db() {
 #[tokio::test]
 async fn concurrent_event_purges_never_deadlock_on_file_backed_db() {
     for i in 0..8 {
-        let dir = tempfile::tempdir().expect("temporary directory");
-        let db_path = dir.path().join("event-race.db");
-        let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
-            .await
-            .expect("file-backed pool");
-        migrations::run_all(&pool).await.expect("migrations");
-        let repo = Repository::new(pool);
-
+        let (_dir, repo) = file_backed_repo("event-race.db").await;
         let now = now_fixed();
         let (_item_id, _request_id, attempt_id) = seed(&repo, now).await;
         sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = ?")

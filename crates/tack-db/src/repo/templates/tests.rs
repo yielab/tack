@@ -8,46 +8,51 @@ async fn test_pool() -> SqlitePool {
     pool
 }
 
-#[tokio::test]
-async fn seeds_three_construction_verticals_with_fields_and_workflows() {
-    let pool = test_pool().await;
-    seed_builtin_templates(&pool).await.expect("seed");
-    // Re-running is idempotent (per-name dedup).
-    seed_builtin_templates(&pool).await.expect("re-seed");
-
-    let construction = list_templates(&pool, Some(ProjectType::Construction))
+/// Seed the built-ins (twice, to exercise the idempotent re-seed path too) and return
+/// every `ProjectType::Construction` template.
+async fn seeded_construction_templates(pool: &SqlitePool) -> Vec<ProjectTemplate> {
+    seed_builtin_templates(pool).await.expect("seed");
+    seed_builtin_templates(pool).await.expect("re-seed");
+    list_templates(pool, Some(ProjectType::Construction))
         .await
-        .expect("list");
+        .expect("list")
+}
 
-    // Base + three verticals, all ProjectType::Construction.
+fn find_template<'a>(templates: &'a [ProjectTemplate], name: &str) -> &'a ProjectTemplate {
+    templates
+        .iter()
+        .find(|t| t.name == name)
+        .unwrap_or_else(|| panic!("missing template {name}"))
+}
+
+#[tokio::test]
+async fn construction_seed_creates_four_templates_once_each() {
+    let pool = test_pool().await;
+    let construction = seeded_construction_templates(&pool).await;
+
     for name in [
         "Construction Project",
         "Wood Frame Build",
         "Steel Frame Build",
         "SIP Panel Build",
     ] {
-        let t = construction
-            .iter()
-            .find(|t| t.name == name)
-            .unwrap_or_else(|| panic!("missing template {name}"));
+        let t = find_template(&construction, name);
         assert_eq!(t.project_type, ProjectType::Construction);
         assert!(t.is_builtin);
+        assert_eq!(
+            construction.iter().filter(|c| c.name == name).count(),
+            1,
+            "{name} duplicated by the re-seed"
+        );
     }
+}
 
-    // Exactly one of each name (idempotent seeding, no duplicates).
-    assert_eq!(
-        construction
-            .iter()
-            .filter(|t| t.name == "SIP Panel Build")
-            .count(),
-        1
-    );
+#[tokio::test]
+async fn wood_frame_keeps_construction_vocabulary() {
+    let pool = test_pool().await;
+    let construction = seeded_construction_templates(&pool).await;
+    let wood = find_template(&construction, "Wood Frame Build");
 
-    let wood = construction
-        .iter()
-        .find(|t| t.name == "Wood Frame Build")
-        .unwrap();
-    // Construction vocabulary base is preserved.
     assert_eq!(
         wood.vocabulary.get("task").map(String::as_str),
         Some("Work Order")
@@ -56,7 +61,14 @@ async fn seeds_three_construction_verticals_with_fields_and_workflows() {
         wood.vocabulary.get("sprint").map(String::as_str),
         Some("Phase")
     );
-    // Build-system-specific custom fields present, incl. the select options.
+}
+
+#[tokio::test]
+async fn wood_frame_has_stud_spacing_select_field() {
+    let pool = test_pool().await;
+    let construction = seeded_construction_templates(&pool).await;
+    let wood = find_template(&construction, "Wood Frame Build");
+
     assert_eq!(wood.custom_fields.len(), 4);
     let stud = wood
         .custom_fields
@@ -68,12 +80,14 @@ async fn seeds_three_construction_verticals_with_fields_and_workflows() {
         stud.options.as_deref(),
         Some(["16\" o.c.".to_string(), "24\" o.c.".to_string()].as_slice())
     );
+}
 
-    // SIP panel count is a Number field.
-    let sip = construction
-        .iter()
-        .find(|t| t.name == "SIP Panel Build")
-        .unwrap();
+#[tokio::test]
+async fn sip_panel_template_has_panel_count_number_field() {
+    let pool = test_pool().await;
+    let construction = seeded_construction_templates(&pool).await;
+    let sip = find_template(&construction, "SIP Panel Build");
+
     let panel_count = sip
         .custom_fields
         .iter()
@@ -167,10 +181,8 @@ async fn create_template_without_orchestration_round_trips_to_none() {
     assert!(fetched.orchestration.is_none());
 }
 
-#[tokio::test]
-async fn create_template_with_orchestration_round_trips_through_get_and_list() {
-    let pool = test_pool().await;
-    let orch = TemplateOrchestration {
+fn sample_orchestration() -> TemplateOrchestration {
+    TemplateOrchestration {
         blueprint: OrchBlueprint::AgenticProduct,
         pipeline_yaml: Some("name: demo\nsteps:\n  - id: lead\n".to_string()),
         pipeline_file: None,
@@ -186,10 +198,15 @@ async fn create_template_with_orchestration_round_trips_through_get_and_list() {
         },
         auto_dispatch: true,
         pod_shape: Some("full".to_string()),
-    };
+    }
+}
 
-    let created = create_template(
-        &pool,
+async fn create_with_orchestration(
+    pool: &SqlitePool,
+    orch: TemplateOrchestration,
+) -> ProjectTemplate {
+    create_template(
+        pool,
         CreateProjectTemplate {
             name: "Agentic Product Template".to_string(),
             description: None,
@@ -198,12 +215,18 @@ async fn create_template_with_orchestration_round_trips_through_get_and_list() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
-            orchestration: Some(orch.clone()),
+            orchestration: Some(orch),
         },
     )
     .await
-    .expect("create");
+    .expect("create")
+}
 
+#[tokio::test]
+async fn template_with_orchestration_round_trips_through_get_and_list() {
+    let pool = test_pool().await;
+    let orch = sample_orchestration();
+    let created = create_with_orchestration(&pool, orch.clone()).await;
     assert_eq!(created.orchestration.as_ref(), Some(&orch));
 
     let fetched = get_template(&pool, created.id).await.expect("get");
