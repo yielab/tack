@@ -127,8 +127,9 @@ already did and is not worse. A new file meets every budget, excluded or not:
 is over. The plan behind the numbers, and the cards bringing the tree under them, is
 `docs/plans/human-maintainability.md`.
 
-The workspace test : production ratio ceiling is **1.261** (`measure --totals`), IX-M8's
-measured landing, not the plan's original 0.8 aspiration: the exclusion list's own
+The workspace test : production ratio ceiling is **1.274** (`measure --totals`), IX-M8's
+measured landing (1.261) raised only by deleting production comments, which count as
+production lines, not the plan's original 0.8 aspiration: the exclusion list's own
 four-figure-line state machines, migrations and contract fixtures carry real weight 0.8
 assumed would be gone. `docs/plans/human-maintainability.md` §1 still records 0.8 as the
 target; a card that brings an excluded file down moves this ceiling too.

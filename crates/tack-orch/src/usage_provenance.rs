@@ -1,16 +1,13 @@
 //! Requested-vs-actual model provenance and honest, provenance-separated
 //! usage economics. Two independent pure concerns, neither performing I/O:
+//! [`compare_model_provenance`] surfaces the request's resolved model (or
+//! auto-select) against the attempt's observation, visible, never silently
+//! reconciled; [`build_usage_economics`] keeps runner-observed wall-clock
+//! time cost structurally separate from the harness's self-reported
+//! token/dollar usage, never summed into one opaque number.
 //!
-//! - [`compare_model_provenance`]: the request's resolved model (or
-//!   auto-select) against the attempt's `ActualExecution` observation —
-//!   visible, never silently reconciled.
-//! - [`build_usage_economics`]: keeps runner-observed wall-clock time cost
-//!   structurally separate from the harness/vendor's self-reported
-//!   token/dollar usage — never summed into one opaque number.
-//!
-//! Every dollar field is named `*_usd_estimated` (`crate::lib`'s "money is
-//! always an estimate"). Absent usage is `Measurement { value: None, source:
-//! NotMeasured, .. }`, never a fabricated `0`/`0.0`.
+//! Every dollar field is named `*_usd_estimated`. Absent usage is
+//! `Measurement { value: None, source: NotMeasured, .. }`, never `0`/`0.0`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -89,18 +86,12 @@ fn not_measured() -> Measurement<f64> {
     }
 }
 
-/// Runner-observed wall-clock time cost — a dimension with entirely
-/// different provenance from the harness's own self-reported [`Usage`]:
-///
-/// - `wall_clock_ms` is a fact the runner/API directly witnesses (attempt
-///   `started_at`/`ended_at`, `execution_attempts` columns, migration 045)
-///   — always derivable once both are known, never itself wrapped in a
-///   [`Measurement`] (there is no "estimated" wall clock; it either is or
-///   is not known yet).
-/// - `cost_usd_estimated` stays `not_measured` unless a caller supplies an
-///   infra rate. **No such rate is stored anywhere in this schema today**,
-///   so `runner_rate_usd_per_hour` is always caller-supplied, never
-///   invented by this module.
+/// Runner-observed wall-clock time cost — entirely different provenance
+/// from the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the
+/// runner/API directly witnesses (attempt start/end), never wrapped in a
+/// [`Measurement`] since there is no "estimated" wall clock. No infra rate
+/// is stored anywhere in this schema today, so `cost_usd_estimated` stays
+/// `not_measured` unless a caller supplies `runner_rate_usd_per_hour`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunnerTimeCost {
     pub wall_clock_ms: Option<u64>,
@@ -173,13 +164,11 @@ pub fn build_usage_economics(
     }
 }
 
-/// Every derived fact this module produces for one attempt, in one call —
-/// a repository/service-handler convenience. Takes the
-/// same raw column shapes `tack_db::repo::execution::AttemptListingRow`
-/// already carries (`actual_execution`/`usage` as raw JSON text, possibly
-/// absent) plus the request's resolved requested provider/model, so a
-/// caller (`tack-api`'s executions handler) can pass real row data straight
-/// through without this module depending on `tack-db`'s row type directly.
+/// Every derived fact this module produces for one attempt, in one call.
+/// Takes the same raw column shapes `AttemptListingRow` already carries
+/// (`actual_execution`/`usage` as raw JSON text, possibly absent) so a
+/// caller can pass real row data through without this module depending on
+/// `tack-db`'s row type directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptFacts {
     /// `None` only when the attempt has not yet reported `actual_execution`
@@ -189,11 +178,9 @@ pub struct AttemptFacts {
     pub usage_economics: UsageEconomics,
 }
 
-/// Parses raw `execution_attempts` columns and produces [`AttemptFacts`].
-/// Malformed JSON in `actual_execution_json`/`usage_json` (should not
-/// happen — both are written by this codebase's own completion handler —
-/// but a raw `TEXT` column has no schema enforcement) is treated the same
-/// as "not yet reported," never a panic.
+/// Parses raw `execution_attempts` columns into [`AttemptFacts`]. Malformed
+/// JSON (a raw `TEXT` column has no schema enforcement) is treated as "not
+/// yet reported," never a panic.
 #[allow(clippy::too_many_arguments)]
 pub fn derive_attempt_facts(
     requested_provider: Option<&str>,

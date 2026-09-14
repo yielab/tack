@@ -1,13 +1,9 @@
 //! Composes the runner this crate ships: the real HTTP protocol client,
 //! every in-tree harness adapter, git-worktree workspaces, and an
-//! owner-only journal.
-//!
-//! This is the crate's single composition root. `tack-runner`'s own `main`
-//! calls it after parsing arguments and reading configuration; any other
-//! process that wants to host the runner role calls the exact same
-//! function, so there is one wiring of adapters, capabilities, protocol,
-//! engine, journal and workspace to keep honest against
-//! `docs/contracts/runner-v1/` — not a copy that can drift from it.
+//! owner-only journal. The crate's single composition root — `tack-runner`'s
+//! `main` and any other process hosting the runner role call the exact same
+//! function, so there is one wiring to keep honest against
+//! `docs/contracts/runner-v1/`, never a copy that can drift from it.
 
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
@@ -38,14 +34,10 @@ pub type ProductionRunnerRuntime = RunnerRuntime<
     SystemClock,
 >;
 
-/// Operational bounds every composer of [`build_runtime`] must choose.
-///
-/// Each field governs how much of the host a spawned harness subprocess, or
-/// a single protocol call, may consume. Neither has a sane process-wide
-/// default: [`ProcessLimits`] deliberately implements no [`Default`] for the
-/// same reason this struct does not either — a value silently inherited
-/// here would hide a real operational choice from whoever is composing the
-/// runner.
+/// Operational bounds every composer of [`build_runtime`] must choose. Each
+/// field governs how much of the host a spawned harness subprocess, or a
+/// single protocol call, may consume. Neither implements [`Default`] — a
+/// value silently inherited here would hide a real operational choice.
 #[derive(Debug, Clone)]
 pub struct RunnerLimits {
     pub harness_process: ProcessLimits,
@@ -64,9 +56,8 @@ pub async fn build_runtime(
 ) -> Result<ProductionRunnerRuntime, RunnerError> {
     config.require_enrollment_credential()?;
 
-    // The real transport replaces `UnavailableProtocolClient`, the stub that
-    // is otherwise the only production `RunnerProtocolClient` in the tree
-    // and cannot reach a server at all.
+    // The real transport replaces `UnavailableProtocolClient`, the stub
+    // that otherwise cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
     let secrets = SecretStore::open(&config.secret_store_path());
     let adapters = build_adapter_registry(
@@ -87,18 +78,15 @@ pub async fn build_runtime(
         Arc::clone(&protocol),
         adapters,
         OwnerOnlyJournal::new(config.state_dir.join("journal")),
-        // Every claimed attempt gets its own real git checkout under the
-        // runner's state directory. This replaces
-        // `UnavailableWorktreeProvisioner`, which refuses every provision
-        // with a typed `WorktreeUnavailable`.
+        // Every claimed attempt gets its own real git checkout, replacing
+        // `UnavailableWorktreeProvisioner`, which refuses every provision.
         WorkspaceManager::new(
             config.state_dir.join("workspaces"),
             GitWorktreeProvisioner::default(),
         ),
     )
-    // `HttpPullProtocol` implements `AttemptDataProtocol`; without attaching
-    // it here, `engine.rs`'s real call sites for events/artifacts would
-    // never run in the production binary even though the code compiles.
+    // Without attaching this, `engine.rs`'s events/artifacts call sites
+    // would never run in the production binary even though it compiles.
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
@@ -112,11 +100,9 @@ pub async fn build_runtime(
 }
 
 /// Builds the production runtime and runs it to completion under `shutdown`.
-///
-/// This is the whole composition root as a single call: a binary's `main`
-/// reduces to argument parsing plus this call and its own signal handling,
-/// and any other process hosting the runner role gets the identical wiring
-/// by injecting its own [`Shutdown`] instead of a process signal.
+/// A binary's `main` reduces to argument parsing plus this call and its own
+/// signal handling; any other host of the runner role injects its own
+/// [`Shutdown`] instead of a process signal for identical wiring.
 pub async fn run(
     config: RunnerConfig,
     limits: RunnerLimits,
@@ -128,15 +114,10 @@ pub async fn run(
 /// What probing this machine's harness installations found: a
 /// [`RunnerCapabilities`] identical to what enrollment/refresh would send,
 /// plus [`ClaudeCodeAdapter::discover`]'s own error when Claude Code could
-/// not be registered at all.
-///
-/// [`build_adapter_registry`] never registers an adapter or probe for a
-/// harness whose `discover` fails, so a missing `claude` binary leaves no
-/// trace in `capabilities.harnesses` whatsoever — Codex, by
-/// contrast, is always registered, and its absence surfaces as a
-/// `probe_error` on its own entry in that same vec instead. A caller that
-/// wants to report Claude Code's absence honestly, rather than silently omit
-/// it, needs this second field; nothing else in this crate captures it.
+/// not be registered at all — [`build_adapter_registry`] never registers an
+/// adapter or probe for a harness whose `discover` fails, so a missing
+/// `claude` binary leaves no trace in `capabilities.harnesses` (Codex, by
+/// contrast, is always registered, surfacing absence as a `probe_error`).
 #[derive(Debug, Clone)]
 pub struct DiscoveryReport {
     pub capabilities: RunnerCapabilities,
@@ -144,26 +125,19 @@ pub struct DiscoveryReport {
     /// Which backend `secrets` answered from — `tack runner doctor` prints
     /// this so a file is never mistaken for a keychain.
     pub secret_backend: crate::secrets::SecretBackendKind,
-    /// What asking each configured provider for its model catalog
-    /// produced, keyed by `Provider::config_key`. Every entry a fetch
-    /// actually reached already lives inside `capabilities` (merged into
-    /// each eligible harness's `model_combinations`) — this field is the
-    /// typed reason for every other outcome, for `tack runner doctor`'s own
-    /// rendering.
+    /// What asking each provider for its model catalog produced, keyed by
+    /// `config_key`. A reached fetch already lives in `capabilities`; this
+    /// is the typed reason for every other outcome.
     pub provider_catalog: BTreeMap<String, crate::provider::CatalogStatus>,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
 /// performs, without building a full runtime or requiring a server or
-/// enrollment credential.
-///
-/// `tack runner doctor` is the only caller today: it needs to report what
-/// this machine can do without enrolling a runner. It calls this instead of
-/// re-deriving [`build_adapter_registry`]/[`report_capabilities`] itself, so
-/// there remains exactly one place that decides how a harness gets probed,
-/// never two that could quietly diverge. `secrets` is never resolved against
-/// during a probe (no attempt exists to resolve for); it is only asked which
-/// backend it is, which the adapters need at construction regardless.
+/// enrollment credential. `tack runner doctor` is the only caller: it needs
+/// to report what this machine can do without enrolling a runner, reusing
+/// [`build_adapter_registry`]/[`report_capabilities`] so exactly one place
+/// decides how a harness gets probed. `secrets` is never resolved against
+/// during a probe, only asked which backend it is.
 pub async fn probe(
     staging_root: &Path,
     process_limits: &ProcessLimits,
@@ -182,16 +156,12 @@ pub async fn probe(
     }
 }
 
-/// Registers every harness whose binary this machine actually has.
-///
-/// A harness that cannot be discovered is **not registered** rather than
-/// registered with a placeholder: `AdapterRegistry::resolve` then reports a
-/// typed "no adapter is registered for harness kind" instead of accepting an
-/// attempt it could never run. Each harness needs two instances because
-/// `register_adapter` and `register_probe` each take an owned box; the probe
-/// copy's version cache is therefore separate from the adapter copy's, so the
-/// adapter falls back to its own one-off version detection at `wait()` time —
-/// documented behaviour, never a fabricated version.
+/// Registers every harness whose binary this machine actually has. A
+/// harness that cannot be discovered is **not registered**: `resolve` then
+/// reports a typed "no adapter registered" instead of accepting an attempt
+/// it could never run. Each harness needs two instances because
+/// `register_adapter`/`register_probe` each take an owned box, so the
+/// adapter's version cache is separate from the probe's.
 fn build_adapter_registry(
     process_limits: &ProcessLimits,
     staging_root: &Path,

@@ -1,29 +1,14 @@
-//! Rust-side accessors for the shared fake harness fixture
-//! (`fake_harness.sh`, documented in full at the top of that file).
-//!
-//! Other crash/fake-harness tests elsewhere in this crate drive this exact
-//! fixture the same way: spawn it through [`super::process::ProcessSpec`]
-//! with `TACK_FAKE_HARNESS_MODE` (and mode-specific variables) set in
-//! `ProcessSpec::env`, exactly as this module's own tests and `process.rs`'s
-//! tests already do. Nothing here is specific to any one harness kind — this
-//! is the reusable half of the fixture machinery, kept generic on purpose.
+//! Rust-side accessors for the shared fake harness fixture (`fake_harness.sh`).
+//! Reusable across harness kinds: spawn via `ProcessSpec` with `TACK_FAKE_HARNESS_MODE` set.
 
 use std::path::PathBuf;
 
-/// Absolute path to the fixture script itself, resolved at compile time
-/// against this crate's own manifest directory so it does not depend on the
-/// process's current working directory at test time.
+/// Absolute path to the fixture script, resolved at compile time.
 pub fn fake_harness_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/harness/fixtures/fake_harness.sh")
 }
 
-/// The `(program, args)` pair to put directly into
-/// [`super::process::ProcessSpec`]. Always invokes the script through an
-/// absolute `/bin/sh` rather than executing the file directly: this avoids
-/// depending on the script's executable bit surviving every checkout/copy,
-/// and sidesteps `PATH` lookup entirely (`ProcessSpec::spawn` always starts
-/// the child from a cleared environment, so an unqualified program name has
-/// no `PATH` to search).
+/// `(program, args)` for `ProcessSpec` — invoked via `/bin/sh`, never directly.
 pub fn fake_harness_command() -> (PathBuf, Vec<String>) {
     (
         PathBuf::from("/bin/sh"),

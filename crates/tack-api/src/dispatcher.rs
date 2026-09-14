@@ -51,10 +51,6 @@ pub(crate) fn is_dispatch_eligible(status_map: &StatusMap, current_status: &str)
     status_map.dispatch_from.iter().any(|s| s == current_status)
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Per-item dispatch lock — process-wide, not part of AppState
-// ─────────────────────────────────────────────────────────────────────────
-
 /// A process-wide guard against two concurrent dispatch requests for the
 /// same item racing each other. Deliberately **not** a field on
 /// [`AppState`]: `AppState` is constructed via a plain struct literal in
@@ -91,10 +87,6 @@ fn try_acquire(item_id: Uuid) -> Option<DispatchGuard> {
     }
     Some(DispatchGuard { item_id })
 }
-
-// ─────────────────────────────────────────────────────────────────────────
-// Outcome types
-// ─────────────────────────────────────────────────────────────────────────
 
 /// The result of attempting to apply a `status_map`-named target status
 /// through the workflow engine. Never an `Err` on its
@@ -156,10 +148,6 @@ pub enum DispatchOutcome {
     },
     Success(DispatchSuccess),
 }
-
-// ─────────────────────────────────────────────────────────────────────────
-// The dispatcher
-// ─────────────────────────────────────────────────────────────────────────
 
 /// Dispatch `item_id` to its project's linked control plane. See
 /// `try_acquire`'s doc comment for the idempotency guarantee.

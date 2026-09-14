@@ -1,18 +1,16 @@
 //! The shared local-process harness lifecycle.
 //!
-//! [`LocalProcessHarness<G>`] owns everything about running a harness CLI as a
-//! local child process that does not depend on which vendor it is: process
-//! bookkeeping (one in-flight [`SupervisedProcess`](crate::harness::process::SupervisedProcess) per opaque
-//! [`LocalRunHandle`]), taking ownership of that bookkeeping on
+//! [`LocalProcessHarness<G>`] owns everything about running a harness CLI as
+//! a local child process that does not depend on which vendor it is:
+//! process bookkeeping (one in-flight
+//! [`SupervisedProcess`](crate::harness::process::SupervisedProcess) per
+//! opaque [`LocalRunHandle`]), ownership of that bookkeeping on
 //! `cancel`/`wait`, reconciling a recorded pid across a restart, and the
 //! shared `secrets`/`providers` an attempt's environment resolves against.
 //! [`HarnessGrammar`] is the seam a concrete vendor (`codex.rs`,
-//! `claude_code.rs`) fills in: everything about *its* command line, output
-//! classification, capability claims and handle encoding — including a full
-//! identity check on `reconcile`, a differently-shaped cancel-failure
-//! policy, and stream-based (rather than exit-code-based) output
-//! classification, all without changing this trait — each hook below says
-//! which asymmetry it exists for.
+//! `claude_code.rs`) fills in — command line, output classification,
+//! capability claims and handle encoding — without changing this trait;
+//! each hook below says which vendor asymmetry it exists for.
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -37,13 +35,10 @@ use crate::{
 };
 
 /// Everything a [`HarnessGrammar::prepare`] call hands back to
-/// [`LocalProcessHarness::start`]: what to spawn, the redaction registry that
-/// spawn's captured output must be scrubbed against, the per-run process
-/// limits (a grammar may narrow the default timeout to a request's own
-/// `timeout_seconds`), and whatever grammar-specific state `wait`/`cancel`
-/// will need back (`G::RunState`) — the harness version, model
-/// provider/id, workspace facts, anything the grammar alone knows how to
-/// produce or consume.
+/// [`LocalProcessHarness::start`]: what to spawn, the redaction registry
+/// captured output must be scrubbed against, per-run process limits (a
+/// grammar may narrow the default timeout), and grammar-specific state
+/// `wait`/`cancel` will need back (`G::RunState`).
 pub struct PreparedRun<S> {
     pub process_spec: ProcessSpec,
     pub secrets: SecretMaterial,
@@ -51,13 +46,10 @@ pub struct PreparedRun<S> {
     pub state: S,
 }
 
-/// The vendor-specific seam. A [`LocalProcessHarness<G>`] owns the lifecycle;
-/// `G` owns everything about one harness CLI's own command line, output and
-/// capability claims. Every method here exists because at least two harness
-/// CLIs are already known to genuinely disagree about it (a model-selection
-/// policy, a cancel-failure policy, an identity check on `reconcile`, a
-/// handle encoding, an output-classification shape), not because a future
-/// harness might.
+/// The vendor-specific seam. A [`LocalProcessHarness<G>`] owns the
+/// lifecycle; `G` owns one harness CLI's command line, output and
+/// capability claims. Every method here exists because at least two
+/// harness CLIs already disagree about it, not because a future one might.
 #[async_trait]
 pub trait HarnessGrammar: Send + Sync + 'static {
     /// Per-attempt state [`HarnessGrammar::prepare`] computes and
@@ -98,10 +90,7 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// Builds everything `start` needs to spawn: command line, environment,
     /// stdin, redaction registry, per-run limits, and `RunState` for later.
     /// Async because a grammar may need to detect its own installed version
-    /// as part of preparing a run (codex's cache-or-detect fallback). Two
-    /// harness CLIs' command lines share no structure beyond "build a
-    /// `Vec<String>`" — this is the grammar's own construction end to end,
-    /// not a partial template.
+    /// while preparing a run (codex's cache-or-detect fallback).
     async fn prepare(
         &self,
         spec: &ExecutionSpec,
@@ -147,13 +136,11 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     fn reconcile_unavailable(&self) -> Result<RecoveryObservation, HarnessError>;
 
     /// Classifies a completed run into a [`HarnessOutcome`]: terminal state,
-    /// terminal reason, staged artifact, usage. A harness that classifies
-    /// purely from the process exit code and one that parses a structured
-    /// output stream share no parsing logic — this hook exists precisely so
-    /// neither is forced through the other's shape. `cancelled` is `true`
-    /// exactly when `cancel` already ran for this handle, tracked
-    /// generically by [`LocalProcessHarness`] itself; a grammar that never
-    /// produces a cancelled terminal state (codex) may ignore it.
+    /// reason, staged artifact, usage. An exit-code classifier and a
+    /// structured-output-stream classifier share no parsing logic — this
+    /// hook exists so neither is forced through the other's shape.
+    /// `cancelled` is `true` exactly when `cancel` already ran for this
+    /// handle, tracked generically by [`LocalProcessHarness`] itself.
     fn outcome(
         &self,
         state: Self::RunState,
@@ -163,12 +150,10 @@ pub trait HarnessGrammar: Send + Sync + 'static {
         cancelled: bool,
     ) -> HarnessOutcome;
 
-    /// Detects the installed version, honestly: every failure mode (binary
-    /// missing, spawn failure, unparseable output, timeout) folds into the
-    /// `Option<String>` slot, matching [`HarnessProbe::probe`]'s own
-    /// contract that probing itself cannot fail. The `BTreeMap` return slot
-    /// carries whatever raw diagnostic a grammar wants attached (e.g. an
-    /// unrecognized version line) — most grammars leave it empty.
+    /// Detects the installed version, honestly: every failure mode folds
+    /// into the `Option<String>` slot, matching [`HarnessProbe::probe`]'s
+    /// contract that probing cannot fail. The `BTreeMap` carries whatever
+    /// raw diagnostic a grammar wants attached; most leave it empty.
     async fn detect_version(&self)
     -> (String, Option<String>, BTreeMap<String, serde_json::Value>);
 

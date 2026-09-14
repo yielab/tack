@@ -1,31 +1,25 @@
 //! Hosts the runner role inside the `tack` binary: `tack runner start` runs
 //! it as the whole process, `tack serve` (with or without `--with-runner`)
-//! runs it as a controllable task alongside the server in the same
-//! process.
+//! runs it as a controllable task alongside the server in the same process.
 //!
-//! Both paths build a [`tack_runner::RunnerConfig`] through the exact
-//! precedence rules `tack-runner`'s own binary uses
-//! ([`load_runner_config`]) and then hand it to `tack_runner::bootstrap`,
-//! the crate's single composition root — there is no second way to wire a
-//! runner in this codebase, only two callers of the same one.
+//! Both paths build a [`tack_runner::RunnerConfig`] through the same
+//! precedence rules `tack-runner`'s own binary uses ([`load_runner_config`])
+//! and hand it to `tack_runner::bootstrap`, the crate's single composition
+//! root — there is no second way to wire a runner in this codebase.
 //!
-//! The embedded case speaks to the server it is embedded in exactly like a
-//! remote runner would: ordinary runner-v1 HTTP against the loopback
-//! address the server actually bound. It does not reach into `tack-api`'s
-//! router or state, and never will — a shortcut here would create a second
-//! implementation of the runner protocol client that `docs/contracts/
-//! runner-v1/` cannot hold accountable.
+//! The embedded case speaks to its own server exactly like a remote runner
+//! would: ordinary runner-v1 HTTP against the loopback address the server
+//! bound. It never reaches into `tack-api`'s router or state — a shortcut
+//! here would create a second implementation of the protocol client that
+//! `docs/contracts/runner-v1/` cannot hold accountable.
 //!
 //! **The seam this module adds (ADR 0061 decisions 2 and 6):** [`serve`]
-//! always wires an [`EmbeddedRunnerControl`] into `AppState`
-//! (`tack_api::serve_with_ready_and_local_runner`), whether or not
+//! always wires an [`EmbeddedRunnerControl`] into `AppState`, whether or not
 //! `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` says to start it immediately —
-//! that flag now only decides `AppConfig::local_runner_enable`'s startup
-//! value, folded in by [`with_runner_enabled`]/`main.rs` before this
-//! function is reached. `tack_api::server::serve_inner`'s own auto-start
-//! check and `PUT /api/local-runner` both call the exact same
-//! [`EmbeddedRunnerControl::start`] — there is only ever one code path into
-//! the runtime, never a boot-time one and a UI-triggered one.
+//! that flag only decides `AppConfig::local_runner_enable`'s startup value.
+//! `serve_inner`'s own auto-start check and `PUT /api/local-runner` both
+//! call the same [`EmbeddedRunnerControl::start`]: one code path in, never a
+//! boot-time one and a UI-triggered one.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -49,10 +43,8 @@ use tack_runner::{
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-/// Bounds applied to every harness subprocess a runner hosted by this binary
-/// spawns. Mirrors the standalone `tack-runner` binary's own bounds: both
-/// binaries run the identical composition root and there is no reason for a
-/// harness to behave differently depending on which process launched it.
+/// Mirrors the standalone `tack-runner` binary's own harness-subprocess
+/// bounds — both run the identical composition root.
 const HARNESS_PROCESS_LIMITS: ProcessLimits =
     ProcessLimits::new(4 * 1024 * 1024, 1024 * 1024, Duration::from_secs(3_600));
 
@@ -66,9 +58,8 @@ fn runner_limits() -> RunnerLimits {
     }
 }
 
-/// Loads runner configuration from an optional TOML file, the environment,
-/// then `command_line` overrides, in that precedence — identical to
-/// `tack-runner`'s own binary, reusing its types rather than re-parsing.
+/// TOML file, then environment, then `command_line` overrides — identical
+/// precedence to `tack-runner`'s own binary, reusing its types.
 fn load_runner_config(
     command_line: ConfigOverrides,
     config_path: Option<&Path>,
@@ -83,31 +74,21 @@ fn load_runner_config(
     })
 }
 
-/// Where the embedded runner's on-disk state (its enrolled credential,
-/// attempt journal and secret store) lives when nothing more specific asks
-/// for another directory — one level under this server's own `storage_dir`,
-/// mirroring how `execution-artifacts` already nests there instead of
-/// colliding with attachments (`router.rs`). A server started against a
-/// different database — and, following the convention every other
-/// per-install artifact in this crate already follows, its own
-/// `TACK_STORAGE_DIR` — never resolves to the same runner state as another
-/// server's; that coupling, not merely a directory name, is what this
-/// function exists to establish.
+/// Where the embedded runner's on-disk state (credential, attempt journal,
+/// secret store) lives by default: one level under this server's own
+/// `storage_dir`, mirroring `execution-artifacts`. Ties runner state to
+/// `TACK_STORAGE_DIR` so a server on a different database never resolves to
+/// another server's runner state.
 fn embedded_default_state_dir(storage_dir: &str) -> PathBuf {
     Path::new(storage_dir).join("runner")
 }
 
-/// Best-effort recovery for an install whose embedded runner state still
-/// sits at the crate's bare, cwd-relative default
-/// (`tack_runner::config::DEFAULT_STATE_DIR`) instead of the new,
-/// database-scoped directory: moves it there in a single rename so an
-/// already-enrolled credential is not stranded somewhere this binary will
-/// never look again. A no-op once `new_dir` already exists — clobbering it
-/// could overwrite state a previous boot or a fresh install already put
-/// there. A failed rename (e.g. `new_dir` on a different filesystem) leaves
-/// the legacy directory untouched and reported; the caller then provisions a
-/// fresh identity at `new_dir` rather than reusing state it could not verify
-/// moved intact.
+/// Best-effort recovery for an install whose runner state still sits at the
+/// crate's bare, cwd-relative default (`DEFAULT_STATE_DIR`) instead of the
+/// new database-scoped directory: renames it there so an already-enrolled
+/// credential isn't stranded. No-op if `new_dir` already exists (never
+/// clobber existing state). A failed rename leaves the legacy directory in
+/// place and reported; the caller provisions a fresh identity instead.
 fn migrate_legacy_state_dir(new_dir: &Path) {
     if new_dir.exists() {
         return;
@@ -137,22 +118,18 @@ fn migrate_legacy_state_dir(new_dir: &Path) {
 }
 
 /// Whether the embedded runner should start at boot, combining
-/// `--with-runner` with its environment equivalent. Off unless one of the
-/// two explicitly says on. This only ever feeds `AppConfig::
-/// local_runner_enable` (`main.rs`'s `run_server`) — the actual on/off
-/// decision at any later moment is `effective_local_runner_enabled`'s
-/// (`tack-api`), which lets a UI toggle override this startup default from
-/// then on.
+/// `--with-runner` with its environment equivalent. Off unless one explicitly
+/// says on. Only feeds `AppConfig::local_runner_enable`'s startup value — a
+/// later UI toggle overrides it via `effective_local_runner_enabled`.
 pub fn with_runner_enabled(flag: bool) -> bool {
     flag || std::env::var("TACK_LOCAL_RUNNER_ENABLE")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
 }
 
-/// Runs the runner role as the whole process (`tack runner start`), owning
-/// its own Tokio runtime and its own ctrl-c wiring — the same shutdown
-/// pattern `tack-runner`'s binary uses, reimplemented here because that
-/// binary's `main` is not library code this crate can call into.
+/// Runs the runner role as the whole process, owning its own Tokio runtime
+/// and ctrl-c wiring — reimplements `tack-runner`'s shutdown since that
+/// binary's `main` isn't callable library code.
 pub fn run_standalone(
     config_path: Option<PathBuf>,
     api_url: Option<String>,
@@ -197,16 +174,11 @@ async fn run_to_shutdown(config: RunnerConfig) -> anyhow::Result<()> {
 }
 
 /// Rejects a server configuration that explicitly asked the embedded runner
-/// to start (`--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) on a non-loopback
-/// bind. An embedded runner executes arbitrary agent processes on the host
-/// serving the UI, so that combination is refused outright, before any
-/// socket or database opens, rather than downgraded to "serve without a
-/// runner" — a caller must fail loudly rather than silently ignore its own
-/// flag. Callers only reach this when they already know the runner was
-/// asked to auto-start; a plain `tack serve` with no such request is fine
-/// on any bind — see [`serve`]'s own doc comment for why the same
-/// loopback rule, applied to a *persisted* preference instead of this
-/// boot's own flag, is checked again later, after the database opens.
+/// to auto-start on a non-loopback bind — refused outright, before any
+/// socket or database opens, since an embedded runner executes arbitrary
+/// agent processes on the host serving the UI. A plain `tack serve` with no
+/// such request never reaches this; see [`serve`] for why the same rule is
+/// checked again later against the *persisted* preference.
 fn ensure_loopback(config: &tack_api::config::AppConfig) -> anyhow::Result<()> {
     if !config.binds_loopback() {
         anyhow::bail!(
@@ -220,20 +192,15 @@ fn ensure_loopback(config: &tack_api::config::AppConfig) -> anyhow::Result<()> {
 }
 
 /// Makes sure `runner_config` carries something the embedded runner can
-/// redeem: an explicit `enrollment_credential` wins outright; otherwise a
-/// durable session already on disk under `state_dir`, reused as-is if its
-/// runner id still resolves in this database
-/// (`local_enrollment::stored_session_orphaned`) — [`crate::local_enrollment::
-/// self_provision`] is not called, so this never mints a second token, and
-/// the config gets a placeholder credential
-/// (`local_enrollment::stored_session_placeholder`) only because
-/// `bootstrap::build_runtime` requires some credential before it looks at
-/// `state_dir`; otherwise a one-time token self-provisioned in-process,
-/// legitimate because operator and runner are the same person on the same
-/// machine (`docs/adr/0058-standalone-single-binary-runner.md`). An orphaned
-/// session file is left on disk untouched: `establish_session` still tries
-/// `refresh` first, gets refused, and falls through to the fresh token this
-/// branch provisioned. Only called after [`ensure_loopback`] has passed.
+/// redeem: an explicit credential wins outright; otherwise a durable session
+/// on disk, reused as-is if its runner id still resolves in this database
+/// (never re-provisioned, so no second token is minted) — a placeholder
+/// credential only because `build_runtime` requires *some* value up front.
+/// Otherwise a fresh one-time token, self-provisioned in-process (ADR 0058:
+/// operator and runner are the same person on the same machine). An orphaned
+/// session file is left untouched: `establish_session` tries `refresh`
+/// first, is refused, and falls through to the fresh token. Called only
+/// after [`ensure_loopback`] has passed.
 async fn ensure_runner_credential(
     runner_config: &mut RunnerConfig,
     server_config: &tack_api::config::AppConfig,
@@ -294,14 +261,10 @@ fn save_secret_meta(state_dir: &Path, meta: &HashMap<String, DateTime<Utc>>) {
 }
 
 /// Narrows the per-provider catalog map to the single status this response
-/// carries. The panel it feeds is one provider's key field, so the line it
-/// renders is that provider's own catalog; no entry for it reads the same as
-/// an unconfigured one, which is what it is. A screen that offers more than
-/// one provider needs a response shaped per provider, not this one.
-///
-/// The per-model price and context-window counts stop here on purpose:
-/// putting them in this response puts them on the wire, and the capability
-/// type has nowhere to carry per-model metadata yet.
+/// carries — the panel it feeds is one provider's key field, so no entry for
+/// it reads the same as unconfigured. Per-model price/context-window counts
+/// stop here on purpose: they'd go on the wire, and the capability type has
+/// nowhere to carry per-model metadata yet.
 fn map_catalog_status(status: Option<&tack_runner::provider::CatalogStatus>) -> CatalogSnapshot {
     use tack_runner::provider::CatalogStatus;
     match status {
@@ -328,25 +291,19 @@ struct Running {
 }
 
 struct State {
-    /// `None` until the server this control is embedded in has bound its
-    /// listener and told [`EmbeddedRunnerControl::set_bound_addr`] — before
-    /// that, [`EmbeddedRunnerControl::start`] has nowhere to point the
-    /// runner's own HTTP client and fails rather than guessing.
+    /// `None` until the server has bound its listener and told
+    /// [`EmbeddedRunnerControl::set_bound_addr`] — before that, `start` has
+    /// nowhere to point the runner's HTTP client and fails rather than guess.
     bound_addr: Option<SocketAddr>,
     runner_config: RunnerConfig,
     running: Option<Running>,
     secret_meta: HashMap<String, DateTime<Utc>>,
-    /// Whether `providers[vercel_ai_gateway].enabled` currently reads `true`
-    /// only because [`EmbeddedRunnerControl::set_secret`] flipped it as a
-    /// convenience, rather than because the operator's own configuration
-    /// (TOML, `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED`, or an
-    /// already-`true` value at boot) already said so. Set only at the
-    /// instant `set_secret` actually changes the flag from `false` to
-    /// `true`; cleared by [`EmbeddedRunnerControl::remove_secret`] undoing
-    /// that exact flip. An operator's own `true` never sets this, so
-    /// removing the default secret never turns off a provider the operator
-    /// configured on directly. Never persisted — matches `enabled` itself,
-    /// which this process never writes back to any file either.
+    /// Whether `providers[vercel_ai_gateway].enabled` reads `true` only
+    /// because `set_secret` flipped it as a convenience, not because the
+    /// operator's own config already said so. Set only at the instant
+    /// `set_secret` flips `false` → `true`; cleared only by `remove_secret`
+    /// undoing that exact flip, so an operator's own `true` is never turned
+    /// off by a later secret removal. Never persisted.
     vercel_ai_gateway_secret_auto_enabled: bool,
 }
 

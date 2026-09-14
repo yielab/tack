@@ -1,10 +1,8 @@
-//! Pure input/output types for the deterministic fleet scheduler.
-//!
-//! Plain data only: no I/O, no clock access (callers pass `now` — see
-//! [`super::select`]). Turns a [`SchedulingRequest`] plus a candidate
-//! [`RunnerCandidate`] slice into a [`SelectionOutcome`] — it never grants
-//! the lease itself; that stays the repository's job against the real
-//! `agent_runners`/`agent_fleet_members` tables (migrations 039–041).
+//! Pure input/output types for the deterministic fleet scheduler. Plain data
+//! only: no I/O, no clock access (callers pass `now`). Turns a
+//! [`SchedulingRequest`] plus a [`RunnerCandidate`] slice into a
+//! [`SelectionOutcome`] — never grants the lease itself; that stays the
+//! repository's job.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,10 +23,9 @@ pub enum RunnerState {
     Revoked,
 }
 
-/// Caller-supplied scheduling priority. No `execution_requests` column
-/// carries one yet, so this is a typed stand-in, read today from
-/// `execution_requests.metadata`. `Normal` is the default so an unset
-/// priority never sorts as the most urgent request in a batch.
+/// Caller-supplied scheduling priority, read today from
+/// `execution_requests.metadata` (no dedicated column yet). `Normal` is the
+/// default so an unset priority never sorts as most urgent in a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Priority {
     Low,
