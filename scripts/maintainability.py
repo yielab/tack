@@ -100,8 +100,6 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/src/orch_runtime/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-api (sleep count unchanged from before the card, not in its acceptance lines)",
 
     # --- tack-cli: none of these are on IX-M8-cli's acceptance lines (name-length only) ---
-    ("crates/tack-cli/src/local_enrollment.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
-    ("crates/tack-cli/src/local_runner.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
     ("crates/tack-cli/tests/e6_scheduler_e2e_test.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
     ("crates/tack-cli/tests/embedded_runner_live_secret.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
     ("crates/tack-cli/tests/embedded_runner_orphaned_credential.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
