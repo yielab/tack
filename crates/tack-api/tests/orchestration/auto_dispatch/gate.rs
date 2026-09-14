@@ -196,6 +196,19 @@ async fn turn_orchestration_off_via_the_ui_toggle(app: &Router) {
     assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
 }
 
+/// Asserts no auto-dispatch happened: no request reached `server` and no
+/// orch_tasks row exists for `item_id`, after draining any background spawn.
+async fn assert_no_auto_dispatch(state: &AppState, server: &MockServer, item_id: Uuid, why: &str) {
+    drain_background_spawns().await;
+    let hits = server.received_requests().await.unwrap_or_default();
+    assert!(hits.is_empty(), "{why}: {hits:?}");
+    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
+    assert!(
+        tasks.is_empty(),
+        "no orch_tasks row should have been created either"
+    );
+}
+
 // ─── The regression test ───────────────────────────────────────────────────
 
 #[tokio::test]
@@ -205,7 +218,6 @@ async fn auto_dispatch_respects_ui_toggle_off_despite_env_enable() {
     // control plane at all, wiremock has nothing to answer with and the
     // dispatch attempt fails loudly — but the real assertion is the
     // received-request count below, not that failure mode.
-
     // TACK_ORCH_ENABLE=1 at the process level...
     let (app, state) = app_with_state(AppConfig {
         orch_enable: true,
@@ -232,19 +244,35 @@ async fn auto_dispatch_respects_ui_toggle_off_despite_env_enable() {
     // Give a wrongly-firing hook a chance to show up, then assert nothing
     // did — same shape `orchestration/auto_dispatch/hook.rs` uses for the
     // equivalent "off by default" case.
-    drain_background_spawns().await;
-    let hits = server.received_requests().await.unwrap_or_default();
-    assert!(
-        hits.is_empty(),
-        "orchestration toggled off in the UI must mean no auto-dispatch, even with \
-         TACK_ORCH_ENABLE=1 at the process level — the raw env flag must not override the \
-         UI's explicit off: {hits:?}"
-    );
-    let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
-    assert!(
-        tasks.is_empty(),
-        "no orch_tasks row should have been created either"
-    );
+    assert_no_auto_dispatch(
+        &state,
+        &server,
+        item_id,
+        "TACK_ORCH_ENABLE=1 must not override the UI's explicit off",
+    )
+    .await;
+}
+
+/// Mocks docket's enqueue (`POST`) and follow-up list (`GET`) for `task_id`,
+/// both reporting it `pending`.
+async fn mock_enqueue_and_list(server: &MockServer, task_id: &str) {
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/tasks/demo"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true, "task": task_id, "project": "demo", "status": "pending"
+        })))
+        .mount(server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/tasks/demo"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "tasks": [{
+                "id": task_id, "description": "x", "priority": "normal",
+                "status": "pending", "created": "2026-08-05T00:00:00Z", "source": "operator",
+            }]
+        })))
+        .mount(server)
+        .await;
 }
 
 /// Sanity check in the opposite direction, so this file proves the gate
@@ -254,23 +282,7 @@ async fn auto_dispatch_respects_ui_toggle_off_despite_env_enable() {
 #[tokio::test]
 async fn auto_dispatch_respects_ui_toggle_on_despite_env_unset() {
     let server = MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::path("/tasks/demo"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
-            "ok": true, "task": "task-ui-enabled", "project": "demo", "status": "pending"
-        })))
-        .mount(&server)
-        .await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/tasks/demo"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
-            "tasks": [{
-                "id": "task-ui-enabled", "description": "x", "priority": "normal",
-                "status": "pending", "created": "2026-08-05T00:00:00Z", "source": "operator",
-            }]
-        })))
-        .mount(&server)
-        .await;
+    mock_enqueue_and_list(&server, "task-ui-enabled").await;
 
     // `AppConfig::default()` has `orch_enable: false` — the env flag is
     // unset — but the orchestration-settings route stays reachable
