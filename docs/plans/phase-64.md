@@ -317,6 +317,7 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | H3 · H3b · R1b | done, in `develop` — opencode installs its plugin package from the npm registry on every attempt, so it refuses a request that denies network |
 | R2 | done, in `develop` — 24 518 lines out, 97 documented paths become 78 |
 | R3 | done, in `develop` — `tack-orch` goes from 19 056 lines to 7 854 |
-| D1 · R4 | running |
-| R3b · H4 | not started |
+| D1 | done, in `develop` — claude-code asks through `--permission-prompt-tool stdio`; the walk through the real binary and the operator route is D2's |
+| R4 · R3b | running |
+| H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
