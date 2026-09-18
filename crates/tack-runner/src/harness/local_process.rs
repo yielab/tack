@@ -92,6 +92,18 @@ pub struct HarnessDescriptor {
     pub probe_notes: &'static [(&'static str, &'static str)],
     /// Where this CLI's own credential lives, for `tack runner doctor`.
     pub credential_note: &'static str,
+    /// The variable name this CLI reads a configured endpoint's credential
+    /// from, when it differs from the endpoint's own `credential_env_var`
+    /// (e.g. docket always reads `DOCKET_LLM_API_KEY`, never the
+    /// provider's name for it). `None` keeps the provider's own name.
+    pub credential_env: Option<&'static str>,
+    /// Whether this CLI's own reported model comes from the endpoint's
+    /// response body rather than an echo of what was configured. When
+    /// true, a report's `observed_model` is recorded `harness_reported`
+    /// even behind a gateway that could otherwise substitute a model —
+    /// the gateway downgrade in [`LocalProcessHarness::outcome`] exists
+    /// for a CLI that only ever echoes its own request.
+    pub observes_served_model: bool,
 }
 
 /// What the grammar is given to build a command line.
@@ -429,7 +441,12 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         if let Some(endpoint) = &endpoint {
             let credential = endpoint.credential.expose().to_owned();
             secrets.register(credential.clone());
-            env.insert(endpoint.credential_env_var.clone(), credential);
+            let credential_var = self
+                .grammar
+                .descriptor()
+                .credential_env
+                .map_or_else(|| endpoint.credential_env_var.clone(), str::to_owned);
+            env.insert(credential_var, credential);
         }
 
         let prompt = request.resolved_agent_profile.instructions.clone();
@@ -593,8 +610,13 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         let requested_model = request.requested_model_id.as_ref().map(|id| id.as_str());
         // A configured endpoint answers after the CLI has already printed
         // the model it was asked for, so what the CLI reports is then a
-        // request, not an observation.
+        // request, not an observation — unless the CLI's own report is
+        // itself the endpoint's answer (`observes_served_model`), which is
+        // an observation regardless of what sits behind the endpoint.
         let (model_id, source) = match (report.observed_model, requested_model) {
+            (Some(model), _) if descriptor.observes_served_model => {
+                (model, ModelObservationSource::HarnessReported)
+            }
             (Some(model), _)
                 if crate::provider::requires_unconfirmed_model_recording(&provider) =>
             {
@@ -697,10 +719,48 @@ fn measurement<T>(value: Option<T>) -> Measurement<T> {
     }
 }
 
+/// Whether `token` starts with at least two dot-separated digit groups
+/// (`X.Y[.Z...]`) and, past those, either ends there or continues with a
+/// suffix that itself starts with a letter and holds only letters, digits,
+/// `.`, `-` or `+` (`0.2.0b1`). A suffix must *start* with a letter, so
+/// `999.999.999-nightly-exotic-format`, whose digit groups are followed by
+/// a `-`, is still not a version.
+fn digit_groups_then_letter_suffix(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    let mut index = 0;
+    let mut groups = 0;
+    loop {
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index == start {
+            return false;
+        }
+        groups += 1;
+        if index < bytes.len() && bytes[index] == b'.' {
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    if groups < 2 {
+        return false;
+    }
+    if index == bytes.len() {
+        return true;
+    }
+    token[index..].starts_with(|ch: char| ch.is_ascii_alphabetic())
+        && token[index..]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '+')
+}
+
 /// Finds the version in a `--version` line: the leading token when it looks
 /// like a version (`2.1.223`, `3.0.0-beta.1`), otherwise a later token that
-/// is a plain `X.Y[.Z]` (`codex-cli 0.149.1`). A line with neither has no
-/// version; guessing one out of it would report a version nobody printed.
+/// is a plain `X.Y[.Z]` (`codex-cli 0.149.1`) or digit groups followed by a
+/// letter-led suffix (`docket 0.2.0b1`). A line with neither has no version;
+/// guessing one out of it would report a version nobody printed.
 pub(crate) fn parse_version(output: &str) -> Option<&str> {
     let plain = |token: &str| {
         let parts: Vec<&str> = token.split('.').collect();
@@ -718,7 +778,7 @@ pub(crate) fn parse_version(output: &str) -> Option<&str> {
     if leading {
         return Some(first);
     }
-    tokens.find(|token| plain(token))
+    tokens.find(|token| plain(token) || digit_groups_then_letter_suffix(token))
 }
 
 /// The pid inside a handle this core issued (`<pid>:<sequence>`). Also reads

@@ -1,0 +1,8 @@
+captured
+docket 0.2.0b1
+
+Real `docket harness run` invocation against a loopback server whose one
+reply is a `bash` tool call running a command (`curl ... | sh`) that is not
+on docket's own curated allowlist. Harness mode's approval posture is fixed
+to non-interactive refusal, so the call is denied immediately as `blocked`
+rather than waiting on a human. Exit code 1.

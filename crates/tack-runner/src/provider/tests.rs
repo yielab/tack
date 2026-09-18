@@ -54,37 +54,55 @@ fn an_enabled_provider_with_no_such_secret_is_a_typed_error() {
     );
 }
 
+/// `(wire) -> (base_url, credential_env_var)`, one row per wire this
+/// provider serves.
+fn wire_endpoint_rows() -> [(Wire, &'static str, &'static str); 3] {
+    [
+        (
+            Wire::AnthropicMessages,
+            "https://ai-gateway.vercel.sh/claude-code",
+            "ANTHROPIC_AUTH_TOKEN",
+        ),
+        (
+            Wire::OpenAiResponses,
+            "https://ai-gateway.vercel.sh/codex/v1",
+            "AI_GATEWAY_API_KEY",
+        ),
+        (
+            Wire::OpenAiChatCompletions,
+            "https://ai-gateway.vercel.sh/v1",
+            "AI_GATEWAY_API_KEY",
+        ),
+    ]
+}
+
 #[test]
 fn a_configured_provider_resolves_the_wire_specific_endpoint() {
     let dir = tempfile::tempdir().expect("temporary directory");
-    let path = dir.path().join("secrets.json");
-    let secrets = SecretStore::file(path.clone());
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
     secrets
         .set("demo-secret", "the-real-key")
         .expect("seed secret");
+    let resolve = |wire| {
+        resolve_endpoint(
+            &providers(true, "demo-secret"),
+            &secrets,
+            VERCEL_AI_GATEWAY_PROVIDER,
+            wire,
+        )
+        .expect("resolves")
+        .expect("endpoint present")
+    };
 
-    let claude = resolve_endpoint(
-        &providers(true, "demo-secret"),
-        &secrets,
-        VERCEL_AI_GATEWAY_PROVIDER,
-        Wire::AnthropicMessages,
-    )
-    .expect("resolves")
-    .expect("endpoint present");
-    assert_eq!(claude.base_url, "https://ai-gateway.vercel.sh/claude-code");
-    assert_eq!(claude.credential_env_var, "ANTHROPIC_AUTH_TOKEN");
-    assert_eq!(claude.credential.expose(), "the-real-key");
-
-    let codex = resolve_endpoint(
-        &providers(true, "demo-secret"),
-        &secrets,
-        VERCEL_AI_GATEWAY_PROVIDER,
-        Wire::OpenAiResponses,
-    )
-    .expect("resolves")
-    .expect("endpoint present");
-    assert_eq!(codex.base_url, "https://ai-gateway.vercel.sh/codex/v1");
-    assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
+    for (wire, base_url, credential_env_var) in wire_endpoint_rows() {
+        let endpoint = resolve(wire);
+        assert_eq!(endpoint.base_url, base_url, "{wire:?}");
+        assert_eq!(endpoint.credential_env_var, credential_env_var, "{wire:?}");
+    }
+    assert_eq!(
+        resolve(Wire::AnthropicMessages).credential.expose(),
+        "the-real-key"
+    );
 }
 
 #[test]
