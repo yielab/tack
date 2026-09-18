@@ -103,3 +103,5 @@ accepted range.
 *(Appended by later readers, dated. The text above is never rewritten.)*
 
 **2026-09-14 — The `legacy-docket` clause is superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. The sentence "Docket is optional and may exist only as `legacy-docket`" becomes "Docket exists only as a harness the runner spawns (ADR 0066)": ADR 0068 retires the control-plane bridge. Every other decision here, including Tack as the only scheduler and the runner as the process owner, is unchanged.
+
+**2026-09-18 — ADR 0068 was accepted.** The `legacy-docket` clause's supersession is in effect. The code it concerns is removed by the stage of Phase 64 that owns it (`docs/book/src/roadmap.md`), not by the acceptance itself.

@@ -11,8 +11,9 @@
 > background service. The phase sections below are mostly closed history; each one states
 > its own outcome at the top.
 
-**Current plan (2026-09-14): Phase 64 — a codebase for human maintainers** (ADR 0068, proposed),
-at the bottom of this file. It follows Phase 63 and comes before the release tag.
+**Current plan: Phase 64 — a codebase for human maintainers** (ADR 0068, accepted
+2026-09-18), at the bottom of this file. It follows Phase 63 and comes before the release
+tag. Its harness stage has its own plan, `docs/plans/harnesses.md`.
 
 **Status:** All engineering phases through 61 are delivered. The earlier ground: the
 thirteen original engineering phases, then competitive and growth phases 20 (MCP server),
@@ -961,10 +962,12 @@ working tree. A stranger opens `engine.rs` and reads an engine.
 
 # A codebase for human maintainers (Phase 64)
 
-**Status:** planned 2026-09-14. Decision record: ADR 0068 (proposed). Aligned with ADRs
-0066 and 0067, both accepted the same day; it supersedes ADRs 0060 and 0065 and parts of
-0050 and 0064. Nothing here starts until ADR 0068 is accepted. Stages are sequenced
-below; cards are cut per stage when it starts, never all at once.
+**Status:** open since 2026-09-18, when ADR 0068 was accepted with its stages reordered
+(the amendment at the bottom of that ADR says why). It is aligned with ADRs 0066 and 0067
+and supersedes ADRs 0060 and 0065 and parts of 0050 and 0064. Stages are sequenced below; how
+each is cut into tasks, in what order and under which limits is
+`docs/plans/phase-64.md`. Work is recorded in ADRs, this page and the commit history — not
+in a card board.
 
 **The goal is the smallest codebase that does everything a user can do today.** Tack's
 features for AI agents are product and stay: the runner, harnesses, the runner-v1 protocol,
@@ -988,14 +991,17 @@ on a coverage measurement, not on lost coverage.
 | 0 | **Measure** | Nothing. Re-measure ADR 0068's tables with their commands: the legacy surface file by file, which `tests/orchestration` files are runner-v1, whether DAG-ordered sprint dispatch has a user. | Every table in ADR 0068 re-measured and dated; one decision recorded for DAG dispatch. |
 | 1 | **CI and coverage first** | Five per-crate coverage builds → one `cargo llvm-cov nextest --workspace` run that is also the test run; one workspace floor; ≥ 80 % patch coverage; three tiers (pull request / merge to `main` / nightly); the `main` ruleset's required checks updated to match. The rustls advisory resolved. | Pull request #56 is green and merged into `main`; a pull-request run completes in under 15 minutes. |
 | 2 | **Agent scaffolding out** | `.claude/`, `TODO.md`'s boards, dispatch plans, per-card handoffs (frozen into `docs/closed-cycles/`), `scripts/maintainability.py` and its baseline, `list-fixed-waits.py`, `check-test-hygiene.sh` → clippy lints; `CLAUDE.md` ≤ 40 lines. | `docs/closed-cycles/` is the only place history lives and no check reads it; `pre-push` runs fmt and clippy only. |
-| 3 | **Mechanisms with no caller** | `model_profiles` (table, routes, MCP tool, panel); the `decisions` path (routes, runner transport, UI, runner-v1 fixtures and pins). | `git grep` finds neither outside migrations that drop them; runner-v1 fixtures and pin table agree. |
-| 4 | **Retire the Docket control plane** | `ControlPlane` trait, reconciler, adapters (docket, github_actions, prometheus, registry, legacy_bridge), orch routes and tokens, `tack orch`, the Fleet/Approvals/Economics/Provision screens, their tests; one migration per dropped table after exporting the rows into the pre-upgrade snapshot. | No `orch_*` table on a fresh install; `TACK_ORCH_*` gone from `docs/CONFIG.md`; upgrade from a populated database tested once. |
-| 5 | **Test suite rebuilt by layer** | Each invariant kept at its lowest layer plus at most one HTTP test; wave gates and narrative multi-claim tests deleted after their real claims move; behaviour tests added for the board features with no coverage; E2E reduced to critical journeys (Chromium on merge, cross-browser nightly); weekly report-only `cargo-mutants` on `tack-core` and `tack-db`. | Workspace line coverage at or above its Stage 1 floor with fewer tests; every public API route has a success, auth and error test; flaky-test quarantine documented in `docs/TESTING.md`. |
-| 6 | **Harnesses on the lean tree** | ADR 0066 (docket, once its upstream contract exists) and ADR 0067 (opencode), built under ADR 0068's rules; `docs/plans/harnesses.md` rewritten against them first. | As in each ADR. |
+| 3 | **Harnesses on one core** | **Core landed 2026-09-18:** a harness is a `HarnessDescriptor` plus a four-method `HarnessGrammar` on `harness/local_process.rs`; `codex.rs` 886 → 189 lines, `claude_code.rs` 1 141 → 305, harness unit tests 3 240 → 1 554. **Remaining:** the Chat Completions wire, the docket grammar (against docket's shipped `harness-v1` contract) and the opencode grammar, each with captured fixtures and one zero-spend end-to-end test. Plan: `docs/plans/harnesses.md`. | As in ADRs 0066 and 0067; `tack runner doctor` lists four harnesses on a machine that has them. |
+| 4 | **Mechanisms with no caller** | `model_profiles` (table, routes, MCP tool, panel). The `decisions` path (routes, runner transport, UI, runner-v1 fixtures and pins) — **only once it is decided whether docket gets a `decisions` ADR**, since docket is the one harness that could ever call it. | `git grep` finds `model_profiles` nowhere outside the migration that drops it; `decisions` is either gone with its fixtures and pins, or has a caller. |
+| 5 | **Retire the Docket control plane** | `ControlPlane` trait, reconciler, adapters (docket, github_actions, prometheus, registry, legacy_bridge), orch routes and tokens, `tack orch`, the Fleet/Approvals/Economics/Provision screens, their tests; one migration per dropped table after exporting the rows into the pre-upgrade snapshot. **Not before Stage 3's docket harness has landed.** | No `orch_*` table on a fresh install; `TACK_ORCH_*` gone from `docs/CONFIG.md`; upgrade from a populated database tested once. |
+| 6 | **Test suite rebuilt by layer** | Each invariant kept at its lowest layer plus at most one HTTP test; wave gates and narrative multi-claim tests deleted after their real claims move; behaviour tests added for the board features with no coverage; E2E reduced to critical journeys (Chromium on merge, cross-browser nightly); weekly report-only `cargo-mutants` on `tack-core` and `tack-db`. | Workspace line coverage at or above its Stage 1 floor with fewer tests; every public API route has a success, auth and error test; flaky-test quarantine documented in `docs/TESTING.md`. |
 
-Stages 1 and 2 touch no product behaviour and can run in parallel. Stage 3 and Stage 4 each
-change the product and each ship with release notes naming what was removed. The release
-tag and `docs/LAUNCH-CHECKLIST.md` resume after Stage 5.
+Stages 1, 2 and 3 touch no board behaviour and can run in parallel. Stage 4 and Stage 5
+each change the product and each ship with release notes naming what was removed; what a
+user of the bridge loses until a harness upgrade replaces it — the approvals inbox,
+one-click pod provisioning, per-product cost from docket's events, DAG-ordered sprint
+dispatch — is named there too. The release tag and `docs/LAUNCH-CHECKLIST.md` resume after
+Stage 6.
 
 ## What this phase deliberately does not do
 
