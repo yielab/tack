@@ -5,7 +5,6 @@ use axum::{
 };
 use serde::Deserialize;
 use tack_core::models::*;
-use tack_core::workflow::WorkflowConfig;
 use tack_db::repo;
 use tracing::instrument;
 use uuid::Uuid;
@@ -20,76 +19,6 @@ pub struct ListTemplatesQuery {
     pub project_type: Option<ProjectType>,
 }
 
-/// Every named status in a template's `status_map` must exist in `workflow` —
-/// validation, not a raw-SQL status write: this never bypasses the workflow
-/// engine, it only checks the *names* used to configure a future
-/// auto-transition are real.
-fn validate_status_map(status_map: &TemplateStatusMap, workflow: &WorkflowConfig) -> ApiResult<()> {
-    let exists = |name: &str| workflow.statuses.iter().any(|s| s.name == name);
-
-    for name in &status_map.dispatch_from {
-        if !exists(name) {
-            return Err(ApiError::BadRequest(format!(
-                "status_map.dispatch_from: unknown status {name:?} for this project's workflow"
-            )));
-        }
-    }
-
-    let named = [
-        ("on_running", &status_map.on_running),
-        ("on_waiting_approval", &status_map.on_waiting_approval),
-        ("on_succeeded", &status_map.on_succeeded),
-        ("on_failed", &status_map.on_failed),
-        ("on_cancelled", &status_map.on_cancelled),
-    ];
-    for (key, value) in named {
-        if let Some(name) = value
-            && !exists(name)
-        {
-            return Err(ApiError::BadRequest(format!(
-                "status_map.{key}: unknown status {name:?} for this project's workflow"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Validate a template's `orchestration` block before it's stored.
-/// `workflow` must be the workflow *this template will actually create*
-/// (the same `data.workflow`/`simple_workflow()` fallback
-/// `repo::templates::create_template` resolves before calling here), not any
-/// live project's workflow, since the template's boards don't exist yet.
-///
-/// Two checks: every named `status_map` status must exist in `workflow`, and
-/// inline `pipeline_yaml`, if supplied, must at least parse as YAML. That
-/// second check deliberately stops at "is this YAML at all" rather than
-/// validating against docket's pipeline schema (step ids, gate/rework
-/// edges, …): the real validator is a local `docket pipeline validate` CLI
-/// subcommand with no HTTP route, and Tack's server only ever talks to a
-/// control plane over HTTP, never a local process that may not share its
-/// host. Reimplementing docket's schema here would drift the moment docket
-/// adds a step kind.
-fn validate_template_orchestration(
-    orch: &TemplateOrchestration,
-    workflow: &WorkflowConfig,
-) -> ApiResult<()> {
-    validate_status_map(&orch.status_map, workflow)?;
-
-    if let Some(yaml) = &orch.pipeline_yaml {
-        serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| {
-            ApiError::BadRequest(format!(
-                "orchestration.pipeline_yaml is not valid YAML: {e} \
-                 (note: this only checks it parses as YAML, not that it is a \
-                 valid docket pipeline — docket has no HTTP endpoint for that \
-                 check yet)"
-            ))
-        })?;
-    }
-
-    Ok(())
-}
-
 /// POST /api/templates - Create a new project template
 #[instrument(skip(state))]
 #[utoipa::path(
@@ -99,7 +28,6 @@ fn validate_template_orchestration(
     request_body = tack_core::models::CreateProjectTemplate,
     responses(
         (status = 200, description = "Template created", body = tack_core::models::ProjectTemplate),
-        (status = 400, description = "orchestration validation error (unknown status_map name, or invalid pipeline_yaml)", body = crate::openapi::ErrorEnvelope),
         (status = 422, description = "Validation error (workflow shape, custom field options)", body = crate::openapi::ErrorEnvelope),
     ),
 )]
@@ -132,21 +60,6 @@ pub async fn create_template(
                 }
             }
         }
-    }
-
-    // Validate the orchestration block, if present, against the workflow
-    // *this template will actually create* — mirroring
-    // `repo::templates::create_template`'s own `data.workflow.unwrap_or_else
-    // (simple_workflow)` fallback so the two never resolve to a different
-    // "effective" workflow: the map must validate against the workflow the
-    // template will actually create, not against whatever project happens
-    // to be applying it.
-    if let Some(ref orch) = data.orchestration {
-        let effective_workflow = data
-            .workflow
-            .clone()
-            .unwrap_or_else(tack_core::workflow::simple_workflow);
-        validate_template_orchestration(orch, &effective_workflow)?;
     }
 
     Ok(Json(
@@ -246,9 +159,6 @@ pub struct CreateProjectFromTemplate {
 /// (workflow/vocabulary/custom fields/boards) has exactly one
 /// implementation. `pub(crate)`, not `pub`: not part of the public HTTP
 /// surface.
-///
-/// `template.orchestration` is still inert here — this only creates the
-/// Tack project.
 pub(crate) async fn build_project_from_template(
     state: &AppState,
     template_id: Uuid,
@@ -503,18 +413,6 @@ pub async fn save_project_as_template(
         } else {
             Some(default_boards)
         },
-        // Deliberately not derived from the source project's live
-        // `orch_link`. Unlike vocabulary/workflow —
-        // which describe *this* project's shape and transfer cleanly to any
-        // future project created from the resulting template —
-        // `orch_links.control_plane_id`/`remote_project` point at one
-        // specific, already-registered docket instance and one specific
-        // remote project string. Copying them into a template would make
-        // every *future* project created from it silently point at
-        // someone else's docket pod the moment orchestration is wired up.
-        // A template's orchestration block can only be set explicitly, via
-        // `POST /api/templates`.
-        orchestration: None,
     };
 
     repo::templates::create_template(state.pool(), template_data)

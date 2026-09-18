@@ -714,7 +714,6 @@ Create a new project template
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Template created | `ProjectTemplate` |
-| 400 | orchestration validation error (unknown status_map name, or invalid pipeline_yaml) | `ErrorEnvelope` |
 | 422 | Validation error (workflow shape, custom field options) | `ErrorEnvelope` |
 
 #### `DELETE /api/templates/{id}`

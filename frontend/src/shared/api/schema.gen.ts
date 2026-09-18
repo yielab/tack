@@ -2969,7 +2969,6 @@ export interface components {
             default_boards?: components["schemas"]["BoardTemplate"][] | null;
             description?: string | null;
             name: string;
-            orchestration?: null | components["schemas"]["TemplateOrchestration"];
             project_type: components["schemas"]["ProjectType"];
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
@@ -3347,11 +3346,6 @@ export interface components {
             requested_provider: string;
         };
         /**
-         * @description docket pod blueprint names (`core/blueprints.py`).
-         * @enum {string}
-         */
-        OrchBlueprint: "software" | "research" | "content" | "ops" | "agentic-product";
-        /**
          * @description Pagination envelope for the item-list endpoint. `total` is the
          *     unpaginated match count so clients can render "N of M".
          */
@@ -3412,7 +3406,6 @@ export interface components {
             id: string;
             is_builtin: boolean;
             name: string;
-            orchestration?: null | components["schemas"]["TemplateOrchestration"];
             project_type: components["schemas"]["ProjectType"];
             /** Format: date-time */
             updated_at: string;
@@ -3633,91 +3626,6 @@ export interface components {
             /** Format: int32 */
             order: number;
             wip_limit?: number | null;
-        };
-        /**
-         * @description Agent-fleet defaults captured on a template. Plain
-         *     `create_project_from_template` stores it and moves on — nothing in this
-         *     struct is applied automatically there. Turning it into a live
-         *     `orch_links` row needs a `control_plane_id` pointing at one specific,
-         *     already-registered docket instance, which that plain from-template path
-         *     never has. On this struct itself there is no route, no dispatch — just a
-         *     JSON blob riding along with the template.
-         */
-        TemplateOrchestration: {
-            auto_dispatch?: boolean;
-            /**
-             * @description docket pod blueprint. Verified against `core/blueprints.py`:
-             *     exactly these five values exist server-side today.
-             *     Unlike the remote-state enums in `tack-orch` (`RunState` etc.),
-             *     this is a value Tack *sends*, not one it decodes from docket's
-             *     output, so no `Unknown` fallback here: an
-             *     unrecognised blueprint name is a real authoring mistake worth
-             *     rejecting, not a forward-compat case to shrug off.
-             */
-            blueprint?: components["schemas"]["OrchBlueprint"];
-            /**
-             * Format: double
-             * @description Default budget *cap* for a project created from this template — an
-             *     operator-set ceiling, not a derived spend figure, so it stays
-             *     unsuffixed exactly like `orch_links.budget_usd`. The naming rule
-             *     that requires an `_estimated` suffix governs *estimated spend*
-             *     fields (`cost_usd_estimated`); a cap the operator chooses is a
-             *     different thing and is out of that rule's scope.
-             */
-            budget_usd?: number | null;
-            /**
-             * @description A pipeline docket already knows about by name/path, for a template
-             *     that would rather point at one than ship inline YAML. Mirrors
-             *     `orch_links.pipeline_file`. Not mutually exclusive with
-             *     `pipeline_yaml`, but only this field currently reaches docket:
-             *     `handlers::provisioning` has no `POST /pods` field for inline YAML
-             *     yet, so a template with `pipeline_yaml` set and no `pipeline_file`
-             *     surfaces a non-fatal warning instead of silently dropping it.
-             */
-            pipeline_file?: string | null;
-            /**
-             * @description Inline docket pipeline YAML — the "pipeline library" entry (task
-             *     37.3). Stored as a template field rather than a new `pipelines`
-             *     table: the roadmap names both as acceptable, and a template is
-             *     already a named, reusable, save-time-validated bundle, so a second
-             *     storage concept alongside it would just be a template under another
-             *     name. See `handlers::templates::validate_template_orchestration`
-             *     for what "validated" means here — deliberately narrower than
-             *     docket's own schema; see that function's doc comment.
-             */
-            pipeline_yaml?: string | null;
-            /**
-             * @description Mirrors docket's `POST /pods` `pod` field, which
-             *     (`serve.py::_handle_post_pods`) accepts only `"full"` or absent.
-             *     Stored permissively here (no enum, no validation) — enforcing that
-             *     exact constraint happens at provisioning time, when the real
-             *     `POST /pods` body is built; guessing at it here would just be a
-             *     second, driftable copy of a one-value check.
-             */
-            pod_shape?: string | null;
-            status_map?: components["schemas"]["TemplateStatusMap"];
-            verify_cmd?: string | null;
-        };
-        /**
-         * @description A template's default `status_map`. Field-for-field
-         *     identical to `tack_api::handlers::orch::StatusMap` by design — the two
-         *     are kept in lockstep deliberately (a template's map becomes a project's
-         *     `orch_links.status_map` verbatim once something applies it) — but they
-         *     stay two distinct Rust types because `tack-core` cannot depend on
-         *     `tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment
-         *     applies here too: dependencies point inward, tack-core has zero I/O and
-         *     zero knowledge of the HTTP layer). Validation is not duplicated: the
-         *     handler converts this into an `orch::StatusMap` and calls
-         *     `orch::validate_status_map` directly — see
-         *     `handlers::templates::validate_template_orchestration`.
-         */
-        TemplateStatusMap: {
-            dispatch_from?: string[];
-            on_cancelled?: string | null;
-            on_failed?: string | null;
-            on_running?: string | null;
-            on_succeeded?: string | null;
-            on_waiting_approval?: string | null;
         };
         Transition: {
             from: string;
@@ -6794,15 +6702,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectTemplate"];
-                };
-            };
-            /** @description orchestration validation error (unknown status_map name, or invalid pipeline_yaml) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Validation error (workflow shape, custom field options) */

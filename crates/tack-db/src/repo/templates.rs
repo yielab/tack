@@ -14,23 +14,9 @@ struct TemplateRow {
     workflow: String,
     custom_fields: String,
     default_boards: String,
-    /// NULL means "no orchestration block" (migration 030) — distinct from
-    /// `Some("{}")`, an explicit-but-empty block. See
-    /// `ProjectTemplate::orchestration`'s doc comment.
-    orchestration: Option<String>,
     is_builtin: i32,
     created_at: String,
     updated_at: String,
-}
-
-/// `TemplateRow.orchestration` → `ProjectTemplate.orchestration`. A `NULL`
-/// column or an unparsable payload both resolve to `None` — a template with
-/// a broken orchestration blob still loads and is still usable as a template
-/// (workflow/vocabulary/boards untouched), matching the rest of this file's
-/// "corrupt JSON degrades to a safe default rather than failing the whole
-/// read" convention (see `vocabulary`/`workflow` above, which do the same).
-fn parse_orchestration(raw: Option<String>) -> Option<TemplateOrchestration> {
-    raw.and_then(|s| serde_json::from_str(&s).ok())
 }
 
 /// Create a new project template
@@ -58,21 +44,12 @@ pub async fn create_template(
     let default_boards = serde_json::to_string(&data.default_boards.unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
 
-    // `None` stays `NULL` (not `"null"`/`"{}"`) — the save-time validation
-    // that keeps a stored orchestration block honest happens one layer up,
-    // in `tack-api`'s `handlers::templates::create_template`; this function
-    // just persists whatever it's handed.
-    let orchestration: Option<String> = data
-        .orchestration
-        .as_ref()
-        .map(|o| serde_json::to_string(o).unwrap_or_else(|_| "{}".to_string()));
-
     let project_type_str = data.project_type.to_string();
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
@@ -82,7 +59,6 @@ pub async fn create_template(
     .bind(&workflow)
     .bind(&custom_fields)
     .bind(&default_boards)
-    .bind(&orchestration)
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(pool)
@@ -95,7 +71,7 @@ pub async fn create_template(
 #[instrument(skip(pool))]
 pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -115,8 +91,6 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
     let default_boards: Vec<BoardTemplate> =
         serde_json::from_str(&row.default_boards).unwrap_or_default();
 
-    let orchestration = parse_orchestration(row.orchestration);
-
     Ok(ProjectTemplate {
         id: Uuid::parse_str(&row.id).unwrap(),
         name: row.name,
@@ -126,7 +100,6 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
         workflow: serde_json::from_value(workflow).unwrap(),
         custom_fields,
         default_boards,
-        orchestration,
         is_builtin: row.is_builtin != 0,
         created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
             .unwrap()
@@ -147,7 +120,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -157,7 +130,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -180,8 +153,6 @@ pub async fn list_templates(
             let default_boards: Vec<BoardTemplate> =
                 serde_json::from_str(&row.default_boards).unwrap_or_default();
 
-            let orchestration = parse_orchestration(row.orchestration);
-
             ProjectTemplate {
                 id: Uuid::parse_str(&row.id).unwrap(),
                 name: row.name,
@@ -192,7 +163,6 @@ pub async fn list_templates(
                 workflow: serde_json::from_value(workflow).unwrap(),
                 custom_fields,
                 default_boards,
-                orchestration,
                 is_builtin: row.is_builtin != 0,
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
                     .unwrap()
