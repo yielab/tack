@@ -35,7 +35,7 @@ fn project_input(name: &str) -> CreateProject {
 }
 
 /// A `CreateProjectTemplate` with every field but `name`/`project_type` at
-/// its default (no vocabulary/workflow/fields/boards/orchestration override).
+/// its default (no vocabulary/workflow/fields/boards override).
 fn template_input(
     name: &str,
     project_type: ProjectType,
@@ -48,7 +48,6 @@ fn template_input(
         workflow: None,
         custom_fields: None,
         default_boards: None,
-        orchestration: None,
     }
 }
 
@@ -580,7 +579,6 @@ async fn create_and_get_template() {
         workflow: None,
         custom_fields: None,
         default_boards: None,
-        orchestration: None,
     };
 
     let template = templates::create_template(repo.pool(), template_data)
@@ -641,7 +639,6 @@ async fn delete_template_not_builtin() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
-            orchestration: None,
         },
     )
     .await

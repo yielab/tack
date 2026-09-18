@@ -5435,16 +5435,6 @@
               }
             }
           },
-          "400": {
-            "description": "orchestration validation error (unknown status_map name, or invalid pipeline_yaml)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
           "422": {
             "description": "Validation error (workflow shape, custom field options)",
             "content": {
@@ -6641,17 +6631,6 @@
           "name": {
             "type": "string"
           },
-          "orchestration": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/TemplateOrchestration",
-                "description": "See [`ProjectTemplate::orchestration`]. Validated at save time by\n`tack-api`'s `handlers::templates::create_template` — this type is\npure data (tack-core has zero I/O), so the validation itself lives\none layer up, reusing `handlers::orch::validate_status_map` (the\n`status_map` validator) rather than duplicating it."
-              }
-            ]
-          },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
           },
@@ -7680,17 +7659,6 @@
         ],
         "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (the frontend's rendering) can show both sides of a mismatch."
       },
-      "OrchBlueprint": {
-        "type": "string",
-        "description": "docket pod blueprint names (`core/blueprints.py`).",
-        "enum": [
-          "software",
-          "research",
-          "content",
-          "ops",
-          "agentic-product"
-        ]
-      },
       "PaginatedItems": {
         "type": "object",
         "description": "Pagination envelope for the item-list endpoint. `total` is the\nunpaginated match count so clients can render \"N of M\".",
@@ -7883,17 +7851,6 @@
           },
           "name": {
             "type": "string"
-          },
-          "orchestration": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/TemplateOrchestration",
-                "description": "Optional agent-fleet defaults for a project created from this\ntemplate. `#[serde(default)]` — absent means\n\"this template does not touch orchestration,\" the same\nabsent-means-nothing rule `Item::source` (migration 029) established\nfor backward compatibility. `None` is the value every\ntemplate had before this field existed and every built-in has today;\nnothing reads this field unless it is `Some`, so a template with no\n`orchestration` block behaves exactly as it did before this field\nexisted."
-              }
-            ]
           },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
@@ -8429,99 +8386,6 @@
               "null"
             ],
             "minimum": 0
-          }
-        }
-      },
-      "TemplateOrchestration": {
-        "type": "object",
-        "description": "Agent-fleet defaults captured on a template. Plain\n`create_project_from_template` stores it and moves on — nothing in this\nstruct is applied automatically there. Turning it into a live\n`orch_links` row needs a `control_plane_id` pointing at one specific,\nalready-registered docket instance, which that plain from-template path\nnever has. On this struct itself there is no route, no dispatch — just a\nJSON blob riding along with the template.",
-        "properties": {
-          "auto_dispatch": {
-            "type": "boolean"
-          },
-          "blueprint": {
-            "$ref": "#/components/schemas/OrchBlueprint",
-            "description": "docket pod blueprint. Verified against `core/blueprints.py`:\nexactly these five values exist server-side today.\nUnlike the remote-state enums in `tack-orch` (`RunState` etc.),\nthis is a value Tack *sends*, not one it decodes from docket's\noutput, so no `Unknown` fallback here: an\nunrecognised blueprint name is a real authoring mistake worth\nrejecting, not a forward-compat case to shrug off."
-          },
-          "budget_usd": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "Default budget *cap* for a project created from this template — an\noperator-set ceiling, not a derived spend figure, so it stays\nunsuffixed exactly like `orch_links.budget_usd`. The naming rule\nthat requires an `_estimated` suffix governs *estimated spend*\nfields (`cost_usd_estimated`); a cap the operator chooses is a\ndifferent thing and is out of that rule's scope."
-          },
-          "pipeline_file": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "A pipeline docket already knows about by name/path, for a template\nthat would rather point at one than ship inline YAML. Mirrors\n`orch_links.pipeline_file`. Not mutually exclusive with\n`pipeline_yaml`, but only this field currently reaches docket:\n`handlers::provisioning` has no `POST /pods` field for inline YAML\nyet, so a template with `pipeline_yaml` set and no `pipeline_file`\nsurfaces a non-fatal warning instead of silently dropping it."
-          },
-          "pipeline_yaml": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Inline docket pipeline YAML — the \"pipeline library\" entry (task\n37.3). Stored as a template field rather than a new `pipelines`\ntable: the roadmap names both as acceptable, and a template is\nalready a named, reusable, save-time-validated bundle, so a second\nstorage concept alongside it would just be a template under another\nname. See `handlers::templates::validate_template_orchestration`\nfor what \"validated\" means here — deliberately narrower than\ndocket's own schema; see that function's doc comment."
-          },
-          "pod_shape": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Mirrors docket's `POST /pods` `pod` field, which\n(`serve.py::_handle_post_pods`) accepts only `\"full\"` or absent.\nStored permissively here (no enum, no validation) — enforcing that\nexact constraint happens at provisioning time, when the real\n`POST /pods` body is built; guessing at it here would just be a\nsecond, driftable copy of a one-value check."
-          },
-          "status_map": {
-            "$ref": "#/components/schemas/TemplateStatusMap"
-          },
-          "verify_cmd": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "TemplateStatusMap": {
-        "type": "object",
-        "description": "A template's default `status_map`. Field-for-field\nidentical to `tack_api::handlers::orch::StatusMap` by design — the two\nare kept in lockstep deliberately (a template's map becomes a project's\n`orch_links.status_map` verbatim once something applies it) — but they\nstay two distinct Rust types because `tack-core` cannot depend on\n`tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment\napplies here too: dependencies point inward, tack-core has zero I/O and\nzero knowledge of the HTTP layer). Validation is not duplicated: the\nhandler converts this into an `orch::StatusMap` and calls\n`orch::validate_status_map` directly — see\n`handlers::templates::validate_template_orchestration`.",
-        "properties": {
-          "dispatch_from": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "on_cancelled": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_failed": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_running": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_succeeded": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_waiting_approval": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },

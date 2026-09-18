@@ -35,7 +35,8 @@ Sections from the next release on are generated from the commit history by
   `TACK_ORCH_EVENT_RETENTION_DAYS`, `TACK_ORCH_APPROVAL_TOKEN` and
   `TACK_ORCH_DISPATCH_TOKEN` variables, and the `tack orch` CLI commands, go with
   it. Docket is now reached the same way as any other coding agent: as a harness
-  (`--harness docket`) on a runner-v1 execution request.
+  (`--harness docket`) on a runner-v1 execution request. A project template no longer
+  accepts an `orchestration` block; one already stored on a template is ignored.
 
 ---
 
