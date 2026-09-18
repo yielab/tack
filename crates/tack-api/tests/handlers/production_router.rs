@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use sha2::Digest;
 use tack_api::config::AppConfig;
 use tack_api::openapi::ApiDoc;
-use tack_api::{AppState, orch_runtime::OrchRuntime, router::build_router};
+use tack_api::{AppState, router::build_router};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{Repository, init_pool, migrations};
 use tower::ServiceExt;
@@ -43,7 +43,6 @@ async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
-        orch_runtime: OrchRuntime::new(),
         local_runner: None,
     }
 }

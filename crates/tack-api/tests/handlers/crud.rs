@@ -998,11 +998,8 @@ async fn import_single_issue(
 /// An item imported
 /// from GitHub is marked untrusted at creation time, and that marker
 /// survives an export → import round trip rather than resetting to
-/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
-/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
-/// `orchestration/dispatch/item.rs`
-/// — this test covers the provenance marker itself, end to end through the
-/// real HTTP import/export/import path.)
+/// trusted — proven end to end through the real HTTP import/export/import
+/// path.
 #[tokio::test]
 async fn github_import_source_untrusted_survives_export_reimport() {
     use wiremock::MockServer;

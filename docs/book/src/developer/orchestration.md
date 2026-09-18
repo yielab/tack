@@ -165,9 +165,7 @@ named with an `_usd_estimated` suffix (`cost_usd_estimated` on `orch_tasks`,
 `FleetEntry`, `FleetAgent`, `RemoteEvent`, …), even where the upstream wire field is
 the bare `costUsd`/`cost_usd` — the `#[serde(rename = "...")]` maps the name, not the
 meaning. `orch_links.budget_usd` is the one deliberate exception: it's a cap a human
-typed in, not a number derived from token counts, so it's never suffixed. See the
-[user guide's explanation](../user-guide/orchestration.md#why-every-dollar-figure-says-estimated)
-for the user-facing framing of this same rule.
+typed in, not a number derived from token counts, so it's never suffixed.
 
 ## The reconciler
 
@@ -716,8 +714,7 @@ directly rather than assumed — Tack builds no workaround for either:
   line and neither field (`paused`/`pausedReason`) is emitted anywhere. The one
   indirect signal (a `paused_refused` trace event) can't be reliably attributed to
   one linked Tack project with today's ingestion (`orch_events` has no
-  `remote_project` column). Tack builds no pause control or indicator — see the
-  [user guide](../user-guide/orchestration.md#budget-pause-and-policy).
+  `remote_project` column). Tack builds no pause control or indicator.
 - **`docket pipeline validate` is CLI-only.** No HTTP route exists for it, so
   `handlers::templates::validate_template_orchestration` only checks that
   `orchestration.pipeline_yaml` parses as YAML, never that it's a valid docket
@@ -746,5 +743,4 @@ None of these require a live docket instance for CI — the adapter tests run ag
 `wiremock`, and everything downstream runs against an in-memory database and a
 hand-written fake `ControlPlane`. For a live sanity check beyond the committed
 suite, verify against a real, isolated `docket serve` (scratch `DOCKET_HOME`, never
-`~/.docket`) — see
-[Local Integration Setup](../user-guide/orchestration-local-setup.md) for how.
+`~/.docket`).

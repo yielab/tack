@@ -15,9 +15,8 @@ turn a board item into a completed attempt are in
 [Running an item with an agent](#running-an-item-with-an-agent), before the operational
 detail (enrollment, credentials, recovery) that follows it.
 
-This is a separate system from [Orchestration](orchestration.md),
-which covers Docket. Docket is optional and legacy here — see
-[Docket compatibility](#docket-compatibility) below for exactly how the two relate.
+Docket is reachable through this same surface, as a harness — see
+[Docket compatibility](#docket-compatibility) below.
 
 **Read this before you rely on it in production:** the last section,
 [What actually runs today](#what-actually-runs-today), states plainly which parts of
@@ -614,28 +613,12 @@ informational, logged and stored, never used to gate behavior today.
 
 ## Docket compatibility
 
-Docket (the optional legacy agent-fleet backend) and the runner-v1 execution domain
-described on this page are **structurally independent**. Docket absence does not
-disable runner execution, and runner absence does not disable Docket's control-plane
-polling — they share no table and no auth surface.
-
-They share exactly one code path, deliberately: the **one-scheduling-owner** guard,
-implemented as `LEGACY_DOCKET_COMPATIBILITY_POLICY` in
-`crates/tack-orch/src/adapters/legacy_bridge.rs`. Docket is maintained as an optional
-legacy bridge (`TACK_ORCH_ENABLE`, default off) and is never the owner of a new
-runner-v1 execution request; runner-v1 is the plan-of-record scheduler. An item with an
-active runner-v1 execution request refuses legacy Docket dispatch (one scheduling
-owner). Docket-origin work is identified with a provider-scoped id
-(`docket:<remote_task_id>`), distinct from any runner-v1 attempt or opaque model id.
-
-That guard is one-directional today: an active runner-v1 request blocks a legacy Docket
-dispatch, but creating a runner-v1 request on an item that already has an active
-`orch_tasks` row is **not** refused. That gap is proven open by
-`crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs` rather than assumed closed. See
-[Orchestration](orchestration.md) for everything Docket-specific:
-registering a control plane, dispatch, budgets, and why every dollar figure there says
-"estimated." That surface is gated entirely behind `TACK_ORCH_ENABLE` and is unrelated
-to whether any runner is enrolled.
+Docket is reached the same way as any other coding agent: as a harness
+(`--harness docket`) on a runner-v1 execution request, through the API and
+CLI surface described on this page. The earlier, separate Docket
+control-plane bridge — a standing background poller with its own dispatch,
+approval and budget routes — has been retired; Docket carries no special
+scheduling path or API surface of its own anymore.
 
 ---
 

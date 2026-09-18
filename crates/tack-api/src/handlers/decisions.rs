@@ -52,9 +52,8 @@ pub struct DecisionOperatorState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
     /// `TACK_EXECUTION_DECISION_TOKEN`. `None` means
-    /// "not configured on this server" — the fail-closed default, same
-    /// posture as `AppState::config.orch_approval_token` before
-    /// `handlers::orch::require_approval_token` ever compares anything. See
+    /// "not configured on this server" — the fail-closed default: nothing
+    /// is ever compared against an unset token. See
     /// [`require_decision_token`].
     pub decision_token: Option<String>,
 }
@@ -116,8 +115,7 @@ fn internal_error() -> (StatusCode, Json<Value>) {
 /// `Authorization` (already spoken for by the ordinary `TACK_API_TOKEN`
 /// Bearer gate — this is a second, independent credential, not a
 /// replacement for it) and deliberately a header, not a request-body field,
-/// mirroring `handlers::orch::APPROVAL_TOKEN_HEADER` exactly — so it never
-/// ends up echoed into a JSON log line the way a body field might.
+/// so it never ends up echoed into a JSON log line the way a body field might.
 pub const DECISION_TOKEN_HEADER: &str = "x-tack-decision-token";
 
 /// Byte-wise constant-time equality, duplicated verbatim from
@@ -145,10 +143,9 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Resolving a decision releases whatever the harness/runner is blocked on
 /// — a materially higher-privilege action than the ordinary operator
-/// `x-tack-principal` gate covers. Mirrors
-/// `handlers::orch::require_approval_token` exactly, including the safe
-/// default: an unconfigured `TACK_EXECUTION_DECISION_TOKEN` always
-/// rejects, never "anyone holding the ordinary API token can."
+/// `x-tack-principal` gate covers. The safe default: an unconfigured
+/// `TACK_EXECUTION_DECISION_TOKEN` always rejects, never "anyone holding
+/// the ordinary API token can."
 ///
 /// The error details carry `required_scope: "operator:decisions"`,
 /// matching `docs/contracts/runner-v1/errors/forbidden.json`'s frozen

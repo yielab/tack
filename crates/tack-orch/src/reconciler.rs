@@ -1284,8 +1284,8 @@ struct PlaneTask {
 type PlaneTasks = Arc<AsyncMutex<HashMap<Uuid, PlaneTask>>>;
 
 /// Handle to a live supervised reconciler run. Returned by
-/// [`spawn_reconcilers_supervised`]; the caller (`tack-api`'s
-/// `orch_runtime.rs`) keeps this around only to query
+/// [`spawn_reconcilers_supervised`]; the caller (the server's
+/// reconciler runtime) keeps this around only to query
 /// [`Self::live_task_count`] — stopping the whole run is done via the
 /// `stop_rx` passed into `spawn_reconcilers_supervised`, not through this
 /// handle (mirrors `OrchRuntime::stop`'s existing non-blocking-stop

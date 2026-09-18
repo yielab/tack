@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
-use tack_api::{AppState, orch_runtime::OrchRuntime, router::build_router};
+use tack_api::{AppState, router::build_router};
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
@@ -47,7 +47,6 @@ async fn router_for(pool: sqlx::SqlitePool, workspace_id: Uuid) -> axum::Router 
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
-        orch_runtime: OrchRuntime::new(),
         local_runner: None,
     };
     build_router(state)

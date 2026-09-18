@@ -12,13 +12,10 @@ use uuid::Uuid;
 
 use crate::config::AppConfig;
 use crate::handlers::local_runner::{LocalRunnerControl, effective_local_runner_enabled};
-use crate::handlers::settings::effective_orch_enabled;
-use crate::orch_store::build_control_plane_store;
 use crate::remote_backup;
 use crate::router::{AppState, build_router};
 use crate::webhook::WebhookClient;
 use tack_db::{Repository, init_pool, migrations, repo};
-use tack_orch::reconciler;
 
 /// Boot the Tack HTTP server: load config, run migrations, start background
 /// tasks, and serve until a shutdown signal is received. No embedded runner
@@ -106,7 +103,6 @@ async fn serve_inner(
         workspace_id,
         broadcast_tx,
         webhook,
-        orch_runtime: crate::orch_runtime::OrchRuntime::new(),
         local_runner: local_runner.clone(),
     };
 
@@ -153,48 +149,6 @@ async fn serve_inner(
         });
     }
 
-    // Start the orchestration reconciler, one task per registered control
-    // plane polling `/health` + `/status.json`, if the *effective* setting
-    // says to (the `app_meta`-stored flag if the UI set one, else
-    // `TACK_ORCH_ENABLE`'s startup value — same precedence as Cloud Backup).
-    // Unlike Cloud Backup this also has a runtime toggle
-    // (`PUT /api/settings/orchestration` calls `state.orch_runtime.start`/
-    // `.stop` directly); this boot-time call only sets the *initial* state.
-    if effective_orch_enabled(&state).await {
-        // The store gets a clone of the broadcast sender every WebSocket
-        // subscriber shares, so it can emit `BoardEvent::AgentRunUpdated`/
-        // `ApprovalPending` straight from `upsert_runs`/`upsert_approvals`
-        // (see orch_store.rs's module doc for why the emit lives there).
-        //
-        // `with_app_context` hands the store the rest of `AppState`, so
-        // `upsert_runs` can run `dispatcher::apply_mapped_status` — the
-        // workflow engine — on a terminal run, like a human-driven PATCH.
-        let store = build_control_plane_store(&state);
-        state
-            .orch_runtime
-            .start(
-                store,
-                reconciler::ReconcilerConfig {
-                    poll_secs: config.orch_poll_secs,
-                    // Trace ingestion's event_retention_days must equal
-                    // `spawn_retention_sweep`'s cutoff (both read
-                    // `config.orch_event_retention_days`) — see `ReconcilerConfig`.
-                    event_retention_days: config.orch_event_retention_days,
-                    ..Default::default()
-                },
-            )
-            .await;
-        // Resolved before `info!`, not inline in its args: an `.await` inside
-        // a tracing macro's arg list holds a non-`Send` temporary across the
-        // await, making the future non-`Send` — fatal for a `tokio::spawn` caller.
-        let control_planes = state.orch_runtime.live_task_count().await;
-        info!(
-            control_planes,
-            poll_secs = config.orch_poll_secs,
-            "Orchestration reconciler enabled"
-        );
-    }
-
     // Start the execution-domain retention sweep (artifact/event + decision-
     // expiry) and the health watch — cancellable background tasks gated by
     // `TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`. The
@@ -203,9 +157,9 @@ async fn serve_inner(
     // `spawn_artifact_and_decision_sweep`'s doc for why deletion must never
     // be gated more loosely than that purge). Health defaults on (read-only:
     // just a `warn!` on a stale lease/`needs_operator` request); retention
-    // defaults **off** (it deletes rows, same opt-in posture as
-    // `TACK_ORCH_ENABLE`). Not stored on `AppState`: `stop()` runs once
-    // below, after the HTTP server stops accepting requests.
+    // defaults **off** (it deletes rows, an explicit operator opt-in). Not
+    // stored on `AppState`: `stop()` runs once below, after the HTTP server
+    // stops accepting requests.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())
@@ -275,9 +229,8 @@ async fn serve_inner(
     // Join the execution retention/health tasks before exiting — the HTTP
     // server has already stopped accepting requests at this point, so this
     // wait costs nothing observable and is what makes "shutdown joins task"
-    // true rather than aspirational (see `execution_runtime.rs`'s doc
-    // comment for why this differs from `OrchRuntime::stop`, which
-    // deliberately does not block).
+    // true rather than aspirational (`execution_runtime.rs`'s `stop()`
+    // really does block until each live task's loop returns).
     execution_runtime.stop().await;
 
     info!("Server shut down gracefully");
