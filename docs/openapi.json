@@ -8434,7 +8434,7 @@
       },
       "TemplateOrchestration": {
         "type": "object",
-        "description": "Agent-fleet defaults captured on a template. Plain\n`create_project_from_template` stores it and moves on — nothing in this\nstruct is applied automatically there. Turning it into a live\n`orch_links` row needs a `control_plane_id` pointing at one specific,\nalready-registered docket instance, which that plain from-template path\nnever has; `handlers::provisioning::create_project_with_pod` is the\nroute that reads these fields as defaults (the request body overrides\nthem) when actually provisioning a pod, and that route is gated behind\n`TACK_ORCH_ENABLE`. On this struct itself there is no route, no\nreconciler, no dispatch — just a JSON blob riding along with the template.",
+        "description": "Agent-fleet defaults captured on a template. Plain\n`create_project_from_template` stores it and moves on — nothing in this\nstruct is applied automatically there. Turning it into a live\n`orch_links` row needs a `control_plane_id` pointing at one specific,\nalready-registered docket instance, which that plain from-template path\nnever has. On this struct itself there is no route, no dispatch — just a\nJSON blob riding along with the template.",
         "properties": {
           "auto_dispatch": {
             "type": "boolean"

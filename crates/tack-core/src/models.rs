@@ -668,11 +668,8 @@ pub struct CreateProjectTemplate {
 /// struct is applied automatically there. Turning it into a live
 /// `orch_links` row needs a `control_plane_id` pointing at one specific,
 /// already-registered docket instance, which that plain from-template path
-/// never has; `handlers::provisioning::create_project_with_pod` is the
-/// route that reads these fields as defaults (the request body overrides
-/// them) when actually provisioning a pod, and that route is gated behind
-/// `TACK_ORCH_ENABLE`. On this struct itself there is no route, no
-/// reconciler, no dispatch — just a JSON blob riding along with the template.
+/// never has. On this struct itself there is no route, no dispatch — just a
+/// JSON blob riding along with the template.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TemplateOrchestration {

@@ -89,20 +89,6 @@ jobs:
           UPDATE_OPENAPI=1 cargo nextest run --workspace --no-tests=fail \
             -E 'binary(openapi_contract) & test(openapi_spec_matches_committed_file)'
           git diff --exit-code docs/openapi.json
-      # tack-orch regression oracles (docs/plans/agnostic-control-plane.md §6):
-      # docket_tick_contract_test is the primary — one full reconciler tick's
-      # ordered request list plus the resulting orch_runs/orch_approvals/
-      # orch_events/orch_metrics/orch_trace_cursors rows; docket_wire_contract_test
-      # is the per-method secondary. A trait or reconciler rewrite that changes
-      # what leaves the process, or what gets persisted, without a golden regen
-      # is caught here.
-      - name: tack-orch golden drift gate
-        if: success() || failure()
-        run: |
-          set -euo pipefail
-          UPDATE_GOLDEN=1 cargo nextest run --workspace --no-tests=fail \
-            -E 'binary(docket_tick_contract_test) | binary(docket_wire_contract_test)'
-          git diff --exit-code crates/tack-orch/tests/golden/
 
   msrv:
     name: MSRV (Rust 1.94 — dependency floor)

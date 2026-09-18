@@ -204,9 +204,8 @@ impl ExecutionRuntime {
 /// `wait_until_stopped` — that one is `tack-orch`-internal and this loop
 /// cannot depend on it any more than it can depend on the rest of that
 /// crate's spawn function; see this file's own "why `tack-orch` cannot grow
-/// this" reasoning above. Four lines, same duplication precedent
-/// `execution_retention.rs`'s own doc comment already established relative
-/// to `reconciler::wait_until_stopped`.
+/// this" reasoning above. Four lines — the same duplication precedent
+/// `execution_retention.rs`'s own doc comment already established.
 async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
     loop {
         if *rx.borrow() {

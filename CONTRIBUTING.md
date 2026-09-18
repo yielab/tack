@@ -92,13 +92,11 @@ Tack/
 │   │       ├── repository/         # CRUD, retention, concurrency
 │   │       ├── migrations/         # schema/upgrade tests
 │   │       └── perf_test.rs        # 50k-item perf test (#[ignore])
-│   ├── tack-orch/            # Agent-fleet ControlPlane client + the neutral runner-v1
-│   │   │                     # execution domain. Depends on core+db only — must never
-│   │   │                     # depend on tack-api (tack-api depends on this crate).
+│   ├── tack-orch/            # The neutral runner-v1 execution domain. Depends on
+│   │   │                     # core+db only — must never depend on tack-api
+│   │   │                     # (tack-api depends on this crate).
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── reconciler.rs               # Polls each control plane, drives health state
-│   │       ├── adapters/                   # docket adapter + a Prometheus /metrics parser
 │   │       ├── execution/                  # Transport-free runner-v1 protocol types
 │   │       ├── scheduler/                  # Pure runner-selection decision library
 │   │       ├── model_policy/               # Deterministic model-selection precedence
@@ -193,8 +191,8 @@ tack-db    (depends on core, adds SQLite)
      +-------------------+
      |                   |
 tack-orch (depends    tack-api   (depends on core + db + orch, adds HTTP;
-  on core + db only;      spawns orch's reconciler and mounts its routes)
-  must never depend
+  on core + db only;      runs orch's scheduler/retention tasks and mounts
+  must never depend        its routes)
   on tack-api)
 
 tack-cli     (depends on core only — talks to tack-api over HTTP, no DB)
