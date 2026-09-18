@@ -304,8 +304,7 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | Harness core redesign | done |
 | M0 | done |
 | H1 · C1 · P1 · H2 · S2 · R1a | done, in `develop` |
-| H3 | done, in `develop` — opencode installs its plugin package from the npm registry on every attempt, so it refuses a request that denies network |
-| H3b · R1b | running |
-| D1 · R2 | not started |
+| H3 · H3b · R1b | done, in `develop` — opencode installs its plugin package from the npm registry on every attempt, so it refuses a request that denies network |
+| D1 · R2 | running |
 | R3 · R4 · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
