@@ -22,12 +22,10 @@ use crate::handlers::local_runner::LocalRunnerControl;
 use crate::handlers::spa;
 use crate::handlers::{
     attachments, attempt_lists, backup, boards_multi, comments, custom_fields, decisions,
-    dependencies, executions, export, import_github, import_linear, items, local_runner, orch,
-    projects, provisioning, roles, runner_admin, runner_protocol, settings, sprints, templates,
-    websocket,
+    dependencies, executions, export, import_github, import_linear, items, local_runner, projects,
+    roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
-use crate::orch_runtime::OrchRuntime;
 use crate::webhook::WebhookClient;
 
 /// Shared application state passed to all handlers.
@@ -40,11 +38,6 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<websocket::BoardEvent>,
     /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
     pub webhook: Option<WebhookClient>,
-    /// Toggleable handle to the orchestration reconciler. Cheap to
-    /// clone (`Arc` underneath) — every handler gets the same live runtime,
-    /// so `PUT /api/settings/orchestration` starts/stops the exact tasks
-    /// `server.rs` spawned (or didn't) at boot.
-    pub orch_runtime: OrchRuntime,
     /// Seam to an embedded runner living in the same process — see
     /// `handlers::local_runner`'s module doc for why this crate holds a
     /// trait object rather than depending on `tack-runner` directly.
@@ -74,73 +67,6 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
     HeaderValue::from_str(&policy).expect("configured CSP must be a valid header value")
 }
 
-/// Orchestration control-center routes. A new route is added to
-/// the appropriate section below, with `crate::openapi::ApiDoc` updated
-/// alongside it, rather than restructuring this function or `build_router`.
-///
-/// The whole sub-router is gated behind the *effective* orchestration
-/// setting (`app_meta`-stored value, falling back to `TACK_ORCH_ENABLE`) via
-/// [`orch::require_orch_enabled`] — with orchestration disabled, every route
-/// here returns `409 Conflict` with `error.code: "orchestration_disabled"`,
-/// naming where to enable it (`PUT /api/settings/orchestration`), rather
-/// than a bare 404. The
-/// auth token gate (`require_token`) is layered on top of this in
-/// `build_router`, so it still applies as usual. `/api/settings/orchestration`
-/// itself lives outside this sub-router (registered directly in
-/// `build_router`, beside `/settings/backup`) precisely so it stays
-/// reachable while the feature is off — see that route's own comment.
-fn orch_routes(state: AppState) -> Router<AppState> {
-    Router::new()
-        .route(
-            "/control-planes",
-            post(orch::create_control_plane).get(orch::list_control_planes),
-        )
-        .route(
-            "/control-planes/{id}",
-            get(orch::get_control_plane)
-                .patch(orch::update_control_plane)
-                .delete(orch::delete_control_plane),
-        )
-        .route(
-            "/projects/{id}/orch-link",
-            get(orch::get_orch_link).put(orch::put_orch_link),
-        )
-        .route("/fleet", get(orch::get_fleet))
-        .route("/metrics", get(orch::get_metrics))
-        .route(
-            "/items/{id}/agent-activity",
-            get(orch::get_item_agent_activity),
-        )
-        .route(
-            "/projects/{id}/agent-activity",
-            get(orch::get_project_agent_activity),
-        )
-        .route("/items/{id}/dispatch", post(orch::dispatch_item))
-        .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint))
-        .route(
-            "/sprints/{id}/dispatch/dry-run",
-            get(orch::dry_run_sprint_dispatch),
-        )
-        .route("/approvals", get(orch::list_pending_approvals)) // fleet-wide inbox, read-only
-        .route("/approvals/{token}", post(orch::decide_approval)) // also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
-        .route(
-            "/projects/{id}/orch-dispatch",
-            post(orch::dispatch_project_pipeline),
-        ) // also gated on TACK_ORCH_DISPATCH_TOKEN (checked inside the handler, not this layer)
-        .route("/projects/{id}/orch-budget", get(orch::get_orch_budget)) // budget cap vs. mirrored spend
-        .route("/projects/{id}/orch-policy", get(orch::get_orch_policy)) // guardrail/tool-call/approval metrics (control-plane-wide)
-        .route("/orch-runs/{run_id}", get(orch::get_orch_run)) // a dispatched pipeline run's mirrored state, read back by its own id
-        .route(
-            "/templates/{id}/provision",
-            post(provisioning::create_project_with_pod),
-        ) // provision a pod + create/link a Tack project from a template, rollback-on-failure (see handlers/provisioning.rs's module doc for why this is a separate route rather than a `provision_pod:true` extension of the existing endpoint)
-        .merge(crate::handlers::economics::economics_routes()) // unit economics summary + per-item export; see handlers/economics.rs
-        .layer(middleware::from_fn_with_state(
-            state,
-            orch::require_orch_enabled,
-        ))
-}
-
 /// Embedded-runner control routes (ADR 0061 decisions 2 and 6) — turn the
 /// in-process runner on/off and hand it a provider secret. Callers merge
 /// this only when both a [`LocalRunnerControl`] was actually wired into
@@ -149,7 +75,7 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// otherwise, so the routes are a genuine 404 rather than a gate that
 /// refuses a request it still had to route. Auth is unchanged from every
 /// other `/api/*` route: this sub-router is merged into `api` *before*
-/// `require_token` is layered on below, same as `orch_routes`.
+/// `require_token` is layered on below, same as `operator_execution_routes`.
 fn local_runner_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -184,24 +110,7 @@ fn local_runner_routes() -> Router<AppState> {
 /// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
-    // Closes over the startup env default so `create_execution`'s dual-scheduling
-    // guard can resolve the *effective* orchestration setting per request (an
-    // `app_meta` override if the UI has set one) without this crate's
-    // `handlers::executions` needing to name `handlers::settings` — see
-    // `OperatorExecutionState::orchestration_enabled`'s doc comment for why.
-    let orch_enable_default = state.config.orch_enable;
-    let orchestration_enabled: Arc<
-        dyn Fn(sqlx::SqlitePool) -> futures::future::BoxFuture<'static, bool> + Send + Sync,
-    > = Arc::new(move |pool| {
-        Box::pin(async move {
-            crate::handlers::settings::effective_orch_enabled_for(&pool, orch_enable_default).await
-        })
-    });
-    let operator_state = executions::OperatorExecutionState::with_clock(
-        state.repo.clone(),
-        clock,
-        orchestration_enabled,
-    );
+    let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock);
     let decision_clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let decision_state =
         decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
@@ -287,20 +196,11 @@ pub fn build_router(state: AppState) -> Router {
             header::AUTHORIZATION,
             header::ACCEPT,
             // `If-Match` — the optimistic-concurrency precondition on
-            // items/orch-links/control-planes PATCH/PUT. Without this, any
-            // cross-origin browser client (anything through
-            // `TACK_ALLOWED_ORIGINS` that isn't same-origin `embed-spa`)
-            // fails preflight on every conditional write and silently falls
-            // back to unconditional last-write-wins.
+            // items PATCH/PUT. Without this, any cross-origin browser
+            // client (anything through `TACK_ALLOWED_ORIGINS` that isn't
+            // same-origin `embed-spa`) fails preflight on every conditional
+            // write and silently falls back to unconditional last-write-wins.
             header::IF_MATCH,
-            // `X-Tack-Approval-Token` — a pre-existing bug:
-            // `frontend/src/features/approvals/api.ts`
-            // sends this on every grant/deny and it has only ever worked
-            // because production is same-origin via `embed-spa`. Reusing
-            // the handler's own constant (rather than a hand-copied
-            // literal) so this list can't drift from the header
-            // `handlers::orch::decide_approval` actually reads.
-            header::HeaderName::from_static(orch::APPROVAL_TOKEN_HEADER),
         ]))
         // Without `expose_headers`, a browser
         // could read zero non-safelisted response headers from this API.
@@ -340,15 +240,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
-        )
-        // Deliberately **outside** `orch_routes`'/`require_orch_enabled`'s
-        // gate: this is the one orchestration-adjacent endpoint that must
-        // stay reachable while orchestration is off — it's how an operator
-        // discovers the feature exists and turns it on. See this file's
-        // `orch_routes` doc comment.
-        .route(
-            "/settings/orchestration",
-            get(settings::get_orch_settings).put(settings::put_orch_settings),
         )
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
@@ -468,11 +359,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
-        // Every orchestration route is batched into `orch_routes` below
-        // rather than restructuring this file. `require_orch_enabled` returns a 409
-        // with `error.code: "orchestration_disabled"` for every route here
-        // while orchestration is off.
-        .merge(orch_routes(state.clone()))
         // ─── Embedded runner control (gated on loopback + a wired-in
         // control — see `local_runner_available` above) ──────────────────
         .merge(if local_runner_available {

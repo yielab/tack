@@ -20,34 +20,61 @@ pub struct ListTemplatesQuery {
     pub project_type: Option<ProjectType>,
 }
 
+/// Every named status in a template's `status_map` must exist in `workflow` —
+/// validation, not a raw-SQL status write: this never bypasses the workflow
+/// engine, it only checks the *names* used to configure a future
+/// auto-transition are real.
+fn validate_status_map(status_map: &TemplateStatusMap, workflow: &WorkflowConfig) -> ApiResult<()> {
+    let exists = |name: &str| workflow.statuses.iter().any(|s| s.name == name);
+
+    for name in &status_map.dispatch_from {
+        if !exists(name) {
+            return Err(ApiError::BadRequest(format!(
+                "status_map.dispatch_from: unknown status {name:?} for this project's workflow"
+            )));
+        }
+    }
+
+    let named = [
+        ("on_running", &status_map.on_running),
+        ("on_waiting_approval", &status_map.on_waiting_approval),
+        ("on_succeeded", &status_map.on_succeeded),
+        ("on_failed", &status_map.on_failed),
+        ("on_cancelled", &status_map.on_cancelled),
+    ];
+    for (key, value) in named {
+        if let Some(name) = value
+            && !exists(name)
+        {
+            return Err(ApiError::BadRequest(format!(
+                "status_map.{key}: unknown status {name:?} for this project's workflow"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate a template's `orchestration` block before it's stored.
 /// `workflow` must be the workflow *this template will actually create*
 /// (the same `data.workflow`/`simple_workflow()` fallback
 /// `repo::templates::create_template` resolves before calling here), not any
 /// live project's workflow, since the template's boards don't exist yet.
 ///
-/// Two checks: every named `status_map` status must exist in `workflow`
-/// (reusing `handlers::orch::validate_status_map`), and inline
-/// `pipeline_yaml`, if supplied, must at least parse as YAML. That second
-/// check deliberately stops at "is this YAML at all" rather than validating
-/// against docket's pipeline schema (step ids, gate/rework edges, …): the
-/// real validator is a local `docket pipeline validate` CLI subcommand with
-/// no HTTP route, and Tack's server only ever talks to a control plane over
-/// HTTP, never a local process that may not share its host. Reimplementing
-/// docket's schema here would drift the moment docket adds a step kind.
+/// Two checks: every named `status_map` status must exist in `workflow`, and
+/// inline `pipeline_yaml`, if supplied, must at least parse as YAML. That
+/// second check deliberately stops at "is this YAML at all" rather than
+/// validating against docket's pipeline schema (step ids, gate/rework
+/// edges, …): the real validator is a local `docket pipeline validate` CLI
+/// subcommand with no HTTP route, and Tack's server only ever talks to a
+/// control plane over HTTP, never a local process that may not share its
+/// host. Reimplementing docket's schema here would drift the moment docket
+/// adds a step kind.
 fn validate_template_orchestration(
     orch: &TemplateOrchestration,
     workflow: &WorkflowConfig,
 ) -> ApiResult<()> {
-    let status_map = crate::handlers::orch::StatusMap {
-        dispatch_from: orch.status_map.dispatch_from.clone(),
-        on_running: orch.status_map.on_running.clone(),
-        on_waiting_approval: orch.status_map.on_waiting_approval.clone(),
-        on_succeeded: orch.status_map.on_succeeded.clone(),
-        on_failed: orch.status_map.on_failed.clone(),
-        on_cancelled: orch.status_map.on_cancelled.clone(),
-    };
-    crate::handlers::orch::validate_status_map(&status_map, workflow)?;
+    validate_status_map(&orch.status_map, workflow)?;
 
     if let Some(yaml) = &orch.pipeline_yaml {
         serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| {
@@ -214,18 +241,14 @@ pub struct CreateProjectFromTemplate {
     pub description: Option<String>,
 }
 
-/// The actual "build a project from a template" work — extracted so
-/// `handlers::provisioning::create_project_with_pod` can reuse the same
-/// project-creation path (workflow/vocabulary/custom fields/boards) rather
-/// than a second, driftable copy, before provisioning a pod and writing the
-/// `orch_links` row. `pub(crate)`, not `pub`: an internal seam between two
-/// handler modules, not part of the public HTTP surface.
+/// The actual "build a project from a template" work — extracted from the
+/// route handler below so the project-creation path
+/// (workflow/vocabulary/custom fields/boards) has exactly one
+/// implementation. `pub(crate)`, not `pub`: not part of the public HTTP
+/// surface.
 ///
 /// `template.orchestration` is still inert here — this only creates the
-/// Tack project. A live `orch_links` row needs a `control_plane_id` this
-/// function's callers may not have yet; `handlers::provisioning` is the one
-/// caller that reads `template.orchestration` for its own defaults, after
-/// this function returns.
+/// Tack project.
 pub(crate) async fn build_project_from_template(
     state: &AppState,
     template_id: Uuid,

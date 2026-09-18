@@ -8,15 +8,10 @@
 // **Why this is polling, not a WebSocket/SSE push channel.** `BoardEvent`
 // (`shared/types/index.ts`, backed by
 // `crates/tack-api/src/handlers/websocket.rs`) is the only realtime channel
-// that exists in this codebase today, and it is scoped to PM board changes
-// plus an `agent_run_updated`/`approval_pending` mirror unrelated to this
-// domain (see `boardSocket.test.ts`). The
-// `execution_requests`/`execution_attempts` tables are a distinct
+// that exists in this codebase today, and it is scoped to PM board changes.
+// The `execution_requests`/`execution_attempts` tables are a distinct
 // vocabulary — `Item` != `ExecutionRequest` != `ExecutionAttempt` — with
-// **no push channel of their own anywhere in the backend**: reusing
-// `agent_run_updated` for this domain would collide two unrelated
-// vocabularies, since that event is specifically about `orch_runs` rows,
-// not `execution_attempts` rows. Rather than block on a backend feature
+// **no push channel of their own anywhere in the backend**. Rather than block on a backend feature
 // this module doesn't own, it implements the same subscribe/invalidate/
 // dispose *contract* backed by a bounded poll, so a caller gets "disposed
 // exactly once" and never has to re-invent invalidation, and a future

@@ -9,9 +9,7 @@ use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
-use tack_db::repo::orch::NewOrchEvent;
 
-use crate::dispatcher::{self, DispatchOutcome};
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
@@ -290,11 +288,6 @@ pub async fn update_item(
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
 
-    // Auto-dispatch to the linked control plane, if configured. Off unless
-    // orchestration is *effectively* enabled — see `maybe_auto_dispatch`'s
-    // own doc comment — and the project's orch_link has auto_dispatch on.
-    maybe_auto_dispatch(&state, &item, &old_status).await;
-
     let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
     response.headers_mut().insert(
         header::ETAG,
@@ -351,114 +344,6 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
             .repo
             .check_and_update_parent_status(parent_id, done_status)
             .await;
-    }
-}
-
-/// Best-effort: when `orch_links.auto_dispatch` is on and `item` just
-/// entered a `status_map.dispatch_from` status, dispatches it via
-/// `dispatcher::dispatch_item`, passing the item's persisted
-/// `item.source.is_trusted()` rather than inferring trust at dispatch time.
-/// Runs off the request path (`tokio::spawn`) so a slow control plane
-/// never turns a card move into a failing PATCH.
-///
-/// Fires at most once per status entry: `item.status == old_status`
-/// short-circuits before any DB/HTTP call, and `dispatch_item`'s own
-/// per-item lock + `orch_tasks` in-flight check is the second layer.
-///
-/// A transport/config error or policy block is logged **and** recorded
-/// as an `orch_events` row (`auto_dispatch_failed`/`_blocked`), visible
-/// on the item's Agent Activity tab, gated on the *effective*
-/// orchestration setting, not the raw `TACK_ORCH_ENABLE` env value.
-pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_status: &str) {
-    if !crate::handlers::settings::effective_orch_enabled(state).await {
-        return;
-    }
-    if item.status == old_status {
-        return;
-    }
-    let Ok(Some(link)) = state.repo.get_orch_link(item.project_id).await else {
-        return;
-    };
-    if !link.auto_dispatch {
-        return;
-    }
-
-    let state = state.clone();
-    let item_id = item.id;
-    let trusted = item.source.is_trusted();
-    let control_plane_id = link.control_plane_id;
-
-    tokio::spawn(async move {
-        match dispatcher::dispatch_item(&state, item_id, trusted).await {
-            Ok(DispatchOutcome::Blocked { policy_id, message }) => {
-                tracing::warn!(
-                    item_id = %item_id,
-                    policy_id = %policy_id,
-                    message = %message,
-                    "auto-dispatch blocked by control-plane policy"
-                );
-                record_auto_dispatch_event(
-                    &state,
-                    item_id,
-                    control_plane_id,
-                    "auto_dispatch_blocked",
-                    &message,
-                    Some(&policy_id),
-                )
-                .await;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(item_id = %item_id, error = %e, "auto-dispatch failed");
-                record_auto_dispatch_event(
-                    &state,
-                    item_id,
-                    control_plane_id,
-                    "auto_dispatch_failed",
-                    &e.to_string(),
-                    None,
-                )
-                .await;
-            }
-        }
-    });
-}
-
-/// Best-effort: record an `auto_dispatch_failed`/`auto_dispatch_blocked`
-/// `orch_events` row so a failed auto-dispatch is visible somewhere a human
-/// (or the Agent Activity UI) can find it, not just in server logs.
-/// Never panics or propagates — an audit-trail write failing must not turn
-/// an already-logged background failure into a crashed background task.
-///
-/// `policy_id` is `Some` only for `auto_dispatch_blocked` (a typed
-/// `OrchError::PolicyBlocked`) — `auto_dispatch_failed` covers
-/// every other, non-policy failure and has no policy id to carry.
-async fn record_auto_dispatch_event(
-    state: &AppState,
-    item_id: Uuid,
-    control_plane_id: Uuid,
-    event_type: &str,
-    message: &str,
-    policy_id: Option<&str>,
-) {
-    let event = NewOrchEvent {
-        id: Uuid::new_v4(),
-        item_id: Some(item_id),
-        run_id: None,
-        event_type: event_type.to_string(),
-        payload: serde_json::json!({ "message": message, "policy_id": policy_id }),
-        occurred_at: Utc::now(),
-    };
-    if let Err(e) = state
-        .repo
-        .upsert_orch_events(control_plane_id, std::slice::from_ref(&event))
-        .await
-    {
-        tracing::warn!(
-            item_id = %item_id,
-            error = %e,
-            "failed to record auto-dispatch event"
-        );
     }
 }
 
