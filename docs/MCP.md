@@ -81,25 +81,24 @@ priority, assignee) to keep agent context small; `get_item` returns full detail.
 ### Execution/fleet/profile tools (Part III, card E5)
 
 Runs a Tack item through the agent-fleet execution surface — the same
-`/api/executions`, `/api/runner-fleets`, `/api/agent-profiles`, and
-`/api/model-profiles` operator routes the `tack execution|fleet|agent-profile|
-model-profile` CLI commands use, via the exact same request-body builders (see
-`crates/tack-cli/src/execution.rs`), so an agent-issued `create_execution` call
-can never diverge in shape from what the CLI (or, once it ships, the web UI)
-would send for the same operation.
+`/api/executions`, `/api/runner-fleets`, and `/api/agent-profiles` operator
+routes the `tack execution|fleet|agent-profile` CLI commands use, via the
+exact same request-body builders (see `crates/tack-cli/src/execution.rs`),
+so an agent-issued `create_execution` call can never diverge in shape from
+what the CLI (or, once it ships, the web UI) would send for the same
+operation.
 
 | Tool | Kind | Arguments | Maps to |
 | --- | --- | --- | --- |
 | `list_fleets` | read | — | `GET /api/runner-fleets` |
 | `list_agent_profiles` | read | — | `GET /api/agent-profiles` |
-| `list_model_profiles` | read | — | `GET /api/model-profiles` |
 | `list_executions` | read | — | `GET /api/executions` |
 | `get_execution` | read | `request_id`* | `GET /api/executions/{id}` |
 | `cancel_execution` | write | `request_id`* | `POST /api/executions/{id}/cancel` |
 | `create_execution` | write | `item_id`*, one of `runner_id`/`fleet_id`*, `agent_profile_id`*, `harness`*, `agent_profile_snapshot`* (object), `repository`* (object), `permission_policy`* (object), `timeout_seconds`*, `model_provider`, `model_id`, `budgets`, `environment`, `metadata`, `status_map_policy_id`, `idempotency_key` | `POST /api/executions` |
 
-Use the three `list_*` tools first to discover valid `fleet_id`/`agent_profile_id`/
-model values before calling `create_execution`. `get_execution`'s `state` can be
+Use the two `list_*` tools first to discover valid `fleet_id`/`agent_profile_id`
+values before calling `create_execution`. `get_execution`'s `state` can be
 `needs_operator` or `lost` — an ambiguous outcome, not just another in-progress
 value; the tool description says so explicitly so an agent surfaces it to the
 human rather than treating it like `queued`/`running`.
@@ -108,7 +107,7 @@ human rather than treating it like `queued`/`running`.
 (enrollment returns a one-time secret — keeping it off the MCP surface means that
 secret can never land in an agent's tool-call transcript; see
 `crates/tack-cli/src/secure_fs.rs`), `tack fleet create`, `tack agent-profile
-create`, `tack model-profile create` (admin-ish setup, in the same spirit as
+create` (admin-ish setup, in the same spirit as
 `backup`/`restore`/`template`/`role`/`field` never having been exposed here), and
 `tack execution reconcile` (an operator's explicit, audited recovery decision
 after reviewing an ambiguous `needs_operator` state — not something an agent

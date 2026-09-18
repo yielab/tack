@@ -38,10 +38,6 @@ export type {
   AgentProfileListResult,
   CreateAgentProfileInput,
   CreateAgentProfileResult,
-  ModelProfileSummary,
-  ModelProfileListResult,
-  CreateModelProfileInput,
-  CreateModelProfileResult,
   EnrollRunnerInput,
   EnrollRunnerResult,
   RevokeRunnerResult,
@@ -49,7 +45,7 @@ export type {
   RunnerSummary,
   RunnerListResult,
 } from './api';
-export { executionsApi, fleetsApi, agentProfilesApi, modelProfilesApi, runnersApi } from './api';
+export { executionsApi, fleetsApi, agentProfilesApi, runnersApi } from './api';
 
 export type {
   ModelProvenance,

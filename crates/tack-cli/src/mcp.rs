@@ -192,7 +192,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
         // discovery (an agent needs valid fleet/profile ids before it can
         // create an execution) plus the core create/list/get/cancel
         // lifecycle. `runner enroll`/`revoke`, `fleet create`,
-        // `agent-profile create`/`model-profile create`, and
+        // `agent-profile create`, and
         // `execution reconcile` are CLI-only, matching this server's
         // existing precedent of keeping admin-ish actions (backup/restore,
         // template/role/field management) off the agent-facing tool
@@ -210,10 +210,6 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
         "list_agent_profiles" => {
             let profiles = call(client.get("/agent-profiles"))?;
             Ok(data_list("agent_profiles", &profiles))
-        }
-        "list_model_profiles" => {
-            let profiles = call(client.get("/model-profiles"))?;
-            Ok(data_list("model_profiles", &profiles))
         }
         "list_executions" => {
             let executions = call(client.get("/executions"))?;
@@ -553,11 +549,6 @@ fn tool_specs() -> Value {
             json!({ "type": "object", "properties": {} })
         ),
         tool(
-            "list_model_profiles",
-            "List model profiles (provider + model id combinations).",
-            json!({ "type": "object", "properties": {} })
-        ),
-        tool(
             "list_executions",
             "List execution requests (newest first).",
             json!({ "type": "object", "properties": {} })
@@ -590,7 +581,7 @@ fn tool_specs() -> Value {
             "Create (or idempotently replay, if idempotency_key repeats) an \
              execution request that assigns a Tack item to a coding-harness \
              runner or fleet. Exactly one of runner_id/fleet_id is required. \
-             Use list_fleets/list_agent_profiles/list_model_profiles first to \
+             Use list_fleets/list_agent_profiles first to \
              discover valid ids.",
             json!({
                 "type": "object",

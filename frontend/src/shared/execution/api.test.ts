@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ApiError, tokenStore } from '../api/client';
-import { executionsApi, fleetsApi, agentProfilesApi, modelProfilesApi, runnersApi } from './api';
+import { executionsApi, fleetsApi, agentProfilesApi, runnersApi } from './api';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -222,14 +222,6 @@ describe('agentProfilesApi', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, data: [] }));
     await agentProfilesApi.list();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/agent-profiles');
-  });
-});
-
-describe('modelProfilesApi', () => {
-  it('list() calls GET /api/model-profiles', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, data: [] }));
-    await modelProfilesApi.list();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/model-profiles');
   });
 });
 

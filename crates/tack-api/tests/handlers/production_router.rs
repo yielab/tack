@@ -663,8 +663,6 @@ async fn every_execution_and_runner_v1_path_requires_auth_live() {
         ("POST", "/api/runners/runr_missing/revoke"),
         ("POST", "/api/agent-profiles"),
         ("GET", "/api/agent-profiles"),
-        ("POST", "/api/model-profiles"),
-        ("GET", "/api/model-profiles"),
     ] {
         let (status, body) = common::send(&app, method, path, json!({}), &[]).await;
         assert_eq!(
@@ -718,7 +716,6 @@ async fn openapi_enumerates_mounted_operator_and_runner_v1_routes() {
         "/api/runners/{runner_id}/enrollment-tokens/{token_id}/revoke",
         "/api/runners/{runner_id}/revoke",
         "/api/agent-profiles",
-        "/api/model-profiles",
     ] {
         assert!(
             paths.contains_key(path),

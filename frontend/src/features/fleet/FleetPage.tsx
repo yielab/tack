@@ -99,7 +99,7 @@ const ErrorState: Component<{ onRetry: () => void }> = (props) => (
  * (`unreachable`/`unknown`) never render a confident-looking `0`/`$0.00` —
  * see `FleetRow.tsx`'s `stale()` branch.
  *
- * The runner/fleet/agent-profile/model-profile management this page used
+ * The runner/fleet/agent-profile management this page used
  * to open with (`RunnerFleetSection`) now lives under the Agents page's
  * Advanced section — a distinct, harness-agnostic execution runner from
  * this page's Docket control planes, which happen to share the word

@@ -9,6 +9,16 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
+## [Unreleased]
+
+### Removed
+
+- `model_profiles`: the `POST`/`GET /api/model-profiles` routes, the `list_model_profiles`
+  MCP tool, and the Model profiles panel on the Agents page. The table was a saved label
+  consulted by nothing; scheduling and model resolution never read it.
+
+---
+
 ## [0.1.0-beta.8] - 2026-09-07
 
 ### Added

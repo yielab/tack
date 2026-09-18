@@ -968,8 +968,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::runner_admin::revoke_enrollment_token,
         handlers::runner_admin::create_profile,
         handlers::runner_admin::list_profiles,
-        handlers::runner_admin::create_model_profile,
-        handlers::runner_admin::list_model_profiles,
     ),
     components(schemas(
         // Local response/request envelopes
@@ -1103,10 +1101,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::runner_admin::CreateProfileResponse,
         handlers::runner_admin::AgentProfileSummary,
         handlers::runner_admin::AgentProfileListResponse,
-        handlers::runner_admin::CreateModelProfile,
-        handlers::runner_admin::CreateModelProfileResponse,
-        handlers::runner_admin::ModelProfileSummary,
-        handlers::runner_admin::ModelProfileListResponse,
         // Core domain models + DTOs
         Workspace,
         Project,
@@ -1177,7 +1171,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
             per-project links, and the Fleet view aggregate. Every route is disabled — 404 — unless \
             TACK_ORCH_ENABLE is set."),
         (name = "execution-operator", description = "Harness-agnostic runner fleet (Part III): PM-side \
-            execution-request/fleet/runner-enrollment/agent-profile/model-profile management. \
+            execution-request/fleet/runner-enrollment/agent-profile management. \
             Authenticated the same way as the rest of this API (operator session or API token); scopes \
             idempotency and audit actor to the server-derived `x-tack-principal`, which a client cannot \
             set (see `crate::middleware::inject_operator_principal`)."),

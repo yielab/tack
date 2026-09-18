@@ -281,12 +281,6 @@ enum Commands {
         action: AgentProfileAction,
     },
 
-    /// Manage model profiles (provider + model id combinations)
-    ModelProfile {
-        #[command(subcommand)]
-        action: ModelProfileAction,
-    },
-
     /// Trigger a docket pipeline run for a project's linked docket project
     Orch {
         #[command(subcommand)]
@@ -824,33 +818,6 @@ enum AgentProfileAction {
 }
 
 #[derive(Subcommand)]
-enum ModelProfileAction {
-    /// Create a model profile
-    Create {
-        /// Profile name
-        name: String,
-        /// Model provider
-        #[arg(long)]
-        provider: String,
-        /// Opaque model id
-        #[arg(long)]
-        model_id: String,
-        /// Optional config reference
-        #[arg(long)]
-        config_reference: Option<String>,
-        /// Output raw JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// List model profiles
-    List {
-        /// Output raw JSON
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand)]
 enum OrchAction {
     /// Trigger a docket pipeline run for a project's linked docket project.
     ///
@@ -1210,19 +1177,6 @@ fn main() -> anyhow::Result<()> {
                 json,
             } => cmd_agent_profile_create(&client, name, instructions, tool_policy, limits, json),
             AgentProfileAction::List { json } => cmd_agent_profile_list(&client, json),
-        },
-
-        Commands::ModelProfile { action } => match action {
-            ModelProfileAction::Create {
-                name,
-                provider,
-                model_id,
-                config_reference,
-                json,
-            } => {
-                cmd_model_profile_create(&client, name, provider, model_id, config_reference, json)
-            }
-            ModelProfileAction::List { json } => cmd_model_profile_list(&client, json),
         },
 
         Commands::Orch { action } => match action {
@@ -2425,64 +2379,6 @@ fn cmd_agent_profile_list(client: &TackClient, as_json: bool) -> anyhow::Result<
         print_table_row(&[
             short_id(p["agent_profile_id"].as_str()),
             p["name"].as_str().unwrap_or("?"),
-        ]);
-    }
-    Ok(())
-}
-
-// ─── Model profile commands ────────────────────────────────────────────────────
-
-fn cmd_model_profile_create(
-    client: &TackClient,
-    name: String,
-    provider: String,
-    model_id: String,
-    config_reference: Option<String>,
-    as_json: bool,
-) -> anyhow::Result<()> {
-    let body = execution::build_create_model_profile_body(
-        &name,
-        &provider,
-        &model_id,
-        config_reference.as_deref(),
-    );
-    let resp = client.post("/model-profiles", &body)?;
-    if as_json {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
-        return Ok(());
-    }
-    let id = resp["model_profile_id"].as_str().unwrap_or("?");
-    println!(
-        "Created model profile: {} ({})",
-        name,
-        &id[..8.min(id.len())]
-    );
-    println!("  provider: {provider}");
-    println!("  model:    {model_id}");
-    println!("  id:       {id}");
-    Ok(())
-}
-
-fn cmd_model_profile_list(client: &TackClient, as_json: bool) -> anyhow::Result<()> {
-    let resp = client.get("/model-profiles")?;
-    let list_val = resp.get("data").cloned().unwrap_or(resp);
-    if as_json {
-        println!("{}", serde_json::to_string_pretty(&list_val)?);
-        return Ok(());
-    }
-    let empty = vec![];
-    let rows = list_val.as_array().unwrap_or(&empty);
-    if rows.is_empty() {
-        println!("No model profiles found.");
-        return Ok(());
-    }
-    print_table_header(&["ID", "NAME", "PROVIDER", "MODEL"]);
-    for m in rows {
-        print_table_row(&[
-            short_id(m["model_profile_id"].as_str()),
-            m["name"].as_str().unwrap_or("?"),
-            m["model_provider"].as_str().unwrap_or("?"),
-            m["model_id"].as_str().unwrap_or("?"),
         ]);
     }
     Ok(())

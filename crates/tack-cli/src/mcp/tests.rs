@@ -59,17 +59,16 @@ fn mcp_tool_names() -> Vec<String> {
 }
 
 #[test]
-fn tools_list_advertises_all_fifteen() {
-    // The original 8 item/project tools plus 7 execution/fleet/profile tools.
+fn tools_list_advertises_all_fourteen() {
+    // The original 8 item/project tools plus 6 execution/fleet/profile tools.
     let names = mcp_tool_names();
-    assert_eq!(names.len(), 15);
+    assert_eq!(names.len(), 14);
     for expected in [
         "list_projects",
         "move_item",
         "add_comment",
         "list_fleets",
         "list_agent_profiles",
-        "list_model_profiles",
         "list_executions",
         "get_execution",
         "cancel_execution",
@@ -88,7 +87,6 @@ fn tools_list_excludes_admin_and_secret_actions() {
         "revoke_runner",
         "create_fleet",
         "create_agent_profile",
-        "create_model_profile",
         "reconcile_execution",
     ] {
         assert!(

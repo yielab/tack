@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (99 paths, 136 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](../../../openapi.json) (98 paths, 134 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1280,7 +1280,7 @@ create a Tack project from a
 
 ## Execution Operator
 
-Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner-enrollment/agent-profile/model-profile management. Authenticated the same way as the rest of this API (operator session or API token); scopes idempotency and audit actor to the server-derived `x-tack-principal`, which a client cannot set (see `crate::middleware::inject_operator_principal`).
+Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner-enrollment/agent-profile management. Authenticated the same way as the rest of this API (operator session or API token); scopes idempotency and audit actor to the server-derived `x-tack-principal`, which a client cannot set (see `crate::middleware::inject_operator_principal`).
 
 #### `GET /api/agent-profiles`
 
@@ -1444,21 +1444,6 @@ Download a verified artifact's raw content
 |---|---|---|
 | 200 | Requeued (or replayed) after an audited recovery decision | `RequeueResponse` |
 | 409 | conflict / idempotency_conflict / invalid_transition | `RunnerV1ErrorEnvelope` |
-
-#### `GET /api/model-profiles`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Every model profile, by name | `ModelProfileListResponse` |
-
-#### `POST /api/model-profiles`
-
-**Request body:** `CreateModelProfile`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Model profile created | `CreateModelProfileResponse` |
-| 409 | conflict (name already exists) | `RunnerV1ErrorEnvelope` |
 
 #### `GET /api/runner-fleets`
 

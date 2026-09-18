@@ -300,23 +300,6 @@ export async function createAgentProfile(request: APIRequestContext, name: strin
   return body.agent_profile_id;
 }
 
-/** Create a model profile (`POST /api/model-profiles`) — the picker
- *  `RunWithAgentModal.tsx`'s "Choose a model" mode lists. Returns the new
- *  profile's id. */
-export async function createModelProfile(
-  request: APIRequestContext,
-  name: string,
-  modelProvider: string,
-  modelId: string,
-): Promise<string> {
-  const res = await request.post(`${API}/model-profiles`, {
-    data: { name, model_provider: modelProvider, model_id: modelId },
-  });
-  expect(res.ok(), `create model profile failed: ${res.status()}`).toBeTruthy();
-  const body = await res.json();
-  return body.model_profile_id;
-}
-
 /**
  * A minimal, valid runner-v1 capability report declaring `codex`/`openai`/
  * `modelId` — for the direct runner-protocol HTTP calls

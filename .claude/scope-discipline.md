@@ -6,9 +6,10 @@ something that actually happened in this tree, and each one names it.
 
 ## The evidence
 
-- **`model_profiles`** (migration 043) is consulted by nothing. It has been a recorded
-  standing finding since Phase 56 and is still listed as deferred in Phase 58's roadmap
-  section. A table, a repository module and a UI surface, for zero callers.
+- **`model_profiles`** (migration 043) was consulted by nothing — a recorded standing
+  finding since Phase 56, still listed as deferred in Phase 58's roadmap section — until
+  it was dropped for exactly that reason. A table, a repository module and a UI surface,
+  for zero callers.
 - **The `decisions` path** — protocol routes, contract fixtures, a DecisionInbox, replay
   tables — is fully built, byte-pinned, and **has never been exercised**, because no harness
   in this tree ever asks a mid-run question. Correctly documented as a scope limit, but it
