@@ -13,9 +13,8 @@ Every number carries its command. Re-run it before quoting it.
 
 ## Before anything
 
-The harness core redesign sits uncommitted on the branch `harness-seam-redesign` (`git
-status --short | wc -l`). It is committed and merged into `develop` first: every task below
-branches from a `develop` that has it.
+The harness core redesign is in `develop` (`git log --oneline --grep harness-seam-redesign
+develop`). Every task below branches from a `develop` that has it.
 
 ## The batches
 
@@ -231,7 +230,7 @@ success, an auth and an error test.
 
 | Task | State |
 |---|---|
-| Harness core redesign | done, uncommitted on `harness-seam-redesign` |
+| Harness core redesign | done |
 | M0 · C1 · H1 | not started |
 | H2 · S2 · P1 | not started |
 | H3 · P2 | not started · blocked on a decision |
