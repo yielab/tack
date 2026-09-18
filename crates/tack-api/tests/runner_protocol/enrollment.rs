@@ -199,11 +199,7 @@ fn enroll_json(token: &str, runner_name: &str, clock: &FakeClock) -> String {
 }
 
 fn build_operator_app(repo: Repository, clock: FakeClock) -> Router {
-    let operator_state = executions::OperatorExecutionState::with_clock(
-        repo,
-        Arc::new(clock),
-        Arc::new(|_pool| Box::pin(async { false })),
-    );
+    let operator_state = executions::OperatorExecutionState::with_clock(repo, Arc::new(clock));
     executions::routes(operator_state)
 }
 

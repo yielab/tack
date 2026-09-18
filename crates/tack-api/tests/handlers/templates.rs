@@ -5,7 +5,7 @@
 //! key when it references a status the template's own workflow doesn't
 //! have; `orchestration.pipeline_yaml` rejected when it isn't parseable
 //! YAML; and backward compatibility — an absent/null `orchestration` key
-//! behaves exactly as before, with no `TACK_ORCH_ENABLE` dependency.
+//! behaves exactly as before.
 
 use crate::common;
 
@@ -55,9 +55,7 @@ async fn body_json(res: axum::response::Response) -> Value {
 /// A template with no `orchestration` key at all — the shape every template
 /// had before `orchestration` was added — and one with an explicit
 /// `"orchestration": null` are the same absent-means-nothing case: both must
-/// keep working unchanged. This is TACK_ORCH_ENABLE-independent: the default
-/// test app has orchestration disabled entirely, and both must still
-/// succeed.
+/// keep working unchanged.
 #[tokio::test]
 async fn create_template_without_or_with_null_orchestration_works() {
     let cases = [None, Some(Value::Null)];

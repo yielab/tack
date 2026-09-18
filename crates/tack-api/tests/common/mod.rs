@@ -5,7 +5,6 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::handlers::websocket::BoardEvent;
-use tack_api::orch_runtime::OrchRuntime;
 use tack_api::{AppState, LocalRunnerControl, config::AppConfig, router::build_router};
 use tack_db::repo::execution::{ExecutionClock, RequestSelection};
 use tack_db::{Repository, init_pool, migrations};
@@ -58,7 +57,6 @@ pub async fn test_app_with_local_runner(
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
-        orch_runtime: OrchRuntime::new(),
         local_runner,
     };
 
@@ -94,7 +92,6 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
-        orch_runtime: OrchRuntime::new(),
         local_runner: None,
     };
 

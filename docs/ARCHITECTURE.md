@@ -61,10 +61,10 @@ docs/                Documentation
 - Auto-runs migrations on startup
 - Database is created automatically if missing
 
-**tack-orch** (agent-fleet orchestration client + the neutral runner-v1 execution domain — depends only on `tack-core` and `tack-db`; must never depend on `tack-api`, the dependency points inward, `tack-api` depends on this crate to spawn the reconciler, run the scheduler/retention/observability tasks, and expose the orchestration and execution routes):
+**tack-orch** (the legacy Docket control-plane client + the neutral runner-v1 execution domain — depends only on `tack-core` and `tack-db`; must never depend on `tack-api`, the dependency points inward, `tack-api` depends on this crate to run the scheduler/retention/observability tasks and expose the execution routes):
 
-*Agent-fleet orchestration (off by default, gated behind `TACK_ORCH_ENABLE`):*
-- Defines the `ControlPlane` trait (`health`, `status`, `metrics`, `list_runs`, `list_approvals`, `list_tasks`, `traces`, plus gated write/dispatch methods) — the seam that makes Tack a factory control center rather than a docket-specific dashboard. `docket` (`adapters::docket::DocketAdapter`) is the only implementor today.
+*Legacy Docket control plane (no longer wired into `tack-api` — nothing constructs a `ControlPlaneStore` or spawns the reconciler):*
+- Defines the `ControlPlane` trait (`health`, `status`, `metrics`, `list_runs`, `list_approvals`, `list_tasks`, `traces`, plus gated write/dispatch methods) — the seam that made Tack a factory control center rather than a docket-specific dashboard. `docket` (`adapters::docket::DocketAdapter`) is the only implementor.
 - `reconciler.rs`: one `tokio` task per registered control plane, polling `/health` + `/status.json` on a jittered interval and driving a `healthy` → `degraded` (3 consecutive failures) → `unreachable` (10) health state machine, persisted to `control_planes`
 - Remote enums (`RunState`, `RunSource`, `TaskStatus`, `ApprovalState`) all carry an `Unknown(String)` fallback so a docket upgrade degrades gracefully instead of failing a poll
 - `adapters::prometheus`: dependency-free `/metrics` text-exposition parser, reused by any future metrics ingestion
@@ -79,7 +79,7 @@ docs/                Documentation
 - Every dollar-valued field across this crate is named `*_usd_estimated` — token counts are the primary, trustworthy measure; docket reports no real spend, so any cost figure downstream is a derived estimate; absent usage is a typed "not measured", never a fabricated `0`. See `docs/book/src/developer/orchestration.md`
 
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 97 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the orchestration endpoints gated behind `TACK_ORCH_ENABLE`, the operator execution/fleet surface, and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
+- Axum HTTP server with 78 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the operator execution/fleet surface and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
 - **Two authentication surfaces, separated structurally.** Operator routes live under `/api` behind `require_token`. Runner routes are nested as a _sibling_ of `/api` on the outer router, so they never traverse the operator auth layer at all — deliberately not an exemption-list entry, which a later edit could quietly widen. Each runner handler authenticates its own hashed bearer credential via `handlers/runner_protocol/runner_auth.rs`.
 - `x-tack-principal` is **overwritten from server config** by `middleware::inject_operator_principal` and never read from the request. Operator idempotency is scoped by principal, so a trusted header would let one caller collide with another's requests.
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
@@ -90,7 +90,6 @@ docs/                Documentation
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON and CSV formats
-- `orch_store.rs`: wires `tack-orch`'s `ControlPlaneStore` trait to the real `Repository` + a `kind`-dispatched adapter constructor; spawns the reconciler from `server.rs` behind `config.orch_enable`
 
 **tack-runner** (the pull-based execution runner — its own binary, separate from `tack`):
 - Polls the Tack API's `/api/runner/v1` surface: enroll, refresh capabilities, claim, heartbeat, accept, start, stream events, poll decisions, submit artifacts, complete, and report cancellation/recovery observations
@@ -176,7 +175,6 @@ All routes follow RESTful conventions:
 - `/api/backup`, `/api/restore` — Local DB backup download / staged restore (2 endpoints)
 - `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
 - `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
-- `/api/control-planes` (GET/POST), `/api/control-planes/{id}` (GET/PATCH/DELETE), `/api/projects/{id}/orch-link` (GET/PUT), `/api/fleet` (GET) — Agent-fleet orchestration (8 endpoints; all gated behind `TACK_ORCH_ENABLE`, 404 when unset). Control-plane token is write-only (`token_set` boolean). See `docs/book/src/developer/orchestration.md` and `docs/book/src/user-guide/orchestration.md`
 - `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
 - `/api/runner/v1/*` — **Runner protocol**, 14 paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
 

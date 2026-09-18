@@ -396,9 +396,9 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
     async fn stop(&self) {
         let mut state = self.state.lock().await;
         if let Some(running) = state.running.take() {
-            // Doesn't block waiting for the task to actually exit — mirrors
-            // `OrchRuntime::stop`'s own rule: a toggle-off HTTP request must
-            // not hang on however long the runner's own shutdown takes.
+            // Doesn't block waiting for the task to actually exit — a
+            // toggle-off HTTP request must not hang on however long the
+            // runner's own shutdown takes.
             running.shutdown_handle.request();
         }
     }
@@ -594,9 +594,9 @@ impl EmbeddedRunnerControl {
 
     async fn start_locked(&self, state: &mut State) -> Result<(), LocalRunnerControlError> {
         if state.running.is_some() {
-            // Idempotent, mirroring `OrchRuntime::start` — a second
-            // `PUT {"enabled": true}` (or the boot-time check racing a UI
-            // toggle) must never spawn a duplicate runner task.
+            // Idempotent — a second `PUT {"enabled": true}` (or the
+            // boot-time check racing a UI toggle) must never spawn a
+            // duplicate runner task.
             return Ok(());
         }
         let bound_addr = state.bound_addr.ok_or_else(|| {

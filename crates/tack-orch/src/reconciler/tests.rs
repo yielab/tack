@@ -927,7 +927,7 @@ async fn repeated_global_start_stop_cycles_leave_no_task_running() {
 }
 
 /// **Guards against `list_registered()` being read only once at spawn
-/// time.** (`tack-api`'s `orch_runtime.rs` has the same reproduction one
+/// time.** (the server's reconciler runtime had the same reproduction one
 /// layer up, against `OrchRuntime` itself.) A plane registered after spawn
 /// must still get polled. This
 /// starts the supervisor with zero planes registered, registers one

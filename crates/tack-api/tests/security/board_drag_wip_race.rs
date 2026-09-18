@@ -1,7 +1,6 @@
 //! `handlers::items::update_item` (the ordinary board-drag / PATCH path)
 //! must not read a WIP-limited column's item count and then write the new
-//! status as two separate, unlocked steps — the same race `wip_limit_race.rs`
-//! guards on the dispatch path, but on this call site.
+//! status as two separate, unlocked steps.
 //!
 //! Drives `N` genuinely concurrent `PATCH /api/items/{id}` requests, all
 //! targeting the same WIP-limited column, through the real HTTP path; the
@@ -14,14 +13,13 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
-use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-// ─── Helpers (mirrors wip_limit_race.rs) ───────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
@@ -47,7 +45,6 @@ async fn app_with_state() -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
-        orch_runtime: OrchRuntime::new(),
         local_runner: None,
     };
 

@@ -90,49 +90,11 @@ pub struct AppConfig {
     #[serde(default = "default_backup_retention")]
     pub backup_retention: usize,
 
-    // ── Agent-Factory Control Center (orchestration) ───────────────────────────
-    /// Enables the orchestration reconciler and every control-plane API route
-    /// (`/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet`).
-    /// **Off by default.** With this unset, no reconciler task is spawned (see
-    /// `server.rs`) and every orch route 404s.
-    #[serde(default)]
-    pub orch_enable: bool,
-
-    /// Base reconciler poll interval in seconds, before per-plane backoff and
-    /// jitter are applied. Default: 10.
-    #[serde(default = "default_orch_poll_secs")]
-    pub orch_poll_secs: u64,
-
-    /// How many days of `orch_events` (and, `orch_metrics`)
-    /// history to keep before the retention sweep rolls old rows into per-day
-    /// aggregates and deletes them. Default: 90.
-    #[serde(default = "default_orch_event_retention_days")]
-    pub orch_event_retention_days: u32,
-
-    /// Shared secret required to grant/deny a docket approval via
-    /// `POST /api/approvals/{token}`. Deliberately separate from
-    /// `TACK_API_TOKEN`: granting an approval is a materially higher-privilege
-    /// act than editing a card, so holding the ordinary API token is not enough
-    /// on its own. Never logged.
-    #[serde(default)]
-    pub orch_approval_token: Option<String>,
-
-    /// Shared secret required to trigger a docket pipeline run via
-    /// `POST /api/projects/{id}/orch-dispatch`. Deliberately separate from
-    /// `TACK_API_TOKEN`, mirroring `orch_approval_token`'s own precedent
-    /// exactly: this spends money on a remote fleet and cannot be cancelled,
-    /// a materially higher-privilege act than the ordinary operator gate
-    /// already covers. **Fail-closed when unset** — see
-    /// `handlers::orch::require_dispatch_token`'s doc comment. Never logged.
-    #[serde(default)]
-    pub orch_dispatch_token: Option<String>,
-
     // ── Embedded runner (ADR 0061 decisions 2 and 6) ───────────────────────
     /// The env/CLI-flag default for whether the in-process embedded runner
     /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
     /// toggle (`PUT /api/local-runner`) overrides it in `app_meta` from
-    /// then on, the same precedence `orch_enable` already establishes —
-    /// see `handlers::local_runner::effective_local_runner_enabled`.
+    /// then on — see `handlers::local_runner::effective_local_runner_enabled`.
     #[serde(default)]
     pub local_runner_enable: bool,
 
@@ -142,20 +104,17 @@ pub struct AppConfig {
     /// `tack_orch::execution_retention`). **Off by default** — see
     /// `default_execution_retention_enable`'s doc comment for the full
     /// rationale. This sweep deletes rows; data deletion must be an
-    /// operator opt-in, the same posture `TACK_ORCH_ENABLE` already
-    /// establishes for this codebase.
+    /// operator opt-in.
     #[serde(default = "default_execution_retention_enable")]
     pub execution_retention_enable: bool,
 
     /// Days of replay/idempotency bookkeeping and terminal `execution_events`
-    /// history kept before the retention sweep purges them. Default: 90 —
-    /// matching `TACK_ORCH_EVENT_RETENTION_DAYS`'s own default.
+    /// history kept before the retention sweep purges them. Default: 90.
     #[serde(default = "default_execution_retention_days")]
     pub execution_retention_days: u32,
 
     /// Interval, in seconds, between execution-retention sweeps. Default:
-    /// 3600 (hourly) — retention is a hygiene task, not a latency-sensitive
-    /// one, so this is deliberately far coarser than `TACK_ORCH_POLL_SECS`.
+    /// 3600 (hourly) — retention is a hygiene task, not a latency-sensitive one.
     #[serde(default = "default_execution_retention_interval_secs")]
     pub execution_retention_interval_secs: u64,
 
@@ -173,8 +132,7 @@ pub struct AppConfig {
 
     /// Shared secret required to resolve a scoped execution decision via
     /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
-    /// Deliberately separate from `TACK_API_TOKEN`, mirroring
-    /// `orch_approval_token`'s own precedent exactly: resolving a decision
+    /// Deliberately separate from `TACK_API_TOKEN`: resolving a decision
     /// releases whatever the harness/runner is blocked on, a materially
     /// higher-privilege act than the ordinary operator gate already covers.
     /// **Fail-closed when unset** — see
@@ -221,11 +179,6 @@ impl Default for AppConfig {
             backup_prefix: default_backup_prefix(),
             backup_interval_secs: None,
             backup_retention: default_backup_retention(),
-            orch_enable: false,
-            orch_poll_secs: default_orch_poll_secs(),
-            orch_event_retention_days: default_orch_event_retention_days(),
-            orch_approval_token: None,
-            orch_dispatch_token: None,
             local_runner_enable: false,
             execution_retention_enable: default_execution_retention_enable(),
             execution_retention_days: default_execution_retention_days(),
@@ -273,19 +226,12 @@ fn default_backup_retention() -> usize {
     10
 }
 
-fn default_orch_poll_secs() -> u64 {
-    10
-}
-fn default_orch_event_retention_days() -> u32 {
-    90
-}
-
 fn default_execution_retention_enable() -> bool {
     // This sweep deletes rows (`purge_stale_execution_replays`,
     // `purge_stale_terminal_execution_events`) — data deletion must be
-    // opt-in, matching `TACK_ORCH_ENABLE`'s own off-by-default posture, not
-    // read-only hygiene the operator never asked for. `execution_health_enable`
-    // stays `true` below: it only reads and logs, it deletes nothing.
+    // opt-in, not read-only hygiene the operator never asked for.
+    // `execution_health_enable` stays `true` below: it only reads and logs,
+    // it deletes nothing.
     false
 }
 fn default_execution_retention_days() -> u32 {
@@ -488,31 +434,8 @@ impl AppConfig {
         if let Ok(v) = std::env::var("TACK_BACKUP_RETENTION") {
             config.backup_retention = v.parse().unwrap_or(default_backup_retention());
         }
-        if let Ok(v) = std::env::var("TACK_ORCH_ENABLE") {
-            config.orch_enable = v == "1" || v.eq_ignore_ascii_case("true");
-        }
         if let Ok(v) = std::env::var("TACK_LOCAL_RUNNER_ENABLE") {
             config.local_runner_enable = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        if let Ok(v) = std::env::var("TACK_ORCH_POLL_SECS") {
-            config.orch_poll_secs = v.parse().unwrap_or(default_orch_poll_secs());
-        }
-        if let Ok(v) = std::env::var("TACK_ORCH_EVENT_RETENTION_DAYS") {
-            config.orch_event_retention_days =
-                v.parse().unwrap_or(default_orch_event_retention_days());
-        }
-        // Never log the approval-token value
-        if let Ok(v) = std::env::var("TACK_ORCH_APPROVAL_TOKEN")
-            && !v.is_empty()
-        {
-            config.orch_approval_token = Some(v);
-        }
-        // Never log the dispatch-token value — same posture as the
-        // approval-token parse above.
-        if let Ok(v) = std::env::var("TACK_ORCH_DISPATCH_TOKEN")
-            && !v.is_empty()
-        {
-            config.orch_dispatch_token = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_ENABLE") {
             config.execution_retention_enable = v == "1" || v.eq_ignore_ascii_case("true");

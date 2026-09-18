@@ -5,7 +5,7 @@
 //! single-writer checks of the method's own behaviour (applied vs.
 //! rejected, timestamp bookkeeping, the `None`-on-vanished-item case); the
 //! genuinely concurrent reproduction of the race this method fixes lives in
-//! `crates/tack-api/tests/security/wip_limit_race.rs`, since it needs the full
+//! an HTTP-level race test, since it needs the full
 //! dispatch flow to drive real concurrent HTTP requests.
 
 use crate::common::{self, create_test_workspace, make_project};

@@ -18,14 +18,24 @@ Sections from the next release on are generated from the commit history by
   consulted by nothing; scheduling and model resolution never read it.
 - The Docket control plane's frontend pages: Fleet, Approvals, Economics, the
   provisioning wizard, and the two orchestration settings panels (global and
-  per-project), along with their sidebar/tab entries and E2E coverage. The bridge
-  itself (API, `tack-orch`, schema) is unaffected for now — it is removed in later
-  steps of the same retirement.
+  per-project), along with their sidebar/tab entries and E2E coverage. `tack-orch`'s
+  `ControlPlane` trait, reconciler and schema are unaffected for now — they are
+  removed in later steps of the same retirement.
 - The Docket control plane's remaining board-view surface: the *Dispatch* action on
   an item (its card menu and the item-detail drawer's "Dispatch to agents" button),
   the *Dispatch sprint* dialog and its DAG-ordered dry run, and the agent-activity
   badges and tab on the Board/List/Table/item-detail views. *Run with agent* is the
   way to run an agent on an item now.
+- The Docket control plane's API and CLI surface: the `/api/orch/*` routes,
+  `/api/control-planes*`, `/api/settings/orchestration`, `POST /api/items/{id}/dispatch`,
+  `/api/sprints/{id}/dispatch` (+ `/dry-run`), the approvals inbox
+  (`/api/approvals*`), one-click pod provisioning (`/api/templates/{id}/provision`),
+  per-product cost derived from docket's events (`/api/economics/*`), and
+  DAG-ordered sprint dispatch. The `TACK_ORCH_ENABLE`, `TACK_ORCH_POLL_SECS`,
+  `TACK_ORCH_EVENT_RETENTION_DAYS`, `TACK_ORCH_APPROVAL_TOKEN` and
+  `TACK_ORCH_DISPATCH_TOKEN` variables, and the `tack orch` CLI commands, go with
+  it. Docket is now reached the same way as any other coding agent: as a harness
+  (`--harness docket`) on a runner-v1 execution request.
 
 ---
 

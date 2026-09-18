@@ -1945,12 +1945,12 @@ impl Repository {
 //
 // 2. **Stale rows.** Nothing has ever updated `orch_tasks.remote_status` /
 //    `orch_approvals.state` after the initial dispatch/poll except a fresh poll of a
-//    *reachable* plane (`dispatcher.rs`'s write, `reconciler.rs`'s `persist_approvals`).
+//    *reachable* plane (the dispatcher's write, `reconciler.rs`'s `persist_approvals`).
 //    A plane that goes `unreachable` (already tracked by `control_planes.health`/
 //    `last_seen_at`) and never recovers leaves any row that was "active" at
 //    that moment (`pending`/`running`/`waiting_approval` on `orch_tasks`, `pending` on
 //    `orch_approvals`) active forever — which also permanently blocks legacy
-//    redispatch, since `dispatcher.rs::is_active_task_status` treats those exact values
+//    redispatch, since the dispatcher's active-status check treats those exact values
 //    as "still in flight." [`Repository::reconcile_stale_orch_tasks`] and
 //    [`Repository::reconcile_stale_orch_approvals`] are **local-only** sweeps: no HTTP
 //    call to docket, so they cannot perturb `docket_tick_contract_test.rs`'s pinned
@@ -1991,7 +1991,7 @@ impl Repository {
     /// `Some((remote_task_id, remote_status))` iff `item_id` has an
     /// `orch_tasks` row whose `remote_status` is `pending`, `running`, or
     /// `waiting_approval`; `None` otherwise. This is the exact set
-    /// `dispatcher.rs`'s `ACTIVE_TASK_STATUSES` names, defined once in this
+    /// the dispatcher's `ACTIVE_TASK_STATUSES` names, defined once in this
     /// query rather than filtered in Rust, so a caller can never drift from
     /// it by accident.
     ///
@@ -2030,7 +2030,7 @@ impl Repository {
     /// recover this tick. `'stale'` is deliberately outside
     /// `dispatcher::ACTIVE_TASK_STATUSES`, so a reconciled row immediately becomes
     /// redispatchable (the existing "anything not in the active set is terminal,
-    /// redispatch is safe" rule in `dispatcher.rs` already covers it — no separate
+    /// redispatch is safe" rule in the dispatcher already covers it — no separate
     /// unblock logic needed). Returns the number of rows updated.
     ///
     /// No HTTP call — see this section's module doc for why that matters for the
