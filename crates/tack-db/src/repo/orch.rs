@@ -1840,9 +1840,9 @@ impl Repository {
 // column on `orch_links` (whose PK is the *Tack* project id, not this pair; see
 // migration 028's comment). The stored value is docket's own compound cursor token
 // verbatim (`"<ts>Z:<n>"`, or a bare timestamp/empty string) — this layer treats it as
-// an opaque string, never parses or validates it. See
-// `crates/tack-orch/src/reconciler.rs`'s module doc for the cursor's real semantics
-// and why losing/rewinding it must never duplicate ingested rows (that guarantee comes
+// an opaque string, never parses or validates it.
+// Losing or rewinding the cursor
+// must never duplicate ingested rows (that guarantee comes
 // from `orch_events.id` being content-derived, not from this table).
 
 /// One project's trace-poll resume state.
@@ -1945,7 +1945,7 @@ impl Repository {
 //
 // 2. **Stale rows.** Nothing has ever updated `orch_tasks.remote_status` /
 //    `orch_approvals.state` after the initial dispatch/poll except a fresh poll of a
-//    *reachable* plane (the dispatcher's write, `reconciler.rs`'s `persist_approvals`).
+//    *reachable* plane (the dispatcher's write, the reconciler's approval persistence).
 //    A plane that goes `unreachable` (already tracked by `control_planes.health`/
 //    `last_seen_at`) and never recovers leaves any row that was "active" at
 //    that moment (`pending`/`running`/`waiting_approval` on `orch_tasks`, `pending` on
@@ -1953,7 +1953,7 @@ impl Repository {
 //    redispatch, since the dispatcher's active-status check treats those exact values
 //    as "still in flight." [`Repository::reconcile_stale_orch_tasks`] and
 //    [`Repository::reconcile_stale_orch_approvals`] are **local-only** sweeps: no HTTP
-//    call to docket, so they cannot perturb `docket_tick_contract_test.rs`'s pinned
+//    call to docket, so they cannot perturb the pinned
 //    per-tick request sequence. **Not wired to any scheduled task** —
 //    mirrors `spawn_retention_sweep`'s own "not yet spawned" gap.
 
