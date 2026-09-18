@@ -6,7 +6,7 @@
 //! which also permanently blocks legacy redispatch for that item (via
 //! `dispatcher::is_active_task_status`). `Repository::reconcile_stale_orch_tasks`/
 //! `reconcile_stale_orch_approvals` are the fix: a local-only sweep (no HTTP
-//! call, so it cannot perturb `docket_tick_contract_test.rs`'s pinned
+//! call, so it cannot perturb the pinned
 //! per-tick request sequence).
 
 use crate::common::{create_test_workspace, make_item, make_project, setup_test_db};

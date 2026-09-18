@@ -1032,8 +1032,7 @@ const MIGRATION_027: [&str; 2] = [
 // ─── Trace ingestion ──────────────────────────────
 //
 // docket's `/traces/{project}?since=` cursor (`serve.py`'s `_traces_page`) is a
-// compound `"<ts>Z:<n>"` token, not a bare timestamp or offset — see
-// `crates/tack-orch/src/reconciler.rs`'s module doc for the full mechanics. It must
+// compound `"<ts>Z:<n>"` token, not a bare timestamp or offset. It must
 // resume correctly per *docket* project, independent of which (if any) Tack project
 // is currently linked to it, so this is its own table keyed on
 // `(control_plane_id, remote_project)` rather than a column bolted onto `orch_links`
