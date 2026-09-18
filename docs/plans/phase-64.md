@@ -303,9 +303,8 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 |---|---|
 | Harness core redesign | done |
 | M0 | done |
-| H1 · C1 · P1 · H2 | done, in `develop` |
-| S2 · H3 · R1a | running |
-| R1b | not started |
+| H1 · C1 · P1 · H2 · S2 · R1a | done, in `develop` |
+| H3 · R1b | running |
 | D1 · R2 | not started |
 | R3 · R4 · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
