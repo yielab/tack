@@ -25,14 +25,14 @@ starts when the tasks it names have been merged into `develop`.
 |---|---|---|
 | **A** | **M0** measure · **C1** CI and coverage · **H1** harness core fixes | the branch above is in `develop` |
 | **B** | **H2** docket · **S2** agent scaffolding out · **P1** `model_profiles` out | H1 · C1 · M0 |
-| **C** | **H3** opencode · **R1** bridge: frontend | H2 · P1 |
-| **D** | **D1** decisions: the runner half · **R2** bridge: API and CLI | H3, for D1 · R1, for R2 |
+| **C** | **H3** opencode · **R1a** → **R1b** bridge: frontend (serial) | H2 · P1 |
+| **D** | **D1** decisions: the runner half · **R2** bridge: API and CLI | H3, for D1 · R1b, for R2 |
 | **E** | **R3** bridge: `tack-orch` → **R4** bridge: schema (serial) · **H4** harness docs | R2 · D1, for H4 |
 | **F** | **D2** decisions: the board half, then **T1** API tests by layer · **T2** board feature tests · **T3** E2E and CI tiers · **T4** mutation report | R4 |
 
 ```
 M0 ──────────────► P1 ─────────┐
-C1 ──► S2                      ├─► R1 ► R2 ► R3 ► R4 ──► D2 ► T1 T2 T3 T4 ──► release tag
+C1 ──► S2                      ├─► R1a ► R1b ► R2 ► R3 ► R4 ──► D2 ► T1 T2 T3 T4 ──► release tag
 H1 ──► H2 ──► H3 ──► D1 ──► H4 │
         └──────────────────────┘
 ```
@@ -215,10 +215,55 @@ layers, from ADR 0068:
 
 | Task | Removes | Notes |
 |---|---|---|
-| **R1** frontend | `features/{fleet, approvals, economics, provisioning}`, `features/settings/{orchestration, orchestrationSettings}`, their routes, nav entries, mocks and E2E specs | `features/agents/runnerFleet` stays — it is runner-v1 |
+| **R1a** frontend: the pages | `features/{fleet, approvals, economics, provisioning}`, `features/settings/{orchestration, orchestrationSettings}`, their entries in `src/app/routes.tsx`, nav entries, mocks and E2E specs | `features/agents/runnerFleet` stays — it is runner-v1 |
+| **R1b** frontend: what the board views share with the bridge | `shared/dispatch/`, `shared/orch/`, `shared/agentActivity/`, `features/sprints/DispatchSprintModal.tsx` and its test, and every use of them in the files measured below | `shared/runWithAgent/` and `shared/execution/` are runner-v1 and stay; where they import a type from a removed module, the type moves into `shared/execution/types.ts` |
 | **R2** API and CLI | `handlers/{orch, provisioning, economics}.rs`, `dispatcher.rs`, `orch_store.rs`, `orch_runtime.rs`, `sprint_dispatch.rs`, `tack orch`, `TACK_ORCH_*` from `docs/CONFIG.md`, `tests/orchestration/**` except the files M0 marked runner-v1 | regenerate the OpenAPI spec and `schema.gen.ts` once, at the end |
 | **R3** `tack-orch` | the `ControlPlane` trait, `reconciler`, `adapters/`, the `docket_*` tests, their fixtures and goldens | the execution domain, scheduler, model policy, retention and `runner_contract` stay |
 | **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents; before the first, the rows are exported as JSON into the pre-upgrade snapshot the migration runner already writes | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
+
+**Measured 2026-09-18 on `develop` at `707f71a`** (`cat <files> | wc -l`; importers with
+`git grep -l`):
+
+- The ADR's table holds: `tack-orch` production 3 432 lines, `tack-api` production 6 156,
+  the six frontend feature directories 7 323, `tests/orchestration/**` 7 957.
+- The frontend bridge is larger than that table: `shared/dispatch/` 1 123 lines,
+  `shared/agentActivity/` 750, `shared/orch/` 393, `DispatchSprintModal` 559. They are used
+  from `features/board/Board.tsx`, `features/list/List.tsx`, `features/table/Table.tsx`,
+  `features/sprints/Sprints.tsx`, `features/item-detail/ItemDetailDrawer.tsx`,
+  `features/item-detail/tabs/AgentActivityTab.tsx` and its test, `shared/ui/AgentStateChip.tsx`,
+  `shared/api/client.ts`, `shared/execution/{api,capabilities,realtime,types}.ts`,
+  `shared/runWithAgent/shared.ts`, and the E2E files `a11y.spec.ts`, `helpers.ts`,
+  `run-with-agent.spec.ts`, `execution-attempt-detail.spec.ts`. Hence R1b.
+- DAG-ordered sprint dispatch is called only by `handlers/orch.rs`, the router, the OpenAPI
+  table and the sprint view's *Dispatch sprint* dialog (`git grep -n sprint_dispatch`, `git
+  grep -l SprintDispatch -- frontend`). The dialog goes in R1b, the rest in R2.
+- In `tests/orchestration/`, two files are runner-v1 and stay:
+  `fleet_templates/fleet_membership.rs` (`/api/runner-fleets`) and
+  `fleet_templates/templates.rs` (`/api/templates`). R2 moves them, with `git mv`, under the
+  test binary that already covers their handlers. `dispatch/dual_scheduling.rs` tests the
+  guard between a docket task and a runner-v1 request; the guard and the file go together.
+- `tack-orch`: `adapters/` (six files), `reconciler.rs` 1 442, `reconciler/tests.rs` 1 920,
+  `tests/docket_*.rs` with `docket_tick_contract_test/support.rs` (3 071 together),
+  `tests/golden/{wire,tick}/`.
+- `tack-db`: `src/repo/orch.rs` 2 101, `src/repo/economics.rs`,
+  `tests/repository/orch_repo.rs` 947, `tests/migrations/orch_migrations.rs` 1 189,
+  `tests/migrations/orch_metrics.rs` 619.
+- Tables still created by the migrations: `control_planes`, `orch_approvals`, `orch_events`,
+  `orch_events_daily`, `orch_links`, `orch_metrics`, `orch_metrics_daily`, `orch_runs`,
+  `orch_tasks`, `orch_trace_cursors` (`grep -o "CREATE TABLE.*orch_[a-z_]*"
+  crates/tack-db/src/migrations.rs`; the two `_new` names are rebuild scaffolding). R4 checks
+  each against `sqlite_master` on a fresh install before writing its `DROP`.
+- `TACK_ORCH` is read outside the bridge in `tack-api`'s `config.rs`, `error.rs`,
+  `server.rs`, `router.rs`, `handlers/{items,settings}.rs`, in `tack-core/src/models.rs`,
+  `tack-orch/src/execution_retention.rs` and `tack-cli/src/main.rs`; and documented in
+  `docs/{CONFIG,API-REFERENCE,ARCHITECTURE,MIGRATION-GUIDE}.md` and five book pages (`git
+  grep -l TACK_ORCH`). R2 and R3 each take the ones in their crates; the docs go with R2.
+- The stale-lease invariant is asserted in 12 test files (`git grep -c
+  "stale_lease\|StaleLease" -- 'crates/*/tests/**' 'crates/**/tests.rs'`). T1 keeps
+  `tack-db/tests/repository/execution_claim_lease_heartbeat.rs` and
+  `tack-api/tests/runner_protocol/lifecycle.rs`; the runner's own two (`engine/tests.rs`,
+  `transport/tests.rs`) assert what the runner does on receiving it and stay; the other
+  eight lose the assertion.
 
 **Tests:** R1–R3 add none. R4 adds exactly one: a file-backed database populated at the
 last pre-removal migration upgrades, the export file holds the rows, and no `orch_*` table
@@ -257,9 +302,10 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | Task | State |
 |---|---|
 | Harness core redesign | done |
-| M0 · C1 · H1 | not started |
+| M0 | done |
+| C1 · H1 | done on their branches, reviewed, not merged |
 | H2 · S2 · P1 | not started |
-| H3 · R1 | not started |
+| H3 · R1a · R1b | not started |
 | D1 · R2 | not started |
 | R3 · R4 · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
