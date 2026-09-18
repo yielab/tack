@@ -11,11 +11,9 @@
 // they only collect a `RunWithAgentFormValues` and hand it to the one
 // modal, which calls {@link buildCreateExecutionInput} exactly once.
 //
-// This module is about the newer, neutral execution domain
-// (`ExecutionRequest` via `tack-runner`) — never the older
-// `shared/dispatch/**` Docket "dispatch" concept. Nothing here imports from
-// or is compatible with `shared/dispatch/**`; see that folder's own files
-// for the older, unrelated feature.
+// This module is about the neutral execution domain (`ExecutionRequest` via
+// `tack-runner`) exclusively — it has no other "run an agent" concept to
+// stay compatible with.
 
 import type {
   CreateExecutionInput,
@@ -426,12 +424,8 @@ export function isTerminalStateString(state: string): boolean {
 }
 
 /**
- * A small, self-contained relative-time formatter. `shared/agentActivity/
- * format.ts` already has an equivalent `relativeTime`, but that module
- * belongs to the older, distinct Docket agent-activity domain — the
- * execution UI stays structurally independent from it, so this ~12-line
- * function is duplicated on purpose rather than importing across that
- * boundary for one date-formatting helper.
+ * A small, self-contained relative-time formatter, local to the execution
+ * UI rather than shared, since it is ~12 lines and this is its only caller.
  */
 export function relativeTimeFromIso(iso: string | null | undefined): string {
   if (!iso) return 'unknown';

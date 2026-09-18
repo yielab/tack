@@ -1141,11 +1141,10 @@ impl Repository {
         Ok(row.map(|r| r.into_orch_approval()))
     }
 
-    /// Every approval for one item — pending **and** decided, since the item-detail
-    /// "Agent Activity" tab is a history view, not just a pending-inbox (see
-    /// `frontend/src/shared/agentActivity/api.ts`'s `ItemAgentActivity.approvals`
-    /// doc comment). Newest-requested first, matching the tab's overall
-    /// newest-first orientation (`list_orch_tasks_for_item`'s `attempt DESC`).
+    /// Every approval for one item — pending **and** decided, since this is a
+    /// history view, not just a pending inbox. Newest-requested first, matching
+    /// this endpoint's overall newest-first orientation
+    /// (`list_orch_tasks_for_item`'s `attempt DESC`).
     #[instrument(skip(self))]
     pub async fn list_orch_approvals_for_item(
         &self,

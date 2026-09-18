@@ -7,8 +7,6 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
-import { useAgentActivityMap } from '../../shared/agentActivity/useAgentActivityMap';
-import DispatchSprintModal from './DispatchSprintModal';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import type { Sprint, Item } from '../../shared/types';
 
@@ -53,13 +51,6 @@ export default function Sprints() {
     api.sprints.list(projectId),
   );
   const { items, refetch: refetchItems } = useProjectItems();
-
-  // Dispatch-to-agents gate: reuses
-  // the same bulk agent-activity fetch Board.tsx already relies on for its
-  // own dispatch gating, rather than adding a second "is orchestration
-  // enabled" probe — see `useAgentActivityMap`'s `orchAvailable` doc comment.
-  const agentActivity = useAgentActivityMap(() => projectId);
-  const [dispatchTarget, setDispatchTarget] = createSignal<Sprint | null>(null);
 
   // Sprint form
   const [showModal, setShowModal] = createSignal(false);
@@ -388,21 +379,6 @@ export default function Sprints() {
                               Close
                             </button>
                           </Show>
-                          {/* Dispatch is privileged and outward-facing (spends
-                              money, starts autonomous agents), so it never
-                              renders when orchestration isn't positively
-                              confirmed enabled — no
-                              control that's just going to 404 or error. */}
-                          <Show when={agentActivity.orchAvailable() && itemsForSprint(sprint.id).length > 0}>
-                            <button
-                              class="text-xs px-2 py-1 rounded"
-                              style={{ 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' }}
-                              onClick={() => setDispatchTarget(sprint)}
-                              aria-label={`Run sprint: ${sprint.name}`}
-                            >
-                              Run sprint
-                            </button>
-                          </Show>
                         </div>
                       </div>
 
@@ -486,16 +462,6 @@ export default function Sprints() {
           </div>
         </form>
       </Modal>
-
-      {/* Run sprint — dry-run preview + confirm. */}
-      <DispatchSprintModal
-        sprint={dispatchTarget()}
-        onClose={() => setDispatchTarget(null)}
-        onDispatched={() => {
-          void refetchItems();
-          agentActivity.refetch();
-        }}
-      />
     </div>
   );
 }
@@ -530,10 +496,8 @@ function ItemCard(props: {
               {props.item.title}
             </p>
             {/* "Run with agent" — same execution
-                surface as Board's per-card trigger, distinct from this
-                view's own "Run sprint" button below (the older, sprint-wide
-                Docket dispatch feature): this one launches a single item's
-                own execution request, not a bulk sprint dispatch. */}
+                surface as Board's per-card trigger: launches a single
+                item's own execution request. */}
             <span onClick={(e) => e.stopPropagation()}>
               <RunWithAgentButton
                 itemId={props.item.id}

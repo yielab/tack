@@ -198,12 +198,10 @@ export async function createItemWithAssignee(
 }
 
 /**
- * Create a fresh sprint with one item assigned to it — the minimum the
- * Sprints view's "Run sprint" dispatch control needs to render at all
- * (`Sprints.tsx` only shows the button for a sprint with
- * `itemsForSprint(id).length > 0`). Returns both ids since the caller
- * typically needs the sprint id (to mock its dry-run route) and doesn't
- * otherwise have one.
+ * Create a fresh sprint with one item assigned to it — the minimum a sprint
+ * lane needs to render an item, and its own "Run with agent" trigger.
+ * Returns both ids since callers typically need the sprint id as well as
+ * the item id.
  */
 export async function createSprintWithItem(
   request: APIRequestContext,
@@ -277,10 +275,10 @@ export async function createFreshItem(
 /**
  * Create a runner fleet via the operator execution surface
  * (`POST /api/runner-fleets`) — the "Run with agent" modal's target picker
- * lists these fleets. Unlike the Docket dispatch helpers above, this route
- * is NOT gated behind `TACK_ORCH_ENABLE` — see `crates/tack-api/src/
- * router.rs`'s own comment distinguishing `orch_routes` from the always-on
- * operator execution/fleet routes. Returns the new fleet's id.
+ * lists these fleets. This route is NOT gated behind `TACK_ORCH_ENABLE` —
+ * see `crates/tack-api/src/router.rs`'s own comment distinguishing
+ * `orch_routes` from the always-on operator execution/fleet routes. Returns
+ * the new fleet's id.
  */
 export async function createFleet(request: APIRequestContext, name: string): Promise<string> {
   const res = await request.post(`${API}/runner-fleets`, { data: { name } });

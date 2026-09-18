@@ -13,11 +13,9 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, AgentStateChip, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
-import { useAgentActivityMap, type AgentBadgeInfo } from '../../shared/agentActivity/useAgentActivityMap';
-import DispatchCardMenu from '../../shared/dispatch/DispatchCardMenu';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 
@@ -30,9 +28,6 @@ const ItemCard: Component<{
   item: Item;
   typeLabel: string;
   onEdit: (item: Item) => void;
-  agentInfo?: AgentBadgeInfo;
-  dispatchAvailable: boolean;
-  onDispatched: () => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
 
@@ -84,26 +79,12 @@ const ItemCard: Component<{
           {shortId(props.item.id)}
         </span>
         <div style={{ flex: 1 }} />
-        <Show when={props.agentInfo}>
-          {(info) => <AgentStateChip state={info().state} title={info().remoteStatus} />}
-        </Show>
-        {/* "Run with agent" — the newer, neutral execution surface.
-            Deliberately a separate control from `DispatchCardMenu` below
-            (the older, unrelated Docket "dispatch" feature): distinct icon,
-            distinct label, distinct backend domain (`ExecutionRequest` via
-            `tack-runner`, never `orch_tasks`). */}
         <RunWithAgentButton
           itemId={props.item.id}
           itemTitle={props.item.title}
           projectId={props.item.project_id}
           showStateChip
           compact
-        />
-        <DispatchCardMenu
-          itemId={props.item.id}
-          itemTitle={props.item.title}
-          available={props.dispatchAvailable}
-          onDispatched={props.onDispatched}
         />
       </div>
       <h4 style={{ 'font-size': '13px', 'font-weight': 600, margin: '0 0 9px', 'line-height': 1.35, color: 'var(--color-text-primary)' }}>
@@ -134,9 +115,6 @@ const BoardColumnView: Component<{
   onItemDrop: (itemId: string, newStatus: string) => void;
   onAddItem: (status: string) => void;
   onEditItem: (item: Item) => void;
-  agentInfoOf: (itemId: string) => AgentBadgeInfo | undefined;
-  dispatchAvailable: boolean;
-  onItemDispatched: () => void;
 }> = (props) => {
   const [isDragOver, setIsDragOver] = createSignal(false);
 
@@ -203,9 +181,6 @@ const BoardColumnView: Component<{
               item={item}
               typeLabel={props.typeLabelOf(item)}
               onEdit={props.onEditItem}
-              agentInfo={props.agentInfoOf(item.id)}
-              dispatchAvailable={props.dispatchAvailable}
-              onDispatched={props.onItemDispatched}
             />
           )}
         </For>
@@ -226,7 +201,6 @@ const Board: Component = () => {
   const vocab = useVocab();
   const { items, loading, refetch } = useProjectItems();
   const [, setSearchParams] = useSearchParams();
-  const agentActivity = useAgentActivityMap(projectId);
 
   const boardStateFromServer = createMemo((): BoardState | null => {
     const proj = project();
@@ -274,16 +248,8 @@ const Board: Component = () => {
     const pid = projectId();
     if (!pid) { setSock(undefined); return; }
     const s = createBoardSocket(pid);
-    const off = s.onEvent((event) => {
+    const off = s.onEvent(() => {
       void refetch();
-      // Card B4 (Wave 2, realtime broadcast, task 34.5): a mirrored agent
-      // run/approval change doesn't touch the item's status, so the plain
-      // items `refetch()` above won't pick it up — the badge chip has its
-      // own bulk resource (`useAgentActivityMap`), refreshed here on exactly
-      // the two event types that mean its data is stale.
-      if (event.type === 'agent_run_updated' || event.type === 'approval_pending') {
-        agentActivity.refetch();
-      }
     });
     setSock(s);
     onCleanup(() => { off(); s.close(); });
@@ -422,9 +388,6 @@ const Board: Component = () => {
                     onItemDrop={handleItemDrop}
                     onAddItem={handleAddItem}
                     onEditItem={handleEditItem}
-                    agentInfoOf={agentActivity.stateFor}
-                    dispatchAvailable={agentActivity.orchAvailable()}
-                    onItemDispatched={agentActivity.refetch}
                   />
                 )}
               </For>

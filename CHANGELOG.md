@@ -21,6 +21,11 @@ Sections from the next release on are generated from the commit history by
   per-project), along with their sidebar/tab entries and E2E coverage. The bridge
   itself (API, `tack-orch`, schema) is unaffected for now — it is removed in later
   steps of the same retirement.
+- The Docket control plane's remaining board-view surface: the *Dispatch* action on
+  an item (its card menu and the item-detail drawer's "Dispatch to agents" button),
+  the *Dispatch sprint* dialog and its DAG-ordered dry run, and the agent-activity
+  badges and tab on the Board/List/Table/item-detail views. *Run with agent* is the
+  way to run an agent on an item now.
 
 ---
 
