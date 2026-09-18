@@ -115,15 +115,12 @@ export const ORCHESTRATION_DISABLED_CODE = 'orchestration_disabled';
 
 /**
  * True when a request failed because agent-fleet orchestration is disabled
- * server-side — the single canonical check every feature directory's own
- * `isOrchDisabled` should delegate to (`features/fleet/api.ts`,
- * `features/approvals/api.ts`, `features/economics/api.ts`,
- * `features/provisioning/api.ts`, `features/settings/orchestration/api.ts`,
- * `shared/agentActivity/api.ts`). Living here — the wire-boundary client
- * every one of those files already imports `ApiError` from — means the
- * check is defined once instead of copy-pasted with drift risk, while still
- * respecting `architecture.test.ts`'s features-can't-import-features rule
- * (this is `shared/api/`, not another feature).
+ * server-side — the single canonical check `shared/agentActivity/api.ts`'s
+ * own `isOrchDisabled` delegates to. Living here — the wire-boundary client
+ * that file already imports `ApiError` from — means the check is defined
+ * once instead of copy-pasted with drift risk, while still respecting
+ * `architecture.test.ts`'s features-can't-import-features rule (this is
+ * `shared/api/`, not a feature).
  *
  * Two cases, in priority order:
  *  1. `err.code === 'orchestration_disabled'` — the documented contract:

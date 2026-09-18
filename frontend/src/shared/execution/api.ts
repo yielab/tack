@@ -213,12 +213,10 @@ export const executionsApi = {
 // ── Runner fleets (`crates/tack-api/src/handlers/runner_admin.rs`) ────────
 //
 // **Vocabulary note (III.0):** this `Fleet` (the `agent_fleets` table) is a
-// completely different concept from `shared/orch/capabilities.ts`'s /
-// `features/fleet/api.ts`'s `FleetEntry` (`GET /api/fleet`, Part II's
-// per-project docket control-plane roster). Both happen to be named
-// "fleet"; nothing here imports from or is compatible with that other
-// module. A caller that means "docket's fleet view" wants
-// `shared/orch`/`features/fleet`, not this file.
+// completely different concept from `shared/orch/capabilities.ts`'s
+// `FleetEntry` (`GET /api/fleet`, the per-project docket control-plane
+// roster). Both happen to be named "fleet"; nothing here imports from or is
+// compatible with that other module.
 
 export interface FleetSummary {
   fleet_id: string;

@@ -12,10 +12,9 @@ export interface CapabilityNoteProps {
  * The one place a `CapabilityGate` becomes visible copy. Renders nothing
  * while the gate is enabled; once disabled, always shows the reason
  * **verbatim from the capability payload** — never a string this component
- * invents. A capability is a value, never a provider check, applied to
- * read-only/informational controls: `features/fleet/FleetRow.tsx` and
- * `features/settings/orchestrationSettings/ControlPlanesManager.tsx` both
- * use this instead of writing their own copy, so there is exactly one place
+ * invents. A capability is a value, never a provider check, so any
+ * read-only/informational control gated on one renders through this
+ * component rather than writing its own copy, keeping exactly one place
  * that could regress into a hard-coded string.
  *
  * Deliberately a plain note, not a disabled `<button>`: no pause/resume
