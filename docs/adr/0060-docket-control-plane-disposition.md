@@ -246,3 +246,5 @@ without re-deriving the mapping.
 *(Appended by later readers, dated. The text above is never rewritten.)*
 
 **2026-09-14 — Superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. ADR 0068 decision 2 retires the bridge this ADR chose to maintain. Two of this ADR's three reasons against deletion no longer hold: the `TODO.md` citations are gone (0 today), and ADR 0066 moves per-tool guardrails into docket's own harness. The third, DAG-ordered sprint dispatch, is re-measured in ADR 0068's plan and re-implemented on runner-v1 only if it has a user. The measurements above stay as the record of why the bridge was kept until then.
+
+**2026-09-18 — ADR 0068 was accepted.** This ADR's supersession is in effect. The code it concerns is removed by the stage of Phase 64 that owns it (`docs/book/src/roadmap.md`), not by the acceptance itself.

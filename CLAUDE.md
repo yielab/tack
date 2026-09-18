@@ -12,26 +12,35 @@ near your code and credentials) — shipped as a single `tack` binary where `tac
 (Scrum/Kanban/phase) with per-project vocabulary; 10 project-type presets; MCP server
 (`tack mcp`). Core is complete (backend, frontend, CLI).
 
-**Part IX (Phase 63, human maintainability) is the live board and takes priority over
-everything else, including the release tag and the publish list in
-`docs/LAUNCH-CHECKLIST.md`.** Its specification is `docs/plans/human-maintainability.md`;
-the board carries only cards and acceptance. Parts IV through VIII are carded out and
-closed except VIII-C3. **These status lines decay in days —
-`TODO.md`'s "Which board is live" table is the authority, not this paragraph.** A new cycle
-branches from `develop`; `README.md` and `docs/screenshots/**` are shared files, and the
-conflict rules for them are in `TODO.md` §VI.3 and §V.3. The boards are the authority for what
-shipped; `docs/book/src/roadmap.md` records only intent.
+**Phase 64 — a codebase for human maintainers — is the live plan, and it comes before the
+release tag and the publish list in `docs/LAUNCH-CHECKLIST.md`.** Its decision record is
+ADR 0068 (accepted 2026-09-18, read its last amendment first); its stages are in
+`docs/book/src/roadmap.md`; `docs/plans/phase-64.md` cuts them into tasks, with their order,
+their files and the limits an agent works under; the harness stage's tasks are in
+`docs/plans/harnesses.md`.
+The goal is the smallest codebase that does everything a user can do today: what serves AI
+agents as product stays (runner, harnesses, runner-v1, MCP, desktop app); what only existed
+because agents built the tree goes.
 
-**Never read `TODO.md` whole — it costs ~199k tokens.** Active boards sit in its first ~2400
-lines (Part IX first, then VIII, VII, VI, V, IV — extract one, never all); the archive (Parts I–III) sits below them.
-It was kept in-file because hundreds of doc comments cited its section numbers; **no Rust file cites it any
-more**, so extracting it is now an open option rather than a blocked one — see `TODO.md`'s own header. Costs and extraction recipes for every big file:
+**Work is no longer tracked as cards and waves.** Every board in `TODO.md` is closed
+(Parts I–IX); nothing new is added to it and no new per-card handoff is written. A decision
+goes in an ADR, intent goes in the roadmap, a plan for one stage goes in `docs/plans/`, and
+the history of a change goes in its commit message. `TODO.md`, `docs/agent-handoffs/` and
+`docs/closed-cycles/` are history: read one only when something names it. A new line of work
+branches from `develop`; `README.md` and `docs/screenshots/**` are shared files.
+
+**Never read `TODO.md` whole** (`wc -c TODO.md` ÷ 4 for today's token cost). It holds closed
+boards only — Parts IX down to IV; Parts I–III are under `docs/closed-cycles/boards/` — and
+Phase 64's Stage 2 archives the rest. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
 with no caller (`model_profiles`, the `decisions` path, the superseded docket control plane).
 
-**Skills:** `/card` (work a board card), `/feature` (feature work off the board),
-`/gate` (scoped verification), `/tokens` (usage measurement vs `.claude/token-baseline.md`), `/status` (where am I / what is next), `/integrate` (merge finished card branches and review them as one change). Prefer them over improvising the workflow.
+**Skills:** `/feature` (feature work), `/gate` (scoped verification), `/status` (where am I /
+what is next), `/tokens` (usage measurement vs `.claude/token-baseline.md`). `/card` and
+`/integrate` drive the closed card-and-wave process and have nothing to act on; they leave
+with `.claude/` in Phase 64's Stage 2. Where a skill's text tells you to write a handoff or
+edit a board, this file wins: don't.
 
 ## Local Domain
 
@@ -100,7 +109,8 @@ crates/
 │                  Depends on core+db only — must NEVER depend on tack-api
 ├── tack-api/      Axum server (library; tack_api::serve). 97 documented paths + WebSocket
 ├── tack-runner/   Pull-based execution runner — separate binary; owns credentials,
-│                  workspace, journal, and the harness subprocess (codex/claude_code)
+│                  workspace, journal, and the harness subprocess. harness/local_process.rs
+│                  is the one lifecycle; a harness is a descriptor + a 4-method grammar
 └── tack-cli/      The single `tack` binary: serve + CLI client (HTTP only, never opens the DB)
 
 frontend/          SolidJS + Tailwind v4; two-axis design tokens (mode × palette);
@@ -123,7 +133,7 @@ returns `stale_lease` and writes nothing (16 call sites in
 finding F1, non-blocking):** when an attempt was superseded by a pre-spawn *recovery*,
 the retried old fence returns `409 conflict` instead of `stale_lease` on heartbeat,
 decisions, artifacts and the observation routes — an earlier guard fires first. Nothing
-is written either way; the code is inconsistent with itself, not unsafe. III-G5 routes it. Full crate detail, design patterns, and implementation
+is written either way; the code is inconsistent with itself, not unsafe. Full crate detail, design patterns, and implementation
 notes (workflow validation, auto-status propagation, WebSocket events, attachments…):
 **`docs/ARCHITECTURE.md`**.
 
@@ -165,21 +175,38 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
   the path: a helper returning only the path deletes the directory as it returns, and the
   compiler will not tell you. `scripts/check-test-hygiene.sh` enforces this (~0.7s, in
   `pre-push` and CI); production code may still use the temp directory and is not scanned.
-- **Tests have a place and a size.** A trailing `#[cfg(test)] mod tests` stays under 150
-  lines or moves to `<module>/tests.rs`; a test body is ≤ 40 lines, its name
-  ≤ 60 characters and states the claim; a test file's preamble is ≤ 10 lines, the file
-  itself ≤ 1 000 lines; variants are rows of one table-driven test; an invariant is pinned
-  at most twice (repository + one router-level test) besides the contract fixtures; no
-  fixed waits; a live or billed test lives under `tests/live/` and is `#[ignore]`d; a card
-  adds at most 15 tests / 600 test lines (`check --changed`, recorded in the handoff);
-  helpers live in `tests/common` or `tack-test-support`, never per file. Throwaway proof
-  goes in `crates/*/tests/scratch_*.rs`, which is gitignored and never tracked.
-  `scripts/maintainability.py check` is a hard gate at these budgets; a file named in the
-  script's own `EXCLUSIONS` is the one exception and instead ratchets against a committed
-  baseline — it may exceed its budget only if it already did and is not worse. Rules,
-  numbers and the plan: `docs/plans/human-maintainability.md`.
-- **Each board card writes one handoff** in `docs/agent-handoffs/`; corrections are
-  appended as amendments, never rewritten.
+- **A behaviour is tested once, at the lowest layer that can express it** (ADR 0068
+  decisions 5 and 6): pure unit tests in `tack-core`, repository tests against SQLite in
+  `tack-db`, one HTTP test per route outcome in `tack-api`, contract tests for runner-v1 and
+  the OpenAPI spec, fake-harness tests in the runner, Playwright for critical journeys. An
+  invariant is pinned at its lowest layer plus at most one test through the HTTP API,
+  besides the contract fixtures. A test that proves how a change was built rather than what
+  the product does — a wave gate, a narrative test asserting unrelated claims, a test of a
+  private helper, a near-copy at another layer — is deleted once its real claim has a home.
+  For a security or "writes nothing" claim, revert the fix once and watch the test fail; a
+  test that still passes is proving something else.
+- **Harnesses: the lifecycle is tested once.** `harness/local_process/tests.rs` proves
+  spawn, environment, secrets, redaction, probe, cancel and reconcile through a grammar
+  that adds nothing, against `fixtures/fake_harness.sh`. A harness's own tests are pure — a
+  request in, a command line out; a captured transcript in, a report out — and never spawn
+  a process to re-prove the core. The one exception, per open-wire harness, is a single
+  test that runs the real binary against a fake model server on loopback: it proves the
+  vendor's contract, is not billed, and returns early when the binary is absent. Vendor
+  output is a file under `fixtures/<kind>/<version>/`, its provenance (captured or
+  constructed) stated in that directory's README. A rule that binds requests goes in
+  the core so it binds every harness; a policy a harness cannot enforce is declared in its
+  `permission_policy` capability, never silently ignored. Shape, rules and the order of
+  work for docket and opencode: `docs/plans/harnesses.md`.
+- **Test sizes are still gated, until Phase 64's Stage 2 replaces the gate with clippy
+  lints.** `scripts/maintainability.py check --changed` runs in `pre-push`: a trailing
+  `#[cfg(test)] mod tests` under 150 lines or moved to `<module>/tests.rs`; a test body
+  ≤ 40 lines, its name ≤ 60 characters and stating the claim; a test file's preamble ≤ 10
+  lines and the file ≤ 1 000; variants as rows of one table-driven test; no fixed waits; a
+  live or billed test under `tests/live/` and `#[ignore]`d; helpers in `tests/common`,
+  `tack-test-support` or a crate's own `test_support` module, never per file. Its
+  15-tests / 600-lines ceiling per change is a tripwire, not a target: a change that
+  restructures tests and trips it is reviewed on what it removed, not re-cut to fit.
+  Throwaway proof goes in `crates/*/tests/scratch_*.rs`, which is gitignored.
 - Changing an API response shape updates the matching frontend unit/E2E mocks in the
   same change. Frontend colors come from `--color-*` tokens only, never raw hex.
 
@@ -202,7 +229,7 @@ reached operator log lines and API error responses before anyone noticed. When i
 rewriting is almost always right and deleting is almost always wrong — the comment usually
 wraps something real in board scaffolding. Keep the knowledge, drop the pointer.
 **And how much:** a module preamble ≤ 30 lines (test file: ≤ 10), a `///` block ≤ 15
-lines, a production file ≤ 35 % comment. Vendor behaviour at a version goes in the fixture
+lines, a production file ≤ 30 % comment. Vendor behaviour at a version goes in the fixture
 README, design rationale in an ADR, history nowhere. `scripts/maintainability.py check`
 measures it, `comment-worklist` lists what is over.
 
@@ -214,9 +241,11 @@ measures it, `comment-worklist` lists what is over.
 | Crate detail, patterns, implementation notes, troubleshooting | `docs/ARCHITECTURE.md` |
 | Endpoint reference / examples | `docs/API-REFERENCE.md` |
 | Testing guide (unit → E2E → load) | `docs/TESTING.md` |
-| Active board, wave rules, card ownership | `TODO.md` (extract, don't read whole) |
-| Per-card decision history | `docs/agent-handoffs/` |
-| Size budgets for tests, comments and docs; the plan behind them | `docs/plans/human-maintainability.md`, `scripts/maintainability.py --help` |
+| The live plan, its stages and its tasks | `docs/book/src/roadmap.md` (Phase 64), `docs/plans/phase-64.md`, `docs/adr/0068-a-codebase-for-human-maintainers.md` |
+| Harness architecture, rules, docket and opencode | `docs/plans/harnesses.md`, ADRs 0066 and 0067 |
+| Decisions | `docs/adr/` — lead with the ask; evidence in its own section |
+| History: closed boards, per-card handoffs | `TODO.md`, `docs/agent-handoffs/`, `docs/closed-cycles/` — only when named |
+| Size budgets still gated in `pre-push` | `scripts/maintainability.py --help` (the plan behind them, Phase 63, is closed: `docs/plans/human-maintainability.md`) |
 | Wire contract of record | `docs/contracts/runner-v1/` |
 | MCP, GitHub sync, deployment | `docs/MCP.md`, `docs/GITHUB-SYNC.md`, `docs/DEPLOYMENT-GUIDE.md` |
 | User/developer book (mdBook) | `docs/book/src/` |

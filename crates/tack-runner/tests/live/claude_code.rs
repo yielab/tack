@@ -26,13 +26,25 @@ use tack_runner::{
         VERCEL_AI_GATEWAY_PROVIDER,
     },
     harness::{
-        HarnessProbe, ModelObservationSource, artifact::ArtifactStager,
-        claude_code::ClaudeCodeAdapter,
+        HarnessProbe, ModelObservationSource,
+        artifact::ArtifactStager,
+        claude_code::{ClaudeCodeAdapter, ClaudeCodeGrammar},
+        process::ProcessLimits,
     },
     secrets::SecretStore,
 };
 
 use crate::common::temp_dir as temp_workspace;
+
+/// The installed `claude`, staging run logs under `state`.
+fn discover(secrets: SecretStore, state: &std::path::Path) -> Result<ClaudeCodeAdapter, String> {
+    let limits = ProcessLimits::new(
+        4 * 1024 * 1024,
+        1024 * 1024,
+        std::time::Duration::from_secs(600),
+    );
+    ClaudeCodeAdapter::discover(ClaudeCodeGrammar, limits, state.join("staging"), secrets)
+}
 
 fn opted_in() -> bool {
     std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() == Ok("1")
@@ -189,7 +201,7 @@ async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
         return;
     }
     let secrets_dir = temp_workspace("secrets");
-    let Ok(adapter) = ClaudeCodeAdapter::discover(test_secret_store(secrets_dir.path())) else {
+    let Ok(adapter) = discover(test_secret_store(secrets_dir.path()), secrets_dir.path()) else {
         eprintln!("skipping live claude-code test: no `claude` binary discoverable on PATH");
         return;
     };
@@ -313,7 +325,8 @@ async fn live_claude_code_through_the_configured_provider_when_opted_in() {
         );
         return;
     }
-    let Ok(adapter) = ClaudeCodeAdapter::discover(runner_state_secret_store()) else {
+    let state = temp_workspace("live-state");
+    let Ok(adapter) = discover(runner_state_secret_store(), state.path()) else {
         eprintln!("skipping live claude-code gateway test: no `claude` binary discoverable");
         return;
     };
@@ -404,7 +417,8 @@ async fn live_claude_code_direct_model_never_reaches_the_configured_provider_whe
         );
         return;
     }
-    let Ok(adapter) = ClaudeCodeAdapter::discover(runner_state_secret_store()) else {
+    let state = temp_workspace("live-state");
+    let Ok(adapter) = discover(runner_state_secret_store(), state.path()) else {
         eprintln!("skipping live claude-code direct-guard test: no `claude` binary discoverable");
         return;
     };

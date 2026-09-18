@@ -19,109 +19,35 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
     }
 }
 
+/// `(name, capability entry, why it is missing, expected status)`. Absent
+/// means "not installed": a located binary whose probe then fails is a
+/// probe error against a present harness, with whatever version it confirmed.
 #[test]
-fn a_healthy_probe_is_present_with_its_real_version() {
-    let harnesses = vec![capability("codex", "0.149.1", None)];
-    let status = classify("codex", &harnesses, None);
-    assert!(matches!(
-        status,
-        HarnessStatus::Present { version: "0.149.1" }
-    ));
-}
-
-/// The literal wording `CodexLocator::resolve`'s own
-/// locator produces for "never found on PATH" — this is what doctor must
-/// recognize as absence, not a probe error.
-#[test]
-fn a_binary_never_found_on_path_is_absent_not_a_probe_error() {
-    let harnesses = vec![capability(
-        "codex",
-        "",
-        Some("`codex` was not found on PATH"),
-    )];
-    let status = classify("codex", &harnesses, None);
-    assert!(
-        matches!(status, HarnessStatus::Absent { reason } if reason.contains("not found on PATH"))
-    );
-}
-
-/// Proves the acceptance-critical distinction: a binary that IS found
-/// and spawned (so the process definitely exists on this machine), but
-/// whose `--version` output doesn't parse, must never be reported as
-/// "absent" — it is a probe error against a present binary. Mirrors
-/// `codex.rs`'s own `probe_reports_an_unrecognized_version_string_as_an_
-/// explicit_probe_error` fixture wording.
-#[test]
-fn a_present_binary_with_unparseable_version_is_a_probe_error() {
-    let harnesses = vec![capability(
-        "codex",
-        "",
-        Some("codex --version output was not a recognizable version string"),
-    )];
-    let status = classify("codex", &harnesses, None);
-    assert!(matches!(
-        status,
-        HarnessStatus::ProbeError { version: None, .. }
-    ));
-}
-
-/// A second, independent proof of the same distinction: a harness that
-/// confirms a real installed version and still fails a later probe step
-/// must render as "present" with a version, plus a distinct probe
-/// error, never collapse into "absent".
-#[test]
-fn a_present_binary_with_later_probe_failure_keeps_its_version() {
-    let harnesses = vec![capability(
-        "future-harness",
-        "1.18.0",
-        Some(
-            "installed_version 1.18.0 confirmed; provider/model enumeration failed \
-             (see additional.model_listing_error)",
+fn classify_separates_present_probe_error_and_absent() {
+    let absent = "no executable named `claude` was found on PATH";
+    let missing = BTreeMap::from([("claude-code".to_owned(), absent.to_owned())]);
+    let codex = |version, error| Some(capability("codex", version, error));
+    let rows: [(&str, Option<HarnessCapability>, &str); 5] = [
+        ("codex", codex("0.149.1", None), "present 0.149.1"),
+        ("codex", codex("", Some("unparseable")), "probe_error -"),
+        (
+            "codex",
+            codex("1.18.0", Some("later")),
+            "probe_error 1.18.0",
         ),
-    )];
-    let status = classify("future-harness", &harnesses, None);
-    assert!(matches!(
-        status,
-        HarnessStatus::ProbeError {
-            version: Some("1.18.0"),
-            ..
-        }
-    ));
-}
-
-/// Claude Code's own discovery failure never produces a
-/// `HarnessCapability` entry at all (see `classify`'s doc comment) —
-/// this proves doctor still reports it as absent rather than silently
-/// omitting it because the entry doesn't exist.
-#[test]
-fn claude_code_missing_from_list_reports_discovery_error() {
-    let harnesses: Vec<HarnessCapability> = Vec::new();
-    let status = classify(
-        "claude-code",
-        &harnesses,
-        Some("no executable named `claude` was found on PATH"),
-    );
-    assert!(matches!(
-        status,
-        HarnessStatus::Absent { reason } if reason.contains("no executable named")
-    ));
-}
-
-#[test]
-fn claude_code_registered_and_healthy_is_present() {
-    let harnesses = vec![capability("claude-code", "2.1.252 (Claude Code)", None)];
-    let status = classify(
-        "claude-code",
-        &harnesses,
-        None, // discovery succeeded, so there is no error to carry
-    );
-    assert!(matches!(status, HarnessStatus::Present { .. }));
-}
-
-#[test]
-fn every_known_harness_kind_has_a_credential_note() {
-    for kind in KNOWN_HARNESS_KINDS {
-        assert_ne!(credential_note(kind), "unknown harness kind");
+        ("claude-code", None, &format!("absent {absent}")),
+        ("codex", None, "absent harness not registered"),
+    ];
+    for (kind, entry, expected) in rows {
+        let harnesses: Vec<HarnessCapability> = entry.into_iter().collect();
+        let described = match classify(kind, &harnesses, &missing) {
+            HarnessStatus::Present { version } => format!("present {version}"),
+            HarnessStatus::ProbeError { version, .. } => {
+                format!("probe_error {}", version.unwrap_or("-"))
+            }
+            HarnessStatus::Absent { reason } => format!("absent {reason}"),
+        };
+        assert_eq!(described, expected, "{kind}");
     }
 }
 
@@ -182,9 +108,10 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
             },
             additional: Default::default(),
         },
-        claude_code_discovery_error: Some(
+        missing_harnesses: BTreeMap::from([(
+            "claude-code".to_owned(),
             "no executable named `claude` was found on PATH".to_owned(),
-        ),
+        )]),
         secret_backend: tack_runner::secrets::SecretBackendKind::File,
         provider_catalog: BTreeMap::from([(
             tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),

@@ -1,3 +1,5 @@
+> **Archived 2026-09-18.** This audit specified Part IX's card IX-M5, which is closed. Its §4 shape is what `crates/tack-runner/src/harness/local_process.rs` now implements and its §5 rules are restated in `docs/plans/harnesses.md`; the measurements below describe the tree before either.
+
 # Harness integrations: a maintainability and scalability audit
 
 Measured 2026-09-11 on `develop` at `1b9b7e6` plus uncommitted docs. Every number below

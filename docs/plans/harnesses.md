@@ -1,201 +1,318 @@
 # Plan: four harnesses on one core
 
-Implements ADR 0066 (docket as a third harness), ADR 0067 (opencode readmitted as a
-fourth), and docket's own ADR 0001 / D-35 (harness mode, in `../rack-cli`). The evidence
-behind the shape is `docs/plans/harness-maintainability-audit.md`. **All three ADRs are
-proposed, not accepted; nothing below starts until they are** — except that the audit's
-core-extraction card is already Part IX's IX-M5 and runs on Part IX's schedule regardless.
+Implements ADR 0066 (docket as a third harness) and ADR 0067 (opencode readmitted as a
+fourth), both accepted, under the rules of ADR 0068. It is Stage 3 of Phase 64; the order of
+every stage, and how a task is handed to an agent, is in `docs/plans/phase-64.md`. The audit
+that first proposed the shape is archived at
+`docs/closed-cycles/plans/harness-maintainability-audit.md`.
 
-## The two things this plan is subordinate to
+Every number below carries its command. Re-run it before quoting it.
 
-**Part IX is the live board and takes priority.** This plan touches no file under
-`crates/tack-runner/` until IX-M5 (Wave 30) has landed: that card extracts the core every
-harness here is written against, and IX-M4's `tack-runner` sub-cards own the crate's test
-binaries until then. The only work that runs in parallel with Part IX is in **another
-repository** — docket's harness mode.
+## Where things stand (measured 2026-09-18)
 
-**Part IX's rules are this plan's rules.** Every card here carries the per-card budget of
-`docs/plans/human-maintainability.md` §2.3 — at most 15 new tests and 600 new test lines,
-measured by `scripts/maintainability.py check --changed` and written into the handoff —
-plus the audit's harness cap: at most 400 lines of production code for a harness's
-descriptor and grammar together. A card that needs more has found a gap in the core, which
-is its own card, not a reason to widen this one.
+**The core is in place and both shipped harnesses are on it.** A harness is a
+`HarnessDescriptor` (data) plus a four-method `HarnessGrammar`; everything else is
+`crates/tack-runner/src/harness/local_process.rs`, once.
 
-## The shape, in one paragraph
+`wc -l crates/tack-runner/src/harness/{local_process,codex,claude_code,mod}.rs`, and the
+same files at `develop` before this change:
 
-One core, four grammars, fixtures per version. `LocalProcessHarness<G>` owns everything a
-local subprocess harness has in common — spawn with a cleared environment, prompt on stdin,
-journal, redaction, cancel escalation, reconcile by pid, version parsing, usage with cost
-unmeasured. Each harness contributes a `HarnessGrammar`: a descriptor (where it lives, how
-it reports its version, which version range its fixtures were captured against), how its
-stream becomes events, how events become an outcome, and what it honestly supports. Its
-tests parse fixture files captured from the real binary with a provenance line; the
-lifecycle is tested once, in the core, against the fake harness. The two open-wire harnesses
-(docket, opencode) additionally run end to end in CI against a fake `/v1/chat/completions`
-server: real binary, real workspace, real diff, zero spend.
+| File | Before | Now |
+|---|---|---|
+| `local_process.rs` (the shared lifecycle) | 531 | 895 |
+| `codex.rs` | 886 | 189 |
+| `claude_code.rs` | 1 141 | 305 |
+| `mod.rs` (registry, descriptors, discovery) | 329 | 417 |
+| Harness unit tests, all files | 3 240 | 1 554 |
 
-## The dependency picture
+What a harness no longer writes: locating its binary, the `--version` probe and its
+parser, the kind and model-selection checks, environment and `secret_reference`
+resolution, provider-endpoint resolution and credential injection, prompt delivery,
+timeouts and capture caps, the handle format, cancellation, reconciliation with a pid
+identity check, log staging, and the assembly of `ActualExecution` and `Usage`.
+
+**All four CLIs are installed on this machine** (`command -v docket opencode codex claude`),
+so every proof below runs here with zero spend.
+
+### docket, measured against the installed binary
+
+`docket --version` prints `docket 0.2.0b1`; harness mode shipped in the repository as
+`0.2.0-beta.2` (commits `01d6c67`, `0d7f4cc` in `../rack-cli`). Each row was seen by running
+`docket harness run` under `env -i` against a throwaway `/v1/chat/completions` server on
+loopback, with `DOCKET_HOME` in a scratch directory:
+
+| Fact | What it means for Tack |
+|---|---|
+| `--task-file /dev/stdin` reads the prompt from stdin | the core's stdin delivery works unchanged; no prompt file, nothing on argv |
+| docket creates a `DOCKET_HOME` that does not exist | the grammar only names the path; the core creates nothing |
+| It runs with an empty environment | `inherited_env` is a choice, not a need; `PATH` is inherited so its `bash` tool finds the user's toolchain |
+| `--model P/ID` splits on the first `/` and sends `ID` upstream (`gw/anthropic/claude-x` → `anthropic/claude-x`) | Tack passes `<requested provider>/<requested model id>` |
+| It calls `<DOCKET_LLM_BASE_URL>/chat/completions` with `Authorization: Bearer <DOCKET_LLM_API_KEY>` | the base URL carries `/v1`; the key variable is docket's, not the provider's |
+| The result line carries `model.served` from the endpoint's response body, and real token counts | the served model is an observation, even behind a gateway |
+| `docket` is a bash launcher that `exec`s a Python interpreter, so `argv[0]` is Python | the core's pid identity check, which compares `argv[0]`, would call a live docket dead; the attempt id on argv (`--agent-id`) is what identifies it |
+| `--timeout` defaults to 300 s | Tack always passes the request's timeout |
+| `docket harness status TOKEN` answers `finished` / `unknown`, but the token is only on stdout | not used: the core cannot journal a token it has not read yet, and the argv check above is enough |
+| `docket --version` is not a plain `X.Y.Z` | the core's version parser reports it as unrecognized today; fixed in H2 |
+
+What ADR 0066 described and did not ship — a stdin flag, `--attempt`, `docket harness
+capabilities`, child process-group events — is not needed for any of the above.
+
+### opencode, measured against `opencode 1.18.30`
+
+ADR 0067's table stands. Two rows were added today, same method:
+
+| Fact | What it means for Tack |
+|---|---|
+| With no positional message, `opencode run` takes the prompt from stdin and completes once stdin closes | the core's stdin delivery works unchanged. ADR 0067's "open stdin hangs" is the same fact seen from the other side: Tack always closes it |
+| It creates `HOME` and `OPENCODE_CONFIG_DIR` when they do not exist, and fills them with 38 MB including an `.npm` cache (`du -sh`) | the grammar only names the paths; whether that first run reaches the network is still unmeasured and is H3's first step |
+
+## The shape
 
 ```
-docket repo (../rack-cli)               Tack — Part IX (live)          Tack — this plan
-─────────────────────────               ─────────────────────          ────────────────
-H1 harness run ─┬─ H2 served model ─┐
-                ├─ H3 capabilities ─┼─ H4 contract ─────────────────────────┐
-                └─ H5 graceful stop ┘                                       │
-                                        IX-M4 ×28 → IX-M5 core ─► T1 handle kind ─► T2 third wire
-                                                                                         │
-                                                                     ┌───────────────────┴──────────────────┐
-                                                                T3 docket grammar                   O1 opencode grammar
-                                                                T4 docket proof                     O2 opencode proof
-                                                                     └───────────────────┬──────────────────┘
-                                                                                   T5 docs, once, for both
-Phase 4: upgrades — each its own card, each gated on its own proof, none scheduled here
+HarnessDescriptor   kind · program · wire · model selection · native provider ·
+  (data)            inherited env · capture floor · pass-through reason · probe notes ·
+                    credential note
+
+HarnessGrammar      descriptor()    the data above
+  (four methods)    capabilities()  what this CLI honestly supports, permission_policy included
+                    invocation()    request + resolved endpoint -> args and extra env, or a typed rejection
+                    report()        finished process -> verdict, evidence, observed model, tokens, cost
+
+LocalProcessHarness everything else, identical for every harness
 ```
 
-Two things run the day the ADRs are accepted: Phase 0 and the docket-repo cards H1–H5.
-Everything in Tack waits for IX-M5. T3 and O1 run in parallel — disjoint files, one
-grammar each — and T5 is one documentation card for both, not two.
+Adding a harness is one module, one line in `harness::DESCRIPTORS` and one in
+`harness::discover`. `provider::wire_for_harness`, the model catalog's eligibility and
+`tack runner doctor` all read the descriptor; none of them is edited.
 
-## Phase 0 — measure before building (no code)
+## Rules every harness is held to
 
-| Measure | Command | Decides |
+1. **The lifecycle is tested once**, in `local_process/tests.rs`, through a grammar that
+   adds nothing, against `fixtures/fake_harness.sh`. A harness's own tests are pure: a
+   request in, a command line out; a captured transcript in, a report out.
+2. **One test per open-wire harness runs the real binary**, against a fake model server on
+   loopback: it proves the vendor's contract, which no fake can. It is not billed, runs in
+   the ordinary suite, and returns early with a message when the binary is absent.
+3. **Vendor output is a file**, under `fixtures/<kind>/<version>/`, and the directory's
+   README says per file whether it was captured or constructed. Findings about a vendor go
+   in that README, not in a module preamble.
+4. **A rule that binds requests lives in the core**, so it binds every harness at once. A
+   grammar only adds what is genuinely its CLI's: the flags, and the requests its CLI
+   cannot honour.
+5. **The permission policy is declared per harness.** `capabilities()` carries a
+   `permission_policy` entry saying how far the tool list, the network flag and the
+   budgets are enforced. A request a harness cannot honour at all is rejected from
+   `invocation()` before anything spawns. Today: claude-code `advisory`, codex `unsupported`.
+6. **Capabilities are claimed from proof for this adapter**, never from what the CLI can do
+   in general. Each upgrade to `Supported` is its own change with its own test.
+7. **A variant is added with its first caller.** `RunContext`, `Invocation` and the
+   descriptor grow a field in the change that needs it, not before.
+8. **Anything that runs a billed binary lives under `tests/live/` and is `#[ignore]`d.**
+
+## The tasks
+
+Four tasks, in order. H1 is independent of everything; H2 needs H1; H3 needs H2 (both edit
+`DESCRIPTORS` and share the wire); H4 needs H3. Each is one branch from `develop`, and each
+lists every file it may touch — a change outside that list is a finding to report, not to
+make.
+
+### H1 — two fixes in the core that every stream harness needs
+
+**Files:** `harness/process.rs` and its tests; `harness/local_process.rs` and
+`harness/local_process/tests.rs`.
+
+1. **Capture keeps the head and the tail of a stream.** Today `capture_bounded` keeps the
+   first `cap` bytes, so a transcript over the cap loses its last line — the one that
+   carries the result for claude-code, docket and opencode. Keep the first `cap / 2` bytes
+   and the last `cap - cap / 2` (a `VecDeque<u8>` that drops from the front). A stream at or
+   under the cap is returned whole and byte-identical to today. Over the cap,
+   `finalize_capture` joins head and tail with one line, `[… <n> bytes dropped …]`;
+   `truncated`, `bytes_dropped` and `total_bytes_seen` keep their meaning. Check that
+   `claude_code::parse_run_output` skips a line that is not JSON, since the cut can land
+   mid-line; if it does not, make it, with one fixture row.
+   *Test:* the existing truncation test becomes one table — under the cap, exactly at it,
+   over it — asserting the text starts with the head, ends with the stream's last line, and
+   the three counters.
+   *Not in this task:* removing `min_capture_bytes`. It becomes unnecessary only once a
+   captured long transcript proves it.
+2. **A live pid is this attempt's process if `argv[0]` is the program *or* any argument is
+   the attempt id.** `process_is_this_harness` takes the journal's `attempt_id`. A CLI that
+   is a launcher script (docket) never has the program as `argv[0]`.
+   *Test:* one more row in `reconcile_tells_this_harness_from_a_reused_pid`: a child whose
+   `argv[0]` is a different program but whose arguments carry the attempt id reconciles as
+   `ProcessRunning`. Trap: `sh -c 'sleep 30'` `exec`s `sleep` and loses its arguments; keep
+   the shell alive (`sh -c 'sleep 30; :' <attempt id>`). Revert the change once and watch the
+   row fail.
+
+**Done when:** `.githooks/pre-push` passes; no new test function was added, only rows.
+
+### H2 — docket
+
+**Files:** `provider/mod.rs`, `provider/vercel_ai_gateway.rs`, `provider/anthropic.rs`,
+`provider/tests.rs`; `harness/local_process.rs` and its tests; `harness/codex.rs` and
+`harness/claude_code.rs` (one descriptor line each); new `harness/docket.rs`,
+`harness/docket/tests.rs`, `harness/fixtures/docket/<version>/`,
+`harness/fixtures/docket/README.md`; `harness/mod.rs`; `crates/tack-runner/Cargo.toml`
+(`wiremock = { workspace = true }` under dev-dependencies).
+
+**Core changes, each with docket as its first caller:**
+
+| Change | Where | Why |
 |---|---|---|
-| Whether opencode's first-run `node_modules` population reaches the network | run once in a fresh `OPENCODE_CONFIG_DIR` under `strace -f -e trace=network` or with outbound blocked, then again warm | ADR 0067's last risk: probe-time pre-population vs a typed `validate` rejection under `network: false` |
-| Probe latency of `docket --version` cold | `for i in 1 2 3; do /usr/bin/time -f %e docket --version; done` | whether the probe runs on every capability refresh or is cached per runner session (opencode's 0.39 s and codex's 0.02 s are already measured) |
-| What a running `docket` shows as in `ps` | `docket harness run … & ps -o pid,comm,args -p $!` | confirms ADR 0066 decision 10: `reconcile` matches the argv attempt id, not the program name |
+| `Wire::OpenAiChatCompletions`. Vercel answers `https://ai-gateway.vercel.sh/v1` with `AI_GATEWAY_API_KEY`; its loopback test override gains the `/v1` arm; Anthropic answers `None` until measured | the three provider files | the wire docket and opencode speak |
+| `HarnessDescriptor::credential_env: Option<&'static str>` — the variable this CLI reads its key from; `None` keeps the provider's own name. One line in `prepare` | `local_process.rs` | docket reads only `DOCKET_LLM_API_KEY` |
+| `HarnessDescriptor::observes_served_model: bool` — the model this CLI reports comes from the endpoint's response, not from its own configuration. When true, `outcome()` records `harness_reported` even behind a gateway | `local_process.rs` | docket's `model.served` is a real observation; the gateway downgrade exists for CLIs that echo their request |
+| `parse_version` accepts a later token that starts `X.Y` and continues with letters, digits, `.`, `-` or `+` | `local_process.rs` | `docket 0.2.0b1` |
 
-Each number goes into the handoff of the card that uses it, with its command beside it.
+**`harness/docket.rs`** — target 200 lines, in the range of `codex.rs`:
 
-## Phase 1 — the docket contract, in docket's repository
+- *Descriptor:* kind and program `docket`; `Wire::OpenAiChatCompletions`;
+  `ModelSelection::Explicit` (docket refuses to run without `--model`); `inherited_env:
+  &["PATH"]`; `min_capture_bytes: (0, 0)`; `credential_env: Some("DOCKET_LLM_API_KEY")`;
+  `observes_served_model: true`.
+- *`invocation()`:* rejects, typed, a request with no resolved endpoint and no
+  `DOCKET_LLM_BASE_URL` in its own `environment` — docket would refuse it anyway, after a
+  spawn. Args: `harness run --workspace <workspace root> --task-file /dev/stdin --model
+  <provider>/<model id> --agent-id <attempt id> --timeout <request timeout>`. Env:
+  `DOCKET_HOME=<workspace root>/.tack-runner/docket-home`, and `DOCKET_LLM_BASE_URL` from
+  the endpoint when there is one. Never `--task`: it would put the prompt on argv.
+- *`report()`:* the last non-empty stdout line, through one `serde` struct (`status`,
+  `stop_reason`, `error`, `blocked`, `model.served`, `usage.input_tokens`,
+  `usage.output_tokens`, `token`). `ok` succeeds; `failed`, `blocked`, `cancelled` and
+  `refused` fail. `terminal_reason` keeps `status` as the code, `error` as the message, and
+  `stop_reason`, `blocked` and `token` whole. An empty `served` is `None`. Tokens are
+  measured; `cost_usd` is always `None`. No parseable result line is a failed run with code
+  `malformed_output` and the exit status as evidence. The exit code never decides.
+- *`capabilities()`:* `cancel` advisory (docket stops cooperatively on `SIGTERM`, but does
+  not report the process groups its tools start); `resume` and `decisions` unsupported
+  (harness mode refuses approvals rather than pausing); `artifacts` advisory (the log
+  only); `usage` as claude-code words a partial measurement — tokens yes, cost never;
+  `permission_policy` unsupported (docket applies its own per-tool policy engine; the
+  request's tool list, network flag and budgets are not passed to it).
 
-Five cards in `../rack-cli`, specified by docket ADR 0001 (D-35). **Nothing from that repo
-is ever committed into this tree**; Tack cards read it as the contract and copy nothing.
-Every docket card sets `DOCKET_HOME` to a directory it owns and never touches `~/.docket`.
+**Fixtures.** First capture, with a throwaway script outside the tree: a loopback server
+that answers one `write` tool call and then a final message, and logs the `tools` array of
+the request so the tool's argument names are known rather than guessed. Keep `ok.ndjson`
+(captured) and `refused.ndjson` (captured, by leaving `DOCKET_HOME` unset); write
+`blocked.ndjson` and `cancelled.ndjson` by hand from `../rack-cli/docs/contracts/harness-v1/
+schema.json`, marked *constructed* in the README. Nothing is copied from `../rack-cli`, and
+nothing there is edited.
 
-- **H1 — `docket harness run` exists and blocks until done.** D-35 decisions 1, 2, 3, 7,
-  8, 11 and the stdin half of 4: one Typer subcommand, one `core/` function driving the
-  existing `agent_loop` with `DocketDriver` unchanged; prompt on stdin, `--workspace`,
-  `--attempt`; endpoint and key from `DOCKET_LLM_BASE_URL` / `DOCKET_LLM_API_KEY` only;
-  refuses the default `DOCKET_HOME`; no pod, worktree or clone; a gated tool call is a
-  terminal `blocked` result. *Must not build:* a server, a thread, driver selection, a
-  persisted format, an approval pause. *Acceptance:* against docket's own fake server one
-  prompt runs to `done` and edits a file in the supplied workspace; with `DOCKET_HOME`
-  unset it exits with the guard code and writes nothing.
-- **H2 — the result states which model served.** D-35 decision 6: `model` from the retained
-  `raw` body into `served_model`, `null` when absent. *Acceptance:* a fake that serves a
-  different model than requested is reported as the served one.
-- **H3 — `docket harness capabilities --json`.** Contract version, docket version, what this
-  build supports (`cancel: advisory` until H5's upgrade path is proven), no model list.
-  *Must not build:* a catalog fetch.
-- **H4 — the contract is published, versioned and pinned.** `docs/contracts/harness-v1/`:
-  one fixture per event type and per terminal result, a README stating the
-  stdin/argv/env/stdout/exit-code contract, a byte-pinning test; ROADMAP §6 gains D-35
-  **and corrects D-14**, which still names OpenClaw as the shipped driver. **This is the
-  gate for T3.**
-- **H5 — graceful stop, and the child group ids that make more than advisory possible.**
-  D-35 decision 9: on `SIGTERM` terminate every child group, emit a terminal `cancelled`
-  result, exit within a bounded grace; emit each child group id as an event when it
-  starts. *Must not build:* any claim that cancellation is guaranteed.
+**Tests — five functions, no more:**
 
-## Phase 2 — the core and its two seams, in Tack
+1. `a_request_becomes_a_harness_run_command` — a table: with an endpoint; with the base URL
+   in the request's own environment.
+2. `a_request_with_no_model_endpoint_is_refused`.
+3. `a_result_line_becomes_a_report` — a table over the four fixtures: verdict, served
+   model, tokens, cost unmeasured, `blocked` kept.
+4. `output_without_a_result_line_is_a_failed_run`.
+5. `the_real_docket_edits_a_file_against_a_fake_model_server` — `wiremock` on loopback, the
+   Vercel provider pointed at it through its existing loopback override, a stored gateway
+   key. Asserts the file the tool wrote, `harness_reported` with the served id the server
+   answered, measured tokens, the `Authorization` header the server received, and that the
+   key is absent from the staged log. Returns early when `docket` is not on `PATH`.
 
-- **IX-M5 — the harness core.** Owned by Part IX, Wave 30, unchanged: extract
-  `LocalProcessHarness` and `HarnessGrammar`, migrate `claude_code` and `codex` with no
-  behaviour change, captured transcripts become fixture files, the live tests move under
-  `tests/live/`, then prune to the audit's §5. This plan adds nothing to that card.
-- **T1 — `LocalRunHandle` names its own harness kind.** ADR 0066 decision 5. Add
-  `harness_kind`; fix the literal construction in `tests/crash_matrix.rs`; delete
-  `encode_handle`/`decode_handle` and their tests. *Must not build:* the second documented
-  debt (the duplicated kind types) — the ADR excludes it. If IX-M5's extraction has already
-  removed the encoding, this card is closed by its integrator with the measurement, not
-  re-done. *Acceptance:* `grep -rn encode_handle crates/` is empty; crash matrix green.
-- **T2 — a third `Wire`, for both new kinds at once.** ADR 0066 decision 3 and ADR 0067
-  decision 2. `Wire::OpenAiChatCompletions`; `vercel_ai_gateway.rs` answers
-  `https://ai-gateway.vercel.sh/v1`; `anthropic.rs` answers `None` with a comment saying
-  unmeasured, not absent; `wire_for_harness` and `CATALOG_ELIGIBLE_HARNESSES` gain
-  `docket` **and** `opencode`. *Must not build:* a live catalog call for the new wire.
-  *Acceptance:* `attach_catalog` records the Vercel catalog under both new kinds and
-  nothing under them for the Anthropic provider, in one table-driven test.
+The core's existing table tests gain rows, not functions: the version table
+(`docket 0.2.0b1`), the model-source table (`observes_served_model`), the provider table (the
+third wire), and one assertion for `credential_env` in the test that already checks what
+reaches the child.
 
-## Phase 3 — two grammars, one proof each, one docs card
+**Done when:** `tack runner doctor` lists `docket` with the gateway's catalog under it;
+`wc -l harness/docket.rs` is under 250; `.githooks/pre-push` passes.
 
-- **T3 — `harness/docket.rs`.** *Needs H4, T1, T2.* One `HarnessGrammar`: descriptor
-  (`locate("docket")` plus `~/.local/bin`; version and capabilities from H3's command; zero
-  `model_combinations`); `command` (own `DOCKET_HOME` inside the workspace; prompt on
-  stdin; `--workspace`, `--attempt`; only the provider injection's environment plus
-  `DOCKET_HOME`); `classify` over the contract's ndjson; `outcome` mapping
-  `done/failed/blocked/cancelled` to `Succeeded/Failed/Failed+rule/Cancelled`,
-  `served_model` into `actual_execution`, tokens measured, cost unmeasured;
-  `capabilities`: `cancel: Advisory`, the rest `Unsupported` with the reason that would
-  change each. `reconcile` is the core's, with the argv attempt id as the identity check.
-  *Must not build:* a remote mode, a pod, an approval round-trip, any import from
-  `tack_orch::adapters`. Budget: ≤ 400 production lines.
-- **T4 — docket proof.** Tack's own fixtures under `tests/fixtures/docket/` with provenance
-  (captured from H1's binary vs constructed); crash-matrix rows for the `docket` kind
-  including pid-reused-by-another-Python; and one end-to-end test in the ordinary test
-  binaries — **not** `tests/live/`, because it spends nothing — that runs the real binary in
-  a `tempfile` workspace against a `wiremock` `/v1/chat/completions` answering a tool call
-  and a final message, asserts the written file and the `served_model`, and is skipped
-  with a named reason when `docket` is absent.
-- **O1 — `harness/opencode.rs`.** *Needs T1, T2; ADR 0067 accepted.* One
-  `HarnessGrammar`: descriptor (`locate("opencode")` plus Homebrew and npm global paths;
-  `--version`; tested range `1.18.30`); `command` with ADR 0067 decision 4's full isolation
-  set, the `@ai-sdk/openai-compatible` provider block built from the provider injection,
-  `permission` built from `permission-policy` (decision 6), stdin closed, `--title` fixed;
-  `classify` over `step_start/tool_use/text/step_finish/error`; `outcome` from events never
-  exit code (decision 5), served model `requested_not_confirmed` always (decision 3),
-  `cost` unmeasured, tokens measured; `capabilities`: `cancel: Advisory` with exit-143
-  synthesis. *Must not build:* a second wire, `--attach`, vendor login. Budget: ≤ 400.
-- **O2 — opencode proof.** Fixtures captured at `1.18.30` into `fixtures/opencode/1.18.30/`
-  — the fourteen rows of ADR 0067's measured table become fixture files or table-driven
-  test rows, each with provenance; crash-matrix rows for the kind; the same end-to-end
-  fake-server test as T4, skipped by name when `opencode` is absent; and one test that
-  Phase 0's network answer is enforced (pre-population at probe time, or a typed
-  `validate` rejection under `network: false`).
-- **T5 — docs, once, for both.** `docs/CONFIG.md` (no new variables — say so);
-  `docs/book/src/user-guide/agent-runners.md` gains two rows in the harness table (wire
-  *OpenAI Chat Completions*; endpoints *Vercel `/v1` · any OpenAI-compatible server · a
-  local model*); the README's harness table; install guidance naming one blessed method
-  per harness (`pipx install docket`; opencode's official installer). Regenerate nothing —
-  no API type changed, and `openapi_contract` proves it. ADR 0063's decision-8 row gets a
-  one-line "superseded by ADR 0067" note, in place.
+### H3 — opencode
 
-## Phase 4 — upgrades, each its own card, none scheduled here
+**Files:** new `harness/opencode.rs`, `harness/opencode/tests.rs`,
+`harness/fixtures/opencode/1.18.30/`, `harness/fixtures/opencode/README.md`;
+`harness/mod.rs`. No core change is expected; one that turns out to be needed follows rule 7
+and is reported.
 
-| Upgrade | Gate | Where |
-|---|---|---|
-| docket `cancel: Supported` | crash matrix shows that after `SIGKILL` to the harness the adapter terminates every group id H5 emitted and nothing survives | Tack only |
-| docket `artifacts: Supported` | the result lists the paths its own tools wrote; the adapter reports exactly that list | one-field contract bump, then Tack |
-| docket `decisions: Supported` | **a new ADR** — turns a subprocess into a session | both repos |
-| opencode served model confirmed | an event or export field carries the served id | Tack, after re-measuring |
-| Local-model quick start in the book | the T4/O2 end-to-end test has run against a real local server once, command recorded | docs |
+**First, two measurements**, recorded in the fixture README with their commands:
 
-## What this plan refuses, by name
+1. Whether the first run on a fresh config directory reaches the network: `strace -f -e
+   trace=network` on a run with a fresh `HOME`, looking for a `connect` to anything but
+   loopback. If it does, `invocation()` rejects a `network: false` request, typed, and the
+   README says why. Pre-populating at probe time is refused until someone needs it.
+2. Whether `"apiKey": "{env:AI_GATEWAY_API_KEY}"` in the injected config is substituted: the
+   fake server's log shows the `Authorization` header. If it is not, the key goes into the
+   config value itself — it is registered for redaction by the core either way.
 
-- **No board Part before acceptance.** The integrator creates it from this plan when the
-  ADRs are accepted, after Part IX Wave 30, not speculatively.
-- **No tack-runner change before IX-M5.** Not even T1. The core is the seam every grammar
-  is written against; writing against the old adapters would be writing it twice.
-- **No copying docket source or fixtures into Tack.** Tack's fixtures are its own captures.
-- **No UI card.** The harness picker renders whatever kinds the runner reports.
-- **No new `TACK_*` variable.** Endpoint and key already flow through provider injection;
-  per-attempt homes are set by the grammar, never by an operator.
-- **No streaming beyond ndjson on stdout**, which `event_sink.rs` already parses.
-- **No third abstraction.** `LocalProcessHarness` and `HarnessGrammar` are the two Part IX
-  §IX.5 allows; a plugin seam, a registry of descriptors read from a file, or a DSL for
-  grammars is out.
-- **No second driver, plugin seam, async or server** on docket's side — D-35 decision 2.
+**`harness/opencode.rs`** — target 250 lines:
 
-## Definition of done for the whole plan
+- *Descriptor:* kind and program `opencode`; `Wire::OpenAiChatCompletions`;
+  `ModelSelection::Explicit`; `inherited_env: &["PATH"]`; `credential_env: None`;
+  `observes_served_model: false`; a probe note naming `1.18.30` as the tested version (ADR
+  0067 decision 9 — outside it the note says untested, never a refusal).
+- *`invocation()`:* rejects a request with no resolved endpoint. Args: `run --pure --format
+  json --title tack -m tack/<model id>`, no positional message — the prompt arrives on
+  stdin. Env: `HOME=<workspace root>/.tack-runner/opencode-home`, `OPENCODE_CONFIG_DIR`
+  under it, `OPENCODE_DISABLE_PROJECT_CONFIG`, `_AUTOUPDATE`, `_MODELS_FETCH` and `_SHARE`
+  set to `1`, and `OPENCODE_CONFIG_CONTENT` built with `serde_json::json!`: one provider
+  `tack` on `@ai-sdk/openai-compatible` with the endpoint's base URL, the key reference and
+  the one requested model, plus the `permission` block — `webfetch` and `task` denied unless
+  the policy grants network or sub-agents, `edit` and `bash` from the tool list (ADR 0067
+  decision 6).
+- *`report()`:* from the events, never the exit code (a denied tool exits 0). Success is a
+  final `step_finish` with `reason: "stop"` and no `error` event; tokens are summed from
+  `step_finish.tokens`; `cost` is always `None` (the stream says `0` for an unknown model);
+  `observed_model` is `None`, so every attempt is `requested_not_confirmed`. Exit 143 with
+  no terminal event is a failed run whose reason says `cancelled`.
+- *`capabilities()`:* as ADR 0067 decisions 3, 7 and 8; `permission_policy` advisory, with
+  the mapping above as its reason.
 
-1. `tack serve --with-runner` on a machine with `docket` and `opencode` installed and a
-   Vercel key reports four harnesses on the Agents page with the gateway's catalog under
-   the two open-wire ones, and reports only what is installed elsewhere.
-2. An item runs to completion with `--harness docket` and with `--harness opencode` against
-   any catalog model, producing a real diff, measured tokens, `Not measured` cost, and — for
-   docket — a `served_model`; for opencode, `requested_not_confirmed`, typed.
-3. Both end-to-end fake-server tests pass in CI with zero spend and no vendor account.
-4. Every harness is under the audit's §5 budgets and `scripts/maintainability.py check` is
-   green on the integrated tree; `grep -rn encode_handle crates/` is empty.
-5. ADRs 0066 and 0067 carry acceptance dates; docket's ROADMAP §6 carries D-35 and a
-   corrected D-14; ADR 0063's decision-8 row points at 0067.
+**Tests — five functions:** the command line and environment for a request; the
+`permission` block as a table over policies; the refusals as a table; events to a report as
+a table over captured fixtures (completed, tool denied with exit 0, cut short); and the real
+binary against `wiremock` answering a streamed (`text/event-stream`) tool call and a final
+message, asserting the written file, measured tokens, `requested_not_confirmed`, and that
+the real `HOME` was not touched.
+
+**Done when:** as H2, for `opencode`.
+
+### H4 — what a user reads
+
+**Files:** `README.md` (shared — touch only the harness table), `docs/book/src/user-guide/
+agent-runners.md`, the two fixture READMEs' cross-references. One table of four harnesses:
+what each needs installed, which provider wires reach it, what it measures and what it
+cannot. One install method per harness. `docs/CONFIG.md` gains nothing — no new variable.
+
+## Asked of docket, none of it blocking
+
+A `harness-v1.1` that would let Tack claim more: an event per child process group it starts,
+which is what `cancel: Supported` needs; the token on stderr's first line or a
+`--token-file`, which is what would make `harness status` usable for recovery; a README
+beside `schema.json` stating the argv/env/stdout/exit-code contract in prose. Nothing in
+`../rack-cli` is edited or committed from this repository.
+
+## Upgrades, each its own change with its own proof
+
+| Upgrade | Proof required |
+|---|---|
+| codex reads `exec --json` (usage, served model) | a captured transcript under `fixtures/codex/<version>/` |
+| codex applies the permission policy | its sandbox and approval flags measured against a live run |
+| `min_capture_bytes` removed from the descriptor | a captured transcript over the cap, read correctly from head and tail |
+| docket `cancel: Supported` | docket emits child group ids; the crash matrix shows nothing survives a `SIGKILL` of the harness |
+| docket `artifacts: Supported` | the result lists the paths its own tools wrote |
+| docket `decisions: Supported` | **its own ADR** — it turns a subprocess into a session that survives a pause. It is also the only caller the runner-v1 `decisions` path would ever have; see ADR 0068's 2026-09-18 amendment |
+| opencode served model confirmed | an event or export field carrying the served id |
+
+## Refused, by name
+
+- A plugin seam, descriptors read from a file, or a DSL for grammars.
+- A grammar hook for recovery, a prompt-file delivery mode, or a core step that creates a
+  harness's home directory: today's measurements show none has a caller.
+- A remote docket, docket's multi-agent pods, or any import from `tack_orch::adapters`.
+- Copying docket source or fixtures into this tree; Tack's fixtures are its own captures.
+- A new `TACK_*` variable: endpoint and key already flow through provider injection.
+- A UI card: the harness picker renders whatever kinds the runner reports.
+
+## Done when
+
+1. On a machine with all four CLIs and a Vercel key, `tack runner doctor` lists four
+   harnesses, with the gateway's catalog under the two open-wire ones.
+2. An item runs to completion with `--harness docket` and `--harness opencode`, producing a
+   real diff, measured tokens, `Not measured` cost, a served model for docket and
+   `requested_not_confirmed` for opencode.
+3. Both real-binary tests pass in CI with zero spend, or return early where the binary is
+   not installed.
+4. `wc -l` of each new harness module is in the range of the two existing ones.

@@ -1,15 +1,15 @@
-//! Harness process/event infrastructure and the shared adapter-registration
-//! seam.
+//! Harnesses: the CLIs a runner can execute an attempt with.
 //!
-//! [`crate::client::engine::HarnessAdapter`] (re-exported as
-//! [`HarnessAdapter`]) is the frozen per-attempt lifecycle interface each
-//! concrete adapter (`codex.rs`, `claude_code.rs`) implements.
-//! [`HarnessProbe`] handles discovery/capability reporting, which has no
-//! home on that trait; [`AdapterRegistry`] dispatches to whichever adapter
-//! matches a claimed attempt's harness kind. [`process`] and
-//! [`event_sink`] are the primitives the adapters compose.
+//! [`HarnessAdapter`] is the per-attempt lifecycle the engine drives and
+//! [`HarnessProbe`] reports what is installed. [`local_process`] implements
+//! both for any CLI that runs as a child process; `codex.rs` and
+//! `claude_code.rs` each add a descriptor and a grammar. [`AdapterRegistry`]
+//! dispatches on a claimed attempt's harness kind, and [`discover`] builds
+//! one from whatever this machine has installed.
 //!
-//! ADR 0066 has the design rationale, including the closed `LocalRunHandle` gap.
+//! Adding a harness: write its module, then add one line to [`DESCRIPTORS`]
+//! and one to [`discover`]. Provider wiring and `tack runner doctor` read
+//! the descriptor.
 
 pub mod artifact;
 pub mod claude_code;
@@ -21,8 +21,10 @@ pub mod locate;
 pub mod process;
 pub mod redact;
 pub mod sha256;
+#[cfg(test)]
+pub(crate) mod test_support;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use async_trait::async_trait;
 use tack_orch::execution::{
@@ -169,18 +171,81 @@ pub enum HarnessRegistrationError {
     },
 }
 
+/// Every harness this build knows, in the order `tack runner doctor` lists
+/// them. Which model wire reaches which harness is read from here.
+pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 2] =
+    [&codex::DESCRIPTOR, &claude_code::DESCRIPTOR];
+
+pub fn descriptor(kind: &str) -> Option<&'static local_process::HarnessDescriptor> {
+    DESCRIPTORS
+        .into_iter()
+        .find(|descriptor| descriptor.kind == kind)
+}
+
+/// A registry of the harnesses installed on this machine, and why each
+/// missing one is missing. A harness that cannot be located is not
+/// registered, so a request for it is a typed "no adapter is registered"
+/// rather than an attempt that could never run.
+pub fn discover(
+    limits: &process::ProcessLimits,
+    staging_root: &Path,
+    secrets: &SecretStore,
+    providers: &BTreeMap<String, crate::config::ProviderConfig>,
+) -> (AdapterRegistry, BTreeMap<String, String>) {
+    let mut found = (AdapterRegistry::new(), BTreeMap::new());
+    let machine = (limits, staging_root, secrets, providers);
+    install(&mut found, machine, codex::CodexGrammar);
+    install(&mut found, machine, claude_code::ClaudeCodeGrammar);
+    found
+}
+
+type Machine<'a> = (
+    &'a process::ProcessLimits,
+    &'a Path,
+    &'a SecretStore,
+    &'a BTreeMap<String, crate::config::ProviderConfig>,
+);
+
+fn install<G: local_process::HarnessGrammar>(
+    (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
+    (limits, staging_root, secrets, providers): Machine<'_>,
+    grammar: G,
+) {
+    let kind = grammar.descriptor().kind;
+    let harness = local_process::LocalProcessHarness::discover(
+        grammar,
+        limits.clone(),
+        staging_root.to_path_buf(),
+        secrets.clone(),
+    );
+    match harness {
+        Ok(harness) => {
+            if registry
+                .register(harness.with_providers(providers.clone()))
+                .is_err()
+            {
+                tracing::warn!(harness = kind, "rejected at registration");
+            }
+        }
+        // The reason can name a filesystem path; the log says only that.
+        Err(reason) => {
+            tracing::info!(harness = kind, "binary not found; not registered");
+            missing.insert(kind.to_owned(), reason);
+        }
+    }
+}
+
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. Keys
-/// on `tack_orch::execution::HarnessKind`; `registry.rs`'s own
-/// `HarnessKind` enum is not yet unified with this one.
+/// on `tack_orch::execution::HarnessKind`.
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(...)` is a
 /// complete, multi-harness runner with no `engine.rs` changes: adding a
 /// harness means registering it here, never a new engine type parameter.
 #[derive(Default)]
 pub struct AdapterRegistry {
-    adapters: BTreeMap<String, Box<dyn HarnessAdapter>>,
-    probes: BTreeMap<String, Box<dyn HarnessProbe>>,
+    adapters: BTreeMap<String, Arc<dyn HarnessAdapter>>,
+    probes: BTreeMap<String, Arc<dyn HarnessProbe>>,
 }
 
 impl AdapterRegistry {
@@ -196,18 +261,29 @@ impl AdapterRegistry {
         kind: DomainHarnessKind,
         adapter: Box<dyn HarnessAdapter>,
     ) -> &mut Self {
-        self.adapters.insert(kind.as_str().to_owned(), adapter);
+        self.adapters
+            .insert(kind.as_str().to_owned(), Arc::from(adapter));
         self
     }
 
-    /// Registers a probe, first checking its declared capabilities against
-    /// [`PROCESS_GROUP_CANCEL_CEILING`]. An overclaiming probe is rejected
-    /// here and never inserted, rather than discovered wrong only once a
-    /// real cancellation fails to reach a detached descendant.
-    pub fn register_probe(
-        &mut self,
-        probe: Box<dyn HarnessProbe>,
-    ) -> Result<&mut Self, HarnessRegistrationError> {
+    /// Registers one harness as both adapter and probe, so the version a
+    /// probe finds is the version its runs are stamped with.
+    pub fn register<H>(&mut self, harness: H) -> Result<&mut Self, HarnessRegistrationError>
+    where
+        H: HarnessAdapter + HarnessProbe + 'static,
+    {
+        let harness = Arc::new(harness);
+        self.check_declared_cancel(harness.as_ref())?;
+        let kind = harness.harness_kind().as_str().to_owned();
+        self.adapters.insert(kind.clone(), harness.clone());
+        self.probes.insert(kind, harness);
+        Ok(self)
+    }
+
+    fn check_declared_cancel(
+        &self,
+        probe: &dyn HarnessProbe,
+    ) -> Result<(), HarnessRegistrationError> {
         let declared = probe.declared_capabilities();
         if declared.cancel.support == CapabilitySupport::Supported
             && PROCESS_GROUP_CANCEL_CEILING != CapabilitySupport::Supported
@@ -218,8 +294,20 @@ impl AdapterRegistry {
                 ceiling: PROCESS_GROUP_CANCEL_CEILING,
             });
         }
+        Ok(())
+    }
+
+    /// Registers a probe, first checking its declared capabilities against
+    /// [`PROCESS_GROUP_CANCEL_CEILING`]. An overclaiming probe is rejected
+    /// here and never inserted, rather than discovered wrong only once a
+    /// real cancellation fails to reach a detached descendant.
+    pub fn register_probe(
+        &mut self,
+        probe: Box<dyn HarnessProbe>,
+    ) -> Result<&mut Self, HarnessRegistrationError> {
+        self.check_declared_cancel(probe.as_ref())?;
         self.probes
-            .insert(probe.harness_kind().as_str().to_owned(), probe);
+            .insert(probe.harness_kind().as_str().to_owned(), Arc::from(probe));
         Ok(self)
     }
 
