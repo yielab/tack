@@ -303,8 +303,11 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 |---|---|
 | Harness core redesign | done |
 | M0 | done |
-| C1 · H1 | done on their branches, reviewed, not merged |
-| H2 · S2 · P1 | not started |
+| H1 | done |
+| C1 | done, pull request #57 green in 3 min 42 s; merging it waits on the ruleset, which also covers `develop` and still names the ten old checks |
+| P1 | done on its branch, reviewed, not merged — the surface was 37 files, not 23: the grep above misses `model-profiles` and `ModelProfile` |
+| H2 | done on its branch, reviewed, not merged — all four fixtures were captured from the real binary; none had to be constructed |
+| S2 | waits for C1 in `develop` |
 | H3 · R1a · R1b | not started |
 | D1 · R2 | not started |
 | R3 · R4 · H4 | not started |
