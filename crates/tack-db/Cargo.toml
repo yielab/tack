@@ -21,3 +21,6 @@ assert_matches = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
+
+[lints]
+workspace = true

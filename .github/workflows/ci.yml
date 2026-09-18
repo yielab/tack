@@ -55,21 +55,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-      # The two cheapest gates in the file (~0.2s and ~0.7s), and the only
-      # ones that catch a comment written for a teammate instead of a reader,
-      # or a test that leaves its scratch files in the runner's temp
-      # directory. Both run before the compiler so a failure costs nothing.
-      - name: Comments carry no board archaeology
+      # The cheapest gate in the file (~0.2s), and the only one clippy cannot
+      # express: a comment that cites a file which no longer exists. Runs
+      # before the compiler so a failure costs nothing.
+      - name: Comments point at files that exist
         run: ./scripts/check-comments.sh
-      - name: Tests take their temporary paths from a guard
-        run: ./scripts/check-test-hygiene.sh
-      # Hard caps on test and comment size; a file listed in EXCLUSIONS
-      # (scripts/maintainability.py) instead ratchets against
-      # scripts/maintainability-baseline.json — it may exceed its budget only if it
-      # already did and is not worse. A new file must meet every budget.
-      # See docs/plans/human-maintainability.md.
-      - name: Tests and comments stay inside their size budgets
-        run: python3 scripts/maintainability.py check
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy
