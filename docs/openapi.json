@@ -2773,64 +2773,6 @@
         }
       }
     },
-    "/api/model-profiles": {
-      "get": {
-        "tags": [
-          "execution-operator"
-        ],
-        "operationId": "list_model_profiles",
-        "responses": {
-          "200": {
-            "description": "Every model profile, by name",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelProfileListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "execution-operator"
-        ],
-        "operationId": "create_model_profile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateModelProfile"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Model profile created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateModelProfileResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict (name already exists)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/orch-runs/{run_id}": {
       "get": {
         "tags": [
@@ -7905,60 +7847,6 @@
           }
         }
       },
-      "CreateModelProfile": {
-        "type": "object",
-        "required": [
-          "name",
-          "model_provider",
-          "model_id"
-        ],
-        "properties": {
-          "config_reference": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "model_id": {
-            "type": "string"
-          },
-          "model_provider": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "CreateModelProfileResponse": {
-        "type": "object",
-        "required": [
-          "protocol_version",
-          "model_profile_id",
-          "name",
-          "model_provider",
-          "model_id"
-        ],
-        "properties": {
-          "model_id": {
-            "type": "string"
-          },
-          "model_profile_id": {
-            "type": "string"
-          },
-          "model_provider": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "protocol_version": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "CreatePendingRunner": {
         "type": "object",
         "required": [
@@ -10041,59 +9929,6 @@
           "estimated",
           "not_measured"
         ]
-      },
-      "ModelProfileListResponse": {
-        "type": "object",
-        "required": [
-          "protocol_version",
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ModelProfileSummary"
-            }
-          },
-          "protocol_version": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "ModelProfileSummary": {
-        "type": "object",
-        "required": [
-          "model_profile_id",
-          "name",
-          "model_provider",
-          "model_id",
-          "enabled"
-        ],
-        "properties": {
-          "config_reference": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "model_id": {
-            "type": "string"
-          },
-          "model_profile_id": {
-            "type": "string"
-          },
-          "model_provider": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
       },
       "ModelProvenanceSchema": {
         "oneOf": [
@@ -12614,7 +12449,7 @@
     },
     {
       "name": "execution-operator",
-      "description": "Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner-enrollment/agent-profile/model-profile management. Authenticated the same way as the rest of this API (operator session or API token); scopes idempotency and audit actor to the server-derived `x-tack-principal`, which a client cannot set (see `crate::middleware::inject_operator_principal`)."
+      "description": "Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner-enrollment/agent-profile management. Authenticated the same way as the rest of this API (operator session or API token); scopes idempotency and audit actor to the server-derived `x-tack-principal`, which a client cannot set (see `crate::middleware::inject_operator_principal`)."
     },
     {
       "name": "runner-protocol-v1",

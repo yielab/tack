@@ -308,7 +308,6 @@ mod tests {
             "/api/runners/enrollment",
             "/api/runners/runr_1/revoke",
             "/api/agent-profiles",
-            "/api/model-profiles",
             "/executions",
             "/runner-fleets",
         ] {

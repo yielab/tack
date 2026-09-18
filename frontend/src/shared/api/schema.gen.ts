@@ -1000,22 +1000,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/model-profiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_model_profiles"];
-        put?: never;
-        post: operations["create_model_profile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/orch-runs/{run_id}": {
         parameters: {
             query?: never;
@@ -3499,20 +3483,6 @@ export interface components {
             tags?: string[] | null;
             title: string;
         };
-        CreateModelProfile: {
-            config_reference?: string | null;
-            model_id: string;
-            model_provider: string;
-            name: string;
-        };
-        CreateModelProfileResponse: {
-            model_id: string;
-            model_profile_id: string;
-            model_provider: string;
-            name: string;
-            /** Format: int32 */
-            protocol_version: number;
-        };
         CreatePendingRunner: {
             /** Format: int64 */
             available_capacity: number;
@@ -4402,19 +4372,6 @@ export interface components {
          * @enum {string}
          */
         MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
-        ModelProfileListResponse: {
-            data: components["schemas"]["ModelProfileSummary"][];
-            /** Format: int32 */
-            protocol_version: number;
-        };
-        ModelProfileSummary: {
-            config_reference?: string | null;
-            enabled: boolean;
-            model_id: string;
-            model_profile_id: string;
-            model_provider: string;
-            name: string;
-        };
         /**
          * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
          *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
@@ -7439,59 +7396,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    list_model_profiles: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Every model profile, by name */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelProfileListResponse"];
-                };
-            };
-        };
-    };
-    create_model_profile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateModelProfile"];
-            };
-        };
-        responses: {
-            /** @description Model profile created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateModelProfileResponse"];
-                };
-            };
-            /** @description conflict (name already exists) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
-                };
             };
         };
     };

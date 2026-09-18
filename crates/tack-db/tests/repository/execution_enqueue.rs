@@ -268,7 +268,7 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
 }
 
 #[tokio::test]
-async fn old_schema_upgrades_to_all_ten_execution_tables() {
+async fn old_schema_upgrades_to_all_nine_execution_tables() {
     let pool = init_pool("sqlite::memory:").await.unwrap();
     migrations::run_up_to(&pool, "038_orch_approvals_rebuild")
         .await
@@ -279,7 +279,6 @@ async fn old_schema_upgrades_to_all_ten_execution_tables() {
         "agent_runners",
         "agent_fleet_members",
         "agent_profiles",
-        "model_profiles",
         "execution_requests",
         "execution_attempts",
         "execution_events",

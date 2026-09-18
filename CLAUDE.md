@@ -34,7 +34,7 @@ boards only — Parts IX down to IV; Parts I–III are under `docs/closed-cycles
 Phase 64's Stage 2 archives the rest. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
-with no caller (`model_profiles`, the superseded docket control plane; the `decisions` path
+with no caller (the superseded docket control plane; the `decisions` path
 had none either, and is kept: task D1 gives it one).
 
 **Skills:** `/feature` (feature work), `/gate` (scoped verification), `/status` (where am I /
@@ -105,7 +105,7 @@ rules that bite:
 ```
 crates/
 ├── tack-core/     Pure business logic, zero I/O (models, workflow, vocabulary, DAG)
-├── tack-db/       SQLite via sqlx; 62 migrations; FTS5; repository pattern in repo/
+├── tack-db/       SQLite via sqlx; 63 migrations; FTS5; repository pattern in repo/
 ├── tack-orch/     ControlPlane trait + reconciler + neutral runner-v1 execution domain.
 │                  Depends on core+db only — must NEVER depend on tack-api
 ├── tack-api/      Axum server (library; tack_api::serve). 97 documented paths + WebSocket

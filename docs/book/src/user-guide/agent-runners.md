@@ -80,7 +80,6 @@ run against.
 | **Runner fleet** | A named group of runners sharing an optional concurrency limit and default policy. An execution request targets either one exact runner or a fleet. |
 | **Agent profile** | Reusable instructions + tool policy + limits, snapshotted into the request at creation time so later edits to the profile never change history. |
 | **Harness** | The coding-agent CLI a runner can launch: `codex` or `claude-code`. The wire value is an opaque string, so a runner may report a kind this build has no bundled adapter for. |
-| **Model profile** | A named `(model_provider, model_id)` pair, stored for operator convenience. Not yet consulted by scheduling or model resolution — see [Known gaps](#known-gaps). |
 
 `Harness` ≠ `ModelProvider` ≠ `ModelId`, and `Item` ≠ `ExecutionRequest` ≠
 `ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
@@ -692,16 +691,6 @@ Token usage, when the harness reports it, is `measured`. When it doesn't, it is
 These are documented rather than papered over, per this project's
 "unsupported is typed, unknown is explicit" rule:
 
-- **`model_profiles` (migration 043) is a saved label, consulted by nothing.**
-  `POST`/`GET /api/model-profiles` store and list named `(provider, model_id)` pairs
-  for operator convenience; `resolve_request_model_policy` never reads that table —
-  it is not one of the four tiers in [Choosing a model and a
-  provider](#choosing-a-model-and-a-provider) (`crates/tack-orch/src/model_policy/wiring.rs`).
-  The "Run with agent" modal's own model picker does not read it either — its options
-  are the *target's own* declared `model_combinations` plus "Project default", keyed
-  by array index (`frontend/src/shared/runWithAgent/RunWithAgentModal.tsx`). Nothing
-  in this tree calls `POST /api/model-profiles` from the UI today; the table exists
-  and answers, with no caller.
 - **`execution_requests` has no real `priority` column.** A `metadata`-convention
   stopgap exists, documented as non-binding.
 

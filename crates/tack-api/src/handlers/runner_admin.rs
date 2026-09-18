@@ -70,10 +70,6 @@ pub fn routes(state: OperatorExecutionState) -> Router {
         )
         .route("/runners/{runner_id}/revoke", post(revoke_runner))
         .route("/agent-profiles", post(create_profile).get(list_profiles))
-        .route(
-            "/model-profiles",
-            post(create_model_profile).get(list_model_profiles),
-        )
         .with_state(state)
 }
 
@@ -93,14 +89,6 @@ pub struct CreateProfile {
     pub tool_policy: Value,
     #[serde(default = "empty")]
     pub limits: Value,
-}
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateModelProfile {
-    pub name: String,
-    pub model_provider: String,
-    pub model_id: String,
-    #[serde(default)]
-    pub config_reference: Option<String>,
 }
 fn empty() -> Value {
     json!({})
@@ -238,31 +226,6 @@ pub struct AgentProfileSummary {
 pub struct AgentProfileListResponse {
     pub protocol_version: u32,
     pub data: Vec<AgentProfileSummary>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct CreateModelProfileResponse {
-    pub protocol_version: u32,
-    pub model_profile_id: String,
-    pub name: String,
-    pub model_provider: String,
-    pub model_id: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ModelProfileSummary {
-    pub model_profile_id: String,
-    pub name: String,
-    pub model_provider: String,
-    pub model_id: String,
-    pub config_reference: Option<String>,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ModelProfileListResponse {
-    pub protocol_version: u32,
-    pub data: Vec<ModelProfileSummary>,
 }
 
 #[utoipa::path(
@@ -1003,82 +966,6 @@ pub async fn list_profiles(
         )
         .collect::<Result<_, _>>()?;
     Ok(Json(AgentProfileListResponse {
-        protocol_version: 1,
-        data,
-    }))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/model-profiles",
-    tag = "execution-operator",
-    request_body = CreateModelProfile,
-    responses(
-        (status = 200, description = "Model profile created", body = CreateModelProfileResponse),
-        (status = 409, description = "conflict (name already exists)", body = RunnerV1ErrorEnvelope),
-    ),
-)]
-pub async fn create_model_profile(
-    State(state): State<OperatorExecutionState>,
-    Json(input): Json<CreateModelProfile>,
-) -> Result<Json<CreateModelProfileResponse>, (StatusCode, Json<Value>)> {
-    let id = format!("mp_{}", Uuid::new_v4());
-    let now = state.clock.now().to_rfc3339();
-    let result=sqlx::query("INSERT INTO model_profiles (id,name,model_provider,model_id,config_reference,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").bind(&id).bind(&input.name).bind(&input.model_provider).bind(&input.model_id).bind(&input.config_reference).bind(&now).bind(&now).execute(state.repo.pool()).await;
-    match result {
-        Ok(_) => Ok(Json(CreateModelProfileResponse {
-            protocol_version: 1,
-            model_profile_id: id,
-            name: input.name,
-            model_provider: input.model_provider,
-            model_id: input.model_id,
-        })),
-        Err(err) if is_unique_violation(&err) => Err(error(
-            StatusCode::CONFLICT,
-            StableErrorCode::Conflict,
-            "Model profile name already exists",
-            json!({}),
-        )),
-        Err(_) => Err(error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not create model profile",
-            json!({}),
-        )),
-    }
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/model-profiles",
-    tag = "execution-operator",
-    responses(
-        (status = 200, description = "Every model profile, by name", body = ModelProfileListResponse),
-    ),
-)]
-pub async fn list_model_profiles(
-    State(state): State<OperatorExecutionState>,
-) -> Result<Json<ModelProfileListResponse>, (StatusCode, Json<Value>)> {
-    let rows=sqlx::query("SELECT id,name,model_provider,model_id,config_reference,enabled FROM model_profiles ORDER BY name").fetch_all(state.repo.pool()).await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not list model profiles",
-            json!({}),
-        )
-    })?;
-    let data: Vec<ModelProfileSummary> = rows
-        .into_iter()
-        .map(|r| ModelProfileSummary {
-            model_profile_id: r.get("id"),
-            name: r.get("name"),
-            model_provider: r.get("model_provider"),
-            model_id: r.get("model_id"),
-            config_reference: r.get("config_reference"),
-            enabled: r.get::<i64, _>("enabled") != 0,
-        })
-        .collect();
-    Ok(Json(ModelProfileListResponse {
         protocol_version: 1,
         data,
     }))
