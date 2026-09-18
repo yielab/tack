@@ -219,7 +219,7 @@ layers, from ADR 0068:
 | **R1b** frontend: what the board views share with the bridge | `shared/dispatch/`, `shared/orch/`, `shared/agentActivity/`, `features/sprints/DispatchSprintModal.tsx` and its test, and every use of them in the files measured below | `shared/runWithAgent/` and `shared/execution/` are runner-v1 and stay; where they import a type from a removed module, the type moves into `shared/execution/types.ts` |
 | **R2** API and CLI | `handlers/{orch, provisioning, economics}.rs`, `dispatcher.rs`, `orch_store.rs`, `orch_runtime.rs`, `sprint_dispatch.rs`, `tack orch`, `TACK_ORCH_*` from `docs/CONFIG.md`, `tests/orchestration/**` except the files M0 marked runner-v1 | regenerate the OpenAPI spec and `schema.gen.ts` once, at the end |
 | **R3** `tack-orch` | the `ControlPlane` trait, `reconciler`, `adapters/`, the `docket_*` tests, their fixtures and goldens | the execution domain, scheduler, model policy, retention and `runner_contract` stay |
-| **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents; before the first, the rows are exported as JSON into the pre-upgrade snapshot the migration runner already writes | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
+| **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents. No export step: the migration runner already writes a whole-database `VACUUM INTO` snapshot before any upgrade (`create_pre_upgrade_backup_if_needed`), so the rows survive there; `tack-db`'s `repo/orch.rs`, `repo/economics.rs` and their tests go with the tables | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
 
 **Measured 2026-09-18 on `develop` at `707f71a`** (`cat <files> | wc -l`; importers with
 `git grep -l`):
@@ -276,8 +276,8 @@ Found while R2 was reviewed, and added to the tasks that follow:
   `tests/repository/status_update_checked.rs`: the dispatcher was its only caller.
 
 **Tests:** R1–R3b add none. R4 adds exactly one: a file-backed database populated at the
-last pre-removal migration upgrades, the export file holds the rows, and no `orch_*` table
-remains. **Done when:** a fresh install has no `orch_*` table; `git grep -n TACK_ORCH`
+last pre-removal migration upgrades, the pre-upgrade snapshot still holds the rows, and no
+`orch_*` table remains. **Done when:** a fresh install has no `orch_*` table; `git grep -n TACK_ORCH`
 finds nothing outside ADRs and history; release notes name what a bridge user loses — the
 approvals inbox, one-click pod provisioning, per-product cost from docket's events, and
 DAG-ordered sprint dispatch.
@@ -316,6 +316,7 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | H1 · C1 · P1 · H2 · S2 · R1a | done, in `develop` |
 | H3 · H3b · R1b | done, in `develop` — opencode installs its plugin package from the npm registry on every attempt, so it refuses a request that denies network |
 | R2 | done, in `develop` — 24 518 lines out, 97 documented paths become 78 |
-| D1 · R3 | running |
-| R3b · R4 · H4 | not started |
+| R3 | done, in `develop` — `tack-orch` goes from 19 056 lines to 7 854 |
+| D1 · R4 | running |
+| R3b · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
