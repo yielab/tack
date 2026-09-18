@@ -57,13 +57,19 @@ happens when one gets killed halfway through.
 This is the part most agent tooling blurs together, so Tack keeps it as **three**
 separate choices. They compose freely — picking one never silently picks another.
 
-**1. The harness** — the coding agent CLI that actually runs. Today there are two,
+**1. The harness** — the coding agent CLI that actually runs. Today there are four,
 each driven through a real adapter — not a hand-rolled prompt loop bolted onto an
 API — behind one `HarnessAdapter` trait, so the next one is a new module, not a
 rewrite:
 
 - **Claude Code** (`claude-code`)
 - **Codex** (`codex`)
+- **docket** (`docket`)
+- **opencode** (`opencode`)
+
+Full comparison — what each needs installed, which provider wires reach it, what it
+measures, and what it can't do — is in the user guide's
+[Choosing a harness](docs/book/src/user-guide/agent-runners.md#choosing-a-harness).
 
 A harness constrains exactly one thing about the model: **the wire protocol** it
 speaks. Claude Code is pointed at an Anthropic-Messages endpoint through environment
@@ -97,10 +103,14 @@ models.
 | --- | --- | --- | --- |
 | **Claude Code** | Anthropic Messages | Vercel AI Gateway · Anthropic's own API | the gateway's full catalog · Anthropic's own model list |
 | **Codex** | OpenAI Responses | Vercel AI Gateway | the gateway's full catalog |
+| **docket** | OpenAI Chat Completions | Vercel AI Gateway | the gateway's full catalog |
+| **opencode** | OpenAI Chat Completions | Vercel AI Gateway | the gateway's full catalog |
 
-Anthropic's own API is missing from the Codex row for a structural reason rather than
-an unbuilt feature: it does not serve the OpenAI-Responses wire at all, so there is no
-endpoint there to point Codex at.
+Anthropic's own API is missing from the Codex, docket and opencode rows for a
+structural reason rather than an unbuilt feature: it doesn't serve either of the wires
+those three speak, so there's no endpoint there to point them at. docket and opencode
+also have no "own subscription" row: neither has a login this adapter uses, so both
+always need a runner-held key against one of the endpoints above.
 
 Either way, the catalog is real, not hand-maintained — fetched live from that
 provider's own endpoint, with price and context window shown only where the provider
