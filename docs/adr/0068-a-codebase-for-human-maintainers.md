@@ -239,4 +239,11 @@ artifact. No external coverage service is required.
 5. **A policy one harness ignores is declared, not silent.** `codex.rs` never read a request's `permission_policy` or `budgets`; `claude_code.rs` did. Every grammar's capability table now carries a `permission_policy` entry (claude-code `advisory`, codex `unsupported`), and a request a harness cannot honour at all is rejected before spawn. This is decision 5's "verified behaviour" applied to the request policy.
 6. **VIII-C3 is closed as obsolete.** It corrects one unit test of `DocketAdapter::dispatch`, which the bridge retirement deletes.
 
+**2026-09-18, later the same day — two questions this ADR left open are answered by the user.**
+
+1. **`decisions` stays, and is finished rather than removed.** This replaces decision 3's second half and point 4 above. The premise that only docket could ever ask was wrong: these CLIs are built to stop and ask before they act, and Tack runs them with asking switched off. That is checked for claude-code (Tack passes `--permission-mode bypassPermissions`; `claude --help` lists `manual` and `--permission-prompts host`) and is to be measured for each of the other three in its own change. The board half is already built. The runner half is built once, in the harness core, so that a harness uses it when its CLI offers a way and declares `decisions: unsupported` until then; whoever dispatches a run chooses `auto` or `ask`. Tasks D1 and D2 in `docs/plans/harnesses.md` and `docs/plans/phase-64.md`.
+2. **DAG-ordered sprint dispatch goes with the bridge** and is named in the release notes. It comes back on runner-v1 scheduling only if use of the released product asks for it.
+
+Work targets `develop`; the ruleset on `main` is left as it is until `develop` is next released.
+
 Rules in force from this date, replacing Part IX's process: decisions are recorded in ADRs and intent in the roadmap; no new card boards, dispatch plans or per-card handoffs are written; `CLAUDE.md` says the same. `scripts/maintainability.py`, `check-comments.sh` and `check-test-hygiene.sh` keep running in `pre-push` until Stage 2 replaces them, because a gate that exists and is ignored is worse than either.
