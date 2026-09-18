@@ -43,10 +43,10 @@ fn assert_catalog_and_claude_base(label: &str, expected_catalog: &str, expected_
     );
 }
 
-/// Checks the full wiring picture when the override is honored: both
-/// endpoints and both credential variables, not just the catalog+claude
-/// pair the other phases share.
-fn assert_full_override_wiring(claude_base: &str, codex_base: &str) {
+/// Checks the full wiring picture when the override is honored: every
+/// endpoint and credential variable, not just the catalog+claude pair the
+/// other phases share.
+fn assert_full_override_wiring(claude_base: &str, codex_base: &str, chat_base: &str) {
     let claude = VercelAiGateway
         .endpoint(Wire::AnthropicMessages)
         .expect("endpoint present");
@@ -57,6 +57,11 @@ fn assert_full_override_wiring(claude_base: &str, codex_base: &str) {
         .expect("endpoint present");
     assert_eq!(codex.base_url, codex_base);
     assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
+    let chat = VercelAiGateway
+        .endpoint(Wire::OpenAiChatCompletions)
+        .expect("endpoint present");
+    assert_eq!(chat.base_url, chat_base);
+    assert_eq!(chat.credential_env_var, "AI_GATEWAY_API_KEY");
 }
 
 /// Proves the smoke-only override actually rebases every URL this
@@ -81,6 +86,7 @@ fn the_test_only_base_url_override_rebases_catalog_and_wires() {
     assert_full_override_wiring(
         "http://127.0.0.1:9/smoke-gw/claude-code",
         "http://127.0.0.1:9/smoke-gw/codex/v1",
+        "http://127.0.0.1:9/smoke-gw/v1",
     );
     unsafe {
         std::env::remove_var(TEST_BASE_URL_OVERRIDE_VAR);

@@ -45,6 +45,8 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                       environment. Tack never reads, stores or forwards it. Only HOME and PATH \
                       are forwarded from the runner's environment; anything else must come \
                       through the execution request's own `environment`.",
+    credential_env: None,
+    observes_served_model: false,
 };
 
 /// Provider families the `claude` binary knows on its own, confirmed by

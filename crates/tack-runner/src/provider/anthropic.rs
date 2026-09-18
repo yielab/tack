@@ -55,6 +55,8 @@ impl Provider for Anthropic {
             // Anthropic's own API does not speak the OpenAI-Responses wire
             // at all — there is no endpoint to point codex at here.
             Wire::OpenAiResponses => None,
+            // Unmeasured whether Anthropic's own API answers this shape.
+            Wire::OpenAiChatCompletions => None,
         }
     }
 
@@ -194,5 +196,6 @@ mod tests {
         let provider = Anthropic;
         assert!(provider.endpoint(Wire::AnthropicMessages).is_some());
         assert!(provider.endpoint(Wire::OpenAiResponses).is_none());
+        assert!(provider.endpoint(Wire::OpenAiChatCompletions).is_none());
     }
 }

@@ -36,6 +36,8 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                       its own config). Tack never reads, stores or forwards it. No host \
                       environment is forwarded into a run: only entries set on the execution \
                       request's own `environment` reach the codex process.",
+    credential_env: None,
+    observes_served_model: false,
 };
 
 /// The key an injected provider endpoint is named under in Codex's

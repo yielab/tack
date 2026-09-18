@@ -21,6 +21,8 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     model_passthrough: "forwarded verbatim",
     probe_notes: &[("note", "attached to every probe")],
     credential_note: "",
+    credential_env: None,
+    observes_served_model: false,
 };
 
 static PLAIN: HarnessDescriptor = BASE;
@@ -28,6 +30,22 @@ static PLAIN: HarnessDescriptor = BASE;
 static INHERITING: HarnessDescriptor = HarnessDescriptor {
     model_selection: ModelSelection::Optional,
     inherited_env: &["HOME"],
+    ..BASE
+};
+
+/// Reports its model as an observation even behind a gateway.
+static OBSERVING: HarnessDescriptor = HarnessDescriptor {
+    model_selection: ModelSelection::Optional,
+    inherited_env: &["HOME"],
+    observes_served_model: true,
+    ..BASE
+};
+
+/// Reads its credential from a name of its own, never the endpoint's.
+static CREDENTIAL_NAMED: HarnessDescriptor = HarnessDescriptor {
+    model_selection: ModelSelection::Optional,
+    inherited_env: &["HOME"],
+    credential_env: Some("TACK_TEST_FIXTURE_CREDENTIAL"),
     ..BASE
 };
 
@@ -234,34 +252,61 @@ async fn a_run_reports_the_request_model_as_unconfirmed() {
     assert_eq!(outcome.usage.cost_usd.value, None);
 }
 
-/// `(provider, observed by the harness, requested) -> (model, source)`. A
+type TestProvider = tack_orch::execution::RequestedModelProvider;
+
+/// `(descriptor, provider, observed by the harness) -> (model, source)`. A
 /// configured endpoint answers after the CLI printed its model, so what the
-/// CLI reports through one is a request, not an observation.
-#[tokio::test]
-async fn the_model_source_says_who_vouches_for_the_model() {
-    let rows = [
-        (Some("anthropic"), Some("seen"), "seen", "harness_reported"),
+/// CLI reports through one is a request, not an observation — unless the
+/// descriptor itself says otherwise (`OBSERVING`).
+type ModelSourceRow = (
+    &'static HarnessDescriptor,
+    Option<&'static str>,
+    Option<&'static str>,
+    &'static str,
+    &'static str,
+);
+
+fn model_source_rows() -> [ModelSourceRow; 4] {
+    [
         (
+            &INHERITING,
+            Some("anthropic"),
+            Some("seen"),
+            "seen",
+            "harness_reported",
+        ),
+        (
+            &INHERITING,
             Some(GATEWAY),
             Some("seen"),
             "seen",
             "requested_not_confirmed",
         ),
-        (None, None, "unknown", "not_observed"),
-    ];
-    for (provider, observed_model, model, source) in rows {
+        (&INHERITING, None, None, "unknown", "not_observed"),
+        (
+            &OBSERVING,
+            Some(GATEWAY),
+            Some("seen"),
+            "seen",
+            "harness_reported",
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn the_model_source_says_who_vouches_for_the_model() {
+    for (descriptor, provider, observed_model, model, source) in model_source_rows() {
         let state = scratch("model-source");
         state_secret(&state, "key");
         let grammar = TestGrammar {
-            descriptor: &INHERITING,
+            descriptor,
             observed_model,
         };
         let harness =
             harness_with(grammar, fake_harness(), state.path()).with_providers(gateway("key"));
         let mut request = spec(KIND, state.path());
         request.work.request.requested_model_id = None;
-        request.work.request.requested_model_provider =
-            provider.map(tack_orch::execution::RequestedModelProvider::new);
+        request.work.request.requested_model_provider = provider.map(TestProvider::new);
 
         let actual = run(&harness, &request).await.actual_execution;
         assert_eq!(actual.model_id.as_str(), model, "{provider:?}");
@@ -387,6 +432,13 @@ async fn the_child_gets_only_what_was_asked_for() {
     let has = |name: &str| names.iter().any(|recorded| recorded == name);
     assert!(has("HOME") && has("AI_GATEWAY_API_KEY"), "{names:?}");
     assert!(!has("USER"), "{names:?}");
+
+    // `credential_env` renames the variable the credential is injected
+    // under; the endpoint's own name is never also set.
+    let (names, _) = run_recording_env(&CREDENTIAL_NAMED, GATEWAY, "").await;
+    let has = |name: &str| names.iter().any(|recorded| recorded == name);
+    assert!(has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
+    assert!(!has("AI_GATEWAY_API_KEY"), "{names:?}");
 }
 
 /// The shim prints the variable's value; seeing `[REDACTED]` in its place
@@ -428,6 +480,7 @@ fn a_version_is_a_leading_token_or_a_later_plain_one() {
         ("2.1.223 (Claude Code)\n", Some("2.1.223")),
         ("3.0.0-beta.1 (Claude Code)\n", Some("3.0.0-beta.1")),
         ("codex-cli 0.149.1", Some("0.149.1")),
+        ("docket 0.2.0b1", Some("0.2.0b1")),
         (
             "harness-cli version 999.999.999-nightly-exotic-format\n",
             None,
