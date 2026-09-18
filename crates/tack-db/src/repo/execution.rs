@@ -3360,9 +3360,8 @@ impl Repository {
     /// never be swept out from under an operator who might still act on it.
     ///
     /// Purge only, not a roll-up: no `execution_events_daily` aggregate
-    /// exists in this schema (unlike `orch_events`/`orch_events_daily` in
-    /// `orch.rs::rollup_and_purge_orch_events`), so this deletes raw rows
-    /// outright with no day/kind/count aggregate surviving.
+    /// exists in this schema, so this deletes raw rows outright with no
+    /// day/kind/count aggregate surviving.
     ///
     /// Same `BEGIN IMMEDIATE` batching rationale as
     /// [`Self::purge_stale_execution_replays`].

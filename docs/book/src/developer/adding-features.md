@@ -54,17 +54,17 @@ pub struct UpdateMilestone {
 Open `crates/tack-db/src/migrations.rs`. Migration names are numbered sequentially and
 never reused — find the highest number already in `all_migrations()` (`grep -o
 '"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs | sort -u | tail -1`) and
-pick the next one. As of this writing that's `063`, so the new migration is `064`. Find
+pick the next one. As of this writing that's `073`, so the new migration is `074`. Find
 the `migrations` vec in `all_migrations()` and append:
 
 ```rust
-("063_milestones", &MIGRATION_063[..]),
+("074_milestones", &MIGRATION_074[..]),
 ```
 
 Then add the constant near the end of the file:
 
 ```rust
-const MIGRATION_063: [&str; 2] = [
+const MIGRATION_074: [&str; 2] = [
     "CREATE TABLE IF NOT EXISTS milestones (
         id TEXT PRIMARY KEY NOT NULL,
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
