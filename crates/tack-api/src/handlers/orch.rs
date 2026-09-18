@@ -1795,11 +1795,10 @@ pub async fn get_orch_policy(
 // GET /api/items/{id}/agent-activity, GET /api/projects/{id}/agent-activity
 // ════════════════════════════════════════════════════════════════════════════
 //
-// Reconciled field-for-field against the frontend boundary file
-// `frontend/src/shared/agentActivity/api.ts` — see that file's header comment
-// for the full field-provenance table (which migration/column backs each
-// field, and which `tack-orch` enum backs each raw status string). Two
-// decisions resolved here:
+// Every field here is reconciled field-for-field against `tack-orch`'s
+// stored columns and enums — which migration/column backs each field, and
+// which `tack-orch` enum backs each raw status string. Two decisions
+// resolved here:
 //
 // 1. **"Latest attempt" tie-break** — highest `attempt` number wins; ties
 //    broken by `dispatched_at` desc. See
@@ -1807,8 +1806,7 @@ pub async fn get_orch_policy(
 //    the (purely mechanical) final tie-break that makes the SQL deterministic.
 // 2. **Inner join vs. left join for the bulk badge endpoint** — uses an
 //    inner join. An item with no `orch_tasks` row simply has no row in
-//    `AgentBadgeResponse`, which is exactly the "no chip" signal
-//    `useAgentActivityMap` already implements on the frontend. A left join
+//    `AgentBadgeResponse` — nothing to render for it. A left join
 //    would need a nullable-status contract to express "never dispatched" vs.
 //    "dispatched, but the reconciler hasn't polled since" — no UI reads that
 //    distinction today, so it isn't worth the wire-shape complexity yet.
@@ -1827,8 +1825,7 @@ pub async fn get_orch_policy(
 // number is money or a timeline. Additive fields an old client ignores
 // safely; the UI does not yet render them.
 
-/// One `orch_events` row. See `ItemAgentEventResponse` in
-/// `frontend/src/shared/agentActivity/api.ts`.
+/// One `orch_events` row.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ItemAgentEventResponse {
     pub id: Uuid,
@@ -2030,9 +2027,8 @@ pub struct AgentBadgeRowResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-/// `GET /api/projects/{id}/agent-activity` response envelope — matches
-/// `frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly
-/// (`{ rows: [...] }`, not a bare array).
+/// `GET /api/projects/{id}/agent-activity` response envelope — deliberately
+/// `{ rows: [...] }`, not a bare array.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AgentBadgeResponse {
     pub rows: Vec<AgentBadgeRowResponse>,

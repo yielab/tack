@@ -5,8 +5,6 @@ import {
   requestForm,
   ApiError,
   tokenStore,
-  isOrchestrationDisabledError,
-  ORCHESTRATION_DISABLED_CODE,
 } from './client';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -185,31 +183,5 @@ describe('shared/api/client', () => {
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.has('Content-Type')).toBe(false);
     expect((fetchMock.mock.calls[0][1] as RequestInit).redirect).toBe('error');
-  });
-});
-
-describe('isOrchestrationDisabledError', () => {
-  it('is true for the documented code, regardless of status (409 or 403)', () => {
-    expect(isOrchestrationDisabledError(new ApiError(409, 'x', ORCHESTRATION_DISABLED_CODE))).toBe(true);
-    expect(isOrchestrationDisabledError(new ApiError(403, 'x', ORCHESTRATION_DISABLED_CODE))).toBe(true);
-  });
-
-  it('is true for a legacy bare 404 with no code (pre-migration fallback)', () => {
-    expect(isOrchestrationDisabledError(new ApiError(404, 'not found'))).toBe(true);
-  });
-
-  it('is false for a 404 that carries a different, unrelated code', () => {
-    expect(isOrchestrationDisabledError(new ApiError(404, 'x', 'item_not_found'))).toBe(false);
-  });
-
-  it('is false for a 409/403 with no code — those keep their ordinary meaning elsewhere', () => {
-    expect(isOrchestrationDisabledError(new ApiError(409, 'already decided'))).toBe(false);
-    expect(isOrchestrationDisabledError(new ApiError(403, 'approval token rejected'))).toBe(false);
-  });
-
-  it('is false for any other status, a plain Error, or a non-Error value', () => {
-    expect(isOrchestrationDisabledError(new ApiError(500, 'boom'))).toBe(false);
-    expect(isOrchestrationDisabledError(new Error('network'))).toBe(false);
-    expect(isOrchestrationDisabledError(undefined)).toBe(false);
   });
 });

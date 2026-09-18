@@ -15,15 +15,12 @@ import {
 } from './helpers';
 
 // "Run with agent" — item/sprint execution UI, built for zero hand-typed
-// identifiers wherever the API can supply a real one instead. Distinct from
-// the older Docket "Dispatch to agents"/"Run sprint" features covered by
-// `journey.spec.ts`/`a11y.spec.ts`'s dispatch tests: this feature targets
-// `/api/executions`, `/api/runner-fleets`, `/api/agent-profiles`,
+// identifiers wherever the API can supply a real one instead. This feature
+// targets `/api/executions`, `/api/runner-fleets`, `/api/agent-profiles`,
 // `/api/projects/{id}` (the model default) — an always-on operator surface,
-// NOT gated behind `TACK_ORCH_ENABLE` (unlike every Docket dispatch route),
-// so no orchestration-enable setup is needed for these specs. See
-// `crates/tack-api/src/router.rs`'s own comment on `orch_routes` vs. the
-// always-on operator execution/fleet routes.
+// NOT gated behind `TACK_ORCH_ENABLE`, so no orchestration-enable setup is
+// needed for these specs. See `crates/tack-api/src/router.rs`'s own comment
+// on `orch_routes` vs. the always-on operator execution/fleet routes.
 //
 // Every test enrolls at least one runner: with none, the modal shows its
 // "agent execution is off" state instead of the form. That reads zero

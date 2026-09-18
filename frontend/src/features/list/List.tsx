@@ -14,10 +14,8 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../shared/types';
-import { Button, AgentStateChip } from '../../shared/ui';
+import { Button } from '../../shared/ui';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
-import { useAgentActivityMap, type AgentBadgeInfo } from '../../shared/agentActivity/useAgentActivityMap';
-import { createBoardSocket } from '../../shared/realtime/boardSocket';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
@@ -38,7 +36,6 @@ export default function List() {
   const { project } = useProject();
   const { types: vocabTypes } = useVocab();
   const types = createMemo(() => vocabTypes());
-  const agentActivity = useAgentActivityMap(() => projectId);
 
   const [, setSearchParams] = useSearchParams();
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
@@ -207,22 +204,6 @@ export default function List() {
     onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onItemUpdated));
   });
 
-  // List has no live board
-  // socket otherwise (unlike Board.tsx) — this connection exists solely to
-  // keep the agent-activity badge chip current when a mirrored run/approval
-  // changes, without inventing a broader live-refresh story that isn't
-  // needed here.
-  onMount(() => {
-    if (!projectId) return;
-    const s = createBoardSocket(projectId);
-    const off = s.onEvent((event) => {
-      if (event.type === 'agent_run_updated' || event.type === 'approval_pending') {
-        agentActivity.refetch();
-      }
-    });
-    onCleanup(() => { off(); s.close(); });
-  });
-
   return (
     <div class="h-full flex flex-col">
       {/* Modern Header */}
@@ -309,7 +290,6 @@ export default function List() {
                             onDelete={() => handleDelete(item)}
                             onView={() => handleViewItem(item)}
                             isExpanded={expandedItems().has(item.id)}
-                            agentInfo={agentActivity.stateFor(item.id)}
                           />
 
                           {/* Inline creation form */}
@@ -367,7 +347,6 @@ function ItemRow(props: {
   onDelete: () => void;
   onView: () => void;
   isExpanded: boolean;
-  agentInfo?: AgentBadgeInfo;
 }) {
   const sortable = createSortable(props.item.id);
   const [showActions, setShowActions] = createSignal(false);
@@ -478,15 +457,6 @@ function ItemRow(props: {
         >
           {props.item.status}
         </span>
-
-        {/* Agent activity chip */}
-        <Show when={props.agentInfo}>
-          {(info) => (
-            <div class="flex-shrink-0">
-              <AgentStateChip state={info().state} title={info().remoteStatus} />
-            </div>
-          )}
-        </Show>
 
         {/* Tags */}
         <Show when={props.item.tags && props.item.tags.length > 0}>

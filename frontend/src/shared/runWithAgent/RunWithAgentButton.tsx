@@ -13,9 +13,7 @@ export interface RunWithAgentButtonProps {
    *  so it can read that project's model default. */
   projectId: string;
   /** Icon-only trigger for tight spaces (Board card header, Sprint lane
-   *  row) — visually and structurally distinct from `shared/dispatch/
-   *  DispatchCardMenu.tsx`'s "⋮" kebab menu: this is a single, explicit
-   *  "run" action, not a menu that happens to contain one. `false` renders
+   *  row): a single, explicit "run" action, not a menu. `false` renders
    *  a labeled button (item-detail). */
   compact?: boolean;
   /** Shows a small badge, next to the trigger, for the item's most recent

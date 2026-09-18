@@ -233,8 +233,7 @@ via drag-and-drop on the Board, or:
 curl -X POST http://localhost:3210/api/items/<item-id>/dispatch
 ```
 
-Also reachable from the item detail drawer's "Dispatch to agents" button, or the
-board card's context menu. Watch the response's `outcome` field:
+Watch the response's `outcome` field:
 
 | `outcome` you might see | What happened |
 |---|---|
@@ -258,9 +257,9 @@ empty/`"unknown"` regardless of how well everything is working — those are
 still-unbuilt placeholders across this whole feature, not a sign something's
 broken. See [What's still a placeholder](orchestration.md#whats-still-a-placeholder).
 
-**Agent activity** for a dispatched item shows up in that item's detail drawer,
-under the **Agent Activity** tab — hops, tool calls, tokens, grouped by dispatch
-attempt. A compact status chip also appears on the item's Board/List/Table card.
+**Agent activity** for a dispatched item is available at
+`GET /api/items/<item-id>/agent-activity` — hops, tool calls, tokens, grouped by
+dispatch attempt. See [Agent activity](orchestration.md#agent-activity).
 
 **If nothing appears in `GET /api/fleet` at all:**
 

@@ -10,7 +10,7 @@ const disposers: Array<() => void> = [];
 /** Last search params seen by a component mounted inside the test router —
  *  `MemoryRouter`'s history is in-memory, not `window.location`, so this is
  *  how a test observes where `setSearchParams` navigated (mirrors
- *  `ItemDetailDrawer.dispatch.test.tsx`'s own `Host`-reads-params pattern). */
+ *  `ItemDetailDrawer.test.tsx`'s own `Host`-reads-params pattern). */
 let lastSearchParams: Record<string, string | string[] | undefined> = {};
 function ParamsProbe() {
   const [params] = useSearchParams();
@@ -89,7 +89,7 @@ afterEach(() => {
 });
 
 describe('RunWithAgentButton', () => {
-  it('compact mode renders an icon-only trigger with an item-specific accessible name — distinct from DispatchCardMenu\'s "⋮" kebab', () => {
+  it('compact mode renders an icon-only trigger with an item-specific accessible name, not a menu', () => {
     const c = mount({ compact: true });
     const trigger = c.querySelector('button[aria-label="Run with agent: Fix login bug"]');
     expect(trigger).toBeTruthy();
