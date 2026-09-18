@@ -34,7 +34,8 @@ boards only — Parts IX down to IV; Parts I–III are under `docs/closed-cycles
 Phase 64's Stage 2 archives the rest. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
-with no caller (`model_profiles`, the `decisions` path, the superseded docket control plane).
+with no caller (`model_profiles`, the superseded docket control plane; the `decisions` path
+had none either, and is kept: task D1 gives it one).
 
 **Skills:** `/feature` (feature work), `/gate` (scoped verification), `/status` (where am I /
 what is next), `/tokens` (usage measurement vs `.claude/token-baseline.md`). `/card` and

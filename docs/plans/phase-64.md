@@ -25,23 +25,24 @@ starts when the tasks it names have been merged into `develop`.
 |---|---|---|
 | **A** | **M0** measure · **C1** CI and coverage · **H1** harness core fixes | the branch above is in `develop` |
 | **B** | **H2** docket · **S2** agent scaffolding out · **P1** `model_profiles` out | H1 · C1 · M0 |
-| **C** | **H3** opencode · **P2** `decisions`, only if the user decided to remove it | H2 · P1 |
-| **D** | **H4** harness docs · **R1** bridge: frontend | H3, for H4 · H2, P1 and P2 if it runs, for R1 |
-| **E** | **R2** bridge: API and CLI → **R3** bridge: `tack-orch` → **R4** bridge: schema (serial) | R1 |
-| **F** | **T1** API tests by layer · **T2** board feature tests · **T3** E2E and CI tiers · **T4** mutation report | R4 |
+| **C** | **H3** opencode · **R1** bridge: frontend | H2 · P1 |
+| **D** | **D1** decisions: the runner half · **R2** bridge: API and CLI | H3, for D1 · R1, for R2 |
+| **E** | **R3** bridge: `tack-orch` → **R4** bridge: schema (serial) · **H4** harness docs | R2 · D1, for H4 |
+| **F** | **D2** decisions: the board half, then **T1** API tests by layer · **T2** board feature tests · **T3** E2E and CI tiers · **T4** mutation report | R4 |
 
 ```
-M0 ──────────────► P1 ──► P2? ─┐
-C1 ──► S2                      ├─► R1 ► R2 ► R3 ► R4 ──► T1 T2 T3 T4 ──► release tag
-H1 ──► H2 ──► H3 ──► H4        │
+M0 ──────────────► P1 ─────────┐
+C1 ──► S2                      ├─► R1 ► R2 ► R3 ► R4 ──► D2 ► T1 T2 T3 T4 ──► release tag
+H1 ──► H2 ──► H3 ──► D1 ──► H4 │
         └──────────────────────┘
 ```
 
 Why this order: the three tracks of batch A touch disjoint trees (docs, `.github/`,
 `crates/tack-runner/src/harness/`). The bridge is not touched until docket is reachable as a
-harness (H2). P1, P2 and R1–R4 all regenerate `docs/openapi.json` and `schema.gen.ts`, so
-they are serial with each other. The test rebuild comes last so it does not rewrite tests
-for code that is about to be deleted.
+harness (H2). H1, H2, H3 and D1 all change `crates/tack-runner/src/harness/`, and D1 changes
+types H3 builds, so they are serial. P1, R1–R4 and D2 all regenerate `docs/openapi.json` and
+`schema.gen.ts`, so they are serial with each other. The test rebuild comes last so it does
+not rewrite tests for code that is about to be deleted.
 
 ## How a task is handed to an agent
 
@@ -64,11 +65,16 @@ Limits, imposed from outside the prompt, because a prompt does not enforce them:
   what a number means.
 - **One gate, once.** The agent runs `.githooks/pre-push` at the end. While working it runs
   only the test binary it is changing (`cargo nextest run --workspace -E 'binary(<name>)'`).
-- **A turn cap per agent**, set by whoever launches it; an agent that reaches it reports
-  where it stopped instead of pushing on.
-- **`CARGO_TARGET_DIR` on the `/` partition**, one per parallel agent, removed when its
-  branch merges. `renice` is applied by the launcher. No agent opens a GUI.
-- **At most three agents at once.** The fourth waits.
+- **150 tool calls per agent.** An agent that reaches it reports where it stopped instead
+  of pushing on, and is replaced by a fresh agent with a short brief — never resumed with a
+  large context.
+- **At most two agents at once**, each building with `--build-jobs 4` and testing with
+  `--test-threads 4`. Sized to the workstation on 2026-09-18: 16 cores (`nproc`), 20 GB of
+  memory available and swap full (`free -g`), 100 GB free on `/` (`df -h /`). Re-measure
+  before raising it.
+- **`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<task>`**, on the `/` partition, removed
+  when the task's branch merges. `renice` is applied by a loop the launcher runs, never by
+  the prompt. No agent opens a GUI.
 - **Review before merge** is done by the launching session, against the task's *done when*,
   reading the diff — not by a second agent asked to agree.
 
@@ -101,13 +107,12 @@ Read-only on code. **Files:** ADR 0068 (a dated amendment, never a rewrite) and 
    exercise runner-v1 fleet templates and therefore stay; every test file that asserts the
    stale-lease invariant (`git grep -l "stale_lease\|StaleLease" -- 'crates/*/tests/**'
    'crates/**/tests.rs'`).
-3. Answer one question with evidence: does DAG-ordered sprint dispatch have a user outside
-   the bridge (`git grep -n "sprint_dispatch"` for callers that are not `orch_*`)? Record the
-   answer as a decision in the amendment: re-implemented on runner-v1 scheduling, or dropped
-   and named in the release notes.
+3. List every caller of DAG-ordered sprint dispatch outside the bridge (`git grep -n
+   "sprint_dispatch"` for callers that are not `orch_*`), so R2 removes them with it. It is
+   dropped either way; it comes back on runner-v1 scheduling only if use of the released
+   product asks for it.
 
-**Done when:** R1–R4 and T1 below carry file lists with a date, and the DAG question has a
-recorded answer.
+**Done when:** R1–R4 and T1 below carry file lists with a date.
 
 ### C1 — CI and coverage (Stage 1)
 
@@ -118,19 +123,20 @@ advisory needs it, `Cargo.lock`, `docs/TESTING.md` (the CI section only).
   replaces both the plain test job and the five per-crate coverage builds. Its floor is the
   measured workspace line total minus one point, written next to the command that measures
   it.
-- Patch coverage: `diff-cover lcov.info --compare-branch origin/main --fail-under 80`. The
-  tool, not a script of our own.
+- Patch coverage: `diff-cover lcov.info --compare-branch origin/<the pull request's base>
+  --fail-under 80`. The tool, not a script of our own.
 - Three tiers by trigger in the same workflow file: pull request (fmt, clippy, the run
-  above, frontend type-check and Vitest, OpenAPI drift, deny and audit); push to `main`
-  (adds the SPA build, the desktop build, Chromium E2E); `schedule` (cross-browser E2E,
-  MSRV). No new workflow file.
+  above, frontend type-check and Vitest, OpenAPI drift, deny and audit); push to `develop`
+  or `main` (adds the SPA build, the desktop build, Chromium E2E); `schedule` (cross-browser
+  E2E, MSRV). No new workflow file.
 - RUSTSEC-2026-0285 (rustls): `cargo update -p rustls` first; an ignore entry with its
   reason only if no fixed release exists.
-- The `main` ruleset's required checks are changed by the user (`gh api`), from the list the
-  task reports. The agent does not change repository settings.
+- The work happens on `develop`. The `main` ruleset still requires the ten old job names;
+  it is changed by the user (`gh api`) when `develop` is next released to `main`, from the
+  list this task reports. The agent does not change repository settings.
 
-**Tests:** none. **Done when:** pull request #56 is green; the pull-request tier's
-wall-clock, from `gh run view`, is under 15 minutes.
+**Tests:** none. **Done when:** the task's own pull request into `develop` is green; the
+pull-request tier's wall-clock, from `gh run view`, is under 15 minutes.
 
 ### S2 — agent scaffolding out (Stage 2)
 
@@ -175,15 +181,32 @@ guide. Plus one new migration.
 **Tests:** none added. **Done when:** the grep above finds `model_profiles` only in
 migrations and ADRs.
 
-### P2 — the `decisions` path (Stage 4, conditional half)
+### D1 and D2 — `decisions` gets its first caller (Stage 4, second half)
 
-Blocked on a decision that is the user's: does docket get a `decisions` ADR? If yes, this
-task is struck and `decisions` stays with docket as its first caller. If no: remove
-`crates/tack-api/src/handlers/decisions.rs` and its routes, the runner's transport calls, the
-UI, the four `decision.*.json` fixtures in `docs/contracts/runner-v1/`, and their rows in the
-pin table of `crates/tack-orch/tests/runner_contract.rs` — all in one commit, because the
-fixtures outrank the types. The `decisions` entry in every harness's capability table stays:
-it is how a harness says it has none.
+The board half of `decisions` is built: the runner-v1 routes, the operator's resolve route
+behind its own token, the inbox in the UI, the runner's `create_decision` and
+`poll_decisions`. What never existed is a harness that asks. It stays, and these two tasks
+give it a caller. **D1**, the runner half, is detailed in `docs/plans/harnesses.md`: one seam
+in the core that any harness can use, and claude-code as the first to use it. **D2**, the
+board half, is here.
+
+**D2 — whoever dispatches chooses.** **Files:** the dispatch handler in
+`crates/tack-api/src/handlers/executions.rs` and its `openapi.rs` entry; the *Run with
+agent* dialog under `frontend/src/features/` and its test; `frontend/src/shared/execution/`
+(`capabilities.ts`, `api.ts`); `docs/book/src/user-guide/agent-runners.md`.
+
+- The dispatch request accepts `permission_policy.approvals`: `auto` or `ask`. Absent means
+  `auto`, which is what every run does today.
+- `ask` on a harness whose `decisions` capability is not `supported` is rejected with a
+  typed validation error before anything is enqueued. The dialog offers the choice only
+  where the capability is `supported`, and says why where it is not.
+- Regenerate, never hand-edit: `./scripts/regen-generated.sh`.
+
+**Tests:** one table-driven HTTP test (accepted with `auto`, accepted with `ask`, rejected
+with `ask` on a harness that cannot, with a row count proving nothing was enqueued); one
+Vitest case for the dialog. **Done when:** a run dispatched with `ask` from the dialog
+reaches `waiting_decision`, shows in the inbox, and continues when answered — walked once by
+hand against the real `claude` and a loopback model server, and written into the report.
 
 ### R1–R4 — retire the Docket control plane (Stage 5)
 
@@ -193,7 +216,7 @@ layers, from ADR 0068:
 | Task | Removes | Notes |
 |---|---|---|
 | **R1** frontend | `features/{fleet, approvals, economics, provisioning}`, `features/settings/{orchestration, orchestrationSettings}`, their routes, nav entries, mocks and E2E specs | `features/agents/runnerFleet` stays — it is runner-v1 |
-| **R2** API and CLI | `handlers/{orch, provisioning, economics}.rs`, `dispatcher.rs`, `orch_store.rs`, `orch_runtime.rs`, `sprint_dispatch.rs` (per M0's DAG answer), `tack orch`, `TACK_ORCH_*` from `docs/CONFIG.md`, `tests/orchestration/**` except the files M0 marked runner-v1 | regenerate the OpenAPI spec and `schema.gen.ts` once, at the end |
+| **R2** API and CLI | `handlers/{orch, provisioning, economics}.rs`, `dispatcher.rs`, `orch_store.rs`, `orch_runtime.rs`, `sprint_dispatch.rs`, `tack orch`, `TACK_ORCH_*` from `docs/CONFIG.md`, `tests/orchestration/**` except the files M0 marked runner-v1 | regenerate the OpenAPI spec and `schema.gen.ts` once, at the end |
 | **R3** `tack-orch` | the `ControlPlane` trait, `reconciler`, `adapters/`, the `docket_*` tests, their fixtures and goldens | the execution domain, scheduler, model policy, retention and `runner_contract` stay |
 | **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents; before the first, the rows are exported as JSON into the pre-upgrade snapshot the migration runner already writes | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
 
@@ -202,7 +225,7 @@ last pre-removal migration upgrades, the export file holds the rows, and no `orc
 remains. **Done when:** a fresh install has no `orch_*` table; `git grep -n TACK_ORCH`
 finds nothing outside ADRs and history; release notes name what a bridge user loses — the
 approvals inbox, one-click pod provisioning, per-product cost from docket's events, and
-DAG-ordered dispatch if M0 dropped it.
+DAG-ordered sprint dispatch.
 
 ### T1–T4 — the test suite by layer (Stage 6)
 
@@ -217,14 +240,17 @@ DAG-ordered dispatch if M0 dropped it.
 (`cargo nextest list --workspace | wc -l` before and after); every public route has a
 success, an auth and an error test.
 
-## Decisions that are the user's
+## Decisions taken
 
-| Decision | Blocks | Default if unanswered |
-|---|---|---|
-| Does docket get a `decisions` ADR? | P2 | `decisions` stays; P2 does not run |
-| The `main` ruleset's required checks | C1 merging | — |
-| Whether DAG-ordered dispatch is rebuilt, if M0 finds a user | R2 | dropped, named in the release notes |
-| Merge the six Dependabot branches before or after C1 | nothing | after, so they run on the new CI |
+All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
+
+| Question | Answer |
+|---|---|
+| Is the `decisions` path removed? | No. Every harness can pause and ask; Tack implements it once, in the core, and each harness uses it when its CLI offers a way (D1, D2) |
+| Is DAG-ordered sprint dispatch rebuilt on runner-v1? | No. It goes with the bridge and is named in the release notes; it comes back only on evidence of use |
+| The `main` ruleset's required checks | Left alone. Work targets `develop`; the ruleset changes when `develop` is next released |
+| The six Dependabot branches | Merged after C1, so they run on the new CI |
+| How many agents, and how long each | Two at once, 150 tool calls each — see the limits above |
 
 ## Status
 
@@ -233,7 +259,7 @@ success, an auth and an error test.
 | Harness core redesign | done |
 | M0 · C1 · H1 | not started |
 | H2 · S2 · P1 | not started |
-| H3 · P2 | not started · blocked on a decision |
-| H4 · R1 | not started |
-| R2 · R3 · R4 | not started |
-| T1 · T2 · T3 · T4 | not started |
+| H3 · R1 | not started |
+| D1 · R2 | not started |
+| R3 · R4 · H4 | not started |
+| D2 · T1 · T2 · T3 · T4 | not started |

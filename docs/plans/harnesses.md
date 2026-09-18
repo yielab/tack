@@ -77,6 +77,8 @@ HarnessGrammar      descriptor()    the data above
   (four methods)    capabilities()  what this CLI honestly supports, permission_policy included
                     invocation()    request + resolved endpoint -> args and extra env, or a typed rejection
                     report()        finished process -> verdict, evidence, observed model, tokens, cost
+  (two optional,    question()      a stdout line -> a question for the operator
+   from task D1)    answer()        the operator's answer -> bytes for the CLI's stdin
 
 LocalProcessHarness everything else, identical for every harness
 ```
@@ -111,8 +113,8 @@ Adding a harness is one module, one line in `harness::DESCRIPTORS` and one in
 
 ## The tasks
 
-Four tasks, in order. H1 is independent of everything; H2 needs H1; H3 needs H2 (both edit
-`DESCRIPTORS` and share the wire); H4 needs H3. Each is one branch from `develop`, and each
+Five tasks, in order. H1 is independent of everything; H2 needs H1; H3 needs H2 (both edit
+`DESCRIPTORS` and share the wire); D1 needs H3 (it changes types H3 builds); H4 needs D1. Each is one branch from `develop`, and each
 lists every file it may touch — a change outside that list is a finding to report, not to
 make.
 
@@ -269,18 +271,99 @@ the real `HOME` was not touched.
 
 **Done when:** as H2, for `opencode`.
 
+### D1 — a harness can pause and ask
+
+These CLIs are built to stop and ask before they act; today Tack runs them with asking
+switched off (claude-code with `--permission-mode bypassPermissions`). The board half of the answer is built — the runner-v1 `decisions` routes, the
+operator's resolve route, the inbox — and has never had a caller. This task adds the runner
+half once, in the core, and claude-code as the first harness to use it. The other three
+declare `decisions: unsupported` with a reason until their own change (see *Upgrades*).
+
+**Measure first, zero spend, before writing code.** Run the installed `claude` against a
+loopback server standing in for the Anthropic Messages API (`ANTHROPIC_BASE_URL`), whose
+first response is a `tool_use` for a shell command: `claude -p --input-format stream-json
+--output-format stream-json --permission-mode manual --permission-prompts host`, prompt as
+one JSON user message on stdin, stdin left open. Record the line that asks, the line that
+answers it, and that the run continues after *allow* and after *deny*. Save them under
+`fixtures/claude_code/<version>/` and say so in that README. If the question does not
+arrive as a line on stdout, or the flags differ at this version, stop and report — the
+design below assumes it.
+
+**Files:** `docs/contracts/runner-v1/claim.response.json` and its row in the pin table of
+`crates/tack-orch/tests/runner_contract.rs`; the type that holds `permission_policy`
+(find it with `git grep -n "struct PermissionPolicy"`); `harness/process.rs`;
+`harness/local_process.rs` and `local_process/tests.rs`; `harness/mod.rs` (the adapter
+trait only); `harness/fixtures/fake_harness.sh`; `engine.rs` and `engine/tests.rs`;
+`harness/claude_code.rs`, `claude_code/tests.rs` and its fixtures.
+
+**The policy, agnostic.** `permission_policy` gains `approvals`: `auto` (the harness decides
+alone — every run today) or `ask` (the harness asks the operator whenever its own rules say
+a person should decide). Absent means `auto`. What is worth asking about stays the
+harness's business; Tack only carries the question and the answer.
+
+**The seam — two defaulted methods on `HarnessGrammar`, both pure:**
+
+```rust
+/// A line of this CLI's stdout that is a question for the operator.
+fn question(&self, _line: &str) -> Option<Question> { None }
+/// The bytes that answer it, written to the CLI's stdin.
+fn answer(&self, _question: &Question, _answer: &DecisionAnswer) -> Vec<u8> { Vec::new() }
+```
+
+`Question { vendor_id, kind, prompt, options, metadata }` maps one to one onto
+`decision.create.request.json`. `Invocation` gains `stdin_stays_open: bool`, default
+`false`; a grammar sets it only for an `ask` request.
+
+**The core.** With `stdin_stays_open`, `process.rs` writes the prompt, keeps the pipe, and
+reads stdout line by line into the same bounded capture H1 built. `LocalProcessHarness`
+offers each line to `question()`; a hit goes out on a channel, the reply comes back on
+another and is written through `answer()`. The adapter trait gains one defaulted method
+returning that pair of channels for a run handle, `None` for every run that cannot ask.
+Nothing else in the lifecycle changes, and a run with `auto` takes today's path untouched.
+
+**The engine.** `wait_with_lease_renewal` gains one `select!` arm: a question becomes
+`create_decision`, then `poll_decisions` on the heartbeat tick until it is resolved or
+expires; an expiry or a transport failure is answered as the question's deny option, so a
+harness is never left waiting forever. The attempt's own timeout keeps running while it
+waits, and the decision's `expires_at` is that deadline. The question's text passes the
+same secret redaction as captured output before it leaves the runner. Logs carry the
+decision id only.
+
+**claude-code.** With `ask`: the flags measured above instead of `bypassPermissions`, the
+prompt framed as a stream-json user message, `question()` and `answer()` for the measured
+lines, `decisions: supported`. With `auto`: exactly today's command line.
+
+**Tests — five functions, rows elsewhere.**
+- `local_process/tests.rs`: `a_question_is_answered_and_the_run_continues`, against
+  `fake_harness.sh` in a new `ask` mode that prints one question and waits for a line on
+  stdin. Rows: allowed, denied, reply channel dropped (answered as deny).
+- `engine/tests.rs`: `a_question_becomes_a_decision_and_its_answer_returns`. Rows:
+  resolved, expired, create fails. Assert the redaction on the posted prompt, and prove it
+  load-bearing by reverting it once.
+- `claude_code/tests.rs`: `an_ask_request_keeps_stdin_open_and_asks_the_host`,
+  `a_permission_request_line_becomes_a_question`, `an_answer_becomes_a_control_response` —
+  pure, from the captured fixtures. The existing command-line table gains an `auto` row
+  proving nothing changed.
+- No new real-binary test: the measurement is the proof of the vendor's contract, and its
+  captures are the fixtures.
+
+**Done when:** a request with `approvals: ask` run through the fake harness reaches
+`waiting_decision`, is resolved through the operator route, and completes; a request
+without the field produces the same command line as before this task, byte for byte.
+
 ### H4 — what a user reads
 
 **Files:** `README.md` (shared — touch only the harness table), `docs/book/src/user-guide/
 agent-runners.md`, the two fixture READMEs' cross-references. One table of four harnesses:
-what each needs installed, which provider wires reach it, what it measures and what it
-cannot. One install method per harness. `docs/CONFIG.md` gains nothing — no new variable.
+what each needs installed, which provider wires reach it, what it measures, whether it can
+pause and ask, and what it cannot. One install method per harness. `docs/CONFIG.md` gains nothing — no new variable.
 
 ## Asked of docket, none of it blocking
 
 A `harness-v1.1` that would let Tack claim more: an event per child process group it starts,
 which is what `cancel: Supported` needs; the token on stderr's first line or a
-`--token-file`, which is what would make `harness status` usable for recovery; a README
+`--token-file`, which is what would make `harness status` usable for recovery; a question event on stdout
+answered by a line on stdin, which is what `decisions: Supported` needs; a README
 beside `schema.json` stating the argv/env/stdout/exit-code contract in prose. Nothing in
 `../rack-cli` is edited or committed from this repository.
 
@@ -293,7 +376,9 @@ beside `schema.json` stating the argv/env/stdout/exit-code contract in prose. No
 | `min_capture_bytes` removed from the descriptor | a captured transcript over the cap, read correctly from head and tail |
 | docket `cancel: Supported` | docket emits child group ids; the crash matrix shows nothing survives a `SIGKILL` of the harness |
 | docket `artifacts: Supported` | the result lists the paths its own tools wrote |
-| docket `decisions: Supported` | **its own ADR** — it turns a subprocess into a session that survives a pause. It is also the only caller the runner-v1 `decisions` path would ever have; see ADR 0068's 2026-09-18 amendment |
+| docket `decisions: Supported` | docket's harness mode prints a question event and reads the answer from stdin (asked of docket, above); then `question()` and `answer()` in `docket.rs`, from a captured transcript |
+| codex `decisions: Supported` | `codex exec` cannot ask; measure whether `codex app-server` puts its approval requests on stdout as lines. If so, the grammar's command changes and the two methods follow |
+| opencode `decisions: Supported` | measure what `opencode run` does with a permission set to `ask`, and whether `opencode acp` asks over stdio. Only a stdio channel fits the seam; an HTTP one is refused until a second harness needs it |
 | opencode served model confirmed | an event or export field carrying the served id |
 
 ## Refused, by name
