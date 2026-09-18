@@ -422,8 +422,8 @@ a real machine, not mocked out.
 - Responsive web UI only — no native mobile application
 - Release binaries are not code-signed yet
 
-Full phase-by-phase history lives in the [roadmap](docs/book/src/roadmap.md); the
-active board is [`TODO.md`](TODO.md).
+Full phase-by-phase history lives in the [roadmap](docs/book/src/roadmap.md); the closed
+boards are archived under [`docs/closed-cycles/boards/`](docs/closed-cycles/boards/).
 
 ## Architecture
 

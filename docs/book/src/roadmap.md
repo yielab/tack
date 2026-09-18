@@ -1,9 +1,10 @@
 # Roadmap
 
 > **This file records intent, phase by phase. It is not the status board.** What actually
-> shipped, and at which commit, is in [TODO.md](../../../TODO.md) — one board per cycle,
-> each with its own card ownership and accepted integration SHAs. Where this file and a
-> board disagree, the board is right.
+> shipped, and at which commit, is in the closed boards under
+> [`docs/closed-cycles/boards/`](../../closed-cycles/boards/) — one board per cycle, each
+> with its own card ownership and accepted integration SHAs. Where this file and a board
+> disagree, the board is right.
 >
 > Phases 0–61 are delivered and merged on `develop`: the project-management core, the
 > harness-agnostic runner fleet, the single-binary embedded runner, the adoption and
@@ -25,9 +26,10 @@ Tack becomes the control panel for a factory of products built by
 [docket](https://github.com/yielab/docket) agent fleets: a new `tack-orch` crate with
 a `ControlPlane` trait and a pull-based reconciler, six new tables, dispatch from the
 board, a fleet-wide approvals inbox, one-click product+pod provisioning, and
-per-product unit economics. Executable task cards for parallel agents are in
-[TODO.md](../../../TODO.md); the reciprocal docket-side work is Phase 22 of that
-project's `ROADMAP.md`. **That cycle is complete** — all six phases shipped 2026-08-05.
+per-product unit economics. Executable task cards for parallel agents were in
+`TODO.md`, now [`docs/closed-cycles/boards/part-1.md`](../../closed-cycles/boards/part-1.md);
+the reciprocal docket-side work is Phase 22 of that project's `ROADMAP.md`. **That cycle is
+complete** — all six phases shipped 2026-08-05.
 
 **Historical cycle (partially implemented August 2026): Phases 39–49 — the Agnostic
 Control Plane.**
@@ -38,7 +40,7 @@ adapter** chosen because it shares none of docket's shape, an inbound telemetry 
 pushed from inside a run, per-item model choice owned by Tack, and the GitHub pipeline
 finished in both directions (which closes Phase 21). Full plan with per-item verification
 commands in [docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md);
-task cards in [TODO.md](../../../TODO.md), Part II.
+task cards in [`docs/closed-cycles/boards/part-2.md`](../../closed-cycles/boards/part-2.md).
 
 **Status correction (2026-08-06):** Phases 39–42 exist in the current unreleased working
 tree, but Phase 41's atomic-write acceptance and Phase 42's provider-scoped identity are
