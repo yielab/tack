@@ -179,31 +179,39 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main`, `develop` and `claude/**`, on every
-pull request, and by hand (`workflow_dispatch`).
+`.github/workflows/ci.yml` (ADR 0068 decision 9) runs in three tiers, by trigger, in the same
+file — no separate workflow per tier:
 
-| Job | What it runs | When |
+| Tier | Trigger | Jobs |
 |---|---|---|
-| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
-| `frontend` | schema drift, type-check, token lint, build, entry-bundle budget | every push and PR |
-| `docs` | `mdbook build` + link check | every push and PR |
-| `msrv` | `cargo build --workspace --locked` on the pinned dependency floor | every push and PR |
-| `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace | every push and PR |
-| `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` | every push and PR |
-| `e2e` | Playwright in three browsers, a11y scan, API contract | every push and PR |
-| `coverage` | `cargo llvm-cov` floors per crate + Vitest thresholds | **pull requests, `main`, manual** — five instrumented builds that share nothing with the normal one |
-| `embed-spa` | release build with the SPA embedded, binary-size budget | **pull requests, `main`, manual** — the size-optimised release profile is the slowest build in the repository |
+| Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security` |
+| Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (Chromium only) |
+| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `e2e` (all three browsers) |
 
-The full suite runs exactly once, in the `rust` job's `cargo nextest run --workspace
---profile ci` step — each test's own pass/fail is in the uploaded JUnit report, which is why
-no step re-runs a subset "to see its status". That same job's last two steps *do* run two
-tests a second time, deliberately: the OpenAPI contract test and tack-orch's golden-drift
-tests are re-invoked with `UPDATE_OPENAPI=1`/`UPDATE_GOLDEN=1` through a targeted `-E`
-filter, which makes them regenerate `docs/openapi.json` / `crates/tack-orch/tests/golden/`
-from the current code, and the step then diffs that output against what's committed. This is
-a second pass over the same test in generate mode to catch drift, not a second verdict from
-the first run — nothing here contradicts "the suite runs once." `CARGO_INCREMENTAL=0`
+| Job | What it runs |
+|---|---|
+| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `python3 scripts/maintainability.py check` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI and golden regenerate-and-diff gates |
+| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 74.81`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (74.81%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
+| `frontend` | schema drift, type-check, **Vitest with coverage thresholds** (70% lines/functions/statements, 60% branches — decision 7), token lint, build, entry-bundle budget |
+| `docs` | `mdbook build` + link check |
+| `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` |
+| `msrv` | `cargo build --workspace --locked` on the pinned dependency floor |
+| `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
+| `embed-spa` | release build with the SPA embedded, binary-size budget |
+| `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
+
+The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
+nextest` step. The `rust` job's last two steps *do* run two tests a second time, deliberately:
+the OpenAPI contract test and tack-orch's golden-drift tests are re-invoked with
+`UPDATE_OPENAPI=1`/`UPDATE_GOLDEN=1` through a targeted `-E` filter, which makes them
+regenerate `docs/openapi.json` / `crates/tack-orch/tests/golden/` from the current code, and
+the step then diffs that output against what's committed. This is a second pass over the same
+test in generate mode to catch drift, not a second verdict from the first run. `CARGO_INCREMENTAL=0`
 throughout: CI never reuses incremental state, and keeping it only inflates the cache.
+
+`main`'s branch-protection ruleset still names the ten job names this tiering replaced; it is
+updated by the repository owner (`gh api`) from the pull-request tier's job list above, when
+`develop` is next released — not by this file.
 
 ### Pre-push hook
 
@@ -220,12 +228,13 @@ no local protection against schema drift there — CI's `frontend` job still cat
 ## Coverage
 
 ```bash
-make coverage   # reproduces CI's `coverage` job locally: per-crate llvm-cov floors + Vitest thresholds
+make coverage   # CI's coverage floors locally: one instrumented workspace run + Vitest thresholds
 ```
 
-Floors `make coverage` (and CI's `coverage` job) enforce, per `Makefile`'s `coverage` target:
-`tack-core` and `tack-runner` ≥ 85 % lines; `tack-db`, `tack-api` and `tack-orch` ≥ 70 %
-lines; frontend Vitest ≥ 70 % lines/functions/statements and ≥ 60 % branches.
+Floors `make coverage` and CI enforce: workspace line coverage ≥ 74.81 % (the total measured
+by the command in `ci.yml`'s `coverage` job, minus one point); frontend Vitest ≥ 70 %
+lines/functions/statements and ≥ 60 % branches. On a pull request CI also requires 80 % of
+the changed lines to be covered (`diff-cover`).
 
 For an HTML report instead of the pass/fail gate:
 

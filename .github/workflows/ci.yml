@@ -4,6 +4,11 @@ on:
   push:
     branches: ["main", "develop", "claude/**"]
   pull_request:
+  # The schedule tier: cross-browser E2E and MSRV, too slow for every pull
+  # request, run weekly. Offset from scheduled-audit.yml's Monday 06:00 UTC so
+  # the two don't contend for runners.
+  schedule:
+    - cron: "30 5 * * 1"
   workflow_dispatch:
 
 # Read-only by default; no job here needs to write anything.
@@ -41,7 +46,7 @@ defaults:
 
 jobs:
   rust:
-    name: Rust (fmt + clippy + test)
+    name: Rust (fmt + clippy + drift gates)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -79,22 +84,10 @@ jobs:
         uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: nextest
-      # One run of the whole suite: every test in its own process, no early
-      # exit, failures and a summary as the only output (.config/nextest.toml).
-      # The JUnit report below carries each test's own status, so nothing in
-      # this job re-runs a subset of the suite to get a status line for it.
-      - name: Test
-        run: cargo nextest run --workspace --profile ci
-      - name: Upload JUnit report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: junit-rust
-          path: target/nextest/ci/junit.xml
-          retention-days: 7
-      # The two gates below do something the run above does not: regenerate a
-      # committed artifact from the code and fail if it differs from what is
-      # committed. They run even after a red Test step so both statuses show.
+      # The suite itself runs once, instrumented, in the `coverage` job. The
+      # two gates below need their own nextest invocation: each regenerates a
+      # committed artifact from the code and fails if it differs from what is
+      # committed.
       # `--no-tests=fail` keeps a renamed test from turning a gate into a no-op.
       #
       # OpenAPI: a handler/DTO change without a spec regen (UPDATE_OPENAPI=1
@@ -123,6 +116,8 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.94 — dependency floor)
+    # Schedule tier: weekly, plus on demand.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -148,6 +143,9 @@ jobs:
 
   desktop:
     name: Desktop app (tack-desktop workspace)
+    # Merge tier: push to develop or main, plus on demand. The GTK/WebKit
+    # system packages and a second Rust build are too slow for every pull request.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -184,15 +182,16 @@ jobs:
         run: cargo test
 
   coverage:
-    name: Coverage (llvm-cov + Vitest thresholds)
-    # Five instrumented builds that share nothing with the normal build, for
-    # floors that decide something at a merge: pull requests, pushes to main
-    # and manual runs — not every push to a working branch.
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    name: Rust tests + coverage (llvm-cov)
+    # The one place the Rust suite runs: once, instrumented, on every push and
+    # pull request. fetch-depth: 0 gives diff-cover the base branch to diff
+    # the pull request's changed lines against.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -203,48 +202,30 @@ jobs:
         uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-llvm-cov
-      # Per-crate line-coverage floors mirror the targets documented in
-      # docs/TESTING.md (tack-core >= 85%, tack-db/tack-api/tack-orch >= 70%).
-      - name: Rust coverage — tack-core (>= 85%)
-        run: cargo llvm-cov -p tack-core --fail-under-lines 85
-      - name: Rust coverage — tack-db (>= 70%)
-        run: cargo llvm-cov -p tack-db --fail-under-lines 70
-      - name: Rust coverage — tack-api (>= 70%)
-        run: cargo llvm-cov -p tack-api --fail-under-lines 70
-      # tack-orch had no floor before Phase 39 (docs/plans/agnostic-control-plane.md
-      # item 0.4) — it is the adapter code this cycle rewrites the most, and was the
-      # least-guarded crate in the workspace without this line.
-      - name: Rust coverage — tack-orch (>= 70%)
-        run: cargo llvm-cov -p tack-orch --fail-under-lines 70
-      # tack-runner had no floor before III-G4 (Wave 6) — it owns local credentials,
-      # the journal and the harness subprocess boundary. Measured locally at 93.66%
-      # line coverage (`cargo llvm-cov -p tack-runner --summary-only`, III-G4 handoff)
-      # via fake-adapter/crash-matrix tests only; live-harness tests are `--ignored`
-      # and excluded from this run by default, so the floor never depends on a billed
-      # live call. 85% mirrors tack-core's floor with headroom below the measured value.
-      - name: Rust coverage — tack-runner (>= 85%)
-        run: cargo llvm-cov -p tack-runner --fail-under-lines 85
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend deps + coverage provider
-        working-directory: frontend
-        # --no-save keeps package.json untouched; the provider is CI-only.
-        run: |
-          set -euo pipefail
-          npm ci
-          npm install --no-save @vitest/coverage-v8@^4
-      - name: Frontend Vitest coverage thresholds
-        working-directory: frontend
-        run: >-
-          npx vitest run --coverage
-          --coverage.provider=v8
-          --coverage.thresholds.lines=70
-          --coverage.thresholds.functions=70
-          --coverage.thresholds.statements=70
-          --coverage.thresholds.branches=60
+          tool: nextest
+      # The floor is the measured workspace line total minus one point:
+      # 75.81 % (19 555 of 25 794 lines) from `cargo llvm-cov report
+      # --summary-only` after this command. Re-measure before changing it.
+      - name: Test + workspace coverage (>= 74.81% lines)
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 74.81
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          retention-days: 7
+      - name: Install diff-cover
+        if: github.event_name == 'pull_request'
+        run: pip install diff-cover
+      # The workspace floor guards what already exists; this guards the lines
+      # the pull request itself changes.
+      - name: Patch coverage (>= 80% of changed lines)
+        if: github.event_name == 'pull_request'
+        run: diff-cover lcov.info --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
   deny:
     name: cargo-deny (dependency policy)
@@ -282,7 +263,7 @@ jobs:
         run: cargo deny --manifest-path crates/tack-desktop/Cargo.toml check
 
   frontend:
-    name: Frontend (typecheck + build)
+    name: Frontend (typecheck + Vitest + build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -308,6 +289,18 @@ jobs:
           git diff --exit-code src/shared/api/schema.gen.ts
       - name: Type check
         run: npm run type-check
+      # --no-save keeps package.json untouched; the provider is CI-only. This
+      # is the one place Vitest runs in CI.
+      - name: Install Vitest coverage provider
+        run: npm install --no-save @vitest/coverage-v8@^4
+      - name: Vitest (with coverage thresholds)
+        run: >-
+          npx vitest run --coverage
+          --coverage.provider=v8
+          --coverage.thresholds.lines=70
+          --coverage.thresholds.functions=70
+          --coverage.thresholds.statements=70
+          --coverage.thresholds.branches=60
       - name: Design token gate (no new raw color literals)
         run: npm run lint:tokens
       - name: Build
@@ -353,9 +346,9 @@ jobs:
   embed-spa:
     name: Embed SPA (single-binary packaging)
     # The size-optimised release profile (lto, opt-level "z", one codegen unit)
-    # is the slowest build in the repository, and the binary-size budget it
-    # feeds matters at a merge: pull requests, pushes to main and manual runs.
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    # is the slowest build in the repository. Merge tier: push to develop or
+    # main, plus on demand.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: frontend
@@ -458,7 +451,10 @@ jobs:
         run: npm audit --audit-level=high
 
   e2e:
-    name: E2E (Playwright, cross-browser)
+    name: E2E (Playwright)
+    # Merge tier: push to develop or main runs Chromium only. Schedule tier:
+    # the weekly cron runs all three browser projects.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     # Fixed setup (checkout through `playwright install --with-deps`) plus this
     # suite's own three browser projects, each run to completion serially
@@ -467,7 +463,8 @@ jobs:
     # any CI-runner variance is added. Margin here is deliberate, not padding:
     # a suite this test-timeout-bound can lose several minutes to a single
     # test that exhausts its own timeout across every retry, and that cost
-    # doesn't show up until it's actually measured.
+    # doesn't show up until it's actually measured. The merge-tier Chromium-only
+    # run finishes well inside this budget too, so one timeout covers both.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -483,12 +480,24 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (Chromium on merge, all three on schedule)
         working-directory: frontend
-        run: npx playwright install --with-deps
-      - name: Run E2E tests
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx playwright install --with-deps
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - name: Run E2E tests (Chromium on merge, cross-browser on schedule)
         working-directory: frontend
-        run: npm run test:e2e
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npm run test:e2e
+          else
+            npx playwright test --project=chromium
+          fi
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
