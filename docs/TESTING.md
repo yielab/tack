@@ -93,7 +93,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 |---|---|---|---|
 | `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above |
 | `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
-| `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; the `docket_*_contract_test` pair regenerates golden files | control-plane logic, reconciler, the neutral execution domain. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract.rs` in the same change |
+| `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/` | the runner-v1 execution domain: capability negotiation, request/attempt lifecycle, scheduling, model policy, usage provenance. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract.rs` in the same change |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable |
 | `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. The one exception, per open-wire harness, is a single test that runs the real binary against a fake model server on loopback: it proves the vendor's contract, is not billed, and returns early when the binary is absent. Vendor output is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape, rules and the order of work for docket and opencode: `docs/plans/harnesses.md`. Live-harness tests are `#[ignore]` and billed |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
@@ -153,13 +153,12 @@ async fn health_returns_ok() {
 
 ## Contract and regeneration gates
 
-Three tests guard artifacts that are committed rather than computed. They run inside the
-full suite; the first two also *rewrite* the artifact when asked, and CI fails when that
+Two tests guard artifacts that are committed rather than computed. They run inside the
+full suite; the first also *rewrites* the artifact when asked, and CI fails when that
 rewrite differs from what is committed:
 
 ```bash
 UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' && git diff --exit-code docs/openapi.json
-UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_tick_contract_test) | binary(docket_wire_contract_test)' && git diff --exit-code crates/tack-orch/tests/golden/
 cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated: the fixtures are the authority
 ```
 
@@ -187,7 +186,7 @@ file — no separate workflow per tier:
 
 | Job | What it runs |
 |---|---|
-| `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI and golden regenerate-and-diff gates |
+| `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI regenerate-and-diff gate |
 | `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 74.81`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (74.81%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
 | `frontend` | schema drift, type-check, **Vitest with coverage thresholds** (70% lines/functions/statements, 60% branches — decision 7), token lint, build, entry-bundle budget |
 | `docs` | `mdbook build` + link check |
@@ -198,12 +197,11 @@ file — no separate workflow per tier:
 | `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
 
 The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
-nextest` step. The `rust` job's last two steps *do* run two tests a second time, deliberately:
-the OpenAPI contract test and tack-orch's golden-drift tests are re-invoked with
-`UPDATE_OPENAPI=1`/`UPDATE_GOLDEN=1` through a targeted `-E` filter, which makes them
-regenerate `docs/openapi.json` / `crates/tack-orch/tests/golden/` from the current code, and
-the step then diffs that output against what's committed. This is a second pass over the same
-test in generate mode to catch drift, not a second verdict from the first run. `CARGO_INCREMENTAL=0`
+nextest` step. The `rust` job's last step *does* run one test a second time, deliberately:
+the OpenAPI contract test is re-invoked with `UPDATE_OPENAPI=1` through a targeted `-E`
+filter, which makes it regenerate `docs/openapi.json` from the current code, and the step
+then diffs that output against what's committed. This is a second pass over the same test
+in generate mode to catch drift, not a second verdict from the first run. `CARGO_INCREMENTAL=0`
 throughout: CI never reuses incremental state, and keeping it only inflates the cache.
 
 `main`'s branch-protection ruleset still names the ten job names this tiering replaced; it is

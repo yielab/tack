@@ -173,10 +173,9 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 /// [`execution_retention::spawn_execution_retention_sweep`](crate::execution_retention::spawn_execution_retention_sweep).
 ///
 /// Logs a `warn!` only on the *transition into* an alert condition (and an
-/// `info!` on the transition back out), matching `reconciler.rs`'s own
-/// "logs backoff at warn without spam" convention: a sustained stuck
-/// condition produces one warn on onset, not one every tick, no matter how
-/// long it lasts. A `debug!`-level snapshot line is emitted every tick
+/// `info!` on the transition back out) — a sustained stuck condition
+/// produces one warn on onset, not one every tick, no matter how long it
+/// lasts. A `debug!`-level snapshot line is emitted every tick
 /// regardless, for anyone tailing logs at debug level.
 pub fn spawn_execution_health_watch(
     enabled: bool,
