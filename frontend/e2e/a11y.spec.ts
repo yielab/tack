@@ -377,7 +377,7 @@ test('fleet page (populated) has no accessibility violations', async ({ page }) 
 // scans above, which happen to share the word "fleet"). The operator
 // execution/fleet/runner/profile routes this section calls
 // (`/api/executions`, `/api/runner-fleets`, `/api/runners/*`,
-// `/api/agent-profiles`, `/api/model-profiles`) are NOT gated behind
+// `/api/agent-profiles`) are NOT gated behind
 // `TACK_ORCH_ENABLE` (`crates/tack-api/src/router.rs`'s
 // `operator_execution_routes` is merged into `/api` independently of
 // `orch_routes`) — so these scans hit the real, unmodified webServer with no
@@ -434,7 +434,7 @@ test('agents page — enrolling a runner and viewing the one-time token modal ha
   expect(violationsAfterClose, JSON.stringify(violationsAfterClose.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-test('agents page — Fleets/Agent profiles/Model profiles tabs have no accessibility violations', async ({ page }) => {
+test('agents page — Fleets/Agent profiles tabs have no accessibility violations', async ({ page }) => {
   await page.goto('/agents');
   await waitForApp(page);
   await openAdvanced(page);
@@ -445,10 +445,6 @@ test('agents page — Fleets/Agent profiles/Model profiles tabs have no accessib
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 
   await page.getByRole('tab', { name: 'Agent profiles' }).click();
-  violations = await scan(page);
-  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
-
-  await page.getByRole('tab', { name: 'Model profiles' }).click();
   violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });

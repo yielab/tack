@@ -19,9 +19,10 @@ carries the ownership and handoff rules. This skill is the architectural path.
 
 ## 0. Check it isn't already half-built — and that it should exist at all
 
-**This is the step this codebase skips, and it is the expensive one.** The tree carries
+**This is the step this codebase skips, and it is the expensive one.** The tree carried
 `model_profiles` (a table, a repo module and a UI surface consulted by *nothing* since Phase
-56), a fully built and contract-pinned `decisions` path that no harness has ever exercised,
+56) until it was removed for exactly that reason. It still carries a fully built and
+contract-pinned `decisions` path that no harness has ever exercised,
 and an entire docket control plane that Part III superseded and which for weeks could not
 simply be deleted because hundreds of doc comments cited its board sections (0 do today;
 ADR 0060 keeps it by decision). All three were built well. None of

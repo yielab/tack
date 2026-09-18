@@ -215,8 +215,8 @@ fn extract(resp: Response) -> anyhow::Result<serde_json::Value> {
 }
 
 /// The operator execution/fleet/runner/profile routes (`/api/executions`,
-/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
-/// `/api/model-profiles`) answer errors with the stable runner-v1 protocol
+/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`)
+/// answer errors with the stable runner-v1 protocol
 /// envelope, `{"error": {"code": "...", "message": "...", "details": {...},
 /// "retryable": bool}}` — `error` is an *object* there, not the plain
 /// `{"error": "text"}`/`{"message": "text"}` string every other route uses.

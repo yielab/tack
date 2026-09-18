@@ -42,7 +42,7 @@ describe('RunnerFleetSection — tabs', () => {
     const tablist = container.querySelector('[role="tablist"]')!;
     expect(tablist).toBeTruthy();
     const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
-    expect(tabs).toHaveLength(4);
+    expect(tabs).toHaveLength(3);
     const selected = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
     expect(selected).toHaveLength(1);
     expect(selected[0].textContent).toBe('Runners');

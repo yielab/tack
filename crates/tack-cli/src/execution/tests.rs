@@ -5,9 +5,7 @@ use super::*;
 // and proves — mechanically, not by inspection — that every body this
 // module builds deserializes into the real request type.
 use tack_api::handlers::executions::{CreateExecution, RecoveryConfirmation};
-use tack_api::handlers::runner_admin::{
-    CreateFleet, CreateModelProfile, CreatePendingRunner, CreateProfile,
-};
+use tack_api::handlers::runner_admin::{CreateFleet, CreatePendingRunner, CreateProfile};
 
 /// Valid `AgentProfileSnapshot` JSON (`{name, instructions, tool_policy,
 /// timeout_seconds, budgets}`) reused across tests that don't care about
@@ -201,16 +199,6 @@ fn agent_profile_body_matches_create_profile() {
     assert_eq!(typed.instructions, "be concise");
     assert_eq!(typed.tool_policy, json!({}));
     assert_eq!(typed.limits, json!({"x": 1}));
-}
-
-#[test]
-fn model_profile_body_matches_create_model_profile() {
-    let body = build_create_model_profile_body("gpt", "openai", "gpt-5", None);
-    let typed: CreateModelProfile =
-        serde_json::from_value(body).expect("must deserialize into CreateModelProfile");
-    assert_eq!(typed.name, "gpt");
-    assert_eq!(typed.model_provider, "openai");
-    assert_eq!(typed.model_id, "gpt-5");
 }
 
 #[test]
