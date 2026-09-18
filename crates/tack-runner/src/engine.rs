@@ -14,18 +14,46 @@ use tack_orch::execution::{
     RunnerId as DomainRunnerId,
 };
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use super::{
     ActiveAttempt, ArtifactManifestItem, ArtifactManifestReport, AttemptDataProtocol, AttemptId,
     AttemptState, CancellationReport, CancellationRequestId, Checkpoint, ClaimRequest, ClaimResult,
     ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport, CompletionResponse,
-    EnrollmentRequest, EnrollmentResponse, EventBatchReport, HeartbeatRequest,
-    PendingTerminalReport, PendingTerminalReportKind, ProtocolClientError, ProtocolEvent,
-    PullProtocol, RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
-    Timestamp,
+    DecisionAnswer, DecisionCreateReport, DecisionOption, DecisionPollReport, EnrollmentRequest,
+    EnrollmentResponse, EventBatchReport, HeartbeatRequest, PendingTerminalReport,
+    PendingTerminalReportKind, ProtocolClientError, ProtocolEvent, PullProtocol, RefreshRequest,
+    RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
+
+/// One thing a harness's own protocol asked the operator, read off a line of
+/// its stdout by [`HarnessGrammar::signal`](crate::harness::local_process::HarnessGrammar::signal).
+/// `kind`, `prompt`, `options` and `metadata` map one to one onto
+/// `decision.create.request.json`; `vendor_id` does not cross the wire at
+/// all — it is the harness's own correlation id (e.g. Claude Code's
+/// `control_request.request_id`), carried back to
+/// [`HarnessGrammar::answer`](crate::harness::local_process::HarnessGrammar::answer)
+/// so the reply is addressed to the right pending question.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Question {
+    pub vendor_id: String,
+    pub kind: String,
+    pub prompt: String,
+    pub options: Vec<DecisionOption>,
+    pub metadata: serde_json::Map<String, serde_json::Value>,
+}
+
+/// What one line of a harness's stdout means to the core, when the run is
+/// listening for a pause-and-ask conversation. `Finished` is what lets the
+/// core close the child's stdin, which is what lets a CLI that keeps
+/// listening past its own terminal line actually exit.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamSignal {
+    Question(Question),
+    Finished,
+}
 
 /// How often [`RunnerEngine::wait_with_lease_renewal`] re-heartbeats a
 /// still-running attempt. Must stay comfortably under the server's
@@ -34,6 +62,126 @@ use super::{
 /// previous one's grant would expire, including a missed cycle or two under
 /// transient network trouble.
 const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// A decision this runner has asked the operator about and not yet answered.
+struct PendingDecision {
+    decision_id: String,
+    question: Question,
+    /// The poll cursor `decision.poll.request.json` calls `after`; `None`
+    /// asks for everything since the decision was created.
+    after: Option<Timestamp>,
+}
+
+/// The mutable state one attempt's decision round trips share: the channel
+/// pair to the running harness, whatever is currently pending an answer, and
+/// the fixed deadline the attempt's own timeout set. Bundled so
+/// `open_decision`/`advance_pending` take one seam, not four loose `&mut`s.
+struct DecisionState<'a> {
+    decisions: &'a mut Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    pending: &'a mut Option<PendingDecision>,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// The next question a running harness asks, or never resolves — used as a
+/// [`tokio::select!`] branch that only actually waits on the channel when
+/// there is one to wait on and nothing is already pending an answer, so a
+/// harness that cannot ask, or one already mid-question, never wakes this
+/// branch.
+async fn next_question(
+    decisions: &mut Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    already_pending: bool,
+) -> Option<Question> {
+    match decisions.as_mut() {
+        Some((questions_rx, _)) if !already_pending => questions_rx.recv().await,
+        _ => std::future::pending().await,
+    }
+}
+
+/// Posts `answer` back to the harness, if anything is still listening. Best
+/// effort: a dropped receiver means the run has already moved on without it.
+async fn send_answer(
+    decisions: &mut Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    answer: DecisionAnswer,
+) {
+    if let Some((_, answers_tx)) = decisions.as_mut() {
+        let _ = answers_tx.send(answer).await;
+    }
+}
+
+/// The answer nobody gave: by convention every grammar orders a question's
+/// options with its safe default last (`decision.create.request.json`'s own
+/// example: `allow_once` then `deny`), so this is always that one.
+fn deny_answer(question: &Question) -> DecisionAnswer {
+    match question.options.last() {
+        Some(option) => DecisionAnswer {
+            option_id: Some(option.option_id.clone()),
+            text: None,
+        },
+        None => DecisionAnswer {
+            option_id: None,
+            text: None,
+        },
+    }
+}
+
+fn decision_id_for(record: &AttemptJournal, question: &Question) -> String {
+    let material = format!(
+        "{}:{}:{}",
+        record.attempt_id.as_str(),
+        record.fencing_token.0,
+        question.vendor_id
+    );
+    format!(
+        "dec_{}",
+        material
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
+}
+
+/// The same secret scrub captured output gets, applied a second time at the
+/// boundary this decision actually leaves the runner over: the resolved
+/// prompt is the one secret this layer independently knows, regardless of
+/// what a harness's own grammar already scrubbed against its full registered
+/// secret set before the question ever reached this channel.
+fn scrub_with_prompt(text: &str, prompt: &str) -> String {
+    if prompt.is_empty() || !text.contains(prompt) {
+        text.to_owned()
+    } else {
+        text.replace(prompt, "[REDACTED]")
+    }
+}
+
+fn scrub_metadata_with_prompt(
+    metadata: serde_json::Map<String, serde_json::Value>,
+    prompt: &str,
+) -> serde_json::Map<String, serde_json::Value> {
+    fn scrub_value(value: serde_json::Value, prompt: &str) -> serde_json::Value {
+        match value {
+            serde_json::Value::String(text) => {
+                serde_json::Value::String(scrub_with_prompt(&text, prompt))
+            }
+            serde_json::Value::Array(items) => serde_json::Value::Array(
+                items
+                    .into_iter()
+                    .map(|item| scrub_value(item, prompt))
+                    .collect(),
+            ),
+            serde_json::Value::Object(map) => serde_json::Value::Object(
+                map.into_iter()
+                    .map(|(key, item)| (key, scrub_value(item, prompt)))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+    match scrub_value(serde_json::Value::Object(metadata), prompt) {
+        serde_json::Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    }
+}
 
 /// `Rejected` carries a `reason`.
 ///
@@ -139,6 +287,18 @@ pub trait HarnessAdapter: Send + Sync {
         &self,
         journal: &AttemptJournal,
     ) -> Result<RecoveryObservation, HarnessError>;
+
+    /// The channel pair for a run that can pause and ask: the engine
+    /// receives [`Question`]s on the first half and posts back
+    /// [`DecisionAnswer`]s on the second. `None` for a run that never asks —
+    /// every harness today outside an `ask`-policy claude-code run. Taken
+    /// once per handle; a second call returns `None` too.
+    async fn decision_channels(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -442,7 +602,7 @@ where
         }
 
         let outcome = match self
-            .wait_with_lease_renewal(session, &record, &handle)
+            .wait_with_lease_renewal(session, &record, &handle, &spec)
             .await
         {
             Ok(outcome) => outcome,
@@ -553,7 +713,9 @@ where
     }
 
     /// Runs `self.adapter.wait(handle)` to completion while sending a
-    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`].
+    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`], and
+    /// carrying any question the harness asks out to the operator through a
+    /// decision.
     ///
     /// The lease is granted for a bounded window at claim time and only
     /// extended by a heartbeat naming the attempt. A harness run can take up
@@ -565,17 +727,45 @@ where
     /// attempt stuck `running` forever. A failed renewal is logged and does
     /// not interrupt the wait: the harness keeps running regardless, and the
     /// worst case is the same stale-lease outcome this loop exists to avoid.
+    ///
+    /// A question is polled for resolution on the same heartbeat tick, never
+    /// its own timer: `spec`'s own `timeout_seconds` is the one deadline
+    /// governing the whole attempt, and a decision that outlives it is
+    /// answered as the question's own deny option — same as a create that
+    /// never succeeded or an answer channel that was dropped — so a harness
+    /// waiting on stdin is never left waiting forever.
     async fn wait_with_lease_renewal(
         &self,
         session: &RunnerSession,
         record: &AttemptJournal,
         handle: &LocalRunHandle,
+        spec: &ExecutionSpec,
     ) -> Result<HarnessOutcome, HarnessError> {
+        let prompt = spec
+            .work
+            .request
+            .resolved_agent_profile
+            .instructions
+            .as_str();
+        let timeout_seconds = i64::try_from(spec.work.request.timeout_seconds).unwrap_or(i64::MAX);
+        let expires_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
+            + chrono::Duration::seconds(timeout_seconds);
+
+        let mut decisions = self.adapter.decision_channels(handle).await;
         let mut wait_future = self.adapter.wait(handle);
+        let mut pending: Option<PendingDecision> = None;
         loop {
+            let mut state = DecisionState {
+                decisions: &mut decisions,
+                pending: &mut pending,
+                expires_at,
+            };
             tokio::select! {
                 biased;
                 outcome = &mut wait_future => return outcome,
+                Some(question) = next_question(state.decisions, state.pending.is_some()) => {
+                    self.open_decision(session, record, &mut state, question, prompt).await;
+                }
                 () = tokio::time::sleep(LEASE_RENEWAL_INTERVAL) => {
                     let request = self.heartbeat_request(session, record);
                     if let Err(error) = self.protocol.heartbeat(session, request).await {
@@ -585,8 +775,102 @@ where
                             "lease-renewal heartbeat failed while the harness is still running"
                         );
                     }
+                    self.advance_pending(session, record, &mut state).await;
                 }
             }
+        }
+    }
+
+    /// Registers a newly asked question as a decision. A create that fails
+    /// (no transport configured, or the call itself errors) is answered
+    /// immediately as the question's deny option rather than left pending —
+    /// there is nothing to poll.
+    async fn open_decision(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+        state: &mut DecisionState<'_>,
+        question: Question,
+        prompt: &str,
+    ) {
+        let decision_id = decision_id_for(record, &question);
+        let created = if let Some(data_protocol) = self.data_protocol.as_ref() {
+            let report = DecisionCreateReport {
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                decision_id: decision_id.clone(),
+                kind: question.kind.clone(),
+                prompt: scrub_with_prompt(&question.prompt, prompt),
+                options: question.options.clone(),
+                expires_at: Timestamp::new(
+                    state
+                        .expires_at
+                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                ),
+                metadata: scrub_metadata_with_prompt(question.metadata.clone(), prompt),
+            };
+            data_protocol.create_decision(session, report).await.is_ok()
+        } else {
+            false
+        };
+        if created {
+            *state.pending = Some(PendingDecision {
+                decision_id,
+                question,
+                after: None,
+            });
+        } else {
+            send_answer(state.decisions, deny_answer(&question)).await;
+        }
+    }
+
+    /// Polls a pending decision once. Resolved answers it as given; a state
+    /// this runner does not recognize as still-pending, or the attempt's own
+    /// deadline passing, answers it as the question's deny option. A
+    /// transport failure leaves it pending for the next tick — the deadline
+    /// still bounds how long that can go on.
+    async fn advance_pending(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+        state: &mut DecisionState<'_>,
+    ) {
+        let Some(open) = state.pending.as_mut() else {
+            return;
+        };
+        if let Some(data_protocol) = self.data_protocol.as_ref() {
+            let poll = DecisionPollReport {
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                after: open.after.clone(),
+            };
+            if let Ok(response) = data_protocol.poll_decisions(session, poll).await {
+                open.after = response.next_after.clone().or_else(|| open.after.clone());
+                let resolved = response
+                    .decisions
+                    .iter()
+                    .find(|decision| decision.decision_id == open.decision_id)
+                    .cloned();
+                if let Some(resolved) = resolved {
+                    if resolved.state == "resolved" {
+                        let opened = state.pending.take().expect("just matched Some above");
+                        let answer = resolved
+                            .answer
+                            .unwrap_or_else(|| deny_answer(&opened.question));
+                        send_answer(state.decisions, answer).await;
+                        return;
+                    }
+                    if resolved.state != "pending" {
+                        let opened = state.pending.take().expect("just matched Some above");
+                        send_answer(state.decisions, deny_answer(&opened.question)).await;
+                        return;
+                    }
+                }
+            }
+        }
+        if chrono::DateTime::<chrono::Utc>::from(self.clock.now()) >= state.expires_at {
+            let opened = state.pending.take().expect("just matched Some above");
+            send_answer(state.decisions, deny_answer(&opened.question)).await;
         }
     }
 

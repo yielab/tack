@@ -36,10 +36,15 @@ use thiserror::Error;
 use tokio::{
     io::AsyncReadExt,
     process::{Child, Command},
+    sync::mpsc,
     time,
 };
 
 use super::redact::{RedactedEnv, SecretMaterial};
+use crate::client::{
+    DecisionAnswer,
+    engine::{Question, StreamSignal},
+};
 
 /// What to launch and where. `working_directory` must be the attempt's own
 /// workspace path (or a descendant of it) — [`ProcessSpec::spawn`] refuses to
@@ -65,6 +70,11 @@ pub struct ProcessSpec {
     pub stdin: Option<Vec<u8>>,
     pub working_directory: PathBuf,
     pub workspace_root: PathBuf,
+    /// After `stdin` is written, keep the pipe open instead of closing it —
+    /// for a CLI that keeps reading (and keeps the process alive) past its
+    /// first message. [`SupervisedProcess::wait_with_capture_and_questions`]
+    /// is the only caller that later writes to it and closes it.
+    pub keep_stdin_open: bool,
 }
 
 impl std::fmt::Debug for ProcessSpec {
@@ -212,7 +222,14 @@ impl ProcessSpec {
                 // pipe, which is not itself a spawn failure — the exit/wait
                 // path below is the authoritative outcome.
                 let _ = stdin.write_all(input).await;
-                drop(stdin);
+                if self.keep_stdin_open {
+                    // Handed back so an interactive wait can keep writing to
+                    // it and close it once the conversation is over; every
+                    // other caller drops it here, closing the pipe now.
+                    child.stdin = Some(stdin);
+                } else {
+                    drop(stdin);
+                }
             }
         }
 
@@ -264,6 +281,138 @@ impl SupervisedProcess {
         })
     }
 
+    /// The interactive counterpart of [`Self::wait_with_capture`], for a
+    /// child spawned with `keep_stdin_open`. Reads stdout line by line into
+    /// the same bounded head/tail capture, offering each line to `signal`;
+    /// a [`StreamSignal::Question`] goes out on `questions_tx` and this loop
+    /// blocks on `answers_rx` for the reply, which `answer` turns into the
+    /// bytes written back to the child's stdin. A `StreamSignal::Finished`,
+    /// a dropped answer channel, or EOF all close stdin and end the loop —
+    /// the child's own exit (or the timeout) is what this method actually
+    /// waits on. `signal`/`answer` stay generic closures rather than a
+    /// `HarnessGrammar` reference so this module keeps no per-CLI knowledge.
+    pub async fn wait_with_capture_and_questions(
+        mut self,
+        limits: &ProcessLimits,
+        secrets: &SecretMaterial,
+        mut signal: impl FnMut(&str) -> Option<StreamSignal> + Send,
+        mut answer: impl FnMut(&Question, &DecisionAnswer) -> Vec<u8> + Send,
+        questions_tx: mpsc::Sender<Question>,
+        mut answers_rx: mpsc::Receiver<DecisionAnswer>,
+    ) -> Result<ProcessResult, ProcessError> {
+        let mut stdin = Some(self.child.stdin.take().ok_or(ProcessError::Io)?);
+        let stdout_pipe = self.child.stdout.take().ok_or(ProcessError::Io)?;
+        let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::Io)?;
+        let stderr_cap = limits.max_stderr_bytes;
+        let stderr_task =
+            tokio::spawn(async move { capture_bounded(&mut stderr_pipe, stderr_cap).await });
+
+        let stdout_cap = limits.max_stdout_bytes;
+        let read_and_drive = async move {
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+            let mut accumulator = BoundedAccumulator::new(stdout_cap);
+            let mut reader = BufReader::new(stdout_pipe);
+            let mut raw_line = Vec::new();
+            loop {
+                raw_line.clear();
+                let Ok(n) = reader.read_until(b'\n', &mut raw_line).await else {
+                    break;
+                };
+                if n == 0 {
+                    break;
+                }
+                accumulator.push(&raw_line);
+                let text = String::from_utf8_lossy(&raw_line);
+                let text = text.trim_end_matches(['\n', '\r']);
+                match signal(text) {
+                    Some(StreamSignal::Question(mut question)) => {
+                        // The same scrub captured output gets, applied before
+                        // the question ever leaves this loop — a tool's
+                        // command or path argument is ordinary content, not
+                        // secret, but is scrubbed anyway in case it happens
+                        // to carry one.
+                        question.prompt = secrets.scrub(&question.prompt);
+                        let mut metadata = serde_json::Value::Object(question.metadata);
+                        secrets.scrub_json(&mut metadata);
+                        question.metadata = match metadata {
+                            serde_json::Value::Object(map) => map,
+                            _ => serde_json::Map::new(),
+                        };
+                        // Nobody heard the question, or heard it and went
+                        // away without answering: reply with the question's
+                        // own deny option rather than leave the child
+                        // blocked on stdin until the run's own timeout.
+                        let resolved = if questions_tx.send(question.clone()).await.is_err() {
+                            deny_option(&question)
+                        } else {
+                            answers_rx
+                                .recv()
+                                .await
+                                .unwrap_or_else(|| deny_option(&question))
+                        };
+                        let bytes = answer(&question, &resolved);
+                        let Some(pipe) = stdin.as_mut() else { break };
+                        if pipe.write_all(&bytes).await.is_err()
+                            || pipe.write_all(b"\n").await.is_err()
+                        {
+                            break;
+                        }
+                    }
+                    // Closing stdin is what lets a CLI that keeps listening
+                    // exit; its remaining output is still drained to EOF so
+                    // it can never block on a full pipe.
+                    Some(StreamSignal::Finished) => stdin = None,
+                    None => {}
+                }
+            }
+            drop(stdin);
+            accumulator.finish()
+        };
+        tokio::pin!(read_and_drive);
+
+        let deadline = time::Instant::now() + limits.timeout;
+        let mut stdout_raw: Option<RawCapture> = None;
+        let exit = {
+            let child_wait = self.child.wait();
+            tokio::pin!(child_wait);
+            loop {
+                tokio::select! {
+                    biased;
+                    status = &mut child_wait => {
+                        let status = status.map_err(|_| ProcessError::Io)?;
+                        break status_to_exit(status);
+                    }
+                    accumulator = &mut read_and_drive, if stdout_raw.is_none() => {
+                        stdout_raw = Some(accumulator);
+                    }
+                    () = time::sleep_until(deadline) => {
+                        break ProcessExit::TimedOut;
+                    }
+                }
+            }
+        };
+        if exit == ProcessExit::TimedOut {
+            kill_tree(self.pid, &mut self.child, limits.termination_grace).await?;
+        }
+        if stdout_raw.is_none() {
+            stdout_raw = Some((&mut read_and_drive).await);
+        }
+
+        let stderr_raw = stderr_task.await.map_err(|_| ProcessError::Io)?;
+        Ok(ProcessResult {
+            exit,
+            stdout: finalize_capture(
+                stdout_raw.unwrap_or_else(|| RawCapture {
+                    head: Vec::new(),
+                    tail: VecDeque::new(),
+                    total: 0,
+                }),
+                secrets,
+            ),
+            stderr: finalize_capture(stderr_raw, secrets),
+        })
+    }
+
     /// Requests cancellation: SIGTERM to the whole group, then SIGKILL after
     /// `grace` if the group has not stopped. This kills descendants the
     /// child itself spawned, not only the direct child — see the module
@@ -302,47 +451,99 @@ async fn kill_tree(
     }
 }
 
-/// Reads `pipe` to EOF, retaining the first `cap / 2` bytes (`head`, filled
-/// once and never touched again) and the last `cap - cap / 2` bytes (`tail`,
-/// a ring that drops from the front as new bytes arrive) — always continuing
-/// to drain past the cap so the writer end never blocks on a full pipe. A
+/// The head/tail bookkeeping both a whole-stream capture
+/// ([`capture_bounded`]) and the interactive line loop
+/// ([`SupervisedProcess::wait_with_capture_and_questions`]) drive: the first
+/// `cap / 2` bytes seen, kept once and never touched again, and the last
+/// `cap - cap / 2` bytes, a ring that drops from the front as new bytes
+/// arrive. One accumulator, fed from either a raw read or a decoded line, so
+/// the two capture paths can never disagree about what "bounded" means.
+struct BoundedAccumulator {
+    head: Vec<u8>,
+    head_cap: usize,
+    tail: VecDeque<u8>,
+    tail_cap: usize,
+    total: u64,
+}
+
+impl BoundedAccumulator {
+    fn new(cap: usize) -> Self {
+        let head_cap = cap / 2;
+        let tail_cap = cap - head_cap;
+        Self {
+            head: Vec::with_capacity(head_cap.min(64 * 1024)),
+            head_cap,
+            tail: VecDeque::with_capacity(tail_cap.min(64 * 1024)),
+            tail_cap,
+            total: 0,
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        self.total += bytes.len() as u64;
+        let mut rest = bytes;
+        if self.head.len() < self.head_cap {
+            let room = self.head_cap - self.head.len();
+            let take = room.min(rest.len());
+            self.head.extend_from_slice(&rest[..take]);
+            rest = &rest[take..];
+        }
+        self.tail.extend(rest.iter().copied());
+        while self.tail.len() > self.tail_cap {
+            self.tail.pop_front();
+        }
+    }
+
+    fn finish(self) -> RawCapture {
+        RawCapture {
+            head: self.head,
+            tail: self.tail,
+            total: self.total,
+        }
+    }
+}
+
+/// Reads `pipe` to EOF into a [`BoundedAccumulator`], always continuing to
+/// drain past the cap so the writer end never blocks on a full pipe. A
 /// stream that never exceeds `cap` fills `head` then `tail` without either
 /// ever dropping anything, so the two concatenate back into the whole,
 /// contiguous stream.
 async fn capture_bounded(pipe: &mut (impl tokio::io::AsyncRead + Unpin), cap: usize) -> RawCapture {
-    let head_cap = cap / 2;
-    let tail_cap = cap - head_cap;
-    let mut head = Vec::with_capacity(head_cap.min(64 * 1024));
-    let mut tail: VecDeque<u8> = VecDeque::with_capacity(tail_cap.min(64 * 1024));
-    let mut total: u64 = 0;
+    let mut accumulator = BoundedAccumulator::new(cap);
     let mut chunk = [0u8; 32 * 1024];
     loop {
         match pipe.read(&mut chunk).await {
             Ok(0) => break,
-            Ok(n) => {
-                total += n as u64;
-                let mut rest = &chunk[..n];
-                if head.len() < head_cap {
-                    let room = head_cap - head.len();
-                    let take = room.min(rest.len());
-                    head.extend_from_slice(&rest[..take]);
-                    rest = &rest[take..];
-                }
-                tail.extend(rest.iter().copied());
-                while tail.len() > tail_cap {
-                    tail.pop_front();
-                }
-            }
+            Ok(n) => accumulator.push(&chunk[..n]),
             Err(_) => break,
         }
     }
-    RawCapture { head, tail, total }
+    accumulator.finish()
 }
 
 struct RawCapture {
     head: Vec<u8>,
     tail: VecDeque<u8>,
     total: u64,
+}
+
+/// The answer nobody gave: by convention every grammar orders a question's
+/// options with its safe default last (`decision.create.request.json`'s own
+/// example: `allow_once` then `deny`), so this is always that one. The
+/// engine falls back to the same convention on expiry, a failed create or a
+/// failed poll — this is the same rule applied where a run's own interactive
+/// loop finds nobody ever heard the question at all.
+fn deny_option(question: &Question) -> DecisionAnswer {
+    match question.options.last() {
+        Some(option) => DecisionAnswer {
+            option_id: Some(option.option_id.clone()),
+            text: None,
+        },
+        None => DecisionAnswer {
+            option_id: None,
+            text: None,
+        },
+    }
 }
 
 /// Byte-identical to the raw capture when nothing was dropped (`head` and

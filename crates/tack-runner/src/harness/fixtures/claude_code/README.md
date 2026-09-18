@@ -2,9 +2,10 @@
 
 What `crates/tack-runner/src/harness/claude_code.rs` (`ClaudeCodeAdapter`) is built on.
 Every claim below was checked once, by hand, against a real `claude` binary; the
-fixtures in `2.1.223/` and `2.1.261/` are the transcripts `claude_code/tests.rs` parses
-to prove `parse_run_output`'s classification, kept here instead of as inline string
-literals so a vendor-shape change is a diff to one file, not a hunt through test bodies.
+fixtures in `2.1.223/`, `2.1.261/` and `2.1.273/` are the transcripts `claude_code/tests.rs`
+parses to prove `parse_run_output`'s and `ClaudeCodeGrammar::signal`'s classification, kept
+here instead of as inline string literals so a vendor-shape change is a diff to one file,
+not a hunt through test bodies.
 
 ## Fixture provenance
 
@@ -51,6 +52,28 @@ below rather than left implicit.
   that detached session itself, but a `SIGKILL` escalation cannot give it that chance, and
   `kill(-pgid, SIGKILL)` does not reach a different session's group — reflected as
   `cancel: Advisory`, never `Supported`, in `ClaudeCodeGrammar::capabilities`.
+
+### Pausing to ask (measured against `claude` 2.1.273)
+
+Checked with `claude` pointed at a loopback stand-in for the Messages API (a fake key, a
+fresh `HOME`, zero spend), the fixtures in `2.1.273/` are that session's own
+`control_request`/`control_response`/`result` lines:
+
+- The flags that make it ask are `-p --input-format stream-json --output-format stream-json
+  --verbose --permission-mode default --permission-prompt-tool stdio`, with the prompt as one
+  stream-json user message on stdin and stdin left open. `--permission-prompts host` alone,
+  without `--permission-prompt-tool`, does **not** ask — every question is denied on the spot,
+  an easy flag to reach for that silently produces `bypassPermissions`-like behaviour.
+- A question is one `control_request` stdout line
+  (`ask-tool-permission-request.jsonl`); the answer is one `control_response` stdin line —
+  `{"behavior":"allow"}` or `{"behavior":"deny","message":…}`
+  (`ask-allow-response.jsonl`/`ask-deny-response.jsonl`). After *allow* the tool ran and the
+  file existed; after *deny* it did not, the run went on, and its `result` line listed the
+  refusal under `permission_denials`.
+- With stdin open the CLI does **not** exit after its `result` line
+  (`ask-result.jsonl`): it waits for another stdin message, and exits 0 only once stdin
+  closes. `ClaudeCodeGrammar::signal` reads that line as `Finished` for exactly this reason —
+  it is the core's own signal to close stdin, not the CLI's.
 
 ## What the adapter does not attempt
 

@@ -302,12 +302,27 @@ pub struct RepositorySnapshot {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+/// Whether a harness asks before it acts, or decides alone. `auto` is every
+/// run today; `ask` is honoured only by a harness whose grammar declares
+/// `decisions: supported`, and is otherwise the same as absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Approvals {
+    Auto,
+    Ask,
+}
+
 /// A requested tool/network policy snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionPolicy {
     #[serde(default)]
     pub tools: Vec<String>,
     pub network: bool,
+    /// Absent means [`Approvals::Auto`]: the wire never carries a fabricated
+    /// default, so a harness with no opinion here is indistinguishable from
+    /// one that was asked and agreed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals: Option<Approvals>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

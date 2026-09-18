@@ -39,9 +39,9 @@ use crate::secrets::SecretStore;
 
 pub use crate::client::engine::{
     CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter, HarnessError,
-    HarnessOutcome, LocalRunHandle,
+    HarnessOutcome, LocalRunHandle, Question, StreamSignal,
 };
-pub use crate::client::{AttemptJournal, RecoveryObservation};
+pub use crate::client::{AttemptJournal, DecisionAnswer, DecisionOption, RecoveryObservation};
 
 /// A closed vocabulary for `ActualExecution.model_observation_source`, a
 /// bare `String` on the wire. Two independently implemented adapters
@@ -388,6 +388,20 @@ impl HarnessAdapter for AdapterRegistry {
         let mut delegated = journal.clone();
         delegated.process_id = Some(inner);
         self.resolve(&kind)?.reconcile(&delegated).await
+    }
+
+    async fn decision_channels(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<(
+        tokio::sync::mpsc::Receiver<Question>,
+        tokio::sync::mpsc::Sender<DecisionAnswer>,
+    )> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .decision_channels(&LocalRunHandle { process_id: inner })
+            .await
     }
 }
 

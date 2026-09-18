@@ -13,7 +13,7 @@ use crate::client::{
     ArtifactUploadGrant, AttemptLease, CancellationResponse, ClaimRequestId, ClaimResult,
     ClaimedWork, CompletionResponse, DecisionCreateReport, DecisionCreateResponse,
     DecisionPollReport, DecisionPollResponse, EventBatchResponse, FencingToken, LeaseResult,
-    ProtocolClientError, RunnerCredential, RunnerId, Timestamp,
+    ProtocolClientError, ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
 };
 use tack_orch::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, RecoveryDisposition,
@@ -415,6 +415,19 @@ struct FakeAdapter {
     // sleeps when a test explicitly sets this, to simulate a harness
     // that outlives one or more lease-renewal intervals.
     wait_delay: std::time::Duration,
+    // `None` for every existing test (no behavior change): set only by a
+    // test proving the question/decision path. `wait()` sends `question`
+    // out and blocks for the engine's answer before completing; the
+    // received answer is recorded so the test can inspect it.
+    interactive: Arc<Mutex<Option<InteractiveFake>>>,
+}
+
+struct InteractiveFake {
+    engine_side: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    to_engine: mpsc::Sender<Question>,
+    from_engine: mpsc::Receiver<DecisionAnswer>,
+    question: Question,
+    received: Arc<Mutex<Option<DecisionAnswer>>>,
 }
 
 #[async_trait]
@@ -444,6 +457,16 @@ impl HarnessAdapter for FakeAdapter {
         if !self.wait_delay.is_zero() {
             tack_test_support::poll_until::<()>(self.wait_delay, async || None).await;
         }
+        let interactive = self.interactive.lock().expect("fake adapter lock").take();
+        if let Some(mut interactive) = interactive {
+            let _ = interactive
+                .to_engine
+                .send(interactive.question.clone())
+                .await;
+            if let Some(answer) = interactive.from_engine.recv().await {
+                *interactive.received.lock().expect("fake adapter lock") = Some(answer);
+            }
+        }
         Ok(HarnessOutcome {
             terminal_state: AttemptState::Succeeded,
             terminal_reason: self.completion_terminal_reason.clone(),
@@ -462,6 +485,18 @@ impl HarnessAdapter for FakeAdapter {
         } else {
             Ok(self.recovery_observation)
         }
+    }
+
+    async fn decision_channels(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        self.interactive
+            .lock()
+            .expect("fake adapter lock")
+            .as_mut()?
+            .engine_side
+            .take()
     }
 }
 
@@ -671,6 +706,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         completion_actual_execution: actual_execution(),
         completion_terminal_reason: default_completion_terminal_reason(),
         wait_delay: std::time::Duration::ZERO,
+        interactive: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -2202,19 +2238,32 @@ struct FakeDataProtocolState {
     accepted_event_ids: BTreeSet<String>,
     manifests: Vec<ArtifactManifestReport>,
     uploads: Vec<(String, Vec<u8>, Option<String>)>,
+    decisions_created: Vec<DecisionCreateReport>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct FakeDataProtocol {
     state: Arc<Mutex<FakeDataProtocolState>>,
     events_fail: Arc<AtomicBool>,
     manifest_fails: Arc<AtomicBool>,
     upload_fails: Arc<AtomicBool>,
+    create_decision_fails: Arc<AtomicBool>,
+    poll_response: Arc<Mutex<DecisionPollResponse>>,
 }
 
 impl FakeDataProtocol {
     fn new() -> Self {
-        Self::default()
+        Self {
+            state: Arc::new(Mutex::new(FakeDataProtocolState::default())),
+            events_fail: Arc::new(AtomicBool::new(false)),
+            manifest_fails: Arc::new(AtomicBool::new(false)),
+            upload_fails: Arc::new(AtomicBool::new(false)),
+            create_decision_fails: Arc::new(AtomicBool::new(false)),
+            poll_response: Arc::new(Mutex::new(DecisionPollResponse {
+                decisions: Vec::new(),
+                next_after: None,
+            })),
+        }
     }
 }
 
@@ -2257,8 +2306,17 @@ impl AttemptDataProtocol for FakeDataProtocol {
         _session: &RunnerSession,
         report: DecisionCreateReport,
     ) -> Result<DecisionCreateResponse, ProtocolClientError> {
+        if self.create_decision_fails.load(Ordering::SeqCst) {
+            return Err(ProtocolClientError::Transport);
+        }
+        let decision_id = report.decision_id.clone();
+        self.state
+            .lock()
+            .expect("fake data protocol lock")
+            .decisions_created
+            .push(report);
         Ok(DecisionCreateResponse {
-            decision_id: report.decision_id,
+            decision_id,
             state: "open".into(),
             created_at: Timestamp::new("2026-08-20T00:00:00Z"),
         })
@@ -2269,10 +2327,11 @@ impl AttemptDataProtocol for FakeDataProtocol {
         _session: &RunnerSession,
         _report: DecisionPollReport,
     ) -> Result<DecisionPollResponse, ProtocolClientError> {
-        Ok(DecisionPollResponse {
-            decisions: Vec::new(),
-            next_after: None,
-        })
+        Ok(self
+            .poll_response
+            .lock()
+            .expect("fake data protocol lock")
+            .clone())
     }
 
     async fn submit_artifact_manifest(
@@ -2583,4 +2642,130 @@ async fn resubmitting_the_same_terminal_event_is_idempotent() {
         "server-side dedup (mirrored by the fake) sees one logical event, not two"
     );
     std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+// -----------------------------------------------------------------
+// A question a harness asks mid-run becomes a decision, and the decision's
+// answer returns to it — `FakeAdapter::interactive` stands in for a harness
+// whose `wait()` pauses on one question; `FakeDataProtocol` stands in for
+// the server side of `create_decision`/`poll_decisions`.
+// -----------------------------------------------------------------
+
+/// `(row, the create call fails?, a resolved answer preset via poll, the
+/// attempt's own timeout, the option_id the run receives)`. `expired` never
+/// presets a poll answer, so the only way it resolves is the deadline —
+/// `1` second is enough for `AdvancingClock` (one simulated second per
+/// `now()` call) to pass it within the first heartbeat tick.
+#[tokio::test(start_paused = true)]
+async fn a_question_becomes_a_decision_and_its_answer_returns() {
+    let canary = "top-secret-instructions-canary-9f21";
+    let prompt = format!("Allow the harness to run: {canary}?");
+    let question = Question {
+        vendor_id: "vendor-1".to_owned(),
+        kind: "tool_permission".to_owned(),
+        prompt: prompt.clone(),
+        options: vec![
+            DecisionOption {
+                option_id: "allow_once".to_owned(),
+                label: "Allow once".to_owned(),
+            },
+            DecisionOption {
+                option_id: "deny".to_owned(),
+                label: "Deny".to_owned(),
+            },
+        ],
+        metadata: serde_json::Map::new(),
+    };
+
+    let rows: [(&str, bool, Option<&str>, u64, &str); 3] = [
+        ("resolved", false, Some("allow_once"), 3600, "allow_once"),
+        ("expired", false, None, 1, "deny"),
+        ("create-fails", true, None, 3600, "deny"),
+    ];
+
+    for (name, create_fails, preset_answer, timeout_seconds, expect_option_id) in rows {
+        let (root_dir, journal) = fresh_journal(&format!("decision-{name}"));
+        let root = root_dir.path();
+        let mut claimed = work();
+        claimed.request.timeout_seconds = timeout_seconds;
+        claimed.request.resolved_agent_profile.instructions = prompt.clone();
+        let decision_id = decision_id_for(&prepared_record(&claimed.lease, root), &question);
+
+        let data_protocol = FakeDataProtocol::new();
+        data_protocol
+            .create_decision_fails
+            .store(create_fails, Ordering::SeqCst);
+        if let Some(option_id) = preset_answer {
+            *data_protocol.poll_response.lock().expect("lock") = DecisionPollResponse {
+                decisions: vec![ResolvedDecision {
+                    decision_id,
+                    state: "resolved".into(),
+                    answer: Some(DecisionAnswer {
+                        option_id: Some(option_id.to_owned()),
+                        text: None,
+                    }),
+                    resolved_at: None,
+                    resolved_by: None,
+                }],
+                next_after: None,
+            };
+        }
+
+        let received = Arc::new(Mutex::new(None));
+        let (questions_tx, questions_rx) = mpsc::channel(1);
+        let (answers_tx, answers_rx) = mpsc::channel(1);
+        let fake_adapter = FakeAdapter {
+            interactive: Arc::new(Mutex::new(Some(InteractiveFake {
+                engine_side: Some((questions_rx, answers_tx)),
+                to_engine: questions_tx,
+                from_engine: answers_rx,
+                question: question.clone(),
+                received: received.clone(),
+            }))),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        let engine = runner_engine(protocol(claimed, false, false), fake_adapter, journal, root)
+            .with_data_protocol(Arc::new(data_protocol.clone()));
+
+        assert!(
+            matches!(
+                engine
+                    .run_once(&session(), claim_request())
+                    .await
+                    .expect("cycle"),
+                RunCycle::Completed { .. }
+            ),
+            "{name}"
+        );
+
+        let answer = received.lock().expect("lock").clone().expect("answered");
+        assert_eq!(
+            answer.option_id.as_deref(),
+            Some(expect_option_id),
+            "{name}"
+        );
+
+        let created = data_protocol
+            .state
+            .lock()
+            .expect("lock")
+            .decisions_created
+            .clone();
+        if create_fails {
+            assert!(created.is_empty(), "{name}");
+        } else {
+            assert_eq!(created.len(), 1, "{name}");
+            assert!(
+                !created[0].prompt.contains(canary),
+                "{name}: {}",
+                created[0].prompt
+            );
+            assert!(
+                created[0].prompt.contains("[REDACTED]"),
+                "{name}: {}",
+                created[0].prompt
+            );
+        }
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
 }

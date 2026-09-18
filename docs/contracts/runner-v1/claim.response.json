@@ -32,7 +32,7 @@
       "base_revision": "0123456789abcdef0123456789abcdef01234567",
       "subdirectory": null
     },
-    "permission_policy": {"tools": ["shell", "filesystem"], "network": false},
+    "permission_policy": {"tools": ["shell", "filesystem"], "network": false, "approvals": "auto"},
     "timeout_seconds": 3600,
     "budgets": {"tokens": 200000, "cost_usd": null},
     "status_map_policy_id": null,

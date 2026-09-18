@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::harness::test_support::{finished, gateway, scratch, secret_store, spec};
-use tack_orch::execution::RequestedModelProvider;
+use tack_orch::execution::{Approvals, RequestedModelProvider};
 
 fn request(provider: Option<&str>, tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, std::path::Path::new("/unused"));
@@ -75,6 +75,129 @@ fn the_policy_model_and_budget_reach_the_command_line() {
         !args
             .iter()
             .any(|arg| arg == "--max-budget-usd" || arg == "--model")
+    );
+
+    // `approvals` absent, or explicit `auto`, produces byte-for-byte the
+    // same command line this adapter has always produced.
+    let baseline = invocation(&request(Some("anthropic"), &["Read"], true))
+        .expect("invocation")
+        .args;
+    let mut explicit_auto = request(Some("anthropic"), &["Read"], true);
+    explicit_auto.work.request.permission_policy.approvals = Some(Approvals::Auto);
+    let with_auto = invocation(&explicit_auto).expect("invocation").args;
+    assert_eq!(with_auto, baseline);
+    assert!(baseline.iter().any(|arg| arg == "bypassPermissions"));
+    assert!(!baseline.iter().any(|arg| arg == "--permission-prompt-tool"));
+}
+
+/// `ask` swaps `bypassPermissions` for the flags measured against a real
+/// `claude`, and sets `stdin_stays_open` so the core keeps the pipe open.
+#[test]
+fn an_ask_request_keeps_stdin_open_and_asks_the_host() {
+    let mut spec = request(Some("anthropic"), &["Read"], true);
+    spec.work.request.permission_policy.approvals = Some(Approvals::Ask);
+    let built = invocation(&spec).expect("invocation");
+
+    assert!(built.stdin_stays_open);
+    let joined = built.args.join(" ");
+    assert!(joined.contains("--input-format stream-json"));
+    assert!(joined.contains("--permission-mode default"));
+    assert!(joined.contains("--permission-prompt-tool stdio"));
+    assert!(!built.args.iter().any(|arg| arg == "bypassPermissions"));
+
+    let framed = ClaudeCodeGrammar.prompt("do it".to_owned(), built.stdin_stays_open);
+    let message: serde_json::Value = serde_json::from_slice(&framed).expect("one JSON line");
+    assert_eq!(message["type"], "user");
+    assert_eq!(message["message"]["content"][0]["text"], "do it");
+    assert_eq!(framed.last(), Some(&b'\n'));
+    let plain = ClaudeCodeGrammar.prompt("do it".to_owned(), false);
+    assert_eq!(plain, b"do it");
+}
+
+/// A `can_use_tool` control request becomes a question; a terminal `result`
+/// line — even with stdin still open — tells the core the conversation is
+/// over. Any other captured line means nothing here.
+#[test]
+fn a_permission_request_line_becomes_a_question() {
+    let request_line =
+        include_str!("../fixtures/claude_code/2.1.273/ask-tool-permission-request.jsonl");
+    let signal = ClaudeCodeGrammar.signal(request_line).expect("a question");
+    let StreamSignal::Question(question) = signal else {
+        panic!("expected a question, got {signal:?}");
+    };
+    assert_eq!(question.vendor_id, "eb72d6ca-573f-48fe-aedb-002cfd31bb7c");
+    assert_eq!(question.kind, "tool_permission");
+    assert!(question.prompt.contains("Bash"));
+    assert_eq!(
+        question
+            .options
+            .iter()
+            .map(|o| o.option_id.as_str())
+            .collect::<Vec<_>>(),
+        ["allow_once", "deny"]
+    );
+
+    let result_line = include_str!("../fixtures/claude_code/2.1.273/ask-result.jsonl");
+    assert_eq!(
+        ClaudeCodeGrammar.signal(result_line),
+        Some(StreamSignal::Finished)
+    );
+
+    assert_eq!(ClaudeCodeGrammar.signal("{\"type\":\"assistant\"}"), None);
+}
+
+/// `allow_once` writes `{"behavior":"allow"}`; anything else, including an
+/// answer this CLI never offered, denies with a message — matching the
+/// shape a real `claude` accepted for each.
+#[test]
+fn an_answer_becomes_a_control_response() {
+    let question = Question {
+        vendor_id: "eb72d6ca-573f-48fe-aedb-002cfd31bb7c".to_owned(),
+        kind: "tool_permission".to_owned(),
+        prompt: "Allow Bash?".to_owned(),
+        options: vec![
+            DecisionOption {
+                option_id: "allow_once".to_owned(),
+                label: "Allow once".to_owned(),
+            },
+            DecisionOption {
+                option_id: "deny".to_owned(),
+                label: "Deny".to_owned(),
+            },
+        ],
+        metadata: serde_json::Map::new(),
+    };
+
+    let allow = DecisionAnswer {
+        option_id: Some("allow_once".to_owned()),
+        text: None,
+    };
+    let bytes = ClaudeCodeGrammar.answer(&question, &allow);
+    let expected: Value = serde_json::from_str(include_str!(
+        "../fixtures/claude_code/2.1.273/ask-allow-response.jsonl"
+    ))
+    .expect("fixture");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).expect("valid json"),
+        expected
+    );
+
+    let deny_question = Question {
+        vendor_id: "f142b75c-e54c-4b01-9b00-58d521445d16".to_owned(),
+        ..question
+    };
+    let deny = DecisionAnswer {
+        option_id: Some("deny".to_owned()),
+        text: Some("denied by test".to_owned()),
+    };
+    let bytes = ClaudeCodeGrammar.answer(&deny_question, &deny);
+    let expected: Value = serde_json::from_str(include_str!(
+        "../fixtures/claude_code/2.1.273/ask-deny-response.jsonl"
+    ))
+    .expect("fixture");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).expect("valid json"),
+        expected
     );
 }
 
