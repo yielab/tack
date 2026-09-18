@@ -8,10 +8,10 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
 
 use crate::harness::{
-    HarnessError,
+    DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
@@ -218,22 +218,42 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             ));
         }
 
-        let mut args: Vec<String> = [
-            "-p",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--no-session-persistence",
-            "--permission-mode",
-            "bypassPermissions",
-            "--effort",
-            "high",
-            "--setting-sources",
-            "",
-            "--tools",
-        ]
-        .map(str::to_owned)
-        .into();
+        // `ask` swaps only the permission surface for the flags measured
+        // against a real `claude`: `--input-format stream-json` so the
+        // prompt can arrive as a control-protocol message, and
+        // `--permission-mode default --permission-prompt-tool stdio` so a
+        // tool call pauses for a `control_request` instead of running.
+        // `auto` (absent counts as `auto`) keeps every flag exactly as
+        // measured before this ever existed.
+        let ask = matches!(policy.approvals, Some(Approvals::Ask));
+
+        let mut args: Vec<String> = vec!["-p".to_owned()];
+        if ask {
+            args.extend(["--input-format".to_owned(), "stream-json".to_owned()]);
+        }
+        args.extend(
+            [
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--no-session-persistence",
+            ]
+            .map(str::to_owned),
+        );
+        if ask {
+            args.extend(
+                [
+                    "--permission-mode",
+                    "default",
+                    "--permission-prompt-tool",
+                    "stdio",
+                ]
+                .map(str::to_owned),
+            );
+        } else {
+            args.extend(["--permission-mode", "bypassPermissions"].map(str::to_owned));
+        }
+        args.extend(["--effort", "high", "--setting-sources", "", "--tools"].map(str::to_owned));
         args.push(policy.tools.join(","));
         if let Some(model) = &request.requested_model_id {
             args.extend(["--model".to_owned(), model.as_str().to_owned()]);
@@ -252,7 +272,11 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             // Set empty anyway rather than trusted to be absent.
             env.insert("ANTHROPIC_API_KEY".to_owned(), String::new());
         }
-        Ok(Invocation { args, env })
+        Ok(Invocation {
+            args,
+            env,
+            stdin_stays_open: ask,
+        })
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
@@ -275,9 +299,11 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                  history, which is not reattaching to an in-flight execution after a restart.",
             ),
             decisions: capability(
-                CapabilitySupport::Unsupported,
-                "No observed mechanism pauses headless execution to await an out-of-band \
-                 decision; permission prompts are resolved locally per --permission-mode.",
+                CapabilitySupport::Supported,
+                "With --permission-mode default --permission-prompt-tool stdio and stdin kept \
+                 open, a tool call pauses on a can_use_tool control_request until this adapter \
+                 answers it with a control_response; the CLI keeps running past its own result \
+                 line until stdin closes.",
             ),
             artifacts: capability(
                 CapabilitySupport::Advisory,
@@ -299,6 +325,101 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                  WebSearch, and does not stop the Bash tool from reaching the network",
             ),
         }
+    }
+
+    /// An `ask` run reads stream-json on stdin, so its prompt is one user
+    /// message in that format; any other run takes the prompt as plain text.
+    fn prompt(&self, prompt: String, stdin_stays_open: bool) -> Vec<u8> {
+        if !stdin_stays_open {
+            return prompt.into_bytes();
+        }
+        let message = serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": prompt}]},
+        });
+        let mut line = message.to_string().into_bytes();
+        line.push(b'\n');
+        line
+    }
+
+    /// A `can_use_tool` control request becomes a question; a terminal
+    /// `result` line is what tells the core the conversation is over, so it
+    /// can close stdin and let the CLI exit. Any other line — `system`,
+    /// `assistant`, `user`/tool-result — means nothing to the core here.
+    fn signal(&self, line: &str) -> Option<StreamSignal> {
+        let value: Value = serde_json::from_str(line.trim()).ok()?;
+        match value.get("type").and_then(Value::as_str) {
+            Some("control_request")
+                if value.pointer("/request/subtype").and_then(Value::as_str)
+                    == Some("can_use_tool") =>
+            {
+                let vendor_id = value.get("request_id")?.as_str()?.to_owned();
+                let tool_name = value
+                    .pointer("/request/tool_name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("a tool");
+                let description = value
+                    .pointer("/request/description")
+                    .and_then(Value::as_str)
+                    .filter(|description| !description.is_empty());
+                let prompt = match description {
+                    Some(description) => format!("Allow {tool_name}: {description}?"),
+                    None => format!("Allow {tool_name}?"),
+                };
+                let mut metadata = serde_json::Map::new();
+                metadata.insert("tool_name".to_owned(), Value::String(tool_name.to_owned()));
+                if let Some(input) = value.pointer("/request/input") {
+                    metadata.insert("input".to_owned(), input.clone());
+                }
+                Some(StreamSignal::Question(Question {
+                    vendor_id,
+                    kind: "tool_permission".to_owned(),
+                    prompt,
+                    options: vec![
+                        DecisionOption {
+                            option_id: "allow_once".to_owned(),
+                            label: "Allow once".to_owned(),
+                        },
+                        DecisionOption {
+                            option_id: "deny".to_owned(),
+                            label: "Deny".to_owned(),
+                        },
+                    ],
+                    metadata,
+                }))
+            }
+            Some("result") => Some(StreamSignal::Finished),
+            _ => None,
+        }
+    }
+
+    /// `allow_once` is the only option this grammar spends on letting the
+    /// tool run; every other answer — including one this CLI never offered —
+    /// is a denial, which `control_response` always accepts with a message.
+    fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
+        let allow = answer.option_id.as_deref() == Some("allow_once");
+        let response = if allow {
+            serde_json::json!({"behavior": "allow"})
+        } else {
+            serde_json::json!({
+                "behavior": "deny",
+                "message": answer
+                    .text
+                    .clone()
+                    .unwrap_or_else(|| "denied by the operator".to_owned()),
+            })
+        };
+        let payload = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": question.vendor_id,
+                "response": response,
+            },
+        });
+        let mut bytes = serde_json::to_vec(&payload).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
     }
 }
 

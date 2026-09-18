@@ -1,0 +1,7 @@
+captured
+claude 2.1.273 (Claude Code)
+
+The `control_response` line this driver wrote to stdin to deny a Bash
+tool_use from a separate run of the same prompt (a different `request_id`
+than `ask-allow-response.jsonl`), and that the CLI accepted (the tool did
+not run; its `result` line listed the refusal under `permission_denials`).

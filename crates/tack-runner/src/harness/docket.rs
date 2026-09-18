@@ -158,6 +158,7 @@ impl HarnessGrammar for DocketGrammar {
             .map(str::to_owned)
             .to_vec(),
             env,
+            ..Invocation::default()
         })
     }
 

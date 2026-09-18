@@ -1,0 +1,6 @@
+captured
+claude 2.1.273 (Claude Code)
+
+The `control_response` line this driver wrote to stdin to allow the Bash
+tool_use in `ask-tool-permission-request.jsonl`, and that the CLI accepted
+(the tool then ran and the file existed). No key or path in this line.
