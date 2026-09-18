@@ -113,8 +113,8 @@ Adding a harness is one module, one line in `harness::DESCRIPTORS` and one in
 
 ## The tasks
 
-Five tasks, in order. H1 is independent of everything; H2 needs H1; H3 needs H2 (both edit
-`DESCRIPTORS` and share the wire); D1 needs H3 (it changes types H3 builds); H4 needs D1. Each is one branch from `develop`, and each
+Six tasks, in order. H1 is independent of everything; H2 needs H1; H3 needs H2 (both edit
+`DESCRIPTORS` and share the wire); H3b needs H3; D1 needs H3b (both change `RunContext`'s neighbourhood in the core); H4 needs D1. Each is one branch from `develop`, and each
 lists every file it may touch — a change outside that list is a finding to report, not to
 make.
 
@@ -271,6 +271,38 @@ the real `HOME` was not touched.
 
 **Done when:** as H2, for `opencode`.
 
+### H3b — a harness's home leaves the workspace
+
+docket and opencode each keep a home directory for the attempt, and both grammars put it at
+`<workspace>/.tack-runner/<kind>-home`. That is inside the checkout the agent works in:
+untracked files the agent can see, and commit with a `git add -A`. opencode's is about
+220 MB of `node_modules` (`fixtures/opencode/README.md`). Nothing removes either one.
+
+**Files:** `harness/local_process.rs` and `local_process/tests.rs`; `harness/docket.rs` and
+`docket/tests.rs`; `harness/opencode.rs` and `opencode/tests.rs`; `harness/test_support.rs`
+if `RunContext` is built there; the two fixtures READMEs where they name the old path.
+
+- `RunContext` gains `scratch: &Path`: a directory the core owns for this attempt, outside
+  the workspace, at `<staging root>/scratch/<attempt id>`. The core does not create it —
+  both CLIs create their home themselves, measured — and removes it, best-effort, when
+  `wait` has built the outcome and when `cancel` has finished. A failure to remove is
+  logged with the attempt id only and never changes the outcome.
+- `docket.rs`: `DOCKET_HOME=<scratch>/docket-home`. `opencode.rs`:
+  `HOME=<scratch>/opencode-home`, config directory under it as today.
+- Nothing else: no option to keep the directory, no shared cache between attempts. A shared
+  opencode cache would save the install and is a separate decision (see *Upgrades*).
+
+**Tests — rows and one function.** The two command-line tests assert the home is under
+`scratch` and not under the workspace (edit the existing assertions). In
+`local_process/tests.rs`, one new function, `the_scratch_directory_is_gone_after_the_run`,
+against `fake_harness.sh` in a mode that writes a file into a directory named by an
+environment variable the no-op grammar sets from `scratch`: after `wait`, the directory
+does not exist and the workspace holds no `.tack-runner/*-home`. Add that mode to
+`fixtures/fake_harness.sh` if none fits. Both real-binary tests must still pass.
+
+**Done when:** after a real docket run and a real opencode run (the two real-binary tests),
+`git -C <workspace> status --porcelain` lists only the file the agent wrote.
+
 ### D1 — a harness can pause and ask
 
 These CLIs are built to stop and ask before they act; today Tack runs them with asking
@@ -379,6 +411,7 @@ beside `schema.json` stating the argv/env/stdout/exit-code contract in prose. No
 | docket `decisions: Supported` | docket's harness mode prints a question event and reads the answer from stdin (asked of docket, above); then `question()` and `answer()` in `docket.rs`, from a captured transcript |
 | codex `decisions: Supported` | `codex exec` cannot ask; measure whether `codex app-server` puts its approval requests on stdout as lines. If so, the grammar's command changes and the two methods follow |
 | opencode `decisions: Supported` | measure what `opencode run` does with a permission set to `ask`, and whether `opencode acp` asks over stdio. Only a stdio channel fits the seam; an HTTP one is refused until a second harness needs it |
+| opencode attempts share one install | a measured saving against the ~220 MB per attempt, and a decision on what the attempts may then see of each other |
 | opencode served model confirmed | an event or export field carrying the served id |
 
 ## Refused, by name
