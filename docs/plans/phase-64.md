@@ -318,6 +318,6 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | R2 | done, in `develop` — 24 518 lines out, 97 documented paths become 78 |
 | R3 | done, in `develop` — `tack-orch` goes from 19 056 lines to 7 854 |
 | D1 | done, in `develop` — claude-code asks through `--permission-prompt-tool stdio`; the walk through the real binary and the operator route is D2's |
-| R4 · R3b | running |
-| H4 | not started |
+| R3b | done, in `develop` — the `project_templates.orchestration` column is no longer read; one migration drops it once R4 is in |
+| R4 · H4 | running |
 | D2 · T1 · T2 · T3 · T4 | not started |
