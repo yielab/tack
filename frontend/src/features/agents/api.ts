@@ -5,13 +5,11 @@
 // /api/local-runner/secrets(/{name})` lives in this one file — `
 // ExecutionToggle.tsx` and `ProviderKeyPanel.tsx` only ever import types and
 // functions from here, never construct a request body or read a raw wire
-// field themselves. Mirrors the pattern `features/settings/
-// orchestrationSettings/api.ts` set for the structurally identical
-// orchestration on/off toggle.
+// field themselves.
 //
 // ── Why these routes can be a genuine 404 ───────────────────────────────
 //
-// Unlike `GET/PUT /api/settings/orchestration` (deliberately reachable even
+// Unlike the orchestration settings route (deliberately reachable even
 // when orchestration is off, so an operator can discover the toggle),
 // `/api/local-runner*` is absent — not present-and-refusing — on any
 // non-loopback bind, or when the process serving the API never wired an

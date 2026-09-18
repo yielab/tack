@@ -153,54 +153,12 @@ export const IconClose = stroke(
   { width: 1.7 },
 );
 
-export const IconFleet = stroke(
-  <>
-    <circle cx="4.3" cy="4.3" r="2.1" />
-    <circle cx="11.7" cy="4.3" r="2.1" />
-    <circle cx="8" cy="11.2" r="2.1" />
-    <path d="M5.9 5.7L7 9.6M10.1 5.7L9 9.6" stroke-linecap="round" />
-  </>,
-  { width: 1.4 },
-);
-
-export const IconApprovals = stroke(
-  <>
-    <path d="M3 8.4l3.2 3.2L13 4.8" stroke-linecap="round" stroke-linejoin="round" />
-  </>,
-  { width: 1.7 },
-);
-
-/** Bar-chart glyph for the unit-economics dashboard (card D5). */
-export const IconEconomics = stroke(
-  <>
-    <path d="M2.5 13.5h11" stroke-linecap="round" />
-    <path d="M4.5 13.5V8.8" stroke-linecap="round" />
-    <path d="M8 13.5V4.5" stroke-linecap="round" />
-    <path d="M11.5 13.5V7" stroke-linecap="round" />
-  </>,
-  { width: 1.5 },
-);
-
 export const IconAttachment = stroke(
   <path d="M11 5L6 10a2 2 0 0 0 2.8 2.8l5-5a3.4 3.4 0 0 0-4.8-4.8l-5 5a4.8 4.8 0 0 0 6.8 6.8L14 11" stroke-linecap="round" stroke-linejoin="round" />,
   { width: 1.5 },
 );
 
-/** Rocket glyph for the provisioning wizard (card D4) — "launch a new pod." */
-export const IconProvision = stroke(
-  <>
-    <path
-      d="M8 2.5c1.8 1 3 3.2 3 5.7 0 1.6-.4 3-1 4.1L8 14l-2-1.7c-.6-1.1-1-2.5-1-4.1 0-2.5 1.2-4.7 3-5.7z"
-      stroke-linejoin="round"
-    />
-    <circle cx="8" cy="7.3" r="1.1" />
-    <path d="M5.3 10.5L3.5 12M10.7 10.5L12.5 12" stroke-linecap="round" />
-  </>,
-  { width: 1.4 },
-);
-
-/** Agent glyph for the Agents nav entry — a small terminal/console shape,
- *  distinct from `IconFleet`'s three-node cluster. */
+/** Agent glyph for the Agents nav entry — a small terminal/console shape. */
 export const IconAgent = stroke(
   <>
     <rect x="2.2" y="3" width="11.6" height="10" rx="2" />
