@@ -105,8 +105,7 @@ running a sprint) can send a governed task to docket.
 curl -X POST https://tack.test/api/items/<item-id>/dispatch
 ```
 
-Also reachable from the item detail drawer ("Dispatch to agents") and the board
-card's context menu. The response's `outcome` field is one of:
+Reachable only through the API today. The response's `outcome` field is one of:
 
 | `outcome` | Meaning |
 |---|---|
@@ -152,9 +151,7 @@ Every item in the sprint always appears in the response with an `order` and a
 or an error on one item never aborts the rest of the sprint; downstream items simply
 report `waiting_on_dependencies` on their next evaluation, with no separate
 bookkeeping. The dry-run and the real run share one planning function, so the
-preview's order and skip decisions are guaranteed to match what actually happens —
-the UI's "Run sprint" dialog always shows this preview before a confirm click can
-fire the real dispatch.
+preview's order and skip decisions are guaranteed to match what actually happens.
 
 ### The trust boundary: `source` and `trusted`
 
@@ -178,10 +175,9 @@ text. Tack's dispatcher requires the flag on every call (there is no version of 
 function that lets you skip it), specifically so this can never happen by omission.
 
 Auto-dispatch (see below) passes the item's persisted `source.is_trusted()` value
-automatically; the manual "Dispatch to agents" button does the same. You never need
-to think about this as an operator — it's enforced structurally — but if you're
-building against the API directly, know that the safety property here is "the flag
-is always present," not "the flag is usually correct."
+automatically. If you're building against the API directly, know that the safety
+property here is "the flag is always present," not "the flag is usually correct" —
+you must still set it explicitly on every call.
 
 ### Auto-dispatch
 
@@ -190,7 +186,8 @@ When a project's link has `auto_dispatch: true`, moving an item into a
 path (so a slow or failing dispatch never delays or fails the status-change request
 itself). A failure is logged and recorded as an `orch_events` row
 (`auto_dispatch_failed` / `auto_dispatch_blocked`) rather than silently swallowed —
-check an item's Agent Activity tab if a card you expected to dispatch didn't seem to.
+check an item's event history via the API if a card you expected to dispatch didn't
+seem to.
 
 ## `status_map`: mapping docket states onto your board
 
@@ -274,17 +271,14 @@ healthy. Killing the control plane produces exactly this sequence: healthy →
 degraded → unreachable, with **no** failed request or error on the Tack side at any
 point.
 
-## Agent Activity
+## Agent activity
 
-Every item that has ever been dispatched has an **Agent Activity** tab (item detail
-drawer) showing hops, tool calls, verdicts, rework cycles, approvals, and
-tokens/estimated cost, grouped by dispatch attempt, newest first. A compact state
-chip (queued / running / waiting-approval / failed / done) appears on Board, List,
-and Table cards for any item with agent activity — nothing renders for an item that
-has never been dispatched.
-
-`GET /api/items/{id}/agent-activity` and `GET /api/projects/{id}/agent-activity`
-back this directly if you're building your own view.
+`GET /api/items/{id}/agent-activity` returns every dispatch attempt for one item —
+hops, tool calls, verdicts, rework cycles, approvals, and tokens/estimated cost,
+grouped by attempt, newest first. `GET /api/projects/{id}/agent-activity` returns
+one row per item with at least one dispatch attempt, carrying only its latest
+attempt's raw status. *Run with agent* is Tack's current agent-execution surface;
+these two routes have no UI of their own today.
 
 ## Approvals
 
@@ -486,14 +480,6 @@ Honestly-reported gaps, not bugs:
   compute plane health. `GET /api/projects/{id}/orch-budget` returns Tack's own
   token-derived estimate against your configured cap instead, not docket's own
   figure.
-
-## Known gap: repeated Sprints-view UI bug
-
-`getByRole('button', { name: 'Run sprint' })` has been observed resolving to more
-than one element on the Sprints view across several test runs — live-reproduced, not
-flake. Not yet root-caused; if "Run sprint" seems to appear
-twice or a dry-run preview behaves oddly, this is a known, tracked issue, not
-something wrong with your setup.
 
 ## See also
 

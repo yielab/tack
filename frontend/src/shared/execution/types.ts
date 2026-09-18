@@ -9,11 +9,9 @@
 // written before that existed and were never migrated to import the
 // generated types: matching each field to its generated equivalent across
 // every consumer in this domain is a larger refactor, not done here. Every
-// shape below is instead copied field-for-field from the real Rust source
-// (cited per type) the same way `shared/dispatch/api.ts` and
-// `shared/orch/capabilities.ts` already do for their own domains. This file
-// is the ONE place that mirrors those shapes; nothing downstream may
-// redeclare a competing copy.
+// shape below is instead copied field-for-field from the real Rust source,
+// cited per type. This file is the ONE place that mirrors those shapes;
+// nothing downstream may redeclare a competing copy.
 //
 // A second, independent source grounds the richer domain concepts
 // (`ExecutionState`, `RunnerSelector`, capability snapshots, usage
@@ -39,11 +37,9 @@
  * `crates/tack-orch/src/execution/types.rs`'s `ExecutionState` enum
  * (`#[serde(rename_all = "snake_case")]`, so the Rust `PascalCase` variants
  * are these exact `snake_case` strings on the wire). This is a real closed
- * union (unlike `shared/agentActivity/api.ts`'s `remote_status`, which stays
- * a plain `string` because docket's `TaskStatus` carries an
- * `Unknown(String)` escape hatch) — III.1's frozen contract has no such
- * escape hatch for this vocabulary, so an unrecognised value here is a
- * genuine contract break, not an expected forward-compatibility case.
+ * union — III.1's frozen contract has no forward-compatibility escape hatch
+ * for this vocabulary, so an unrecognised value here is a genuine contract
+ * break, not an expected case.
  */
 export type ExecutionState =
   | 'queued'

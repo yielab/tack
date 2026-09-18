@@ -9,9 +9,8 @@
 // (`shared/types/index.ts`, backed by
 // `crates/tack-api/src/handlers/websocket.rs`) is the only realtime channel
 // that exists in this codebase today, and it is scoped to PM board changes
-// plus an older docket-orchestration mirror
-// (`agent_run_updated`/`approval_pending` — see `boardSocket.test.ts`, and
-// `shared/agentActivity/api.ts`'s header comment on that same domain). The
+// plus an `agent_run_updated`/`approval_pending` mirror unrelated to this
+// domain (see `boardSocket.test.ts`). The
 // `execution_requests`/`execution_attempts` tables are a distinct
 // vocabulary — `Item` != `ExecutionRequest` != `ExecutionAttempt` — with
 // **no push channel of their own anywhere in the backend**: reusing

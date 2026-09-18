@@ -128,9 +128,7 @@ export function isDecisionTokenRejected(err: unknown): boolean {
  *  expiry — `decisions.rs`'s own `ResolveOutcome::Expired`), or the
  *  attempt/decision id pair does not exist. Distinguished from
  *  {@link isDecisionIdempotencyConflict} — both are HTTP 409, so `code` is
- *  what actually distinguishes them (never bare `status`, matching
- *  `isOrchestrationDisabledError`'s own precedent for two failures sharing
- *  a status code). */
+ *  what actually distinguishes them, never bare `status`. */
 export function isDecisionExpired(err: unknown): boolean {
   return err instanceof ApiError && err.status === 409 && err.code === 'decision_expired';
 }

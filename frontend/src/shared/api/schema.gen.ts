@@ -3092,9 +3092,8 @@ export interface components {
             runner_id: string;
         };
         /**
-         * @description `GET /api/projects/{id}/agent-activity` response envelope — matches
-         *     `frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly
-         *     (`{ rows: [...] }`, not a bare array).
+         * @description `GET /api/projects/{id}/agent-activity` response envelope — deliberately
+         *     `{ rows: [...] }`, not a bare array.
          */
         AgentBadgeResponse: {
             rows: components["schemas"]["AgentBadgeRowResponse"][];
@@ -4253,10 +4252,7 @@ export interface components {
             /** Format: int64 */
             tokens_out: number;
         };
-        /**
-         * @description One `orch_events` row. See `ItemAgentEventResponse` in
-         *     `frontend/src/shared/agentActivity/api.ts`.
-         */
+        /** @description One `orch_events` row. */
         ItemAgentEventResponse: {
             event_type: string;
             /** Format: uuid */
