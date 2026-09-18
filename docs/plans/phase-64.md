@@ -287,9 +287,15 @@ DAG-ordered sprint dispatch.
 | Task | Does | Budget |
 |---|---|---|
 | **T1** API tests | `crates/tack-api/tests/wave2_gate.rs` deleted after each real claim it holds has a home at its lowest layer; the stale-lease invariant kept in the repository test and one HTTP test, removed from the other files M0 listed | net test lines go down; no new file |
-| **T2** board features | HTTP tests for `attachments`, `custom_fields` and `boards_multi`: success, auth, validation and each documented error, one table per route | three test files, one per handler |
+| **T2** board features | HTTP tests for `attachments`, `custom_fields`, `boards_multi` and `templates`: success, auth, validation and each documented error, one table per route. Measured in CI on 2026-09-18 (the `coverage-lcov` artifact, `LH`/`LF` per file): 0 %, 15 %, 15 % and 0 % of their lines are covered — `templates` lost its only HTTP tests with the orchestration block | four test files, one per handler |
 | **T3** E2E and tiers | Playwright reduced to the critical journeys, listed in `docs/TESTING.md`; Chromium on merge, cross-browser nightly; the flaky-test quarantine rule written down | no new spec |
 | **T4** mutation report | a weekly `cargo-mutants` job on `tack-core` and `tack-db`'s repository layer, report-only, uploaded as an artifact | one workflow job; no gate |
+
+Removing the bridge removed the best-covered code in the tree (its tests were three lines
+per line of production code), so workspace line coverage fell from 75.81 % to 74.38 % in CI
+and the `coverage` job went red on `develop`. The floor is not lowered to fit: T2 covers
+four handlers that have almost none, and the floor is then set again from CI's own
+measurement, minus one point.
 
 **Done when:** workspace line coverage is at or above C1's floor with fewer tests
 (`cargo nextest list --workspace | wc -l` before and after); every public route has a
@@ -319,5 +325,6 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | R3 | done, in `develop` — `tack-orch` goes from 19 056 lines to 7 854 |
 | D1 | done, in `develop` — claude-code asks through `--permission-prompt-tool stdio`; the walk through the real binary and the operator route is D2's |
 | R3b · R4 | done, in `develop` — migrations 064–074; the pre-upgrade snapshot was only ever taken before a table rebuild, so R4 widened it to a migration that drops a table, and proved it |
-| H4 | running |
-| D2 · T1 · T2 · T3 · T4 | not started |
+| H4 · T1 | done, in `develop` — the wave gate's five claims all had a better home already; six tests and 1 106 lines fewer |
+| D2 · T2 | running |
+| T3 · T4 | not started |
