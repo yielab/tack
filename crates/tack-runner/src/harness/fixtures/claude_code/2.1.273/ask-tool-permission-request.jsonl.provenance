@@ -1,0 +1,8 @@
+captured
+claude 2.1.273 (Claude Code)
+
+Real `control_request` line observed on stdout for `claude -p --input-format
+stream-json --output-format stream-json --verbose --permission-mode default
+--permission-prompt-tool stdio`, against a loopback stand-in for the
+Messages API answering a Bash tool_use, trimmed to the fields `signal` reads.
+`blocked_path`'s scratch path is rewritten to `/capture`.

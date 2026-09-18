@@ -28,15 +28,16 @@ use tack_orch::execution::{
     FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind, Measurement,
     MeasurementSource, Usage, WorkspaceId as DomainWorkspaceId,
 };
+use tokio::sync::mpsc;
 
 use crate::{
     Clock,
     client::AttemptState,
     config::ProviderConfig,
     harness::{
-        AttemptJournal, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
-        HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelObservationSource,
-        RecoveryObservation,
+        AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, ExecutionSpec,
+        HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
+        ModelObservationSource, Question, RecoveryObservation, StreamSignal,
         process::{
             CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec,
             SupervisedProcess,
@@ -127,6 +128,10 @@ pub struct Invocation {
     pub args: Vec<String>,
     /// Added on top of the inherited, requested and credential variables.
     pub env: BTreeMap<String, String>,
+    /// Set only for an `ask` request: after the prompt is written, the core
+    /// keeps stdin open and drives `signal`/`answer` on this CLI's stdout
+    /// instead of running it to exit and closing the pipe.
+    pub stdin_stays_open: bool,
 }
 
 /// What a finished process's output says happened.
@@ -179,6 +184,23 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// Reads a finished process. Never fails: output that cannot be read is
     /// a failed run whose `terminal_reason` says so.
     fn report(&self, run: &RunContext<'_>, result: &ProcessResult) -> RunReport;
+
+    /// What a line of this CLI's stdout means to the core, if anything.
+    /// Only ever consulted when [`Invocation::stdin_stays_open`] was set.
+    fn signal(&self, _line: &str) -> Option<StreamSignal> {
+        None
+    }
+
+    /// The bytes that deliver the prompt on stdin. A CLI kept open to be
+    /// asked questions usually wants it framed in its own protocol.
+    fn prompt(&self, prompt: String, _stdin_stays_open: bool) -> Vec<u8> {
+        prompt.into_bytes()
+    }
+
+    /// The bytes that answer `question`, written to the CLI's stdin.
+    fn answer(&self, _question: &Question, _answer: &DecisionAnswer) -> Vec<u8> {
+        Vec::new()
+    }
 }
 
 /// Shorthand for one [`FeatureCapabilities`] entry.
@@ -245,6 +267,10 @@ impl BinaryLocator {
 pub(crate) struct RunningProcess {
     process: SupervisedProcess,
     record: RunRecord,
+    /// The engine-facing half of an interactive run's channels, present
+    /// only when [`Invocation::stdin_stays_open`] was set. Taken once by
+    /// `decision_channels`, before `wait` consumes the rest of this entry.
+    decision_channels: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
 }
 
 /// What `wait` needs back once the process itself has been consumed.
@@ -255,6 +281,11 @@ struct RunRecord {
     spec: ExecutionSpec,
     endpoint: Option<ProviderEndpoint>,
     scratch: PathBuf,
+    /// The process-facing half of an interactive run's channels: the ends
+    /// `wait`'s interactive read loop sends a question out on and receives
+    /// its answer back on. Present exactly when `decision_channels` (above,
+    /// on the sibling [`RunningProcess`]) is.
+    interactive: Option<(mpsc::Sender<Question>, mpsc::Receiver<DecisionAnswer>)>,
 }
 
 /// The adapter and probe for any [`HarnessGrammar`].
@@ -444,6 +475,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     }
 
     /// Everything `start` spawns, built the same way `validate` checks it.
+    /// The trailing `bool` is [`Invocation::stdin_stays_open`], carried back
+    /// so `start` knows whether to open this run's decision channels.
     fn prepare(
         &self,
         spec: &ExecutionSpec,
@@ -453,6 +486,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             SecretMaterial,
             Option<ProviderEndpoint>,
             PathBuf,
+            bool,
         ),
         HarnessError,
     > {
@@ -493,6 +527,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
 
         let prompt = request.resolved_agent_profile.instructions.clone();
         secrets.register(prompt.clone());
+        let stdin_stays_open = invocation.stdin_stays_open;
+        let stdin = self.grammar.prompt(prompt, stdin_stays_open);
 
         let workspace_root = spec.workspace.path.clone();
         let working_directory = match request.repository.subdirectory.as_deref() {
@@ -503,11 +539,12 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             program,
             args,
             env,
-            stdin: Some(prompt.into_bytes()),
+            stdin: Some(stdin),
             working_directory,
             workspace_root,
+            keep_stdin_open: stdin_stays_open,
         };
-        Ok((process_spec, secrets, endpoint, scratch))
+        Ok((process_spec, secrets, endpoint, scratch, stdin_stays_open))
     }
 
     /// Runs `<program> --version`. Probing cannot fail: every way it goes
@@ -534,6 +571,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             stdin: None,
             working_directory: neutral_dir.clone(),
             workspace_root: neutral_dir,
+            keep_stdin_open: false,
         };
         let limits = ProcessLimits::new(8192, 8192, self.probe_timeout);
         let result = match spec.spawn().await {
@@ -899,7 +937,7 @@ where
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
-        let (process_spec, secrets, endpoint, scratch) = self.prepare(spec)?;
+        let (process_spec, secrets, endpoint, scratch, stdin_stays_open) = self.prepare(spec)?;
         let process = process_spec.spawn().await.map_err(|error| {
             tracing::warn!(?error, harness = self.kind(), "spawn failed");
             HarnessError::Process
@@ -911,6 +949,19 @@ where
             process.pid(),
             self.next_handle.fetch_add(1, Ordering::SeqCst)
         );
+        // One pair carries a question out to the engine; the other carries
+        // its answer back in. `decision_channels` hands out the engine-facing
+        // ends once; `wait`'s interactive loop drives the process-facing ones.
+        let (decision_channels, interactive) = if stdin_stays_open {
+            let (questions_tx, questions_rx) = mpsc::channel(1);
+            let (answers_tx, answers_rx) = mpsc::channel(1);
+            (
+                Some((questions_rx, answers_tx)),
+                Some((questions_tx, answers_rx)),
+            )
+        } else {
+            (None, None)
+        };
         self.running.lock().await.insert(
             process_id.clone(),
             RunningProcess {
@@ -922,10 +973,24 @@ where
                     spec: spec.clone(),
                     endpoint,
                     scratch,
+                    interactive,
                 },
+                decision_channels,
             },
         );
         Ok(LocalRunHandle { process_id })
+    }
+
+    async fn decision_channels(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        self.running
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .decision_channels
+            .take()
     }
 
     /// A signal that could not be delivered is `Ambiguous` evidence, not an
@@ -964,14 +1029,31 @@ where
     }
 
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
-        let RunningProcess { process, record } = self.take_running(&handle.process_id).await?;
-        let result = process
-            .wait_with_capture(&record.limits, &record.secrets)
-            .await
-            .map_err(|error| {
-                tracing::warn!(?error, harness = self.kind(), "capture failed");
-                HarnessError::Process
-            })?;
+        let RunningProcess {
+            process,
+            mut record,
+            ..
+        } = self.take_running(&handle.process_id).await?;
+        let result = if let Some((questions_tx, answers_rx)) = record.interactive.take() {
+            process
+                .wait_with_capture_and_questions(
+                    &record.limits,
+                    &record.secrets,
+                    |line| self.grammar.signal(line),
+                    |question, answer| self.grammar.answer(question, answer),
+                    questions_tx,
+                    answers_rx,
+                )
+                .await
+        } else {
+            process
+                .wait_with_capture(&record.limits, &record.secrets)
+                .await
+        }
+        .map_err(|error| {
+            tracing::warn!(?error, harness = self.kind(), "capture failed");
+            HarnessError::Process
+        })?;
         let ended_at = DateTime::<Utc>::from(self.clock.now());
         let probed_version = self.known_version().await;
         let outcome = self.outcome(&record, ended_at, &result, probed_version);
