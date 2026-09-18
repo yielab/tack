@@ -77,8 +77,9 @@ HarnessGrammar      descriptor()    the data above
   (four methods)    capabilities()  what this CLI honestly supports, permission_policy included
                     invocation()    request + resolved endpoint -> args and extra env, or a typed rejection
                     report()        finished process -> verdict, evidence, observed model, tokens, cost
-  (two optional,    signal()        a stdout line -> a question for the operator, or "finished"
-   from task D1)    answer()        the operator's answer -> bytes for the CLI's stdin
+  (three optional,  signal()        a stdout line -> a question for the operator, or "finished"
+   for a CLI that   answer()        the operator's answer -> bytes for the CLI's stdin
+   can ask)         prompt()        the prompt -> the bytes that deliver it on stdin
 
 LocalProcessHarness everything else, identical for every harness
 ```
