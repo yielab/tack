@@ -135,6 +135,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("071_drop_orch_metrics_daily", &MIGRATION_071[..]),
         ordinary("072_drop_orch_trace_cursors", &MIGRATION_072[..]),
         ordinary("073_drop_control_planes", &MIGRATION_073[..]),
+        ordinary("074_drop_template_orchestration", &MIGRATION_074[..]),
     ]
 }
 
@@ -1091,15 +1092,8 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
 const MIGRATION_029: [&str; 1] =
     ["ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'"];
 
-// Holds a serialized `TemplateOrchestration` (tack-core). A
-// nullable column, not `NOT NULL DEFAULT '{}'` — `NULL` means "this template
-// has no orchestration block," distinct from `'{}'` ("an orchestration block
-// with every field at its default"). Every row that predates this migration
-// backfills to `NULL`, so `repo::templates::get_template`/`list_templates`
-// deserialize it to `orchestration: None`, matching `ProjectTemplate`'s own
-// `#[serde(default)]` — the same "absent means nothing, existing templates
-// are untouched" rule migration 029 established for `items.source`, applied
-// here to a column instead of a JSON payload key.
+// Held a template's serialized orchestration block, `NULL` for a template
+// without one, until 074 dropped the column.
 const MIGRATION_030: [&str; 1] = ["ALTER TABLE project_templates ADD COLUMN orchestration TEXT"];
 
 // Unit economics: `GET /api/economics/summary` and
@@ -1668,3 +1662,7 @@ const MIGRATION_071: [&str; 1] = ["DROP TABLE orch_metrics_daily"];
 const MIGRATION_072: [&str; 1] = ["DROP TABLE orch_trace_cursors"];
 // The parent every other table in this batch referenced; must run last.
 const MIGRATION_073: [&str; 1] = ["DROP TABLE control_planes"];
+
+// The column held a template's configuration for the bridge dropped above;
+// nothing selects or binds it.
+const MIGRATION_074: [&str; 1] = ["ALTER TABLE project_templates DROP COLUMN orchestration"];
