@@ -4,8 +4,7 @@
 //! through the real production router, the two focused read-only
 //! runner/attempt routes, the attempt-scoped artifact/decision list routes,
 //! cross-execution scoping on the attempt-events and artifact-download
-//! routes, runner-fleet membership, template save-time validation, and
-//! optimistic item-version concurrency.
+//! routes, runner-fleet membership, and optimistic item-version concurrency.
 
 mod common;
 
@@ -27,5 +26,3 @@ mod local_runner;
 mod operator_read_routes;
 #[path = "handlers/production_router.rs"]
 mod production_router;
-#[path = "handlers/templates.rs"]
-mod templates;
