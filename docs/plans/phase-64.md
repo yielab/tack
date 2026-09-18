@@ -219,7 +219,7 @@ layers, from ADR 0068:
 | **R1b** frontend: what the board views share with the bridge | `shared/dispatch/`, `shared/orch/`, `shared/agentActivity/`, `features/sprints/DispatchSprintModal.tsx` and its test, and every use of them in the files measured below | `shared/runWithAgent/` and `shared/execution/` are runner-v1 and stay; where they import a type from a removed module, the type moves into `shared/execution/types.ts` |
 | **R2** API and CLI | `handlers/{orch, provisioning, economics}.rs`, `dispatcher.rs`, `orch_store.rs`, `orch_runtime.rs`, `sprint_dispatch.rs`, `tack orch`, `TACK_ORCH_*` from `docs/CONFIG.md`, `tests/orchestration/**` except the files M0 marked runner-v1 | regenerate the OpenAPI spec and `schema.gen.ts` once, at the end |
 | **R3** `tack-orch` | the `ControlPlane` trait, `reconciler`, `adapters/`, the `docket_*` tests, their fixtures and goldens | the execution domain, scheduler, model policy, retention and `runner_contract` stay |
-| **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents. No export step: the migration runner already writes a whole-database `VACUUM INTO` snapshot before any upgrade (`create_pre_upgrade_backup_if_needed`), so the rows survive there; `tack-db`'s `repo/orch.rs`, `repo/economics.rs` and their tests go with the tables | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
+| **R4** schema | one migration per `DROP TABLE` for `control_planes` and the `orch_*` tables, children before parents. No export step: the migration runner writes a whole-database `VACUUM INTO` snapshot (`create_pre_upgrade_backup_if_needed`) before a rebuild and, from this task on, before a migration that drops a table, so the rows survive there; `tack-db`'s `repo/orch.rs`, `repo/economics.rs` and their tests go with the tables | the secret columns of those tables leave `remote_backup.rs::scrub_snapshot_secrets` in the same commit |
 
 **Measured 2026-09-18 on `develop` at `707f71a`** (`cat <files> | wc -l`; importers with
 `git grep -l`):
@@ -318,6 +318,6 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | R2 | done, in `develop` — 24 518 lines out, 97 documented paths become 78 |
 | R3 | done, in `develop` — `tack-orch` goes from 19 056 lines to 7 854 |
 | D1 | done, in `develop` — claude-code asks through `--permission-prompt-tool stdio`; the walk through the real binary and the operator route is D2's |
-| R3b | done, in `develop` — the `project_templates.orchestration` column is no longer read; one migration drops it once R4 is in |
-| R4 · H4 | running |
+| R3b · R4 | done, in `develop` — migrations 064–074; the pre-upgrade snapshot was only ever taken before a table rebuild, so R4 widened it to a migration that drops a table, and proved it |
+| H4 | running |
 | D2 · T1 · T2 · T3 · T4 | not started |
