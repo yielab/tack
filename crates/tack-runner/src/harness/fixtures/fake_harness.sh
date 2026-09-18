@@ -56,6 +56,12 @@
 #                  For workspace-confinement tests: the caller controls cwd
 #                  via ProcessSpec::working_directory, this mode never does
 #                  its own path confinement.
+#   write_scratch_file
+#                  Creates TACK_FAKE_HARNESS_SCRATCH_DIR (the caller never
+#                  does) and writes a marker file into it, standing in for a
+#                  CLI that keeps a home directory under its scratch path.
+#                  Exits 0. For proving the core removes the directory once
+#                  the run is done.
 #
 # Every mode first prints one diagnostic line to stderr
 # (`fake_harness: mode=<mode> pid=$$`) — never secret, always safe to leave
@@ -135,6 +141,13 @@ case "$mode" in
       echo "fake_harness: read_relative could not find $path" >&2
       exit "${TACK_FAKE_HARNESS_EXIT_CODE:-1}"
     fi
+    ;;
+
+  write_scratch_file)
+    dir="$TACK_FAKE_HARNESS_SCRATCH_DIR"
+    mkdir -p "$dir"
+    echo "fake-harness-scratch" > "$dir/marker"
+    exit 0
     ;;
 
   *)

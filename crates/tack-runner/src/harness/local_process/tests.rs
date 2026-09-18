@@ -78,9 +78,14 @@ impl HarnessGrammar for TestGrammar {
                 reason: "grammar refused the policy".to_owned(),
             });
         }
+        let mut env = BTreeMap::new();
+        env.insert(
+            "TACK_FAKE_HARNESS_SCRATCH_DIR".to_owned(),
+            run.scratch.display().to_string(),
+        );
         Ok(Invocation {
             args: vec!["run".to_owned()],
-            env: BTreeMap::new(),
+            env,
         })
     }
 
@@ -383,6 +388,34 @@ async fn secrets_never_survive_into_the_reason_or_the_staged_log() {
             !reason.contains(canary) && !log.contains(canary),
             "{canary}"
         );
+    }
+}
+
+/// After `wait` has built the outcome, the attempt's scratch directory is
+/// gone and the workspace holds no home directory a grammar might have
+/// pointed a CLI at.
+#[tokio::test]
+async fn the_scratch_directory_is_gone_after_the_run() {
+    let state = scratch("scratch-lifecycle");
+    let workspace = scratch("scratch-lifecycle-workspace");
+    let mut request = spec(KIND, workspace.path());
+    set_env(
+        &mut request,
+        &[("TACK_FAKE_HARNESS_MODE", "write_scratch_file")],
+    );
+
+    let outcome = run(&harness(state.path()), &request).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+
+    let scratch_dir = state.path().join("staging").join("scratch").join("attempt");
+    assert!(!scratch_dir.exists(), "{scratch_dir:?}");
+
+    let tack_runner_dir = workspace.path().join(".tack-runner");
+    if let Ok(entries) = std::fs::read_dir(&tack_runner_dir) {
+        for entry in entries {
+            let name = entry.expect("entry").file_name();
+            assert!(!name.to_string_lossy().ends_with("-home"), "{name:?}");
+        }
     }
 }
 
