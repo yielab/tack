@@ -77,7 +77,7 @@ HarnessGrammar      descriptor()    the data above
   (four methods)    capabilities()  what this CLI honestly supports, permission_policy included
                     invocation()    request + resolved endpoint -> args and extra env, or a typed rejection
                     report()        finished process -> verdict, evidence, observed model, tokens, cost
-  (two optional,    question()      a stdout line -> a question for the operator
+  (two optional,    signal()        a stdout line -> a question for the operator, or "finished"
    from task D1)    answer()        the operator's answer -> bytes for the CLI's stdin
 
 LocalProcessHarness everything else, identical for every harness
@@ -311,15 +311,25 @@ operator's resolve route, the inbox — and has never had a caller. This task ad
 half once, in the core, and claude-code as the first harness to use it. The other three
 declare `decisions: unsupported` with a reason until their own change (see *Upgrades*).
 
-**Measure first, zero spend, before writing code.** Run the installed `claude` against a
-loopback server standing in for the Anthropic Messages API (`ANTHROPIC_BASE_URL`), whose
-first response is a `tool_use` for a shell command: `claude -p --input-format stream-json
---output-format stream-json --permission-mode manual --permission-prompts host`, prompt as
-one JSON user message on stdin, stdin left open. Record the line that asks, the line that
-answers it, and that the run continues after *allow* and after *deny*. Save them under
-`fixtures/claude_code/<version>/` and say so in that README. If the question does not
-arrive as a line on stdout, or the flags differ at this version, stop and report — the
-design below assumes it.
+**Measured 2026-09-18 against `claude` 2.1.273 and a loopback stand-in for the Messages
+API, zero spend** (`ANTHROPIC_BASE_URL`, a fake key, a fresh `HOME`):
+
+- The flags are `-p --input-format stream-json --output-format stream-json --verbose
+  --permission-mode default --permission-prompt-tool stdio`, the prompt as one stream-json
+  user message on stdin, stdin left open. `--permission-prompts host` without
+  `--permission-prompt-tool` does not ask: every question is denied on the spot.
+- The question is one stdout line: `{"type":"control_request","request_id":…,"request":
+  {"subtype":"can_use_tool","tool_name":…,"input":{…},…}}`.
+- The answer is one stdin line: `{"type":"control_response","response":{"subtype":
+  "success","request_id":…,"response":{"behavior":"allow"}}}`, or `{"behavior":"deny",
+  "message":…}`. After *allow* the tool ran and the file existed; after *deny* it did not,
+  the run went on, and its `result` line listed the refusal under `permission_denials`.
+- With stdin open the CLI does not exit after its `result` line: it waits for another
+  message, and exits 0 once stdin closes. So the core must learn from the grammar that the
+  conversation is over.
+
+The captured lines become fixtures under `fixtures/claude_code/<version>/` with their
+`.provenance` files, scratch paths rewritten to `/capture`.
 
 **Files:** `docs/contracts/runner-v1/claim.response.json` and its row in the pin table of
 `crates/tack-orch/tests/runner_contract.rs`; the type that holds `permission_policy`
@@ -338,19 +348,21 @@ harness's business; Tack only carries the question and the answer.
 **The seam — two defaulted methods on `HarnessGrammar`, both pure:**
 
 ```rust
-/// A line of this CLI's stdout that is a question for the operator.
-fn question(&self, _line: &str) -> Option<Question> { None }
-/// The bytes that answer it, written to the CLI's stdin.
+/// What a line of this CLI's stdout means to the core, if anything.
+fn signal(&self, _line: &str) -> Option<StreamSignal> { None }
+/// The bytes that answer a question, written to the CLI's stdin.
 fn answer(&self, _question: &Question, _answer: &DecisionAnswer) -> Vec<u8> { Vec::new() }
 ```
 
-`Question { vendor_id, kind, prompt, options, metadata }` maps one to one onto
-`decision.create.request.json`. `Invocation` gains `stdin_stays_open: bool`, default
-`false`; a grammar sets it only for an `ask` request.
+`StreamSignal` is `Question(Question)` or `Finished`. `Question { vendor_id, kind, prompt,
+options, metadata }` maps one to one onto `decision.create.request.json`. On `Finished` the
+core closes the child's stdin, which is what lets a CLI that keeps listening exit.
+`Invocation` gains `stdin_stays_open: bool`, default `false`; a grammar sets it only for an
+`ask` request.
 
 **The core.** With `stdin_stays_open`, `process.rs` writes the prompt, keeps the pipe, and
 reads stdout line by line into the same bounded capture H1 built. `LocalProcessHarness`
-offers each line to `question()`; a hit goes out on a channel, the reply comes back on
+offers each line to `signal()`; a question goes out on a channel, the reply comes back on
 another and is written through `answer()`. The adapter trait gains one defaulted method
 returning that pair of channels for a run handle, `None` for every run that cannot ask.
 Nothing else in the lifecycle changes, and a run with `auto` takes today's path untouched.
@@ -364,8 +376,9 @@ same secret redaction as captured output before it leaves the runner. Logs carry
 decision id only.
 
 **claude-code.** With `ask`: the flags measured above instead of `bypassPermissions`, the
-prompt framed as a stream-json user message, `question()` and `answer()` for the measured
-lines, `decisions: supported`. With `auto`: exactly today's command line.
+prompt framed as a stream-json user message, `signal()` reading `can_use_tool` as a question
+and the `result` line as `Finished`, `answer()` writing the `control_response`,
+`decisions: supported`. With `auto`: exactly today's command line.
 
 **Tests — five functions, rows elsewhere.**
 - `local_process/tests.rs`: `a_question_is_answered_and_the_run_continues`, against
@@ -410,7 +423,7 @@ beside `schema.json` stating the argv/env/stdout/exit-code contract in prose. No
 | `min_capture_bytes` removed from the descriptor | a captured transcript over the cap, read correctly from head and tail |
 | docket `cancel: Supported` | docket emits child group ids; the crash matrix shows nothing survives a `SIGKILL` of the harness |
 | docket `artifacts: Supported` | the result lists the paths its own tools wrote |
-| docket `decisions: Supported` | docket's harness mode prints a question event and reads the answer from stdin (asked of docket, above); then `question()` and `answer()` in `docket.rs`, from a captured transcript |
+| docket `decisions: Supported` | docket's harness mode prints a question event and reads the answer from stdin (asked of docket, above); then `signal()` and `answer()` in `docket.rs`, from a captured transcript |
 | codex `decisions: Supported` | `codex exec` cannot ask; measure whether `codex app-server` puts its approval requests on stdout as lines. If so, the grammar's command changes and the two methods follow |
 | opencode `decisions: Supported` | measure what `opencode run` does with a permission set to `ask`, and whether `opencode acp` asks over stdio. Only a stdio channel fits the seam; an HTTP one is refused until a second harness needs it |
 | opencode attempts share one install | a measured saving against the ~220 MB per attempt, and a decision on what the attempts may then see of each other |
