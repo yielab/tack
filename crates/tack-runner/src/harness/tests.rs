@@ -496,5 +496,5 @@ fn every_descriptor_is_found_by_its_kind() {
             descriptor
         ));
     }
-    assert!(super::descriptor("opencode").is_none());
+    assert!(super::descriptor("no-such-harness").is_none());
 }
