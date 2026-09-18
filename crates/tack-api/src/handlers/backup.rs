@@ -36,6 +36,9 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
         .execute(state.pool())
         .await?;
 
+    // A VACUUM INTO target this handler removes itself before returning on
+    // every path below — not a test artifact, so no `tempfile` guard.
+    #[allow(clippy::disallowed_methods)]
     let temp_path = std::env::temp_dir().join(format!("tack-backup-{}.db", Uuid::new_v4()));
     let path_str = temp_path.to_string_lossy().replace('\'', "''");
 
@@ -153,6 +156,9 @@ async fn migration_count_of_bytes(bytes: &[u8]) -> Result<u32, String> {
     use sqlx::Connection;
     use sqlx::sqlite::SqliteConnectOptions;
 
+    // A scratch file this function reads back once and discards — not a test
+    // artifact, so no `tempfile` guard.
+    #[allow(clippy::disallowed_methods)]
     let tmp = std::env::temp_dir().join(format!("tack-restore-check-{}.db", Uuid::new_v4()));
     tokio::fs::write(&tmp, bytes)
         .await

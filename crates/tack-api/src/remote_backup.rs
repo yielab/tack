@@ -361,6 +361,9 @@ async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, Backu
         .execute(pool)
         .await?;
 
+    // A VACUUM INTO target the caller reads back and removes — not a test
+    // artifact, so no `tempfile` guard.
+    #[allow(clippy::disallowed_methods)]
     let temp = std::env::temp_dir().join(format!("tack-snap-{}.db", Uuid::new_v4()));
     let temp_str = temp.to_string_lossy().replace('\'', "''");
 

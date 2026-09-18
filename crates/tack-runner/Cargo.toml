@@ -55,3 +55,6 @@ tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
 # The docket real-binary test's fake model server (`docket/tests.rs`).
 wiremock = { workspace = true }
+
+[lints]
+workspace = true

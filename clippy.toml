@@ -1,0 +1,9 @@
+disallowed-methods = [
+    { path = "std::env::temp_dir", reason = "tests take their temporary path from a `tempfile` guard (docs/TESTING.md), never a hand-built path under the OS temp dir; production code that legitimately needs that directory gets #[allow(clippy::disallowed_methods)] with its own one-line reason" },
+]
+
+# The smallest value that passes, not a target: the largest function in the
+# workspace is 318 lines (create_execution in
+# crates/tack-api/src/handlers/executions.rs). The lint itself is switched on
+# in Cargo.toml's [workspace.lints]. Lower this as that function shrinks.
+too-many-lines-threshold = 318

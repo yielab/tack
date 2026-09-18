@@ -481,6 +481,9 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         args.push("--version".to_owned());
         let mut env = self.inherited_env();
         env.extend(self.probe_env.clone());
+        // A working directory for a `--version` probe that writes nothing —
+        // not a test artifact, so no `tempfile` guard.
+        #[allow(clippy::disallowed_methods)]
         let neutral_dir = std::env::temp_dir();
         let spec = ProcessSpec {
             program,
