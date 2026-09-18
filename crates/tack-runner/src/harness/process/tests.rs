@@ -149,13 +149,11 @@ async fn each_confined_process_only_ever_sees_its_own_canary_file() {
     assert!(!read_b.stdout.text.contains("workspace-a-secret"));
 }
 
-/// Acceptance: high-volume output stays memory-bounded. Drives 8 MiB of
-/// real stdout through a 64 KiB cap and asserts the captured buffer never
-/// exceeds the cap while the full byte count is still known and the
-/// process still exits cleanly (proving the drain-past-cap loop does not
-/// deadlock the child on a full pipe).
+/// Drives 8 MiB of real stdout through a 64 KiB cap: the child exits
+/// cleanly, so draining past the cap never blocks it on a full pipe, and
+/// exactly the cap's worth of bytes is kept.
 #[tokio::test]
-async fn high_volume_output_is_memory_bounded_and_truncated() {
+async fn high_volume_output_never_blocks_the_child() {
     let workspace_dir = temp_workspace("high-volume");
     const VOLUME_BYTES: usize = 8 * 1024 * 1024;
     const CAP: usize = 64 * 1024;
@@ -172,16 +170,72 @@ async fn high_volume_output_is_memory_bounded_and_truncated() {
         ProcessExit::Exited(0),
         "child was not deadlocked"
     );
-    assert!(
-        result.stdout.text.len() <= CAP,
-        "captured buffer must never exceed the configured cap"
-    );
     assert!(result.stdout.truncated);
     assert_eq!(result.stdout.total_bytes_seen, VOLUME_BYTES as u64);
-    assert_eq!(
-        result.stdout.bytes_dropped,
-        VOLUME_BYTES as u64 - result.stdout.text.len() as u64
-    );
+    assert_eq!(result.stdout.bytes_dropped, (VOLUME_BYTES - CAP) as u64);
+}
+
+struct CaptureRow {
+    label: &'static str,
+    line_count: usize,
+    truncated: bool,
+}
+
+const CAPTURE_ROWS: [CaptureRow; 3] = [
+    CaptureRow {
+        label: "under the cap",
+        line_count: 5,
+        truncated: false,
+    },
+    CaptureRow {
+        label: "exactly at the cap",
+        line_count: 10,
+        truncated: false,
+    },
+    CaptureRow {
+        label: "over the cap",
+        line_count: 20,
+        truncated: true,
+    },
+];
+
+/// Acceptance: capture keeps the head and the tail of the stream, over a
+/// table of sizes relative to the cap. Under and at the cap, the capture is
+/// the whole stream, byte-identical to a plain bounded read. Over the cap,
+/// the text still starts with the stream's first bytes and still ends with
+/// its actual last line — the one a harness's terminal `result` line lives
+/// on — rather than losing it to a straight head-only cut.
+#[tokio::test]
+async fn capture_bounded_keeps_the_head_and_the_tail_of_the_stream() {
+    const CAP: usize = 100;
+    const HEAD_CAP: usize = CAP / 2;
+
+    for row in &CAPTURE_ROWS {
+        let lines: Vec<String> = (0..row.line_count)
+            .map(|index| format!("line-{index:04}\n"))
+            .collect();
+        let stream = lines.concat();
+        let total = stream.len() as u64;
+        let mut cursor = std::io::Cursor::new(stream.clone().into_bytes());
+        let raw = capture_bounded(&mut cursor, CAP).await;
+        let captured = finalize_capture(raw, &SecretMaterial::new());
+
+        assert_eq!(captured.total_bytes_seen, total, "{}", row.label);
+        assert_eq!(captured.truncated, row.truncated, "{}", row.label);
+        if row.truncated {
+            let last_line = lines.last().expect("at least one line");
+            assert!(
+                captured.text.starts_with(&stream[..HEAD_CAP]),
+                "{}",
+                row.label
+            );
+            assert!(captured.text.ends_with(last_line.as_str()), "{}", row.label);
+            assert_eq!(captured.bytes_dropped, total - CAP as u64, "{}", row.label);
+        } else {
+            assert_eq!(captured.text, stream, "{}", row.label);
+            assert_eq!(captured.bytes_dropped, 0, "{}", row.label);
+        }
+    }
 }
 
 /// Spawns the `spawn_child` fixture mode in a fresh workspace and waits

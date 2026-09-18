@@ -533,6 +533,38 @@ fn journal(process_id: Option<&str>) -> AttemptJournal {
     }
 }
 
+/// Three real processes for [`reconcile_tells_this_harness_from_a_reused_pid`]:
+/// unrelated, already-exited, and a launcher script carrying `attempt_id`. A
+/// launcher script (docket) has `sh` as `argv[0]`, never the harness program
+/// itself, but the attempt id it was started with survives as one of its own
+/// arguments. `exec`ing straight to `sleep` would drop those arguments, so the
+/// shell is kept alive with a trailing no-op instead.
+struct ReusedPidRig {
+    unrelated: std::process::Child,
+    exited: std::process::Child,
+    launcher: std::process::Child,
+}
+
+fn spawn_reused_pid_rig(attempt_id: &str) -> ReusedPidRig {
+    let unrelated = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn");
+    let mut exited = std::process::Command::new("true").spawn().expect("spawn");
+    exited.wait().expect("reap");
+    let launcher = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("sleep 30; :")
+        .arg(attempt_id)
+        .spawn()
+        .expect("spawn");
+    ReusedPidRig {
+        unrelated,
+        exited,
+        launcher,
+    }
+}
+
 /// A live pid is only `ProcessRunning` when it is still this harness's
 /// program: the OS may have given the pid to something else since.
 #[cfg(target_os = "linux")]
@@ -541,12 +573,7 @@ async fn reconcile_tells_this_harness_from_a_reused_pid() {
     let state = scratch("reconcile");
     let harness = harness(state.path());
     let (handle, _) = start_hanging(&harness, state.path()).await;
-    let mut unrelated = std::process::Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .expect("spawn");
-    let mut exited = std::process::Command::new("true").spawn().expect("spawn");
-    exited.wait().expect("reap");
+    let mut rig = spawn_reused_pid_rig(journal(None).attempt_id.as_str());
 
     let rows = [
         (
@@ -554,12 +581,16 @@ async fn reconcile_tells_this_harness_from_a_reused_pid() {
             Ok(RecoveryObservation::ProcessRunning),
         ),
         (
-            Some(unrelated.id().to_string()),
+            Some(rig.unrelated.id().to_string()),
             Ok(RecoveryObservation::ProcessStopped),
         ),
         (
-            Some(format!("codex:{}:0", exited.id())),
+            Some(format!("codex:{}:0", rig.exited.id())),
             Ok(RecoveryObservation::ProcessStopped),
+        ),
+        (
+            Some(rig.launcher.id().to_string()),
+            Ok(RecoveryObservation::ProcessRunning),
         ),
         (None, Ok(RecoveryObservation::ProcessStopped)),
         (Some("not-a-pid".to_owned()), Err(())),
@@ -569,6 +600,8 @@ async fn reconcile_tells_this_harness_from_a_reused_pid() {
         assert_eq!(observed.map_err(|_| ()), expected, "{process_id:?}");
     }
     harness.cancel(&handle).await.expect("cancel");
-    let _ = unrelated.kill();
-    let _ = unrelated.wait();
+    let _ = rig.unrelated.kill();
+    let _ = rig.unrelated.wait();
+    let _ = rig.launcher.kill();
+    let _ = rig.launcher.wait();
 }

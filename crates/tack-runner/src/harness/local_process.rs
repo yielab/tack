@@ -529,21 +529,29 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         version
     }
 
-    /// Whether a live pid is still the program this harness spawns. `None`
-    /// when that cannot be known: a bare liveness check cannot rule out a
-    /// pid the OS has since given to something else.
+    /// Whether a live pid is still the program this harness spawns, or a
+    /// launcher script for it. `argv[0]` matching the resolved binary proves
+    /// it directly; failing that, the attempt id appearing anywhere in the
+    /// argument list proves it too — a launcher (docket) never has the real
+    /// program as `argv[0]`, but always carries the attempt id it was
+    /// started with. `None` when neither can be known: a bare liveness check
+    /// cannot rule out a pid the OS has since given to something else.
     #[cfg(target_os = "linux")]
-    fn process_is_this_harness(&self, pid: u32) -> Option<bool> {
+    fn process_is_this_harness(&self, pid: u32, attempt_id: &str) -> Option<bool> {
         let (expected, _) = self.locator.resolve().ok()?;
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-        let argv0 = raw.split(|byte| *byte == 0).find(|part| !part.is_empty())?;
+        let mut args = raw.split(|byte| *byte == 0).filter(|part| !part.is_empty());
+        let argv0 = args.next()?;
         let argv0 = Path::new(std::str::from_utf8(argv0).ok()?);
         let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        Some(canonical(argv0) == canonical(&expected))
+        if canonical(argv0) == canonical(&expected) {
+            return Some(true);
+        }
+        Some(args.any(|arg| arg == attempt_id.as_bytes()))
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn process_is_this_harness(&self, _pid: u32) -> Option<bool> {
+    fn process_is_this_harness(&self, _pid: u32, _attempt_id: &str) -> Option<bool> {
         None
     }
 
@@ -874,13 +882,15 @@ where
             if !crate::harness::process::process_alive(pid) {
                 return Ok(RecoveryObservation::ProcessStopped);
             }
-            Ok(match self.process_is_this_harness(pid) {
-                Some(true) => RecoveryObservation::ProcessRunning,
-                // Alive, but another program: the attempt's process is gone
-                // and the OS has reused its pid.
-                Some(false) => RecoveryObservation::ProcessStopped,
-                None => RecoveryObservation::Ambiguous,
-            })
+            Ok(
+                match self.process_is_this_harness(pid, journal.attempt_id.as_str()) {
+                    Some(true) => RecoveryObservation::ProcessRunning,
+                    // Alive, but another program: the attempt's process is gone
+                    // and the OS has reused its pid.
+                    Some(false) => RecoveryObservation::ProcessStopped,
+                    None => RecoveryObservation::Ambiguous,
+                },
+            )
         }
         #[cfg(not(unix))]
         {
