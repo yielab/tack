@@ -1,21 +1,22 @@
 # Agent Runners & Fleet Execution
 
-Tack can hand a board item to a coding agent — Codex or Claude Code — and
-track what it did as first-class project history: requested vs. actual harness/model,
-a fenced execution attempt, an event timeline, decisions the agent needs answered, and
-verified artifacts it produced. This page is the operator's guide to that surface:
-running the `tack-runner` binary, enrolling and revoking runners, where credentials and
-workspaces live, what a runner can honestly promise (the capability matrix), and how
-version compatibility and network exposure work.
+Tack can hand a board item to a coding agent — codex, Claude Code, docket or
+opencode — and track what it did as first-class project history: requested vs. actual
+harness/model, a fenced execution attempt, an event timeline, decisions the agent needs
+answered, and verified artifacts it produced. This page is the operator's guide to that
+surface: which harness to pick, running the `tack-runner` binary, enrolling and revoking
+runners, where credentials and workspaces live, what a runner can honestly promise (the
+capability matrix), and how version compatibility and network exposure work.
 
-The question every new user asks first — *which model, from which provider, and where
-do I put the key* — has a direct answer below, not a negation: see
+The question every new user asks first — *which harness, which model, from which
+provider, and where do I put the key* — has a direct answer below, not a negation: see
+[Choosing a harness](#choosing-a-harness) and
 [Choosing a model and a provider](#choosing-a-model-and-a-provider). The four ways to
 turn a board item into a completed attempt are in
 [Running an item with an agent](#running-an-item-with-an-agent), before the operational
 detail (enrollment, credentials, recovery) that follows it.
 
-Docket is reachable through this same surface, as a harness — see
+Docket's own control-plane history — retired, and what replaced it — is in
 [Docket compatibility](#docket-compatibility) below.
 
 **Read this before you rely on it in production:** the last section,
@@ -78,11 +79,115 @@ run against.
 | **Runner** | A `tack-runner` process, identified by a durable `runner_id`, enrolled once and then polling for work. |
 | **Runner fleet** | A named group of runners sharing an optional concurrency limit and default policy. An execution request targets either one exact runner or a fleet. |
 | **Agent profile** | Reusable instructions + tool policy + limits, snapshotted into the request at creation time so later edits to the profile never change history. |
-| **Harness** | The coding-agent CLI a runner can launch: `codex` or `claude-code`. The wire value is an opaque string, so a runner may report a kind this build has no bundled adapter for. |
+| **Harness** | The coding-agent CLI a runner can launch: `codex`, `claude-code`, `docket` or `opencode` — see [Choosing a harness](#choosing-a-harness). The wire value is an opaque string, so a runner may report a kind this build has no bundled adapter for. |
 
 `Harness` ≠ `ModelProvider` ≠ `ModelId`, and `Item` ≠ `ExecutionRequest` ≠
 `ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
 see `docs/contracts/runner-v1/protocol.json`.
+
+---
+
+## Choosing a harness
+
+Tack drives a coding-agent CLI — it never runs a model itself. Four are supported today:
+`codex`, `claude-code`, `docket` and `opencode`. Pick one by what it needs installed, how
+it reaches a model, and how far it lets Tack steer it — the rest of this page assumes
+you've already picked one.
+
+| Harness | Install | Reaches a model through | What it measures | Pauses to ask you | Honours the permission policy | Can't |
+|---|---|---|---|---|---|---|
+| `codex` | The official Codex CLI, e.g. `npm install -g @openai/codex` | Its own login (ChatGPT/API-key session) needs no Tack configuration. A Tack-configured Vercel AI Gateway key also reaches it, over the OpenAI Responses wire — Anthropic's own API doesn't serve that wire, so it's never an option here. | Wall-clock duration only. Token/cost usage isn't read from its output, and the model that actually served the request is never confirmed — Tack records the one you requested, tagged `requested_not_confirmed`. | No | Not at all — your tool list, network flag and budget never reach it | Resume a session, pause for a decision, report usage/cost, or enforce the permission policy |
+| `claude-code` | `npm install -g @anthropic-ai/claude-code` | Its own login (a Claude subscription or its own API key) needs no Tack configuration. A Tack-configured endpoint can be Anthropic's own API directly, or the Vercel AI Gateway — both over the Anthropic Messages wire. | Tokens and cost, from the run's own result line — advisory, because an auxiliary model's cost is folded into the total while token counts were only confirmed to cover the primary turn. The served model is confirmed from its own session-start line on a direct connection; routed through the gateway, it's recorded `requested_not_confirmed` instead, since a gateway can still substitute a model underneath it. | **Yes** — the only harness that does, and only when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
+| `docket` | From the [docket project](https://github.com/yielab/docket), following its own install instructions | Always needs a Tack-configured endpoint — the Vercel AI Gateway, over the OpenAI Chat Completions wire; Anthropic's own API doesn't serve that wire either. It has no login of its own that this adapter uses. | Tokens, genuinely read from its result line, and a served model that's a real observation of the endpoint's own response — never downgraded to `requested_not_confirmed`, even behind a gateway. Cost is never measured: the installed version always reports it `null`. | No — a tool call that would need one is refused immediately instead | Not at all — it applies its own tool-policy engine; your tool list, network flag and budget never reach it | Resume, pause for a decision, report a cost, or enforce the permission policy |
+| `opencode` | `brew install opencode` | Always needs a Tack-configured endpoint — its own vendor logins are out of scope for this adapter — the Vercel AI Gateway, over the same OpenAI Chat Completions wire as docket. | Tokens, summed across every step of the run. The served model is never confirmed — every run is recorded `requested_not_confirmed`, because nothing in its output names what actually answered. Cost is never measured for a model it doesn't recognize. | No — a denied tool is refused on the spot in non-interactive mode | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Pause for a decision, confirm which model served a request, or run at all against a request that denies network — see below |
+
+A few things above are easy to trip over:
+
+- **opencode reaches the npm registry on every attempt**, not just a first run. Even a
+  fresh, isolated config directory makes a real connection to `registry.npmjs.org` and
+  installs about 220 MB before it does anything else. Because Tack can't make opencode
+  keep a promise the CLI itself breaks, a request whose permission policy denies network
+  is rejected before opencode ever spawns.
+- **docket reads its key from one fixed variable.** Whatever provider you configure,
+  Tack injects its resolved credential under `DOCKET_LLM_API_KEY` — docket never sees a
+  provider-named variable, and it refuses to start without one.
+- **codex ignores the permission policy, and says so.** Its sandbox and approval flags
+  have never been measured against a real run, so Tack doesn't attempt to map your tool
+  list, network flag or budget onto them — a request's permission policy has no effect
+  on a codex run today.
+- **claude-code's network deny is narrower than it sounds.** `network: false` only
+  blocks the WebFetch and WebSearch tools by name; its Bash tool can still reach the
+  network if your tool list grants it, so a network-sensitive item needs its tool list
+  narrowed too, not just the network flag.
+
+### Checking a machine
+
+Run `tack runner doctor` on the machine that will actually run the harness before
+trusting anything above about your own install — it probes every harness this build has
+an adapter for, with no runner enrollment and nothing written to the board. For each
+harness it prints whether the binary was found and its version, one line on how it
+authenticates, and whether it accepts an operator-chosen model verbatim
+(`model_passthrough`) or only a declared list (`model_combinations`). Condensed from a
+real run on a machine with all four installed:
+
+```text
+codex
+  status:      present
+  version:     0.149.1
+  credentials: Codex authenticates itself (its own CLI login, or an API key it reads
+               from its own config)...
+  model_combinations: (none reported)
+  model_passthrough: supported — requested_model_id is forwarded verbatim via --model...
+
+claude-code
+  status:      present
+  version:     2.1.273
+  ...
+
+docket
+  status:      present
+  version:     0.2.0b1
+  ...
+
+opencode
+  status:      present
+  version:     1.18.30
+  ...
+
+Runner-wide capabilities (apply identically to every harness above):
+  cancel     advisory    — process-group signal cannot reach a detached descendant
+  resume     unsupported — no resumable session contract
+  decisions  unsupported — no harness adapter in this tree ever opens a decision
+  artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
+  usage      advisory    — usage is reported only when a harness emits it
+
+Secret store (resolves `secret_reference` environment entries):
+  backend: keychain
+  ...
+
+Provider endpoint (vercel_ai_gateway):
+  reaches: codex, claude-code, docket, opencode
+  status:  not configured
+
+Provider endpoint (anthropic):
+  reaches: claude-code
+  status:  not configured
+```
+
+A harness absent from your machine prints `status: absent` and names every directory it
+searched, instead of the fields above — see
+[Where Tack looks for a harness binary](#where-tack-looks-for-a-harness-binary) below.
+
+The **runner-wide capabilities** block is a single, deliberately conservative statement
+that applies to every harness alike — it is not where claude-code's ability to pause and
+ask shows up. That's a fact about one attempt, set by that request's own
+`permission_policy.approvals` and recorded in the attempt's own capability snapshot at
+claim time, not in this enrollment-time summary. Reading `decisions: unsupported` here
+does not mean claude-code can never pause; see the table above.
+
+How a provider's endpoint and credential are configured — the `TACK_RUNNER_PROVIDER_*`
+variables, which secret-store entry each one reads, and the embedded runner's own key
+field — is the single authority in `docs/CONFIG.md`, not restated here.
 
 ---
 
@@ -311,16 +416,20 @@ operator's opaque model id verbatim and the harness validates it at its own run 
 `unsupported` — a capability claim below `supported` is not load-bearing
 (`crates/tack-orch/src/scheduler/select.rs`). Run `tack runner doctor` on the actual
 runner host to see this for real rather than trusting a stale copy of this page — the
-full command and its unabridged output are in the [CLI reference](cli.md#runner).
-Condensed from a real run on a machine with both harnesses installed:
+full command and its unabridged output are in the [CLI reference](cli.md#runner), and
+what the rest of its output means is in
+[Choosing a harness](#choosing-a-harness). Condensed from a real run on a machine with
+all four harnesses installed:
 
 | Harness | `model_combinations` | `model_passthrough` |
 |---|---|---|
 | `codex` | (none reported) | supported |
 | `claude-code` | (none reported) | supported |
+| `docket` | (none reported) | supported |
+| `opencode` | (none reported) | supported |
 
-Codex and Claude Code both have no `list-models` command to probe, so both declare zero
-combinations and rely entirely on passthrough — any operator-specified model is accepted
+None of the four has a `list-models` command to probe, so every one declares zero
+combinations and relies entirely on passthrough — any operator-specified model is accepted
 pre-spawn and only the harness itself validates it at run time. A harness that can
 enumerate its own installed/configured models would declare them instead and refuse
 passthrough — rejecting an undeclared model before any process spawns rather than after
@@ -449,11 +558,12 @@ difference.
 
 ---
 
-## Where Tack looks for `claude` and `codex`
+## Where Tack looks for a harness binary
 
 The Agents page's "harness detected" check, and the runner's own startup probe, resolve
-each binary the same way: the runner process's own `PATH` first, exactly as a shell
-would find it. If that search comes up empty, the runner then checks a fixed list of
+`codex`, `claude`, `docket` and `opencode` the same way: the runner process's own `PATH`
+first, exactly as a shell would find it. If that search comes up empty, the runner then
+checks a fixed list of
 per-user install locations that a shell-launched terminal usually has on `PATH` but a
 desktop launcher (a `.desktop` entry, Finder, the Start menu) or `tack service` under
 systemd's user manager usually does not, since both start from a minimal session
@@ -548,19 +658,20 @@ read this snapshot rather than assume a feature works.
 **The one enforced rule:** no in-tree adapter may claim `cancel: supported`.
 `AdapterRegistry::register_probe` rejects any probe that does, at registration time,
 before any attempt can reference it — `crates/tack-runner/src/harness/mod.rs`, proved
-by `harness::tests::registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists`.
+by `harness::tests::registering_a_probe_overclaiming_cancel_support_is_rejected`.
 The reason is structural, not a policy choice: every harness's own shell tool spawns
 its subprocess in a new session outside the runner's process group, confirmed with
-`ps` against real harness installations. `cancel` is `advisory`
+`ps` against each real harness installation (see each harness's own
+`fixtures/<kind>/README.md`). `cancel` is `advisory`
 everywhere in this build — a cancellation *request* is always honored as a request,
 but the runner cannot promise the process actually stops.
 
 | Feature | Ceiling in this build | Why |
 |---|---|---|
-| `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across both harnesses — `harness::tests::registering_both_real_adapters_is_order_independent` pins both post-fix |
+| `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across all four harnesses — `AdapterRegistry::register_probe` rejects a stronger claim at registration, before any attempt can reference it |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
-| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them |
-| `artifacts` | `advisory` (both adapters) | None of the harnesses tested can guarantee artifact discovery; downgraded from an earlier `supported` claim |
+| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — today, only claude-code, and only when the request asks for it; see [Choosing a harness](#choosing-a-harness) |
+| `artifacts` | `advisory` (every adapter) | None of the harnesses tested can guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
 ---
@@ -615,7 +726,8 @@ informational, logged and stored, never used to gate behavior today.
 
 Docket is reached the same way as any other coding agent: as a harness
 (`--harness docket`) on a runner-v1 execution request, through the API and
-CLI surface described on this page. The earlier, separate Docket
+CLI surface described on this page — see [Choosing a harness](#choosing-a-harness) for
+what it needs installed and what it can and can't do. The earlier, separate Docket
 control-plane bridge — a standing background poller with its own dispatch,
 approval and budget routes — has been retired; Docket carries no special
 scheduling path or API surface of its own anymore.

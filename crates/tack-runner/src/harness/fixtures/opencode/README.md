@@ -8,6 +8,10 @@ endpoint — never a real model endpoint, never the real `~/.config/opencode`.
 
 **Observed on:** `opencode 1.18.30`, one machine, one point in time.
 
+What a user reads about this harness — install, capabilities, caveats — is
+[Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
+in the user guide.
+
 ## Fixture provenance
 
 Each `1.18.30/*.ndjson` fixture has a sibling `*.ndjson.provenance` text file: its first line is
