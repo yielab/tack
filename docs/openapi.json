@@ -6692,7 +6692,7 @@
       },
       "AgentBadgeResponse": {
         "type": "object",
-        "description": "`GET /api/projects/{id}/agent-activity` response envelope — matches\n`frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly\n(`{ rows: [...] }`, not a bare array).",
+        "description": "`GET /api/projects/{id}/agent-activity` response envelope — deliberately\n`{ rows: [...] }`, not a bare array.",
         "required": [
           "rows"
         ],
@@ -9681,7 +9681,7 @@
       },
       "ItemAgentEventResponse": {
         "type": "object",
-        "description": "One `orch_events` row. See `ItemAgentEventResponse` in\n`frontend/src/shared/agentActivity/api.ts`.",
+        "description": "One `orch_events` row.",
         "required": [
           "id",
           "event_type",

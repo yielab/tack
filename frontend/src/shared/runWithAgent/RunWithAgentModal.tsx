@@ -99,12 +99,8 @@ function runnerSummaryToCapabilities(runner: RunnerSummary): RunnerCapabilities 
  * building their own form, which is what makes "all three surfaces create
  * the same payload shape" true by construction rather than by convention.
  *
- * Vocabulary/visual distinctness from the older Docket "dispatch" feature
- * (`shared/dispatch/**`): this modal's title, every
- * label, and its submit button all say "run" / "agent", never "dispatch" —
- * and it is a visually different modal (its own title bar, its own field
- * set) from `features/sprints/DispatchSprintModal.tsx`, not a themed
- * variant of it. The two features are deliberately unaware of each other.
+ * This modal's title, every label, and its submit button all say "run" /
+ * "agent", never "dispatch", and it owns its own title bar and field set.
  */
 const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const store = useExecutionStore();
@@ -146,10 +142,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     return targetCapabilities();
   };
 
-  // Resources throw once errored — read through a safe accessor everywhere
-  // (same pattern, and same reasoning, as `DispatchSprintModal.tsx#dryRunData`
-  // and `ItemDetailDrawer.tsx#agentActivityData`: calling an errored Solid
-  // resource accessor from within a reactive computation aborts that batch).
+  // Resources throw once errored — read through a safe accessor everywhere:
+  // calling an errored Solid resource accessor from within a reactive
+  // computation aborts that batch.
   const fleetsData = (): FleetSummary[] => (fleets.error !== undefined ? [] : (fleets() ?? []));
   const agentProfilesData = (): AgentProfileSummary[] =>
     agentProfiles.error !== undefined ? [] : (agentProfiles() ?? []);

@@ -90,10 +90,8 @@ export const tokenStore = {
  *  (`error.code` in the `{ "error": { status, message, code? } }` envelope).
  *  `code` is `undefined` for the large majority of errors, which still only
  *  carry `status`/`message`; callers that need to distinguish two failures
- *  sharing an HTTP status (e.g. "orchestration disabled" vs. an ordinary 404)
- *  should check `code` first and fall back to `status` only when `code` is
- *  absent. See {@link isOrchestrationDisabledError} for the canonical
- *  example. */
+ *  sharing an HTTP status should check `code` first and fall back to
+ *  `status` only when `code` is absent. */
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -104,41 +102,6 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
-}
-
-/** The machine-readable `error.code` a feature route returns when
- *  `TACK_ORCH_ENABLE`/the database override is off. Routes migrated to
- *  this contract answer with a 409 or 403 carrying this code instead of a
- *  bare 404, so a real "not found" and "feature is off" are distinguishable
- *  even when they'd otherwise share a status code on the same route. */
-export const ORCHESTRATION_DISABLED_CODE = 'orchestration_disabled';
-
-/**
- * True when a request failed because agent-fleet orchestration is disabled
- * server-side — the single canonical check `shared/agentActivity/api.ts`'s
- * own `isOrchDisabled` delegates to. Living here — the wire-boundary client
- * that file already imports `ApiError` from — means the check is defined
- * once instead of copy-pasted with drift risk, while still respecting
- * `architecture.test.ts`'s features-can't-import-features rule (this is
- * `shared/api/`, not a feature).
- *
- * Two cases, in priority order:
- *  1. `err.code === 'orchestration_disabled'` — the documented contract:
- *     every migrated route answers 409 or 403 with this code, freeing up
- *     404/403/409 to keep their ordinary meanings elsewhere on the same
- *     route (e.g. `POST /api/approvals/{token}` still uses a plain 403 for
- *     "approval token rejected" and 409 for "already decided" — neither
- *     carries this code, so neither is misclassified as "disabled").
- *  2. A bare 404 with no `code` at all — the legacy shape every one of
- *     these routes used before this contract landed. Kept as a fallback so
- *     the frontend keeps working against a server that hasn't deployed the
- *     new envelope yet, not because 404 still means "disabled" going
- *     forward.
- */
-export function isOrchestrationDisabledError(err: unknown): boolean {
-  if (!(err instanceof ApiError)) return false;
-  if (err.code === ORCHESTRATION_DISABLED_CODE) return true;
-  return err.code === undefined && err.status === 404;
 }
 
 /** Join the configured base with a leading-slash path. */

@@ -1,14 +1,10 @@
-import { createSignal, createMemo, For, Show, onMount, onCleanup, createEffect } from 'solid-js';
-import { useParams } from '@solidjs/router';
+import { createSignal, createMemo, For, Show, onMount, onCleanup } from 'solid-js';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
-import { createBoardSocket } from '../../shared/realtime/boardSocket';
-import { AgentStateChip } from '../../shared/ui';
-import { useAgentActivityMap, type AgentBadgeInfo } from '../../shared/agentActivity/useAgentActivityMap';
 import type { Item, Priority, UpdateItem } from '../../shared/types';
 
 // ── Pure helpers (exported for unit testing) ──────────────────────────────────
@@ -108,11 +104,9 @@ function loadDensity(): Density {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Table() {
-  const params = useParams();
   const { items, loading, refetch } = useProjectItems();
   const { workflow } = useProject();
   const { t, typeMap } = useVocab();
-  const agentActivity = useAgentActivityMap(() => params.id);
 
   const [sortKey, setSortKey] = createSignal<SortKey | null>(null);
   const [sortDir, setSortDir] = createSignal<SortDir>('asc');
@@ -139,23 +133,6 @@ export default function Table() {
     const onUpdated = () => void refetch();
     window.addEventListener(ITEM_UPDATED_EVENT, onUpdated);
     onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onUpdated));
-  });
-
-  // Table has no live board
-  // socket otherwise (unlike Board.tsx) — this connection exists solely to
-  // keep the agent-activity badge chip current when a mirrored run/approval
-  // changes, without inventing a broader live-refresh story that isn't
-  // needed here.
-  createEffect(() => {
-    const pid = params.id;
-    if (!pid) return;
-    const s = createBoardSocket(pid);
-    const off = s.onEvent((event) => {
-      if (event.type === 'agent_run_updated' || event.type === 'approval_pending') {
-        agentActivity.refetch();
-      }
-    });
-    onCleanup(() => { off(); s.close(); });
   });
 
   const visibleColumns = createMemo(() => COLUMNS.filter((c) => !hidden().has(c.key)));
@@ -358,7 +335,7 @@ export default function Table() {
                                   }}
                                   onClick={() => c.editable && setEditing({ id: item.id, key: c.key })}
                                 >
-                                  {renderCell(item, c, typeMap, agentActivity.stateFor(item.id))}
+                                  {renderCell(item, c, typeMap)}
                                 </button>
                               }
                             >
@@ -385,16 +362,12 @@ function renderCell(
   item: Item,
   c: ColDef,
   typeMap: ReturnType<typeof useVocab>['typeMap'],
-  agentInfo?: AgentBadgeInfo,
 ) {
   switch (c.key) {
     case 'title':
       return (
         <span class="inline-flex items-center gap-2">
           <span class="font-medium">{item.title}</span>
-          <Show when={agentInfo}>
-            {(info) => <AgentStateChip state={info().state} title={info().remoteStatus} />}
-          </Show>
         </span>
       );
     case 'item_type': {

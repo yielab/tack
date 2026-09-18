@@ -26,9 +26,8 @@
 import type { CapabilitySupport, CapabilityValue, FeatureCapabilities, ModelCombination, RunnerCapabilities } from './types';
 
 /** What a gated control needs to render itself. `reason` stays nullable
- *  (unlike `shared/orch/capabilities.ts`'s `CapabilityGate`, whose backend
- *  always supplies a reason) because `CapabilityValue.reason` is genuinely
- *  `null` on the wire when a runner reports support without qualification
+ *  because `CapabilityValue.reason` is genuinely `null` on the wire when a
+ *  runner reports support without qualification
  *  (`docs/contracts/runner-v1/capabilities.json`'s `cancel` entry) — a
  *  component must not fabricate text where the runner gave none. */
 export interface CapabilityGate {
@@ -39,8 +38,7 @@ export interface CapabilityGate {
 const NO_DATA_REASON = 'no runner capability data available';
 
 /** A single runner capability value is "enabled" at every level except
- *  `'unsupported'` — matching `shared/orch/capabilities.ts`'s `gate()`
- *  convention (`'advisory'` still lets a control fire). */
+ *  `'unsupported'` (`'advisory'` still lets a control fire). */
 function gateValue(value: CapabilityValue | undefined): CapabilityGate {
   if (!value) return { enabled: false, reason: NO_DATA_REASON };
   return { enabled: value.support !== 'unsupported', reason: value.reason };
