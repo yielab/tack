@@ -15,12 +15,11 @@ use serde_json::{Value, json};
 
 // =======================================================================
 // 1. Stale fence: every attempt-scoped mutation checked here rejects a
-//    superseded fencing token and writes nothing — extending
-//    `wave2_gate.rs`'s own coverage (which only proves this for `events`)
-//    to `heartbeat`, `decisions`, `artifacts` (manifest), `cancellation-
-//    observation` and `recovery-observation`. One shared setup supersedes
-//    `attempt_a`/`fence_a` once; every route below is then tried against
-//    that same already-stale fence.
+//    superseded fencing token and writes nothing — across `heartbeat`,
+//    `decisions`, `artifacts` (manifest), `cancellation-observation` and
+//    `recovery-observation`. One shared setup supersedes `attempt_a`/
+//    `fence_a` once; every route below is then tried against that same
+//    already-stale fence.
 // =======================================================================
 
 struct SupersededFence {
@@ -32,9 +31,8 @@ struct SupersededFence {
 }
 
 /// Claims one request (`attempt_a`/`fence_a`), then supersedes it with a
-/// pre-spawn recovery observation (mirrors `wave2_gate.rs`'s own
-/// `superseded_fence_is_rejected_as_stale_lease_and_writes_nothing`) so the
-/// returned fence is guaranteed stale before any caller uses it.
+/// pre-spawn recovery observation so the returned fence is guaranteed stale
+/// before any caller uses it.
 async fn setup_superseded_fence(app: &axum::Router) -> SupersededFence {
     let item_id = create_project_and_item(app).await;
     let agent_profile_id = agent_profile(app, "stale-fence").await;

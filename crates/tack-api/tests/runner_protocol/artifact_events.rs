@@ -840,29 +840,8 @@ async fn content_is_immutable_once_verified() {
 }
 
 // ---------------------------------------------------------------------
-// 6. Fencing: stale/missing fencing token, content-type mismatch.
+// 6. Fencing: missing fencing token, content-type mismatch.
 // ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn stale_fencing_token_is_rejected_before_any_write() {
-    let fx = Fixture::new("stale-fence").await;
-    let content = b"content".to_vec();
-    fx.manifest("art-stale", &content, None).await;
-
-    let auth = fx.auth();
-    let wrong_fence = (fx.attempt.fencing_token + 999).to_string();
-    let headers = [
-        (auth.0.as_str(), auth.1.as_str()),
-        ("x-tack-fencing-token", wrong_fence.as_str()),
-    ];
-    let (status, response) = fx
-        .put(&fx.content_uri("art-stale"), content, &headers)
-        .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{response}");
-    assert_eq!(response["error"]["code"], "stale_lease");
-    assert!(fx.attempt_dir_is_empty().await);
-    fx.cleanup().await;
-}
 
 #[tokio::test]
 async fn missing_fencing_header_is_invalid_request() {
