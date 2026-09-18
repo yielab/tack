@@ -497,7 +497,7 @@ Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--ap
 - Board basics: `serve`, `init`, `projects`, `add`, `list`, `move`, `board`, `branch`, `search`, `sprint`, `config`, `completions`
 - Backup/restore: `backup`, `backups`, `restore`
 - Project setup: `template`, `role`, `comment`, `field`
-- Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke execution runners), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits), `model-profile` (provider + model id combinations)
+- Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke execution runners), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits)
 
 Running `tack` with **no subcommand** — or `tack serve` — starts the server + web UI: `run_server()` builds a Tokio runtime and calls `tack_api::serve()`. This is the primary, UI-first entry point. Everything else is the CLI client.
 

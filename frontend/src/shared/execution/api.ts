@@ -310,46 +310,6 @@ export const agentProfilesApi = {
     }),
 };
 
-// ── Model profiles ─────────────────────────────────────────────────────────
-
-export interface ModelProfileSummary {
-  model_profile_id: string;
-  name: string;
-  model_provider: string;
-  model_id: string;
-  config_reference: string | null;
-  enabled: boolean;
-}
-
-export interface ModelProfileListResult {
-  protocol_version: number;
-  data: ModelProfileSummary[];
-}
-
-export interface CreateModelProfileInput {
-  name: string;
-  model_provider: string;
-  model_id: string;
-  config_reference?: string | null;
-}
-
-export interface CreateModelProfileResult {
-  protocol_version: number;
-  model_profile_id: string;
-  name: string;
-  model_provider: string;
-  model_id: string;
-}
-
-export const modelProfilesApi = {
-  list: () => requestWithHeaders<ModelProfileListResult>('/model-profiles'),
-  create: (input: CreateModelProfileInput) =>
-    request<CreateModelProfileResult>('/model-profiles', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-};
-
 // ── Runners ─────────────────────────────────────────────────────────────────
 
 /** `POST /runners/enrollment` request body — `CreatePendingRunner`

@@ -168,8 +168,8 @@ fn local_runner_routes() -> Router<AppState> {
 }
 
 /// Mounts the operator execution/fleet API (`/api/executions`,
-/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
-/// `/api/model-profiles`) plus decision resolution and operator artifact
+/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`)
+/// plus decision resolution and operator artifact
 /// download, merged into `api` *before* `require_token` — so they share
 /// operator authentication, never the runner router's bearer-credential
 /// check. `inject_operator_principal` runs on this whole sub-router,
@@ -482,7 +482,7 @@ pub fn build_router(state: AppState) -> Router {
         })
         // ─── Operator execution/fleet API
         // — `/executions`, `/runner-fleets`, `/runners/*`,
-        // `/agent-profiles`, `/model-profiles`. Same operator auth as
+        // `/agent-profiles`. Same operator auth as
         // everything else in this router: merged in *before*
         // `require_token` below. See `operator_execution_routes`'s doc
         // comment for why this is a `merge`, not a `nest`. ───────────────

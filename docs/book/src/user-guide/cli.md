@@ -451,39 +451,6 @@ ap_6e564  sonnet-profile
 
 ---
 
-## Model Profiles
-
-Named, saved `(provider, model_id)` pairs for operator convenience — a pick-list the
-web UI's model picker reads. **Not itself a tier of the model precedence:** creating one
-here has no scheduling effect until an operator or the UI picks it and its pair is
-copied into an execution request's own `--model-provider`/`--model-id` (the
-highest-precedence tier); see [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider) and [Known
-gaps](agent-runners.md#known-gaps).
-
-```sh
-tack model-profile create "sonnet-4.5" --provider anthropic --model-id claude-sonnet-4-5
-```
-
-```text
-Created model profile: sonnet-4.5 (mp_ecf57)
-  provider: anthropic
-  model:    claude-sonnet-4-5
-  id:       mp_ecf5721b-ed25-48cc-bf20-3ed8ee1ba024
-```
-
-```sh
-tack model-profile list
-```
-
-```text
-ID        NAME                              PROVIDER      MODEL           
-────────  ────────────────────────────────  ────────────  ────────────
-mp_ecf57  sonnet-4.5                        anthropic     claude-sonnet-4…
-```
-
----
-
 ## MCP Server (AI agents)
 
 `tack mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server

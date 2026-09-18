@@ -120,7 +120,7 @@ describe('FleetPage — rows present', () => {
   });
 });
 
-// The harness-agnostic runner/fleet/agent-profile/model-profile UI that
+// The harness-agnostic runner/fleet/agent-profile UI that
 // used to open this page (`RunnerFleetSection`) now lives under the Agents
 // page's Advanced section instead — see `features/agents/AgentsPage.tsx`
 // and `AdvancedSection.tsx`. This page is the legacy Docket control-plane

@@ -1,20 +1,15 @@
 //! Execution/fleet/runner/profile request bodies and display helpers shared
-//! by `main.rs` (the `tack execution|fleet|runner|agent-profile|model-profile`
-//! commands) and `mcp.rs` (the matching MCP tools), so the two entry points
-//! can never build a differently-shaped request for the same operation.
+//! by `main.rs` (the `tack execution|fleet|runner|agent-profile` commands)
+//! and `mcp.rs` (the matching MCP tools), so both entry points build the
+//! same shape for the same operation.
 //!
-//! There is no `docs/contracts/runner-v1/` fixture for this surface — that
-//! directory is the frozen authority for the *runner* wire protocol
-//! (`/api/runner/v1/*`), a different, deliberately distinct domain from the
-//! *operator* execution/fleet/runner/profile API this module targets. The shape
-//! authority for these routes is instead the request structs the handlers
-//! themselves deserialize (`tack_api::handlers::executions::CreateExecution`
-//! and `tack_api::handlers::runner_admin::{CreateFleet, CreateProfile,
-//! CreateModelProfile, CreatePendingRunner}`), which every request-body
-//! builder here is tested against directly (see the `shape` tests below) —
-//! deserializing the exact JSON this module builds into the exact struct the
-//! server deserializes, so a renamed or dropped field fails a test in this
-//! crate instead of only surfacing as a live 400 later.
+//! There is no `docs/contracts/runner-v1/` fixture here — that's the frozen
+//! authority for the *runner* wire protocol (`/api/runner/v1/*`), a distinct
+//! domain. The shape authority here is instead the handler request structs
+//! themselves (`tack_api::handlers::executions::CreateExecution`,
+//! `tack_api::handlers::runner_admin::{CreateFleet, CreateProfile,
+//! CreatePendingRunner}`), tested against directly below: a renamed or
+//! dropped field fails a test in this crate, not a live 400 later.
 
 use serde_json::{Value, json};
 
@@ -232,22 +227,6 @@ pub fn build_create_agent_profile_body(
         "tool_policy": parse_json_field_or_empty(tool_policy, "tool-policy")?,
         "limits": parse_json_field_or_empty(limits, "limits")?,
     }))
-}
-
-/// Builds the `POST /api/model-profiles` body (`CreateModelProfile`). No JSON
-/// blob arguments, so this cannot fail on parse.
-pub fn build_create_model_profile_body(
-    name: &str,
-    model_provider: &str,
-    model_id: &str,
-    config_reference: Option<&str>,
-) -> Value {
-    json!({
-        "name": name,
-        "model_provider": model_provider,
-        "model_id": model_id,
-        "config_reference": config_reference,
-    })
 }
 
 #[derive(Default)]

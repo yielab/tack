@@ -56,7 +56,7 @@ docs/                Documentation
 
 **tack-db**:
 - SQLite via `sqlx` (async)
-- 62 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
+- 63 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
 - Repository pattern: CRUD for all entities in `repo/` submodules
 - Auto-runs migrations on startup
 - Database is created automatically if missing
@@ -102,7 +102,7 @@ docs/                Documentation
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
-- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init`, `projects`, `add`, `list`, `move`, `board`, `branch`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template`, `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`, `model-profile`
+- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init`, `projects`, `add`, `list`, `move`, `board`, `branch`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template`, `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
 - `tack branch <item-id>` — derives/creates a git branch from an item (`git.rs`)
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
@@ -143,7 +143,7 @@ docs/                Documentation
 
 ## Database Schema Highlights
 
-- **62 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection)
+- **63 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection)
 - Migrations are transactional with ordered-prefix and checksum enforcement; 037/038 do a copy/verify/swap rebuild guarded by a `VACUUM INTO` snapshot
 - **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. 16 sites in `repo/execution.rs` hit this (`grep -c 'begin_with("BEGIN IMMEDIATE")' crates/tack-db/src/repo/execution.rs`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
@@ -177,7 +177,7 @@ All routes follow RESTful conventions:
 - `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
 - `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
 - `/api/control-planes` (GET/POST), `/api/control-planes/{id}` (GET/PATCH/DELETE), `/api/projects/{id}/orch-link` (GET/PUT), `/api/fleet` (GET) — Agent-fleet orchestration (8 endpoints; all gated behind `TACK_ORCH_ENABLE`, 404 when unset). Control-plane token is write-only (`token_set` boolean). See `docs/book/src/developer/orchestration.md` and `docs/book/src/user-guide/orchestration.md`
-- `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`, `/api/model-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
+- `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
 - `/api/runner/v1/*` — **Runner protocol**, 14 paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
 
 Query parameters support filtering, pagination, and search.
