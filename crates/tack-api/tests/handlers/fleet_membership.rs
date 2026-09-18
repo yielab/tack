@@ -62,7 +62,7 @@ fn bearer(token: &str) -> String {
 
 /// Every fixture in this file declares this exact harness/model pairing so
 /// the real scheduler treats it as eligible — matching the convention
-/// `wave2_gate.rs` uses for the same reason.
+/// `handlers/production_router.rs` uses for the same reason.
 fn full_capabilities() -> Value {
     let now = Utc::now().to_rfc3339();
     json!({
