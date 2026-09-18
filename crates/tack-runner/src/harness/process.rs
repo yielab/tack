@@ -26,7 +26,11 @@
 //! already used for non-Unix permissions in `workspace.rs`/`journal.rs`; this
 //! is a documented limitation, not a silent gap.
 
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    path::PathBuf,
+    time::Duration,
+};
 
 use thiserror::Error;
 use tokio::{
@@ -298,10 +302,18 @@ async fn kill_tree(
     }
 }
 
-/// Reads `pipe` to EOF, retaining at most `cap` bytes but always continuing
-/// to drain past the cap so the writer end never blocks on a full pipe.
+/// Reads `pipe` to EOF, retaining the first `cap / 2` bytes (`head`, filled
+/// once and never touched again) and the last `cap - cap / 2` bytes (`tail`,
+/// a ring that drops from the front as new bytes arrive) — always continuing
+/// to drain past the cap so the writer end never blocks on a full pipe. A
+/// stream that never exceeds `cap` fills `head` then `tail` without either
+/// ever dropping anything, so the two concatenate back into the whole,
+/// contiguous stream.
 async fn capture_bounded(pipe: &mut (impl tokio::io::AsyncRead + Unpin), cap: usize) -> RawCapture {
-    let mut buffer = Vec::with_capacity(cap.min(64 * 1024));
+    let head_cap = cap / 2;
+    let tail_cap = cap - head_cap;
+    let mut head = Vec::with_capacity(head_cap.min(64 * 1024));
+    let mut tail: VecDeque<u8> = VecDeque::with_capacity(tail_cap.min(64 * 1024));
     let mut total: u64 = 0;
     let mut chunk = [0u8; 32 * 1024];
     loop {
@@ -309,27 +321,51 @@ async fn capture_bounded(pipe: &mut (impl tokio::io::AsyncRead + Unpin), cap: us
             Ok(0) => break,
             Ok(n) => {
                 total += n as u64;
-                if buffer.len() < cap {
-                    let room = cap - buffer.len();
-                    buffer.extend_from_slice(&chunk[..n.min(room)]);
+                let mut rest = &chunk[..n];
+                if head.len() < head_cap {
+                    let room = head_cap - head.len();
+                    let take = room.min(rest.len());
+                    head.extend_from_slice(&rest[..take]);
+                    rest = &rest[take..];
                 }
-                // Bytes beyond `cap` are intentionally never stored.
+                tail.extend(rest.iter().copied());
+                while tail.len() > tail_cap {
+                    tail.pop_front();
+                }
             }
             Err(_) => break,
         }
     }
-    RawCapture { buffer, total }
+    RawCapture { head, tail, total }
 }
 
 struct RawCapture {
-    buffer: Vec<u8>,
+    head: Vec<u8>,
+    tail: VecDeque<u8>,
     total: u64,
 }
 
+/// Byte-identical to the raw capture when nothing was dropped (`head` and
+/// `tail` are then a contiguous, gapless split of the same stream, so they
+/// are rejoined as raw bytes before the one lossy UTF-8 decode — decoding
+/// each half separately could split a multi-byte character right at the
+/// join and render it differently than decoding the whole thing at once).
+/// Once something is dropped, `head` and `tail` are no longer adjacent, so
+/// they decode separately and join around one marker line naming the gap.
 fn finalize_capture(raw: RawCapture, secrets: &SecretMaterial) -> CapturedOutput {
-    let truncated = raw.total > raw.buffer.len() as u64;
-    let bytes_dropped = raw.total - raw.buffer.len() as u64;
-    let text = secrets.scrub(&String::from_utf8_lossy(&raw.buffer));
+    let kept = raw.head.len() as u64 + raw.tail.len() as u64;
+    let truncated = raw.total > kept;
+    let bytes_dropped = raw.total - kept;
+    let text = if truncated {
+        let head_text = secrets.scrub(&String::from_utf8_lossy(&raw.head));
+        let tail_bytes: Vec<u8> = raw.tail.into_iter().collect();
+        let tail_text = secrets.scrub(&String::from_utf8_lossy(&tail_bytes));
+        format!("{head_text}\n[\u{2026} {bytes_dropped} bytes dropped \u{2026}]\n{tail_text}")
+    } else {
+        let mut whole = raw.head;
+        whole.extend(raw.tail);
+        secrets.scrub(&String::from_utf8_lossy(&whole))
+    };
     CapturedOutput {
         text,
         truncated,
