@@ -5,9 +5,8 @@
 //! `execution_transitions_completion`, `execution_recovery_requeue`,
 //! `execution_decisions_artifacts`, `execution_enqueue`, and the
 //! concurrent-duplicate-writer race family in `execution_races`, plus
-//! `execution_retention` and `event_artifact_retention`), the agent-fleet
-//! control-plane repository (`orch_repo`), and the two concurrency-sensitive
-//! write paths (`status_update_checked`, `version_concurrency`).
+//! `execution_retention` and `event_artifact_retention`), and the
+//! concurrency-sensitive `version_concurrency` write path.
 
 mod common;
 
@@ -33,9 +32,5 @@ mod execution_retention;
 mod execution_transitions_completion;
 #[path = "repository/integration.rs"]
 mod integration;
-#[path = "repository/orch_repo.rs"]
-mod orch_repo;
-#[path = "repository/status_update_checked.rs"]
-mod status_update_checked;
 #[path = "repository/version_concurrency.rs"]
 mod version_concurrency;

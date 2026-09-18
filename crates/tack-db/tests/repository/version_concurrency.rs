@@ -1,16 +1,10 @@
 //! `items.version` (migration 034) backs `handlers::items`'s `ETag`/`If-Match`
-//! support. `update_item`, `update_item_status_checked` and
-//! `check_and_update_parent_status` are the three write paths that must bump
-//! it; `claim_item_version` is the atomic compare-and-swap the HTTP layer
-//! builds its concurrency guard on.
+//! support. `update_item` and `check_and_update_parent_status` are the write
+//! paths that must bump it; `claim_item_version` is the atomic
+//! compare-and-swap the HTTP layer builds its concurrency guard on.
 
 use crate::common::{self, create_test_workspace, make_item, make_project};
 use tack_core::models::{CreateItem, ItemType, Priority, UpdateItem};
-use tack_core::workflow::StatusCategory;
-
-/// Scrum's "In Progress" column has `wip_limit: Some(5)` — comfortably above
-/// the single item this file moves into it.
-const TARGET: &str = "In Progress";
 
 #[tokio::test]
 async fn fresh_item_starts_at_version_one() {
@@ -49,31 +43,6 @@ async fn update_item_bumps_version() {
     assert!(
         after > before,
         "update_item must bump version: {before} -> {after}"
-    );
-}
-
-#[tokio::test]
-async fn update_item_status_checked_bumps_version() {
-    let repo = common::setup_test_db().await;
-    let ws = create_test_workspace(&repo).await;
-    let project = make_project(&repo, ws).await;
-    let item = make_item(&repo, &project).await;
-
-    let before = repo.get_item_version(item.id).await.unwrap().unwrap();
-    repo.update_item_status_checked(
-        item.id,
-        project.id,
-        TARGET,
-        Some(StatusCategory::InProgress),
-        &project.workflow,
-    )
-    .await
-    .expect("db call")
-    .expect("item exists");
-    let after = repo.get_item_version(item.id).await.unwrap().unwrap();
-    assert!(
-        after > before,
-        "update_item_status_checked must bump version: {before} -> {after}"
     );
 }
 
