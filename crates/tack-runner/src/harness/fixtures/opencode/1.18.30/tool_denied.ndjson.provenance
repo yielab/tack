@@ -1,0 +1,11 @@
+captured
+Real `opencode run` against `opencode 1.18.30`, same isolation as `completed.ndjson.provenance`,
+with `OPENCODE_CONFIG_CONTENT`'s `permission` block set to `{"edit":"deny","bash":"deny",
+"webfetch":"deny","task":"deny"}` and the fake model server's first turn answering with a
+`tool_calls` delta naming `write` (a tool the permission block removed from the offered list),
+then a second turn answering with plain text. opencode reports the denial as its own
+`type":"tool","tool":"invalid"` event — `"Model tried to call unavailable tool 'write'"` — and
+recovers on the next turn rather than stopping the run; exit code was 0 throughout, matching
+ADR 0067's own measured finding for a denied tool. Proves a mid-run denial is visible in the
+transcript without being read as a failure, and that a report sums tokens across every
+`step_finish`, not only the last one.
