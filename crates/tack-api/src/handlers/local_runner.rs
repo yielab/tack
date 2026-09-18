@@ -75,8 +75,7 @@ async fn save(pool: &sqlx::SqlitePool, settings: &LocalRunnerSettings) -> Result
 /// The on/off preference Tack should actually use right now: the
 /// `app_meta`-stored value if the UI has ever set one, else the env/CLI-flag
 /// default (`--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`, folded into
-/// `AppConfig::local_runner_enable` at load time) — the same precedence
-/// `effective_orch_enabled` already established. Read fresh on every call,
+/// `AppConfig::local_runner_enable` at load time). Read fresh on every call,
 /// never cached, so a toggle a moment ago is always reflected.
 pub async fn effective_local_runner_enabled(state: &AppState) -> bool {
     load(state.pool())
@@ -184,10 +183,8 @@ pub trait LocalRunnerControl: Send + Sync {
     async fn remove_secret(&self, name: &str) -> Result<(), LocalRunnerControlError>;
 
     /// What the configured provider's catalog looks like right now.
-    /// Computed fresh on every call — never cached — the same "never
-    /// cached" rule `orch_settings_view` documents for its own status view,
-    /// so this is always the re-probe the card asks for; there is nothing
-    /// else to invalidate.
+    /// Computed fresh on every call, never cached, so there is nothing to
+    /// invalidate.
     async fn catalog(&self) -> CatalogSnapshot;
 }
 
@@ -241,8 +238,8 @@ pub struct UpdateLocalRunner {
 
 /// PUT /api/local-runner — save the preference and start/stop the embedded
 /// runner to match, immediately, with no restart. Persist first, then
-/// reconcile the runtime — same ordering `put_orch_settings` uses and for
-/// the same reason: a crash between the two still boots correctly next time.
+/// reconcile the runtime: a crash between the two still boots correctly
+/// next time.
 #[instrument(skip(state))]
 #[utoipa::path(
     put,

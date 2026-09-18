@@ -188,11 +188,9 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── repo.rs      Repository struct — delegates to submodules
 │   │       └── repo/        One file per entity (items, projects, sprints, …)
 │   │
-│   ├── tack-orch/         Control-plane client + runner-v1 execution domain
+│   ├── tack-orch/         The runner-v1 execution domain
 │   │   └── src/
-│   │       ├── lib.rs       ControlPlane trait, OrchError
-│   │       ├── reconciler.rs Docket poll loop, health state machine
-│   │       ├── adapters/    Docket adapter
+│   │       ├── lib.rs       Module declarations, OrchError
 │   │       ├── execution/   Lifecycle validation, fencing/idempotency types
 │   │       ├── scheduler/   Deterministic runner selection
 │   │       ├── model_policy/ Deterministic model-selection precedence
