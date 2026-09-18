@@ -323,7 +323,9 @@ design below assumes it.
 
 **Files:** `docs/contracts/runner-v1/claim.response.json` and its row in the pin table of
 `crates/tack-orch/tests/runner_contract.rs`; the type that holds `permission_policy`
-(find it with `git grep -n "struct PermissionPolicy"`); `harness/process.rs`;
+(`crates/tack-orch/src/execution/types.rs`; its one struct literal is in
+`crates/tack-runner/tests/live/claude_code.rs`); `docs/openapi.json` and `schema.gen.ts`,
+regenerated, if the type is in the spec; `harness/process.rs`;
 `harness/local_process.rs` and `local_process/tests.rs`; `harness/mod.rs` (the adapter
 trait only); `harness/fixtures/fake_harness.sh`; `engine.rs` and `engine/tests.rs`;
 `harness/claude_code.rs`, `claude_code/tests.rs` and its fixtures.
