@@ -113,6 +113,12 @@ pub struct RunContext<'a> {
     /// the CLI runs against its own native login. The core injects the
     /// credential variable itself; the grammar only points the CLI at it.
     pub endpoint: Option<&'a ProviderEndpoint>,
+    /// A directory this attempt owns, outside the workspace, for whatever
+    /// state the CLI itself needs between spawn and exit (a home directory,
+    /// a cache). The core computes the path and removes it once `wait` or
+    /// `cancel` has finished with it; it never creates it, so a grammar
+    /// naming a path under here relies on the CLI to create it.
+    pub scratch: &'a Path,
 }
 
 /// The harness-specific part of a spawn.
@@ -248,6 +254,7 @@ struct RunRecord {
     started_at: DateTime<Utc>,
     spec: ExecutionSpec,
     endpoint: Option<ProviderEndpoint>,
+    scratch: PathBuf,
 }
 
 /// The adapter and probe for any [`HarnessGrammar`].
@@ -411,11 +418,44 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         }
     }
 
+    /// Where this attempt's scratch directory lives. Pure path arithmetic —
+    /// nothing here touches the filesystem, so `validate` can call it too.
+    fn scratch_dir(&self, spec: &ExecutionSpec) -> PathBuf {
+        self.staging_root
+            .join("scratch")
+            .join(spec.work.lease.attempt_id.as_str())
+    }
+
+    /// Best-effort cleanup of an attempt's scratch directory. A CLI that
+    /// never wrote one leaves nothing to remove; any other failure is
+    /// logged by attempt id alone, never the path, and never changes the
+    /// outcome that was already built.
+    fn remove_scratch(&self, scratch: &Path, attempt_id: &str) {
+        if let Err(error) = std::fs::remove_dir_all(scratch)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                attempt_id,
+                harness = self.kind(),
+                ?error,
+                "scratch directory could not be removed"
+            );
+        }
+    }
+
     /// Everything `start` spawns, built the same way `validate` checks it.
     fn prepare(
         &self,
         spec: &ExecutionSpec,
-    ) -> Result<(ProcessSpec, SecretMaterial, Option<ProviderEndpoint>), HarnessError> {
+    ) -> Result<
+        (
+            ProcessSpec,
+            SecretMaterial,
+            Option<ProviderEndpoint>,
+            PathBuf,
+        ),
+        HarnessError,
+    > {
         self.check_request(spec)?;
         let (program, mut args) = self
             .locator
@@ -432,9 +472,11 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         )?);
 
         let endpoint = self.resolve_endpoint(spec)?;
+        let scratch = self.scratch_dir(spec);
         let invocation = self.grammar.invocation(&RunContext {
             spec,
             endpoint: endpoint.as_ref(),
+            scratch: &scratch,
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
@@ -465,7 +507,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             working_directory,
             workspace_root,
         };
-        Ok((process_spec, secrets, endpoint))
+        Ok((process_spec, secrets, endpoint, scratch))
     }
 
     /// Runs `<program> --version`. Probing cannot fail: every way it goes
@@ -595,6 +637,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &RunContext {
                 spec: &running.spec,
                 endpoint: running.endpoint.as_ref(),
+                scratch: &running.scratch,
             },
             result,
         );
@@ -856,7 +899,7 @@ where
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
-        let (process_spec, secrets, endpoint) = self.prepare(spec)?;
+        let (process_spec, secrets, endpoint, scratch) = self.prepare(spec)?;
         let process = process_spec.spawn().await.map_err(|error| {
             tracing::warn!(?error, harness = self.kind(), "spawn failed");
             HarnessError::Process
@@ -878,6 +921,7 @@ where
                     started_at: DateTime::<Utc>::from(self.clock.now()),
                     spec: spec.clone(),
                     endpoint,
+                    scratch,
                 },
             },
         );
@@ -902,6 +946,10 @@ where
                 (CancelObservation::Ambiguous, "signal_failed")
             }
         };
+        self.remove_scratch(
+            &running.record.scratch,
+            running.record.spec.work.lease.attempt_id.as_str(),
+        );
         Ok(CancellationEvidence {
             observation,
             observed_at: crate::client::Timestamp::new(rfc3339(self.clock.now())),
@@ -926,7 +974,9 @@ where
             })?;
         let ended_at = DateTime::<Utc>::from(self.clock.now());
         let probed_version = self.known_version().await;
-        Ok(self.outcome(&record, ended_at, &result, probed_version))
+        let outcome = self.outcome(&record, ended_at, &result, probed_version);
+        self.remove_scratch(&record.scratch, record.spec.work.lease.attempt_id.as_str());
+        Ok(outcome)
     }
 
     async fn reconcile(

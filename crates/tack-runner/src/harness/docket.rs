@@ -132,7 +132,7 @@ impl HarnessGrammar for DocketGrammar {
             .as_ref()
             .map_or(String::new(), |model| model.as_str().to_owned());
         let workspace_root = &run.spec.workspace.path;
-        let docket_home = workspace_root.join(".tack-runner").join("docket-home");
+        let docket_home = run.scratch.join("docket-home");
 
         let mut env = BTreeMap::new();
         env.insert("DOCKET_HOME".to_owned(), docket_home.display().to_string());

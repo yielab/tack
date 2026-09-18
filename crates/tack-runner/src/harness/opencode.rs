@@ -179,8 +179,7 @@ impl HarnessGrammar for OpencodeGrammar {
             .requested_model_id
             .as_ref()
             .map_or_else(String::new, |id| id.as_str().to_owned());
-        let workspace_root = &run.spec.workspace.path;
-        let opencode_home = workspace_root.join(".tack-runner").join("opencode-home");
+        let opencode_home = run.scratch.join("opencode-home");
         let config_dir = opencode_home.join("config");
 
         let tools = &request.permission_policy.tools;

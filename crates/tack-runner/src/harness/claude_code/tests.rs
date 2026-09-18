@@ -19,6 +19,7 @@ fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, Harnes
     ClaudeCodeGrammar.invocation(&RunContext {
         spec,
         endpoint: None,
+        scratch: std::path::Path::new("unused"),
     })
 }
 
@@ -99,6 +100,7 @@ fn a_configured_endpoint_sets_the_base_url_and_nothing_secret() {
         .invocation(&RunContext {
             spec: &spec,
             endpoint: Some(&endpoint),
+            scratch: std::path::Path::new("unused"),
         })
         .expect("routed")
         .env;
@@ -116,6 +118,7 @@ fn read(exit: ProcessExit, stdout: &str) -> RunReport {
     let run = RunContext {
         spec: &spec,
         endpoint: None,
+        scratch: std::path::Path::new("unused"),
     };
     ClaudeCodeGrammar.report(&run, &finished(exit, stdout))
 }

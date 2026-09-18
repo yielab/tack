@@ -36,11 +36,13 @@ fn networked(state: &std::path::Path) -> crate::harness::ExecutionSpec {
 #[test]
 fn a_request_becomes_a_run_command_and_environment() {
     let state = scratch("opencode-invocation");
+    let scratch_dir = scratch("opencode-invocation-scratch");
     let endpoint = endpoint(state.path());
     let request = networked(state.path());
     let run = RunContext {
         spec: &request,
         endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
     };
     let invocation = OpencodeGrammar.invocation(&run).expect("invocation");
     assert_eq!(
@@ -56,7 +58,10 @@ fn a_request_becomes_a_run_command_and_environment() {
             "tack/opaque/model-alpha"
         ]
     );
-    assert!(invocation.env["HOME"].ends_with("opencode-home"));
+    let home = &invocation.env["HOME"];
+    assert!(home.starts_with(&scratch_dir.path().display().to_string()));
+    assert!(!home.starts_with(&state.path().display().to_string()));
+    assert!(home.ends_with("opencode-home"));
     assert!(invocation.env["OPENCODE_CONFIG_DIR"].ends_with("opencode-home/config"));
     for flag in [
         "OPENCODE_DISABLE_PROJECT_CONFIG",
@@ -101,6 +106,7 @@ fn the_permission_block_is_a_table_over_policies() {
         let run = RunContext {
             spec: &request,
             endpoint: Some(&endpoint),
+            scratch: state.path(),
         };
         let invocation = OpencodeGrammar.invocation(&run).expect("invocation");
         let content: serde_json::Value =
@@ -122,6 +128,7 @@ fn the_refusals_are_a_table() {
             RunContext {
                 spec: &request,
                 endpoint: None,
+                scratch: state.path(),
             },
             "endpoint",
         ),
@@ -129,6 +136,7 @@ fn the_refusals_are_a_table() {
             RunContext {
                 spec: &request,
                 endpoint: Some(&endpoint),
+                scratch: state.path(),
             },
             "network",
         ),
@@ -148,6 +156,7 @@ fn read(stdout: &str, exit: ProcessExit) -> RunReport {
     let run = RunContext {
         spec: &request,
         endpoint: None,
+        scratch: state.path(),
     };
     OpencodeGrammar.report(&run, &finished(exit, stdout))
 }

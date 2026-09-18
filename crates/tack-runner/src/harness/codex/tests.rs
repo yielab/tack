@@ -22,6 +22,7 @@ fn a_direct_request_passes_only_the_model() {
     let run = RunContext {
         spec: &request,
         endpoint: None,
+        scratch: state.path(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
     assert_eq!(
@@ -40,6 +41,7 @@ fn a_configured_endpoint_is_named_before_the_subcommand() {
     let run = RunContext {
         spec: &request,
         endpoint: Some(&endpoint),
+        scratch: state.path(),
     };
     let args = CodexGrammar.invocation(&run).expect("invocation").args;
 
@@ -85,6 +87,7 @@ fn the_exit_status_alone_decides_the_verdict() {
     let run = RunContext {
         spec: &request,
         endpoint: None,
+        scratch: state.path(),
     };
     for (exit, stdout, succeeded, code) in rows {
         let report = CodexGrammar.report(&run, &finished(exit, stdout));
