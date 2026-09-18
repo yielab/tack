@@ -209,18 +209,17 @@ This design gives callers a single `repo` value to pass around while keeping eac
 
 **Lives in:** `crates/tack-orch/src/`
 
-**Owns:** two things that share a crate because both sit between `tack-db` and
-`tack-api` without depending on `tack-api`: the Docket agent-fleet orchestration
-client (`ControlPlane` trait, reconciler, adapters), and — added in Part III — the
-neutral runner-v1 **execution domain** (`execution/`): lifecycle validation,
-fencing/idempotency types, and the pure state-machine rules that both `tack-api`'s
-handlers and `tack-runner`'s protocol implementation must agree on.
+**Owns:** the neutral runner-v1 **execution domain** (`execution/`): lifecycle
+validation, fencing/idempotency types, and the pure state-machine rules that both
+`tack-api`'s handlers and `tack-runner`'s protocol implementation must agree on, plus
+the scheduler, model-policy resolver, and the execution domain's own
+retention/observability/provenance background modules.
 
 **Does not own:** HTTP handling or SQL. Depends only on `tack-core` and `tack-db`; the
-dependency points inward deliberately — `tack-api` depends on this crate (to spawn the
-reconciler and expose the orchestration/execution routes), never the reverse. This
-boundary is load-bearing: it's what lets `tack-runner`'s tests exercise the same
-lifecycle rules as the server without linking Axum.
+dependency points inward deliberately — `tack-api` depends on this crate (to run the
+scheduler/retention/observability tasks and expose the execution routes), never the
+reverse. This boundary is load-bearing: it's what lets `tack-runner`'s tests exercise
+the same lifecycle rules as the server without linking Axum.
 
 ---
 
@@ -244,16 +243,6 @@ Wire-shape-adjacent types shared by both the server and (once wired) the runner:
 network }`, and `EnvironmentValue { value, secret_reference }` — the last one is why
 execution requests never store a raw secret: every environment entry is either a
 literal non-secret value or an opaque reference the runner resolves locally.
-
-### `reconciler.rs` and `adapters::docket`
-
-One `tokio` task per registered Docket control plane, polling `/health` +
-`/status.json` on a jittered interval and driving a `healthy → degraded (3 failures) →
-unreachable (10)` state machine. Remote enums all carry an `Unknown(String)` fallback
-so a Docket version mismatch degrades gracefully instead of failing a poll. This half
-of the crate is entirely independent of the execution domain above — see
-[Docket compatibility](../user-guide/agent-runners.md#docket-compatibility) for how
-(and why) the two never share a code path.
 
 ### `scheduler/`
 
@@ -288,10 +277,10 @@ Two sibling background tasks — not submodules of `execution/`, which is delibe
 I/O-free — because both are persistence-bearing work that runs on a timer. Retention
 sweeps stale terminal-attempt event rows out of `execution_events` on an injectable
 clock (`RetentionClock`, so tests never depend on wall time) with a cancellation
-signal raced against its inter-sweep sleep, mirroring the reconciler's own shutdown
-shape; there is no daily roll-up table for `execution_events` yet, so this purges
-rows outright rather than aggregating them, and says so rather than calling itself a
-"roll up". Observability computes a periodic, id-free snapshot of runner/queue/lease/
+signal raced against its inter-sweep sleep; there is no daily roll-up table for
+`execution_events` yet, so this purges rows outright rather than aggregating them,
+and says so rather than calling itself a "roll up". Observability computes a periodic,
+id-free snapshot of runner/queue/lease/
 event counts and logs alerts from it — keyed only by the domain's two small, closed
 state vocabularies (`agent_runners.state`, `execution_requests.state`), never by
 attempt/request/runner id, so the label set stays bounded regardless of fleet size.

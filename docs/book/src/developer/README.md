@@ -37,8 +37,8 @@ of linking against it.
 
 - `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions. You can run every test in it without a database process.
 - `tack-db` knows about `tack-core` (it persists those structs), but it knows nothing about HTTP, routing, or config files.
-- `tack-orch` knows about `tack-core` and `tack-db` but nothing about HTTP — it is the control-plane client (Docket reconciler) and the neutral runner-v1 execution domain, both usable without Axum. See [Crate Tour](crate-tour.md#tack-orch).
-- `tack-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet. It depends on `tack-orch` to spawn the reconciler and expose the orchestration/execution routes.
+- `tack-orch` knows about `tack-core` and `tack-db` but nothing about HTTP — it is the neutral runner-v1 execution domain, usable without Axum. See [Crate Tour](crate-tour.md#tack-orch).
+- `tack-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet. It depends on `tack-orch` to run the scheduler/retention/observability tasks and expose the execution routes.
 - `tack-cli` is the single `tack` binary. It depends on `tack-api` so that `tack serve` can start the server in-process, but its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
 - `tack-runner` is a separate binary entirely. It never depends on any of the crates above; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
 

@@ -13,8 +13,7 @@ and the tour should be corrected to match.
 crates/
 ├── tack-core/     Pure business logic (no I/O)
 ├── tack-db/       SQLite persistence layer
-├── tack-orch/     Agent-fleet orchestration client (ControlPlane trait, reconciler)
-│                  + the neutral runner-v1 execution domain (execution/), the
+├── tack-orch/     The neutral runner-v1 execution domain (execution/), the
 │                  deterministic scheduler and model-policy resolver, and the
 │                  execution domain's own retention/observability/provenance
 │                  background modules
@@ -61,22 +60,15 @@ docs/                Documentation
 - Auto-runs migrations on startup
 - Database is created automatically if missing
 
-**tack-orch** (the legacy Docket control-plane client + the neutral runner-v1 execution domain — depends only on `tack-core` and `tack-db`; must never depend on `tack-api`, the dependency points inward, `tack-api` depends on this crate to run the scheduler/retention/observability tasks and expose the execution routes):
+**tack-orch** (the runner-v1 execution domain — depends only on `tack-core` and `tack-db`; must never depend on `tack-api`, the dependency points inward, `tack-api` depends on this crate to run the scheduler/retention/observability tasks and expose the execution routes):
 
-*Legacy Docket control plane (no longer wired into `tack-api` — nothing constructs a `ControlPlaneStore` or spawns the reconciler):*
-- Defines the `ControlPlane` trait (`health`, `status`, `metrics`, `list_runs`, `list_approvals`, `list_tasks`, `traces`, plus gated write/dispatch methods) — the seam that made Tack a factory control center rather than a docket-specific dashboard. `docket` (`adapters::docket::DocketAdapter`) is the only implementor.
-- `reconciler.rs`: one `tokio` task per registered control plane, polling `/health` + `/status.json` on a jittered interval and driving a `healthy` → `degraded` (3 consecutive failures) → `unreachable` (10) health state machine, persisted to `control_planes`
-- Remote enums (`RunState`, `RunSource`, `TaskStatus`, `ApprovalState`) all carry an `Unknown(String)` fallback so a docket upgrade degrades gracefully instead of failing a poll
-- `adapters::prometheus`: dependency-free `/metrics` text-exposition parser, reused by any future metrics ingestion
-
-*The runner-v1 execution domain and its supporting modules:*
 - `execution/`: the neutral, transport-free runner-v1 protocol domain (request/attempt/event/artifact/decision types) that both `tack-api`'s handlers and `tack-runner` build on
 - `scheduler/`: a pure, I/O-free decision library — given a candidate pool of runners (health/capacity/labels/declared harness and model support) and a request (exact runner or fleet selector, required harness, optional provider/model, priority), it returns a selected runner or a typed reason none qualify; it never grants the authoritative lease, only the repository's fenced claim does that. `select::select_runner` decides one request; `batch::schedule` orders several by priority then FIFO fairness; `wiring` is the live `tack-db`-backed caller
 - `model_policy/`: deterministic model-selection precedence — request override → agent-profile default → project default → fleet default → auto-select when nothing is configured — pure resolution plus a `wiring` module that fetches each tier's configured default
-- `execution_retention.rs`: a cancellable background sweep that purges stale/terminal execution rows, mirroring the reconciler's own retention sweep but with an injectable clock and a real stop signal
+- `execution_retention.rs`: a cancellable background sweep that purges stale/terminal execution rows, with an injectable clock and a real stop signal
 - `execution_observability.rs`: a periodic, **id-free** fleet health snapshot (runner/queue/lease/event state counts, bounded to the domain's small closed vocabularies) plus stuck/ambiguous alerts — never labeled by attempt, request or runner id
 - `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
-- Every dollar-valued field across this crate is named `*_usd_estimated` — token counts are the primary, trustworthy measure; docket reports no real spend, so any cost figure downstream is a derived estimate; absent usage is a typed "not measured", never a fabricated `0`. See `docs/book/src/developer/orchestration.md`
+- Every dollar-valued field across this crate is named `*_usd_estimated` — token counts are the primary, trustworthy measure; absent usage is a typed "not measured", never a fabricated `0`
 
 **tack-api** (library — does not build its own binary):
 - Axum HTTP server with 78 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the operator execution/fleet surface and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
