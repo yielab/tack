@@ -265,7 +265,17 @@ layers, from ADR 0068:
   `transport/tests.rs`) assert what the runner does on receiving it and stay; the other
   eight lose the assertion.
 
-**Tests:** R1–R3 add none. R4 adds exactly one: a file-backed database populated at the
+Found while R2 was reviewed, and added to the tasks that follow:
+
+- **R3b — the `orchestration` block of a project template.** `TemplateOrchestration` in
+  `tack-core`, its validation in `tack-api`'s `handlers/templates.rs` and the tests in
+  `tests/handlers/templates.rs` configure a bridge that no longer exists. It goes after R3,
+  with the OpenAPI spec regenerated and a line in the release notes; a template that still
+  carries the block must load, with the block ignored.
+- **R4 also removes `Repository::update_item_status_checked`** and
+  `tests/repository/status_update_checked.rs`: the dispatcher was its only caller.
+
+**Tests:** R1–R3b add none. R4 adds exactly one: a file-backed database populated at the
 last pre-removal migration upgrades, the export file holds the rows, and no `orch_*` table
 remains. **Done when:** a fresh install has no `orch_*` table; `git grep -n TACK_ORCH`
 finds nothing outside ADRs and history; release notes name what a bridge user loses — the
@@ -305,6 +315,7 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | M0 | done |
 | H1 · C1 · P1 · H2 · S2 · R1a | done, in `develop` |
 | H3 · H3b · R1b | done, in `develop` — opencode installs its plugin package from the npm registry on every attempt, so it refuses a request that denies network |
-| D1 · R2 | running |
-| R3 · R4 · H4 | not started |
+| R2 | done, in `develop` — 24 518 lines out, 97 documented paths become 78 |
+| D1 · R3 | running |
+| R3b · R4 · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
