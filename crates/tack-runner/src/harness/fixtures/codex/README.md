@@ -8,6 +8,10 @@ change. The grammar's tests are pure (command line and exit reading); the live t
 `tests/live/codex.rs` resolve a real `codex` from `PATH`, skip cleanly without it, and are
 `#[ignore]`d.
 
+What a user reads about this harness — install, capabilities, caveats — is
+[Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
+in the user guide.
+
 **Observed on:** `codex-cli 0.149.1`, one machine, one point in time.
 
 ## Measured
