@@ -27,11 +27,13 @@ fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
 #[test]
 fn a_request_becomes_a_harness_run_command() {
     let state = scratch("docket-invocation");
+    let scratch_dir = scratch("docket-invocation-scratch");
     let endpoint = endpoint(state.path());
     let with_endpoint = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &with_endpoint,
         endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
     };
     let invocation = DocketGrammar.invocation(&run).expect("invocation");
     assert_eq!(
@@ -52,13 +54,17 @@ fn a_request_becomes_a_harness_run_command() {
         ]
     );
     assert_eq!(invocation.env[BASE_URL_ENV], endpoint.base_url);
-    assert!(invocation.env["DOCKET_HOME"].ends_with("docket-home"));
+    let docket_home = &invocation.env["DOCKET_HOME"];
+    assert!(docket_home.starts_with(&scratch_dir.path().display().to_string()));
+    assert!(!docket_home.starts_with(&state.path().display().to_string()));
+    assert!(docket_home.ends_with("docket-home"));
 
     let mut own_env = spec(DESCRIPTOR.kind, state.path());
     set_env(&mut own_env, &[(BASE_URL_ENV, "http://127.0.0.1:9/v1")]);
     let run = RunContext {
         spec: &own_env,
         endpoint: None,
+        scratch: scratch_dir.path(),
     };
     let invocation = DocketGrammar.invocation(&run).expect("invocation");
     assert!(!invocation.env.contains_key(BASE_URL_ENV));
@@ -72,6 +78,7 @@ fn a_request_with_no_model_endpoint_is_refused() {
     let run = RunContext {
         spec: &request,
         endpoint: None,
+        scratch: state.path(),
     };
     let error = DocketGrammar
         .invocation(&run)
@@ -85,6 +92,7 @@ fn read(stdout: &str) -> RunReport {
     let run = RunContext {
         spec: &request,
         endpoint: None,
+        scratch: state.path(),
     };
     DocketGrammar.report(
         &run,
