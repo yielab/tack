@@ -343,3 +343,5 @@ being wrong. Step 5's inventory is `docs/adr/0064-fixed-waits.txt`, produced by 
 recorded there, and the step is done when that file is empty — not when a grep is.
 
 **2026-09-14 — Decisions 5 and 6 are superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. CI's shape (decision 5) becomes ADR 0068 decision 9's three tiers, and coverage becomes one workspace measurement from the test run itself plus patch coverage (decision 7). The fixed-wait work (decision 6) is finished: one exempt live-test wait remains. The inventory file and `scripts/list-fixed-waits.py` are removed under ADR 0068 decision 11. Decisions 1–4 and 7 (nextest, workspace feature resolution with filtersets, the dev profile, one binary per subject, numbers carry commands) stand.
+
+**2026-09-18 — ADR 0068 was accepted.** The supersession of decisions 5 and 6 is in effect. The code it concerns is removed by the stage of Phase 64 that owns it (`docs/book/src/roadmap.md`), not by the acceptance itself.

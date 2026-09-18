@@ -48,7 +48,7 @@ Everything past this point is supporting detail; nothing above depends on anythi
 
 ---
 
-- **Status:** proposed 2026-09-14.
+- **Status:** accepted 2026-09-18 — recorded as a dated amendment at the bottom of this file, which also reorders the stages.
 - **Date:** 2026-09-14
 - **Supersedes:** ADR 0060 (the Docket bridge stays maintained), ADR 0065 (Docket pipeline
   dispatch trigger), ADR 0064 decisions 5 and 6, ADR 0050's `legacy-docket` clause.
@@ -229,3 +229,14 @@ artifact. No external coverage service is required.
 ## Amendments
 
 *(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-18 — ACCEPTED, with the stages reordered.** The user directed the work this ADR describes to begin, with two corrections that came out of re-auditing the harness integration against docket's own repository. The twelve decisions stand as written. What changes is the order in Phase 64, one deletion that becomes a decision, and one rule that was implicit.
+
+1. **docket's harness contract already exists.** `docket harness run` and `status`, with a versioned schema and fixtures, shipped in docket `0.2.0-beta.2` on 2026-09-12 (`git -C ../rack-cli log --oneline -- src/docket/core/harness.py`). Stage 6's precondition ("once its upstream contract exists") is met, so nothing about the harnesses has to wait.
+2. **The harnesses move ahead of the bridge retirement.** Retiring the control plane (old Stage 4) before docket is reachable as a harness (old Stage 6) would leave docket with no integration at all in between. The new order is in `docs/book/src/roadmap.md`: measure; CI and the agent scaffolding; **harnesses on one core**; mechanisms with no caller; retire the bridge; rebuild the test suite. `docs/plans/harnesses.md` is that stage's plan.
+3. **The harness seam was redesigned, which Part IX could not do.** IX-M5 extracted a shared core under a no-behaviour-change rule, so each historical difference between the two adapters became a trait hook: 14 of them, with `codex.rs` at 886 lines and `claude_code.rs` at 1 141. The seam is now a `HarnessDescriptor` plus a four-method `HarnessGrammar` — 189 and 305 lines (`wc -l crates/tack-runner/src/harness/{codex,claude_code}.rs`) — and harness unit tests fell from 3 240 lines to 1 554 by proving the lifecycle once, in the core, as decision 5 of this ADR asks. Behaviour was unified on purpose where the two adapters disagreed by accident: one handle format, one cancellation policy (a failed signal is `Ambiguous` evidence), reconciliation always checks that a live pid is still the harness program, run logs are always staged outside the workspace, the runner's configured process limits apply to every harness, and an injected provider credential is always registered for redaction — it was not, in either adapter.
+4. **`decisions` (decision 3) is removed only after the docket `decisions` question is answered.** docket is the one harness that could ever enter a decision state — it has an approval store, and its harness mode today refuses approvals rather than pausing. ADR 0066 already requires a separate ADR to route a mid-run approval to a Tack operator. If that ADR is wanted, `decisions` has its first caller and stays; if it is not, `decisions` goes as decision 3 says. Removing a byte-pinned protocol path and then rebuilding it would be the worst of the three outcomes, so Stage 4 deletes `model_profiles` unconditionally and `decisions` only once this is decided.
+5. **A policy one harness ignores is declared, not silent.** `codex.rs` never read a request's `permission_policy` or `budgets`; `claude_code.rs` did. Every grammar's capability table now carries a `permission_policy` entry (claude-code `advisory`, codex `unsupported`), and a request a harness cannot honour at all is rejected before spawn. This is decision 5's "verified behaviour" applied to the request policy.
+6. **VIII-C3 is closed as obsolete.** It corrects one unit test of `DocketAdapter::dispatch`, which the bridge retirement deletes.
+
+Rules in force from this date, replacing Part IX's process: decisions are recorded in ADRs and intent in the roadmap; no new card boards, dispatch plans or per-card handoffs are written; `CLAUDE.md` says the same. `scripts/maintainability.py`, `check-comments.sh` and `check-test-hygiene.sh` keep running in `pre-push` until Stage 2 replaces them, because a gate that exists and is ignored is worse than either.
