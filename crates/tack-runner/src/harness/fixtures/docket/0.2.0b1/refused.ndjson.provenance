@@ -1,0 +1,6 @@
+captured
+docket 0.2.0b1
+
+Real `docket harness run` invocation identical to ok.ndjson's, with
+DOCKET_HOME left unset. Exit code 2, as `docket harness run --help`
+documents for a refusal.

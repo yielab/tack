@@ -48,6 +48,8 @@ pub const CATALOG_DISCOVERY: &str = "catalog_reported";
 pub enum Wire {
     AnthropicMessages,
     OpenAiResponses,
+    /// The `POST /chat/completions` shape docket and opencode both speak.
+    OpenAiChatCompletions,
 }
 
 /// Which [`Wire`] a harness kind speaks, read from its descriptor, so

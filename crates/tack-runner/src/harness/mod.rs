@@ -14,6 +14,7 @@
 pub mod artifact;
 pub mod claude_code;
 pub mod codex;
+pub mod docket;
 pub mod event_sink;
 pub mod fixtures;
 pub mod local_process;
@@ -173,8 +174,11 @@ pub enum HarnessRegistrationError {
 
 /// Every harness this build knows, in the order `tack runner doctor` lists
 /// them. Which model wire reaches which harness is read from here.
-pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 2] =
-    [&codex::DESCRIPTOR, &claude_code::DESCRIPTOR];
+pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 3] = [
+    &codex::DESCRIPTOR,
+    &claude_code::DESCRIPTOR,
+    &docket::DESCRIPTOR,
+];
 
 pub fn descriptor(kind: &str) -> Option<&'static local_process::HarnessDescriptor> {
     DESCRIPTORS
@@ -196,6 +200,7 @@ pub fn discover(
     let machine = (limits, staging_root, secrets, providers);
     install(&mut found, machine, codex::CodexGrammar);
     install(&mut found, machine, claude_code::ClaudeCodeGrammar);
+    install(&mut found, machine, docket::DocketGrammar);
     found
 }
 

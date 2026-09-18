@@ -1,0 +1,10 @@
+captured
+docket 0.2.0b1
+
+Real `docket harness run --workspace <dir> --task-file /dev/stdin --model
+gw/anthropic/claude-x --agent-id <id> --timeout 30` transcript, against a
+throwaway loopback HTTP server standing in for the model endpoint
+(DOCKET_LLM_BASE_URL=http://127.0.0.1:<port>/v1, DOCKET_LLM_API_KEY set to
+an obviously fake key never sent to a real host). The server answered one
+`write` tool call, then a final assistant message. No content is redacted;
+none of it is real.

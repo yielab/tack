@@ -1,0 +1,7 @@
+captured
+docket 0.2.0b1
+
+Real `docket harness run` invocation against a loopback server that never
+answers, sent SIGTERM a few seconds after it started. Exit code 1; the
+result line's `model.served` is empty because no model response was ever
+received.

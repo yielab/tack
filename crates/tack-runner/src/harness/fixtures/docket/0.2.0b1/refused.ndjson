@@ -1,0 +1,1 @@
+{"v":"1.0.0","token":"","status":"refused","stop_reason":"","error":"DOCKET_HOME is not set; harness mode never runs against the default home","blocked":null,"model":{"requested":"","served":""},"usage":{"input_tokens":0,"output_tokens":0,"cached_tokens":0,"turns":0},"cost_usd":null,"run_state":""}

@@ -99,6 +99,7 @@ impl Provider for VercelAiGateway {
             let (suffix, credential_env_var) = match wire {
                 Wire::AnthropicMessages => ("/claude-code", "ANTHROPIC_AUTH_TOKEN"),
                 Wire::OpenAiResponses => ("/codex/v1", "AI_GATEWAY_API_KEY"),
+                Wire::OpenAiChatCompletions => ("/v1", "AI_GATEWAY_API_KEY"),
             };
             // Leaked deliberately: this arm only ever runs under the smoke
             // test's own opt-in env var, at most twice per process (one
@@ -118,6 +119,13 @@ impl Provider for VercelAiGateway {
             }),
             Wire::OpenAiResponses => Some(KnownEndpoint {
                 base_url: "https://ai-gateway.vercel.sh/codex/v1",
+                credential_env_var: "AI_GATEWAY_API_KEY",
+            }),
+            // Same host and credential as the catalog itself: docket and
+            // opencode both call `<base>/chat/completions` directly, with
+            // no per-CLI path segment to disambiguate them.
+            Wire::OpenAiChatCompletions => Some(KnownEndpoint {
+                base_url: "https://ai-gateway.vercel.sh/v1",
                 credential_env_var: "AI_GATEWAY_API_KEY",
             }),
         }
