@@ -206,12 +206,9 @@ const DecisionRow: Component<{
  * badge updates immediately, without the caller managing any state of its
  * own.
  *
- * The decision token field mirrors `features/approvals/ApprovalsPage.tsx`'s
- * own `TACK_ORCH_APPROVAL_TOKEN` entry exactly, including its reasoning:
- * always render the control and let a real resolve attempt's actual 403
- * answer "is this configured at all", rather than guessing client-side (see
- * `features/approvals/api.ts`'s `PendingApprovalListResponse` doc comment
- * for the fuller argument this mirrors).
+ * The decision token field always renders the control and lets a real
+ * resolve attempt's actual 403 answer "is this configured at all", rather
+ * than guessing client-side.
  */
 const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   const [tokenInput, setTokenInput] = createSignal(decisionTokenStore.get() ?? '');

@@ -15,7 +15,7 @@ turn a board item into a completed attempt are in
 [Running an item with an agent](#running-an-item-with-an-agent), before the operational
 detail (enrollment, credentials, recovery) that follows it.
 
-This is a separate system from [Orchestration & the Fleet View](orchestration.md),
+This is a separate system from [Orchestration](orchestration.md),
 which covers Docket. Docket is optional and legacy here — see
 [Docket compatibility](#docket-compatibility) below for exactly how the two relate.
 
@@ -632,7 +632,7 @@ That guard is one-directional today: an active runner-v1 request blocks a legacy
 dispatch, but creating a runner-v1 request on an item that already has an active
 `orch_tasks` row is **not** refused. That gap is proven open by
 `crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs` rather than assumed closed. See
-[Orchestration & the Fleet View](orchestration.md) for everything Docket-specific:
+[Orchestration](orchestration.md) for everything Docket-specific:
 registering a control plane, dispatch, budgets, and why every dollar figure there says
 "estimated." That surface is gated entirely behind `TACK_ORCH_ENABLE` and is unrelated
 to whether any runner is enrolled.

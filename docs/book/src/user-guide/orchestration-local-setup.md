@@ -3,7 +3,7 @@
 This page takes you from nothing to Tack dispatching real work to a local
 [docket](https://github.com/yielab/docket) instance. If you just want to understand
 *what* orchestration does once it's running, read
-[Orchestration & the Fleet View](orchestration.md) first — this page is the "how do
+[Orchestration](orchestration.md) first — this page is the "how do
 I actually stand this up" companion.
 
 Every command and environment variable below was verified directly against
@@ -79,8 +79,8 @@ cd docket && ./install.sh
 hosted provider's API key, or a local llama.cpp/vLLM/LM Studio server), `git`,
 `bash`. If you just want to exercise the *integration* — the HTTP surface, dispatch
 outcomes, approvals — a real model endpoint isn't strictly required for the read
-side (`/health`, `/status.json`, registering a control plane, viewing the Fleet
-view); it becomes necessary the moment you actually dispatch a task that runs an
+side (`/health`, `/status.json`, registering a control plane, reading `GET
+/api/fleet`); it becomes necessary the moment you actually dispatch a task that runs an
 agent turn.
 
 ### Bootstrap a scratch home and a pod
@@ -170,7 +170,7 @@ Four environment variables gate this feature, all verified against
 | `TACK_ORCH_ENABLE` | `false` | `1` or `true` — the whole feature is off, and every orchestration route 404s, until this is set. |
 | `TACK_ORCH_POLL_SECS` | `10` | Leave at the default for local testing; the reconciler will pick up a newly registered plane on its next tick, no restart needed. |
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Leave at the default unless you're specifically testing retention. |
-| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Set this if you want to test the approvals inbox's grant/deny controls — see [Approvals inbox](orchestration.md#approvals-inbox). Deliberately separate from `TACK_API_TOKEN`. |
+| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Set this if you want to test granting/denying approvals — see [Approvals](orchestration.md#approvals). Deliberately separate from `TACK_API_TOKEN`. |
 
 ```bash
 TACK_ORCH_ENABLE=1 cargo run -p tack-cli -- serve
@@ -185,16 +185,6 @@ once at startup, not polled.
 You need a real Tack project to link — create one first (`tack init` or the New
 Project dialog) if you don't already have one.
 
-### Via the UI
-
-Open the project's **Settings → Orchestration** tab. It has a link form
-(control plane picker, remote project name, budget cap) — but it
-does **not** let you *create* the control plane itself, only link an existing one.
-So the first step is still the API call below; after that, the link form (and
-editing the budget cap afterward) works entirely from the UI.
-
-### Via the API (required at least once, for the control plane itself)
-
 ```bash
 curl -X POST http://localhost:3210/api/control-planes \
   -H "Content-Type: application/json" \
@@ -205,8 +195,7 @@ curl -X POST http://localhost:3210/api/control-planes \
   }'
 ```
 
-Then link your project (either via the UI form now, or the same route the form
-calls):
+Then link your project:
 
 ```bash
 curl -X PUT http://localhost:3210/api/projects/<project-id>/orch-link \
@@ -252,7 +241,7 @@ board card's context menu. Watch the response's `outcome` field:
 | `not_eligible` | The item wasn't actually in a `dispatch_from` status — check the item's current status against your `status_map`. |
 | `no_dispatch_policy` | The link's `status_map.dispatch_from` is empty. Check what you actually saved in Step 4. |
 | `dispatched` | docket accepted the task and it's running (or queued, if `docket serve` wasn't started with `--dispatch`). |
-| `waiting_approval` | docket's policy engine wants a human to approve this specific task before it runs — check `docket approve`/`docket deny` from the CLI, or Tack's own [Approvals inbox](orchestration.md#approvals-inbox) if `TACK_ORCH_APPROVAL_TOKEN` is set. |
+| `waiting_approval` | docket's policy engine wants a human to approve this specific task before it runs — check `docket approve`/`docket deny` from the CLI, or Tack's own [Approvals](orchestration.md#approvals) if `TACK_ORCH_APPROVAL_TOKEN` is set. |
 | `blocked` | docket's policy engine refused the task outright — the response names a real `policy_id`. This is expected behavior if your item's description happens to match one of docket's default guardrail policies (a destructive shell command pattern is a common one to trip during testing). |
 
 If you started `docket serve` **without** `--dispatch`, a `dispatched` outcome means
@@ -262,19 +251,18 @@ the CLI (against the same `DOCKET_HOME`) to drive one pipeline turn.
 
 ## Step 6 — Verifying it works
 
-**A healthy Fleet row** (sidebar → Fleet) shows: your project name, a **green
-"healthy"** pod-health chip, and — once you've dispatched something — non-zero token
-counts under "Burn vs budget" with the word "estimated" next to the dollar figure.
-Roster and Gateway will show empty/"unknown" regardless of how well everything is
-working — those are still-unbuilt placeholders across this whole feature, not a
-sign something's broken. See
-[What's still a placeholder](orchestration.md#whats-still-a-placeholder).
+**A healthy linked project** reports, from `GET /api/fleet`: your project name, a
+`"healthy"` pod-health value, and — once you've dispatched something — non-zero
+token counts with an `estimated` cost figure. `roster` and `gateway` will read
+empty/`"unknown"` regardless of how well everything is working — those are
+still-unbuilt placeholders across this whole feature, not a sign something's
+broken. See [What's still a placeholder](orchestration.md#whats-still-a-placeholder).
 
 **Agent activity** for a dispatched item shows up in that item's detail drawer,
 under the **Agent Activity** tab — hops, tool calls, tokens, grouped by dispatch
 attempt. A compact status chip also appears on the item's Board/List/Table card.
 
-**If nothing appears in the Fleet view at all:**
+**If nothing appears in `GET /api/fleet` at all:**
 
 1. Confirm `TACK_ORCH_ENABLE` is actually set on the *running* server process —
    `curl http://localhost:3210/api/fleet` should return JSON, not `404`. A `404`
@@ -300,27 +288,26 @@ is normal if `docket serve` isn't running, crashed, or the `base_url` is wrong.
 Recovery is immediate on the next successful poll; there's no manual "retry" needed.
 Check `curl <base_url>/health` directly to confirm docket is actually up.
 
-**Approvals grant/deny buttons are missing or every decision 403s.** Reading the
-approvals inbox only needs the ordinary orchestration gate, but *deciding* one needs
-`TACK_ORCH_APPROVAL_TOKEN` set on the Tack server **and** the request to carry a
-matching `X-Tack-Approval-Token` header. With that variable unset, every decision
-request gets `403` **unconditionally** — there's no "no secret configured, allow it"
+**Every decision request 403s.** Reading `GET /api/approvals` only needs the
+ordinary orchestration gate, but *deciding* one needs `TACK_ORCH_APPROVAL_TOKEN`
+set on the Tack server **and** the request to carry a matching
+`X-Tack-Approval-Token` header. With that variable unset, every decision request
+gets `403` **unconditionally** — there's no "no secret configured, allow it"
 fallback the way the ordinary API token has. This is deliberate: releasing a gated
 agent action is treated as higher-privilege than editing a card.
 
-**The budget/policy panel never shows a pause indicator, even though I know a pod
-auto-paused.** This isn't missing from Tack's UI by oversight — docket's own
-`/status.json` and `/metrics` genuinely don't emit a `paused`/`pausedReason` field
-anywhere (verified by reading both response builders directly), and there's no HTTP
-route to clear a pause either. `docket profile <pod-id> --resume` is the only way,
-and it's CLI-only. See
+**Nothing reports a pause, even though I know a pod auto-paused.** This isn't a
+gap in Tack alone — docket's own `/status.json` and `/metrics` genuinely don't
+emit a `paused`/`pausedReason` field anywhere (verified by reading both response
+builders directly), and there's no HTTP route to clear a pause either. `docket
+profile <pod-id> --resume` is the only way, and it's CLI-only. See
 [Budget, pause, and policy](orchestration.md#budget-pause-and-policy).
 
-**The Fleet view's "Gateway" column always says "unknown."** Also by design, and
-doubly so: Tack has no persisted gateway column to populate, and even if it did,
-docket's own `gateway_active()` is hardcoded to return `false` in the current docket
-version — there's no daemon gateway any more. Neither side of this is wired, and
-neither is expected to change soon.
+**`GET /api/fleet`'s `gateway` field always says `"unknown"`.** Also by design,
+and doubly so: Tack has no persisted gateway column to populate, and even if it
+did, docket's own `gateway_active()` is hardcoded to return `false` in the current
+docket version — there's no daemon gateway any more. Neither side of this is
+wired, and neither is expected to change soon.
 
 **I ran `docket serve` and now some approvals I had pending are gone.** This is the
 fail-closed startup sweep described in the [safety note](#safety-note--read-this-before-you-run-docket-serve)
@@ -332,7 +319,7 @@ warning.
 
 ## See also
 
-- [Orchestration & the Fleet View](orchestration.md) — what everything you just set
+- [Orchestration](orchestration.md) — what everything you just set
   up actually means: dispatch outcomes, the trust boundary, `status_map`, retention,
   and why every dollar figure says "estimated."
 - [Configuration](configuration.md) — the full `TACK_ORCH_*` reference table.

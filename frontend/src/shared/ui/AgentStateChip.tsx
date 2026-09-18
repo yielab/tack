@@ -54,8 +54,7 @@ export interface AgentStateChipProps {
  * item-detail Agent Activity tab, and the Board/List/Table badges, so there
  * is one implementation and never a per-view reimplementation.
  * 5 visually distinct states, each a token-driven color plus a text label so
- * the distinction never relies on color alone (WCAG 1.4.1), following the
- * same pattern as `frontend/src/features/fleet/HealthChip.tsx`.
+ * the distinction never relies on color alone (WCAG 1.4.1).
  *
  * Renders nothing when `state` is absent at the call site — callers achieve
  * "no chip for an item with no agent activity" by simply not mounting this

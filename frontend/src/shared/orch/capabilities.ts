@@ -15,12 +15,8 @@
 // never an equality check against a plane's `kind` string (the grep this
 // repo's CI runs to catch a regression stays at zero hits).
 //
-// Two ad-hoc capability bits predate this module and are retired in favour
-// of it: the approvals inbox's old grant-availability boolean
-// (`features/approvals/api.ts` — see that file's header for why its
-// replacement isn't literally a `Capabilities` read: it was never a
-// provider capability, it was a Tack-server auth gate) and
-// `useAgentActivityMap`'s `orchAvailable()` used as a dispatch gate (see
+// An ad-hoc capability bit predates this module and is retired in favour of
+// it: `useAgentActivityMap`'s `orchAvailable()` used as a dispatch gate (see
 // that file's doc comment for the residual wiring gap that was found but
 // could not be closed without editing a file outside this module).
 

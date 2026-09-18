@@ -1,4 +1,4 @@
-# Orchestration & the Fleet View
+# Orchestration
 
 Tack is the **control center for a factory of products** built by governed agent
 fleets — today, that means [docket](https://github.com/yielab/docket), a separate
@@ -30,8 +30,8 @@ Tack never guesses at a control plane's state. A background task called the
 **reconciler** polls each registered plane on an interval and records what it finds
 — whether it's reachable, what version it reports, its runs, its approvals, its
 metrics, and (once you've linked a project to it) its activity. If a plane goes
-quiet, the Fleet view says so rather than showing you stale numbers as if they were
-current.
+quiet, that shows in its reported health (see [Pod health](#pod-health)) rather
+than stale numbers presented as current.
 
 ## Enabling orchestration
 
@@ -42,7 +42,7 @@ The whole feature is gated behind four settings:
 | `TACK_ORCH_ENABLE` | `false` | Turns on the reconciler background task and every orchestration route (control planes, links, fleet, dispatch, approvals, budget/policy, provisioning, economics). Unset ⇒ none of it exists — every route 404s exactly as if it were never built. |
 | `TACK_ORCH_POLL_SECS` | `10` | How often (in seconds) the reconciler polls each registered plane, before per-plane exponential backoff and ±20% jitter are applied. |
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of mirrored `orch_events`/`orch_metrics` history kept before the retention sweep rolls old rows into per-day aggregates and deletes the originals. See [Retention](#retention-what-survives-past-the-window) below. |
-| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | A **separate** shared secret, distinct from `TACK_API_TOKEN`, required to grant or deny a docket approval. See [Approvals inbox](#approvals-inbox). |
+| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | A **separate** shared secret, distinct from `TACK_API_TOKEN`, required to grant or deny a docket approval. See [Approvals](#approvals). |
 
 See [Configuration](configuration.md) for the full reference table. Set
 `TACK_ORCH_ENABLE=true` and restart the server to turn the feature on. Nothing else
@@ -50,15 +50,7 @@ changes until you register a control plane.
 
 ## Registering a control plane and linking a project
 
-You can do both from the UI or the API.
-
-**UI:** open a project's **Settings → Orchestration** tab. The form there
-(`LinkForm`) lets you pick a registered control plane, name the remote project
-(docket's own project identifier, not Tack's UUID), and set a budget cap. It does
-not yet let you create the control plane itself or edit `status_map`/
-`auto_dispatch`/`blueprint` — those still go through the API.
-
-**API:**
+You do both via the API:
 
 ```bash
 curl -X POST https://tack.test/api/control-planes \
@@ -260,22 +252,12 @@ re-choosing the *exact* status the automation already believed the item was in (
 dragging a card to "In Progress" for your own reason while `on_running` already put
 it there) — no value-based check can, without a change-log of who-set-what-when.
 
-## The Fleet view
+## Pod health
 
-Once a control plane is registered and at least one project is linked, the **Fleet**
-page (sidebar, under Workspace) shows one row per linked project:
-
-| Column | What it shows |
-|---|---|
-| **Project** | The Tack project name and which control plane / kind it's linked to. |
-| **Pod health** | `healthy`, `degraded`, or `unreachable`, driven entirely by the reconciler's poll history. |
-| **Roster** | Always empty today — see [What's still a placeholder](#whats-still-a-placeholder). |
-| **Last activity** | When something last happened on this project's agent tasks. |
-| **Burn vs budget** | Tokens used against your configured cap, with an estimated dollar figure underneath. |
-| **Gateway** | Always `unknown` today — see below. |
-| **Approvals** | Pending gated actions for this project — read the fleet-wide [Approvals inbox](#approvals-inbox) for the full picture, including uncorrelated approvals this column can't show. |
-
-### Reading pod health
+Once a control plane is registered and at least one project is linked, `GET
+/api/fleet` reports one row per linked project — project name, pod health,
+roster, last activity, token burn against budget, gateway state, and pending
+approval count.
 
 Health is the reconciler's running verdict, not a live check:
 
@@ -304,13 +286,13 @@ has never been dispatched.
 `GET /api/items/{id}/agent-activity` and `GET /api/projects/{id}/agent-activity`
 back this directly if you're building your own view.
 
-## Approvals inbox
+## Approvals
 
-A fleet-wide page (sidebar → Approvals) listing every pending approval across every
-linked pod, **oldest first** — docket's approvals fail closed on timeout, so latency
-here has a real cost.
+`GET /api/approvals` lists every pending approval across every linked pod,
+**oldest first** — docket's approvals fail closed on timeout, so latency here has a
+real cost.
 
-**Reading the inbox** needs only the ordinary orchestration gate. **Deciding one**
+**Reading the list** needs only the ordinary orchestration gate. **Deciding one**
 (`POST /api/approvals/{token}`) needs a **separate credential**: the request must
 carry an `X-Tack-Approval-Token` header matching `TACK_ORCH_APPROVAL_TOKEN`. With
 that variable unset, every decision request gets `403` unconditionally — there is no
@@ -318,40 +300,34 @@ that variable unset, every decision request gets `403` unconditionally — there
 is deliberate: releasing a gated agent action is a materially higher-privilege act
 than editing a card, and the safe default has to be "nothing on this server can
 release a paused agent," not "trust the network boundary" (which is the ordinary
-Bearer gate's own safe default). The inbox's list response carries
-`grant_available: bool` so the UI can hide decision controls without a second probe,
-never the secret itself.
+Bearer gate's own safe default). The list response carries `grant_available: bool`
+rather than the secret itself.
 
 Every decision made from Tack is recorded on docket's side with `channel: "tack"` —
 distinguishable in docket's own audit chain (`docket audit verify`) from a CLI grant,
-an HTTP grant from something else, or a Telegram decision. Grant/deny is never a
-single click: the UI opens a confirmation naming the requesting agent, the action
-text, the correlated item (or "Uncorrelated"), and how long it's been waiting, with
-the words "This cannot be undone."
+an HTTP grant from something else, or a Telegram decision.
 
 **Uncorrelated approvals surface here and nowhere else.** An approval docket can't
 tie back to a specific Tack item (`item_id IS NULL` — usually something dispatched
-outside Tack entirely) doesn't appear in the Fleet view's per-project approval count,
-but it does appear in this inbox, labelled "Uncorrelated," so nothing gated is ever
-invisible.
+outside Tack entirely) doesn't appear in a project's own approval count, but it does
+appear in this list, labelled "Uncorrelated," so nothing gated is ever invisible.
 
 ## Budget, pause, and policy
 
-Project **Settings → Orchestration** carries two panels beyond the link form:
+Beyond the link itself, two routes cover a linked project's spend and guardrails:
 
-- **Budget** — this project's configured `budget_usd` cap against Tack's own
-  token-derived spend estimate (`GET /api/projects/{id}/orch-budget`). The
-  progress fraction is explicitly captioned as "an estimate of a fraction of an
-  estimate" everywhere it renders, and it is **not** clamped at 100% — an
-  over-cap project is exactly the state an operator most needs to see.
-- **Policy** — denial rate, policy hits by id, approvals by channel, and tool-call
-  volume, all sourced from docket's `/metrics` (`GET /api/projects/{id}/orch-policy`).
-  **This data is scoped to the control plane, not the linked project** —
-  docket's own metrics endpoint aggregates every project on a pod together, with no
-  per-project label to filter on. The response carries
-  `scoped_to_control_plane_only: true` and the panel renders that caveat above every
-  number, not as a footnote. Chain verification is not reimplemented in Tack; the
-  panel links out to `docket audit verify`.
+- **Budget** (`GET /api/projects/{id}/orch-budget`) — this project's configured
+  `budget_usd` cap against Tack's own token-derived spend estimate. The progress
+  fraction is explicitly described as "an estimate of a fraction of an estimate,"
+  and it is **not** clamped at 100% — an over-cap project is exactly the state an
+  operator most needs to see.
+- **Policy** (`GET /api/projects/{id}/orch-policy`) — denial rate, policy hits by
+  id, approvals by channel, and tool-call volume, all sourced from docket's
+  `/metrics`. **This data is scoped to the control plane, not the linked project**
+  — docket's own metrics endpoint aggregates every project on a pod together, with
+  no per-project label to filter on. The response carries
+  `scoped_to_control_plane_only: true`. Chain verification is not reimplemented in
+  Tack; use `docket audit verify` directly.
 
 **There is no pause control or pause indicator anywhere in Tack, and that's by
 design given what docket currently exposes, not a missing feature Tack chose not to
@@ -362,11 +338,10 @@ and no route to even read whether a given agent is currently paused. `GET
 `paused`/`pausedReason` field at all, even though docket tracks both internally. The
 one indirect signal, a `paused_refused` trace event, exists but can't be reliably
 attributed to *which* linked Tack project produced it with today's ingestion. If a
-project's spend looks stalled, the budget panel names the real remedy —
-`docket profile <pod-id> --resume` — as a static caption; it never claims to know
-whether that's actually what happened.
+project's spend looks stalled, the real remedy is `docket profile <pod-id> --resume`
+— Tack has no way to know whether that's actually what happened.
 
-## Provisioning: one click, a project and its pod
+## Provisioning: a project and its pod together
 
 A **template's** `orchestration` block (blueprint, pipeline reference, budget,
 default `status_map`, pod shape) can be set via `POST /api/templates` and then used
@@ -383,13 +358,9 @@ curl -X POST https://tack.test/api/templates/<template-id>/provision \
   }'
 ```
 
-Also reachable from the **Provision** page (sidebar) as a four-step wizard:
-project/template → pod & control plane → review → result. A confirmation dialog
-("This creates real infrastructure and cannot be automatically undone.") gates the
-actual call, the same pattern the approvals inbox and sprint dispatch use — this
-route is deliberately **not** gated behind the separate approval token, since it's
-ordinary use of the same privilege class as dispatch, not a release of a guardrail's
-deliberate block.
+This route is deliberately **not** gated behind the separate approval token, since
+it's ordinary use of the same privilege class as dispatch, not a release of a
+guardrail's deliberate block.
 
 **Rollback is one-directional, by necessity.** docket's own `POST /pods` is atomic
 on its own side (fully created or nothing created, with `409` for "already exists"),
@@ -422,13 +393,12 @@ not that it is a valid docket pipeline."
 
 ## Unit economics
 
-The **Economics** page (sidebar) answers "what did each product line cost, in
-tokens and estimated dollars, per shipped item, and how often did agents need
-rework?" — sliced overall, by project type, and by item type
-(`GET /api/economics/summary`; per-item detail and CSV/JSON export at
-`GET /api/economics/items`).
+`GET /api/economics/summary` answers "what did each product line cost, in tokens
+and estimated dollars, per shipped item, and how often did agents need rework?" —
+sliced overall, by project type, and by item type; per-item detail and CSV/JSON
+export are at `GET /api/economics/items`.
 
-A few rules this page enforces, not just documents:
+A few rules this data enforces, not just documents:
 
 - **Agent vs. human population is disjoint.** A completed item counts as "agent" if
   it has at least one dispatch on record (regardless of who ultimately finished it),
@@ -507,14 +477,15 @@ Honestly-reported gaps, not bugs:
   own `gateway_active()` is hardcoded to return `false` in the current docket
   version — there's no daemon gateway any more — so even a fully-wired poll would
   read `"inactive"` universally today.
-- **`roster` is always `[]`.** No agent-roster table exists; the column is in the
-  UI and the API for when one does.
+- **`roster` is always `[]`.** No agent-roster table exists; the field is in the
+  API for when one does.
 - **`pricing_snapshot_at` is always `null`.** No pricing-snapshot mechanism exists
   anywhere in the codebase yet.
 - **Docket's own per-agent `budgetUsd`/`costUsd`** (from `/status.json`) is fetched
   by the reconciler every poll but never persisted — only used transiently to
-  compute plane health. The budget panel shows Tack's own token-derived estimate
-  against your configured cap instead, not docket's own figure.
+  compute plane health. `GET /api/projects/{id}/orch-budget` returns Tack's own
+  token-derived estimate against your configured cap instead, not docket's own
+  figure.
 
 ## Known gap: repeated Sprints-view UI bug
 

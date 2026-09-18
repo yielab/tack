@@ -26,8 +26,7 @@
 //! Provisioning is gated by the ordinary `TACK_API_TOKEN` + `TACK_ORCH_ENABLE` pair,
 //! not `TACK_ORCH_APPROVAL_TOKEN`, which exists to override a guardrail policy's
 //! deliberate block, a narrower privilege than "use the orchestration API." This is
-//! ordinary use of that same class, like manual and sprint-wide dispatch;
-//! confirmation lives on the frontend (`ProvisioningWizard.tsx`).
+//! ordinary use of that same class, like manual and sprint-wide dispatch.
 
 use axum::Json;
 use axum::extract::{Path, State};

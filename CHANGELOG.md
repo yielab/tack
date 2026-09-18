@@ -16,6 +16,11 @@ Sections from the next release on are generated from the commit history by
 - `model_profiles`: the `POST`/`GET /api/model-profiles` routes, the `list_model_profiles`
   MCP tool, and the Model profiles panel on the Agents page. The table was a saved label
   consulted by nothing; scheduling and model resolution never read it.
+- The Docket control plane's frontend pages: Fleet, Approvals, Economics, the
+  provisioning wizard, and the two orchestration settings panels (global and
+  per-project), along with their sidebar/tab entries and E2E coverage. The bridge
+  itself (API, `tack-orch`, schema) is unaffected for now — it is removed in later
+  steps of the same retirement.
 
 ---
 
