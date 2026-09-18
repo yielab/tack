@@ -75,9 +75,7 @@ async fn execution_retention_sweep_is_a_noop_when_disabled() {
     assert!(handle.is_none());
 
     // No task is ever spawned when disabled (see the early `return None`
-    // above), so there is nothing to wait for before asserting silence —
-    // mirroring reconciler's own `disabled_orchestration_spawns_no_tasks...`
-    // test.
+    // above), so there is nothing to wait for before asserting silence.
     assert!(store.replay_calls.lock().unwrap().is_empty());
     assert!(store.event_calls.lock().unwrap().is_empty());
 }

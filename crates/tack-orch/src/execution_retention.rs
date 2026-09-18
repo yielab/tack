@@ -2,15 +2,13 @@
 //!
 //! A sibling of `execution/`, not part of it: `crate::execution` deliberately
 //! has no transport/persistence/vendor dependencies, while this module is
-//! nothing but persistence and a spawned background task — closer in shape
-//! to `reconciler.rs`'s `spawn_retention_sweep`/`RetentionStore`.
-//!
-//! Unlike that orch sweep, [`RetentionClock`] makes "now" injectable and
+//! nothing but persistence and a spawned background task.
+//! [`RetentionClock`] makes "now" injectable, and
 //! [`spawn_execution_retention_sweep`] races a `stop_rx` against its
 //! inter-sweep sleep instead of only stopping via a dropped `JoinHandle`.
 //!
-//! No roll-up table for `execution_events` yet (unlike orch's
-//! `orch_events_daily`): this purges terminal-attempt event rows outright.
+//! No roll-up table for `execution_events` yet: this purges terminal-attempt
+//! event rows outright.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -44,8 +42,7 @@ impl From<tack_db::repo::execution::PurgeStats> for PurgeOutcome {
 /// Deliberately its own trait, not a method bolted onto an existing one:
 /// retention runs fleet-wide, independent of any single execution request
 /// or attempt, and needs none of a scheduling/observability seam's other
-/// machinery. Mirrors `reconciler::RetentionStore`'s own shape and reasoning
-/// for the orch domain.
+/// machinery.
 #[async_trait]
 pub trait ExecutionRetentionStore: Send + Sync {
     /// Purge stale replay/idempotency bookkeeping rows older than `cutoff`.
@@ -153,9 +150,9 @@ impl Default for ExecutionRetentionConfig {
 /// Resolves once `stop_rx` carries `true` — either because it already did
 /// when called, or because a later `send(true)` changes it. Resolves
 /// (rather than hanging forever) if the sender is dropped without ever
-/// sending `true`. Mirrors `reconciler::wait_until_stopped` exactly
-/// (private there, four lines — duplicated rather than exported across an
-/// unrelated module boundary for something this small).
+/// sending `true`. Four lines, private, duplicated in
+/// `tack_api::execution_runtime` rather than exported across an unrelated
+/// module boundary for something this small.
 async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
     loop {
         if *rx.borrow() {
@@ -168,8 +165,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 }
 
 /// Spawn the cancellable execution-retention sweep, or don't: `enabled =
-/// false` returns `None` without ever calling `store` (same contract as
-/// `reconciler::spawn_retention_sweep`).
+/// false` returns `None` without ever calling `store`.
 ///
 /// Runs immediately, then every `config.sweep_interval_secs`, until
 /// `stop_rx` carries `true` — checked at the top of the loop and raced

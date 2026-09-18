@@ -29,7 +29,6 @@
 - [Architecture Overview](developer/README.md)
 - [Crate Tour](developer/crate-tour.md)
 - [Frontend & Design System](developer/frontend.md)
-- [Orchestration Architecture](developer/orchestration.md)
 - [Adding Features](developer/adding-features.md)
 - [Configuration Reference](developer/configuration-reference.md)
 - [MCP Server](developer/mcp.md)
