@@ -7,7 +7,7 @@
 # dependency features differently from `--workspace`, so the two forms build
 # every tack crate twice and each source change is compiled once per form.
 #   cargo nextest run --workspace -E 'package(tack-api)'
-#   cargo nextest run --workspace -E 'binary(wave2_gate)'
+#   cargo nextest run --workspace -E 'binary(runner_protocol)'
 #   cargo nextest run --workspace -E 'rdeps(tack-core)'   # all a core change can reach
 #   cargo nextest run --workspace -E 'test(/fencing/)'    # by test-name regex
 

@@ -5,8 +5,8 @@
 //! — a second, independent copy of this module tree per the same pattern
 //! `runner_protocol.rs`'s own doc comments describe, deliberately
 //! self-contained rather than shared through `crate::` (matching the
-//! established precedent in `wave2_gate.rs` and `wiring/artifact.rs`: each
-//! adversarial file builds its own clean database and production router).
+//! established precedent in `wiring/artifact.rs`: each adversarial file
+//! builds its own clean database and production router).
 
 // Each of the two importing files uses a different subset of this shared
 // surface (races vs. fencing/artifacts/replay/corruption); allowed here
