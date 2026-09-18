@@ -26,7 +26,7 @@ below rather than left implicit.
 ## Findings
 
 - `claude --version` prints `"<version> (Claude Code)"` to stdout, exit 0, empty stderr, and
-  needs neither `HOME` nor `PATH` — a fast, side-effect-free probe (`detect_version`).
+  needs neither `HOME` nor `PATH` — a fast, side-effect-free probe (`local_process::LocalProcessHarness::probe`).
 - `claude -p` reads the prompt from **stdin** when no positional argument is given. The
   adapter always uses stdin, never argv, keeping the prompt out of `/proc/<pid>/cmdline`
   (matches `../process.rs`'s own documented preference).
@@ -50,7 +50,7 @@ below rather than left implicit.
   harness's `spawn_child` mode. A graceful `SIGTERM` appeared to let Claude Code clean up
   that detached session itself, but a `SIGKILL` escalation cannot give it that chance, and
   `kill(-pgid, SIGKILL)` does not reach a different session's group — reflected as
-  `cancel: Advisory`, never `Supported`, in `feature_capabilities`.
+  `cancel: Advisory`, never `Supported`, in `ClaudeCodeGrammar::capabilities`.
 
 ## What the adapter does not attempt
 

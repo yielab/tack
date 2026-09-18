@@ -156,8 +156,8 @@ Tack/
 │   │       ├── journal.rs       # Owner-only TOML journal written before spawn
 │   │       ├── workspace.rs     # Isolated per-attempt workspace/worktree
 │   │       ├── secrets.rs       # Local vendor credential storage
-│   │       └── harness/         # process.rs, event_sink.rs, redact.rs, artifact.rs, and
-│   │                            # one module per harness: codex.rs, claude_code.rs
+│   │       └── harness/         # local_process.rs (the shared lifecycle), process.rs, redact.rs,
+│   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs
 │   └── tack-cli/             # clap CLI (talks to API over HTTP, never opens the DB)
 │       └── src/
 │           ├── main.rs         # `Commands` enum + dispatch

@@ -126,3 +126,5 @@ caller, and `tack orch dispatch` is where it should live if it is ever wanted.
 *(Appended by later readers, dated. The text above is never rewritten.)*
 
 **2026-09-14 — Superseded by ADR 0068** (proposed the same day). It takes effect when ADR 0068 is accepted; until then this ADR stands as written. The trigger this ADR wired lives on the `ControlPlane` bridge that ADR 0068 decision 2 retires. `POST /api/projects/{id}/orch-dispatch`, `TACK_ORCH_DISPATCH_TOKEN` and `tack orch dispatch` are removed with it. Starting docket work from Tack moves to the harness path of ADR 0066.
+
+**2026-09-18 — ADR 0068 was accepted.** This ADR's supersession is in effect. The code it concerns is removed by the stage of Phase 64 that owns it (`docs/book/src/roadmap.md`), not by the acceptance itself.

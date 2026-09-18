@@ -459,9 +459,14 @@ see [What actually runs today](../user-guide/agent-runners.md#what-actually-runs
 ### `harness/`
 
 The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
-cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and one
-module per harness (`codex.rs`, `claude_code.rs`) — the harness vocabulary itself stays
-open (`HarnessKind::Other(String)`); this crate just ships adapters for these two. Two
+cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
+`local_process.rs` — the one lifecycle every local CLI harness shares: locating the
+binary, the version probe, the request policy, environment and secrets, provider
+injection, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
+`HarnessDescriptor` (data) and a four-method `HarnessGrammar` (its command line, how its
+output is read, what it supports): `codex.rs`, `claude_code.rs`. Adding one is a module
+plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness
+vocabulary itself stays open (`HarnessKind::Other(String)`). Two engine-facing
 traits:
 `HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
 `reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`

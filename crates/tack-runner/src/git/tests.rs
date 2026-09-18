@@ -609,52 +609,6 @@ async fn a_symlinked_attempt_path_is_refused_before_writing() {
 // Rule 12: a credential embedded in the remote never reaches a log.
 // -----------------------------------------------------------------
 
-// Capturing what actually reached a log line needs a *global* subscriber,
-// not a scoped one: `tracing` caches per-callsite interest process-wide,
-// so a callsite first evaluated by another test (with no subscriber
-// installed) is cached as "never interested" and a later thread-local
-// subscriber never sees it. That is exactly how this assertion silently
-// passed on nothing when the suite ran in parallel. Installing the
-// subscriber globally rebuilds the interest cache; a thread-local buffer
-// then keeps this test's captured output separate from every other
-// test's, so the assertion stays about this call and nothing else.
-thread_local! {
-    static CAPTURED: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-struct ThreadLocalCapture;
-
-impl std::io::Write for ThreadLocalCapture {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        CAPTURED.with(|captured| captured.borrow_mut().extend_from_slice(buffer));
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl tracing_subscriber::fmt::MakeWriter<'_> for ThreadLocalCapture {
-    type Writer = Self;
-
-    fn make_writer(&self) -> Self::Writer {
-        ThreadLocalCapture
-    }
-}
-
-fn install_log_capture() {
-    static INSTALLED: std::sync::Once = std::sync::Once::new();
-    INSTALLED.call_once(|| {
-        tracing_subscriber::fmt()
-            .with_writer(ThreadLocalCapture)
-            .with_max_level(tracing::Level::DEBUG)
-            .with_ansi(false)
-            .init();
-    });
-    CAPTURED.with(|captured| captured.borrow_mut().clear());
-}
-
 #[tokio::test]
 async fn a_credential_in_the_remote_url_never_reaches_a_log_line() {
     const PASSWORD: &str = "canary-git-password-9f3a";
@@ -667,16 +621,14 @@ async fn a_credential_in_the_remote_url_never_reaches_a_log_line() {
         base_revision: "main".into(),
     };
 
-    install_log_capture();
+    crate::test_log_capture::install();
     let error = GitWorktreeProvisioner::new(git_program(), Duration::from_secs(20))
         .provision(&workspace, &repository)
         .await
         .expect_err("an unreachable remote cannot succeed");
 
     assert_eq!(error, WorkspaceError::RepositoryUnreachable);
-    let captured = CAPTURED
-        .with(|captured| String::from_utf8(captured.borrow().clone()))
-        .expect("utf-8");
+    let captured = crate::test_log_capture::captured();
     assert!(
         captured.contains("git command failed") && captured.contains("attempt checkout failed"),
         "the test is only load-bearing if git's failure was actually logged: {captured:?}"

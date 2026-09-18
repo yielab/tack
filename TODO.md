@@ -12,8 +12,8 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **IX** | **Human maintainability** | 63 | **OPEN 2026-09-11 — priority over every other card, including the release tag.** Ten cards IX-M0…IX-M9 in seven waves (27–33); Waves 27's three cards are mechanical and run first. IX-M9 (was IX-M8) split off IX-M8 (test-volume gap) on 2026-09-12, after audit found M4's own −25k-line delta was never measured to have landed. Specification: `docs/plans/human-maintainability.md`. | [§IX](#part-ix--human-maintainability-phase-63) |
-| **VIII** | **Docket bridge hardening** | 62 | **Done 2026-09-08 — Waves 24–26 integrated; one small card open (VIII-C3, blocking nothing).** ADR 0060's four gaps closed and ADR 0065 accepted; detail in this Part's own section below. | [§VIII](#part-viii--docket-bridge-hardening-phase-62), top of this file |
+| IX | Human maintainability | 63 | **Done 2026-09-14** — Waves 27–33 integrated; a follow-up cut the size exclusions 89 → 44 and the rest are accepted under §IX.5. Measured outcome and why Phase 64 replaces it: `docs/book/src/roadmap.md`, Phase 63. | [§IX](#part-ix--human-maintainability-phase-63) |
+| VIII | Docket bridge hardening | 62 | **Done 2026-09-08** — Waves 24–26 integrated. VIII-C3 closed as obsolete 2026-09-18: the adapter it corrects is deleted by Phase 64's bridge retirement. | [§VIII](#part-viii--docket-bridge-hardening-phase-62) |
 | **VII** | **Desktop app & background service** | 61 | **Done 2026-09-07** (reopened once for VII-B5, then closed again). ADR 0062 accepted; Linux/Windows bundles build, macOS not re-run; a stranger completed a full attempt via the tray/AppImage. One product defect spun out as VI-C36. | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
 | **VI** | **Agent Onboarding & Provider UX** | 60 | **Done 2026-09-07** — every card has an accepted integration and a handoff; nothing is open. Not card work, but still true: no harness offers in-app login, so the completed-attempt claim rests on a fake-harness shim, and the live tray/AppImage walks aren't re-run. | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **Done 2026-09-06** — every card integrated. What remains is publishing, a human action outside this repo: see `docs/LAUNCH-CHECKLIST.md`, whose first item is tagging a release (nothing downloadable since `v0.1.0-beta.7`). | [§V](#part-v--adoption--first-public-release-phase-59) |
@@ -22,7 +22,11 @@
 | II | Agnostic Control Plane | 39–49 | Superseded after Wave B by Part III. | `docs/closed-cycles/boards/part-2.md` |
 | I | Agent-Factory Control Center | 33–38 | Complete 2026-08-05. | `docs/closed-cycles/boards/part-1.md` |
 
-**Part IX is the live board and takes priority; Part VIII keeps one small open card (VIII-C3).** Parts I–VII are closed. Part V is distribution and launch — everything between
+**No board in this file is live.** ADR 0068 was accepted on 2026-09-18, and with it work
+stopped being tracked as cards and waves: the current plan is **Phase 64** in
+`docs/book/src/roadmap.md` (its harness stage: `docs/plans/harnesses.md`), decisions are
+recorded in `docs/adr/`, and nothing new is added here. This file stays until Phase 64's
+Stage 2 archives it to `docs/closed-cycles/boards/`. Parts I–IX are closed. Part V is distribution and launch — everything between
 "it works here" and "a stranger can use it". Part VI is the agent onboarding and provider
 flow — everything between "a stranger installed it" and "a stranger ran an item with the
 model they chose, without opening this file". Part IV is done. They share `README.md` and
@@ -58,7 +62,7 @@ the "Which board is live" table above for the current state of every Part.
 
 # Part IX — Human maintainability (Phase 63)
 
-**Status: OPEN 2026-09-11 — priority over every other open card, including the release tag.**
+**Status: done 2026-09-14.** Opened 2026-09-11 with priority over every other card.
 Created from `docs/plans/human-maintainability.md`, which is the specification; this board
 carries only the cards, their order and their acceptance. Nothing here changes what the code
 does, what the wire contract says or what CI verifies. It removes copies, prose and
@@ -73,7 +77,7 @@ block only.
 | 27 — The tool and the mechanical moves | IX-M0 → IX-M1 → IX-M2 | 63 | done — `7ffd192`, `45edaba`, `dfa62aa`; 284 files baselined, budgets hold |
 | 28 — One place for a helper | IX-M3-db, then IX-M3-orch ∥ IX-M3-api ∥ IX-M3-runner ∥ IX-M3-cli | 63 | done — all five sub-cards integrated, 1502/1502 tests hold, budgets hold |
 | 29 — Prune per binary | IX-M4-<crate>-<binary>, 28 sub-cards, largest first | 63 | done — all sub-cards integrated (renames, table-driving, sleep→poll), 1439/1439 tests hold (8 skipped), budgets hold |
-| 30 — Harness core | IX-M5 (= T0 of `docs/plans/harness-maintainability-audit.md`) | 63 | done — `LocalProcessHarness<G>`/`HarnessGrammar` extracted, both adapters migrated, cross-adapter test dedup landed, 1413/1413 tests hold; 3 of 4 audit exit criteria met, per-adapter 400-line budget still open (codex 671, claude_code 816) — a follow-on card, not a further pass of this one |
+| 30 — Harness core | IX-M5 (= T0 of `docs/closed-cycles/plans/harness-maintainability-audit.md`) | 63 | done — `LocalProcessHarness<G>`/`HarnessGrammar` extracted, both adapters migrated, cross-adapter test dedup landed, 1413/1413 tests hold; 3 of 4 audit exit criteria met, per-adapter 400-line budget still open (codex 671, claude_code 816) — a follow-on card, not a further pass of this one |
 | 31 — Comments and docs | IX-M6 batches ∥ IX-M7 | 63 | done — 5 IX-M6 batches (44 files) integrated, 0 comment-worklist violations remain; IX-M7 landed in two halves (generated docs: book includes, `scripts/gen-api-reference.py`, `cargo doc` CI gate; archival: Parts I-III + closed-Part handoffs moved to `docs/closed-cycles/`, live table trimmed to ≤300 chars/row); 1413/1413 tests hold, budgets hold, `pre-push` green |
 | 32 — Close the test-volume gap | IX-M8-dedup, then IX-M8-<crate> ×5 ∥ IX-M6-dev-notes ∥ IX-M7-roadmap | 63 | done — IX-M6-dev-notes integrated `4655b6b` (12 notes resolved, directory deleted), IX-M8-dedup integrated `c90bbcc` (49 pairs → 0, all by rename, 0 tests removed), IX-M7-roadmap integrated `c9339ee` (roadmap 3 683 → 948 lines). **Finding:** `cargo llvm-cov` skips `src/**/tests.rs` but counted the inline modules IX-M1 moved, so line coverage on `develop` is now honest and under three floors — core 83.08 % (85), db 69.89 % (70), api 69.25 % (70); missed-line counts are identical to `main`'s, nothing lost coverage; CI's job never runs on `develop`. Crate cards hold "after ≥ before"; floors re-set in IX-M9 or by decision. IX-M8-runner integrated `8be6c78` (test lines 13 358 → 12 885, 0 tests removed, coverage 91.55 % → 91.55 %, crate's only fixed wait gone; **unmet, recorded:** `src/engine/tests.rs` 2 587 lines and `src/harness/claude_code/tests.rs` 1 344 lines with one 43-line body — brought down only by splitting files, which the card forbids). IX-M8-orch integrated `7225c5e` after two rejections (a five-file split of `reconciler/tests.rs`, reverted; then a helper that dropped its `MockServer` guard and made `docket_adapter_test` flaky under `cargo test`/llvm-cov — fixed, 10/10 green): crate test lines 11 837 → 11 848 (net +11, the guard bindings), tests 277 → 276, 7 fixed waits → 0, coverage 91.17 % → 91.10 % (194 missed lines both; denominator shrank with an inline module); **unmet, recorded:** `src/reconciler/tests.rs` 1 921 lines. IX-M8-db integrated (tests 189 → 192, test lines 11 272 → 10 859, 0 removed, coverage 69.89 % → 69.89 %); **unmet, recorded:** `tests/orch_migrations.rs` 1 190 lines, `tests/execution_repo.rs` 4 176 lines with 38 bodies over 40 (25 over the 60 cap, largest 174). IX-M8-api integrated after one integrator fix (a new helper dropped its `MockServer` guard and made `max_in_flight_bounds_actual_dispatch_concurrency` fail under `cargo test`): tests 447 → 440, test lines 28 645 → 28 371, line coverage 69.25 % → 69.27 %; **unmet, recorded:** 13 files with bodies over 40 (none over 60), 6 of them over 1 000 lines (largest `runner_protocol/lifecycle.rs` 1 821). IX-M8-cli integrated (tack-desktop's inline supervisor tests moved to `supervisor/tests.rs`, its 2 sleeps gone; a cwd-mutating helper in `local_runner/tests.rs` made safe under `cargo test` with a lock; coverage 44.73 % → 44.73 %); **unmet, recorded:** `tack-cli` test lines 4 228 → 4 271 (+43) — its long bodies were single end-to-end tests, and named helpers cost more than they saved. integrator fix after merge: three `local_runner` secret tests wrote to the real keychain over D-Bus and flaked under a full workspace run (`d8fd3ce`). IX-M8 closed |
 | 33 — Ratchet down | IX-M9 (was IX-M8) | 63 | done — IX-M9 integrated: `check` is a hard gate at 40-line bodies, 1 000-line test files and 30 % comment share; 89 named exclusions in the script, each with its reason, still ratcheted against the baseline (89 = failures with the list emptied, verified); `check --changed` fails a change adding more than 15 tests or 600 test lines; workspace ratio ceiling 1.261 (gap to 0.8 named in `docs/TESTING.md`). **Findings for a decision:** 50 of the 89 were never recorded by an IX-M8 handoff — 33 comment-share files surfaced by the 35 → 30 % tightening, 13 files with short sleeps, 3 `tack-core` files never carded, 2 `tack-desktop` files. CI coverage floors (core 85, db 70, api 70) still fail on honest numbers; not decided. **Follow-up 2026-09-14 (off-board, IX-X1/X2/X3):** 33 comment-share files to ≤ 30 % (`0b2e539`), 21 fixed sleeps to bounded polls + 8 names + log-file test race (`ffb60a1`), db execution-repository tests on one fixture split by operation (`0723297`), api runner-protocol/chaos bodies 270 → ≤ 97 (`0bb4738`); exclusions 89 → 44, pre-push green. Runner card abandoned at the Sonnet session limit; `engine/tests.rs`, `claude_code/tests.rs`, `reconciler/tests.rs`, `orch_migrations.rs` and the rest of api stay as accepted exclusions per §IX.5 |
@@ -145,7 +149,7 @@ file and any doc page in one sitting, and a script — not a prompt — keeps it
 tokens): §2 the test layout and the nine rules, §3 the comment budgets, §4 the documentation
 rules, §5 the cards, §6 the decisions still open. Read the section your card cites, not the
 plan whole. The harness adapters have their own audit,
-`docs/plans/harness-maintainability-audit.md`; IX-M5 is its card T0.
+`docs/closed-cycles/plans/harness-maintainability-audit.md`; IX-M5 is its card T0.
 
 ### Re-measured 2026-09-12, after Waves 27–31 (`git log --oneline f95fbc2..HEAD | wc -l` = 159)
 
@@ -337,7 +341,7 @@ largest first: `tack-db-repository` (`execution_repo.rs` alone is 4 323 lines),
 
 ### IX-M5 — the harness core
 
-Card T0 of `docs/plans/harness-maintainability-audit.md` §6, unchanged: extract
+Card T0 of `docs/closed-cycles/plans/harness-maintainability-audit.md` §6, unchanged: extract
 `LocalProcessHarness` and `HarnessGrammar`; migrate `claude_code` and `codex` with no
 behaviour change, their current tests as the proof; captured transcripts become fixture
 files; the three live tests move under `tests/live/` as `#[ignore]`; then prune to the
@@ -927,6 +931,10 @@ with a date on it, and two of the methods it vouches for are older than the code
 them.
 
 ### VIII-C3 — a unit test models a response the real server never sends
+
+**Closed as obsolete 2026-09-18** (ADR 0068, amendment of that date): Phase 64 deletes
+`DocketAdapter` with the control-plane bridge, and the test with it. The finding below stays
+as a record of how `/dispatch/{project}` behaves.
 
 Unwaved, small, dispatchable any time. **Found by VIII-C2's live capture**, which is the
 only reason anyone knows.
