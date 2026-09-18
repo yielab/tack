@@ -68,7 +68,7 @@ Limits, imposed from outside the prompt, because a prompt does not enforce them:
 - **150 tool calls per agent.** An agent that reaches it reports where it stopped instead
   of pushing on, and is replaced by a fresh agent with a short brief — never resumed with a
   large context.
-- **At most two agents at once**, each building with `--build-jobs 4` and testing with
+- **At most two agents building at once** (a third may run when its work is the frontend or docs), each building with `--build-jobs 4` and testing with
   `--test-threads 4`. Sized to the workstation on 2026-09-18: 16 cores (`nproc`), 20 GB of
   memory available and swap full (`free -g`), 100 GB free on `/` (`df -h /`). Re-measure
   before raising it.
@@ -303,12 +303,9 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 |---|---|
 | Harness core redesign | done |
 | M0 | done |
-| H1 | done |
-| C1 | done, pull request #57 green in 3 min 42 s; merging it waits on the ruleset, which also covers `develop` and still names the ten old checks |
-| P1 | done on its branch, reviewed, not merged — the surface was 37 files, not 23: the grep above misses `model-profiles` and `ModelProfile` |
-| H2 | done on its branch, reviewed, not merged — all four fixtures were captured from the real binary; none had to be constructed |
-| S2 | waits for C1 in `develop` |
-| H3 · R1a · R1b | not started |
+| H1 · C1 · P1 · H2 | done, in `develop` |
+| S2 · H3 · R1a | running |
+| R1b | not started |
 | D1 · R2 | not started |
 | R3 · R4 · H4 | not started |
 | D2 · T1 · T2 · T3 · T4 | not started |
