@@ -7,6 +7,10 @@ never `../rack-cli` and never a real model endpoint.
 
 **Observed on:** `docket 0.2.0b1`, one machine, one point in time.
 
+What a user reads about this harness — install, capabilities, caveats — is
+[Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
+in the user guide.
+
 ## Fixture provenance
 
 Each `<version>/*.ndjson` fixture has a sibling `*.ndjson.provenance` text file: its first

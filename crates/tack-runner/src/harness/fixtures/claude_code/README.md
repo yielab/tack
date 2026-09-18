@@ -7,6 +7,10 @@ parses to prove `parse_run_output`'s and `ClaudeCodeGrammar::signal`'s classific
 here instead of as inline string literals so a vendor-shape change is a diff to one file,
 not a hunt through test bodies.
 
+What a user reads about this harness — install, capabilities, caveats — is
+[Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
+in the user guide.
+
 ## Fixture provenance
 
 Each `<version>/*.jsonl` fixture has a sibling `*.jsonl.provenance` text file. Its first
