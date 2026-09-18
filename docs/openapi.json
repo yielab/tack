@@ -2145,7 +2145,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded\nrunner to match, immediately, with no restart. Persist first, then\nreconcile the runtime — same ordering `put_orch_settings` uses and for\nthe same reason: a crash between the two still boots correctly next time.",
+        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded\nrunner to match, immediately, with no restart. Persist first, then\nreconcile the runtime: a crash between the two still boots correctly\nnext time.",
         "operationId": "put_local_runner",
         "requestBody": {
           "content": {

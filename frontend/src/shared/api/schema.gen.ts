@@ -726,8 +726,8 @@ export interface paths {
         /**
          * PUT /api/local-runner — save the preference and start/stop the embedded
          *     runner to match, immediately, with no restart. Persist first, then
-         *     reconcile the runtime — same ordering `put_orch_settings` uses and for
-         *     the same reason: a crash between the two still boots correctly next time.
+         *     reconcile the runtime: a crash between the two still boots correctly
+         *     next time.
          */
         put: operations["put_local_runner"];
         post?: never;
