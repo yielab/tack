@@ -4,7 +4,6 @@ use crate::client::{AttemptId, FencingToken, RunnerId, WorkspaceId, engine::Harn
 // `process::tests`'s own (`pub(crate)`) pidfile-poll helpers, reused
 // below by the cross-adapter descendant-tree cancellation test rather
 // than duplicated a third time.
-use crate::harness::process::tests::{wait_for_pidfile, wait_until_dead};
 use std::{
     path::PathBuf,
     sync::{
@@ -12,7 +11,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
-use tack_orch::execution::{CapabilityValue, RequestedModelId, RequestedModelProvider};
+use tack_orch::execution::CapabilityValue;
 
 /// A trivial trait-level fake — deliberately not the fake *binary*: this
 /// module tests dispatch/routing logic, which does not need a real
@@ -448,546 +447,54 @@ fn decode_handle_rejects_input_with_no_recognizable_encoding() {
     );
 }
 
-// ---- The real, reconciled adapters -------------------------------------
-//
-// Everything above this point tests dispatch/routing with trait-level
-// fakes. These last tests are the two
-// acceptance-gate proofs that need the
-// *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`),
-// not stand-ins: "the same fixture
-// completes through both fake adapters" and "registration of both
-// is order-independent." Each real adapter's own file already has
-// its own exhaustive fixture-driven test suite;
-// these two tests are deliberately narrow, cross-cutting proofs that
-// only make sense here, where both are in scope together.
+// ---- the real grammars, through the registry ------------------------------
 
-/// A scratch directory that removes itself, and everything written under
-/// it, when the returned guard drops — including when an assertion panics
-/// first.
-fn cross_adapter_temp_dir(label: &str) -> tempfile::TempDir {
-    tempfile::Builder::new()
-        .prefix(label)
-        .tempdir()
-        .expect("temporary directory")
-}
-
-/// A fresh, hermetic file-backed store per call — never the platform
-/// keychain — so parallel `#[test]` functions never see each other's
-/// entries and CI needs no Secret Service.
-/// Takes the directory rather than making one, so the store's file cannot
-/// outlive the guard that removes it. Each call gets its own file inside
-/// that directory: two adapters in one test must not share a store.
-fn cross_adapter_secret_store(dir: &std::path::Path) -> SecretStore {
-    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    SecretStore::file(dir.join(format!("secrets-{n}.json")))
-}
-
-/// One deterministic fixture script, driven identically by both
-/// real adapters. Never the shared `fake_harness_command()` — that
-/// fixture is env-var-driven and single-purpose per spawn, which cannot
-/// honestly answer a harness's own version/model-listing/run calls
-/// (multiple purposes) in one adapter instance without also faking a
-/// probe-only environment override this cross-cutting test has no
-/// business reaching into. Branches on its own argv instead:
-/// a literal `--version` token prints a clean version string; a literal
-/// `models` token prints one deterministic `provider/model` line; anything
-/// else (each adapter's real `run`/`exec`/`-p` invocation) prints a
-/// fixed, non-JSON marker and exits 0 — which both
-/// adapters' own `wait()` honestly classifies as `Succeeded` from the
-/// exit code alone (Codex always does; Claude Code falls
-/// back to exit-code classification when stdout does not parse as its
-/// own structured output).
-/// Returns the guard alongside the command: the script lives inside it,
-/// so dropping it before the adapters run would delete the program they
-/// are about to spawn.
-fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>, tempfile::TempDir) {
-    let dir = cross_adapter_temp_dir("script");
-    let script_path = dir.path().join("fixture.sh");
-    let script = r#"#!/bin/sh
-for arg in "$@"; do
-  case "$arg" in
---version) echo "1.0.0"; exit 0 ;;
-models) printf 'demo/model-a\n'; exit 0 ;;
-  esac
-done
-echo "cross-adapter-fixture-complete"
-exit 0
-"#;
-    std::fs::write(&script_path, script).expect("write cross-adapter fixture script");
-    (
-        PathBuf::from("/bin/sh"),
-        vec![script_path.display().to_string()],
-        dir,
-    )
-}
-
-/// A real `CodexAdapter` driven by the shared fixture script.
-fn fixture_codex_adapter(
-    codex_program: &std::path::Path,
-    codex_args: &[String],
-    staging_root: &std::path::Path,
-    secrets: &std::path::Path,
-) -> crate::harness::codex::CodexAdapter {
-    crate::harness::codex::CodexAdapter::for_fixture(
-        codex_program.to_path_buf(),
-        codex_args.to_vec(),
-        staging_root.to_path_buf(),
-        cross_adapter_secret_store(secrets),
-    )
-}
-
-/// A real `ClaudeCodeAdapter`: the installed binary if `discover` finds
-/// one, else the shared no-op fixture script — either way, a real adapter,
-/// never a trait-level fake.
-fn fixture_claude_code_adapter(
-    secrets: &std::path::Path,
-) -> crate::harness::claude_code::ClaudeCodeAdapter {
-    crate::harness::claude_code::ClaudeCodeAdapter::discover(cross_adapter_secret_store(secrets))
-        .unwrap_or_else(|_| {
-            crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-                PathBuf::from("/bin/sh"),
-                vec!["-c".to_owned(), "exit 0".to_owned()],
-                cross_adapter_secret_store(secrets),
-            )
-        })
-}
-
-/// Dispatch itself, not only the registered-kind set, is order
-/// independent. The fixture's requested model (provider "openai", id
-/// "opaque/model-alpha") is unsupported by claude-code (unknown provider
-/// family), so it rejects it pre-spawn regardless of registry order.
-/// codex is a pass-through harness: it cannot independently verify a
-/// model's identity, so it accepts any *explicit* provider/id pre-spawn
-/// and defers the real check to the harness at run time — an accepted
-/// dispatch, not a rejection, for any locator that resolves, which the
-/// fixture command always does.
-async fn assert_dispatch_is_order_independent(
-    forward: &AdapterRegistry,
-    backward: &AdapterRegistry,
-) {
-    for kind in ["codex", "claude-code"] {
-        let spec = spec_requesting(kind);
-        let forward_result = forward.validate(&spec).await;
-        let backward_result = backward.validate(&spec).await;
-        let expect_ok = kind == "codex";
-        assert_eq!(
-            forward_result.is_ok(),
-            expect_ok,
-            "kind {kind}: forward registry"
-        );
-        assert_eq!(
-            backward_result.is_ok(),
-            expect_ok,
-            "kind {kind}: backward registry"
-        );
-    }
-}
-
-/// A fresh registry with both real adapters registered in `order` —
-/// `BTreeMap`-keyed storage, so only dispatch (proven separately) could
-/// possibly depend on registration order, never the registered-kind set.
-fn adapter_registry_in_order(
-    order: [&str; 2],
-    codex_program: &std::path::Path,
-    codex_args: &[String],
-    staging_root: &std::path::Path,
-    secrets: &std::path::Path,
-) -> AdapterRegistry {
+/// One script stands in for both CLIs: it answers `--version` and otherwise
+/// succeeds. Each harness is registered once, as adapter and probe, and an
+/// attempt started through the registry is waited on through it.
+#[tokio::test]
+async fn a_grammar_completes_an_attempt_through_the_registry() {
+    use crate::harness::test_support::{clock, scratch, script, secret_store, spec};
+    let state = scratch("registry");
+    let body = "[ \"$1\" = --version ] && echo 1.0.0 && exit 0\necho fixture-complete";
+    let harness = |grammar| {
+        local_process::LocalProcessHarness::new(
+            grammar,
+            script(state.path(), body),
+            clock(),
+            process::ProcessLimits::new(1_000_000, 1_000_000, std::time::Duration::from_secs(10)),
+            state.path().join("staging"),
+            secret_store(state.path()),
+        )
+    };
     let mut registry = AdapterRegistry::new();
-    for kind in order {
-        match kind {
-            "codex" => registry.register_adapter(
-                DomainHarnessKind::new("codex"),
-                Box::new(fixture_codex_adapter(
-                    codex_program,
-                    codex_args,
-                    staging_root,
-                    secrets,
-                )),
-            ),
-            "claude-code" => registry.register_adapter(
-                DomainHarnessKind::new("claude-code"),
-                Box::new(fixture_claude_code_adapter(secrets)),
-            ),
-            other => unreachable!("test fixture only knows codex/claude-code, got {other}"),
-        };
-    }
     registry
-}
+        .register(harness(codex::CodexGrammar))
+        .expect("codex");
 
-/// Both real adapters register as probes cleanly (registration itself
-/// rejects an overclaiming probe, proven elsewhere) and both report
-/// capabilities.
-async fn assert_both_probes_register_and_report(
-    codex_program: &std::path::Path,
-    codex_args: &[String],
-    staging_root: &std::path::Path,
-    secrets: &std::path::Path,
-) {
-    let mut probe_registry = AdapterRegistry::new();
-    probe_registry
-        .register_probe(Box::new(fixture_codex_adapter(
-            codex_program,
-            codex_args,
-            staging_root,
-            secrets,
-        )))
-        .expect("codex probe registers cleanly");
-    probe_registry
-        .register_probe(Box::new(fixture_claude_code_adapter(secrets)))
-        .expect("claude-code probe registers cleanly");
-
-    let reports = probe_registry.capabilities().await;
-    assert_eq!(reports.len(), 2, "both real probes registered");
-    let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
-    kinds.sort_unstable();
-    assert_eq!(kinds, vec!["claude-code", "codex"]);
-}
-
-/// Builds a real `ExecutionSpec` for `kind`, reusing `claim.response.json`
-/// exactly as `spec_requesting` above does, but with a real (existing)
-/// workspace directory — the real adapters actually spawn a process
-/// there, unlike the trait-level fakes above — and an explicit
-/// provider/model pair valid for that specific adapter.
-fn real_adapter_spec(
-    kind: &str,
-    provider: &str,
-    model: &str,
-    workspace_path: PathBuf,
-) -> ExecutionSpec {
-    real_adapter_spec_with_env(kind, provider, model, &[], workspace_path)
-}
-
-/// [`real_adapter_spec`] plus literal environment entries — for driving
-/// the shared fake-harness fixture's own `TACK_FAKE_HARNESS_*` switches.
-fn real_adapter_spec_with_env(
-    kind: &str,
-    provider: &str,
-    model: &str,
-    extra_env: &[(&str, &str)],
-    workspace_path: PathBuf,
-) -> ExecutionSpec {
-    let claim: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../docs/contracts/runner-v1/claim.response.json"
-    ))
-    .expect("claim fixture");
-    let mut request: tack_orch::execution::ExecutionRequestSnapshot =
-        serde_json::from_value(claim["request"].clone()).expect("request fixture");
-    request.requested_harness_kind = DomainHarnessKind::new(kind);
-    request.requested_model_provider = Some(RequestedModelProvider::new(provider));
-    request.requested_model_id = Some(RequestedModelId::new(model));
-    for (key, value) in extra_env {
-        request.environment.insert(
-            (*key).to_owned(),
-            tack_orch::execution::EnvironmentValue {
-                value: Some((*value).to_owned()),
-                secret_reference: None,
-                additional: BTreeMap::new(),
-            },
-        );
-    }
-    let attempt: tack_orch::execution::AttemptSnapshot =
-        serde_json::from_value(claim["attempt"].clone()).expect("attempt fixture");
-    ExecutionSpec {
-        work: crate::client::ClaimedWork {
-            claim_request_id: crate::client::ClaimRequestId::new("claim"),
-            lease: crate::client::AttemptLease {
-                attempt_id: AttemptId::new("attempt"),
-                runner_id: RunnerId::new("runner"),
-                fencing_token: FencingToken(1),
-                attempt_number: 1,
-                state: crate::client::AttemptState::Leased,
-                issued_at: crate::client::Timestamp::new("2026-08-09T12:20:00Z"),
-                expires_at: crate::client::Timestamp::new("2026-08-09T13:20:00Z"),
-            },
-            request,
-            attempt,
-        },
-        workspace: crate::client::Workspace {
-            attempt_id: AttemptId::new("attempt"),
-            id: WorkspaceId::new("ws_cross_adapter"),
-            path: workspace_path,
-            base_revision: "revision".into(),
-        },
-    }
-}
-
-/// Runs `adapter` through validate/start/wait against the shared fixture
-/// script and asserts it reaches `Succeeded` — the one lifecycle sequence
-/// both real adapters below are proven against, identically.
-async fn assert_adapter_completes_fixture(
-    kind: &str,
-    adapter: &dyn HarnessAdapter,
-    provider: &str,
-    model_id: &str,
-    workspace: &std::path::Path,
-) {
-    let spec = real_adapter_spec(kind, provider, model_id, workspace.to_path_buf());
-    adapter.validate(&spec).await.expect("validate");
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
+    let request = spec("codex", state.path());
+    registry.validate(&request).await.expect("validate");
+    let handle = registry.start(&request).await.expect("start");
+    let outcome = registry.wait(&handle).await.expect("wait");
     assert_eq!(
         outcome.terminal_state,
         crate::client::AttemptState::Succeeded
     );
+    assert_eq!(outcome.actual_execution.harness_kind.as_str(), "codex");
+    assert_eq!(outcome.actual_execution.harness_version, "1.0.0");
+
+    let probed: Vec<_> = registry.capabilities().await;
+    assert_eq!(probed[0].installed_version, "1.0.0");
+    assert_eq!(registry.registered_kinds(), ["codex"]);
 }
 
-#[tokio::test]
-async fn the_same_fixture_completes_through_both_real_adapters() {
-    let secrets_dir = cross_adapter_temp_dir("secrets");
-    let (program, args, _script_dir) = cross_adapter_fixture_command();
-    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
-
-    let codex_workspace_dir = cross_adapter_temp_dir("codex-ws");
-    assert_adapter_completes_fixture(
-        "codex",
-        &codex,
-        "openai",
-        "opaque/model-alpha",
-        codex_workspace_dir.path(),
-    )
-    .await;
-
-    let claude_workspace_dir = cross_adapter_temp_dir("claude-ws");
-    assert_adapter_completes_fixture(
-        "claude-code",
-        &claude,
-        "anthropic",
-        "claude-fixture-model",
-        claude_workspace_dir.path(),
-    )
-    .await;
-
-    for workspace in [codex_workspace_dir.path(), claude_workspace_dir.path()] {
-        std::fs::remove_dir_all(workspace).expect("cleanup");
+#[test]
+fn every_descriptor_is_found_by_its_kind() {
+    for descriptor in DESCRIPTORS {
+        assert!(std::ptr::eq(
+            super::descriptor(descriptor.kind).expect("found"),
+            descriptor
+        ));
     }
-}
-
-/// Registers the two real adapters, and their probes, into two registries
-/// in opposite orders: `BTreeMap`-keyed registration cannot let "who
-/// registered first" become dispatch priority, proven empirically here for
-/// both the registered-kind set and dispatch itself, plus each probe's
-/// declared cancellation capability passing the registration-time ceiling.
-#[tokio::test]
-async fn registering_both_real_adapters_is_order_independent() {
-    let secrets_dir = cross_adapter_temp_dir("order-secrets");
-    let secrets = secrets_dir.path();
-    let staging_root_dir = cross_adapter_temp_dir("order-artifacts");
-    let staging_root = staging_root_dir.path();
-    let (codex_program, codex_args, _codex_script_dir) = cross_adapter_fixture_command();
-
-    let forward = adapter_registry_in_order(
-        ["codex", "claude-code"],
-        &codex_program,
-        &codex_args,
-        staging_root,
-        secrets,
-    );
-    let backward = adapter_registry_in_order(
-        ["claude-code", "codex"],
-        &codex_program,
-        &codex_args,
-        staging_root,
-        secrets,
-    );
-    assert_eq!(forward.registered_kinds(), backward.registered_kinds());
-    assert_eq!(forward.registered_kinds(), vec!["claude-code", "codex"]);
-    assert_dispatch_is_order_independent(&forward, &backward).await;
-
-    // The registration-time gate: both real, now-reconciled probes
-    // register cleanly (neither still claims `cancel: Supported`).
-    assert_both_probes_register_and_report(&codex_program, &codex_args, staging_root, secrets)
-        .await;
-}
-
-/// Both real adapters against one fixture command and secrets directory —
-/// lifecycle mechanics belonging to `local_process.rs`, not either adapter
-/// (audit §5 rule 1), each used to exist once per adapter file.
-fn real_adapters_for(
-    program: PathBuf,
-    args: Vec<String>,
-    secrets_dir: &std::path::Path,
-) -> (
-    crate::harness::codex::CodexAdapter,
-    crate::harness::claude_code::ClaudeCodeAdapter,
-    tempfile::TempDir,
-) {
-    let staging_dir = cross_adapter_temp_dir("codex-artifacts");
-    let codex = crate::harness::codex::CodexAdapter::for_fixture(
-        program.clone(),
-        args.clone(),
-        staging_dir.path().to_path_buf(),
-        cross_adapter_secret_store(secrets_dir),
-    );
-    let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-        program,
-        args,
-        cross_adapter_secret_store(secrets_dir),
-    );
-    (codex, claude, staging_dir)
-}
-
-/// A disabled provider rejects at `validate`, pre-spawn, for both real
-/// adapters — `provider::resolve_endpoint`'s own check, surfaced by the
-/// shared `validate`. Replaces each adapter's own `*_disabled_provider_*` test.
-#[tokio::test]
-async fn disabled_provider_rejects_both_real_adapters_before_spawning() {
-    let secrets_dir = cross_adapter_temp_dir("disabled-provider-secrets");
-    let (program, args, _script_dir) = cross_adapter_fixture_command();
-    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
-    let disabled_providers = BTreeMap::from([(
-        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        crate::config::ProviderConfig {
-            enabled: false,
-            secret: "demo-secret".to_owned(),
-        },
-    )]);
-    let codex = codex.with_providers(disabled_providers.clone());
-    let claude = claude.with_providers(disabled_providers);
-
-    let adapters: [(&str, &dyn HarnessAdapter); 2] = [("codex", &codex), ("claude-code", &claude)];
-    for (label, adapter) in adapters {
-        let workspace_dir = cross_adapter_temp_dir("disabled-provider-ws");
-        let spec = real_adapter_spec(
-            label,
-            crate::config::VERCEL_AI_GATEWAY_PROVIDER,
-            "opaque/model-alpha",
-            workspace_dir.path().to_path_buf(),
-        );
-        let error = adapter
-            .validate(&spec)
-            .await
-            .expect_err("must reject a disabled provider pre-spawn");
-        assert!(matches!(error, HarnessError::Rejected { .. }), "{label}");
-    }
-}
-
-/// A cancel/wait on a handle never produced by that adapter is a typed
-/// rejection, never a panic — `take_running`'s own shared bookkeeping.
-#[tokio::test]
-async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections() {
-    let secrets_dir = cross_adapter_temp_dir("untracked-handle-secrets");
-    let (program, args, _script_dir) = cross_adapter_fixture_command();
-    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
-    let adapters: [&dyn HarnessAdapter; 2] = [&codex, &claude];
-    let handles = [
-        LocalRunHandle {
-            process_id: "codex:999999:0".to_owned(),
-        },
-        LocalRunHandle {
-            process_id: "999999".to_owned(),
-        },
-    ];
-
-    for adapter in adapters {
-        for handle in &handles {
-            assert!(matches!(
-                adapter.cancel(handle).await,
-                Err(HarnessError::Process)
-            ));
-            assert!(matches!(
-                adapter.wait(handle).await,
-                Err(HarnessError::Process)
-            ));
-        }
-    }
-}
-
-/// Cancel kills the whole descendant tree through both real adapters'
-/// `start`/`cancel` — entirely shared `cancel()` plus `process.rs`'s
-/// process-group signal (the primitive-level proof stays `process/tests.rs`'s).
-#[tokio::test]
-async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
-    let secrets_dir = cross_adapter_temp_dir("descendant-tree-secrets");
-    let (fake_program, fake_args) = crate::harness::fixtures::fake_harness_command();
-    let (codex, claude, _staging) = real_adapters_for(fake_program, fake_args, secrets_dir.path());
-
-    let cases: [(&str, &dyn HarnessAdapter, &str, &str); 2] = [
-        ("codex", &codex, "openai", "opaque/model-alpha"),
-        ("claude-code", &claude, "anthropic", "claude-fixture-model"),
-    ];
-    for (kind, adapter, provider, model) in cases {
-        let workspace_dir = cross_adapter_temp_dir("descendant-ws");
-        let pidfile = workspace_dir.path().join("grandchild.pid");
-        let pidfile_str = pidfile.to_str().expect("utf8 pidfile path");
-        let extra_env = [
-            ("TACK_FAKE_HARNESS_MODE", "spawn_child"),
-            ("TACK_FAKE_HARNESS_PIDFILE", pidfile_str),
-            ("TACK_FAKE_HARNESS_SLEEP_SECONDS", "3600"),
-        ];
-        let workspace = workspace_dir.path().to_path_buf();
-        let spec = real_adapter_spec_with_env(kind, provider, model, &extra_env, workspace);
-        adapter.validate(&spec).await.expect("validate");
-        let handle = adapter.start(&spec).await.expect("start");
-        let grandchild_pid = wait_for_pidfile(&pidfile).await;
-        assert!(
-            crate::harness::process::process_alive(grandchild_pid),
-            "{kind}: grandchild must be observed running before cancellation"
-        );
-        let evidence = adapter.cancel(&handle).await.expect("cancel");
-        assert_eq!(
-            evidence.observation,
-            CancelObservation::ProcessStopped,
-            "{kind}"
-        );
-        assert!(
-            wait_until_dead(grandchild_pid, std::time::Duration::from_secs(5)).await,
-            "{kind}: grandchild must be gone after the adapter cancels its parent"
-        );
-    }
-}
-
-/// The two of `reconcile`'s three shared pid cases that need no live
-/// process: no recorded id, and an undecodable one — shared plumbing,
-/// before `decode_handle` even runs.
-async fn assert_reconcile_pidless_cases(label: &str, adapter: &dyn HarnessAdapter) {
-    assert_eq!(
-        adapter.reconcile(&journal_with_process(None)).await,
-        Ok(RecoveryObservation::ProcessStopped),
-        "{label}: no recorded process id"
-    );
-    assert_eq!(
-        adapter
-            .reconcile(&journal_with_process(Some("not-a-pid-at-all")))
-            .await,
-        Err(HarnessError::RecoveryUnavailable),
-        "{label}: undecodable process id"
-    );
-}
-
-/// Shared `reconcile()` handles three pid-independent cases identically for
-/// both real adapters: no recorded process id, an undecodable handle, and
-/// a decodable handle whose process already exited. A still-*alive* pid is
-/// genuinely per-adapter and stays in each adapter's own file.
-#[cfg(unix)]
-#[tokio::test]
-async fn reconcile_reports_shared_pid_plumbing_identically_for_both() {
-    let secrets_dir = cross_adapter_temp_dir("reconcile-secrets");
-    let (program, args, _script_dir) = cross_adapter_fixture_command();
-    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
-
-    type ReconcileCase<'a> = (&'a str, &'a dyn HarnessAdapter, fn(u32) -> String);
-    let cases: [ReconcileCase; 2] = [
-        ("codex", &codex, |pid| format!("codex:{pid}:0")),
-        ("claude-code", &claude, |pid| pid.to_string()),
-    ];
-    for (label, adapter, encode) in cases {
-        assert_reconcile_pidless_cases(label, adapter).await;
-
-        // Decodable, but the process has already exited: spawn and reap a
-        // real one so the pid is definitely dead, not a guessed sentinel.
-        let mut dead = std::process::Command::new("true")
-            .spawn()
-            .expect("spawn true");
-        let dead_pid = dead.id();
-        let _ = dead.wait();
-        assert_eq!(
-            adapter
-                .reconcile(&journal_with_process(Some(&encode(dead_pid))))
-                .await,
-            Ok(RecoveryObservation::ProcessStopped),
-            "{label}: decodable but already-dead pid"
-        );
-    }
+    assert!(super::descriptor("opencode").is_none());
 }

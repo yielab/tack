@@ -1,6 +1,6 @@
 //! Live acceptance tests against a real, installed `codex` binary. Moved
 //! out of `crates/tack-runner/src/harness/codex/tests.rs` (audit
-//! `docs/plans/harness-maintainability-audit.md` §5 rule 4: "anything that
+//! `docs/closed-cycles/plans/harness-maintainability-audit.md` §5 rule 4: "anything that
 //! runs a real binary lives under `tests/live/`") — only the crate's public
 //! API is used here, since an integration test binary cannot see private
 //! items.
@@ -22,8 +22,12 @@ use tack_runner::{
         VERCEL_AI_GATEWAY_PROVIDER,
     },
     harness::{
-        HarnessProbe, ModelObservationSource, artifact::ArtifactStager, codex::CodexAdapter,
-        locate::locate_installed, process::ProcessLimits, sha256::sha256_hex,
+        HarnessProbe, ModelObservationSource,
+        artifact::ArtifactStager,
+        codex::{CodexAdapter, CodexGrammar},
+        locate::locate_installed,
+        process::ProcessLimits,
+        sha256::sha256_hex,
     },
 };
 
@@ -113,10 +117,12 @@ async fn live_probe_and_artifact_staging_against_a_real_codex_binary_when_presen
 
     let scratch = common::temp_dir("live-artifacts");
     let adapter = CodexAdapter::discover(
+        CodexGrammar,
         ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(30)),
         scratch.path().to_path_buf(),
         test_secret_store(scratch.path()),
-    );
+    )
+    .expect("codex was located above");
 
     let capability = adapter.probe().await;
     eprintln!(
@@ -194,10 +200,12 @@ async fn live_codex_through_the_configured_provider_when_opted_in() {
 
     let scratch = common::temp_dir("live-gateway-artifacts");
     let adapter = CodexAdapter::discover(
+        CodexGrammar,
         ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(60)),
         scratch.path().to_path_buf(),
         secrets,
     )
+    .expect("codex was located above")
     .with_providers(providers);
 
     let workspace_dir = deterministic_fixture_repo("live-gateway");

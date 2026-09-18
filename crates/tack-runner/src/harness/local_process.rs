@@ -1,259 +1,725 @@
-//! The shared local-process harness lifecycle.
+//! The local-process harness: one lifecycle for every harness CLI that runs
+//! as a child process, plus the small seam a concrete CLI fills in.
 //!
-//! [`LocalProcessHarness<G>`] owns everything about running a harness CLI as
-//! a local child process that does not depend on which vendor it is:
-//! process bookkeeping (one in-flight
-//! [`SupervisedProcess`](crate::harness::process::SupervisedProcess) per
-//! opaque [`LocalRunHandle`]), ownership of that bookkeeping on
-//! `cancel`/`wait`, reconciling a recorded pid across a restart, and the
-//! shared `secrets`/`providers` an attempt's environment resolves against.
-//! [`HarnessGrammar`] is the seam a concrete vendor (`codex.rs`,
-//! `claude_code.rs`) fills in — command line, output classification,
-//! capability claims and handle encoding — without changing this trait;
-//! each hook below says which vendor asymmetry it exists for.
+//! [`LocalProcessHarness<G>`] owns everything that does not depend on which
+//! CLI is running: locating the binary, the version probe, the request
+//! policy every harness is held to, environment and secret resolution,
+//! provider-endpoint injection, spawn, capture limits, cancellation,
+//! reconciliation after a restart, log staging and the assembly of the
+//! [`HarnessOutcome`].
+//!
+//! A harness contributes a [`HarnessDescriptor`] (data) and a
+//! [`HarnessGrammar`]: how a request becomes a command line, how the
+//! process's output becomes a [`RunReport`], and what it honestly supports.
+//! Nothing else is per-harness, so a rule added here binds every harness at
+//! once.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_orch::execution::{
-    CapabilityValue, FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind,
-    Measurement, MeasurementSource,
+    ActualExecution, ActualModelId, ActualModelProvider, CapabilitySupport, CapabilityValue,
+    FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind, Measurement,
+    MeasurementSource, Usage, WorkspaceId as DomainWorkspaceId,
 };
 
 use crate::{
     Clock,
+    client::AttemptState,
     config::ProviderConfig,
     harness::{
         AttemptJournal, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
-        HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, RecoveryObservation,
-        process::{CancelOutcome, ProcessError, ProcessLimits, ProcessResult, ProcessSpec},
+        HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelObservationSource,
+        RecoveryObservation,
+        process::{
+            CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec,
+            SupervisedProcess,
+        },
         redact::SecretMaterial,
     },
-    provider::ProviderEndpoint,
+    provider::{ProviderEndpoint, Wire},
     secrets::SecretStore,
 };
 
-/// Everything a [`HarnessGrammar::prepare`] call hands back to
-/// [`LocalProcessHarness::start`]: what to spawn, the redaction registry
-/// captured output must be scrubbed against, per-run process limits (a
-/// grammar may narrow the default timeout), and grammar-specific state
-/// `wait`/`cancel` will need back (`G::RunState`).
-pub struct PreparedRun<S> {
-    pub process_spec: ProcessSpec,
-    pub secrets: SecretMaterial,
-    pub limits: ProcessLimits,
-    pub state: S,
+/// `request_timeout_seconds_max` in `docs/contracts/runner-v1/limits.json`.
+const MAX_TIMEOUT_SECONDS: u64 = 86_400;
+const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Reported as the model id when neither the harness nor the request named
+/// one; always paired with [`ModelObservationSource::NotObserved`].
+pub const UNOBSERVED_MODEL: &str = "unknown";
+
+/// Whether a request may leave the model to the harness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSelection {
+    /// The request must name a provider and a model. The text says why,
+    /// and becomes the rejection reason.
+    Explicit(&'static str),
+    Optional,
 }
 
-/// The vendor-specific seam. A [`LocalProcessHarness<G>`] owns the
-/// lifecycle; `G` owns one harness CLI's command line, output and
-/// capability claims. Every method here exists because at least two
-/// harness CLIs already disagree about it, not because a future one might.
-#[async_trait]
+/// Everything about a harness CLI that is data rather than behaviour.
+#[derive(Debug)]
+pub struct HarnessDescriptor {
+    /// The wire value of `requested_harness_kind`.
+    pub kind: &'static str,
+    /// The executable searched for on `PATH` and the well-known install
+    /// locations in [`crate::harness::locate`].
+    pub program: &'static str,
+    /// The one model wire this CLI speaks; selects which configured
+    /// provider endpoints can reach it.
+    pub wire: Wire,
+    pub model_selection: ModelSelection,
+    /// The provider recorded when a request names none.
+    pub native_provider: &'static str,
+    /// Names copied from the runner's own environment into every spawn.
+    /// The child's environment is otherwise exactly what the request and
+    /// the provider injection put there.
+    pub inherited_env: &'static [&'static str],
+    /// Capture caps this CLI's transcript needs. The effective cap is the
+    /// larger of this and the runner's configured limit: capture keeps the
+    /// head of a stream, and a grammar that reads a terminal line loses it
+    /// if the transcript is cut short.
+    pub min_capture_bytes: (usize, usize),
+    /// Why a requested model id is accepted without a model list.
+    pub model_passthrough: &'static str,
+    /// Extra key/value notes attached to every probe report.
+    pub probe_notes: &'static [(&'static str, &'static str)],
+    /// Where this CLI's own credential lives, for `tack runner doctor`.
+    pub credential_note: &'static str,
+}
+
+/// What the grammar is given to build a command line.
+pub struct RunContext<'a> {
+    pub spec: &'a ExecutionSpec,
+    /// The configured provider endpoint the request named, or `None` when
+    /// the CLI runs against its own native login. The core injects the
+    /// credential variable itself; the grammar only points the CLI at it.
+    pub endpoint: Option<&'a ProviderEndpoint>,
+}
+
+/// The harness-specific part of a spawn.
+#[derive(Debug, Default)]
+pub struct Invocation {
+    pub args: Vec<String>,
+    /// Added on top of the inherited, requested and credential variables.
+    pub env: BTreeMap<String, String>,
+}
+
+/// What a finished process's output says happened.
+#[derive(Debug)]
+pub struct RunReport {
+    pub succeeded: bool,
+    /// Vendor evidence, reported as-is. The core adds the staged log under
+    /// `artifact` when this is a JSON object.
+    pub terminal_reason: serde_json::Value,
+    /// The version the run itself reported, when it reports one.
+    pub harness_version: Option<String>,
+    /// The model id the harness itself reported, when it reports one.
+    pub observed_model: Option<String>,
+    pub tokens_in: Option<u64>,
+    pub tokens_out: Option<u64>,
+    /// `None` leaves the runner's own wall-clock measurement in place.
+    pub duration_ms: Option<u64>,
+    pub cost_usd: Option<f64>,
+}
+
+impl RunReport {
+    /// A report carrying only a verdict and its evidence.
+    pub fn verdict(succeeded: bool, terminal_reason: serde_json::Value) -> Self {
+        Self {
+            succeeded,
+            terminal_reason,
+            harness_version: None,
+            observed_model: None,
+            tokens_in: None,
+            tokens_out: None,
+            duration_ms: None,
+            cost_usd: None,
+        }
+    }
+}
+
+/// The per-CLI seam.
 pub trait HarnessGrammar: Send + Sync + 'static {
-    /// Per-attempt state [`HarnessGrammar::prepare`] computes and
-    /// [`HarnessGrammar::outcome`]/cancel later consume — e.g. the resolved
-    /// model provider/id, workspace facts, a cached harness version.
-    type RunState: Send + Sync + 'static;
+    fn descriptor(&self) -> &'static HarnessDescriptor;
 
-    /// The wire value this grammar reports for
-    /// `requested_harness_kind`/`ActualExecution.harness_kind`.
-    fn harness_kind(&self) -> DomainHarnessKind;
+    /// The per-feature support this CLI honestly provides.
+    fn capabilities(&self) -> FeatureCapabilities;
 
-    /// Per-harness pre-spawn policy beyond kind-matching (which each
-    /// implementation checks itself, since the check's own error text names
-    /// the harness): a requested model/provider requirement, an allow-list,
-    /// a self-contradictory request. Called from both `validate` and
-    /// `start`, matching each existing adapter's own discard-and-recheck
-    /// discipline.
-    fn validate_selection(&self, spec: &ExecutionSpec) -> Result<(), HarnessError>;
+    /// Builds the command line for one request, or rejects a request this
+    /// CLI cannot honour — a tool it cannot restrict, a provider it does
+    /// not know. Runs in `validate` and again in `start`, so the two cannot
+    /// disagree.
+    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError>;
 
-    /// Resolves the concrete program and any fixed leading arguments this
-    /// grammar would spawn, or a human-readable reason it cannot. Called
-    /// from `validate` (result discarded) and, at each grammar's own
-    /// discretion, from `prepare`.
-    fn resolve_binary(&self) -> Result<(PathBuf, Vec<String>), String>;
-
-    /// Resolves a configured provider endpoint for this request, or `None`
-    /// when the request names the harness's own direct/native provider.
-    /// Owns the per-grammar `Wire` and the "which provider name does this
-    /// request carry" question. Called from both `validate` (result
-    /// discarded) and `prepare` (endpoint actually injected).
-    fn resolve_provider_endpoint(
-        &self,
-        spec: &ExecutionSpec,
-        secrets: &SecretStore,
-        providers: &BTreeMap<String, ProviderConfig>,
-    ) -> Result<Option<ProviderEndpoint>, HarnessError>;
-
-    /// Builds everything `start` needs to spawn: command line, environment,
-    /// stdin, redaction registry, per-run limits, and `RunState` for later.
-    /// Async because a grammar may need to detect its own installed version
-    /// while preparing a run (codex's cache-or-detect fallback).
-    async fn prepare(
-        &self,
-        spec: &ExecutionSpec,
-        secrets: &SecretStore,
-        providers: &BTreeMap<String, ProviderConfig>,
-    ) -> Result<PreparedRun<Self::RunState>, HarnessError>;
-
-    /// Encodes a freshly spawned pid into this grammar's own opaque handle
-    /// format (codex disambiguates pid reuse with a monotonic counter;
-    /// claude-code's is a bare pid string).
-    fn encode_handle(&self, pid: u32) -> String;
-
-    /// The inverse of [`Self::encode_handle`], or `None` if `process_id` is
-    /// not this grammar's own encoding.
-    fn decode_handle(&self, process_id: &str) -> Option<u32>;
-
-    /// Maps a delivered-or-failed cancellation signal to the observation and
-    /// detail payload `cancel` reports. Owns both the success-path detail
-    /// shape (which differs per grammar) and the failure-path policy — one
-    /// grammar may treat a failed signal as `Ambiguous`, another as a typed
-    /// `Err` — matching each adapter's own historical choice.
-    fn cancel_outcome(
-        &self,
-        pid: u32,
-        signal_result: Result<CancelOutcome, ProcessError>,
-    ) -> Result<
-        (
-            CancelObservation,
-            serde_json::Map<String, serde_json::Value>,
-        ),
-        HarnessError,
-    >;
-
-    /// What a still-alive recorded pid means for this grammar. A grammar
-    /// with an identity check (matching `/proc/<pid>/cmdline` against its
-    /// own binary) can return `Ambiguous` when it cannot verify; one with no
-    /// such check reports `ProcessRunning` unconditionally.
-    fn reconcile_alive(&self, pid: u32) -> RecoveryObservation;
-
-    /// What `reconcile` reports on a platform with no liveness primitive at
-    /// all (non-Unix) — the two existing grammars disagree on the *value*,
-    /// not just the reasoning, so this is not folded into a default.
-    fn reconcile_unavailable(&self) -> Result<RecoveryObservation, HarnessError>;
-
-    /// Classifies a completed run into a [`HarnessOutcome`]: terminal state,
-    /// reason, staged artifact, usage. An exit-code classifier and a
-    /// structured-output-stream classifier share no parsing logic — this
-    /// hook exists so neither is forced through the other's shape.
-    /// `cancelled` is `true` exactly when `cancel` already ran for this
-    /// handle, tracked generically by [`LocalProcessHarness`] itself.
-    fn outcome(
-        &self,
-        state: Self::RunState,
-        started_at: DateTime<Utc>,
-        ended_at: DateTime<Utc>,
-        result: ProcessResult,
-        cancelled: bool,
-    ) -> HarnessOutcome;
-
-    /// Detects the installed version, honestly: every failure mode folds
-    /// into the `Option<String>` slot, matching [`HarnessProbe::probe`]'s
-    /// contract that probing cannot fail. The `BTreeMap` carries whatever
-    /// raw diagnostic a grammar wants attached; most leave it empty.
-    async fn detect_version(&self)
-    -> (String, Option<String>, BTreeMap<String, serde_json::Value>);
-
-    /// Optional side effect after a version detection completes (from a
-    /// direct `probe()` call): a grammar may cache the result to stamp
-    /// `harness_version` at `start()` time without a redundant spawn.
-    /// Default no-op — most grammars re-derive everything from a run's own
-    /// output at `wait()` time instead.
-    fn after_probe(&self, _version: &str, _error: Option<&str>) {}
-
-    /// The pass-through attestation `probe()` reports in
-    /// `HarnessCapability.model_passthrough`, or `None` if this grammar does
-    /// not make one.
-    fn model_passthrough(&self) -> Option<CapabilityValue>;
-
-    /// The per-feature support this grammar honestly promises, independent
-    /// of any specific attempt. Reused by `wait()` to stamp
-    /// `ActualExecution.capability_snapshot`, exactly like each adapter did
-    /// before this existed — one source of truth per grammar, not two.
-    fn feature_capabilities(&self) -> FeatureCapabilities;
+    /// Reads a finished process. Never fails: output that cannot be read is
+    /// a failed run whose `terminal_reason` says so.
+    fn report(&self, run: &RunContext<'_>, result: &ProcessResult) -> RunReport;
 }
 
-/// One in-flight (spawned, not yet reaped) attempt process, keyed by its own
-/// encoded handle in [`LocalProcessHarness::running`]. `state` is the
-/// grammar's own [`HarnessGrammar::RunState`] — everything `wait`/`cancel`
-/// need that only `prepare` had access to.
-pub(crate) struct RunningProcess<S> {
-    process: crate::harness::process::SupervisedProcess,
+/// Shorthand for one [`FeatureCapabilities`] entry.
+pub fn capability(support: CapabilitySupport, reason: &str) -> CapabilityValue {
+    CapabilityValue {
+        support,
+        reason: Some(reason.to_owned()),
+        additional: BTreeMap::new(),
+    }
+}
+
+/// The `permission_policy` entry of a capability table: how far this CLI
+/// enforces the tool list and network flag a request carries. Every grammar
+/// states it, so a policy one harness ignores is a declared fact rather than
+/// a silent difference between harnesses.
+pub fn policy_capability(
+    support: CapabilitySupport,
+    reason: &str,
+) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([(
+        "permission_policy".to_owned(),
+        serde_json::json!(capability(support, reason)),
+    )])
+}
+
+/// Where the executable comes from.
+#[derive(Debug, Clone)]
+pub enum BinaryLocator {
+    /// Searches a snapshot of the runner's own `PATH` and home directory on
+    /// every call, so an uninstall after startup is caught at `validate`.
+    Search {
+        program: String,
+        path: Option<std::ffi::OsString>,
+        home: Option<PathBuf>,
+    },
+    /// A fixed program plus leading arguments: how tests point a grammar at
+    /// the fake harness script.
+    #[cfg(test)]
+    Fixed {
+        program: PathBuf,
+        prefix_args: Vec<String>,
+    },
+}
+
+impl BinaryLocator {
+    fn resolve(&self) -> Result<(PathBuf, Vec<String>), String> {
+        match self {
+            Self::Search {
+                program,
+                path,
+                home,
+            } => super::locate::locate(program, path.as_deref(), home.as_deref())
+                .map(|found| (found, Vec::new()))
+                .map_err(|error| error.to_string()),
+            #[cfg(test)]
+            Self::Fixed {
+                program,
+                prefix_args,
+            } => Ok((program.clone(), prefix_args.clone())),
+        }
+    }
+}
+
+pub(crate) struct RunningProcess {
+    process: SupervisedProcess,
+    record: RunRecord,
+}
+
+/// What `wait` needs back once the process itself has been consumed.
+struct RunRecord {
     secrets: SecretMaterial,
     limits: ProcessLimits,
     started_at: DateTime<Utc>,
-    state: S,
+    spec: ExecutionSpec,
+    endpoint: Option<ProviderEndpoint>,
 }
 
-/// The shared local-process harness lifecycle: implements both
-/// [`HarnessAdapter`] and [`HarnessProbe`] for any [`HarnessGrammar`] `G`,
-/// so a concrete harness module supplies only `G` plus a thin constructor.
+/// The adapter and probe for any [`HarnessGrammar`].
 pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
-    /// `pub(crate)`: a grammar-specific builder outside this module (e.g.
-    /// claude-code's `with_cancel_grace`) needs its own grammar's fields
-    /// after construction, and a generic accessor would exist for that one
-    /// caller alone.
-    pub(crate) grammar: G,
+    grammar: G,
+    locator: BinaryLocator,
     clock: C,
-    /// Resolves `secret_reference` environment entries. Shared with every
-    /// other adapter the runner constructed at startup — see
-    /// `crate::secrets::SecretStore`.
+    limits: ProcessLimits,
+    staging_root: PathBuf,
     secrets: SecretStore,
-    /// Configured provider endpoints (`RunnerConfig::providers`), consulted
-    /// only when a request's `requested_model_provider` names one. Empty by
-    /// default, meaning every request spawns against the harness's own
-    /// native provider.
     providers: BTreeMap<String, ProviderConfig>,
-    /// `pub(crate)` rather than private: a couple of `codex`'s own tests
-    /// assert directly on "no bookkeeping was created" after a pre-spawn
-    /// rejection, which is simpler proved against the real field than
-    /// through an added accessor that would exist for no other caller.
-    pub(crate) running: tokio::sync::Mutex<BTreeMap<String, RunningProcess<G::RunState>>>,
-    /// Handles `cancel` has already run for; `wait` removes and reads this
-    /// back so `outcome`'s `cancelled` parameter is honest. Never cleaned up
-    /// if `wait` is never subsequently called for the same handle — a
-    /// small, accepted leak, matching the pre-extraction claude-code
-    /// adapter's own identical design.
-    cancelled: tokio::sync::Mutex<std::collections::BTreeSet<String>>,
+    probe_timeout: Duration,
+    /// Added to the version probe's environment only; tests steer the fake
+    /// harness with it.
+    probe_env: BTreeMap<String, String>,
+    /// The last successfully probed version, stamped on a run whose own
+    /// output reports none.
+    probed_version: std::sync::Mutex<Option<String>>,
+    next_handle: AtomicU64,
+    pub(crate) running: tokio::sync::Mutex<BTreeMap<String, RunningProcess>>,
+}
+
+impl<G: HarnessGrammar> LocalProcessHarness<G> {
+    /// Locates the CLI on this machine. A harness whose binary is absent is
+    /// an `Err` naming where it was searched for, and is never registered.
+    pub fn discover(
+        grammar: G,
+        limits: ProcessLimits,
+        staging_root: PathBuf,
+        secrets: SecretStore,
+    ) -> Result<Self, String> {
+        let (path, home) = super::locate::snapshot();
+        let locator = BinaryLocator::Search {
+            program: grammar.descriptor().program.to_owned(),
+            path,
+            home,
+        };
+        locator.resolve()?;
+        Ok(Self::new(
+            grammar,
+            locator,
+            crate::SystemClock,
+            limits,
+            staging_root,
+            secrets,
+        ))
+    }
 }
 
 impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
-    pub fn new(grammar: G, clock: C, secrets: SecretStore) -> Self {
+    pub(crate) fn new(
+        grammar: G,
+        locator: BinaryLocator,
+        clock: C,
+        limits: ProcessLimits,
+        staging_root: PathBuf,
+        secrets: SecretStore,
+    ) -> Self {
         Self {
             grammar,
+            locator,
             clock,
+            limits,
+            staging_root,
             secrets,
             providers: BTreeMap::new(),
+            probe_timeout: PROBE_TIMEOUT,
+            probe_env: BTreeMap::new(),
+            probed_version: std::sync::Mutex::new(None),
+            next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
-            cancelled: tokio::sync::Mutex::new(std::collections::BTreeSet::new()),
         }
     }
 
-    /// Configures the provider endpoints this harness may point a spawn at.
-    /// Not part of `new` itself so every existing call site (fixtures,
-    /// tests) keeps constructing a harness with no configured endpoint at
-    /// all, exactly today's behavior, without editing each one.
+    /// The provider endpoints a request may name. Empty means every request
+    /// runs against the CLI's own native login.
     pub fn with_providers(mut self, providers: BTreeMap<String, ProviderConfig>) -> Self {
         self.providers = providers;
         self
     }
 
-    async fn take_running(
+    #[cfg(test)]
+    pub(crate) fn with_probe(mut self, timeout: Duration, env: BTreeMap<String, String>) -> Self {
+        self.probe_timeout = timeout;
+        self.probe_env = env;
+        self
+    }
+
+    fn kind(&self) -> &'static str {
+        self.grammar.descriptor().kind
+    }
+
+    fn reject(&self, reason: String) -> HarnessError {
+        tracing::warn!(
+            reason,
+            harness = self.kind(),
+            "request rejected before spawn"
+        );
+        HarnessError::Rejected { reason }
+    }
+
+    /// The rules every harness is held to before anything is spawned.
+    fn check_request(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
+        let descriptor = self.grammar.descriptor();
+        let request = &spec.work.request;
+        let requested = request.requested_harness_kind.as_str();
+        if requested != descriptor.kind {
+            return Err(self.reject(format!(
+                "requested harness kind {requested:?} does not match this adapter's kind {:?}",
+                descriptor.kind
+            )));
+        }
+        if let ModelSelection::Explicit(reason) = descriptor.model_selection
+            && (request.requested_model_provider.is_none() || request.requested_model_id.is_none())
+        {
+            return Err(self.reject(reason.to_owned()));
+        }
+        Ok(())
+    }
+
+    fn resolve_endpoint(
         &self,
-        process_id: &str,
-    ) -> Result<RunningProcess<G::RunState>, HarnessError> {
+        spec: &ExecutionSpec,
+    ) -> Result<Option<ProviderEndpoint>, HarnessError> {
+        let provider = spec
+            .work
+            .request
+            .requested_model_provider
+            .as_ref()
+            .map_or("", |provider| provider.as_str());
+        crate::provider::resolve_endpoint(
+            &self.providers,
+            &self.secrets,
+            provider,
+            self.grammar.descriptor().wire,
+        )
+        .map_err(|error| self.reject(error.to_string()))
+    }
+
+    fn inherited_env(&self) -> BTreeMap<String, String> {
+        self.grammar
+            .descriptor()
+            .inherited_env
+            .iter()
+            .filter_map(|name| Some(((*name).to_owned(), std::env::var(name).ok()?)))
+            .collect()
+    }
+
+    fn run_limits(&self, spec: &ExecutionSpec) -> ProcessLimits {
+        let (min_stdout, min_stderr) = self.grammar.descriptor().min_capture_bytes;
+        let requested = spec.work.request.timeout_seconds;
+        ProcessLimits {
+            max_stdout_bytes: self.limits.max_stdout_bytes.max(min_stdout),
+            max_stderr_bytes: self.limits.max_stderr_bytes.max(min_stderr),
+            timeout: if requested > 0 {
+                Duration::from_secs(requested.min(MAX_TIMEOUT_SECONDS))
+            } else {
+                self.limits.timeout
+            },
+            termination_grace: self.limits.termination_grace,
+        }
+    }
+
+    /// Everything `start` spawns, built the same way `validate` checks it.
+    fn prepare(
+        &self,
+        spec: &ExecutionSpec,
+    ) -> Result<(ProcessSpec, SecretMaterial, Option<ProviderEndpoint>), HarnessError> {
+        self.check_request(spec)?;
+        let (program, mut args) = self
+            .locator
+            .resolve()
+            .map_err(|reason| self.reject(reason))?;
+        let request = &spec.work.request;
+
+        let mut secrets = SecretMaterial::new();
+        let mut env = self.inherited_env();
+        env.extend(super::resolve_environment(
+            &self.secrets,
+            request,
+            &mut secrets,
+        )?);
+
+        let endpoint = self.resolve_endpoint(spec)?;
+        let invocation = self.grammar.invocation(&RunContext {
+            spec,
+            endpoint: endpoint.as_ref(),
+        })?;
+        args.extend(invocation.args);
+        env.extend(invocation.env);
+        if let Some(endpoint) = &endpoint {
+            let credential = endpoint.credential.expose().to_owned();
+            secrets.register(credential.clone());
+            env.insert(endpoint.credential_env_var.clone(), credential);
+        }
+
+        let prompt = request.resolved_agent_profile.instructions.clone();
+        secrets.register(prompt.clone());
+
+        let workspace_root = spec.workspace.path.clone();
+        let working_directory = match request.repository.subdirectory.as_deref() {
+            Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
+            _ => workspace_root.clone(),
+        };
+        let process_spec = ProcessSpec {
+            program,
+            args,
+            env,
+            stdin: Some(prompt.into_bytes()),
+            working_directory,
+            workspace_root,
+        };
+        Ok((process_spec, secrets, endpoint))
+    }
+
+    /// Runs `<program> --version`. Probing cannot fail: every way it goes
+    /// wrong is the `Option<String>` error, and unrecognized output is kept
+    /// under `raw_version_output` rather than reported as a version.
+    async fn detect_version(&self) -> (String, Option<String>, Option<String>) {
+        let program_name = self.grammar.descriptor().program;
+        let failed = |reason: String| (String::new(), Some(reason), None);
+        let (program, mut args) = match self.locator.resolve() {
+            Ok(resolved) => resolved,
+            Err(reason) => return failed(reason),
+        };
+        args.push("--version".to_owned());
+        let mut env = self.inherited_env();
+        env.extend(self.probe_env.clone());
+        let neutral_dir = std::env::temp_dir();
+        let spec = ProcessSpec {
+            program,
+            args,
+            env,
+            stdin: None,
+            working_directory: neutral_dir.clone(),
+            workspace_root: neutral_dir,
+        };
+        let limits = ProcessLimits::new(8192, 8192, self.probe_timeout);
+        let result = match spec.spawn().await {
+            Ok(process) => {
+                process
+                    .wait_with_capture(&limits, &SecretMaterial::new())
+                    .await
+            }
+            Err(error) => {
+                return failed(format!(
+                    "{program_name} --version could not be spawned: {error}"
+                ));
+            }
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => return failed(format!("{program_name} --version failed: {error}")),
+        };
+        match result.exit {
+            ProcessExit::Exited(0) => {
+                let output = result.stdout.text.trim();
+                match parse_version(output) {
+                    Some(version) => (version.to_owned(), None, None),
+                    None if output.is_empty() => {
+                        failed(format!("{program_name} --version produced no output"))
+                    }
+                    None => (
+                        String::new(),
+                        Some(format!(
+                            "{program_name} --version output was not a recognizable version"
+                        )),
+                        Some(output.chars().take(200).collect()),
+                    ),
+                }
+            }
+            ProcessExit::Exited(code) => failed(format!(
+                "{program_name} --version exited with status {code}"
+            )),
+            #[cfg(unix)]
+            ProcessExit::Signaled(signal) => failed(format!(
+                "{program_name} --version was terminated by signal {signal}"
+            )),
+            ProcessExit::TimedOut => failed(format!("{program_name} --version timed out")),
+        }
+    }
+
+    async fn known_version(&self) -> String {
+        if let Some(version) = self.probed_version.lock().unwrap().clone() {
+            return version;
+        }
+        let (version, _, _) = self.detect_version().await;
+        if !version.is_empty() {
+            *self.probed_version.lock().unwrap() = Some(version.clone());
+        }
+        version
+    }
+
+    /// Whether a live pid is still the program this harness spawns. `None`
+    /// when that cannot be known: a bare liveness check cannot rule out a
+    /// pid the OS has since given to something else.
+    #[cfg(target_os = "linux")]
+    fn process_is_this_harness(&self, pid: u32) -> Option<bool> {
+        let (expected, _) = self.locator.resolve().ok()?;
+        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        let argv0 = raw.split(|byte| *byte == 0).find(|part| !part.is_empty())?;
+        let argv0 = Path::new(std::str::from_utf8(argv0).ok()?);
+        let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        Some(canonical(argv0) == canonical(&expected))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn process_is_this_harness(&self, _pid: u32) -> Option<bool> {
+        None
+    }
+
+    async fn take_running(&self, process_id: &str) -> Result<RunningProcess, HarnessError> {
         self.running.lock().await.remove(process_id).ok_or_else(|| {
-            tracing::warn!(
-                process_id,
-                harness = %self.grammar.harness_kind().as_str(),
-                "handle not tracked by this adapter instance"
-            );
+            tracing::warn!(process_id, harness = self.kind(), "handle not tracked");
             HarnessError::Process
         })
     }
+
+    fn outcome(
+        &self,
+        running: &RunRecord,
+        ended_at: DateTime<Utc>,
+        result: &ProcessResult,
+        probed_version: String,
+    ) -> HarnessOutcome {
+        let descriptor = self.grammar.descriptor();
+        let request = &running.spec.work.request;
+        let report = self.grammar.report(
+            &RunContext {
+                spec: &running.spec,
+                endpoint: running.endpoint.as_ref(),
+            },
+            result,
+        );
+
+        let mut terminal_reason = report.terminal_reason;
+        if let Some(object) = terminal_reason.as_object_mut()
+            && let Some(artifact) = self.stage_run_log(&running.spec, result)
+        {
+            object.insert("artifact".to_owned(), artifact);
+        }
+
+        let provider = request.requested_model_provider.as_ref().map_or_else(
+            || descriptor.native_provider.to_owned(),
+            |provider| provider.as_str().trim().to_ascii_lowercase(),
+        );
+        let requested_model = request.requested_model_id.as_ref().map(|id| id.as_str());
+        // A configured endpoint answers after the CLI has already printed
+        // the model it was asked for, so what the CLI reports is then a
+        // request, not an observation.
+        let (model_id, source) = match (report.observed_model, requested_model) {
+            (Some(model), _)
+                if crate::provider::requires_unconfirmed_model_recording(&provider) =>
+            {
+                (model, ModelObservationSource::RequestedNotConfirmed)
+            }
+            (Some(model), _) => (model, ModelObservationSource::HarnessReported),
+            (None, Some(model)) => (
+                model.to_owned(),
+                ModelObservationSource::RequestedNotConfirmed,
+            ),
+            (None, None) => (
+                UNOBSERVED_MODEL.to_owned(),
+                ModelObservationSource::NotObserved,
+            ),
+        };
+
+        let elapsed_ms = ended_at
+            .signed_duration_since(running.started_at)
+            .num_milliseconds()
+            .max(0) as u64;
+        HarnessOutcome {
+            terminal_state: if report.succeeded {
+                AttemptState::Succeeded
+            } else {
+                AttemptState::Failed
+            },
+            terminal_reason,
+            final_checkpoint: None,
+            actual_execution: ActualExecution {
+                harness_kind: DomainHarnessKind::new(descriptor.kind),
+                harness_version: report.harness_version.unwrap_or(probed_version),
+                model_provider: ActualModelProvider::new(provider),
+                model_id: ActualModelId::new(model_id),
+                model_observation_source: source.as_str().to_owned(),
+                capability_snapshot: self.grammar.capabilities(),
+                // Overwritten by the engine, which owns workspace facts.
+                workspace_id: DomainWorkspaceId::new(running.spec.workspace.id.as_str()),
+                base_revision: running.spec.workspace.base_revision.clone(),
+                started_at: running.started_at,
+                ended_at,
+                additional: BTreeMap::new(),
+            },
+            usage: Usage {
+                tokens_in: measurement(report.tokens_in),
+                tokens_out: measurement(report.tokens_out),
+                duration_ms: measurement(Some(report.duration_ms.unwrap_or(elapsed_ms))),
+                cost_usd: measurement(report.cost_usd),
+                additional: BTreeMap::new(),
+            },
+        }
+    }
+
+    /// Stages the already-redacted stdout and stderr as a `log` artifact.
+    /// Best-effort: a staging failure omits the artifact, never fails the
+    /// attempt.
+    fn stage_run_log(
+        &self,
+        spec: &ExecutionSpec,
+        result: &ProcessResult,
+    ) -> Option<serde_json::Value> {
+        let workspace = &spec.workspace.path;
+        let relative = PathBuf::from(".tack-runner").join(format!("{}-run.log", self.kind()));
+        let absolute = workspace.join(&relative);
+        std::fs::create_dir_all(absolute.parent()?).ok()?;
+        let combined = format!(
+            "=== stdout ===\n{}\n=== stderr ===\n{}",
+            result.stdout.text, result.stderr.text
+        );
+        std::fs::write(&absolute, combined).ok()?;
+        let stager = crate::harness::artifact::ArtifactStager::new(&self.staging_root);
+        let attempt_id = spec.work.lease.attempt_id.as_str();
+        match stager.stage_file(attempt_id, workspace, &relative, "log", "text/plain") {
+            Ok(staged) => Some(serde_json::json!({
+                "kind": staged.kind,
+                "name": staged.name,
+                "media_type": staged.media_type,
+                "size_bytes": staged.size_bytes,
+                "sha256": staged.sha256,
+                "staged_path": staged.staged_path.display().to_string(),
+            })),
+            Err(error) => {
+                tracing::warn!(?error, harness = self.kind(), "run log could not be staged");
+                None
+            }
+        }
+    }
+}
+
+/// `Measured` when there is a value, `NotMeasured` when there is none: an
+/// absent number is never reported as zero.
+fn measurement<T>(value: Option<T>) -> Measurement<T> {
+    Measurement {
+        source: if value.is_some() {
+            MeasurementSource::Measured
+        } else {
+            MeasurementSource::NotMeasured
+        },
+        value,
+        additional: BTreeMap::new(),
+    }
+}
+
+/// Finds the version in a `--version` line: the leading token when it looks
+/// like a version (`2.1.223`, `3.0.0-beta.1`), otherwise a later token that
+/// is a plain `X.Y[.Z]` (`codex-cli 0.149.1`). A line with neither has no
+/// version; guessing one out of it would report a version nobody printed.
+pub(crate) fn parse_version(output: &str) -> Option<&str> {
+    let plain = |token: &str| {
+        let parts: Vec<&str> = token.split('.').collect();
+        (2..=3).contains(&parts.len())
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    };
+    let mut tokens = output.split_whitespace();
+    let first = tokens.next()?;
+    let leading = first.starts_with(|ch: char| ch.is_ascii_digit())
+        && first
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-');
+    if leading {
+        return Some(first);
+    }
+    tokens.find(|token| plain(token))
+}
+
+/// The pid inside a handle this core issued (`<pid>:<sequence>`). Also reads
+/// a bare pid and a kind-prefixed one, the two forms a journal written
+/// before the formats were unified can still hold.
+fn handle_pid(process_id: &str) -> Option<u32> {
+    process_id
+        .split(':')
+        .find_map(|part| part.parse::<u32>().ok())
 }
 
 fn rfc3339(time: std::time::SystemTime) -> String {
@@ -267,32 +733,42 @@ where
     C: Clock + Send + Sync,
 {
     fn harness_kind(&self) -> DomainHarnessKind {
-        self.grammar.harness_kind()
+        DomainHarnessKind::new(self.kind())
     }
 
     async fn probe(&self) -> HarnessCapability {
+        let descriptor = self.grammar.descriptor();
         let probed_at = DateTime::<Utc>::from(self.clock.now());
-        let (installed_version, probe_error, additional) = self.grammar.detect_version().await;
-        self.grammar
-            .after_probe(&installed_version, probe_error.as_deref());
+        let (installed_version, probe_error, raw_output) = self.detect_version().await;
+        if !installed_version.is_empty() {
+            *self.probed_version.lock().unwrap() = Some(installed_version.clone());
+        }
+        let mut additional: BTreeMap<String, serde_json::Value> = descriptor
+            .probe_notes
+            .iter()
+            .map(|(key, note)| ((*key).to_owned(), serde_json::json!(note)))
+            .collect();
+        if let Some(raw) = raw_output {
+            additional.insert("raw_version_output".to_owned(), serde_json::json!(raw));
+        }
         HarnessCapability {
-            harness_kind: self.grammar.harness_kind(),
+            harness_kind: DomainHarnessKind::new(descriptor.kind),
             installed_version,
             probe_error,
             probed_at,
-            // Neither grammar implemented against this trait enumerates a
-            // model list today (see each grammar's own `model_passthrough`
-            // for why schedulability does not need one); a future grammar
-            // that can would be the first caller to justify turning this
-            // into a hook.
+            // No harness CLI here can list its models; schedulability rests
+            // on the pass-through attestation instead.
             model_combinations: Vec::new(),
-            model_passthrough: self.grammar.model_passthrough(),
+            model_passthrough: Some(capability(
+                CapabilitySupport::Supported,
+                descriptor.model_passthrough,
+            )),
             additional,
         }
     }
 
     fn declared_capabilities(&self) -> FeatureCapabilities {
-        self.grammar.feature_capabilities()
+        self.grammar.capabilities()
     }
 }
 
@@ -302,110 +778,84 @@ where
     G: HarnessGrammar,
     C: Clock + Send + Sync,
 {
+    /// Builds the whole spawn and discards it, so anything `start` would
+    /// refuse is refused here, before the attempt is announced.
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
-        self.grammar.validate_selection(spec)?;
-        self.grammar.resolve_binary().map_err(|reason| {
-            tracing::warn!(
-                reason,
-                harness = %self.grammar.harness_kind().as_str(),
-                "validate: binary unresolvable"
-            );
-            HarnessError::Rejected { reason }
-        })?;
-        // Every `secret_reference` entry must resolve before the harness
-        // process exists. This discards the resolved values — `prepare`
-        // resolves again for real. The engine has already journaled and
-        // announced the attempt by now, and turns a refusal here into a
-        // reported failure rather than an abandoned lease.
-        super::resolve_environment(
-            &self.secrets,
-            &spec.work.request,
-            &mut SecretMaterial::new(),
-        )?;
-        // Same discard-and-recheck discipline, for a configured provider
-        // endpoint.
-        self.grammar
-            .resolve_provider_endpoint(spec, &self.secrets, &self.providers)?;
-        Ok(())
+        self.prepare(spec).map(|_| ())
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
-        self.grammar.validate_selection(spec)?;
-        let prepared = self
-            .grammar
-            .prepare(spec, &self.secrets, &self.providers)
-            .await?;
-
-        let supervised = prepared.process_spec.spawn().await.map_err(|error| {
-            tracing::warn!(
-                ?error,
-                harness = %self.grammar.harness_kind().as_str(),
-                "start: spawn failed"
-            );
+        let (process_spec, secrets, endpoint) = self.prepare(spec)?;
+        let process = process_spec.spawn().await.map_err(|error| {
+            tracing::warn!(?error, harness = self.kind(), "spawn failed");
             HarnessError::Process
         })?;
-        let pid = supervised.pid();
-        let handle_id = self.grammar.encode_handle(pid);
-        let started_at = DateTime::<Utc>::from(self.clock.now());
-
+        // The sequence keeps two handles apart if the OS reuses a pid while
+        // an earlier entry is still tracked.
+        let process_id = format!(
+            "{}:{}",
+            process.pid(),
+            self.next_handle.fetch_add(1, Ordering::SeqCst)
+        );
         self.running.lock().await.insert(
-            handle_id.clone(),
+            process_id.clone(),
             RunningProcess {
-                process: supervised,
-                secrets: prepared.secrets,
-                limits: prepared.limits,
-                started_at,
-                state: prepared.state,
+                process,
+                record: RunRecord {
+                    secrets,
+                    limits: self.run_limits(spec),
+                    started_at: DateTime::<Utc>::from(self.clock.now()),
+                    spec: spec.clone(),
+                    endpoint,
+                },
             },
         );
-
-        Ok(LocalRunHandle {
-            process_id: handle_id,
-        })
+        Ok(LocalRunHandle { process_id })
     }
 
+    /// A signal that could not be delivered is `Ambiguous` evidence, not an
+    /// error: the process may or may not still be running, and the engine's
+    /// recovery path is what resolves that.
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         let running = self.take_running(&handle.process_id).await?;
-        self.cancelled
-            .lock()
-            .await
-            .insert(handle.process_id.clone());
         let pid = running.process.pid();
-        let signal_result = running
+        let (observation, process_outcome) = match running
             .process
-            .cancel(running.limits.termination_grace)
-            .await;
-        let (observation, details) = self.grammar.cancel_outcome(pid, signal_result)?;
+            .cancel(running.record.limits.termination_grace)
+            .await
+        {
+            Ok(CancelOutcome::Stopped) => (CancelObservation::ProcessStopped, "stopped"),
+            Ok(CancelOutcome::Killed) => (CancelObservation::ProcessStopped, "killed"),
+            Err(error) => {
+                tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
+                (CancelObservation::Ambiguous, "signal_failed")
+            }
+        };
         Ok(CancellationEvidence {
             observation,
             observed_at: crate::client::Timestamp::new(rfc3339(self.clock.now())),
-            details,
+            details: serde_json::Map::from_iter([
+                ("pid".to_owned(), serde_json::json!(pid)),
+                (
+                    "process_outcome".to_owned(),
+                    serde_json::json!(process_outcome),
+                ),
+            ]),
         })
     }
 
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
-        let running = self.take_running(&handle.process_id).await?;
-        let cancelled = self.cancelled.lock().await.remove(&handle.process_id);
-        let result = running
-            .process
-            .wait_with_capture(&running.limits, &running.secrets)
+        let RunningProcess { process, record } = self.take_running(&handle.process_id).await?;
+        let result = process
+            .wait_with_capture(&record.limits, &record.secrets)
             .await
             .map_err(|error| {
-                tracing::warn!(
-                    ?error,
-                    harness = %self.grammar.harness_kind().as_str(),
-                    "wait: capture failed"
-                );
+                tracing::warn!(?error, harness = self.kind(), "capture failed");
                 HarnessError::Process
             })?;
         let ended_at = DateTime::<Utc>::from(self.clock.now());
-        Ok(self.grammar.outcome(
-            running.state,
-            running.started_at,
-            ended_at,
-            result,
-            cancelled,
-        ))
+        let probed_version = self.known_version().await;
+        Ok(self.outcome(&record, ended_at, &result, probed_version))
     }
 
     async fn reconcile(
@@ -413,119 +863,33 @@ where
         journal: &AttemptJournal,
     ) -> Result<RecoveryObservation, HarnessError> {
         let Some(process_id) = journal.process_id.as_deref() else {
-            // Nothing was ever confirmed running for this attempt; there is
-            // no process-liveness question left to answer.
             return Ok(RecoveryObservation::ProcessStopped);
         };
-        let Some(pid) = self.grammar.decode_handle(process_id) else {
-            tracing::warn!(
-                process_id,
-                harness = %self.grammar.harness_kind().as_str(),
-                "reconcile: unrecognized handle encoding"
-            );
+        let Some(pid) = handle_pid(process_id) else {
+            tracing::warn!(process_id, harness = self.kind(), "unrecognized handle");
             return Err(HarnessError::RecoveryUnavailable);
         };
-
         #[cfg(unix)]
         {
-            if crate::harness::process::process_alive(pid) {
-                Ok(self.grammar.reconcile_alive(pid))
-            } else {
-                Ok(RecoveryObservation::ProcessStopped)
+            if !crate::harness::process::process_alive(pid) {
+                return Ok(RecoveryObservation::ProcessStopped);
             }
+            Ok(match self.process_is_this_harness(pid) {
+                Some(true) => RecoveryObservation::ProcessRunning,
+                // Alive, but another program: the attempt's process is gone
+                // and the OS has reused its pid.
+                Some(false) => RecoveryObservation::ProcessStopped,
+                None => RecoveryObservation::Ambiguous,
+            })
         }
         #[cfg(not(unix))]
         {
             let _ = pid;
-            self.grammar.reconcile_unavailable()
+            Ok(RecoveryObservation::Ambiguous)
         }
     }
 }
 
-/// A [`tack_orch::execution::Measurement`] whose source is honestly
-/// `NotMeasured` — shared because "cost is never measured yet" is the one
-/// usage fact every local-process grammar agrees on, not because usage
-/// itself is shared (it is not: see each grammar's own `outcome`).
-pub fn not_measured<T>() -> Measurement<T> {
-    Measurement {
-        value: None,
-        source: MeasurementSource::NotMeasured,
-        additional: BTreeMap::new(),
-    }
-}
-
-/// The resolve-and-reject-typed shape both existing grammars' own
-/// `resolve_provider_endpoint` wrap identically around
-/// `provider::resolve_endpoint` — only the provider name (required for
-/// codex, optional for claude-code) and the `Wire` variant are genuinely
-/// per-grammar, extracted by the caller before this runs.
-pub(crate) fn resolve_provider_endpoint(
-    provider: &str,
-    secrets: &SecretStore,
-    providers: &BTreeMap<String, ProviderConfig>,
-    wire: crate::provider::Wire,
-    harness_kind: &str,
-) -> Result<Option<ProviderEndpoint>, HarnessError> {
-    crate::provider::resolve_endpoint(providers, secrets, provider, wire).map_err(|error| {
-        let reason = error.to_string();
-        tracing::warn!(
-            reason,
-            harness = harness_kind,
-            "rejecting a request whose provider endpoint could not be resolved"
-        );
-        HarnessError::Rejected { reason }
-    })
-}
-
-/// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-/// artifact under `staging_root`, via [`crate::harness::artifact::ArtifactStager`]
-/// — the one piece of `outcome()` genuinely identical between every
-/// existing grammar; only the staging root and the log's own filename
-/// differ. Best-effort: a staging failure returns `None`, never a hard
-/// error — each grammar's own `outcome()` treats that as "no `artifact`
-/// key," never as a failed attempt.
-pub(crate) fn stage_run_log(
-    staging_root: &std::path::Path,
-    workspace_path: &std::path::Path,
-    attempt_id: &str,
-    log_filename: &str,
-    stdout: &str,
-    stderr: &str,
-    harness_kind: &str,
-) -> Option<serde_json::Value> {
-    let relative = PathBuf::from(".tack-runner").join(log_filename);
-    let absolute = workspace_path.join(&relative);
-    if let Some(parent) = absolute.parent()
-        && std::fs::create_dir_all(parent).is_err()
-    {
-        return None;
-    }
-    let mut combined = String::new();
-    combined.push_str("=== stdout ===\n");
-    combined.push_str(stdout);
-    combined.push_str("\n=== stderr ===\n");
-    combined.push_str(stderr);
-    if std::fs::write(&absolute, combined.as_bytes()).is_err() {
-        return None;
-    }
-
-    let stager = crate::harness::artifact::ArtifactStager::new(staging_root);
-    match stager.stage_file(attempt_id, workspace_path, &relative, "log", "text/plain") {
-        Ok(staged) => Some(serde_json::json!({
-            "kind": staged.kind,
-            "name": staged.name,
-            "media_type": staged.media_type,
-            "size_bytes": staged.size_bytes,
-            "sha256": staged.sha256,
-            "staged_path": staged.staged_path.display().to_string(),
-        })),
-        Err(error) => {
-            tracing::warn!(
-                ?error,
-                harness = harness_kind,
-                "wait: artifact staging failed"
-            );
-            None
-        }
-    }
-}
+#[cfg(test)]
+#[path = "local_process/tests.rs"]
+mod tests;
