@@ -1,0 +1,5 @@
+captured
+Real `opencode run` against `opencode 1.18.30`, same isolation as `completed.ndjson.provenance`,
+against a fake model server that accepted the connection and never answered. `SIGTERM` was sent
+3 seconds in; the process exited with status 143 and produced zero bytes on stdout — not even
+the `step_start` event a normal turn starts with. Empty by construction, not truncation.

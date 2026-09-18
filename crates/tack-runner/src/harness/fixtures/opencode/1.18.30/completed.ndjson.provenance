@@ -1,0 +1,10 @@
+captured
+Real `opencode run --pure --format json --title tack -m tack/fake-model "write HELLO.txt saying hi"`
+against `opencode 1.18.30`, `HOME`/`OPENCODE_CONFIG_DIR` under a fresh scratch directory
+(rewritten to `/capture` below), and a loopback fake model server answering one streamed
+`text/event-stream` chat-completions turn with plain text content and `finish_reason: "stop"`.
+No tool call in this transcript; it is the baseline a tool-calling transcript is compared
+against. Ran under:
+`HOME=/capture/home OPENCODE_CONFIG_DIR=/capture/config OPENCODE_CONFIG_CONTENT=... \
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 \
+OPENCODE_DISABLE_SHARE=1 opencode run --pure --format json --title tack -m tack/fake-model ...`
