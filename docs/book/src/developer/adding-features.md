@@ -54,7 +54,7 @@ pub struct UpdateMilestone {
 Open `crates/tack-db/src/migrations.rs`. Migration names are numbered sequentially and
 never reused — find the highest number already in `all_migrations()` (`grep -o
 '"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs | sort -u | tail -1`) and
-pick the next one. As of this writing that's `073`, so the new migration is `074`. Find
+pick the next one. As of this writing that's `074`, so the new migration is `075`. Find
 the `migrations` vec in `all_migrations()` and append:
 
 ```rust

@@ -62,7 +62,8 @@ hand-written count, which this document does not track. Migrations 039–048 add
 ten neutral runner-v1 execution tables; later ones refined execution replay, recovery
 and attempt-start facts; 063 dropped the unused `model_profiles` table; 064–073 drop
 the legacy Docket control-plane bridge (below). Everything from 039 through 062 is
-additive; 063 and 064–073 are the only migrations in this history that remove data.
+additive; 063, 064–073 and 074 (an unused column of `project_templates`) are the only migrations in
+this history that remove data.
 
 This upgrade drops the legacy Docket control-plane bridge: `control_planes` and the
 nine `orch_*` tables — agent-fleet/control-plane registrations, dispatched tasks,

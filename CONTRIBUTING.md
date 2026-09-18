@@ -74,7 +74,7 @@ Tack/
 │   ├── tack-db/              # Database layer
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Pool initialization, WAL mode
-│   │   │   ├── migrations.rs   # 73 schema migrations (auto-run on startup; live count is
+│   │   │   ├── migrations.rs   # 74 schema migrations (auto-run on startup; live count is
 │   │   │   │                  #   GET /api/health's migrations_applied)
 │   │   │   ├── repo.rs         # Repository struct
 │   │   │   └── repo/           # One file per entity
