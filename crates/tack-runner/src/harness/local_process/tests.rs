@@ -2,6 +2,7 @@
 //! script through a grammar that adds nothing of its own.
 
 use super::*;
+use crate::harness::DecisionOption;
 use crate::harness::test_support::{
     FixedClock, clock, fake_harness, gateway, scratch, script, secret_store, set_env,
     set_secret_reference, spec,
@@ -52,6 +53,10 @@ static CREDENTIAL_NAMED: HarnessDescriptor = HarnessDescriptor {
 struct TestGrammar {
     descriptor: &'static HarnessDescriptor,
     observed_model: Option<&'static str>,
+    /// Sets `stdin_stays_open` and drives the fake harness's `ask` mode:
+    /// `"ASK:<prompt>"` on stdout becomes a question, any stdin line back
+    /// answers it.
+    ask: bool,
 }
 
 impl HarnessGrammar for TestGrammar {
@@ -86,6 +91,7 @@ impl HarnessGrammar for TestGrammar {
         Ok(Invocation {
             args: vec!["run".to_owned()],
             env,
+            stdin_stays_open: self.ask,
         })
     }
 
@@ -97,6 +103,42 @@ impl HarnessGrammar for TestGrammar {
                 serde_json::json!({"stdout": result.stdout.text, "stderr": result.stderr.text}),
             )
         }
+    }
+
+    /// The fake harness's `ask` mode reads its prompt as one line.
+    fn prompt(&self, prompt: String, stdin_stays_open: bool) -> Vec<u8> {
+        let mut bytes = prompt.into_bytes();
+        if stdin_stays_open {
+            bytes.push(b'\n');
+        }
+        bytes
+    }
+
+    /// The fake harness's `ask` mode prints exactly one `ASK:<prompt>`
+    /// line; anything else means nothing to this grammar.
+    fn signal(&self, line: &str) -> Option<StreamSignal> {
+        let prompt = line.strip_prefix("ASK:")?;
+        Some(StreamSignal::Question(Question {
+            vendor_id: "q1".to_owned(),
+            kind: "test".to_owned(),
+            prompt: prompt.to_owned(),
+            options: vec![
+                DecisionOption {
+                    option_id: "allow".to_owned(),
+                    label: "Allow".to_owned(),
+                },
+                DecisionOption {
+                    option_id: "deny".to_owned(),
+                    label: "Deny".to_owned(),
+                },
+            ],
+            metadata: serde_json::Map::new(),
+        }))
+    }
+
+    /// The fake harness reads back exactly one line and echoes it.
+    fn answer(&self, _question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
+        answer.option_id.clone().unwrap_or_default().into_bytes()
     }
 }
 
@@ -124,6 +166,7 @@ fn harness(state: &Path) -> Harness {
     let grammar = TestGrammar {
         descriptor: &PLAIN,
         observed_model: None,
+        ask: false,
     };
     harness_with(grammar, fake_harness(), state)
 }
@@ -202,6 +245,7 @@ async fn an_absent_binary_is_rejected_and_probed_as_an_error() {
     let grammar = TestGrammar {
         descriptor: &PLAIN,
         observed_model: None,
+        ask: false,
     };
     let harness = harness_with(grammar, absent_binary(), state.path());
     let rejected = harness.validate(&spec(KIND, state.path())).await;
@@ -306,6 +350,7 @@ async fn the_model_source_says_who_vouches_for_the_model() {
         let grammar = TestGrammar {
             descriptor,
             observed_model,
+            ask: false,
         };
         let harness =
             harness_with(grammar, fake_harness(), state.path()).with_providers(gateway("key"));
@@ -419,6 +464,61 @@ async fn the_scratch_directory_is_gone_after_the_run() {
     }
 }
 
+// ---- a question --------------------------------------------------------
+
+/// `(the answer sent back, or None to drop the channel instead) -> what the
+/// fake harness echoes`. A dropped channel is answered as the question's
+/// deny option by the run itself, same as an explicit deny.
+#[tokio::test]
+async fn a_question_is_answered_and_the_run_continues() {
+    let rows: [(Option<&str>, &str); 3] = [
+        (Some("allow"), "fake-harness-answered:allow"),
+        (Some("deny"), "fake-harness-answered:deny"),
+        (None, "fake-harness-answered:deny"),
+    ];
+    for (sent, expected) in rows {
+        let state = scratch("ask");
+        let grammar = TestGrammar {
+            descriptor: &PLAIN,
+            observed_model: None,
+            ask: true,
+        };
+        let harness = harness_with(grammar, fake_harness(), state.path());
+        let mut request = spec(KIND, state.path());
+        set_env(&mut request, &[("TACK_FAKE_HARNESS_MODE", "ask")]);
+
+        let handle = harness.start(&request).await.expect("start");
+        let (mut questions_rx, answers_tx) = harness
+            .decision_channels(&handle)
+            .await
+            .expect("an ask request exposes decision channels");
+
+        let drive = async {
+            let question = questions_rx.recv().await.expect("question");
+            assert_eq!(question.prompt, "do-thing");
+            match sent {
+                Some(option_id) => {
+                    let answer = DecisionAnswer {
+                        option_id: Some(option_id.to_owned()),
+                        text: None,
+                    };
+                    let _ = answers_tx.send(answer).await;
+                }
+                None => drop(answers_tx),
+            }
+        };
+        let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
+        let outcome = outcome.expect("wait").terminal_reason;
+        assert!(
+            outcome["stdout"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected),
+            "{sent:?}: {outcome:?}"
+        );
+    }
+}
+
 // ---- what reaches the child ----------------------------------------------
 
 /// Runs a shim that records the names of its environment variables, and
@@ -438,6 +538,7 @@ async fn run_recording_env(
     let grammar = TestGrammar {
         descriptor,
         observed_model: None,
+        ask: false,
     };
     let harness = harness_with(grammar, script(state.path(), &body), state.path())
         .with_providers(gateway("key"));

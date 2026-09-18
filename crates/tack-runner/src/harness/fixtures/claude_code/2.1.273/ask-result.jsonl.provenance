@@ -1,0 +1,8 @@
+captured
+claude 2.1.273 (Claude Code)
+
+The terminal `result` line from the same `--permission-prompt-tool stdio`
+run as `ask-allow-response.jsonl`, trimmed to the fields `signal` and
+`parse_run_output` read. Proves a `result` line, not just any JSON line,
+ends the conversation — the CLI keeps running past it with stdin open, and
+only closing stdin (which `Finished` triggers) lets it exit.

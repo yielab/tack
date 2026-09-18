@@ -66,6 +66,7 @@ fn permission_policy(tools: &[&str], network: bool) -> PermissionPolicy {
     PermissionPolicy {
         tools: tools.iter().map(|tool| tool.to_string()).collect(),
         network,
+        approvals: None,
         additional: Default::default(),
     }
 }

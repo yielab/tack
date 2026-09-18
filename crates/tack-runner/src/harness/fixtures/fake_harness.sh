@@ -41,6 +41,11 @@
 #                  50000000) bytes of repeated non-secret 'x' characters to
 #                  stdout as fast as possible, then exits 0. For
 #                  memory-bound capture tests.
+#   ask            Reads and discards the initial prompt line every mode is
+#                  given, then prints "ASK:do-thing", blocks reading one line
+#                  back from stdin, echoes "fake-harness-answered:<that
+#                  line>" to stdout, and exits 0. Standing in for a CLI that
+#                  keeps its stdin open and pauses mid-run for an answer.
 #   echo_canary    Echoes back, to *both* stdout and stderr: the value of
 #                  every environment variable named in
 #                  TACK_FAKE_HARNESS_ECHO_ENV_KEYS (comma- or
@@ -101,6 +106,15 @@ case "$mode" in
 
   hang)
     exec sleep "${TACK_FAKE_HARNESS_SLEEP_SECONDS:-3600}"
+    ;;
+
+  ask)
+    read -r _prompt
+    echo "ASK:do-thing"
+    read -r reply
+    echo "fake_harness: got reply $reply" >&2
+    echo "fake-harness-answered:$reply"
+    exit 0
     ;;
 
   spawn_child)

@@ -1,0 +1,1 @@
+{"type":"control_request","request_id":"eb72d6ca-573f-48fe-aedb-002cfd31bb7c","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"touch made-by-tool.txt","description":"list files"},"description":"list files","blocked_path":"/capture/work2-allow/made-by-tool.txt"}}

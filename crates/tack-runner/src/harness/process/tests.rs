@@ -21,6 +21,7 @@ fn spec(workspace: &Path, env: BTreeMap<String, String>) -> ProcessSpec {
         stdin: None,
         working_directory: workspace.to_path_buf(),
         workspace_root: workspace.to_path_buf(),
+        keep_stdin_open: false,
     }
 }
 

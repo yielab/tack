@@ -223,7 +223,11 @@ impl HarnessGrammar for OpencodeGrammar {
             .into();
         args.push(format!("tack/{model_id}"));
 
-        Ok(Invocation { args, env })
+        Ok(Invocation {
+            args,
+            env,
+            ..Invocation::default()
+        })
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
