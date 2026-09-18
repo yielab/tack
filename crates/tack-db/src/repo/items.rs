@@ -9,25 +9,6 @@ use tack_core::workflow::{StatusCategory, WorkflowConfig};
 
 use super::Repository;
 
-/// The result of [`Repository::update_item_status_checked`] — see its doc
-/// comment.
-#[derive(Debug)]
-pub enum StatusUpdateOutcome {
-    /// The transition was applied; carries the freshly reloaded item.
-    /// Boxed: `Item` otherwise dominates this enum's size even for the
-    /// common `Rejected` case (`clippy::large_enum_variant`) — the same fix
-    /// applied to `sprint_dispatch::ItemResult::Outcome` for the
-    /// same reason.
-    Applied(Box<Item>),
-    /// The target column's WIP limit is at (or over) capacity — nothing was
-    /// written, the item was left exactly as it was. Carries the exact
-    /// [`CoreError::WipLimitExceeded`] [`WorkflowConfig::check_wip_limit`]
-    /// produced, computed from the count read inside the same transaction
-    /// that decided not to write, so callers get the engine's own error
-    /// text rather than a re-derived approximation.
-    Rejected(CoreError),
-}
-
 /// Result of one complete item PATCH.  Unlike the older helpers this owns the
 /// WIP decision, field update, timestamps, and version increment in one
 /// transaction, so callers cannot accidentally compose partial mutations.
@@ -728,96 +709,6 @@ impl Repository {
                 .fetch_one(self.pool())
                 .await?;
         Ok(count)
-    }
-
-    /// Atomically checks `target_status`'s WIP limit (per `workflow`) and,
-    /// only if it isn't exceeded, applies the status transition inside one
-    /// `BEGIN IMMEDIATE` transaction, so the count read and the write can
-    /// never interleave with another writer racing the same column.
-    ///
-    /// Do not split this into `count_items_by_status` then a plain
-    /// `update_item` with no lock spanning them: two callers moving different
-    /// items into the same WIP-limited column could each read "under the
-    /// limit" before either wrote, then both commit over it. `BEGIN IMMEDIATE`
-    /// blocks a second concurrent caller until the first commits — the
-    /// board-drag path (`handlers::items::update_item`) hits this same race
-    /// and calls this method too.
-    ///
-    /// Only touches the fields `dispatcher::apply_mapped_status` needs; extend
-    /// this rather than composing it with `update_item`'s unguarded writes.
-    #[instrument(skip(self, workflow))]
-    pub async fn update_item_status_checked(
-        &self,
-        id: Uuid,
-        project_id: Uuid,
-        target_status: &str,
-        status_category: Option<StatusCategory>,
-        workflow: &WorkflowConfig,
-    ) -> Result<Option<StatusUpdateOutcome>, sqlx::Error> {
-        let now = Utc::now().to_rfc3339();
-        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
-                .bind(project_id.to_string())
-                .bind(target_status)
-                .fetch_one(&mut *tx)
-                .await?;
-
-        if let Err(e) = workflow.check_wip_limit(target_status, count as usize) {
-            tx.rollback().await?;
-            return Ok(Some(StatusUpdateOutcome::Rejected(e)));
-        }
-
-        sqlx::query(
-            "UPDATE items SET status = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-        )
-        .bind(target_status)
-        .bind(&now)
-        .bind(id.to_string())
-        .execute(&mut *tx)
-        .await?;
-
-        if let Some(category) = status_category {
-            match category {
-                StatusCategory::InProgress => {
-                    sqlx::query(
-                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(&mut *tx)
-                    .await?;
-                }
-                StatusCategory::Done => {
-                    sqlx::query(
-                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(&mut *tx)
-                    .await?;
-                }
-                StatusCategory::Todo => {
-                    sqlx::query(
-                        "UPDATE items SET completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(&mut *tx)
-                    .await?;
-                }
-            }
-        }
-
-        tx.commit().await?;
-
-        Ok(self
-            .get_item(id)
-            .await?
-            .map(|item| StatusUpdateOutcome::Applied(Box::new(item))))
     }
 
     #[instrument(skip(self))]

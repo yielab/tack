@@ -36,7 +36,10 @@ Sections from the next release on are generated from the commit history by
   `TACK_ORCH_DISPATCH_TOKEN` variables, and the `tack orch` CLI commands, go with
   it. Docket is now reached the same way as any other coding agent: as a harness
   (`--harness docket`) on a runner-v1 execution request. A project template no longer
-  accepts an `orchestration` block; one already stored on a template is ignored.
+  accepts an `orchestration` block; one already stored on a template is ignored. This upgrade also drops the
+  bridge's own schema — `control_planes` and the nine `orch_*` tables — outright; any
+  pre-existing rows survive only in the automatic pre-upgrade snapshot this upgrade
+  takes beside the database file, not in the running database itself.
 
 ---
 
