@@ -125,6 +125,16 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("061_execution_attempt_start_facts", &MIGRATION_061[..]),
         ordinary("062_project_default_model", &MIGRATION_062[..]),
         ordinary("063_drop_model_profiles", &MIGRATION_063[..]),
+        ordinary("064_drop_orch_links", &MIGRATION_064[..]),
+        ordinary("065_drop_orch_tasks", &MIGRATION_065[..]),
+        ordinary("066_drop_orch_runs", &MIGRATION_066[..]),
+        ordinary("067_drop_orch_events", &MIGRATION_067[..]),
+        ordinary("068_drop_orch_approvals", &MIGRATION_068[..]),
+        ordinary("069_drop_orch_metrics", &MIGRATION_069[..]),
+        ordinary("070_drop_orch_events_daily", &MIGRATION_070[..]),
+        ordinary("071_drop_orch_metrics_daily", &MIGRATION_071[..]),
+        ordinary("072_drop_orch_trace_cursors", &MIGRATION_072[..]),
+        ordinary("073_drop_control_planes", &MIGRATION_073[..]),
     ]
 }
 
@@ -276,9 +286,20 @@ async fn create_pre_upgrade_backup_if_needed(
     let applied: Vec<String> = sqlx::query_scalar("SELECT name FROM _migrations")
         .fetch_all(pool)
         .await?;
-    let Some(rebuild) = migrations.iter().find(|migration| {
-        matches!(migration.kind, MigrationKind::Rebuild(_))
-            && !applied.iter().any(|name| name == migration.name)
+    // A migration needs a pre-upgrade snapshot when re-running it cannot
+    // recover its rows: a rebuild (037, 038) copies through a staging table
+    // that a crash can leave half-built, and a `DROP TABLE` (064-073)
+    // destroys rows outright. An `ALTER`/`CREATE`/`UPDATE` does not — a
+    // failed one leaves the prior schema and data exactly as they were, so
+    // simply retrying `run_all` is enough.
+    let Some(destructive) = migrations.iter().find(|migration| {
+        let needs_snapshot = match migration.kind {
+            MigrationKind::Rebuild(_) => true,
+            MigrationKind::Ordinary(statements) => statements
+                .iter()
+                .any(|statement| statement.contains("DROP TABLE")),
+        };
+        needs_snapshot && !applied.iter().any(|name| name == migration.name)
     }) else {
         return Ok(());
     };
@@ -295,7 +316,7 @@ async fn create_pre_upgrade_backup_if_needed(
         return Ok(());
     }
 
-    let backup_path = format!("{database_file}.before-{}.sqlite", rebuild.name);
+    let backup_path = format!("{database_file}.before-{}.sqlite", destructive.name);
     // VACUUM INTO creates a transactionally consistent SQLite snapshot. Do not
     // overwrite it: after a failed attempt the first pre-upgrade image is the
     // recovery artifact, not disposable cache. A pre-existing file therefore
@@ -306,12 +327,12 @@ async fn create_pre_upgrade_backup_if_needed(
         .await
     {
         Ok(_) => info!(
-            migration = rebuild.name,
+            migration = destructive.name,
             backup_path, "Created automatic pre-upgrade backup"
         ),
         Err(error) if error.to_string().contains("already exists") => {
             info!(
-                migration = rebuild.name,
+                migration = destructive.name,
                 backup_path, "Reusing automatic pre-upgrade backup"
             )
         }
@@ -956,7 +977,7 @@ const MIGRATION_025: [&str; 4] = [
     // orch_tasks/orch_runs/orch_events/orch_approvals, a sample has no natural key
     // across scrapes — the same name+labels recorded at two different scrape times are
     // two distinct data points, not a correction of one another — so this table has no
-    // ON CONFLICT upsert path (see repo/orch.rs's upsert_orch_metrics doc comment).
+    // ON CONFLICT upsert path — every scrape is inserted as a new row, never merged.
     // `labels` is a canonical (BTreeMap-key-sorted) JSON object so the same logical
     // label set always serializes identically; the retention rollup (026/027) and the
     // "latest sample per metric" query (GET /api/metrics) both depend on that.
@@ -1189,9 +1210,9 @@ const MIGRATION_036: [&str; 1] =
 // once the run reports in. Doing that against a single-column PK means
 // inserting a placeholder row keyed on the correlation id and then
 // "backfilling" the provider's real id once it's known — which is a *second*
-// row under a different primary key, because `ON CONFLICT(run_id)`
-// (`repo/orch.rs::upsert_orch_runs`) has no way to notice the two rows are the
-// same run. Every run dispatched this way would double from that point on.
+// row under a different primary key, because an `INSERT ... ON
+// CONFLICT(run_id)` upsert has no way to notice the two rows are the same
+// run. Every run dispatched this way would double from that point on.
 // Rebuilding the primary key around `(control_plane_id, external_run_id,
 // run_attempt)` with a separate, nullable `correlation_id` column sidesteps
 // this entirely: the correlation id and the provider id are different columns
@@ -1212,10 +1233,13 @@ const MIGRATION_036: [&str; 1] =
 // and commits the migration record last. A statement failure rolls the whole
 // transaction back, leaving a retryable original table and no staging residue.
 //
-// **This is the only step in the whole cycle that rewrites existing rows.**
-// Before a file-backed database enters its first pending rebuild, `run_all`
-// creates a consistent `VACUUM INTO` snapshot beside it. That snapshot is an
-// additional recovery artifact, not a substitute for the atomic copy/swap.
+// **These rebuilds are irrecoverable by retry alone** — a crash mid-copy
+// leaves a staging table, not the original data — and so is a `DROP TABLE`
+// elsewhere in this file. Before a file-backed database enters its first
+// pending rebuild or table drop, `run_all` creates a consistent `VACUUM
+// INTO` snapshot beside it (`create_pre_upgrade_backup_if_needed`). That
+// snapshot is an additional recovery artifact, not a substitute for the
+// atomic copy/swap a rebuild itself performs.
 
 // Every existing column is carried across unchanged; `run_id` is copied into
 // the new `external_run_id` (positionally, not by name, in the INSERT below)
@@ -1618,3 +1642,29 @@ const MIGRATION_061: [&str; 2] = [
 ];
 const MIGRATION_062: [&str; 1] = ["ALTER TABLE projects ADD COLUMN default_model TEXT"];
 const MIGRATION_063: [&str; 1] = ["DROP TABLE model_profiles"];
+
+// ─── Retiring the legacy Docket bridge ─────────────────────────────────────
+//
+// Every orch_* table except orch_tasks carries `control_plane_id TEXT NOT
+// NULL REFERENCES control_planes(id) ON DELETE CASCADE` (orch_tasks
+// references items(id) instead). SQLite applies a referencing row's `ON
+// DELETE` action to `DROP TABLE` on the referenced table exactly as it would
+// to a `DELETE`, so dropping control_planes before its children here would
+// silently cascade-delete every child table's rows — leaving the tables
+// themselves standing, empty, for their own `DROP TABLE` below to remove
+// with nothing left to snapshot. control_planes is therefore the last table
+// dropped in this batch. Each `DROP TABLE` is its own migration, per the
+// one-statement-per-migration rule: the runner applies a migration's
+// statements with no wrapping transaction across migrations, so a later one
+// failing can never leave an earlier one half-undone.
+const MIGRATION_064: [&str; 1] = ["DROP TABLE orch_links"];
+const MIGRATION_065: [&str; 1] = ["DROP TABLE orch_tasks"];
+const MIGRATION_066: [&str; 1] = ["DROP TABLE orch_runs"];
+const MIGRATION_067: [&str; 1] = ["DROP TABLE orch_events"];
+const MIGRATION_068: [&str; 1] = ["DROP TABLE orch_approvals"];
+const MIGRATION_069: [&str; 1] = ["DROP TABLE orch_metrics"];
+const MIGRATION_070: [&str; 1] = ["DROP TABLE orch_events_daily"];
+const MIGRATION_071: [&str; 1] = ["DROP TABLE orch_metrics_daily"];
+const MIGRATION_072: [&str; 1] = ["DROP TABLE orch_trace_cursors"];
+// The parent every other table in this batch referenced; must run last.
+const MIGRATION_073: [&str; 1] = ["DROP TABLE control_planes"];

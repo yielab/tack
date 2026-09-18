@@ -255,25 +255,19 @@ pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force:
 ///
 /// This list only covers `app_meta`. **This is not the only thing
 /// [`scrub_snapshot_secrets`] scrubs** — any other table that grows a
-/// secret-bearing column (like `control_planes.token`, migration 019, or
-/// `control_planes.secrets`, migration 033 — a GitHub Actions plane's API
-/// credential and webhook signing secret, packed into one JSON blob) needs its
-/// own dedicated block in that function, following the same
-/// null-before-VACUUM shape. Read that function's doc comment before adding a
-/// new secret column anywhere in the schema.
+/// secret-bearing column needs its own dedicated block in that function,
+/// following the same null-before-VACUUM shape. Read that function's doc
+/// comment before adding a new secret column anywhere in the schema.
 const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
 
 /// Strip machine-local secrets/identity from a freshly-created snapshot DB
 /// file so they never ship inside a downloadable or uploadable bundle.
 ///
 /// The single chokepoint for scrubbing backup secrets — every table with a
-/// secret-bearing column must be handled here: `app_meta`'s
-/// [`SENSITIVE_META_KEYS`] are deleted outright; `control_planes.token`
-/// (migration 019) and `control_planes.secrets` (migration 033) are set to
-/// `NULL` rather than deleting the row, so a restore still shows which
-/// planes were registered and the operator just re-enters the secret(s).
-/// Removing `install_id` means a restore regenerates a fresh one via
-/// [`install_id`] on first use, never adopting the source install's identity.
+/// secret-bearing column must be handled here: today that is only
+/// `app_meta`'s [`SENSITIVE_META_KEYS`], deleted outright. Removing
+/// `install_id` means a restore regenerates a fresh one via [`install_id`]
+/// on first use, never adopting the source install's identity.
 ///
 /// **Add new secret columns here, not just to this doc comment**, and
 /// before the trailing `VACUUM` so the freed bytes actually drop from the
@@ -303,47 +297,7 @@ pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
             .await?;
     }
 
-    // control_planes (migration 019) may not exist in a snapshot taken from a
-    // pre-019 database — guard with sqlite_master rather than assuming the
-    // table is there, same defensive posture as the app_meta CREATE above.
-    // Null the token only; the row itself (name, base_url, health, …) must
-    // survive so a restore still shows which planes were registered.
-    let has_control_planes: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'control_planes'",
-    )
-    .fetch_optional(&mut conn)
-    .await?;
-    if has_control_planes.is_some() {
-        sqlx::query("UPDATE control_planes SET token = NULL WHERE token IS NOT NULL")
-            .execute(&mut conn)
-            .await?;
-    }
-
-    // control_planes.secrets (migration 033) is newer than the table itself
-    // (migration 019), so `has_control_planes` alone is not a sufficient guard:
-    // a snapshot taken from a pre-033 database has the table but not yet this
-    // column, and an UPDATE naming an absent column is a hard sqlx error, not a
-    // no-op — it would abort the whole scrub function before the VACUUM below
-    // ever runs, which would leave the app_meta secrets deleted above but the
-    // freed pages never rewritten. Check the column's presence via
-    // pragma_table_info before touching it, same defensive posture as guarding
-    // the table's presence via sqlite_master above. Null, not delete, for the
-    // same reason as token: the row must survive so a restore still shows which
-    // planes were registered — the operator re-enters both secrets afterwards.
-    if has_control_planes.is_some() {
-        let has_secrets_column: Option<String> = sqlx::query_scalar(
-            "SELECT name FROM pragma_table_info('control_planes') WHERE name = 'secrets'",
-        )
-        .fetch_optional(&mut conn)
-        .await?;
-        if has_secrets_column.is_some() {
-            sqlx::query("UPDATE control_planes SET secrets = NULL WHERE secrets IS NOT NULL")
-                .execute(&mut conn)
-                .await?;
-        }
-    }
-
-    // A plain DELETE/UPDATE leaves the secret bytes in freed/overwritten pages
+    // A plain DELETE leaves the secret bytes in freed/overwritten pages
     // (the SQLite freelist), so a hex-dump of the snapshot would still reveal
     // them. VACUUM rewrites the file and physically drops that content — it
     // must run after every scrub step above, not before.

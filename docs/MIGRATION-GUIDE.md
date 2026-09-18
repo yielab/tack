@@ -34,15 +34,18 @@ execution request, upgrading is exactly one step:
      is what prevents silently running an edited or reordered migration history.
    - Every ordinary migration runs inside its own transaction; a failing statement
      rolls the whole migration back rather than leaving a half-applied schema.
-   - A small number of migrations (037, 038 — a pre-Part-III `COPY`/verify/swap
-     table rebuild) are a different, higher-risk kind: **before the first attempt at
-     one of these**, Tack automatically takes a `VACUUM INTO` snapshot named
-     `<your-db-file>.before-<migration-name>.sqlite`, next to your database file. It
-     is never overwritten by a retry — the first pre-upgrade image is the recovery
-     artifact. See `docs/adr/0008-transactional-migration-rebuild-recovery.md` for
-     the full design rationale. If you're already past 038 (any Tack released after
-     Part III began), this snapshot step is inert for future upgrades — it only
-     fires again if a future rebuild-class migration is added.
+   - A small number of migrations are a different, higher-risk kind, because a
+     failed one can't just be retried from the prior schema: 037/038 (a
+     pre-Part-III `COPY`/verify/swap table rebuild) and 064–073 (dropping the
+     legacy Docket control-plane bridge's tables outright — see below).
+     **Before the first attempt at one of these**, Tack automatically takes a
+     `VACUUM INTO` snapshot named `<your-db-file>.before-<migration-name>.sqlite`,
+     next to your database file. It is never overwritten by a retry — the first
+     pre-upgrade image is the recovery artifact. See
+     `docs/adr/0008-transactional-migration-rebuild-recovery.md` for the rebuild
+     migrations' own design rationale. If you're already past 073, this snapshot
+     step is inert for future upgrades — it only fires again if a future
+     destructive migration is added.
    - The rebuild migrations themselves run with `PRAGMA defer_foreign_keys=ON` inside
      their transaction, compare row counts and an explicit bidirectional column
      projection between the old and new table before dropping the original, and run
@@ -57,8 +60,22 @@ execution request, upgrading is exactly one step:
 `GET /api/health` reports `migrations_applied` — read that field rather than a
 hand-written count, which this document does not track. Migrations 039–048 added the
 ten neutral runner-v1 execution tables; later ones refined execution replay, recovery
-and attempt-start facts. None of them are destructive to data written by an earlier
-version: every one of them is additive.
+and attempt-start facts; 063 dropped the unused `model_profiles` table; 064–073 drop
+the legacy Docket control-plane bridge (below). Everything from 039 through 062 is
+additive; 063 and 064–073 are the only migrations in this history that remove data.
+
+This upgrade drops the legacy Docket control-plane bridge: `control_planes` and the
+nine `orch_*` tables — agent-fleet/control-plane registrations, dispatched tasks,
+runs, events, approvals, metrics and their daily rollups, and trace cursors. If you
+had registered a Docket control plane, dispatched work through it, or read its
+per-item token/cost counts, none of that survives in the running database after this
+upgrade — the rows exist only in the automatic pre-upgrade `VACUUM INTO` snapshot
+this upgrade takes beside your database file (see step 3 above). That snapshot is a
+full copy of the database as it was, so it holds the control-plane tokens you had stored,
+unencrypted: keep it where your database backups live, and delete it once you no longer
+need those rows. Docket itself stays
+reachable as a harness on a runner-v1 execution request
+([Agent Runners](book/src/user-guide/agent-runners.md)); only the old bridge is gone.
 
 ---
 
