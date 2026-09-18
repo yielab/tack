@@ -616,17 +616,6 @@ pub struct ProjectTemplate {
     pub workflow: WorkflowConfig,
     pub custom_fields: Vec<CustomFieldDefinition>,
     pub default_boards: Vec<BoardTemplate>,
-    /// Optional agent-fleet defaults for a project created from this
-    /// template. `#[serde(default)]` — absent means
-    /// "this template does not touch orchestration," the same
-    /// absent-means-nothing rule `Item::source` (migration 029) established
-    /// for backward compatibility. `None` is the value every
-    /// template had before this field existed and every built-in has today;
-    /// nothing reads this field unless it is `Some`, so a template with no
-    /// `orchestration` block behaves exactly as it did before this field
-    /// existed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub orchestration: Option<TemplateOrchestration>,
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -654,116 +643,6 @@ pub struct CreateProjectTemplate {
     pub workflow: Option<WorkflowConfig>,
     pub custom_fields: Option<Vec<CustomFieldDefinition>>,
     pub default_boards: Option<Vec<BoardTemplate>>,
-    /// See [`ProjectTemplate::orchestration`]. Validated at save time by
-    /// `tack-api`'s `handlers::templates::create_template` — this type is
-    /// pure data (tack-core has zero I/O), so the validation itself lives
-    /// one layer up, reusing `handlers::orch::validate_status_map` (the
-    /// `status_map` validator) rather than duplicating it.
-    #[serde(default)]
-    pub orchestration: Option<TemplateOrchestration>,
-}
-
-/// Agent-fleet defaults captured on a template. Plain
-/// `create_project_from_template` stores it and moves on — nothing in this
-/// struct is applied automatically there. Turning it into a live
-/// `orch_links` row needs a `control_plane_id` pointing at one specific,
-/// already-registered docket instance, which that plain from-template path
-/// never has. On this struct itself there is no route, no dispatch — just a
-/// JSON blob riding along with the template.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct TemplateOrchestration {
-    /// docket pod blueprint. Verified against `core/blueprints.py`:
-    /// exactly these five values exist server-side today.
-    /// Unlike the remote-state enums in `tack-orch` (`RunState` etc.),
-    /// this is a value Tack *sends*, not one it decodes from docket's
-    /// output, so no `Unknown` fallback here: an
-    /// unrecognised blueprint name is a real authoring mistake worth
-    /// rejecting, not a forward-compat case to shrug off.
-    #[serde(default)]
-    pub blueprint: OrchBlueprint,
-    /// Inline docket pipeline YAML — the "pipeline library" entry (task
-    /// 37.3). Stored as a template field rather than a new `pipelines`
-    /// table: the roadmap names both as acceptable, and a template is
-    /// already a named, reusable, save-time-validated bundle, so a second
-    /// storage concept alongside it would just be a template under another
-    /// name. See `handlers::templates::validate_template_orchestration`
-    /// for what "validated" means here — deliberately narrower than
-    /// docket's own schema; see that function's doc comment.
-    #[serde(default)]
-    pub pipeline_yaml: Option<String>,
-    /// A pipeline docket already knows about by name/path, for a template
-    /// that would rather point at one than ship inline YAML. Mirrors
-    /// `orch_links.pipeline_file`. Not mutually exclusive with
-    /// `pipeline_yaml`, but only this field currently reaches docket:
-    /// `handlers::provisioning` has no `POST /pods` field for inline YAML
-    /// yet, so a template with `pipeline_yaml` set and no `pipeline_file`
-    /// surfaces a non-fatal warning instead of silently dropping it.
-    #[serde(default)]
-    pub pipeline_file: Option<String>,
-    #[serde(default)]
-    pub verify_cmd: Option<String>,
-    /// Default budget *cap* for a project created from this template — an
-    /// operator-set ceiling, not a derived spend figure, so it stays
-    /// unsuffixed exactly like `orch_links.budget_usd`. The naming rule
-    /// that requires an `_estimated` suffix governs *estimated spend*
-    /// fields (`cost_usd_estimated`); a cap the operator chooses is a
-    /// different thing and is out of that rule's scope.
-    #[serde(default)]
-    pub budget_usd: Option<f64>,
-    #[serde(default)]
-    pub status_map: TemplateStatusMap,
-    #[serde(default)]
-    pub auto_dispatch: bool,
-    /// Mirrors docket's `POST /pods` `pod` field, which
-    /// (`serve.py::_handle_post_pods`) accepts only `"full"` or absent.
-    /// Stored permissively here (no enum, no validation) — enforcing that
-    /// exact constraint happens at provisioning time, when the real
-    /// `POST /pods` body is built; guessing at it here would just be a
-    /// second, driftable copy of a one-value check.
-    #[serde(default)]
-    pub pod_shape: Option<String>,
-}
-
-/// docket pod blueprint names (`core/blueprints.py`).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum OrchBlueprint {
-    #[default]
-    Software,
-    Research,
-    Content,
-    Ops,
-    AgenticProduct,
-}
-
-/// A template's default `status_map`. Field-for-field
-/// identical to `tack_api::handlers::orch::StatusMap` by design — the two
-/// are kept in lockstep deliberately (a template's map becomes a project's
-/// `orch_links.status_map` verbatim once something applies it) — but they
-/// stay two distinct Rust types because `tack-core` cannot depend on
-/// `tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment
-/// applies here too: dependencies point inward, tack-core has zero I/O and
-/// zero knowledge of the HTTP layer). Validation is not duplicated: the
-/// handler converts this into an `orch::StatusMap` and calls
-/// `orch::validate_status_map` directly — see
-/// `handlers::templates::validate_template_orchestration`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct TemplateStatusMap {
-    #[serde(default)]
-    pub dispatch_from: Vec<String>,
-    #[serde(default)]
-    pub on_running: Option<String>,
-    #[serde(default)]
-    pub on_waiting_approval: Option<String>,
-    #[serde(default)]
-    pub on_succeeded: Option<String>,
-    #[serde(default)]
-    pub on_failed: Option<String>,
-    #[serde(default)]
-    pub on_cancelled: Option<String>,
 }
 
 // ─── Custom Fields ───────────────────────────────────────────

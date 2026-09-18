@@ -43,9 +43,8 @@ use tack_core::models::{
     CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
     CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemRole, ItemSource,
-    ItemType, OrchBlueprint, Priority, Project, ProjectTemplate, ProjectType, Role,
-    SetCustomFieldValue, Sprint, SprintStatus, TemplateOrchestration, TemplateStatusMap,
-    UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
+    ItemType, Priority, Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint,
+    SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
 };
 use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig, WorkflowType};
 
@@ -1035,9 +1034,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         Board,
         BoardGrouping,
         ProjectTemplate,
-        TemplateOrchestration,
-        TemplateStatusMap,
-        OrchBlueprint,
         CustomFieldDefinition,
         CustomFieldType,
         CustomFieldValue,
