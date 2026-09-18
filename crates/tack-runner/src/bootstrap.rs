@@ -19,10 +19,7 @@ use crate::{
         AttemptDataProtocol, HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy,
         RunnerEngine, WorkspaceManager, workspace::git::GitWorktreeProvisioner,
     },
-    harness::{
-        AdapterRegistry, HarnessProbe, PROCESS_GROUP_CANCEL_CEILING,
-        claude_code::ClaudeCodeAdapter, codex::CodexAdapter, process::ProcessLimits,
-    },
+    harness::{AdapterRegistry, PROCESS_GROUP_CANCEL_CEILING, process::ProcessLimits},
 };
 
 /// The concrete runtime this crate ships: the real HTTP protocol, every
@@ -60,7 +57,7 @@ pub async fn build_runtime(
     // that otherwise cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
     let secrets = SecretStore::open(&config.secret_store_path());
-    let adapters = build_adapter_registry(
+    let (adapters, _) = crate::harness::discover(
         &limits.harness_process,
         &staging_root,
         &secrets,
@@ -113,15 +110,13 @@ pub async fn run(
 
 /// What probing this machine's harness installations found: a
 /// [`RunnerCapabilities`] identical to what enrollment/refresh would send,
-/// plus [`ClaudeCodeAdapter::discover`]'s own error when Claude Code could
-/// not be registered at all — [`build_adapter_registry`] never registers an
-/// adapter or probe for a harness whose `discover` fails, so a missing
-/// `claude` binary leaves no trace in `capabilities.harnesses` (Codex, by
-/// contrast, is always registered, surfacing absence as a `probe_error`).
+/// plus, per harness kind, why a harness that is not installed could not be
+/// located — such a harness is never registered, so it leaves no trace in
+/// `capabilities.harnesses`.
 #[derive(Debug, Clone)]
 pub struct DiscoveryReport {
     pub capabilities: RunnerCapabilities,
-    pub claude_code_discovery_error: Option<String>,
+    pub missing_harnesses: BTreeMap<String, String>,
     /// Which backend `secrets` answered from — `tack runner doctor` prints
     /// this so a file is never mistaken for a keychain.
     pub secret_backend: crate::secrets::SecretBackendKind,
@@ -135,7 +130,7 @@ pub struct DiscoveryReport {
 /// performs, without building a full runtime or requiring a server or
 /// enrollment credential. `tack runner doctor` is the only caller: it needs
 /// to report what this machine can do without enrolling a runner, reusing
-/// [`build_adapter_registry`]/[`report_capabilities`] so exactly one place
+/// [`crate::harness::discover`]/[`report_capabilities`] so exactly one place
 /// decides how a harness gets probed. `secrets` is never resolved against
 /// during a probe, only asked which backend it is.
 pub async fn probe(
@@ -144,74 +139,17 @@ pub async fn probe(
     secrets: &SecretStore,
     providers: &BTreeMap<String, crate::config::ProviderConfig>,
 ) -> DiscoveryReport {
-    let adapters = build_adapter_registry(process_limits, staging_root, secrets, providers);
+    let (adapters, missing_harnesses) =
+        crate::harness::discover(process_limits, staging_root, secrets, providers);
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     let provider_catalog =
         crate::provider::attach_catalog(&mut capabilities, providers, secrets, &SystemClock).await;
     DiscoveryReport {
         capabilities,
-        claude_code_discovery_error: ClaudeCodeAdapter::discover(secrets.clone()).err(),
+        missing_harnesses,
         secret_backend: secrets.backend(),
         provider_catalog,
     }
-}
-
-/// Registers every harness whose binary this machine actually has. A
-/// harness that cannot be discovered is **not registered**: `resolve` then
-/// reports a typed "no adapter registered" instead of accepting an attempt
-/// it could never run. Each harness needs two instances because
-/// `register_adapter`/`register_probe` each take an owned box, so the
-/// adapter's version cache is separate from the probe's.
-fn build_adapter_registry(
-    process_limits: &ProcessLimits,
-    staging_root: &Path,
-    secrets: &SecretStore,
-    providers: &BTreeMap<String, crate::config::ProviderConfig>,
-) -> AdapterRegistry {
-    let mut registry = AdapterRegistry::new();
-
-    let codex = CodexAdapter::discover(
-        process_limits.clone(),
-        staging_root.to_path_buf(),
-        secrets.clone(),
-    )
-    .with_providers(providers.clone());
-    let kind = HarnessProbe::harness_kind(&codex);
-    registry.register_adapter(kind, Box::new(codex));
-    if registry
-        .register_probe(Box::new(
-            CodexAdapter::discover(
-                process_limits.clone(),
-                staging_root.to_path_buf(),
-                secrets.clone(),
-            )
-            .with_providers(providers.clone()),
-        ))
-        .is_err()
-    {
-        tracing::warn!(harness = "codex", "probe rejected at registration");
-    }
-
-    match ClaudeCodeAdapter::discover(secrets.clone()) {
-        Ok(adapter) => {
-            let adapter = adapter.with_providers(providers.clone());
-            let kind = HarnessProbe::harness_kind(&adapter);
-            registry.register_adapter(kind, Box::new(adapter));
-            match ClaudeCodeAdapter::discover(secrets.clone()) {
-                Ok(probe) => {
-                    let probe = probe.with_providers(providers.clone());
-                    if registry.register_probe(Box::new(probe)).is_err() {
-                        tracing::warn!(harness = "claude_code", "probe rejected at registration");
-                    }
-                }
-                Err(_) => tracing::warn!(harness = "claude_code", "probe could not be built"),
-            }
-        }
-        // The reason string can name a filesystem path; only the fact is logged.
-        Err(_) => tracing::info!(harness = "claude_code", "binary not found; not registered"),
-    }
-
-    registry
 }
 
 /// Builds the capability snapshot sent at enrollment and on every refresh.

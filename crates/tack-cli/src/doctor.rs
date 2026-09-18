@@ -16,21 +16,14 @@ use tack_runner::{
     RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
 };
 
-/// Irrelevant to a probe (each adapter's own `--version` call is bounded by
-/// a separate, shorter, internal timeout — see e.g.
-/// `harness::codex::DEFAULT_PROBE_TIMEOUT`), but `build_adapter_registry`
+/// Irrelevant to a probe (the `--version` call is bounded by its own,
+/// shorter, internal timeout), but `harness::discover`
 /// requires a value and this command never constructs a real `RunnerConfig`
 /// to source one from. Mirrors `local_runner.rs`'s own
 /// `HARNESS_PROCESS_LIMITS` so the two callers of the same composition root
 /// stay visibly consistent.
 const PROCESS_LIMITS: ProcessLimits =
     ProcessLimits::new(4 * 1024 * 1024, 1024 * 1024, Duration::from_secs(3_600));
-
-/// The harnesses this build knows how to probe, in the fixed order the
-/// report displays them — never the registry's own `BTreeMap` iteration
-/// order, which is keyed by wire string and would silently reorder if a
-/// kind's spelling changed.
-const KNOWN_HARNESS_KINDS: [&str; 2] = ["codex", "claude-code"];
 
 /// Runs the probe and prints the report; `as_json` switches to the raw
 /// [`tack_orch::execution::RunnerCapabilities`] snapshot instead of the
@@ -72,8 +65,7 @@ enum HarnessStatus<'a> {
     Present {
         version: &'a str,
     },
-    /// The binary was found (and, for Codex, actually spawned) but
-    /// a probe step failed — an unparseable version string, a nonzero exit,
+    /// The binary was found but a probe step failed — an unparseable version string, a nonzero exit,
     /// or a timed-out process. Distinct from `Absent`:
     /// this machine can find the harness, something about probing it went
     /// wrong.
@@ -86,34 +78,24 @@ enum HarnessStatus<'a> {
     },
 }
 
-/// Classifies one harness kind from the raw probe output.
-///
-/// Codex is always registered regardless of whether its
-/// binary exists (`bootstrap::build_adapter_registry`'s doc comment), so
-/// its absence surfaces as a `probe_error` on its own
-/// [`HarnessCapability`] entry — specifically the literal `"<name> was not
-/// found on PATH"` every `*Locator::resolve` in this tree produces (see
-/// `codex.rs`), which is what distinguishes it here from every
-/// other probe failure (malformed output, nonzero exit, timeout) that same
-/// field also carries. Claude Code is different: a
-/// missing binary means `ClaudeCodeAdapter::discover` never runs at all, so
-/// there is no entry to inspect — `claude_code_discovery_error` is the only
-/// place that failure is recorded.
+/// Classifies one harness kind from the raw probe output. A harness whose
+/// binary could not be located is never registered, so it has no capability
+/// entry; `missing` holds why.
 fn classify<'a>(
     kind: &str,
     harnesses: &'a [HarnessCapability],
-    claude_code_discovery_error: Option<&'a str>,
+    missing: &'a BTreeMap<String, String>,
 ) -> HarnessStatus<'a> {
     let Some(capability) = harnesses.iter().find(|h| h.harness_kind.as_str() == kind) else {
-        let reason = claude_code_discovery_error.unwrap_or("harness not registered");
+        let reason = missing
+            .get(kind)
+            .map_or("harness not registered", String::as_str);
         return HarnessStatus::Absent { reason };
     };
-
     match &capability.probe_error {
         None => HarnessStatus::Present {
             version: &capability.installed_version,
         },
-        Some(reason) if reason.contains("not found on PATH") => HarnessStatus::Absent { reason },
         Some(reason) => HarnessStatus::ProbeError {
             version: (!capability.installed_version.is_empty())
                 .then_some(capability.installed_version.as_str()),
@@ -127,12 +109,9 @@ fn render(report: &bootstrap::DiscoveryReport) {
     println!("Tack runner doctor — harness discovery for this machine");
     println!();
 
-    for kind in KNOWN_HARNESS_KINDS {
-        let status = classify(
-            kind,
-            &capabilities.harnesses,
-            report.claude_code_discovery_error.as_deref(),
-        );
+    for descriptor in tack_runner::harness::DESCRIPTORS {
+        let kind = descriptor.kind;
+        let status = classify(kind, &capabilities.harnesses, &report.missing_harnesses);
 
         println!("{kind}");
         match status {
@@ -152,7 +131,7 @@ fn render(report: &bootstrap::DiscoveryReport) {
                 println!("  reason:      {reason}");
             }
         }
-        println!("  credentials: {}", credential_note(kind));
+        println!("  credentials: {}", descriptor.credential_note);
 
         if let Some(capability) = capabilities
             .harnesses
@@ -284,34 +263,6 @@ fn support_label(support: CapabilitySupport) -> &'static str {
         CapabilitySupport::Supported => "supported",
         CapabilitySupport::Unsupported => "unsupported",
         CapabilitySupport::Advisory => "advisory",
-    }
-}
-
-/// Where each harness's provider credential actually lives, grounded in
-/// that adapter's own environment-forwarding code
-/// (`crates/tack-runner/src/harness/{codex,claude_code}.rs`) —
-/// never a guess about which environment variable a CLI reads internally.
-fn credential_note(kind: &str) -> &'static str {
-    match kind {
-        "codex" => {
-            "Codex authenticates itself (its own CLI login flow or an API key it reads from \
-             its own environment/config — see `codex --help`). Tack never reads, stores, or \
-             forwards it. This adapter forwards no ambient host environment into an actual \
-             run: only entries explicitly set on the execution request's own `environment` \
-             field ever reach the codex process."
-        }
-        "claude-code" => {
-            "Claude Code authenticates itself: typically an OAuth session under $HOME/.claude \
-             established by its own login flow, or an API key it reads from its own \
-             environment. Tack never reads, stores, or forwards it. This adapter forwards \
-             only HOME and PATH from the runner process's own environment, so the installed \
-             CLI can find its existing session; anything else must come through the \
-             execution request's own `environment` field."
-        }
-        other => {
-            debug_assert!(false, "unhandled harness kind {other:?}");
-            "unknown harness kind"
-        }
     }
 }
 

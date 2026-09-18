@@ -40,12 +40,6 @@ const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 /// measured while actually running a task (ADR 0061 decision 3).
 pub const CATALOG_DISCOVERY: &str = "catalog_reported";
 
-/// Harness kinds whose adapters apply a [`ProviderEndpoint`] through
-/// per-spawn injection alone (env vars or invocation flags). A harness that
-/// instead needs a written config file or a startup-loaded package stays
-/// off this list — a materially different mechanism this crate doesn't implement.
-const CATALOG_ELIGIBLE_HARNESSES: [&str; 2] = ["claude-code", "codex"];
-
 /// The wire shape a harness adapter already speaks. Selects which
 /// [`Provider::endpoint`] applies and how the adapter injects it —
 /// environment variables for an Anthropic-Messages CLI, invocation flags
@@ -56,15 +50,11 @@ pub enum Wire {
     OpenAiResponses,
 }
 
-/// Which [`Wire`] a catalog-eligible harness kind speaks, so
+/// Which [`Wire`] a harness kind speaks, read from its descriptor, so
 /// [`attach_catalog`] never records a combination for a harness a provider
 /// can't reach (a provider need not serve every wire).
 fn wire_for_harness(harness_kind: &str) -> Option<Wire> {
-    match harness_kind {
-        "claude-code" => Some(Wire::AnthropicMessages),
-        "codex" => Some(Wire::OpenAiResponses),
-        _ => None,
-    }
+    crate::harness::descriptor(harness_kind).map(|descriptor| descriptor.wire)
 }
 
 /// What an adapter must inject to point a spawn at a configured provider:
@@ -165,16 +155,13 @@ pub fn registry() -> Vec<Box<dyn Provider>> {
     ]
 }
 
-/// The catalog-eligible harness kinds this provider's endpoints actually
-/// reach, in [`CATALOG_ELIGIBLE_HARNESSES`] order — for `tack runner
-/// doctor`'s own rendering.
+/// The harness kinds this provider's endpoints reach, in
+/// [`crate::harness::DESCRIPTORS`] order — for `tack runner doctor`.
 pub fn reaches(provider: &dyn Provider) -> Vec<&'static str> {
-    CATALOG_ELIGIBLE_HARNESSES
-        .iter()
-        .filter(|harness_kind| {
-            wire_for_harness(harness_kind).is_some_and(|wire| provider.endpoint(wire).is_some())
-        })
-        .copied()
+    crate::harness::DESCRIPTORS
+        .into_iter()
+        .filter(|descriptor| provider.endpoint(descriptor.wire).is_some())
+        .map(|descriptor| descriptor.kind)
         .collect()
 }
 
@@ -232,7 +219,7 @@ pub fn resolve_endpoint(
 
 /// What asking one configured provider for its model catalog produced — a
 /// typed absence for every non-catalog outcome, matching
-/// `bootstrap::build_adapter_registry`'s own posture toward a harness that
+/// `crate::harness::discover`'s own posture toward a harness that
 /// cannot be discovered: never a stale or placeholder list.
 #[derive(Debug, Clone)]
 pub enum CatalogStatus {
@@ -346,9 +333,6 @@ async fn attach_one_catalog<C: Clock>(
         })
         .collect();
     for harness in capabilities.harnesses.iter_mut() {
-        if !CATALOG_ELIGIBLE_HARNESSES.contains(&harness.harness_kind.as_str()) {
-            continue;
-        }
         let Some(wire) = wire_for_harness(harness.harness_kind.as_str()) else {
             continue;
         };

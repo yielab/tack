@@ -13,9 +13,10 @@ pub mod filesystem;
 pub mod harness;
 pub mod process;
 pub mod provider;
-pub mod registry;
 pub mod runtime;
 pub mod secrets;
+#[cfg(test)]
+pub(crate) mod test_log_capture;
 
 pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
@@ -26,6 +27,5 @@ pub use config::{
 pub use error::{ConfigError, RunnerError};
 pub use filesystem::{LocalFilesystem, RunnerFilesystem};
 pub use process::{ProcessSupervisor, SystemProcessSupervisor};
-pub use registry::HarnessKind;
 pub use runtime::{RunnerRuntime, Shutdown, ShutdownHandle};
 pub use secrets::{SecretBackendKind, SecretError, SecretStore, SecretValue};
