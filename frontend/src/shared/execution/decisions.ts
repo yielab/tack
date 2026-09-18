@@ -87,14 +87,11 @@ const DECISION_TOKEN_STORAGE_KEY = 'tack_execution_decision_token';
 
 /**
  * The operator's own copy of `TACK_EXECUTION_DECISION_TOKEN` — a **second**,
- * higher-privilege secret the server holds, structurally identical to
- * `features/approvals/api.ts`'s `approvalTokenStore` for
- * `TACK_ORCH_APPROVAL_TOKEN` (resolving a decision "releases whatever the
- * harness/runner is blocked on" — `decisions.rs`'s own doc comment makes the
- * identical argument granting an approval does). Session-only, scoped to the
- * configured API origin, never sent automatically — only
- * `decisionsApi.resolve` ever reads it, and only on an actual resolve call,
- * never implicitly.
+ * higher-privilege secret the server holds (resolving a decision "releases
+ * whatever the harness/runner is blocked on" — `decisions.rs`'s own doc
+ * comment makes that argument). Session-only, scoped to the configured API
+ * origin, never sent automatically — only `decisionsApi.resolve` ever reads
+ * it, and only on an actual resolve call, never implicitly.
  */
 export const decisionTokenStore = {
   get(): string | null {
@@ -121,8 +118,7 @@ export const decisionTokenStore = {
  * server at all — `decisions.rs`'s `require_decision_token` is fail-closed
  * (rejects even when unset, never "no secret configured, allow anyway"), so
  * this is the honest, expected shape of "decisions cannot be resolved on
- * this deployment" your card's brief names — never swallowed as a generic
- * error. Mirrors `features/approvals/api.ts#isApprovalTokenRejected` exactly.
+ * this deployment" — never swallowed as a generic error.
  */
 export function isDecisionTokenRejected(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403;

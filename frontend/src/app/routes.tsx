@@ -16,22 +16,14 @@ const Templates     = lazy(() => import('../features/templates/Templates'));
 const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator'));
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
-const Fleet         = lazy(() => import('../features/fleet/FleetPage'));
 const Agents        = lazy(() => import('../features/agents/AgentsPage'));
-const Approvals     = lazy(() => import('../features/approvals/ApprovalsPage'));
-const Economics     = lazy(() => import('../features/economics/EconomicsPage'));
-const ProvisioningWizard = lazy(() => import('../features/provisioning/ProvisioningWizard'));
 
 export const routes: RouteDefinition[] = [
   { path: '/',         component: Projects },
   { path: '/projects', component: Projects },
   { path: '/templates',     component: Templates },
   { path: '/templates/new', component: TemplateCreator },
-  { path: '/fleet',      component: Fleet },
   { path: '/agents',     component: Agents },
-  { path: '/approvals',  component: Approvals },
-  { path: '/economics',  component: Economics },
-  { path: '/provision',  component: ProvisioningWizard },
   { path: '/settings', component: GlobalSettings },
 
   // Project destinations

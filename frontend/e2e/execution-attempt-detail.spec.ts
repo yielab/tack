@@ -148,8 +148,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
 
     // Enter the deployment's real decision token (this file's own
     // `playwright.config.ts` addition configures `TACK_EXECUTION_DECISION_TOKEN`
-    // for exactly this test) — mirrors `features/approvals/ApprovalsPage.tsx`'s
-    // identical token-entry flow.
+    // for exactly this test).
     await drawer.getByLabel('Your decision token').fill('e2e-decision-token');
     await drawer.getByRole('button', { name: 'Save' }).click();
 

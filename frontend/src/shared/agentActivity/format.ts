@@ -11,9 +11,7 @@
 import type { AgentChipState } from '../ui/AgentStateChip';
 
 /** Human-relative time, or an explicit "never"/"unknown" rather than a blank
- *  string. Mirrors `frontend/src/features/fleet/format.ts#relativeTime`
- *  (duplicated, not imported — see `./api.ts`'s note on why this module
- *  can't reach into `features/fleet/**`). */
+ *  string. */
 export function relativeTime(iso: string | null): string {
   if (!iso) return 'never';
   const then = new Date(iso).getTime();

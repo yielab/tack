@@ -12,7 +12,6 @@ import VocabularyPanel from './panels/VocabularyPanel';
 import FieldsPanel from './panels/FieldsPanel';
 import RolesPanel from './panels/RolesPanel';
 import DataPanel from './panels/DataPanel';
-import OrchestrationPanel from './orchestration/OrchestrationPanel';
 
 const TABS: TabItem[] = [
   { id: 'general', label: 'General' },
@@ -22,7 +21,6 @@ const TABS: TabItem[] = [
   { id: 'fields', label: 'Fields' },
   { id: 'roles', label: 'Roles' },
   { id: 'data', label: 'Data' },
-  { id: 'orchestration', label: 'Orchestration' },
 ];
 
 /** One tabbed surface for every project setting. */
@@ -104,9 +102,6 @@ const ProjectSettings: Component = () => {
           </Match>
           <Match when={active() === 'data'}>
             <DataPanel />
-          </Match>
-          <Match when={active() === 'orchestration'}>
-            <Show when={projectId()}>{(id) => <OrchestrationPanel projectId={id()} />}</Show>
           </Match>
         </Switch>
       </Tabs>
