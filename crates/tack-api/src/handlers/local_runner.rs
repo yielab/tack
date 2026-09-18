@@ -158,8 +158,7 @@ pub trait LocalRunnerControl: Send + Sync {
     async fn status(&self) -> RuntimeStatus;
 
     /// Starts the embedded runner if it is not already running. A no-op,
-    /// not an error, if it is (mirrors `OrchRuntime::start`'s idempotency —
-    /// `orch_runtime.rs`).
+    /// not an error, if it is.
     async fn start(&self) -> Result<(), LocalRunnerControlError>;
 
     /// Stops the embedded runner if running. A no-op otherwise.

@@ -1,12 +1,12 @@
 //! Runtime start/stop control for the execution-domain retention sweep and
 //! health watch.
 //!
-//! Mirrors `orch_runtime.rs`'s own start/stop shape (a `tokio::sync::watch`
-//! stop signal, one "generation" tracked at a time) with one deliberate
-//! difference: [`ExecutionRuntime::stop`] *joins* both background tasks —
-//! `server.rs` calls it once, after `axum::serve(...)` returns from graceful
-//! shutdown, so a blocking join here costs nothing (every HTTP request has
-//! already stopped). All retention/observability logic itself lives in
+//! A `tokio::sync::watch` stop signal with one "generation" tracked at a
+//! time, deliberately blocking on stop: [`ExecutionRuntime::stop`] *joins*
+//! both background tasks — `server.rs` calls it once, after
+//! `axum::serve(...)` returns from graceful shutdown, so a blocking join
+//! here costs nothing (every HTTP request has already stopped). All
+//! retention/observability logic itself lives in
 //! `tack_orch::execution_retention`/`execution_observability`; this module
 //! only wires configuration and the repository into those spawn functions.
 
@@ -83,11 +83,10 @@ struct Running {
 /// called after `axum::serve(...)` returns so both background tasks are
 /// guaranteed joined before the process exits.
 ///
-/// Not stored on `AppState` (unlike [`crate::orch_runtime::OrchRuntime`]):
-/// nothing in the current HTTP surface needs to toggle this at runtime. A
-/// local variable in `server.rs::serve()` is sufficient; a future
-/// runtime-toggle route would need to add the field to `AppState` in
-/// `router.rs`.
+/// Not stored on `AppState`: nothing in the current HTTP surface needs to
+/// toggle this at runtime. A local variable in `server.rs::serve()` is
+/// sufficient; a future runtime-toggle route would need to add the field to
+/// `AppState` in `router.rs`.
 pub struct ExecutionRuntime {
     inner: Mutex<Option<Running>>,
 }
@@ -110,7 +109,7 @@ impl ExecutionRuntime {
     /// `*_enable` flag (the two retention-flavored sweeps below share
     /// `retention_enable` — see [`spawn_artifact_and_decision_sweep`]'s doc
     /// comment for why they must). Idempotent: a `start()` while a
-    /// generation is already running is a no-op (mirrors `OrchRuntime::start`).
+    /// generation is already running is a no-op.
     pub async fn start(&self, repo: Repository, config: ExecutionRuntimeConfig) {
         let mut guard = self.inner.lock().await;
         if guard.is_some() {
@@ -178,12 +177,11 @@ impl ExecutionRuntime {
     /// first place — that's not a failure to join, it's nothing to join). A
     /// no-op when nothing is running, mirroring `start()`'s idempotency.
     ///
-    /// This is the load-bearing difference from `OrchRuntime::stop`: it
-    /// really does block until each live task's loop has observed the stop
-    /// signal and returned, at whatever safe point that task defines (never
-    /// mid-transaction — see `execution_retention`/`execution_observability`'s
-    /// own doc comments, and [`spawn_artifact_and_decision_sweep`]'s for the
-    /// third).
+    /// This really does block until each live task's loop has observed the
+    /// stop signal and returned, at whatever safe point that task defines
+    /// (never mid-transaction — see
+    /// `execution_retention`/`execution_observability`'s own doc comments,
+    /// and [`spawn_artifact_and_decision_sweep`]'s for the third).
     pub async fn stop(&self) {
         let mut guard = self.inner.lock().await;
         if let Some(running) = guard.take() {
@@ -366,8 +364,7 @@ mod tests {
         // resolve.
         runtime.stop().await;
 
-        // A second stop() is a harmless no-op (nothing left to signal or
-        // join) — mirrors OrchRuntime's own idempotency guarantee.
+        // A second stop() is a harmless no-op (nothing left to signal or join).
         runtime.stop().await;
     }
 
@@ -408,9 +405,8 @@ mod tests {
         // spawn a second set of tasks (would leak, and a subsequent single
         // stop() would only join one generation's handles) — this only
         // proves it doesn't hang/panic; the no-duplicate-generation
-        // invariant itself mirrors `OrchRuntime::start`'s own tested
-        // behavior (`repeated_global_start_stop_cycles_leave_no_task_running`
-        // in `tack-orch`), same `guard.is_some()` early-return shape.
+        // invariant is enforced by the same `guard.is_some()` early-return
+        // shape as `start()` above.
         runtime.start(repo, config).await;
         runtime.stop().await;
     }

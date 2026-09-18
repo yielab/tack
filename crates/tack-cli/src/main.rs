@@ -280,12 +280,6 @@ enum Commands {
         #[command(subcommand)]
         action: AgentProfileAction,
     },
-
-    /// Trigger a docket pipeline run for a project's linked docket project
-    Orch {
-        #[command(subcommand)]
-        action: OrchAction,
-    },
 }
 
 #[derive(Subcommand)]
@@ -817,47 +811,6 @@ enum AgentProfileAction {
     },
 }
 
-#[derive(Subcommand)]
-enum OrchAction {
-    /// Trigger a docket pipeline run for a project's linked docket project.
-    ///
-    /// docket answers before the pipeline itself runs, so this command can
-    /// only ever report that the run *started* — never that it was
-    /// permitted. Whether it succeeds, fails, or hits a guardrail block only
-    /// becomes visible once Tack's reconciler next polls docket and mirrors
-    /// that run's outcome.
-    Dispatch {
-        /// Tack project ID (must already be linked via the project's
-        /// docket link)
-        project: String,
-        /// Pipeline variables, as a JSON object (default: {})
-        #[arg(long)]
-        variables: Option<String>,
-        /// TACK_ORCH_DISPATCH_TOKEN — this server refuses the request
-        /// outright when it's unset, the same fail-closed default
-        /// TACK_ORCH_APPROVAL_TOKEN already uses
-        #[arg(long, env = "TACK_ORCH_DISPATCH_TOKEN")]
-        dispatch_token: Option<String>,
-        /// Output raw JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read back a pipeline run's mirrored state by its own run id.
-    ///
-    /// Reports what the reconciler last mirrored into Tack's own database —
-    /// never docket itself. A run id `tack orch dispatch` just returned may
-    /// not be mirrored yet: that reports as "not mirrored yet", not an
-    /// error, since Tack cannot tell an un-polled run apart from an unknown
-    /// run id.
-    Run {
-        /// The run id, as returned by `tack orch dispatch`
-        run_id: String,
-        /// Output raw JSON
-        #[arg(long)]
-        json: bool,
-    },
-}
-
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 fn main() -> anyhow::Result<()> {
@@ -1177,16 +1130,6 @@ fn main() -> anyhow::Result<()> {
                 json,
             } => cmd_agent_profile_create(&client, name, instructions, tool_policy, limits, json),
             AgentProfileAction::List { json } => cmd_agent_profile_list(&client, json),
-        },
-
-        Commands::Orch { action } => match action {
-            OrchAction::Dispatch {
-                project,
-                variables,
-                dispatch_token,
-                json,
-            } => cmd_orch_dispatch(&client, project, variables, dispatch_token, json),
-            OrchAction::Run { run_id, json } => cmd_orch_run(&client, run_id, json),
         },
 
         // Already handled above; unreachable but required for exhaustiveness.
@@ -2380,89 +2323,6 @@ fn cmd_agent_profile_list(client: &TackClient, as_json: bool) -> anyhow::Result<
             short_id(p["agent_profile_id"].as_str()),
             p["name"].as_str().unwrap_or("?"),
         ]);
-    }
-    Ok(())
-}
-
-/// `tack orch dispatch <project>`. `variables` is an optional JSON object
-/// string forwarded to docket's pipeline dispatch verbatim; `dispatch_token`
-/// is required — the server refuses the request outright without it, so
-/// this says so plainly here rather than sending a request that can only
-/// come back `403`.
-fn cmd_orch_dispatch(
-    client: &TackClient,
-    project: String,
-    variables: Option<String>,
-    dispatch_token: Option<String>,
-    as_json: bool,
-) -> anyhow::Result<()> {
-    let Some(dispatch_token) = dispatch_token else {
-        anyhow::bail!(
-            "TACK_ORCH_DISPATCH_TOKEN is not set (and --dispatch-token was not given) — \
-             this server refuses to dispatch a docket pipeline without it"
-        );
-    };
-    let variables: serde_json::Value = match variables {
-        Some(raw) => serde_json::from_str(&raw)
-            .map_err(|e| anyhow::anyhow!("--variables must be a JSON object: {e}"))?,
-        None => json!({}),
-    };
-    let body = json!({ "variables": variables });
-    let resp = client.post_with_headers(
-        &format!("/projects/{project}/orch-dispatch"),
-        &body,
-        &[("x-tack-dispatch-token", dispatch_token.as_str())],
-    )?;
-    if as_json {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
-        return Ok(());
-    }
-    let run_id = resp["run_id"].as_str().unwrap_or("?");
-    let remote_project = resp["remote_project"].as_str().unwrap_or("?");
-    println!("Dispatch started for docket project {remote_project}: run {run_id}");
-    println!(
-        "  This confirms docket accepted the request and started the run — not that it was \
-         permitted. docket's own guardrails run after this response is sent; the outcome \
-         (success, failure, or a guardrail block) becomes visible in Tack once the \
-         reconciler's next poll mirrors it."
-    );
-    Ok(())
-}
-
-/// `tack orch run <run_id>`, pairing with `tack orch dispatch`. Reads back
-/// whatever the reconciler has mirrored for this run id — never docket
-/// itself, so a run just dispatched can legitimately report as not yet
-/// mirrored.
-fn cmd_orch_run(client: &TackClient, run_id: String, as_json: bool) -> anyhow::Result<()> {
-    let resp = client.get(&format!("/orch-runs/{run_id}"))?;
-    if as_json {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
-        return Ok(());
-    }
-    let mirrored = resp["mirrored"].as_bool().unwrap_or(false);
-    if !mirrored {
-        println!("Run {run_id}: not mirrored yet");
-        println!(
-            "  Tack has not observed this run id yet — either it hasn't been polled since \
-             it was dispatched, or the id is wrong. Both look identical from here; try again \
-             after the next reconciler poll."
-        );
-        return Ok(());
-    }
-    let state = resp["state"].as_str().unwrap_or("?");
-    let remote_project = resp["remote_project"].as_str().unwrap_or("?");
-    println!("Run {run_id}: {state} (project {remote_project})");
-    if let Some(started_at) = resp["started_at"].as_str() {
-        println!("  Started: {started_at}");
-    }
-    if let Some(ended_at) = resp["ended_at"].as_str() {
-        println!("  Ended:   {ended_at}");
-    }
-    if let Some(error) = resp["error"].as_str() {
-        println!("  Error:   {error}");
-    }
-    if let Some(mirrored_at) = resp["mirrored_at"].as_str() {
-        println!("  Mirrored at: {mirrored_at}");
     }
     Ok(())
 }

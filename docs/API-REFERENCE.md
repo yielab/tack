@@ -55,17 +55,15 @@ read from the request, so a trusted-looking header cannot impersonate another
 caller. See [Administration & Security](book/src/user-guide/administration.md) for
 setup.
 
-A handful of privileged operator actions carry their **own** token, distinct from
+A privileged operator action carries its **own** token, distinct from
 `TACK_API_TOKEN` and fail-closed when unset (the route rejects rather than falling
 back to the operator token):
 
 | Token | Gates |
 |---|---|
-| `TACK_ORCH_APPROVAL_TOKEN` | `POST /api/approvals/{token}` — grant/deny a docket approval |
-| `TACK_ORCH_DISPATCH_TOKEN` | `POST /api/projects/{id}/orch-dispatch` — trigger a docket pipeline run |
 | `TACK_EXECUTION_DECISION_TOKEN` | `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve` |
 
-None of these three is ever logged.
+It is never logged.
 
 ### Runner protocol surface — `/api/runner/v1`
 
@@ -112,8 +110,6 @@ ws.onmessage = (event) => {
 |---|---|
 | `ItemCreated` / `ItemUpdated` / `ItemDeleted` | `{event_type, project_id, item_id, timestamp}` |
 | `BoardConfigUpdated` / `SprintUpdated` | `{event_type, project_id, timestamp}` (+ full object for `SprintUpdated`) |
-| `AgentRunUpdated` | `{project_id, item_id, run_id, state}` — a mirrored orchestrated run changed state |
-| `ApprovalPending` | `{project_id, item_id, token, action}` — not emitted on every re-poll |
 | `Ping` | `{}` — periodic keepalive |
 
 The channel is a single Tokio broadcast (capacity 100) shared by every project;
@@ -272,27 +268,9 @@ Content-Type: application/json
 
 Polling `GET /api/executions/{request_id}/attempts` after this, on a live embedded
 runner, reached `"state": "succeeded"` in the same real run — see the agent-runners
-walkthrough linked above for the full attempt body.
-
-`dispatch_project_pipeline` (`POST /api/projects/{id}/orch-dispatch`, ADR 0065)
-resolves the docket project from the caller's existing `orch-link` and triggers a
-full pipeline run there — **the response reports only that docket accepted the
-request and started a run, never that the run was permitted.** docket's
-`POST /dispatch/{project}` creates the run record and answers before the pipeline
-itself executes (guardrail evaluation included), on a thread the response never
-waits on, so a guardrail block is not observable on this route the way it is on
-`/dispatch`'s item-level sibling. Whether the run succeeds, fails, or is blocked
-only becomes visible once Tack's reconciler next polls docket and mirrors that
-run's outcome — see `docs/adr/0065-docket-pipeline-dispatch-trigger.md`.
-`tack orch dispatch <project>` is this route's in-tree CLI caller.
-
-`get_orch_run` (`GET /api/orch-runs/{run_id}`) reads back a dispatched run's
-mirrored state by its own id. It reads Tack's own database only — never docket — so
-it cannot resolve a block any sooner than the reconciler's next poll. A run id with
-no mirrored row yet answers `200` with `"mirrored": false` and every other field
-`null`, never a `404`: Tack cannot tell an un-polled run apart from an unknown run
-id, so it reports the absence rather than guessing which one it is.
-`tack orch run <run_id>` is this route's in-tree CLI caller.
+walkthrough linked above for the full attempt body. docket is reached the same way
+as every other harness, as `--harness docket` on a runner-v1 execution request —
+never through a Tack-side dispatch route.
 
 ---
 
@@ -304,7 +282,7 @@ Every failing response shares one shape:
 { "error": { "status": 404, "message": "Item not found" } }
 ```
 
-A narrow set of responses (e.g. orchestration-disabled, stale-lease) add a `code`
+A narrow set of responses (e.g. stale-lease) add a `code`
 field so a caller can branch on the reason without parsing `message`:
 
 ```json

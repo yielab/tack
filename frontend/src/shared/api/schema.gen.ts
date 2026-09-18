@@ -20,55 +20,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/approvals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/approvals` — the fleet-wide pending-approval inbox, oldest
-         *     first. Read-only; no `TACK_ORCH_APPROVAL_TOKEN` needed (see the
-         *     module-doc section above on why reading and deciding are different
-         *     privilege levels).
-         */
-        get: operations["list_pending_approvals"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/approvals/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/approvals/{token}` — grant or deny a pending approval,
-         *     proxying to docket's own `POST /approvals/{token}` with `channel: "tack"`
-         *     so the decision is honestly attributed in docket's hash-chained audit
-         *     log rather than reading as an anonymous/CLI decision.
-         * @description **Not idempotent, not reversible** — see [`OrchError::AlreadyDecided`]'s
-         *     doc comment for what happens when the token was already resolved
-         *     elsewhere (a normal race for an inbox like this, not a bug): this
-         *     handler reports it as `409`, not `500`, and the frontend treats it as
-         *     "remove this stale row," not as an error toast.
-         */
-        post: operations["decide_approval"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/attachments/{id}": {
         parameters: {
             query?: never;
@@ -110,7 +61,7 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
-                    /** @description TACK_EXECUTION_DECISION_TOKEN — a second, independent operator credential *on top of* the ordinary operator auth every other `/api` route uses (never a substitute for it). Fail-closed: every call is rejected with 403 whenever the server has not configured TACK_EXECUTION_DECISION_TOKEN at all — there is no "no secret configured, allow everything" fallback the way the plain Bearer gate has for an unset TACK_API_TOKEN. Mirrors TACK_ORCH_APPROVAL_TOKEN exactly. */
+                    /** @description TACK_EXECUTION_DECISION_TOKEN — a second, independent operator credential *on top of* the ordinary operator auth every other `/api` route uses (never a substitute for it). Fail-closed: every call is rejected with 403 whenever the server has not configured TACK_EXECUTION_DECISION_TOKEN at all — there is no "no secret configured, allow everything" fallback the way the plain Bearer gate has for an unset TACK_API_TOKEN. */
                     "x-tack-decision-token": string;
                 };
                 path: {
@@ -312,55 +263,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/control-planes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/control-planes` — every registered control plane (tokens never
-         *     included).
-         */
-        get: operations["list_control_planes"];
-        put?: never;
-        /** `POST /api/control-planes` — register a control plane. */
-        post: operations["create_control_plane"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/control-planes/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/control-planes/{id}`. */
-        get: operations["get_control_plane"];
-        put?: never;
-        post?: never;
-        /** `DELETE /api/control-planes/{id}`. */
-        delete: operations["delete_control_plane"];
-        options?: never;
-        head?: never;
-        /**
-         * `PATCH /api/control-planes/{id}`. Supports optimistic concurrency: an
-         *     `If-Match: "<version>"` header, taken from a
-         *     previous response's `ETag`, must match the row's current version or the
-         *     request is rejected with `412` and nothing is written. **Omitting
-         *     `If-Match` is not an error** — the precondition
-         *     check is skipped entirely; the version still moves forward on every
-         *     successful write either way, so a later conditional request from a
-         *     different client can always detect this one.
-         */
-        patch: operations["update_control_plane"];
-        trace?: never;
-    };
     "/api/custom-fields/{id}": {
         parameters: {
             query?: never;
@@ -406,45 +308,6 @@ export interface paths {
         };
         /** GET /api/debug/info — System info (only in debug builds) */
         get: operations["debug_info"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/economics/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/economics/items` — per-completed-item economics (task 38.1's raw
-         *     population) plus CSV/JSON export (task 38.4), reusing `export.rs`'s
-         *     `?format=` + `Content-Disposition: attachment` convention rather than a second
-         *     export route.
-         */
-        get: operations["get_economics_items"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/economics/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/economics/summary`. */
-        get: operations["get_economics_summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -689,23 +552,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/fleet": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/fleet`. */
-        get: operations["get_fleet"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -737,54 +583,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_item"];
-        trace?: never;
-    };
-    "/api/items/{id}/agent-activity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/items/{id}/agent-activity` — every mirrored dispatch attempt and
-         *     approval for one item, newest first.
-         */
-        get: operations["get_item_agent_activity"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/{id}/dispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/items/{id}/dispatch` — enqueue a governed task on the item's
-         *     project's linked control plane. See the `dispatcher` module for the full
-         *     flow; this handler is just the HTTP boundary.
-         * @description **Trust default.** Unlike `dispatcher::dispatch_item`'s own required
-         *     `trusted: bool` parameter (no default, by design — see that module's
-         *     doc), this direct/manual entry point has no request body asking the
-         *     caller to state trust explicitly, so it resolves one via
-         *     `dispatcher::resolve_default_trust` — a conservative stopgap pending
-         *     item-provenance-driven trust resolution. See that function's own
-         *     doc comment for exactly what it checks today and what it doesn't yet.
-         */
-        post: operations["dispatch_item"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/items/{item_id}/attachments": {
@@ -977,60 +775,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/metrics` — Prometheus text exposition merging Tack's own
-         *     work-tracking metrics (items by status, average cycle time, 7-day
-         *     throughput) with the latest mirrored sample of every metric docket has
-         *     reported for each linked control plane (task 34.7). One Grafana/Prometheus
-         *     scrape of this endpoint covers the whole factory.
-         */
-        get: operations["get_metrics"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/orch-runs/{run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/orch-runs/{run_id}` — a pipeline run's state as last mirrored
-         *     by the reconciler, addressed by the run's own id rather than through a
-         *     Tack item. Complements `POST /api/projects/{id}/orch-dispatch`: that
-         *     route claims no item (ADR 0065 decision 5), so the only other route that
-         *     read `orch_runs` — `GET /api/items/{id}/agent-activity` — cannot reach a
-         *     pipeline-triggered run at all.
-         * @description This route never contacts docket. Fetching inline here would be a second
-         *     ingestion path alongside the reconciler's own `/runs` poll (ADR 0065
-         *     decision 7 forbids exactly that), and it would make a read route reach
-         *     the network. **A run id is not a promise the run was permitted** — it
-         *     names a run docket accepted and started; whether it succeeded, failed,
-         *     or hit a guardrail block is exactly the state this route reports once
-         *     the reconciler has observed it, never before.
-         */
-        get: operations["get_orch_run"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -1101,31 +845,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_project"];
-        trace?: never;
-    };
-    "/api/projects/{id}/agent-activity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/projects/{id}/agent-activity` — one row per item in this project
-         *     that has at least one mirrored dispatch attempt, each carrying only its
-         *     latest attempt's raw status (the Board/List/Table badge's data source).
-         *     Does not 404 for an unknown `project_id` — mirrors `list_items`'s
-         *     precedent (`handlers/items.rs`) of just returning an empty result for a
-         *     project-scoped list rather than a bulk-fetch racing a project's own
-         *     lifecycle (e.g. deleted between the page loading and this poll).
-         */
-        get: operations["get_project_agent_activity"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/projects/{id}/export": {
@@ -1209,89 +928,6 @@ export interface paths {
          *     Pagination is cursor-based (50 issues per page).
          */
         post: operations["import_linear"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{id}/orch-budget": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/projects/{id}/orch-budget`. */
-        get: operations["get_orch_budget"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{id}/orch-dispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/projects/{id}/orch-dispatch` — trigger a full docket pipeline
-         *     run for the project's linked docket project. `variables` is forwarded to
-         *     docket exactly as received — an opaque `{name: value}` JSON object this
-         *     route never inspects, validates, or logs (ADR 0065 decision 6); omit the
-         *     field, or send `{}`, for a pipeline with no variables to resolve.
-         */
-        post: operations["dispatch_project_pipeline"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{id}/orch-link": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/projects/{id}/orch-link`. */
-        get: operations["get_orch_link"];
-        /**
-         * `PUT /api/projects/{id}/orch-link` — create or replace the project's
-         *     link. Supports optimistic concurrency the same
-         *     way `PATCH /api/control-planes/{id}` does — see that handler's doc
-         *     comment for the `If-Match`/`ETag` contract. One difference: this is a
-         *     create-or-replace endpoint, so a nonexistent link and a version mismatch
-         *     both surface as `412` here (see `bump_orch_link_version_if_match`'s doc
-         *     comment for why that collapse is correct, not a shortcut).
-         */
-        put: operations["put_orch_link"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{id}/orch-policy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/projects/{id}/orch-policy`. */
-        get: operations["get_orch_policy"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2910,37 +2546,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/orchestration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * GET /api/settings/orchestration — current orchestration settings.
-         * @description Deliberately reachable regardless of whether orchestration is enabled
-         *     (registered outside `orch_routes`' gate in `router.rs`) — a UI on a
-         *     server where orchestration has never been turned on must still be able
-         *     to read this and offer to turn it on. See `router.rs`'s route comment.
-         */
-        get: operations["get_orch_settings"];
-        /**
-         * PUT /api/settings/orchestration — save the orchestration enable flag and
-         *     start/stop the reconciler to match, immediately, without a restart.
-         * @description Order matters: persist first, then reconcile the runtime. If the process
-         *     restarts between the two (crash, deploy), the stored value is already
-         *     correct and the next boot's `server.rs` picks it up — the only thing lost
-         *     is this one instant's runtime state, not the setting itself.
-         */
-        put: operations["put_orch_settings"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/sprints/{id}": {
         parameters: {
             query?: never;
@@ -2955,52 +2560,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_sprint"];
-        trace?: never;
-    };
-    "/api/sprints/{id}/dispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item
-         *     in the sprint, in topological order, bounded by `max_in_flight`
-         *     concurrent control-plane calls. Each item's own `ItemSource` decides its
-         *     `trusted` flag (never a blanket value for the batch). A failure
-         *     dispatching one item never aborts the rest;
-         *     see `sprint_dispatch`'s module doc, decision 1.
-         */
-        post: operations["dispatch_sprint"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sprints/{id}/dispatch/dry-run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/sprints/{id}/dispatch/dry-run` — the exact plan a real
-         *     `POST .../dispatch` call would execute (same order, same
-         *     dependency-readiness skips), with zero database writes and zero HTTP
-         *     calls to the control plane. See `sprint_dispatch::dry_run_sprint_dispatch`.
-         */
-        get: operations["dry_run_sprint_dispatch"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/sprints/{id}/status": {
@@ -3055,27 +2614,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/templates/{id}/provision": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/templates/{id}/provision` — create a Tack project from a
-         *     template, provision a docket pod for it, and link the two. See the
-         *     module doc for the full rollback design.
-         */
-        post: operations["create_project_with_pod"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3091,28 +2629,6 @@ export interface components {
         AddFleetMember: {
             runner_id: string;
         };
-        /**
-         * @description `GET /api/projects/{id}/agent-activity` response envelope — deliberately
-         *     `{ rows: [...] }`, not a bare array.
-         */
-        AgentBadgeResponse: {
-            rows: components["schemas"]["AgentBadgeRowResponse"][];
-        };
-        /**
-         * @description One row of `GET /api/projects/{id}/agent-activity` — the minimum a
-         *     Board/List/Table badge needs: an item's latest dispatch attempt's raw
-         *     status. See the module-level doc comment for the inner-join / tie-break
-         *     decisions.
-         */
-        AgentBadgeRowResponse: {
-            /** Format: int64 */
-            attempt: number;
-            /** Format: uuid */
-            item_id: string;
-            remote_status: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
         AgentProfileListResponse: {
             data: components["schemas"]["AgentProfileSummary"][];
             /** Format: int32 */
@@ -3125,24 +2641,6 @@ export interface components {
             name: string;
             tool_policy: unknown;
         };
-        /** @description One `docket_approvals_total{channel=...,outcome=...}` sample. */
-        ApprovalChannelEntry: {
-            /** @description `"cli"` | `"http"` | `"mcp"` | `"telegram"` | `"tack"` | `"timeout"`. */
-            channel: string;
-            /** Format: double */
-            count: number;
-            /**
-             * @description `"granted"` | `"denied"` — a `"timeout"` channel always resolves
-             *     `"denied"` (a fail-closed expiry, never a human decision; see
-             *     `core/approval.py`).
-             */
-            outcome: string;
-        };
-        /**
-         * @description `POST /api/approvals/{token}` request body.
-         * @enum {string}
-         */
-        ApprovalDecisionAction: "grant" | "deny";
         ArtifactListResponse: {
             data: components["schemas"]["ArtifactSummary"][];
             /** Format: int32 */
@@ -3300,25 +2798,6 @@ export interface components {
             /** @example cancellation_requested */
             state: string;
         };
-        /**
-         * @description Wire mirror of `tack_orch::Capabilities` — what a control plane can
-         *     actually do, so the UI can disable a control and explain why instead of
-         *     checking `kind`.
-         */
-        CapabilitiesResponse: {
-            artifacts: boolean;
-            cancel: boolean;
-            decisions: components["schemas"]["DecisionsCapability"];
-            dispatch: boolean;
-            event_scope: components["schemas"]["EventScopeCapability"];
-            model_selection: components["schemas"]["ModelSelectionCapability"];
-            pause: components["schemas"]["SupportCapability"];
-            plane_metrics: boolean;
-            provisioning: boolean;
-            resume: components["schemas"]["SupportCapability"];
-            runtimes: boolean;
-            usage: components["schemas"]["UsageCapability"];
-        };
         Comment: {
             author?: string | null;
             comment_type: components["schemas"]["CommentType"];
@@ -3334,42 +2813,6 @@ export interface components {
         };
         /** @enum {string} */
         CommentType: "comment" | "status_change" | "edit" | "system";
-        /**
-         * @description Client-safe view of a `control_planes` row. Deliberately has **no** `token`
-         *     field — see the module doc.
-         */
-        ControlPlaneResponse: {
-            api_version?: string | null;
-            base_url: string;
-            capabilities?: null | components["schemas"]["CapabilitiesResponse"];
-            /** Format: int64 */
-            consecutive_failures: number;
-            /** Format: date-time */
-            created_at: string;
-            /**
-             * @description `"unknown"` (pre-first-poll default) | `"healthy"` | `"degraded"` |
-             *     `"unreachable"` (the reconciler's health state machine,
-             *     `tack-orch::reconciler`, persisted verbatim) | `"unconfigured"`
-             *     (this build of Tack could not even build a live adapter for
-             *     `kind`, so the reconciler's state machine never ran against this
-             *     plane at all; see `orch_store::RepoControlPlaneStore::
-             *     mark_unconfigured`'s doc comment).
-             */
-            health: string;
-            /** Format: uuid */
-            id: string;
-            kind: string;
-            /** Format: date-time */
-            last_seen_at?: string | null;
-            name: string;
-            /**
-             * @description True when a docket Bearer token is currently stored for this plane.
-             *     The token itself is write-only over this API.
-             */
-            token_set: boolean;
-            /** Format: date-time */
-            updated_at: string;
-        };
         CreateBoard: {
             description?: string | null;
             filters?: unknown;
@@ -3380,15 +2823,6 @@ export interface components {
         CreateComment: {
             author?: string | null;
             content: string;
-        };
-        /** @description `POST /api/control-planes` body. */
-        CreateControlPlaneRequest: {
-            base_url: string;
-            /** @description Defaults to `"docket"` when omitted — the only kind implemented today. */
-            kind?: string | null;
-            name: string;
-            /** @description docket Bearer token. Write-only: never echoed back in any response. */
-            token?: string | null;
         };
         CreateCustomField: {
             default_value?: unknown;
@@ -3540,16 +2974,6 @@ export interface components {
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
         };
-        /** @description `POST /api/templates/{id}/provision` body. */
-        CreateProjectWithPodRequest: {
-            description?: string | null;
-            name: string;
-            provision_pod: components["schemas"]["ProvisionPodRequest"];
-        };
-        CreateProjectWithPodResponse: {
-            project: components["schemas"]["Project"];
-            provisioning: components["schemas"]["ProvisioningOutcome"];
-        };
         CreateRole: {
             color?: string | null;
             icon?: string | null;
@@ -3594,18 +3018,6 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             value: unknown;
-        };
-        DecideApprovalRequest: {
-            action: components["schemas"]["ApprovalDecisionAction"];
-        };
-        /**
-         * @description `POST /api/approvals/{token}` response — docket's own resulting state
-         *     (`"granted"`/`"denied"`, or an unrecognised value shown as-is — this API
-         *     never fails on an unknown remote value).
-         */
-        DecideApprovalResponse: {
-            state: string;
-            token: string;
         };
         /**
          * @description Schema-only mirror of the `answer` object `POST
@@ -3667,15 +3079,6 @@ export interface components {
             state: string;
             updated_at: string;
         };
-        /**
-         * @description Wire mirror of `tack_orch::DecisionSupport`.
-         * @enum {string}
-         */
-        DecisionSupportLevel: "none" | "poll" | "push";
-        DecisionsCapability: {
-            level: components["schemas"]["DecisionSupportLevel"];
-            reason: string;
-        };
         Dependency: {
             /** Format: date-time */
             created_at: string;
@@ -3689,246 +3092,11 @@ export interface components {
         };
         /** @enum {string} */
         DependencyType: "blocks" | "is_blocked_by" | "relates_to" | "duplicates";
-        /**
-         * @description `POST /api/items/{id}/dispatch` response. `outcome` is one of
-         *     `"dispatched"`, `"waiting_approval"`, `"already_in_flight"`,
-         *     `"no_dispatch_policy"`, `"not_eligible"`, `"blocked"` — every one of
-         *     these is a `200`, including `"blocked"`: docket gave a definitive,
-         *     well-formed refusal, which is a successful round-trip from Tack's HTTP
-         *     perspective, not a Tack-side error. Callers must branch on `outcome`,
-         *     not on HTTP status, to tell these apart. See `dispatcher::DispatchOutcome`
-         *     for the same taxonomy on the Rust side.
-         */
-        DispatchItemResponse: {
-            /** @description Present only when `outcome == "waiting_approval"`. */
-            approval_token?: string | null;
-            /** @description Present only when `outcome == "not_eligible"`. */
-            current_status?: string | null;
-            /** @description Present only when `outcome == "not_eligible"`. */
-            dispatch_from?: string[] | null;
-            /**
-             * @description Present only when `outcome == "blocked"` — docket's own message,
-             *     verbatim, for display.
-             */
-            message?: string | null;
-            outcome: string;
-            /**
-             * @description Present only when `outcome == "blocked"` — the id of the guardrail
-             *     policy that fired (`OrchError::PolicyBlocked::policy_id`),
-             *     as a typed field rather than something a caller has to parse back out
-             *     of `message`.
-             */
-            policy_id?: string | null;
-            /**
-             * @description The Tack status `status_map` named for this trigger and actually
-             *     applied. Absent when `status_map` named no target for this trigger,
-             *     when the item was already there, or when the workflow engine
-             *     rejected it (see `status_map_rejected` below).
-             */
-            status_applied?: string | null;
-            /**
-             * @description Set when the workflow engine refused the `status_map`-driven
-             *     transition (`status_map_rejected`
-             *     outcome). The item was left exactly as it was; this is the engine's
-             *     own reason (e.g. an invalid transition or a WIP limit).
-             */
-            status_map_rejected?: string | null;
-            task?: null | components["schemas"]["DispatchedTaskResponse"];
-        };
-        /** @description `POST /api/projects/{id}/orch-dispatch` request body. */
-        DispatchProjectPipelineRequest: {
-            /**
-             * @description Opaque `{name: value}` object, forwarded to docket verbatim as the
-             *     pipeline's `variables` — this route has no opinion on its shape
-             *     beyond "a JSON object" and never logs it. Omit for `{}`.
-             */
-            variables?: unknown;
-        };
-        /**
-         * @description `POST /api/projects/{id}/orch-dispatch` response.
-         *
-         *     **`run_id` is not a promise the run was permitted.** docket's
-         *     `POST /dispatch/{project}` creates the run record and answers before the
-         *     pipeline itself executes — guardrail evaluation included — on a thread
-         *     this response never waits on (ADR 0065, "A block is not synchronously
-         *     observable on this route"). This struct carries no `status`/`outcome`
-         *     field for that reason: the only fact this route can honestly report is
-         *     that docket accepted the request and started a run. What that run goes
-         *     on to do — success, failure, or a guardrail block — is not visible here;
-         *     it only becomes visible once the reconciler's own periodic poll of
-         *     docket's `/runs` endpoint mirrors this run's outcome into Tack.
-         */
-        DispatchProjectPipelineResponse: {
-            /**
-             * @description The docket project (`orch_links.remote_project`) the pipeline was
-             *     started against.
-             */
-            remote_project: string;
-            /**
-             * @description docket's own pipeline-run id — a different kind of id from an
-             *     `orch_tasks.remote_task_id`. Hand this to an operator who wants to
-             *     correlate what they see later once the reconciler mirrors it.
-             */
-            run_id: string;
-        };
-        /**
-         * @description A dispatched (or already-in-flight) `orch_tasks` row, projected for the
-         *     dispatch response. Deliberately smaller than `ItemAgentAttemptResponse`
-         *     (`GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost
-         *     fields, since a task this fresh has none of that mirrored yet.
-         */
-        DispatchedTaskResponse: {
-            /** Format: int64 */
-            attempt: number;
-            /** Format: date-time */
-            dispatched_at: string;
-            remote_status: string;
-            remote_task_id: string;
-            trusted: boolean;
-        };
-        /**
-         * @description `GET /api/sprints/{id}/dispatch/dry-run` response. Zero side effects —
-         *     see `sprint_dispatch`'s module doc, decision 5.
-         */
-        DryRunSprintDispatchResponse: {
-            items: components["schemas"]["SprintDispatchItemResponse"][];
-            /** Format: int32 */
-            max_in_flight: number;
-            /** Format: uuid */
-            sprint_id: string;
-            summary: components["schemas"]["SprintDispatchSummary"];
-        };
-        /**
-         * @description One completed item's economics — the row shape behind both the dashboard's
-         *     drill-down list and the CSV/JSON export (task 38.4).
-         */
-        EconomicsItemResponse: {
-            /** Format: int64 */
-            attempt_count: number;
-            /** Format: date-time */
-            completed_at?: string | null;
-            /** Format: double */
-            cost_usd_estimated?: number | null;
-            /** Format: date-time */
-            first_dispatched_at?: string | null;
-            /** Format: uuid */
-            item_id: string;
-            item_type: string;
-            /**
-             * Format: double
-             * @description `dispatched_at → completed_at` for an agent item, `started_at → completed_at`
-             *     for a human item; `None` if the required timestamp is missing or the computed
-             *     duration is negative (a data anomaly, e.g. a redispatch after completion —
-             *     excluded rather than shown as a nonsensical negative duration).
-             */
-            lead_time_hours?: number | null;
-            population: components["schemas"]["EconomicsPopulation"];
-            pricing_snapshot_at?: string | null;
-            /** Format: uuid */
-            project_id: string;
-            project_type: string;
-            /** @description Only meaningful when `population == Agent`; always `false` for a human item. */
-            rework_applicable: boolean;
-            /**
-             * @description Whether this item's rework-signal data is trustworthy — `false` when its only
-             *     dispatch predates the retention cutoff (see the module doc).
-             */
-            rework_data_reliable: boolean;
-            /**
-             * @description Raw signal presence; only trust this when `rework_applicable &&
-             *     rework_data_reliable` both hold.
-             */
-            rework_signal: boolean;
-            /** Format: date-time */
-            started_at?: string | null;
-            status: string;
-            title: string;
-            /** Format: int64 */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-        };
-        EconomicsItemsResponse: {
-            rows: components["schemas"]["EconomicsItemResponse"][];
-            /**
-             * Format: int64
-             * @description Total matching rows before `limit`/`offset` — never truncated silently (see
-             *     the query docs below).
-             */
-            total: number;
-        };
-        /**
-         * @description Which population a `GET /api/economics/items` row belongs to (see the module doc's
-         *     definition: "dispatched at least once" vs. "never dispatched").
-         * @enum {string}
-         */
-        EconomicsPopulation: "agent" | "human";
-        /** @description One row of the summary: "overall", one `project_type`, or one `item_type`. */
-        EconomicsSlice: {
-            /**
-             * Format: int64
-             * @description Completed items with at least one `orch_tasks` row (dispatched to an agent at
-             *     least once — regardless of who ultimately finished it).
-             */
-            agent_completed_count: number;
-            agent_lead_time: components["schemas"]["LeadTimeStat"];
-            /** Format: int64 */
-            completed_item_count: number;
-            /**
-             * Format: double
-             * @description Summed `orch_tasks.cost_usd_estimated` for this slice's agent-dispatched
-             *     items. `None` only when `agent_completed_count == 0` (nothing to sum);
-             *     `Some(0.0)` means agent items exist but none report a cost yet.
-             */
-            cost_usd_estimated?: number | null;
-            /**
-             * Format: double
-             * @description `cost_usd_estimated / agent_completed_count`. `None` whenever
-             *     `agent_completed_count < MIN_SAMPLE_SIZE` — the headline "cost per shipped
-             *     item" figure is exactly the kind of small-sample-noise ratio this module
-             *     guards against elsewhere, so it is withheld below the stated minimum
-             *     rather than shown from a handful of items.
-             */
-            cost_usd_estimated_per_item?: number | null;
-            /**
-             * Format: int64
-             * @description Completed items with zero `orch_tasks` rows — never dispatched.
-             */
-            human_completed_count: number;
-            human_lead_time: components["schemas"]["LeadTimeStat"];
-            /**
-             * @description `"overall"`, a `project_type` value, or an `item_type` value — see the
-             *     containing response's `by_project_type`/`by_item_type` field it came from.
-             */
-            key: string;
-            lead_time_selection_bias_note: string;
-            /** @description Always `None` today — no pricing-snapshot mechanism exists yet. */
-            pricing_snapshot_at?: string | null;
-            rework: components["schemas"]["ReworkStat"];
-            /** Format: int64 */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-        };
-        EconomicsSummaryResponse: {
-            by_item_type: components["schemas"]["EconomicsSlice"][];
-            by_project_type: components["schemas"]["EconomicsSlice"][];
-            /** Format: int32 */
-            events_retention_days: number;
-            /** Format: date-time */
-            generated_at: string;
-            /** Format: int64 */
-            min_sample_size: number;
-            overall: components["schemas"]["EconomicsSlice"];
-        };
         ErrorBody: {
             /**
              * @description Stable, machine-readable error code. Present on a narrow set of
              *     responses where a caller needs to branch on *why* without parsing
-             *     `message` — e.g. `orchestration_disabled` on the 409 every
-             *     orchestration route returns while the feature is switched off (see
-             *     `handlers::orch::require_orch_enabled`). Absent on ordinary errors.
-             * @example orchestration_disabled
+             *     `message`. Absent on ordinary errors.
              */
             code?: string | null;
             /**
@@ -3958,15 +3126,6 @@ export interface components {
             /** Format: int32 */
             protocol_version: number;
         };
-        EventScopeCapability: {
-            level: components["schemas"]["EventScopeLevel"];
-            reason: string;
-        };
-        /**
-         * @description Wire mirror of `tack_orch::EventScope`.
-         * @enum {string}
-         */
-        EventScopeLevel: "none" | "run" | "project" | "plane";
         /**
          * @description One event as reported by `GET
          *     /api/executions/{id}/attempts/{attempt_number}/events`.
@@ -4008,94 +3167,6 @@ export interface components {
             request_id: string;
             state: string;
         };
-        /**
-         * @description One row per Tack project that has an `orch_links` row, joining: the link,
-         *     its control plane's reconciler-observed health, and mirrored cost/token/
-         *     approval data summed from `orch_tasks`/`orch_approvals`.
-         *
-         *     **Staleness must be representable.** `cost_usd_estimated` is `None`
-         *     whenever the plane is `unreachable` — never coerced to zero — so the UI can
-         *     grey the row and say "last seen Nm ago" instead of rendering a confident
-         *     zero. `Some(0.0)` means the
-         *     plane is reachable and genuinely has no mirrored cost yet. `tokens_in`/
-         *     `tokens_out` are always a plain (never-null) sum — the row component
-         *     gates on `health`/`isStale()`, not per-field nullability, to decide
-         *     whether a number is trustworthy to render.
-         */
-        FleetEntry: {
-            api_version?: string | null;
-            auto_dispatch: boolean;
-            blueprint?: string | null;
-            /**
-             * Format: double
-             * @description User-set cap, not a derived figure — deliberately unsuffixed.
-             */
-            budget_usd?: number | null;
-            capabilities?: null | components["schemas"]["CapabilitiesResponse"];
-            /** Format: int64 */
-            consecutive_failures: number;
-            /** Format: uuid */
-            control_plane_id: string;
-            control_plane_kind: string;
-            control_plane_name: string;
-            /**
-             * Format: double
-             * @description Estimated cumulative spend, summed from `orch_tasks` for this
-             *     project's items. `None` = plane unreachable, figure is stale/unknown.
-             *     `Some(0.0)` = plane reachable, nothing dispatched yet.
-             */
-            cost_usd_estimated?: number | null;
-            /**
-             * @description `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` today** —
-             *     `control_planes` has no persisted gateway column (see migration 019) and
-             *     the reconciler only polls `/health` + `/status.json` for the health state
-             *     machine, not a stored gateway snapshot. Mirroring `FleetStatus.gateway`
-             *     would populate this for real.
-             */
-            gateway: string;
-            /**
-             * @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` |
-             *     `"unconfigured"` — see [`ControlPlaneResponse::health`]'s doc
-             *     comment for what each means.
-             */
-            health: string;
-            /**
-             * Format: date-time
-             * @description Most recent `orch_tasks.dispatched_at` for this project's items, or
-             *     `None` if nothing has ever been dispatched. Real data (not a
-             *     placeholder) — computed from the same join as the cost/token sums.
-             */
-            last_activity_at?: string | null;
-            /** Format: date-time */
-            last_seen_at?: string | null;
-            /**
-             * Format: int64
-             * @description Pending docket approvals correlated to an item in this project (via
-             *     `orch_approvals.item_id`). Approvals with no item correlation surface
-             *     in the fleet-wide approvals inbox instead of here.
-             */
-            pending_approval_count: number;
-            /**
-             * @description Pricing-table snapshot date backing `cost_usd_estimated`. **Always
-             *     `None` today** — no pricing-snapshot mechanism exists. Whatever adds one
-             *     should populate this alongside real cost figures.
-             */
-            pricing_snapshot_at?: string | null;
-            /** Format: uuid */
-            project_id: string;
-            project_name: string;
-            remote_project: string;
-            /** @description Always `[]` — see [`FleetRosterMember`]. */
-            roster: components["schemas"]["FleetRosterMember"][];
-            /**
-             * Format: int64
-             * @description Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's
-             *     items. Real data, not a placeholder — an honest current total.
-             */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-        };
         FleetListResponse: {
             data: components["schemas"]["FleetSummary"][];
             /** Format: int32 */
@@ -4112,21 +3183,6 @@ export interface components {
              * @example added
              */
             state: string;
-        };
-        /**
-         * @description One roster member — projected from a future live `FleetAgent` snapshot.
-         *     **Always an empty list today**: no agent-roster table exists (migrations
-         *     019–024 mirror control planes/links/tasks/runs/events/approvals only).
-         *     Whatever adds roster mirroring populates this; until then the field stays
-         *     on the wire as `[]` rather than being removed,
-         *     so `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a
-         *     shape change.
-         */
-        FleetRosterMember: {
-            id: string;
-            model: string;
-            name: string;
-            role: string;
         };
         FleetSummary: {
             /** Format: int64 */
@@ -4199,88 +3255,6 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
-        /** @description `GET /api/items/{id}/agent-activity` response. */
-        ItemAgentActivityResponse: {
-            /** @description Newest-requested first; pending and decided both included. */
-            approvals: components["schemas"]["ItemAgentApprovalResponse"][];
-            /**
-             * @description Newest attempt first (`orch_tasks.attempt DESC` — the repo layer's
-             *     `list_orch_tasks_for_item` already returns this order).
-             */
-            attempts: components["schemas"]["ItemAgentAttemptResponse"][];
-            /** Format: int32 */
-            events_retention_days: number;
-            /**
-             * @description See the module-level doc comment above `ItemAgentEventResponse` for
-             *     why this can't be a precise per-item fact and what it means instead.
-             */
-            events_truncated: boolean;
-        };
-        /** @description One `orch_approvals` row for the item (pending or already decided). */
-        ItemAgentApprovalResponse: {
-            action?: string | null;
-            agent?: string | null;
-            /** Format: date-time */
-            decided_at?: string | null;
-            remote_task_id?: string | null;
-            /** Format: date-time */
-            requested_at: string;
-            state: string;
-            token: string;
-        };
-        /** @description One `orch_tasks` row (one dispatch attempt) for the item. */
-        ItemAgentAttemptResponse: {
-            /** Format: int64 */
-            attempt: number;
-            /** Format: double */
-            cost_usd_estimated?: number | null;
-            /** Format: date-time */
-            dispatched_at: string;
-            events: components["schemas"]["ItemAgentEventResponse"][];
-            /**
-             * @description Always `null` — no pricing-snapshot mechanism exists anywhere in the
-             *     system yet (the Fleet view has the identical gap). Left `null` rather
-             *     than invented.
-             */
-            pricing_snapshot_at?: string | null;
-            remote_run_id?: string | null;
-            remote_status: string;
-            remote_task_id: string;
-            run?: null | components["schemas"]["ItemAgentRunResponse"];
-            /** Format: int64 */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-        };
-        /** @description One `orch_events` row. */
-        ItemAgentEventResponse: {
-            event_type: string;
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            occurred_at: string;
-            payload: unknown;
-        };
-        /**
-         * @description The `orch_runs` row correlated to an attempt via `remote_run_id`, if any
-         *     has been mirrored yet.
-         */
-        ItemAgentRunResponse: {
-            /** Format: date-time */
-            ended_at?: string | null;
-            /**
-             * @description Non-empty only when `state == "failed"`. Projected as an empty string,
-             *     never `null` — matches `ItemAgentRun.error: string` on the frontend
-             *     (deliberately not `string | null`, unlike `OrchRun.error` in the Rust
-             *     repo layer, which is `Option<String>`).
-             */
-            error: string;
-            run_id: string;
-            source: string;
-            /** Format: date-time */
-            started_at?: string | null;
-            state: string;
-        };
         /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
          *     and dependency edges.
@@ -4309,27 +3283,6 @@ export interface components {
         ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown";
         ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
             custom: string;
-        };
-        /**
-         * @description Average-or-raw duration figure. `avg_hours` and `raw_hours` are mutually
-         *     exclusive: exactly one is populated (or, at `sample_count == 0`, neither).
-         */
-        LeadTimeStat: {
-            /**
-             * Format: double
-             * @description `None` whenever `below_min_sample` is true (including `sample_count == 0`) —
-             *     see `raw_hours`.
-             */
-            avg_hours?: number | null;
-            below_min_sample: boolean;
-            /**
-             * @description Populated only when `below_min_sample` is true and `sample_count > 0`: the
-             *     individual durations, so a small sample is shown honestly rather than averaged
-             *     into a number that looks more precise than it is.
-             */
-            raw_hours?: number[] | null;
-            /** Format: int64 */
-            sample_count: number;
         };
         LinearImportRequest: {
             /** @description Linear personal API key (create at https://linear.app/settings/api). */
@@ -4393,186 +3346,11 @@ export interface components {
             requested_model_id: string;
             requested_provider: string;
         };
-        ModelSelectionCapability: {
-            level: components["schemas"]["ModelSelectionLevel"];
-            reason: string;
-        };
-        /**
-         * @description Wire mirror of `tack_orch::ModelSelection`.
-         * @enum {string}
-         */
-        ModelSelectionLevel: "unsupported" | "advisory" | "honoured";
         /**
          * @description docket pod blueprint names (`core/blueprints.py`).
          * @enum {string}
          */
         OrchBlueprint: "software" | "research" | "content" | "ops" | "agentic-product";
-        /** @description `GET /api/projects/{id}/orch-budget` response. */
-        OrchBudgetResponse: {
-            /**
-             * Format: double
-             * @description User-set cap (`orch_links.budget_usd`) — `None` if unlinked or unset.
-             *     Deliberately unsuffixed, same convention as `FleetEntry::budget_usd`.
-             */
-            budget_usd?: number | null;
-            /** Format: uuid */
-            control_plane_id?: string | null;
-            control_plane_name?: string | null;
-            /**
-             * Format: double
-             * @description `None` when unlinked, when the linked plane is `unreachable`, or when
-             *     its health can't be resolved — never coerced to a confident-looking
-             *     zero. `Some(0.0)` means the plane is reachable and genuinely has no
-             *     mirrored cost yet.
-             */
-            cost_usd_estimated?: number | null;
-            /**
-             * @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`. `None` only
-             *     when `linked` is `false`.
-             */
-            health?: string | null;
-            linked: boolean;
-            /** @description Always `None` today — no pricing-snapshot mechanism exists yet. */
-            pricing_snapshot_at?: string | null;
-            /**
-             * Format: int64
-             * @description Summed from `orch_tasks` for this project's items. Real, historical
-             *     data — always present (never null) regardless of `linked`, since a
-             *     project can accumulate mirrored dispatch history and later be
-             *     unlinked without that history becoming false.
-             */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-        };
-        /** @description Client-facing view of a project's control-plane link. */
-        OrchLinkResponse: {
-            auto_dispatch: boolean;
-            blueprint?: string | null;
-            /**
-             * Format: double
-             * @description User-set cap, not a derived spend figure — deliberately unsuffixed
-             *     Matches `orch_links.budget_usd`.
-             */
-            budget_usd?: number | null;
-            /**
-             * @description `tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL`,
-             *     verbatim. Every control plane this API can register or link to is a
-             *     legacy Docket bridge (the only adapter `registry::build` accepts), so
-             *     this is unconditional rather than derived per-plane.
-             */
-            compatibility_label: string;
-            /**
-             * @description `tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY`,
-             *     verbatim, so a caller can render or quote the justification without a
-             *     second round trip to the source.
-             */
-            compatibility_policy: string;
-            /** Format: uuid */
-            control_plane_id: string;
-            /** Format: date-time */
-            created_at: string;
-            pipeline_file?: string | null;
-            /** Format: uuid */
-            project_id: string;
-            remote_project: string;
-            status_map: components["schemas"]["StatusMap"];
-            /** Format: date-time */
-            updated_at: string;
-        };
-        /**
-         * @description `GET /api/projects/{id}/orch-link` response. `linked: false` (with
-         *     `link: null`) is the ordinary state for a project that has never registered
-         *     a control plane — not an error, matching the `settings.rs` precedent for
-         *     optional per-scope config (no 404 for "not configured yet").
-         */
-        OrchLinkView: {
-            link?: null | components["schemas"]["OrchLinkResponse"];
-            linked: boolean;
-        };
-        /** @description `GET /api/projects/{id}/orch-policy` response. */
-        OrchPolicyResponse: {
-            approvals_by_channel: components["schemas"]["ApprovalChannelEntry"][];
-            /** Format: uuid */
-            control_plane_id?: string | null;
-            control_plane_name?: string | null;
-            /**
-             * Format: double
-             * @description `deny / (allow + ask + deny)`. `None` when no tool-gate decisions have
-             *     been observed at all — deliberately not `0.0`, since zero would claim
-             *     a clean, evaluated history rather than "no data yet".
-             */
-            denial_rate?: number | null;
-            /**
-             * @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`. `None` only
-             *     when `linked` is `false`.
-             */
-            health?: string | null;
-            linked: boolean;
-            policy_hits: components["schemas"]["PolicyHitEntry"][];
-            /**
-             * @description Always `true` — see the module doc above. Present on the wire so a
-             *     caller can't mistake this response for per-project data just because a
-             *     `project_id` is in the URL.
-             */
-            scoped_to_control_plane_only: boolean;
-            /**
-             * Format: date-time
-             * @description Latest scrape time across every sample folded into this response, or
-             *     `None` if the plane has never reported guardrail metrics.
-             */
-            scraped_at?: string | null;
-            tool_calls: components["schemas"]["ToolCallEntry"][];
-        };
-        /**
-         * @description `GET /api/orch-runs/{run_id}` response — one `orch_runs` row, addressed
-         *     by its own id rather than through an item. Mirrors [`OrchLinkView`]'s
-         *     `linked`/`link` shape: `mirrored: false` with every other field `null`
-         *     is the answer for a run id the reconciler has not (yet) written a row
-         *     for, not a 404. Tack cannot tell an un-polled run apart from one that
-         *     was never dispatched — both look identical here — so it reports the
-         *     absence rather than guessing which one it is.
-         */
-        OrchRunReadbackResponse: {
-            /** Format: date-time */
-            ended_at?: string | null;
-            error?: string | null;
-            /**
-             * Format: uuid
-             * @description Present only when a task dispatch (not a project-level pipeline
-             *     dispatch) has been correlated to this run — `null` is the ordinary
-             *     case for a run started through `POST /api/projects/{id}/orch-dispatch`
-             *     (ADR 0065 decision 5: that route claims no item).
-             */
-            item_id?: string | null;
-            /**
-             * @description `true` once the reconciler's `/runs` poll has written a row for this
-             *     run id at least once.
-             */
-            mirrored: boolean;
-            /**
-             * Format: date-time
-             * @description When the reconciler last wrote this row — distinct from `started_at`/
-             *     `ended_at`, which come from docket itself.
-             */
-            mirrored_at?: string | null;
-            remote_project?: string | null;
-            run_id: string;
-            /**
-             * @description Raw `RunSource` string as mirrored (`cli` / `webhook` / `schedule` /
-             *     `sweep` / `mcp` / or an unrecognised value).
-             */
-            source?: string | null;
-            /** Format: date-time */
-            started_at?: string | null;
-            /**
-             * @description The run's state as of the last reconciler poll — never fabricated
-             *     when `mirrored` is `false`. A guardrail block surfaces here as a
-             *     failed state once docket's own run registry reflects it; this route
-             *     never learns the verdict any sooner than the reconciler does.
-             */
-            state?: string | null;
-        };
         /**
          * @description Pagination envelope for the item-list endpoint. `total` is the
          *     unpaginated match count so clients can render "N of M".
@@ -4585,73 +3363,6 @@ export interface components {
             per_page: number;
             /** Format: int64 */
             total: number;
-        };
-        /** @description `GET /api/approvals` response envelope. */
-        PendingApprovalListResponse: {
-            /**
-             * @description Whether `TACK_ORCH_APPROVAL_TOKEN` is configured on this server at
-             *     all, **without ever exposing its value** — the same write-only-secret
-             *     discipline as `ControlPlaneResponse.token_set` /
-             *     `handlers::settings`'s `secret_key_set`. The frontend uses this to
-             *     decide whether to render Grant/Deny controls at all (a missing
-             *     server-side secret means nobody can act on this inbox today); the
-             *     server still enforces the real check independently on every
-             *     `POST /api/approvals/{token}` call regardless of what this flag says,
-             *     so a stale/cached `true` can never grant a privilege the header check
-             *     wouldn't also grant.
-             */
-            grant_available: boolean;
-            /**
-             * @description Oldest-requested first — docket approvals fail closed on timeout, so
-             *     surfacing the longest-waiting one first has a real cost (this
-             *     card's rationale).
-             */
-            rows: components["schemas"]["PendingApprovalResponse"][];
-        };
-        /**
-         * @description One row of the fleet-wide approvals inbox — a pending `orch_approvals`
-         *     record enriched with the correlated control plane / item / project, when
-         *     known. See the module-doc section above on why uncorrelated rows
-         *     (`item_id: null`) are never filtered out.
-         */
-        PendingApprovalResponse: {
-            /**
-             * @description The gated action's description, already redacted by docket before it
-             *     reached Tack's mirror.
-             */
-            action?: string | null;
-            /**
-             * @description `orch_approvals.agent` — populated from docket's `role` field on
-             *     ingestion. Role is the closest field docket's wire shape offers.
-             */
-            agent?: string | null;
-            /** Format: uuid */
-            control_plane_id: string;
-            control_plane_name: string;
-            /** Format: uuid */
-            item_id?: string | null;
-            item_status?: string | null;
-            item_title?: string | null;
-            /** Format: uuid */
-            project_id?: string | null;
-            project_name?: string | null;
-            remote_task_id?: string | null;
-            /** Format: date-time */
-            requested_at: string;
-            token: string;
-        };
-        /** @description One `docket_policy_hits_total{policy_id=...,hook=...,action=...}` sample. */
-        PolicyHitEntry: {
-            /**
-             * @description `"block"` | `"require_approval"` | `"ask"` | `"warn"` | `"redact"` — docket's
-             *     own vocabulary, shown verbatim.
-             */
-            action: string;
-            /** Format: double */
-            count: number;
-            /** @description `"pre_input"` | `"pre_output"` | `"pre_tool_call"`. */
-            hook: string;
-            policy_id: string;
         };
         /** @enum {string} */
         Priority: "critical" | "high" | "medium" | "low" | "none";
@@ -4710,91 +3421,6 @@ export interface components {
         };
         /** @enum {string} */
         ProjectType: "software" | "web" | "mobile" | "construction" | "personal" | "homework" | "maintenance" | "legal" | "research" | "event" | "custom";
-        /**
-         * @description The pod-provisioning half of the request body. Every field mirrors
-         *     docket's real `POST /pods` body (see the module doc) except
-         *     `control_plane_id` (Tack's own reference, never sent to docket) and
-         *     `status_map`/`auto_dispatch`/`pipeline_file`, which configure the
-         *     `orch_links` row written *after* the pod exists, not the `POST /pods`
-         *     call itself. Any field left `None` falls back to the chosen template's
-         *     `orchestration` block, if it has one; if neither supplies a value,
-         *     docket's own blueprint default applies (for `blueprint`, `budget`,
-         *     `verify_cmd`) or the field is simply omitted from the link.
-         */
-        ProvisionPodRequest: {
-            auto_dispatch?: boolean | null;
-            blueprint?: null | components["schemas"]["OrchBlueprint"];
-            /** Format: double */
-            budget_usd?: number | null;
-            /** Format: uuid */
-            control_plane_id: string;
-            /**
-             * @description Codebase path (`software`-kind blueprints) or shared work directory
-             *     (`workdir`-kind blueprints — `research`/`content`/`ops`/
-             *     `agentic-product`). Empty/omitted lets docket auto-provision a work
-             *     directory for `workdir`-kind blueprints; meaningless to omit for
-             *     `software`, which then gets an empty codebase.
-             */
-            path?: string | null;
-            /**
-             * @description A pipeline docket already knows about by name/path — stored on the
-             *     `orch_links` row (`pipeline_file`). Inline `pipeline_yaml` on a
-             *     template has no delivery mechanism to docket yet (`POST /pods` has
-             *     no pipeline field at all) — see the response's `warnings`.
-             */
-            pipeline_file?: string | null;
-            /**
-             * @description Mirrors docket's `pod` field. Only the literal string `"full"` is
-             *     meaningful (docket's own `software`-only roster override); any
-             *     other non-empty value is rejected before docket is ever called.
-             */
-            pod_shape?: string | null;
-            /**
-             * @description The docket-side pod identifier. Required — never derived from the
-             *     Tack project name — so a retry after a partial failure can be typed
-             *     back in verbatim instead of risking a second, differently-named pod
-             *     for the same intent (see the module doc's rollback design).
-             */
-            remote_project: string;
-            status_map?: null | components["schemas"]["StatusMap"];
-            verify_cmd?: string | null;
-        };
-        ProvisionedPodMemberResponse: {
-            id: string;
-            model: string;
-            role: string;
-        };
-        /**
-         * @description The outcome of the provisioning half of the request, once the Tack
-         *     project itself exists. See the module doc's rollback design for exactly
-         *     when each variant is produced — both are a `200`, never an error
-         *     response, because in both cases the project *and* the pod are real and
-         *     valid; `PodCreatedLinkFailed` just means one more step (linking) needs
-         *     finishing, manually, via the existing Settings → Orchestration UI.
-         */
-        ProvisioningOutcome: {
-            blueprint: string;
-            /** Format: uuid */
-            control_plane_id: string;
-            members: components["schemas"]["ProvisionedPodMemberResponse"][];
-            remote_project: string;
-            /** @enum {string} */
-            status: "linked";
-            /**
-             * @description Non-fatal notices — e.g. a template's inline `pipeline_yaml`
-             *     that could not be delivered anywhere. Empty in the common case.
-             */
-            warnings: string[];
-        } | {
-            blueprint: string;
-            /** Format: uuid */
-            control_plane_id: string;
-            members: components["schemas"]["ProvisionedPodMemberResponse"][];
-            remote_project: string;
-            /** @enum {string} */
-            status: "pod_created_link_failed";
-            warnings: string[];
-        };
         RecoveryConfirmation: {
             reason: string;
             recovery_key: string;
@@ -4858,37 +3484,6 @@ export interface components {
             runner_id: string;
             /** @example revoked */
             state: string;
-        };
-        /**
-         * @description Rework-rate figure for one slice, plus the exact definition and truncation
-         *     caveat that produced it.
-         */
-        ReworkStat: {
-            /**
-             * Format: int64
-             * @description Excluded because their only dispatch predates the retention cutoff — their
-             *     event history may already be gone (see `REWORK_TRUNCATION_NOTE`).
-             */
-            attempts_excluded_stale: number;
-            /**
-             * Format: int64
-             * @description Every dispatched item in scope, including ones excluded from the rate below.
-             */
-            attempts_total: number;
-            /**
-             * Format: int64
-             * @description Of the *eligible* (`attempts_total - attempts_excluded_stale`) items, how many
-             *     carry at least one qualifying event.
-             */
-            attempts_with_rework_signal: number;
-            below_min_sample: boolean;
-            definition: string;
-            /**
-             * Format: double
-             * @description `None` when the eligible sample is `0` or below `MIN_SAMPLE_SIZE`.
-             */
-            rate?: number | null;
-            truncation_note: string;
         };
         Role: {
             color: string;
@@ -5028,66 +3623,6 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
-        /**
-         * @description One item's place in a sprint-dispatch plan or report — shared shape for
-         *     both the dry-run preview and the real run's per-item result, so the two
-         *     responses read the same way side by side. `decision` is one of:
-         *     `"waiting_on_dependencies"`, `"no_dispatch_policy"`, `"not_eligible"`,
-         *     `"already_in_flight"`, `"blocked"`, `"waiting_approval"`, `"dispatched"`,
-         *     `"would_dispatch"` (dry-run only — a real run would have called docket
-         *     and resolved to one of the outcomes above instead), or `"error"`
-         *     (real run only — this item's own dispatch failed or its worker task
-         *     panicked; every other item in the sprint still ran).
-         */
-        SprintDispatchItemResponse: {
-            approval_token?: string | null;
-            /**
-             * @description Present only when `decision == "waiting_on_dependencies"` — every
-             *     direct dependency that hasn't reached a Done-category status yet.
-             */
-            blocked_by?: string[] | null;
-            current_status?: string | null;
-            decision: string;
-            dispatch_from?: string[] | null;
-            /** @description Present only when `decision == "error"` (real run only). */
-            error?: string | null;
-            /** Format: uuid */
-            item_id: string;
-            message?: string | null;
-            order: number;
-            policy_id?: string | null;
-            status: string;
-            status_applied?: string | null;
-            status_map_rejected?: string | null;
-            task?: null | components["schemas"]["DispatchedTaskResponse"];
-            title: string;
-        };
-        /** @description `POST /api/sprints/{id}/dispatch` response. */
-        SprintDispatchResponse: {
-            items: components["schemas"]["SprintDispatchItemResponse"][];
-            /** Format: int32 */
-            max_in_flight: number;
-            /** Format: uuid */
-            sprint_id: string;
-            summary: components["schemas"]["SprintDispatchSummary"];
-        };
-        /**
-         * @description Summary counts over a real dispatch run's per-item `decision` values —
-         *     the UI's headline "8 dispatched, 2 waiting on dependencies" line without
-         *     re-deriving it client-side from the row list.
-         */
-        SprintDispatchSummary: {
-            already_in_flight: number;
-            blocked: number;
-            dispatched: number;
-            errored: number;
-            no_dispatch_policy: number;
-            not_eligible: number;
-            total: number;
-            waiting_approval: number;
-            waiting_on_dependencies: number;
-            would_dispatch: number;
-        };
         /** @enum {string} */
         SprintStatus: "planning" | "active" | "review" | "closed";
         /** @enum {string} */
@@ -5099,36 +3634,6 @@ export interface components {
             order: number;
             wip_limit?: number | null;
         };
-        /**
-         * @description `status_map`. All keys optional except `dispatch_from`, which may be an
-         *     empty list before a dispatch policy is configured — dispatch needs it
-         *     non-empty, but registering a link ahead of that is a normal, valid state.
-         *     Every named status is validated against
-         *     the project's `WorkflowConfig` at save time — see [`validate_status_map`].
-         *     An absent key means "do not touch the item's status on that transition."
-         */
-        StatusMap: {
-            dispatch_from?: string[];
-            on_cancelled?: string | null;
-            on_failed?: string | null;
-            on_running?: string | null;
-            on_succeeded?: string | null;
-            on_waiting_approval?: string | null;
-        };
-        /**
-         * @description `pause`/`resume`'s wire shape — level plus why, not a bare enum. See
-         *     `tack_orch::Capabilities`'s own doc comment: the reason is
-         *     adapter-authored data, never a string this API layer invents.
-         */
-        SupportCapability: {
-            level: components["schemas"]["SupportLevel"];
-            reason: string;
-        };
-        /**
-         * @description Wire mirror of `tack_orch::Support`.
-         * @enum {string}
-         */
-        SupportLevel: "unsupported" | "advisory" | "supported";
         /**
          * @description Agent-fleet defaults captured on a template. Plain
          *     `create_project_from_template` stores it and moves on — nothing in this
@@ -5217,17 +3722,6 @@ export interface components {
             on_succeeded?: string | null;
             on_waiting_approval?: string | null;
         };
-        /** @description One `docket_tool_calls_total{decision=...}` sample. */
-        ToolCallEntry: {
-            /** Format: double */
-            count: number;
-            /**
-             * @description `"allow"` | `"ask"` | `"deny"` — docket's own closed vocabulary
-             *     (`core/tools.py`'s tool-gate decisions), shown verbatim so an
-             *     unrecognised future value still renders rather than being dropped.
-             */
-            decision: string;
-        };
         Transition: {
             from: string;
             to: string;
@@ -5257,21 +3751,6 @@ export interface components {
             grouping?: null | components["schemas"]["BoardGrouping"];
             is_default?: boolean | null;
             name?: string | null;
-        };
-        /**
-         * @description `PATCH /api/control-planes/{id}` body. `token` is tri-state — see the module
-         *     doc and [`deserialize_some`]. `name`/`base_url` follow the ordinary
-         *     "absent means untouched" convention every other partial update in this API
-         *     uses.
-         */
-        UpdateControlPlaneRequest: {
-            base_url?: string | null;
-            name?: string | null;
-            /**
-             * @description Absent = leave the stored token untouched. `null` = clear it. A string
-             *     = set/replace it.
-             */
-            token?: string | null;
         };
         UpdateCustomField: {
             default_value?: unknown;
@@ -5307,15 +3786,6 @@ export interface components {
         UpdateLocalRunner: {
             enabled: boolean;
         };
-        /**
-         * @description Incoming update — just the one field the contract defines. No tri-state
-         *     "unset back to env default" path exists yet; once stored, `source` stays
-         *     `"database"` permanently, mirroring how Cloud Backup's string fields
-         *     already behave for their own overrides.
-         */
-        UpdateOrchSettings: {
-            enabled: boolean;
-        };
         UpdateProject: {
             archived?: boolean | null;
             default_model?: null | components["schemas"]["ProjectModelDefault"];
@@ -5342,22 +3812,6 @@ export interface components {
         UpdateSprintStatus: {
             status: components["schemas"]["SprintStatus"];
         };
-        /** @description `PUT /api/projects/{id}/orch-link` body. */
-        UpsertOrchLinkRequest: {
-            auto_dispatch?: boolean;
-            blueprint?: string | null;
-            /** Format: double */
-            budget_usd?: number | null;
-            /** Format: uuid */
-            control_plane_id: string;
-            pipeline_file?: string | null;
-            remote_project: string;
-            status_map?: components["schemas"]["StatusMap"];
-        };
-        UsageCapability: {
-            level: components["schemas"]["UsageSupportLevel"];
-            reason: string;
-        };
         /**
          * @description Documents `tack_orch::usage_provenance::UsageEconomics` —
          *     `AttemptSummary.usage_economics`'s real shape. Always present (never
@@ -5369,11 +3823,6 @@ export interface components {
             model_token_cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
             runner_time_cost: components["schemas"]["RunnerTimeCostSchema"];
         };
-        /**
-         * @description Wire mirror of `tack_orch::UsageSupport`.
-         * @enum {string}
-         */
-        UsageSupportLevel: "not_measured" | "from_provider" | "from_gateway";
         /**
          * @description Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
          *     in this API (`*_usd_estimated`) uses this shape. `value` is `null`
@@ -5464,89 +3913,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    list_pending_approvals: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Fleet-wide pending-approval inbox, oldest first — includes uncorrelated approvals */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PendingApprovalListResponse"];
-                };
-            };
-            /** @description Orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    decide_approval: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description docket approval token */
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DecideApprovalRequest"];
-            };
-        };
-        responses: {
-            /** @description Decision applied — docket's own resulting state */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DecideApprovalResponse"];
-                };
-            };
-            /** @description Missing/invalid X-Tack-Approval-Token header, or TACK_ORCH_APPROVAL_TOKEN not configured on this server */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Unknown token, orchestration disabled, or the control plane that issued it was deleted */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The approval was already decided (granted/denied/expired) elsewhere */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -5910,182 +4276,6 @@ export interface operations {
             };
         };
     };
-    list_control_planes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description All registered control planes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlPlaneResponse"][];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_control_plane: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateControlPlaneRequest"];
-            };
-        };
-        responses: {
-            /** @description Control plane registered (token never returned) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlPlaneResponse"];
-                };
-            };
-            /** @description Validation error */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_control_plane: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Control plane ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The control plane */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlPlaneResponse"];
-                };
-            };
-            /** @description Not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    delete_control_plane: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Control plane ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    update_control_plane: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Control plane ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateControlPlaneRequest"];
-            };
-        };
-        responses: {
-            /** @description Updated control plane (token never returned); carries an ETag header naming the new version */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlPlaneResponse"];
-                };
-            };
-            /** @description Not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description If-Match did not match the control plane's current version — nothing was written */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
     get_field: {
         parameters: {
             query?: never;
@@ -6212,72 +4402,6 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
-            };
-        };
-    };
-    get_economics_items: {
-        parameters: {
-            query?: {
-                /** @description Filter to one `project_type` (e.g. `"software"`). Omit for all. */
-                project_type?: string;
-                /** @description Filter to one `item_type` (e.g. `"bug"`). Omit for all. */
-                item_type?: string;
-                /**
-                 * @description `"json"` (default, paginated) or `"csv"` (an attachment; ignores
-                 *     `limit`/`offset`, capped at `EXPORT_MAX_ROWS`).
-                 */
-                format?: string;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Per-completed-item economics (JSON, paginated) or a CSV export attachment, per the format query */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EconomicsItemsResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_economics_summary: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Unit economics (tokens, estimated cost, agent-vs-human lead time, rework rate) sliced by project_type and item_type */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EconomicsSummaryResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -6614,33 +4738,6 @@ export interface operations {
             };
         };
     };
-    get_fleet: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description One row per project linked to a control plane */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FleetListResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     health: {
         parameters: {
             query?: never;
@@ -6777,79 +4874,6 @@ export interface operations {
             };
             /** @description If-Match did not match the current item version — nothing was written */
             412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_item_agent_activity: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Item ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Dispatch attempts and approvals mirrored for this item */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ItemAgentActivityResponse"];
-                };
-            };
-            /** @description Item not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    dispatch_item: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Item ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Dispatch outcome — branch on the `outcome` field, not HTTP status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DispatchItemResponse"];
-                };
-            };
-            /** @description Item not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Project not linked to a control plane, a dispatch for this item is already in flight, or the control plane could not be reached */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7368,65 +5392,6 @@ export interface operations {
             };
         };
     };
-    get_metrics: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Prometheus text exposition: Tack's own work-tracking metrics plus the latest mirrored docket sample per metric/label set */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": unknown;
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_orch_run: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description docket's own pipeline-run id, as returned by POST /api/projects/{id}/orch-dispatch */
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The run's state as last mirrored by the reconciler; `mirrored: false` if this run id has no mirrored row yet */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrchRunReadbackResponse"];
-                };
-            };
-            /** @description Orchestration disabled */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
     list_projects: {
         parameters: {
             query?: never;
@@ -7668,36 +5633,6 @@ export interface operations {
             };
         };
     };
-    get_project_agent_activity: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Latest dispatch-attempt status per item with agent activity */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentBadgeResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     export_project: {
         parameters: {
             query?: {
@@ -7872,204 +5807,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
-            };
-        };
-    };
-    get_orch_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description This project's budget cap vs. estimated spend to date */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrchBudgetResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    dispatch_project_pipeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DispatchProjectPipelineRequest"];
-            };
-        };
-        responses: {
-            /** @description docket accepted the request and started a pipeline run. This reports that the run started, never that it was permitted — poll the reconciler's mirrored run state for the eventual outcome */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DispatchProjectPipelineResponse"];
-                };
-            };
-            /** @description Missing/invalid X-Tack-Dispatch-Token header, or TACK_ORCH_DISPATCH_TOKEN not configured on this server */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Project not found, project not linked to a control plane, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description docket refused the request itself (malformed variables, the control plane unreachable, or — defensively, though not reachable on this route today — a synchronous guardrail refusal) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_orch_link: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The project's control-plane link, if any */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrchLinkView"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    put_orch_link: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertOrchLinkRequest"];
-            };
-        };
-        responses: {
-            /** @description Saved link; carries an ETag header naming the new version */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrchLinkResponse"];
-                };
-            };
-            /** @description Validation error (e.g. an unknown status name in status_map) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Project or control plane not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description If-Match did not match (or no link exists yet to match) — nothing was written */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_orch_policy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Guardrail/tool-call/approval metrics for this project's linked control plane (control-plane-wide — see scoped_to_control_plane_only) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrchPolicyResponse"];
-                };
-            };
-            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -8896,50 +6633,6 @@ export interface operations {
             };
         };
     };
-    get_orch_settings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Orchestration settings: effective enabled flag, where it came from, and reconciler/link counts */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    put_orch_settings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateOrchSettings"];
-            };
-        };
-        responses: {
-            /** @description Updated orchestration settings (same shape as GET) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     get_sprint: {
         parameters: {
             query?: never;
@@ -9008,104 +6701,6 @@ export interface operations {
             };
             /** @description Sprint not found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    dispatch_sprint: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sprint ID */
-                id: string;
-                /**
-                 * @description Bound on concurrent HTTP calls to the control plane for this run.
-                 *     Omit to use `sprint_dispatch::DEFAULT_MAX_IN_FLIGHT`; any value is
-                 *     clamped to `[1, sprint_dispatch::MAX_MAX_IN_FLIGHT]`. The dry-run
-                 *     response's own `max_in_flight` field reports the clamped value, so
-                 *     the UI can show exactly what a real run with this input would use.
-                 */
-                max_in_flight: number | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Sprint dispatch report — one row per item, in dependency order */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SprintDispatchResponse"];
-                };
-            };
-            /** @description Sprint not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Project not linked to a control plane */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    dry_run_sprint_dispatch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sprint ID */
-                id: string;
-                /**
-                 * @description Bound on concurrent HTTP calls to the control plane for this run.
-                 *     Omit to use `sprint_dispatch::DEFAULT_MAX_IN_FLIGHT`; any value is
-                 *     clamped to `[1, sprint_dispatch::MAX_MAX_IN_FLIGHT]`. The dry-run
-                 *     response's own `max_in_flight` field reports the clamped value, so
-                 *     the UI can show exactly what a real run with this input would use.
-                 */
-                max_in_flight: number | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Dependency-ordered dispatch plan — zero side effects */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DryRunSprintDispatchResponse"];
-                };
-            };
-            /** @description Sprint not found, or orchestration disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Project not linked to a control plane */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9274,69 +6869,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    create_project_with_pod: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Template ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateProjectWithPodRequest"];
-            };
-        };
-        responses: {
-            /** @description Project created; pod provisioned. `provisioning.status` distinguishes a fully-linked result from one where the pod exists but the link write failed (both are real, neither was rolled back) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateProjectWithPodResponse"];
-                };
-            };
-            /** @description Validation error, or docket refused the provisioning request — the project (if one had been created for this attempt) was rolled back */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Template or control plane not found, or orchestration disabled (TACK_ORCH_ENABLE unset) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description A pod already exists on this control plane under that remote project name — the project created for this attempt was rolled back */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description name/description validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
             };
         };
     };

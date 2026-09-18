@@ -11,7 +11,6 @@ use axum::http::{Request, StatusCode, header};
 use tower::ServiceExt;
 
 use crate::common::test_app;
-use tack_api::handlers::orch::APPROVAL_TOKEN_HEADER;
 
 /// `Access-Control-Allow-Origin` only reflects an origin the server was
 /// actually configured with (`TACK_ALLOWED_ORIGINS`); `AppConfig::default()`
@@ -44,7 +43,7 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
         .header(header::ACCESS_CONTROL_REQUEST_METHOD, method)
         .header(
             header::ACCESS_CONTROL_REQUEST_HEADERS,
-            "if-match, x-tack-approval-token, content-type, authorization",
+            "if-match, content-type, authorization",
         )
         .body(Body::empty())
         .unwrap();
@@ -58,13 +57,11 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
 }
 
 /// A browser preflight for a cross-origin `PATCH /api/items/{id}` — the
-/// shape both the ETag/If-Match write path and the approval-decide call
-/// (`frontend/src/features/approvals/api.ts`) actually send — must list
-/// `if-match` and `x-tack-approval-token` in the allowed request headers,
-/// and a real (non-preflight) response must expose `ETag` so the browser's
-/// `fetch()` can read it back off a `GET`. Without `expose_headers` naming
-/// `ETag`, a browser can read zero non-safelisted response headers from
-/// this API, full stop.
+/// shape the ETag/If-Match write path actually sends — must list `if-match`
+/// in the allowed request headers, and a real (non-preflight) response must
+/// expose `ETag` so the browser's `fetch()` can read it back off a `GET`.
+/// Without `expose_headers` naming `ETag`, a browser can read zero
+/// non-safelisted response headers from this API, full stop.
 /// Asserts a real (non-preflight) GET exposes `ETag` via
 /// `Access-Control-Expose-Headers` — `tower_http`'s CORS layer only
 /// attaches it to a real response, never a preflight.
@@ -91,11 +88,11 @@ async fn assert_etag_exposed(app: &Router) {
 }
 
 #[tokio::test]
-async fn preflight_allows_if_match_approval_token_exposes_etag() {
+async fn preflight_allows_if_match_exposes_etag() {
     let (app, _workspace_id) = test_app().await;
     let item_uri = "/api/items/00000000-0000-0000-0000-000000000000";
 
-    // (a)+(b): If-Match must be allowed for a PATCH preflight.
+    // If-Match must be allowed for a PATCH preflight.
     let status = preflight(&app, item_uri, "PATCH", "if-match, content-type").await;
     assert_eq!(status, StatusCode::OK);
     let allow_headers = preflight_allow_headers(&app, item_uri, "PATCH").await;
@@ -104,21 +101,7 @@ async fn preflight_allows_if_match_approval_token_exposes_etag() {
         "if-match missing from Access-Control-Allow-Headers: {allow_headers}"
     );
 
-    // (c): x-tack-approval-token must be allowed for the approval-decide
-    // preflight (`POST /api/approvals/{token}`) — pre-existing bug, fixed
-    // here. Assert the literal constant the handler actually checks
-    // (`handlers/orch.rs::APPROVAL_TOKEN_HEADER`), not a hand-copied
-    // string, so this test can't drift from the header the server reads.
-    let approval_uri = "/api/approvals/apr-test-token";
-    let status = preflight(&app, approval_uri, "POST", APPROVAL_TOKEN_HEADER).await;
-    assert_eq!(status, StatusCode::OK);
-    let allow_headers = preflight_allow_headers(&app, approval_uri, "POST").await;
-    assert!(
-        allow_headers.contains(APPROVAL_TOKEN_HEADER),
-        "{APPROVAL_TOKEN_HEADER} missing from Access-Control-Allow-Headers: {allow_headers}"
-    );
-
-    // (a): ETag must be readable by JS on the real response, not just sent
+    // ETag must be readable by JS on the real response, not just sent
     // on the wire — this has to be a plain GET, not another OPTIONS round-trip.
     assert_etag_exposed(&app).await;
 }

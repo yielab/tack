@@ -4,8 +4,8 @@
 //! through the real production router, the two focused read-only
 //! runner/attempt routes, the attempt-scoped artifact/decision list routes,
 //! cross-execution scoping on the attempt-events and artifact-download
-//! routes, economics reporting, optimistic item-version concurrency, and
-//! template provisioning's rollback behavior.
+//! routes, runner-fleet membership, template save-time validation, and
+//! optimistic item-version concurrency.
 
 mod common;
 
@@ -15,10 +15,10 @@ mod attempt_lists;
 mod attempt_scoping;
 #[path = "handlers/crud.rs"]
 mod crud;
-#[path = "handlers/economics.rs"]
-mod economics;
 #[path = "handlers/executions_runner_admin.rs"]
 mod executions_runner_admin;
+#[path = "handlers/fleet_membership.rs"]
+mod fleet_membership;
 #[path = "handlers/item_concurrency.rs"]
 mod item_concurrency;
 #[path = "handlers/local_runner.rs"]
@@ -27,5 +27,5 @@ mod local_runner;
 mod operator_read_routes;
 #[path = "handlers/production_router.rs"]
 mod production_router;
-#[path = "handlers/provisioning.rs"]
-mod provisioning;
+#[path = "handlers/templates.rs"]
+mod templates;

@@ -5,8 +5,8 @@ default, with an automatic pre-upgrade snapshot before the one genuinely risky c
 of migration), and how to safely enable the runner-fleet execution features added in
 Part III on an existing deployment.
 
-If you are only running Tack as a project manager and have never set
-`TACK_ORCH_ENABLE` or created an execution request, upgrading is exactly one step:
+If you are only running Tack as a project manager and have never created an
+execution request, upgrading is exactly one step:
 **back up, then start the new binary.** Everything below the first section is opt-in.
 
 ---
@@ -71,10 +71,8 @@ gates are independent of each other — enabling one does not enable the others.
 | You want... | Set | Off-by-default because |
 |---|---|---|
 | The execution/runner/fleet API surface to exist at all (`POST /api/executions`, `/api/runners/*`, etc.) | Nothing — this surface has no `_ENABLE` gate; it's always mounted | Creating an execution request or enrolling a runner has no side effect on its own until something acts on it |
-| Docket control-plane polling and dispatch (`/api/control-planes`, `/api/fleet`) | `TACK_ORCH_ENABLE=true` | Spawns a background reconciler task and adds a real, network-reaching agent-fleet backend to the picture |
 | Resolving a scoped execution decision | `TACK_EXECUTION_DECISION_TOKEN=<secret>` | Fail-closed by design — with it unset, `POST .../decisions/{id}/resolve` rejects every request rather than falling back to the ordinary operator token |
-| Granting/denying a Docket approval | `TACK_ORCH_APPROVAL_TOKEN=<secret>` | Same fail-closed posture, mirrored exactly for the Docket approval surface |
-| Automatic deletion of old execution history, replay bookkeeping, and artifact blobs | `TACK_EXECUTION_RETENTION_ENABLE=true` | **Deletes rows and on-disk blobs.** Off by default deliberately: data deletion is an explicit operator opt-in, matching `TACK_ORCH_ENABLE`'s posture |
+| Automatic deletion of old execution history, replay bookkeeping, and artifact blobs | `TACK_EXECUTION_RETENTION_ENABLE=true` | **Deletes rows and on-disk blobs.** Off by default deliberately: data deletion is an explicit operator opt-in |
 | The read-only execution health watch (logs a `warn!` on stale-lease/`needs_operator` onset) | Nothing to do — `TACK_EXECUTION_HEALTH_ENABLE=true` is the default | Reads and logs only; no data is deleted or sent anywhere |
 
 **Recommended enablement order for a first rollout:**
@@ -90,10 +88,11 @@ gates are independent of each other — enabling one does not enable the others.
    want execution history and artifact blobs to live
    (`TACK_EXECUTION_RETENTION_DAYS`, default 90) — this is the one setting on this
    page that deletes data.
-4. Enable `TACK_ORCH_ENABLE` only if you're actually running Docket. It's entirely
-   optional; runner-fleet execution (Codex/Claude Code via `tack-runner`)
-   does not need it and vice versa — see
-   [Docket compatibility](book/src/user-guide/agent-runners.md#docket-compatibility).
+
+Docket is reached the same way as any other coding agent, as a harness
+(`--harness docket`) on a runner-v1 execution request — see
+[Agent Runners](book/src/user-guide/agent-runners.md). It needs no separate
+enablement step here.
 
 Full variable reference, defaults, and cross-references: `docs/CONFIG.md`.
 

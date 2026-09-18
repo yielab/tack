@@ -68,11 +68,8 @@ pub struct ErrorBody {
     pub message: String,
     /// Stable, machine-readable error code. Present on a narrow set of
     /// responses where a caller needs to branch on *why* without parsing
-    /// `message` — e.g. `orchestration_disabled` on the 409 every
-    /// orchestration route returns while the feature is switched off (see
-    /// `handlers::orch::require_orch_enabled`). Absent on ordinary errors.
+    /// `message`. Absent on ordinary errors.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "orchestration_disabled")]
     pub code: Option<String>,
 }
 
@@ -274,7 +271,7 @@ fn json_operation(
 // `handlers::executions`/`handlers::runner_admin`'s handlers each carry
 // their own `#[utoipa::path(...)]` annotation referencing real,
 // `ToSchema`-derived request/response DTOs, exactly like every other
-// domain in this file (`handlers::orch`, `handlers::items`, …) — listed
+// domain in this file (`handlers::items`, `handlers::projects`, …) — listed
 // directly in `ApiDoc`'s `paths(...)`/`components(schemas(...))` below
 // instead of through a separate nested fragment with every body typed as
 // free-form JSON (`json_operation`'s `json_content()`), which would leave
@@ -627,7 +624,7 @@ fn resolve_decision_operation() -> OperationBuilder {
              for it). Fail-closed: every call is rejected with 403 whenever the server has not \
              configured TACK_EXECUTION_DECISION_TOKEN at all — there is no \"no secret \
              configured, allow everything\" fallback the way the plain Bearer gate has for an \
-             unset TACK_API_TOKEN. Mirrors TACK_ORCH_APPROVAL_TOKEN exactly.",
+             unset TACK_API_TOKEN.",
             true,
         ),
     ];
@@ -823,7 +820,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
             and domain models; it is the single source of truth for the wire format. \
             All failing responses share the `{ \"error\": { \"status\", \"message\" } }` \
             envelope, with an additional `code` field on a narrow set of responses \
-            (e.g. `orchestration_disabled`) where a caller needs to branch on the \
+            (e.g. `stale_lease`) where a caller needs to branch on the \
             reason without parsing `message`.",
         license(name = "MIT", identifier = "MIT"),
         contact(name = "Tack", email = "info@yielab.com"),
@@ -912,38 +909,12 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Settings ──────────────────────────────────────────────────────
         handlers::settings::get_backup_settings,
         handlers::settings::put_backup_settings,
-        handlers::settings::get_orch_settings,
-        handlers::settings::put_orch_settings,
         // ── Embedded runner control (ADR 0061 decisions 2 and 6) ────────────
         handlers::local_runner::get_local_runner,
         handlers::local_runner::put_local_runner,
         handlers::local_runner::list_local_runner_secrets,
         handlers::local_runner::put_local_runner_secret,
         handlers::local_runner::delete_local_runner_secret,
-        // ── Orchestration (Agent-Factory Control Center) ────────────────────
-        handlers::orch::create_control_plane,
-        handlers::orch::list_control_planes,
-        handlers::orch::get_control_plane,
-        handlers::orch::update_control_plane,
-        handlers::orch::delete_control_plane,
-        handlers::orch::get_orch_link,
-        handlers::orch::put_orch_link,
-        handlers::orch::get_fleet,
-        handlers::orch::get_orch_budget,
-        handlers::orch::get_metrics,
-        handlers::orch::get_orch_policy,
-        handlers::orch::get_item_agent_activity,
-        handlers::orch::get_project_agent_activity,
-        handlers::orch::dispatch_item,
-        handlers::orch::dispatch_sprint,
-        handlers::orch::dry_run_sprint_dispatch,
-        handlers::orch::list_pending_approvals,
-        handlers::orch::decide_approval,
-        handlers::orch::dispatch_project_pipeline,
-        handlers::orch::get_orch_run,
-        handlers::provisioning::create_project_with_pod,
-        handlers::economics::get_economics_summary,
-        handlers::economics::get_economics_items,
         // ── Harness-agnostic runner fleet: operator execution API ──────────
         handlers::executions::create_execution,
         handlers::executions::list_executions,
@@ -987,68 +958,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::import_linear::LinearImportRequest,
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,
-        handlers::settings::UpdateOrchSettings,
         handlers::local_runner::UpdateLocalRunner,
         handlers::local_runner::SetLocalRunnerSecret,
-        handlers::orch::ControlPlaneResponse,
-        handlers::orch::CapabilitiesResponse,
-        handlers::orch::SupportLevel,
-        handlers::orch::EventScopeLevel,
-        handlers::orch::DecisionSupportLevel,
-        handlers::orch::UsageSupportLevel,
-        handlers::orch::ModelSelectionLevel,
-        handlers::orch::SupportCapability,
-        handlers::orch::EventScopeCapability,
-        handlers::orch::DecisionsCapability,
-        handlers::orch::UsageCapability,
-        handlers::orch::ModelSelectionCapability,
-        handlers::orch::CreateControlPlaneRequest,
-        handlers::orch::UpdateControlPlaneRequest,
-        handlers::orch::OrchLinkResponse,
-        handlers::orch::OrchLinkView,
-        handlers::orch::UpsertOrchLinkRequest,
-        handlers::orch::StatusMap,
-        handlers::orch::FleetEntry,
-        handlers::orch::FleetListResponse,
-        handlers::orch::FleetRosterMember,
-        handlers::orch::OrchBudgetResponse,
-        handlers::orch::OrchPolicyResponse,
-        handlers::orch::ToolCallEntry,
-        handlers::orch::PolicyHitEntry,
-        handlers::orch::ApprovalChannelEntry,
-        handlers::orch::ItemAgentEventResponse,
-        handlers::orch::ItemAgentRunResponse,
-        handlers::orch::ItemAgentAttemptResponse,
-        handlers::orch::ItemAgentApprovalResponse,
-        handlers::orch::ItemAgentActivityResponse,
-        handlers::orch::AgentBadgeRowResponse,
-        handlers::orch::AgentBadgeResponse,
-        handlers::orch::DispatchedTaskResponse,
-        handlers::orch::DispatchItemResponse,
-        handlers::orch::SprintDispatchItemResponse,
-        handlers::orch::SprintDispatchSummary,
-        handlers::orch::DryRunSprintDispatchResponse,
-        handlers::orch::SprintDispatchResponse,
-        handlers::orch::PendingApprovalResponse,
-        handlers::orch::PendingApprovalListResponse,
-        handlers::orch::ApprovalDecisionAction,
-        handlers::orch::DecideApprovalRequest,
-        handlers::orch::DecideApprovalResponse,
-        handlers::orch::DispatchProjectPipelineRequest,
-        handlers::orch::DispatchProjectPipelineResponse,
-        handlers::orch::OrchRunReadbackResponse,
-        handlers::provisioning::ProvisionPodRequest,
-        handlers::provisioning::CreateProjectWithPodRequest,
-        handlers::provisioning::ProvisionedPodMemberResponse,
-        handlers::provisioning::ProvisioningOutcome,
-        handlers::provisioning::CreateProjectWithPodResponse,
-        handlers::economics::LeadTimeStat,
-        handlers::economics::ReworkStat,
-        handlers::economics::EconomicsSlice,
-        handlers::economics::EconomicsSummaryResponse,
-        handlers::economics::EconomicsPopulation,
-        handlers::economics::EconomicsItemResponse,
-        handlers::economics::EconomicsItemsResponse,
         // ── Harness-agnostic runner fleet: operator execution API DTOs ──────
         handlers::executions::CreateExecution,
         handlers::executions::CreateExecutionResponse,
@@ -1167,9 +1078,6 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "search", description = "Full-text search within a project or globally."),
         (name = "backup", description = "Local and S3-compatible cloud backup / restore."),
         (name = "settings", description = "Runtime-editable server settings (cloud backup)."),
-        (name = "orchestration", description = "Agent-Factory Control Center: control-plane registration, \
-            per-project links, and the Fleet view aggregate. Every route is disabled — 404 — unless \
-            TACK_ORCH_ENABLE is set."),
         (name = "execution-operator", description = "Harness-agnostic runner fleet (Part III): PM-side \
             execution-request/fleet/runner-enrollment/agent-profile management. \
             Authenticated the same way as the rest of this API (operator session or API token); scopes \
