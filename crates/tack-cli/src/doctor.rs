@@ -46,6 +46,9 @@ async fn probe() -> bootstrap::DiscoveryReport {
     // A doctor run never claims or executes an attempt, so the only thing
     // this path feeds — `wait()`'s artifact-staging directory — is never
     // reached; nothing is created or written under it.
+    // Named but never created or written — see the comment above — so this is
+    // not a test artifact and takes no `tempfile` guard.
+    #[allow(clippy::disallowed_methods)]
     let staging_root = std::env::temp_dir().join("tack-runner-doctor-unused-staging");
     // The real state dir a `runner start` in this same environment would
     // use (honors `--state-dir`/`TACK_RUNNER_STATE_DIR`), so the backend

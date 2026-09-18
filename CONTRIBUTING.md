@@ -26,7 +26,7 @@ cargo nextest run --workspace
 
 `scripts/setup-git.sh` wires up two things:
 
-- **`.githooks/pre-push`** runs the comment and test-hygiene checks, `cargo fmt --all --check` for the root workspace *and*, separately, for `crates/tack-desktop` (its own workspace), `cargo clippy --workspace --all-targets -- -D warnings`, and a check that `Cargo.lock` and (when `frontend/node_modules` exists) `schema.gen.ts` are not stale — not the test suite. This mirrors most of what CI's `rust` job checks before the test run, so failures are caught locally before they reach GitHub. See "Pull Request Process" below for the exact command.
+- **`.githooks/pre-push`** runs exactly three things: `cargo fmt --all --check` for the root workspace *and*, separately, for `crates/tack-desktop` (its own workspace), `cargo clippy --workspace --all-targets -- -D warnings`, and a freshness check on `Cargo.lock` and (when `frontend/node_modules` exists) `schema.gen.ts` — not the test suite. This mirrors most of what CI's `rust` job checks before the test run, so failures are caught locally before they reach GitHub. See "Pull Request Process" below for the exact command.
 - **The `tack-generated` merge driver** for `Cargo.lock`, `frontend/package-lock.json`, `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts`. Each is a pure function of sources tracked elsewhere, so hand-merging one is always either busywork or a mistake. The driver resolves them without a conflict and `.githooks/post-merge` regenerates them from the merged sources — staged, never committed for you. `scripts/regen-generated.sh` is the same regeneration, runnable by hand.
 
 `rust-toolchain.toml` pins the exact compiler both you and CI use, and rustup installs it with `rustfmt` and `clippy` the first time you run `cargo` here — you do not need to select a toolchain yourself, and you should not override it. Bumping that pin is a deliberate one-line change that Dependabot proposes monthly; it can surface new clippy lints, which is precisely why it is not left to whatever day upstream ships a release.
@@ -274,10 +274,10 @@ curl -s localhost:3210/api/debug/db-stats | jq
 
 ### Writing Tests
 
-Every test follows the size rules in `docs/TESTING.md` ("Where a test lives, and how big
-it may be"): one claim per test, a name of at most 60 characters that states it, a body of
-at most 60 lines, helpers in `tests/common`, no fixed waits.
-`python3 scripts/maintainability.py check --changed` tells you before the push does.
+Every test follows the conventions in `docs/TESTING.md` ("Where a test lives, and how big
+it may be"): one claim per test, a name that states it, helpers in `tests/common`, no fixed
+waits. `cargo clippy --workspace --all-targets -- -D warnings` catches an oversized function
+(`clippy.toml`'s `too-many-lines-threshold`); review carries the rest.
 
 **Unit tests** go in the same file as the code, inside a `#[cfg(test)]` module, while that
 module is under 150 lines; past that they move to `<module>/tests.rs`
@@ -409,6 +409,18 @@ SELECT * FROM _migrations;
 PRAGMA journal_mode;   -- should show "wal"
 ```
 
+### Writing a Migration
+
+**One `ALTER` per migration name.** The migration runner executes a migration's statements
+individually, with no wrapping transaction, so a multi-`ALTER` migration that fails partway
+through bricks the install — give each `ALTER` its own migration name instead.
+
+**`BEGIN IMMEDIATE` is mandatory for a transaction that reads then writes.** A deferred
+transaction that reads then writes deadlocks under concurrency once two callers both try to
+upgrade from reader to writer. Prove a concurrency test load-bearing against a file-backed
+database, not the shared in-memory test harness, which can mask the race. Full detail and
+the stress-test approach: `docs/ARCHITECTURE.md`.
+
 ---
 
 ## Error Handling
@@ -436,6 +448,8 @@ All logging uses the `tracing` crate with structured spans.
 - **Handlers** — `#[instrument(skip(state))]` auto-creates spans
 - **Repository methods** — same instrumentation, logs at `debug` level
 - **HTTP middleware** — `TraceLayer` logs every request with method, URI, and duration
+- **Logs carry ids only** — never credentials, prompt bodies, query strings or env values.
+  A test asserts the redaction wherever a log line could plausibly carry one.
 
 ```bash
 RUST_LOG=error cargo run -p tack-cli -- serve                # errors only
@@ -443,7 +457,27 @@ RUST_LOG=tack_db=debug cargo run -p tack-cli -- serve      # debug the DB layer
 RUST_LOG=trace cargo run -p tack-cli -- serve                # everything (very verbose)
 ```
 
+## Secrets
+
+Secrets are write-only over the API and never logged. Every new secret column is added to
+`remote_backup.rs::scrub_snapshot_secrets` in the same commit that adds it — a backup or
+remote-sync snapshot must never carry a secret in the clear.
+
 ---
+
+## Decisions and Scope
+
+A non-trivial design or architecture choice is recorded as an ADR under `docs/adr/`, not
+argued out across commit messages or PR comments. Write it for someone who was not in the
+room: the first screen must say, in plain language with no jargon or citations, what is
+being decided, why it needs deciding now, and what stays blocked if nobody accepts it.
+Put the rejected alternatives, line numbers and cost analysis in a separate section below
+that summary — a reader who trusts the summary should never have to open it.
+
+Do not build a mechanism — a column, a trait, a config flag, a route, a module — that
+nothing in the same change calls. Code with no caller is not "ready for later"; it is
+unverified surface with a maintenance cost and no test that can fail meaningfully. Build
+for the second concrete case you actually have, not a hypothetical third.
 
 ## Reporting Bugs & Requesting Features
 
@@ -484,12 +518,11 @@ that may not fit the roadmap.
    ./.githooks/pre-push
    ```
 
-   That runs, in order: the comment and test-hygiene checks, `cargo fmt --all --check`
-   for the root workspace *and*, separately, for `crates/tack-desktop` (its own
-   workspace, excluded from the root one), `cargo clippy --workspace --all-targets --
-   -D warnings`, and the lockfile / `schema.gen.ts` freshness checks (the latter only
-   when `frontend/node_modules` exists) — **not the test suite**, on purpose. Run that
-   yourself:
+   That runs, in order: `cargo fmt --all --check` for the root workspace *and*,
+   separately, for `crates/tack-desktop` (its own workspace, excluded from the root
+   one), `cargo clippy --workspace --all-targets -- -D warnings`, and the lockfile /
+   `schema.gen.ts` freshness checks (the latter only when `frontend/node_modules`
+   exists) — **not the test suite**, on purpose. Run that yourself:
 
    ```bash
    cargo nextest run --workspace
@@ -581,3 +614,21 @@ Tack uses a simple two-long-lived-branch model:
 - Prefer returning `Result` over panicking
 - Write tests for any new business logic
 - No AI attribution lines in commit messages
+- **Unsupported is typed, unknown is explicit, unmeasured is nullable.** No
+  `unimplemented!()`, and no zero standing in for "unknown" (never render `$0.00` for
+  unmeasured money — the literal is `Not measured`). A capability a component cannot
+  honour is declared as such in its own type, not silently ignored.
+- **Changing an API response shape updates the matching frontend unit/E2E mocks in the
+  same change.** Frontend colors come from `--color-*` tokens only, never raw hex.
+
+### Comments
+
+Comments explain the code, never the project's history. Write what the code does when the
+name doesn't say it, why a non-obvious choice was made, what breaks if you change it, and
+what isn't true yet (an unwired column, a mechanism with no caller). Don't write dates,
+attributions, commented-out code, or a narrative of how the code got here — `git log`
+already holds that, and a reader with just the code can't use a reference to a process they
+were never part of. `scripts/check-comments.sh` (~0.2s, in CI) enforces the one part of
+this a script can check mechanically: a comment that cites a filename must cite a file that
+still exists. When it fires, repoint the citation or restate the fact it stood in for —
+deleting the comment is almost always the wrong fix, since it usually wraps something real.
