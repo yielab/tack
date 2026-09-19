@@ -275,10 +275,7 @@ export async function createFreshItem(
 /**
  * Create a runner fleet via the operator execution surface
  * (`POST /api/runner-fleets`) — the "Run with agent" modal's target picker
- * lists these fleets. This route is NOT gated behind `TACK_ORCH_ENABLE` —
- * see `crates/tack-api/src/router.rs`'s own comment distinguishing
- * `orch_routes` from the always-on operator execution/fleet routes. Returns
- * the new fleet's id.
+ * lists these fleets. Returns the new fleet's id.
  */
 export async function createFleet(request: APIRequestContext, name: string): Promise<string> {
   const res = await request.post(`${API}/runner-fleets`, { data: { name } });

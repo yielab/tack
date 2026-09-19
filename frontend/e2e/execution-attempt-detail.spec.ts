@@ -241,10 +241,15 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const resolveHandle = await resolveButton.elementHandle();
     expect(resolveHandle).not.toBeNull();
 
-    // Longer than `realtime.ts`'s own 4s default poll interval, so at least
-    // one full invalidate-and-refetch round trip lands inside this wait
-    // regardless of how much time the setup above already used.
-    await page.waitForTimeout(6000);
+    // The next poll's refetch of this attempt's decisions lands, and the
+    // frames after it give the list time to re-render from the new data.
+    await page.waitForResponse(
+      (r) => r.request().method() === 'GET' && /\/attempts\/\d+\/decisions/.test(r.url()),
+      { timeout: 15_000 },
+    );
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))),
+    );
 
     // The exact node captured before the wait is still the one in the DOM
     // — never detached and replaced by a fresh mount.

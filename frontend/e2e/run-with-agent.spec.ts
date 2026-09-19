@@ -17,10 +17,8 @@ import {
 // "Run with agent" — item/sprint execution UI, built for zero hand-typed
 // identifiers wherever the API can supply a real one instead. This feature
 // targets `/api/executions`, `/api/runner-fleets`, `/api/agent-profiles`,
-// `/api/projects/{id}` (the model default) — an always-on operator surface,
-// NOT gated behind `TACK_ORCH_ENABLE`, so no orchestration-enable setup is
-// needed for these specs. See `crates/tack-api/src/router.rs`'s own comment
-// on `orch_routes` vs. the always-on operator execution/fleet routes.
+// `/api/projects/{id}` (the model default) — the always-on operator surface,
+// so these specs need no server setup beyond the default webServer.
 //
 // Every test enrolls at least one runner: with none, the modal shows its
 // "agent execution is off" state instead of the form. That reads zero
