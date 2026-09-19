@@ -986,6 +986,16 @@ assets are signed and SBOM'd.
 
 ---
 
+**Next cycle (added August 2026): Phases 33–38 — the Agent-Factory Control Center.**
+Tack becomes the control panel for a factory of products built by
+[docket](https://github.com/yielab/docket) agent fleets: a new `tack-orch` crate with
+a `ControlPlane` trait and a pull-based reconciler, six new tables, dispatch from the
+board, a fleet-wide approvals inbox, one-click product+pod provisioning, and
+per-product unit economics. Executable task cards for parallel agents were in
+`TODO.md`, now [`docs/closed-cycles/boards/part-1.md`](../../closed-cycles/boards/part-1.md);
+the reciprocal docket-side work is Phase 22 of that project's `ROADMAP.md`. **That cycle is
+complete** — all six phases shipped 2026-08-05.
+
 ## Next — Agent-Factory Control Center (Phases 33–38, August 2026)
 
 **Thesis:** Tack becomes the **control center for a factory of products** built by
@@ -1478,6 +1488,22 @@ inbox, and answer what the product line cost per shipped item — with every cos
 honestly labelled an estimate.
 
 ---
+
+**Historical cycle (partially implemented August 2026): Phases 39–49 — the Agnostic
+Control Plane.**
+Phases 33–38 built a control center against exactly one backend. This cycle makes it true
+of any backend: capability negotiation so the UI disables what a provider cannot do and
+names why, a `ControlPlane` trait with no docket nouns left in it, a **GitHub Actions
+adapter** chosen because it shares none of docket's shape, an inbound telemetry channel
+pushed from inside a run, per-item model choice owned by Tack, and the GitHub pipeline
+finished in both directions (which closes Phase 21). Full plan with per-item verification
+commands in [docs/closed-cycles/plans/agnostic-control-plane.md](../../closed-cycles/plans/agnostic-control-plane.md);
+task cards in [`docs/closed-cycles/boards/part-2.md`](../../closed-cycles/boards/part-2.md).
+
+**Status correction (2026-08-06):** Phases 39–42 exist in the current unreleased working
+tree, but Phase 41's atomic-write acceptance and Phase 42's provider-scoped identity are
+reopened. Phases 43–49 are frozen/superseded by the harness-agnostic runner plan appended
+at the bottom of this roadmap. Their text is intentionally retained as design history.
 
 ## Next — Agnostic Control Plane (Phases 39–49, August 2026)
 
