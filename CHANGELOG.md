@@ -25,8 +25,9 @@ Sections from the next release on are generated from the commit history by
 - **An idle runner claimed work about a hundred times a second.** The server answers a
   claim with no work at once and says when to ask again; the runner ignored that. It now
   waits for the hint — one claim every five seconds when there is nothing to do.
-- `make e2e` on a Linux desktop no longer overwrites the `vercel-ai-gateway/default` entry
-  in your own keychain; the E2E server keeps its secrets in a file under `storage-e2e`.
+- `make e2e` and `scripts/smoke.sh` on a Linux desktop no longer overwrite the
+  `vercel-ai-gateway/default` entry in your own keychain; both keep their secrets in a
+  file under their own state directory.
 
 ### Removed
 

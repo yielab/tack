@@ -38,7 +38,7 @@ Numbers, measured today (`2026-09-19`), not aspirational:
 | | |
 | --- | --- |
 | Rust | 96,629 lines across the six crates (`find crates -name '*.rs' \| xargs wc -l`) |
-| Tests | 1,116 passed, 7 skipped, 0 failed, `cargo nextest run --workspace`, ~26s |
+| Tests | 1,049 Rust tests (`cargo nextest run --workspace`, ~27 s) and 551 frontend tests (`npx vitest run`, ~5 s) |
 | Migrations | 72, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
 | API surface | 78 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
 | Release binary | 18.4 MiB, `lto = true, opt-level = "z"`, measured in CI (`stat -c%s target/release/tack`) |
