@@ -182,7 +182,7 @@ file — no separate workflow per tier:
 |---|---|---|
 | Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security` |
 | Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (Chromium only) |
-| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `e2e` (all three browsers) |
+| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (all three browsers) |
 
 | Job | What it runs |
 |---|---|
@@ -192,6 +192,7 @@ file — no separate workflow per tier:
 | `docs` | `mdbook build` + link check |
 | `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` |
 | `msrv` | `cargo build --workspace --locked` on the pinned dependency floor |
+| `mutants` | `cargo-mutants` over `tack-core` and `tack-db`'s repository layer. Report-only: surviving mutants are listed in the job summary and the `mutants-*` artifacts, and never fail the build. Read it when deciding where the next test goes — a survivor is a line a test runs but would not miss |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `embed-spa` | release build with the SPA embedded, binary-size budget |
 | `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
