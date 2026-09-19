@@ -542,7 +542,7 @@ async fn run_events_decisions_and_artifacts_exchange(
             DecisionPollReport {
                 attempt_id: attempt.clone(),
                 fencing_token: FencingToken(7),
-                after: Some(Timestamp::new("2026-08-06T12:20:59Z")),
+                after: Timestamp::new("2026-08-06T12:20:59Z"),
             },
         )
         .await
@@ -961,4 +961,21 @@ fn retry_backoff_is_bounded() {
     assert_eq!(policy.backoff_for(1), Duration::from_millis(250));
     assert_eq!(policy.backoff_for(2), Duration::from_millis(500));
     assert_eq!(policy.backoff_for(30), policy.max_backoff);
+}
+
+#[test]
+fn an_idle_runner_paces_its_claims_by_the_servers_hint() {
+    let ms = Duration::from_millis;
+    for (retry_after, claim_took, expected) in [
+        // The server answered at once: wait the whole hint.
+        (ms(5_000), ms(3), ms(4_997)),
+        // The server held the claim open for longer than its own hint.
+        (ms(5_000), ms(10_000), ms(250)),
+        // A hint of zero never turns the loop hot.
+        (ms(0), ms(0), ms(250)),
+        // A hint beyond the contract's longest wait is cut down to it.
+        (ms(3_600_000), ms(0), ms(30_000)),
+    ] {
+        assert_eq!(idle_pause(retry_after, claim_took), expected);
+    }
 }
