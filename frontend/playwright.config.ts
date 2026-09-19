@@ -138,7 +138,7 @@ export default defineConfig({
         TACK_DATABASE_URL: 'sqlite:e2e.db?mode=rwc',
         TACK_STORAGE_DIR: './storage-e2e',
         TACK_LOG_LEVEL: 'warn',
-        // III-F4: a fixed, non-secret token so `execution-attempt-detail.spec.ts`
+        // A fixed, non-secret token so `execution-attempt-detail.spec.ts`
         // can prove the real "happy path" decision-resolve flow through the
         // production router. Additive — every other spec is unaffected, since
         // nothing but a resolve call ever reads this header (see

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Config for recording VI-D2's real hero GIF and Agents-page screenshots
+// Config for recording the real hero GIF and Agents-page screenshots
 // (docs/screenshots/hero.gif, agents.png, attempt.png, two-machines.png).
 // Deliberately has NO webServer block, the same reasoning
 // playwright.recovery-demo.config.ts documents: the target here is an

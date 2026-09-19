@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end smoke: a real `tack serve` + a real `tack-runner` + harness binaries.
 #
-# Written for card III-H2. Steps 1-6 predate III-H1 (step 6 was the load-bearing
-# proof of the P0 III-G5 refused to tag on); steps 7-9 were unconditional SKIPPED
-# stubs until III-H2 implemented them, and are now real:
+# Steps 1-6 build the fixture; what steps 7-14 each prove:
 #
 #   7  claim -> checkout -> harness -> completion, through production routes
 #   8  the same neutral request through each harness kind, reported per kind
@@ -35,6 +33,11 @@
 # and listed in the release verdict, never rounded up and never counted as PASS.
 set -uo pipefail
 
+# Keychain entry names are global, not per state dir, so a secret set below
+# would overwrite the operator's real one. A bus address that cannot exist
+# sends every `tack` process to its file store instead. Linux only.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/tack-smoke-no-keychain"
+
 LIVE=0; [ "${1:-}" = "--live" ] && LIVE=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Honors CARGO_TARGET_DIR so this script builds and runs the same binaries
@@ -47,7 +50,7 @@ API="http://127.0.0.1:$PORT"
 PRINCIPAL='x-tack-principal: smoke-operator'
 SERVER_PID=""; RUNNER_A_PID=""; RUNNER_B_PID=""; STANDALONE_PID=""; NORUNNER_PID=""; FAILED=0
 GATEWAY_PID=""; RUNNER_GW_PID=""; NL2_PID=""
-UNMET=()   # observed §III.6 shortfalls, printed in the release verdict
+UNMET=()   # observed release-criteria shortfalls, printed in the release verdict
 
 cleanup() {
   [ -n "$RUNNER_A_PID" ] && kill "$RUNNER_A_PID" 2>/dev/null
@@ -159,18 +162,30 @@ chmod +x "$SHIMS/claude"
 cp "$SHIMS/claude" "$SHIMS/codex"
 chmod +x "$SHIMS/codex"
 
-step 3 "Start the API server (no Docket configured — its absence must not disable runner execution)"
+# docket's adapter reads only a terminal NDJSON result line, not the exit code (crates/tack-runner/src/harness/docket.rs), so its shim prints one.
+cat > "$SHIMS/docket" <<SHIM
+#!/bin/sh
+case "\${1:-}" in
+  --version|-v) echo "docket 0.2.0b1"; exit 0 ;;
+esac
+cat >/dev/null
+printf '{"token":"smoke-docket-run","status":"ok","stop_reason":"","error":"","blocked":null,"model":{"served":"docket/smoke-model"},"usage":{"input_tokens":1,"output_tokens":1}}\n'
+exit 0
+SHIM
+chmod +x "$SHIMS/docket"
+
+step 3 "Start the API server (no agent-fleet backend configured — its absence must not disable runner execution)"
 # Run from $WORK, never the repo root: the developer's tack.toml would otherwise be
 # picked up, with whatever workstation-specific options it sets. A smoke test must
 # exercise the product, not the workstation.
 # `exec` matters: it replaces the subshell with the server process, so $! is the real
 # tack PID. Without it, cleanup kills the subshell and leaves an orphan holding $PORT —
-# a later run then silently talks to the previous run's database (found by III-H1).
+# a later run then silently talks to the previous run's database.
 ( cd "$WORK" && exec env TACK_DATABASE_URL="sqlite:$WORK/smoke.db?mode=rwc" TACK_PORT="$PORT" \
   TACK_STORAGE_DIR="$WORK/storage" "$BIN_DIR/tack" serve >"$WORK/server.log" 2>&1 ) &
 SERVER_PID=$!
 for _ in $(seq 1 40); do curl -sf "$API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
-curl -sf "$API/api/health" >/dev/null && ok "server healthy on $PORT, TACK_ORCH_ENABLE unset (Docket absent)" \
+curl -sf "$API/api/health" >/dev/null && ok "server healthy on $PORT with no agent-fleet backend configured" \
   || { bad "server never came up"; tail -20 "$WORK/server.log"; exit 1; }
 
 step 4 "Create a project and an item (the plan of record)"
@@ -196,8 +211,8 @@ step 6 "Runner enrolls, heartbeats and polls against the live server"
 RUNNER_A_PATH="$PATH"; [ "$LIVE" = 0 ] && RUNNER_A_PATH="$SHIMS:$PATH"
 mkdir -p "$WORK/runner-state"; chmod 700 "$WORK/runner-state"
 # TACK_RUNNER_ID must be distinct per runner: the enroll body's runner_name is
-# taken from it, and a duplicate name is answered 500 by the server today
-# (escalated by III-H2), which would otherwise abort the second runner here.
+# taken from it, and a duplicate name is answered 500 by the server today,
+# which would otherwise abort the second runner here.
 ( exec env PATH="$RUNNER_A_PATH" TACK_RUNNER_ID="smoke-runner-a" TACK_RUNNER_ENROLLMENT_TOKEN="$ENROLL" \
     "$BIN_DIR/tack-runner" --api-url "$API" --state-dir "$WORK/runner-state" \
     >"$WORK/runner.log" 2>&1 ) &
@@ -206,7 +221,7 @@ HEARTBEAT=$(wait_for "curl -sf '$API/api/runners' | jq -r '.data[] | select(.run
 if [ -n "$HEARTBEAT" ]; then
   ok "runner active, heartbeat at $HEARTBEAT"
 elif grep -qiE "protocol client is not configured|ProtocolUnavailable" "$WORK/runner.log"; then
-  bad "runner cannot speak to the server — the III-H1 P0 has regressed"
+  bad "runner cannot speak to the server — the protocol-client wiring has regressed"
   tail -4 "$WORK/runner.log" | sed 's/^/   | /'; exit 1
 else
   bad "runner never became active with a heartbeat"
@@ -273,30 +288,33 @@ else
     || bad "no workspace_id on the attempt"
   EVENTS=$(curl -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7/attempts/1/events" | jq '.data | length')
   if [ "${EVENTS:-0}" -gt 0 ]; then ok "event timeline: $EVENTS events"
-  else unmet "the runner never submits events or artifacts (engine has no AttemptDataProtocol call site — open since III-H1), so the §III.6 'verified artifacts and idempotent event timeline' criterion cannot be shown from a real runner (server routes are proven only by fake-client tests)"; fi
-  ok "Docket absent throughout and execution still ran (G1 invariant, collected live)"
+  else unmet "the runner never submits events or artifacts (engine has no AttemptDataProtocol call site), so a verified artifact and idempotent event timeline cannot be shown from a real runner (server routes are proven only by fake-client tests)"; fi
+  ok "no agent-fleet backend was configured anywhere in this run, and execution still ran"
   REQ7_STATE=$(curl -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7" | jq -r '.state // empty')
   if [ "$REQ7_STATE" = "succeeded" ]; then ok "request state propagated to succeeded"
-  else note "request state is '$REQ7_STATE' although its attempt succeeded — the propagation gap III-H3 observed, still present"; fi
+  else note "request state is '$REQ7_STATE' although its attempt succeeded — a known propagation gap, still present"; fi
 fi
 
 step 8 "The same neutral request through each harness kind, per kind, never rounded up"
-declare -A S8_PROVIDER=( [codex]=openai [claude-code]=anthropic )
-declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=claude-sonnet-4-5 )
-declare -A S8_BINARY=( [codex]=codex [claude-code]=claude )
-for kind in codex claude-code; do
+# opencode (the fourth harness kind) needs an npm install and network per attempt, so it has no small shim here.
+printf '   %-12s not covered in fake mode — installs an npm package per attempt and needs network; no small shim can stand in for it\n' "opencode:"
+declare -A S8_PROVIDER=( [codex]=openai [claude-code]=anthropic [docket]=docket )
+declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=claude-sonnet-4-5 [docket]=smoke-model )
+declare -A S8_BINARY=( [codex]=codex [claude-code]=claude [docket]=docket )
+declare -A S8_ENV=( [codex]='{}' [claude-code]='{}' [docket]='{"DOCKET_LLM_BASE_URL":{"value":"http://127.0.0.1:1","secret_reference":null}}' )  # docket needs this env key to spawn at all; "docket" resolves to no configured provider endpoint
+for kind in codex claude-code docket; do
   bin="${S8_BINARY[$kind]}"
   if [ "$LIVE" = 1 ] && ! command -v "$bin" >/dev/null 2>&1; then
     printf '   %-12s ABSENT — not installed, not claimed, not counted\n' "$kind:"
     continue
   fi
-  # Both codex and claude-code probes declare no models BY DESIGN (their
-  # adapters refuse to invent a list) and rely on model_passthrough:supported
+  # Every one of these probes declares no models BY DESIGN (each adapter
+  # refuses to invent a list) and relies on model_passthrough:supported
   # instead, which is exactly what this step must surface.
   provider="${S8_PROVIDER[$kind]}"; model="${S8_MODEL[$kind]}"
-  REQ=$(create_execution "$ITEM" "$RUNNER_ID" "$kind" "$provider" "$model" 120 '{}' "smoke-s8-$kind-$$")
+  REQ=$(create_execution "$ITEM" "$RUNNER_ID" "$kind" "$provider" "$model" 120 "${S8_ENV[$kind]}" "smoke-s8-$kind-$$")
   if [ -z "$REQ" ]; then bad "$kind: execution request refused outright"; continue; fi
-  GOT=$(wait_for "attempts_json '$REQ' | jq -r '.data[0].attempt_id // empty'" 12 || true)
+  GOT=$(wait_for "attempts_json '$REQ' | jq -r '.data[0].attempt_id // empty'" 20 || true)  # an idle runner re-polls only every retry_after_ms (5s)
   if [ -n "$GOT" ]; then
     STATE=$(wait_for "attempts_json '$REQ' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\") | .state'" 150 || true)
     if [ "$STATE" = "succeeded" ]; then ok "$kind: attempt succeeded through the full pipeline"
@@ -328,13 +346,13 @@ for kind in codex claude-code; do
       <<<"$HARNESS_CAP")
     if [ -n "$PROBE_ERROR" ]; then
       bad "$kind: request never claimable — this runner's own probe of the $kind binary failed ($PROBE_ERROR), so the scheduler will not place any $kind work on it regardless of model declarations (crates/tack-api/src/handlers/runner_protocol.rs HarnessProbeError, checked before model eligibility)"
-      unmet "§III.6 'attempts through Codex and Claude Code': $kind is unschedulable on this runner because its probe failed, not because of a model policy"
+      unmet "attempts through $kind: $kind is unschedulable on this runner because its probe failed, not because of a model policy"
     elif [ "$DECLARED" = "true" ] || [ "$PASSTHROUGH" = "supported" ]; then
       bad "$kind: request was never claimed even though the runner declares $provider/$model schedulable (declared=$DECLARED, model_passthrough=$PASSTHROUGH) — the runner most likely had no free capacity at the time; step 8 shares this runner with whatever step 7 left it doing"
-      unmet "§III.6 'attempts through Codex and Claude Code': $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
+      unmet "attempts through $kind: $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
     else
       bad "$kind: request never claimable — the $kind adapter declares no matching model_combinations and no supported model_passthrough attestation for $provider/$model, so the scheduler has no eligible pairing to place (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected)"
-      unmet "§III.6 'attempts through Codex and Claude Code': $kind/$provider/$model is not declared schedulable by this runner"
+      unmet "attempts through $kind: $kind/$provider/$model is not declared schedulable by this runner"
     fi
     curl -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
   fi
@@ -759,18 +777,18 @@ SHIM
 fi
 
 step 14 "GET /api/local-runner/secrets is a genuine 404 on a non-loopback bind"
-# The card that carried this step assumed plain 'tack serve' (no
-# --with-runner) leaves this route unmounted. Measured directly against
-# this build and found false: ADR 0061 decision 6 (crates/tack-cli/src/
-# local_runner.rs::serve's own doc comment) wires an EmbeddedRunnerControl
-# into every 'tack serve', with or without --with-runner, so the UI toggle
-# can turn the runner on later with no restart — router.rs only gates these
-# routes on `state.local_runner.is_some() && state.config.binds_loopback()`.
-# The real, current 404 boundary is bind mode, confirmed live below and
-# already unit-tested server-side (VI-B3's
-# routes_are_absent_on_a_non_loopback_bind/routes_are_absent_on_a_loopback_
-# bind_with_no_control). This step proves the boundary end to end against
-# the real binary instead of repeating the stale premise.
+# It is tempting to assume plain 'tack serve' (no --with-runner) leaves this
+# route unmounted; measured directly against this build and found false: ADR
+# 0061 decision 6 (crates/tack-cli/src/local_runner.rs::serve's own doc
+# comment) wires an EmbeddedRunnerControl into every 'tack serve', with or
+# without --with-runner, so the UI toggle can turn the runner on later with
+# no restart — router.rs only gates these routes on
+# `state.local_runner.is_some() && state.config.binds_loopback()`. The real,
+# current 404 boundary is bind mode, confirmed live below and already
+# unit-tested server-side (routes_are_absent_on_a_non_loopback_bind/
+# routes_are_absent_on_a_loopback_bind_with_no_control). This step proves the
+# boundary end to end against the real binary instead of repeating the stale
+# premise.
 NL2_PORT=$((PORT + 5))
 NL2_TOKEN="smoke-nl2-token-$$"
 NL2_WORK="$WORK/nonloopback-localrunner"; mkdir -p "$NL2_WORK"
@@ -809,7 +827,7 @@ if [ "$LIVE" = 1 ]; then MODE_DESC="live, ${#AVAIL[@]}/2 real harnesses installe
 if [ "$FAILED" = 0 ]; then printf '\033[32mSMOKE PASSED\033[0m — %s\n' "$MODE_DESC"
 else printf '\033[31mSMOKE FAILED\033[0m — %s; see the failing step above\n' "$MODE_DESC"; fi
 if [ "${#UNMET[@]}" -gt 0 ]; then
-  printf '\n\033[1mRELEASE VERDICT: criteria of §III.6 this run could NOT demonstrate\033[0m\n'
+  printf '\n\033[1mRELEASE VERDICT: criteria this run could NOT demonstrate\033[0m\n'
   for u in "${UNMET[@]}"; do printf ' - %s\n' "$u"; done
   printf 'A release claim resting on this run must carry every line above.\n'
 fi

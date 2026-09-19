@@ -56,7 +56,7 @@ cloudflared.yml
 /frontend/e2e.db-shm
 /frontend/e2e.db-wal
 # The e2e webServer is a plain `tack serve` with an embedded runner always
-# wired in (VI-B3) — this is its default state dir (session, journal,
+# wired in — this is its default state dir (session, journal,
 # secret-metadata sidecar), created the first time a spec turns it on.
 /frontend/.tack-runner/
 
