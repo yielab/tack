@@ -1,28 +1,31 @@
 # Closed cycles
 
-Nothing under this directory is current. The current plan is Phase 64 in
-`docs/book/src/roadmap.md`; `TODO.md`'s "Which board is live" table records how every
-Part closed.
+Nothing under this directory is current. The live plan is Phase 64 in
+`docs/book/src/roadmap.md` — closed 2026-09-19; what's next is the release tag.
 
-- `boards/part-<n>.md` — the full board section for a closed Part whose text has left
-  `TODO.md` entirely (today: Parts I, II, III), moved verbatim with a one-line notice
-  prepended. Numbering inside each file (`§0`…`§6` for Part I, `§II.*`, `§III.*`) is
-  unchanged from when it lived in `TODO.md`.
-- `boards/roadmap-phases-0-57.md` — the Phases 0–57 (Parts I–III) sections of
+- `boards/part-1.md`, `part-2.md`, `part-3.md` — the full board sections for the closed
+  Agent-Factory Control Center and Agnostic Control Plane cycles (Phases 33–49), moved
+  verbatim from the old `TODO.md` with a one-line notice prepended. Section numbering
+  inside each file is unchanged from when it lived there.
+- `boards/part-4-9.md` — the rest of `TODO.md` (Phases 58–63), moved here whole when
+  `TODO.md` left the repository (2026-09-18). Its own "Which board is live" table
+  records how each cycle closed. `TODO.md` no longer exists anywhere in the tree.
+- `boards/roadmap-phases-0-57.md` — the Phases 0–57 sections of
   `docs/book/src/roadmap.md` (the audit-driven status board, `Completed`, four shipped
   phases from `Planned`, three "Next" cycles, and the Harness-Agnostic Runner Fleet
-  chapter), moved verbatim with the same one-line notice; `roadmap.md` keeps only what
-  is ahead.
+  chapter), moved verbatim with a one-line notice.
+- `boards/roadmap-phases-58-63.md` — the Phases 58–63 sections of
+  `docs/book/src/roadmap.md` (standalone single-binary packaging, the first public
+  release, agent onboarding & provider UX, the desktop app and background service, and
+  human maintainability), moved verbatim with a one-line notice. `roadmap.md` itself
+  keeps only what is ahead.
 - `plans/` — a plan whose phase has landed or whose design was replaced: the harness
-  maintainability audit, the Phase 63 specification, and the agnostic control plane plan
-  whose bridge Phase 64 retired.
-- `handoffs/part-<n>/` — the per-card handoffs for a closed Part, moved out of
-  `docs/agent-handoffs/part-<roman>/`.
+  maintainability audit, the human-maintainability (Phase 63) specification, and the
+  agnostic control plane plan whose bridge Phase 64 retired.
+- `handoffs/` — the per-card handoffs for every closed cycle, moved out of the old
+  `docs/agent-handoffs/`: `part-3/` through `part-7/`, `part-viii/`, `part-ix/`, plus
+  `deps/` and `test-architecture/`. `docs/agent-handoffs/` no longer exists anywhere in
+  the tree.
 
-**Parts IV through VIII are only partly here.** Their own board sections stay in
-`TODO.md` itself — none of IV–IX have had
-their `TODO.md` text extracted to `boards/` — but their handoffs have already moved, to
-`handoffs/part-4/` through `handoffs/part-7/` (Part VIII's handoffs stay in
-`docs/agent-handoffs/part-viii/`, since it still has an open card; Part IX's stay in
-`docs/agent-handoffs/part-ix/`, since it is the live board). Do not assume a Part's
-handoffs being here means its board section moved too, or the reverse.
+Everything here is frozen — boards, plans and handoffs are moved as-is and not edited
+going forward.

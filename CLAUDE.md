@@ -10,12 +10,12 @@ backend via Axum + SQLite, SolidJS frontend) and the runner (a worker that execu
 your code and credentials, embedded via `tack serve --with-runner`). Multiple workflows,
 per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 
-## Phase 64 — the live plan
+## Release — what's next
 
-The smallest codebase that does everything a user can do today: `docs/adr/0068-a-codebase-
-for-human-maintainers.md` (read its last amendment first), staged in
-`docs/book/src/roadmap.md`, cut into tasks in `docs/plans/phase-64.md` and
-`docs/plans/harnesses.md`. Decisions go in an ADR, intent in the roadmap, history in commits.
+Phase 64 shipped 2026-09-19: the Docket control-plane bridge is gone, and the runner,
+harnesses, MCP and desktop app are the product surface. What's left is cutting the
+release tag and working through `docs/LAUNCH-CHECKLIST.md`. Decisions go in an ADR,
+intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
 
