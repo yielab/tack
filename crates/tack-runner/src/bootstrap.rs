@@ -163,10 +163,12 @@ pub async fn probe(
 /// - `artifacts` reports advisory: `RunnerEngine::submit_terminal_evidence`
 ///   uploads a staged artifact, but only when an adapter stages one and
 ///   only best-effort (a transport failure is logged, never retried).
-/// - `decisions` reports unsupported: the protocol path is implemented and
-///   reachable, but no harness adapter ever asks a question a decision
-///   could answer — claiming support for a path nothing calls would be
-///   exactly the lie this rule forbids.
+/// - `decisions` reports supported at the runner level: the protocol path
+///   is implemented and at least one in-tree harness (claude-code) actually
+///   opens a question through it. Whether a *given* run can ask is a
+///   per-harness fact, not this one — `harnesses` carries each adapter's own
+///   `decisions` capability, and the scheduler reads that, never this
+///   summary, to admit or refuse an `ask` request.
 async fn report_capabilities<C: Clock>(
     adapters: &AdapterRegistry,
     clock: &C,
@@ -201,8 +203,10 @@ async fn report_capabilities<C: Clock>(
                 Some("no resumable session contract"),
             ),
             decisions: feature(
-                tack_orch::execution::CapabilitySupport::Unsupported,
-                Some("no harness adapter in this tree ever opens a decision"),
+                tack_orch::execution::CapabilitySupport::Supported,
+                Some(
+                    "at least one harness adapter opens a decision; see each harness's own decisions capability for which one",
+                ),
             ),
             artifacts: feature(
                 tack_orch::execution::CapabilitySupport::Advisory,

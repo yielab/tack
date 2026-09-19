@@ -120,6 +120,25 @@ A few things above are easy to trip over:
   network if your tool list grants it, so a network-sensitive item needs its tool list
   narrowed too, not just the network flag.
 
+### Asking before acting
+
+By default an agent decides everything on its own: every tool call, every file it
+touches. Setting a request's `permission_policy.approvals` to `ask` changes that. The
+harness pauses before each tool call and waits for a person to answer. In the **"Run with
+agent"** dialog this is the "Approvals" choice, "Automatic" or "Ask me"; the CLI and the
+API set it directly (`--permission-policy
+'{"tools":[...],"network":...,"approvals":"ask"}'`). Unset, or `"auto"`, never pauses.
+
+Only claude-code honours `ask` today. For any other harness the dialog disables "Ask me"
+and says why, and a request built by hand that asks anyway is never scheduled onto a
+runner that would ignore the choice and run as `auto`.
+
+The question appears in the attempt's decision inbox, in the same item view as the run's
+timeline and artifacts. Answering it needs `TACK_EXECUTION_DECISION_TOKEN`, a secret
+separate from the ordinary API token. A question nobody answers before the attempt's
+deadline is answered with its own deny option. It is never left open and never defaults
+to allow.
+
 ### Checking a machine
 
 Run `tack runner doctor` on the machine that will actually run the harness before
@@ -157,7 +176,7 @@ opencode
 Runner-wide capabilities (apply identically to every harness above):
   cancel     advisory    — process-group signal cannot reach a detached descendant
   resume     unsupported — no resumable session contract
-  decisions  unsupported — no harness adapter in this tree ever opens a decision
+  decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
   artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
   usage      advisory    — usage is reported only when a harness emits it
 
@@ -180,10 +199,12 @@ searched, instead of the fields above — see
 
 The **runner-wide capabilities** block is a single, deliberately conservative statement
 that applies to every harness alike — it is not where claude-code's ability to pause and
-ask shows up. That's a fact about one attempt, set by that request's own
-`permission_policy.approvals` and recorded in the attempt's own capability snapshot at
-claim time, not in this enrollment-time summary. Reading `decisions: unsupported` here
-does not mean claude-code can never pause; see the table above.
+ask shows up. `decisions: supported` here only means the protocol path exists on this
+runner at all; *which* harness can actually use it is a per-harness fact, set by that
+request's own `permission_policy.approvals` and recorded in the attempt's own capability
+snapshot at claim time, not in this enrollment-time summary. Reading `decisions:
+supported` here does not mean every harness can pause; see the table above for which
+one actually does.
 
 How a provider's endpoint and credential are configured — the `TACK_RUNNER_PROVIDER_*`
 variables, which secret-store entry each one reads, and the embedded runner's own key
@@ -670,7 +691,7 @@ but the runner cannot promise the process actually stops.
 |---|---|---|
 | `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across all four harnesses — `AdapterRegistry::register_probe` rejects a stronger claim at registration, before any attempt can reference it |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
-| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — today, only claude-code, and only when the request asks for it; see [Choosing a harness](#choosing-a-harness) |
+| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — today, only claude-code, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
 | `artifacts` | `advisory` (every adapter) | None of the harnesses tested can guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
@@ -749,10 +770,9 @@ For everything else about exposing Tack beyond `127.0.0.1` — TLS termination b
 reverse proxy, `TACK_ALLOWED_ORIGINS`, `TACK_API_TOKEN`, request body limits — see
 [Administration and Security](administration.md), which applies identically whether or
 not any runner is enrolled. The one addition specific to this domain:
-`TACK_EXECUTION_DECISION_TOKEN` and `TACK_ORCH_APPROVAL_TOKEN` are **separate,
-higher-privilege secrets** layered on top of `TACK_API_TOKEN`, both fail-closed when
-unset (the route rejects rather than silently falling back to the ordinary operator
-token) and never logged. See `docs/CONFIG.md` for every `TACK_*` variable in this
+`TACK_EXECUTION_DECISION_TOKEN` is a **separate, higher-privilege secret** layered on
+top of `TACK_API_TOKEN`, fail-closed when unset (the route rejects rather than silently
+falling back to the ordinary operator token) and never logged. See `docs/CONFIG.md` for every `TACK_*` variable in this
 domain.
 
 `tack serve --with-runner` (see "Standalone mode" above) adds a second, stricter

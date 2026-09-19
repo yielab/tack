@@ -80,6 +80,12 @@ export interface RunWithAgentFormValues {
   timeoutSeconds: number;
   allowNetwork: boolean;
   tools: string[];
+  /** `'auto'` (default) omits `permission_policy.approvals` on the wire;
+   *  `'ask'` sends it as `"ask"`. Mirrors `PermissionPolicy::approvals`
+   *  (`crates/tack-orch/src/execution/types.rs`): absent means `Auto`, so
+   *  this module never sends a fabricated `"auto"` literal — see
+   *  {@link buildCreateExecutionInput}. */
+  approvals: 'auto' | 'ask';
   repository: { kind: string; remote: string; baseRevision: string; subdirectory: string | null };
   idempotencyKey: string;
 }
@@ -99,7 +105,10 @@ export interface RunWithAgentFormValues {
  * their shape is copied field-for-field from those structs:
  *   - `AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds, budgets }`
  *   - `RepositorySnapshot { kind, remote, base_revision, subdirectory }`
- *   - `PermissionPolicy { tools, network }`
+ *   - `PermissionPolicy { tools, network, approvals }` — `approvals` is
+ *     omitted entirely for `'auto'`, matching the Rust field's own
+ *     `skip_serializing_if = "Option::is_none"`: absent means `Auto`, never
+ *     a redundant `"auto"` literal sent over the wire
  * A live test against a real server confirmed defaulting
  * `agent_profile_snapshot`/`permission_policy` to `{}` gets a 400 `missing
  * field \`network\`` — this module's fields exist specifically because that
@@ -133,6 +142,7 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     permission_policy: {
       tools: values.tools,
       network: values.allowNetwork,
+      ...(values.approvals === 'ask' ? { approvals: 'ask' } : {}),
     },
     budgets: {},
     environment: {},
@@ -518,4 +528,20 @@ export function projectDefaultModelPair(
  */
 export function isModelPassthroughAttested(harness: HarnessCapability | undefined): boolean {
   return harness?.model_passthrough?.support === 'supported';
+}
+
+// ─── Approvals ("Ask me before acting") ─────────────────────────────────────
+
+/**
+ * Whether a harness attests it can pause a run and ask the operator before
+ * it acts, unlocking the "Ask me" approvals choice — same rule and same
+ * shape as {@link isModelPassthroughAttested}: only `support === 'supported'`
+ * counts, `'advisory'` and an absent `decisions` attestation (an older
+ * runner, or the shared fake probe) both mean "not attested" and are
+ * rejected identically to `'unsupported'`, matching
+ * `crates/tack-orch/src/scheduler/select.rs`'s own treatment of this exact
+ * field.
+ */
+export function isDecisionsAttested(harness: HarnessCapability | undefined): boolean {
+  return harness?.decisions?.support === 'supported';
 }

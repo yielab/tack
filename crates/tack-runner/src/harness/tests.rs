@@ -341,6 +341,7 @@ impl HarnessProbe for FakeProbe {
             // "no attestation" path; the real adapters each attest
             // explicitly.
             model_passthrough: None,
+            decisions: None,
             additional: Default::default(),
         }
     }

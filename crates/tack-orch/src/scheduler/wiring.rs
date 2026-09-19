@@ -25,7 +25,7 @@ use super::types::{
     ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest, SelectionOutcome,
 };
 use crate::execution::{
-    EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RequestedModelId,
+    Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RequestedModelId,
     RequestedModelProvider, RunnerId,
 };
 
@@ -55,6 +55,16 @@ fn priority_from_metadata(metadata_json: &str) -> Priority {
         Some(raw) if raw.eq_ignore_ascii_case("high") => Priority::High,
         _ => Priority::Normal,
     }
+}
+
+/// Reads `permission_policy.approvals` out of a queued row's stored JSON —
+/// the scheduling-time counterpart of `priority_from_metadata` above, same
+/// leniency: a missing key, malformed JSON, or unrecognised value all mean
+/// `None`, which the pure scheduler already treats identically to
+/// [`Approvals::Auto`], never a scheduling failure.
+fn approvals_from_permission_policy(policy_json: &str) -> Option<Approvals> {
+    let value: serde_json::Value = serde_json::from_str(policy_json).ok()?;
+    serde_json::from_value(value.get("approvals")?.clone()).ok()
 }
 
 /// Parses `created_at` (always RFC 3339 — every write path in
@@ -119,6 +129,7 @@ fn build_scheduling_request(
         priority: priority_from_metadata(&row.metadata),
         requested_harness_kind: HarnessKind::new(harness_kind),
         requested_model,
+        approvals: approvals_from_permission_policy(&row.permission_policy),
         required_labels: BTreeMap::new(),
         created_at: parse_created_at(&row.created_at, now),
     })
@@ -293,6 +304,7 @@ mod tests {
             requested_model_id: None,
             created_at: "2026-08-10T00:00:00Z".into(),
             metadata: "{}".into(),
+            permission_policy: "{}".into(),
         };
         assert!(build_scheduling_request(&row, Utc::now()).is_none());
     }
@@ -308,6 +320,7 @@ mod tests {
             requested_model_id: None,
             created_at: "2026-08-10T00:00:00Z".into(),
             metadata: "{}".into(),
+            permission_policy: "{}".into(),
         };
         assert!(build_scheduling_request(&row, Utc::now()).is_none());
     }

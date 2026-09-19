@@ -15,6 +15,7 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
         probed_at: fixed_timestamp(),
         model_combinations: Vec::new(),
         model_passthrough: None,
+        decisions: None,
         additional: Default::default(),
     }
 }
