@@ -488,9 +488,19 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      # `npm audit` exits 1 for a finding and for a registry outage alike. A
+      # finding fails the job. An outage that outlasts three tries is a warning:
+      # no commit can fix it, and the next run audits the same lockfile.
       - name: npm dependency audit (fail on high+)
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: |
+          for attempt in 1 2 3; do
+            if out=$(npm audit --audit-level=high 2>&1); then echo "$out"; exit 0; fi
+            echo "$out"
+            grep -q 'audit endpoint returned an error' <<<"$out" || exit 1
+            sleep 20
+          done
+          echo "::warning::npm's advisory endpoint is down; the npm audit did not run"
 
   e2e:
     name: E2E (Playwright)
