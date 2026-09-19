@@ -34,18 +34,19 @@ execution request, upgrading is exactly one step:
      is what prevents silently running an edited or reordered migration history.
    - Every ordinary migration runs inside its own transaction; a failing statement
      rolls the whole migration back rather than leaving a half-applied schema.
-   - A small number of migrations are a different, higher-risk kind, because a
-     failed one can't just be retried from the prior schema: 037/038 (a
-     pre-Part-III `COPY`/verify/swap table rebuild) and 064–073 (dropping the
-     legacy Docket control-plane bridge's tables outright — see below).
-     **Before the first attempt at one of these**, Tack automatically takes a
-     `VACUUM INTO` snapshot named `<your-db-file>.before-<migration-name>.sqlite`,
-     next to your database file. It is never overwritten by a retry — the first
-     pre-upgrade image is the recovery artifact. See
-     `docs/adr/0008-transactional-migration-rebuild-recovery.md` for the rebuild
-     migrations' own design rationale. If you're already past 073, this snapshot
-     step is inert for future upgrades — it only fires again if a future
-     destructive migration is added.
+   - A few migrations cannot simply be retried from the prior schema if they fail:
+     037/038 (a `COPY`/verify/swap table rebuild), 063 (drops the unused
+     `model_profiles` table) and 064–073 (drop the legacy Docket control-plane
+     bridge's tables — see below). **Before the first of these that your database
+     still has to run**, Tack takes one whole-database `VACUUM INTO` snapshot next to
+     your database file, named `<your-db-file>.before-<migration-name>.sqlite`. One
+     snapshot covers every migration in that startup. Upgrading from any release up
+     to `v0.1.0-beta.7`, the first such migration is 063, so the file is
+     `<your-db-file>.before-063_drop_model_profiles.sqlite` — and it is the file that
+     holds your `control_planes` and `orch_*` rows, whatever its name says. A retry
+     never overwrites it. The rebuild design is in
+     `docs/adr/0008-transactional-migration-rebuild-recovery.md`. Once you are past
+     073 this step does nothing until a later release adds another such migration.
    - The rebuild migrations themselves run with `PRAGMA defer_foreign_keys=ON` inside
      their transaction, compare row counts and an explicit bidirectional column
      projection between the old and new table before dropping the original, and run
