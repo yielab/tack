@@ -7,7 +7,7 @@
 Custom fields today support nine types (`crates/tack-core/src/models.rs`, `pub enum
 CustomFieldType`): `Text`, `Number`, `Date`, `Boolean`, `Select`, `MultiSelect`, `Url`,
 `Email`, `LongText`. Each type has validation logic in `CustomFieldType::validate_value`
-(`crates/tack-core/src/models.rs:839` onward) — e.g. `Url` requires the string start
+(`crates/tack-core/src/models.rs:731` onward) — e.g. `Url` requires the string start
 with `http://`/`https://`, `Date` accepts `YYYY-MM-DD` or RFC3339. This is one of the
 most self-contained extension points in the codebase: a new variant touches one enum,
 one validation match arm, and one serialization mapping.
@@ -23,7 +23,7 @@ one validation match arm, and one serialization mapping.
    validates), or `Rating` (a bounded integer, e.g. 1–5).
 2. Add the variant to `CustomFieldType` in `crates/tack-core/src/models.rs`.
 3. Add its validation arm to `validate_value` (same function, right below the existing
-   `Url` arm at line 847 is a good, complete example of the shape: match on the JSON
+   `Url` arm at line 739 is a good, complete example of the shape: match on the JSON
    value's shape, return a specific `Err(String)` naming the field and what's actually
    expected — not a generic "invalid value").
 4. Add its string mapping in `crates/tack-db/src/repo/custom_fields.rs` — there are

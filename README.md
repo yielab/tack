@@ -5,9 +5,9 @@
 [![Rust](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org/)
 [![Beta](https://img.shields.io/badge/status-beta-yellow.svg)](CHANGELOG.md)
 
-**A project board that can hand its own items to an AI coding agent — Claude Code or
-Codex — and track the run as part of the item's history.** Self-hosted, one binary,
-no cloud account.
+**A project board that can hand its own items to an AI coding agent — Claude Code,
+Codex, docket, or opencode — and track the run as part of the item's history.**
+Self-hosted, one binary, no cloud account.
 
 <p align="center">
   <img src="docs/screenshots/hero.gif" width="98%" alt="A board item assigned to Claude Code through Run with agent, tracked live from Leased to Succeeded, with its Execution tab showing the matched model and measured cost" />
@@ -18,11 +18,11 @@ no cloud account.
 In priority order — what Tack is built around, what it's built on top of, and what
 it costs you to run:
 
-- **An agent execution engine, first.** Assign any board item to `claude-code` or
-  `codex` and it runs as a tracked, durable attempt — events, decisions, and
-  artifacts land back on the item, not a fire-and-forget shell command. Most of
-  this README is about this one capability, because it's the reason to pick Tack
-  over a plain project tracker.
+- **An agent execution engine, first.** Assign any board item to `claude-code`,
+  `codex`, `docket`, or `opencode` and it runs as a tracked, durable attempt — events,
+  decisions, and artifacts land back on the item, not a fire-and-forget shell command.
+  Most of this README is about this one capability, because it's the reason to pick
+  Tack over a plain project tracker.
 - **A full project manager underneath it.** Board, list, table, calendar, timeline,
   and dashboard views; configurable Scrum/Kanban/phase workflows; vocabulary you
   rename to match your domain (`Task` → `Work Order`, `Sprint` → `Phase`). None of
@@ -134,7 +134,7 @@ succeeds.
 
 The recording is reproducible: [`scripts/record-recovery-demo.sh`](scripts/record-recovery-demo.sh)
 drives it against a published release artifact in Docker, and [`scripts/smoke.sh` step
-9](scripts/smoke.sh#L322-L409) asserts the same sequence on every run.
+9](scripts/smoke.sh) asserts the same sequence on every run.
 
 ## Two components
 
@@ -155,8 +155,9 @@ Under the hood, Tack is two components, built to be one product.
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
-> an isolated workspace, launches the coding agent you already use — Claude Code or Codex
-> — and reports back. **It holds the keys; the board never sees them.**
+> an isolated workspace, launches the coding agent you already use — Claude Code,
+> Codex, docket, or opencode — and reports back. **It holds the keys; the board never
+> sees them.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its
@@ -196,7 +197,7 @@ auditable operation with a history.
 
 If you already build agents with a framework, Tack is not a competitor to it — a
 framework gives you primitives to construct an agent loop; Tack assumes you'd
-rather point it at Claude Code or Codex, tools that already do that well, and
+rather point it at Claude Code, Codex, docket, or opencode, tools that already do that well, and
 instead solves the problem those frameworks leave on the table: who ran what,
 against which item, at what cost, with what to show for it when it crashes
 halfway through.
@@ -211,8 +212,8 @@ a browser.
 
 The headline capability, and the reason this document leads with it. It needs at
 least one runner attached — embedded (`tack serve --with-runner`) or a separate
-`tack-runner` process — and one harness, Claude Code or Codex, installed and
-credentialed on that runner's machine. [Running an agent](#running-an-agent) above
+`tack-runner` process — and one harness (Claude Code, Codex, docket, or opencode)
+installed and credentialed on that runner's machine. [Running an agent](#running-an-agent) above
 covers exactly which agent runs, how it's credentialed, and what happens when one
 crashes mid-attempt; this list covers what else that buys you:
 
@@ -287,7 +288,7 @@ the single `tack` binary — no Docker, no database server, no separate frontend
 | --- | --- |
 | **Platform** | Linux, macOS (Intel + Apple Silicon), Windows |
 | **Browser** | Any current Chrome, Firefox, Safari, or Edge |
-| **Footprint** | 21.0 MiB binary (UI embedded), ~19.5 MiB idle memory — measured in [Benchmarks](docs/BENCHMARKS.md) |
+| **Footprint** | 18.4 MiB binary (UI embedded), from CI's release build — full footprint and latency methodology in [Benchmarks](docs/BENCHMARKS.md) |
 
 Building from source instead needs [Rust 1.94+](https://rustup.rs/) and
 [Node.js 22+](https://nodejs.org/).
@@ -303,7 +304,7 @@ that's off until something turns it on:
 | Works with zero runners | | Needs an active runner | |
 |---|---|---|---|
 | Board, timeline, dashboard, list, calendar | ✅ | An item's **Run with agent** button | ❌ "Agent execution is off" |
-| Items, comments, search, attachments | ✅ | Codex or Claude Code actually running | ❌ nothing to run it |
+| Items, comments, search, attachments | ✅ | A harness (Claude Code, Codex, docket, or opencode) actually running | ❌ nothing to run it |
 | CLI, REST API, `tack mcp`, webhooks, GitHub sync | ✅ | | |
 
 Nothing silently queues forever — the button says there's no runner to give the
@@ -393,8 +394,9 @@ Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments l
 `storage/`. Back up both.
 
 `--with-runner` self-provisions an agent runner inside the same process — no second
-binary, no token to copy anywhere — so a board item assigned to `claude-code` or
-`codex` (whichever of those you have installed and logged in) actually executes. It
+binary, no token to copy anywhere — so a board item assigned to `claude-code`, `codex`,
+`docket`, or `opencode` (whichever of those you have installed and credentialed, by its
+own login or a configured provider key) actually executes. It
 refuses to start on anything but loopback, since it executes arbitrary agent
 processes on the machine serving the UI; see
 [Agent Runners](docs/book/src/user-guide/agent-runners.md#standalone-mode-tack-serve---with-runner)
@@ -413,7 +415,10 @@ above. The published release archives predate the fleet; until the next tag, ins
 from the `develop` branch with the Cargo command above.
 
 **Harness proof** — every row below was checked against the actual installed binaries on
-a real machine, not mocked out.
+a real machine, not mocked out. `claude-code` and `codex` are the two with a recorded live run; what `docket` and
+`opencode` can and cannot do is in
+[Choosing a harness](docs/book/src/user-guide/agent-runners.md#choosing-a-harness), and
+`tack runner doctor` reports the harnesses on your own machine.
 
 | Harness | Status |
 | --- | --- |
@@ -425,8 +430,6 @@ a real machine, not mocked out.
 - One optional shared Bearer token; no per-user identities or permissions
 - One active SQLite writer; S3 backup is snapshot replication, not live multi-writer sync
 - The browser UI requires its Tack server to be running — no offline mode
-- The existing Docket integration is a legacy, disabled-by-default bridge, not proof
-  of harness-agnostic execution
 - Imported usage/cost values may be estimates; native telemetry always labels its
   measurement source
 - Responsive web UI only — no native mobile application
@@ -451,11 +454,9 @@ Tack scheduler ── policy + capability matching ──► eligible fleet
    ▼                                                   ▼
 durable attempt ◄── events / decisions / artifacts ─ tack-runner
                                                         │
-                                   HarnessAdapter ──────┼──────┐
-                                                        │      │
-                                                   Codex CLI  Claude Code
-                                                        │
-                                                 future harnesses
+                                   HarnessAdapter ──────┼──────┬──────┬──────┐
+                                                        │      │      │      │
+                                                   Codex CLI  Claude Code  docket  opencode
 ```
 
 This separates concepts that must not be conflated:
@@ -466,7 +467,7 @@ This separates concepts that must not be conflated:
 | **Execution request** | Durable request to perform an item, with policy and eligibility constraints. |
 | **Fleet** | Schedulable pool of runners with declared capabilities. |
 | **Runner** | Worker process that leases work and executes it near its repo and credentials. |
-| **Harness** | Agent runtime such as Codex CLI or Claude Code. |
+| **Harness** | Agent runtime — Codex CLI, Claude Code, docket, or opencode. |
 | **Attempt** | Immutable execution history for one lease and run. |
 | **Decision** | Structured request for human input or authorization. |
 

@@ -1,9 +1,10 @@
 # How Tack compares
 
-Prepared for launch (V-C3). Every number here was checked against a live source on
-2026-09-06 — GitHub's API for stars/license/archived status, or this repository's own
-code for what Tack does and doesn't do. Commands are inline so any of these can be
-re-checked in thirty seconds. This is drafted material, not yet published anywhere.
+Every number here was checked against a live source — GitHub's API for
+stars/license/archived status, or this repository's own code for what Tack does and
+doesn't do (competitor facts checked 2026-09-06; Tack's own facts re-checked
+2026-09-19). Commands are inline so any of these can be re-checked in thirty seconds.
+This is drafted material, not yet published anywhere.
 
 ## The two axes that matter
 
@@ -15,7 +16,7 @@ either duplicating the work or losing the record of it.
 
 | | Plans work (real PM: sprints, deps, multiple views) | Executes work (spawns a coding agent) | Crash recovery with no duplicate work | Self-hosted, no required cloud | License / cost |
 |---|---|---|---|---|---|
-| **Tack** | Yes | Yes — Claude Code, Codex | **Yes** — fencing token + lease + replay table; demoed end to end, see `docs/screenshots/recovery-demo.gif` | Yes — one binary, one SQLite file | MIT, free |
+| **Tack** | Yes | Yes — Claude Code, Codex, docket, opencode | **Yes** — fencing token + lease + replay table; demoed end to end, see `docs/screenshots/recovery-demo.gif` | Yes — one binary, one SQLite file | MIT, free |
 | Vibe Kanban (community, post-Bloop) | Kanban board, agent-focused | Yes | Not documented in the public repo | Yes | Apache-2.0, free |
 | Crystal → Nimbalyst | Session list, not a PM board | Yes | Not documented | Yes | MIT, free |
 | Conductor | No | Yes | Not documented | No — macOS app + cloud | Closed, $22M Series A (2026-03) |
@@ -68,8 +69,9 @@ real, checked against the code, not softened:
   that log, `structuralB`, resolves to the same GitHub account via its commit's own
   noreply email — checked, not assumed).
 - **Zero users outside this repository's own testing.** 0 stars, 0 forks, 0 human-filed
-  issues (`gh issue list --state all` returns none; the GitHub API's "3 open issues"
-  count is entirely Dependabot PRs).
+  issues (`gh issue list --repo yielab/tack --state all` returns none; the GitHub API's
+  "3 open issues" count is 3 open pull requests — two from Dependabot, one from the
+  repo's own single contributor).
 - **No time tracking.** `estimate`/`estimate_unit` exist on an item; nothing records
   time actually spent — no `time_spent` field anywhere in the schema.
 - **Artifacts download, they don't diff.** An agent's generated files can be downloaded

@@ -17,15 +17,15 @@ status or an agent's attempt finished is to have the board open or poll the API.
 Tack already has one outbound-notification mechanism: signed webhooks
 (`crates/tack-api/src/webhook.rs`, `WebhookClient`). It already fires on item
 create/update/delete, sprint status changes, and due-soon alerts — see the call sites at
-`crates/tack-api/src/handlers/items.rs:114,275,541` and
-`crates/tack-api/src/handlers/sprints.rs:124` (`if let Some(wh) = &state.webhook`). SMTP
+`crates/tack-api/src/handlers/items.rs:112,273,388` and
+`crates/tack-api/src/handlers/sprints.rs:114,170` (`if let Some(wh) = &state.webhook`). SMTP
 notification is the same shape of problem — "an event happened, tell someone" — with a
 different transport. The webhook client is fire-and-forget, HMAC-signs its payload, uses
 a 10-second timeout, and explicitly disables following redirects (a webhook URL is
 operator-configured, but a redirect response comes from whoever's on the other end of
 it — the code has a comment explaining exactly why that's refused). An email notifier
 belongs in the same shape: its own client module, registered once on `AppState`
-(`crates/tack-api/src/router.rs:42` is where `webhook: Option<WebhookClient>` lives
+(`crates/tack-api/src/router.rs:40` is where `webhook: Option<WebhookClient>` lives
 today), invoked from the same handler call sites rather than adding a second set of
 "when do we notify" logic.
 
