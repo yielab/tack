@@ -241,10 +241,10 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const resolveHandle = await resolveButton.elementHandle();
     expect(resolveHandle).not.toBeNull();
 
-    // The next poll's refetch of this attempt's decisions lands, and the
-    // frames after it give the list time to re-render from the new data.
+    // The next poll tick's refetch of the executions lands, and the frames
+    // after it give the panel time to re-render from the new data.
     await page.waitForResponse(
-      (r) => r.request().method() === 'GET' && /\/attempts\/\d+\/decisions/.test(r.url()),
+      (r) => r.request().method() === 'GET' && /\/api\/executions(\?|\/|$)/.test(r.url()),
       { timeout: 15_000 },
     );
     await page.evaluate(

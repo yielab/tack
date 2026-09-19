@@ -61,7 +61,7 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
         <button
           type="button"
           class="text-xs"
-          style={{ color: 'var(--color-text-tertiary)' }}
+          style={{ color: 'var(--color-text-secondary)' }}
           aria-label="Dismiss"
           onClick={() => {
             dismiss();
