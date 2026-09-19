@@ -8,12 +8,18 @@
 
 mod common;
 
+#[path = "handlers/attachments.rs"]
+mod attachments;
 #[path = "handlers/attempt_lists.rs"]
 mod attempt_lists;
 #[path = "handlers/attempt_scoping.rs"]
 mod attempt_scoping;
+#[path = "handlers/boards_multi.rs"]
+mod boards_multi;
 #[path = "handlers/crud.rs"]
 mod crud;
+#[path = "handlers/custom_fields.rs"]
+mod custom_fields;
 #[path = "handlers/executions_runner_admin.rs"]
 mod executions_runner_admin;
 #[path = "handlers/fleet_membership.rs"]
@@ -26,3 +32,5 @@ mod local_runner;
 mod operator_read_routes;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/templates.rs"]
+mod templates;

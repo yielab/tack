@@ -124,6 +124,31 @@ pub async fn create_project(app: &Router, name: &str, project_type: &str) -> Uui
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
+/// Create an item on `project_id` via `POST /api/projects/{id}/items`; returns its id.
+/// Shared by the attachment and custom-field-value handler tests, which both need an
+/// item to attach data to and neither cares about its fields beyond a title.
+#[allow(dead_code)] // only the attachments and custom-fields handler suites create bare items
+pub async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/projects/{project_id}/items"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"title": title, "item_type": "task"})).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 4 * 1024 * 1024).await.unwrap();
+    let v: Value = serde_json::from_slice(&bytes).unwrap();
+    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
+}
+
 /// Send a request, returning `(status, parsed JSON body)`. An empty or non-JSON body
 /// parses to `Value::Null` rather than panicking. 8MB response cap.
 #[allow(dead_code)] // not every test binary sends generic JSON requests

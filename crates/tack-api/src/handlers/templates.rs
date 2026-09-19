@@ -35,6 +35,9 @@ pub async fn create_template(
     State(state): State<AppState>,
     Json(data): Json<CreateProjectTemplate>,
 ) -> ApiResult<Json<ProjectTemplate>> {
+    data.validate()
+        .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+
     // Validate workflow shape if provided
     if let Some(ref wf) = data.workflow {
         wf.validate().map_err(|e| {
