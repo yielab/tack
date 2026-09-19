@@ -32,12 +32,6 @@ impl Default for RetentionPolicy {
 // `execution_runtime.rs` on the `TACK_EXECUTION_RETENTION_*` schedule, tested
 // directly below; `runner_protocol/artifact_events.rs` exercises the HTTP
 // surface instead.
-//
-// `#[allow(dead_code)]` below: `artifact_events.rs` and `lifecycle.rs` each load
-// an independent `#[path]` copy of this file without `execution_runtime.rs`, so
-// dead-code analysis (per binary) flags each copy unused despite a live caller
-// in the real `tack-api` library. Same duplication in `artifact_download.rs`.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SweepOutcome {
     pub events_deleted: u64,
@@ -52,7 +46,6 @@ pub struct SweepOutcome {
 /// One bounded pass over `execution_events` older than `policy.event_retention`.
 /// `0` deleted means caught up; exactly `batch_limit` deleted is the signal to
 /// call again (the loop in `execution_runtime.rs` does, until it sees fewer).
-#[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_events(
     repo: &Repository,
     now: DateTime<Utc>,
@@ -70,7 +63,6 @@ pub async fn sweep_events(
 /// unconditionally by id. Rows with `None` go through
 /// [`Repository::delete_unresolved_execution_artifacts_by_row_ids`], which
 /// re-checks `content_reference IS NULL` in the same atomic `DELETE`.
-#[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_artifacts(
     repo: &Repository,
     storage: &ArtifactStorage,
