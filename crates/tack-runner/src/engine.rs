@@ -67,10 +67,20 @@ const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_se
 struct PendingDecision {
     decision_id: String,
     question: Question,
-    /// The poll cursor `decision.poll.request.json` calls `after`; `None`
-    /// asks for everything since the decision was created.
-    after: Option<Timestamp>,
+    /// The poll cursor `decision.poll.request.json` calls `after`. The
+    /// contract requires a timestamp, so it starts at the Unix epoch — every
+    /// decision of this attempt — and then follows the server's own
+    /// `next_after`, never this machine's clock.
+    after: Timestamp,
 }
+
+/// How often a pending decision is polled for its answer. Much shorter than
+/// [`LEASE_RENEWAL_INTERVAL`]: a person has just answered and is watching the
+/// run for it to move.
+const DECISION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Where a fresh decision's poll cursor starts.
+const POLL_FROM_THE_START: &str = "1970-01-01T00:00:00Z";
 
 /// The mutable state one attempt's decision round trips share: the channel
 /// pair to the running harness, whatever is currently pending an answer, and
@@ -303,12 +313,26 @@ pub trait HarnessAdapter: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunCycle {
-    NoWork,
-    Completed { attempt_id: AttemptId },
-    Cancelled { attempt_id: AttemptId },
-    Quarantined { attempt_id: AttemptId },
-    RecoveryPending { attempt_id: AttemptId },
-    TerminalReportPending { attempt_id: AttemptId },
+    /// Nothing to claim. `retry_after` is the server's own
+    /// `claim.no-work.response.json` hint for when to ask again.
+    NoWork {
+        retry_after: std::time::Duration,
+    },
+    Completed {
+        attempt_id: AttemptId,
+    },
+    Cancelled {
+        attempt_id: AttemptId,
+    },
+    Quarantined {
+        attempt_id: AttemptId,
+    },
+    RecoveryPending {
+        attempt_id: AttemptId,
+    },
+    TerminalReportPending {
+        attempt_id: AttemptId,
+    },
 }
 
 pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
@@ -404,7 +428,7 @@ where
         claim: ClaimRequest,
     ) -> Result<RunCycle, EngineError> {
         match self.protocol.claim(session, claim).await? {
-            ClaimResult::NoWork { .. } => Ok(RunCycle::NoWork),
+            ClaimResult::NoWork { retry_after, .. } => Ok(RunCycle::NoWork { retry_after }),
             ClaimResult::Work(work) => self.run_claimed(session, *work).await,
         }
     }
@@ -754,7 +778,16 @@ where
         let mut decisions = self.adapter.decision_channels(handle).await;
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
+        // An interval, not a `sleep` rebuilt every turn of the loop: the
+        // decision poll below wakes the loop far more often than a lease
+        // needs renewing, and must not keep pushing the renewal back.
+        let mut renewal = tokio::time::interval_at(
+            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
+            LEASE_RENEWAL_INTERVAL,
+        );
+        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            let waiting_for_an_answer = pending.is_some();
             let mut state = DecisionState {
                 decisions: &mut decisions,
                 pending: &mut pending,
@@ -766,7 +799,7 @@ where
                 Some(question) = next_question(state.decisions, state.pending.is_some()) => {
                     self.open_decision(session, record, &mut state, question, prompt).await;
                 }
-                () = tokio::time::sleep(LEASE_RENEWAL_INTERVAL) => {
+                _ = renewal.tick() => {
                     let request = self.heartbeat_request(session, record);
                     if let Err(error) = self.protocol.heartbeat(session, request).await {
                         tracing::warn!(
@@ -775,6 +808,8 @@ where
                             "lease-renewal heartbeat failed while the harness is still running"
                         );
                     }
+                }
+                () = tokio::time::sleep(DECISION_POLL_INTERVAL), if waiting_for_an_answer => {
                     self.advance_pending(session, record, &mut state).await;
                 }
             }
@@ -817,7 +852,7 @@ where
             *state.pending = Some(PendingDecision {
                 decision_id,
                 question,
-                after: None,
+                after: Timestamp::new(POLL_FROM_THE_START.to_owned()),
             });
         } else {
             send_answer(state.decisions, deny_answer(&question)).await;
@@ -844,26 +879,35 @@ where
                 fencing_token: record.fencing_token,
                 after: open.after.clone(),
             };
-            if let Ok(response) = data_protocol.poll_decisions(session, poll).await {
-                open.after = response.next_after.clone().or_else(|| open.after.clone());
-                let resolved = response
-                    .decisions
-                    .iter()
-                    .find(|decision| decision.decision_id == open.decision_id)
-                    .cloned();
-                if let Some(resolved) = resolved {
-                    if resolved.state == "resolved" {
-                        let opened = state.pending.take().expect("just matched Some above");
-                        let answer = resolved
-                            .answer
-                            .unwrap_or_else(|| deny_answer(&opened.question));
-                        send_answer(state.decisions, answer).await;
-                        return;
+            match data_protocol.poll_decisions(session, poll).await {
+                Err(error) => tracing::warn!(
+                    %error,
+                    attempt_id = record.attempt_id.as_str(),
+                    "decision poll failed; the question stays pending until the next poll"
+                ),
+                Ok(response) => {
+                    if let Some(next_after) = response.next_after.clone() {
+                        open.after = next_after;
                     }
-                    if resolved.state != "pending" {
-                        let opened = state.pending.take().expect("just matched Some above");
-                        send_answer(state.decisions, deny_answer(&opened.question)).await;
-                        return;
+                    let resolved = response
+                        .decisions
+                        .iter()
+                        .find(|decision| decision.decision_id == open.decision_id)
+                        .cloned();
+                    if let Some(resolved) = resolved {
+                        if resolved.state == "resolved" {
+                            let opened = state.pending.take().expect("just matched Some above");
+                            let answer = resolved
+                                .answer
+                                .unwrap_or_else(|| deny_answer(&opened.question));
+                            send_answer(state.decisions, answer).await;
+                            return;
+                        }
+                        if resolved.state != "pending" {
+                            let opened = state.pending.take().expect("just matched Some above");
+                            send_answer(state.decisions, deny_answer(&opened.question)).await;
+                            return;
+                        }
                     }
                 }
             }

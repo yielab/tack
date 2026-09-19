@@ -65,6 +65,18 @@ use crate::{
 /// it rather than requiring every operator to spell it into `--api-url`.
 const PROTOCOL_BASE_PATH: &str = "/api/runner/v1";
 
+/// How long an idle runner waits before it claims again: the server's
+/// `retry_after_ms`, less what the claim itself already took, held between a
+/// floor that keeps a server answering `0` from turning the loop hot and the
+/// longest wait the contract allows.
+fn idle_pause(retry_after: Duration, claim_took: Duration) -> Duration {
+    const FLOOR: Duration = Duration::from_millis(250);
+    retry_after
+        .min(Duration::from_millis(CLAIM_WAIT_MS_MAX))
+        .saturating_sub(claim_took)
+        .max(FLOOR)
+}
+
 /// `limits.json`'s `claim_wait_ms_max`. A larger `wait` is rejected by the
 /// server with `payload_too_large`, so the client clamps rather than sends a
 /// request it already knows is invalid.
@@ -723,9 +735,9 @@ pub struct DecisionCreateResponse {
 pub struct DecisionPollReport {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
-    /// `null` on the first poll: `decision.poll.request.json` models "from
-    /// the beginning" as an absent cursor, never as a zero timestamp.
-    pub after: Option<Timestamp>,
+    /// Required, as in `decision.poll.request.json`: the server refuses a
+    /// poll with no cursor. "From the beginning" is an early timestamp.
+    pub after: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1204,6 +1216,7 @@ where
             if shutdown.is_requested() {
                 return Ok(());
             }
+            let asked_at = tokio::time::Instant::now();
             let claim = ClaimRequest {
                 claim_request_id: ClaimRequestId::new(self.next_id("claim")),
                 available_capacity: 1,
@@ -1215,7 +1228,7 @@ where
                 cycle = self.engine.run_once(&session, claim) => cycle,
             };
             match cycle {
-                Ok(RunCycle::NoWork) => {
+                Ok(RunCycle::NoWork { retry_after }) => {
                     if let Err(error) = self.idle_heartbeat(&session).await {
                         // Same rationale as the `Err(error)` arm below: a
                         // failing idle heartbeat paired with a claim that
@@ -1224,6 +1237,16 @@ where
                         // reject each attempt.
                         tracing::warn!(%error, "idle heartbeat failed");
                         tokio::time::sleep(self.protocol.retry.max_backoff).await;
+                    }
+                    // The server says when to ask again. `wait` only asks it
+                    // to hold the claim open, which it is free not to do, so
+                    // without this pause an idle runner claims as fast as the
+                    // server can answer. Time a held claim already took counts.
+                    let pause = idle_pause(retry_after, asked_at.elapsed());
+                    tokio::select! {
+                        biased;
+                        () = shutdown.requested() => return Ok(()),
+                        () = tokio::time::sleep(pause) => {}
                     }
                 }
                 Ok(outcome) => tracing::info!(?outcome, "run cycle finished"),
