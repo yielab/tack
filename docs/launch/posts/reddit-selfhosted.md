@@ -16,18 +16,16 @@ repo, with crash-safe agent execution (single binary, SQLite, MIT)
 
 **What it is:** a project manager (Kanban/Scrum/phase workflows, dependencies,
 timelines, calendar, per-project vocabulary) that can also dispatch a board item to an
-AI coding agent — Claude Code or Codex — running on your own machine with your own
-credentials. One `tack` binary, one SQLite file. No accounts system, no telemetry, no
-required external service.
+AI coding agent — Claude Code, Codex, docket, or opencode — running on your own machine
+with your own credentials. One `tack` binary, one SQLite file. No accounts system, no
+telemetry, no required external service.
 
 **Why post here specifically:** this sub cares about footprint and data ownership more
 than feature lists, so here are the actual numbers, not marketing copy:
 
 | | Measured value | How |
 | --- | --- | --- |
-| Release binary (static, UI embedded) | 19.3 MiB | downloaded the real GitHub Release archive, `ls -l` |
-| Idle memory (RSS) | ~13.6 MiB | `awk '/VmRSS/{...}' /proc/<pid>/status`, 1s after ready |
-| Cold start | ~113 ms | wall-clock to first `/api/health` 200 |
+| Release binary (UI embedded) | 18.4 MiB | CI's own release build, `stat -c%s target/release/tack` |
 | Dependencies at runtime | none | no Postgres, no Redis, no Docker required — SQLite and the web UI are embedded in the one binary |
 | Data location | `tack.db` + `storage/` in the working directory | back up both, that's the whole database |
 
