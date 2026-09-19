@@ -220,3 +220,12 @@ exist, what they cost, what their limits are, and whatever else that provider pu
 providers do not follow one exact standard.
 
 Wave 15 gains VI-B4, which builds the trait and proves it with a second provider module.
+
+## Amendment — 2026-09-19: the table above is history
+
+Read from the code on 2026-09-19. Decision 4 is built: `crates/tack-runner/src/provider/`
+has a `Provider` trait with one module per provider, `anthropic` and `vercel_ai_gateway`.
+Decision 5 is built: `ModelCombination` carries `model_metadata` with a context window, a
+price and a modality per model, as a named field in the runner-v1 contract. OpenAI direct
+and OpenRouter still do not exist; each would be one more module. Decision 8 was reversed
+by ADR 0067, which readmitted opencode.

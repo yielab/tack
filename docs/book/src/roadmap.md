@@ -33,35 +33,19 @@ Two items are still open and are tracked below, under [Planned](#planned): Phase
 
 ## Planned
 
-The product is feature-complete for the solo-dev / small-team use case. Phases 20–25
-are **competitive / growth** work, driven by a deep competitive analysis of Tack
-against the Rust and self-hosted PM ecosystem.
+Two items are open. Each carries file paths and acceptance criteria so it can be picked up
+cold.
 
-**Why these phases (the research, in brief):** No mature Rust-native, web-based,
-self-hostable PM tool exists among the leading Jira alternatives — Tack is alone in
-its niche. Competitors run other stacks (Plane/Django, Vikunja/Go, Huly/TypeScript,
-OpenProject/Rails); the only _actually Rust_ rivals are hobby-scale terminal tools
-(taskwarrior-tui, rust_kanban, kanbanban, fulsomenko/kanban). The verified gaps Tack
-should close are: a **Table view** (Vikunja), **bi-directional GitHub sync** (Huly),
-**AI-agent / MCP** support (Plane, Vibe Kanban), and **git-from-card** dev
-conveniences (fulsomenko/kanban). Tack's differentiators to strengthen: the **single
-~10 MB binary** (no Postgres/Docker-compose), **per-project vocabulary + domain
-presets**, the **web + API + CLI triad**, and the **MIT license** (vs the AGPL/EPL
-field). The Rust/self-host community values keyboard-first, offline/local-first,
-plaintext, single-binary, low-memory tools — and criticizes heavy Docker-compose
-deployments and bloated SPAs. The dominant 2025–26 trend is **AI agents as
-first-class PM actors**, which makes Phase 20 the highest-leverage work.
+- **Phase 21 — GitHub sync, the inbound half.** Pushing an item's state to its issue
+  shipped. Receiving changes from GitHub, mirroring comments, per-project tokens and
+  linking an existing issue by hand are not built. One product decision scopes the work:
+  mirror status, comments and close-state, or status only.
+- **Phase 22, Task 2 — `tack open` / smart start.** `tack branch <item-id>` shipped; the
+  command that opens an item's branch and moves it to in-progress in one step did not.
 
-Each phase below carries file paths and acceptance criteria so it can be picked up
-cold. Three product decisions gate the dependent tasks — call them before dispatching:
-
-1. **MCP transport** — stdio sidecar (`tack mcp`) vs an HTTP/SSE endpoint in `tack serve`? _(blocks Phase 20)_ — recommend **stdio sidecar** for v1.
-2. **GitHub sync scope** — mirror status + comments + close-state, or status only for v1? _(scopes Phase 21)_
-3. **Local-first** — is offline/CRDT sync in scope this cycle, or parked? _(gates Phase 25)_
-
-> **Suggested parallelization:** Phase 22 (T1), Phase 24 (T1, T2), and the Phase 20
-> decision have no dependencies and can start immediately. Phases 20 and 21 are each
-> internally sequential; Phase 23 is a self-contained frontend track.
+What the harnesses can still gain — a run that asks before it acts on codex, docket and
+opencode, cancel and artifacts on docket, one shared install for opencode — is listed
+under "Upgrades" in `docs/plans/harnesses.md`.
 
 ### Phase 21 — Bi-Directional GitHub Sync ⏳ _v1 push-only shipped; inbound + comments pending_
 
