@@ -14,7 +14,7 @@ use super::types::{
     IneligibleReason, ModelSelector, RunnerCandidate, RunnerState, SchedulingRequest, Selection,
     SelectionOutcome,
 };
-use crate::execution::{CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
+use crate::execution::{Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
 
 /// A request-level defect that disqualifies every candidate identically, so
 /// it is reported once rather than as N copies of the same
@@ -134,6 +134,18 @@ fn evaluate_candidate(
             harness: request.requested_harness_kind.clone(),
             error: error.clone(),
         });
+    }
+
+    if matches!(request.approvals, Some(Approvals::Ask)) {
+        let can_ask = harness
+            .decisions
+            .as_ref()
+            .is_some_and(|cap| cap.support == CapabilitySupport::Supported);
+        if !can_ask {
+            return Err(IneligibleReason::DecisionsNotSupported {
+                harness: request.requested_harness_kind.clone(),
+            });
+        }
     }
 
     match &request.requested_model {

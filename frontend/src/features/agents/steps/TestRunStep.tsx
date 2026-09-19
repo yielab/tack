@@ -100,6 +100,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
         modelId: modelId().trim(),
         timeoutSeconds: 600,
         allowNetwork: false,
+        approvals: 'auto',
         tools: [],
         repository: { kind: 'git', remote: remote().trim(), baseRevision: baseRevision().trim() || 'main', subdirectory: null },
         idempotencyKey: `agents-page-test-run-${Date.now()}`,

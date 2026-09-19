@@ -288,7 +288,10 @@ pub struct CreateExecution {
     /// `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
     /// base_revision, subdirectory}`).
     pub repository_snapshot: Value,
-    /// `tack_orch::execution::PermissionPolicy` (`{tools, network}`).
+    /// `tack_orch::execution::PermissionPolicy` (`{tools, network,
+    /// approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
+    /// `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
+    /// matched harness does not attest `decisions: supported`.
     pub permission_policy: Value,
     pub budgets: Value,
     pub environment: Value,
