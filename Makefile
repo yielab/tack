@@ -99,7 +99,7 @@ fmt-check: ## Check formatting (used in CI)
 
 coverage: ## Rust + frontend coverage against CI's thresholds (see ci.yml's `coverage` job)
 	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "Installing cargo-llvm-cov..."; cargo install cargo-llvm-cov --locked; }
-	cargo llvm-cov nextest --workspace --fail-under-lines 75.88
+	cargo llvm-cov nextest --workspace --fail-under-lines 78.93
 	@cd frontend && npm ls @vitest/coverage-v8 >/dev/null 2>&1 || npm install --no-save @vitest/coverage-v8@^4
 	cd frontend && npx vitest run --coverage --coverage.provider=v8 \
 		--coverage.thresholds.lines=70 --coverage.thresholds.functions=70 \
