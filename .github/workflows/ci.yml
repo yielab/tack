@@ -4,8 +4,8 @@ on:
   push:
     branches: ["main", "develop", "claude/**"]
   pull_request:
-  # The schedule tier: cross-browser E2E and MSRV, too slow for every pull
-  # request, run weekly. Offset from scheduled-audit.yml's Monday 06:00 UTC so
+  # The schedule tier: cross-browser E2E, MSRV and the mutation report, too
+  # slow for every pull request, run weekly. Offset from scheduled-audit.yml's Monday 06:00 UTC so
   # the two don't contend for runners.
   schedule:
     - cron: "30 5 * * 1"
@@ -116,6 +116,71 @@ jobs:
         run: cargo build --workspace --locked
         env:
           RUSTUP_TOOLCHAIN: 1.94.1
+
+  mutants:
+    name: Mutation report (${{ matrix.name }})
+    # Schedule tier: weekly, plus on demand. Report-only: it never fails a
+    # build for a surviving mutant. It answers one question the coverage
+    # number cannot — whether a test would notice if the covered line were
+    # wrong — for the two crates where a silent wrong answer costs most.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        # tack-db's repository layer holds about four times tack-core's
+        # mutants, so it is split into shards that each finish in one job.
+        include:
+          - name: tack-core
+            args: -p tack-core
+          - name: tack-db repo 1/4
+            args: -p tack-db -f 'crates/tack-db/src/repo/**' -f crates/tack-db/src/repo.rs --shard 0/4
+          - name: tack-db repo 2/4
+            args: -p tack-db -f 'crates/tack-db/src/repo/**' -f crates/tack-db/src/repo.rs --shard 1/4
+          - name: tack-db repo 3/4
+            args: -p tack-db -f 'crates/tack-db/src/repo/**' -f crates/tack-db/src/repo.rs --shard 2/4
+          - name: tack-db repo 4/4
+            args: -p tack-db -f 'crates/tack-db/src/repo/**' -f crates/tack-db/src/repo.rs --shard 3/4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          key: mutants
+      - name: Install cargo-mutants and cargo-nextest
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        with:
+          tool: cargo-mutants,cargo-nextest
+      # Exit 2 is "some mutants survived" and 3 is "some timed out": both are
+      # the report, not a failure. Anything else — a usage error, or tests
+      # that fail before any mutation — is a broken job and stays red.
+      - name: Run cargo-mutants
+        run: |
+          set -uo pipefail
+          cargo mutants ${{ matrix.args }} --test-tool nextest --in-place --no-shuffle -j 2
+          code=$?
+          if [ "$code" -eq 2 ] || [ "$code" -eq 3 ]; then exit 0; fi
+          exit "$code"
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            for f in caught missed timeout unviable; do
+              echo "- $f: $(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)"
+            done
+            echo; echo "Surviving mutants:"; echo '```'
+            cat mutants.out/missed.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-${{ strategy.job-index }}
+          path: mutants.out/
+          retention-days: 30
 
   desktop:
     name: Desktop app (tack-desktop workspace)
