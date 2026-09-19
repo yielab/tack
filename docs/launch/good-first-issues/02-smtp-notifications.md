@@ -38,7 +38,7 @@ today), invoked from the same handler call sites rather than adding a second set
    in the same PR — that file is the single authority for config tables, and an
    undocumented env var is treated as a bug here, not a minor omission.
 3. This project's posture is that anything reaching the network is off by default
-   behind an explicit `_ENABLE` gate (see `TACK_ORCH_ENABLE` in `docs/CONFIG.md` for the
+   behind an explicit `_ENABLE` gate (see the `_ENABLE` variables in `docs/CONFIG.md` for the
    existing convention) — an SMTP notifier should follow the same rule rather than
    silently start sending mail once host/port are configured.
 4. Wire it into the same event points the webhook client already uses, rather than

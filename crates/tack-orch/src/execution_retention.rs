@@ -102,8 +102,7 @@ impl ExecutionRetentionStore for RepoExecutionRetentionStore {
     }
 }
 
-/// Default retention window in days — mirrors the orch precedent
-/// (`TACK_ORCH_EVENT_RETENTION_DAYS`, also 90) and
+/// Default retention window in days — mirrors
 /// `AppConfig::execution_retention_days`'s own default
 /// (`crates/tack-api/src/config.rs`).
 pub const DEFAULT_EXECUTION_RETENTION_DAYS: u32 = 90;

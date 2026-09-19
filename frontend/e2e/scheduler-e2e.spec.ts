@@ -10,9 +10,12 @@ import {
   waitForApp,
 } from './helpers';
 
-// Cross-surface E2E proving healthy fleet selection, saturation, exact
-// runner, unsupported model, and realtime updates all pass through
-// production routes — not mocks — end to end through the UI.
+// Cross-surface E2E: a request made in the UI is claimed and the UI shows it
+// without a reload, and a model no runner attests is blocked in the form from
+// the same live capability data the scheduler enforces — through production
+// routes, not mocks. Which runner may claim what (saturation, an exact-runner
+// selector excluding every other runner) is the scheduler's own rule, pinned
+// in `crates/tack-orch/src/scheduler/select/tests.rs`, not re-proved here.
 //
 // Every request in this file is created through the real, unmocked
 // `RunWithAgentModal` form (`shared/runWithAgent/`) against the real
@@ -120,83 +123,6 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // row's state badge both read "Leased" — `.first()` targets the
   // request-level one this test's own name is about.
   await expect(drawer.getByText('Leased', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-});
-
-test('a saturated runner leaves a second exact-runner request visibly queued', async ({ page, request }) => {
-  const projectId = await getOrCreateProject(request);
-  const modelId = `opaque/model-saturated-${Date.now()}`;
-  const agentProfileId = await createAgentProfile(request, `E2E saturation profile ${Date.now()}`);
-  const { runnerId, credential } = await enrollRunner(request, `saturated-runner-${Date.now()}`, modelId, 1);
-
-  const firstItemId = await createFreshItem(request, projectId, `Scheduler E2E saturation 1 ${Date.now()}`);
-  {
-    const { modal } = await openRunModal(page, projectId, firstItemId);
-    await fillExactRunnerTarget(modal, runnerId, agentProfileId);
-    await modal.getByLabel('Choose…').check();
-    await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
-    await modal.getByRole('button', { name: 'Run' }).click();
-    await expect(modal).toBeHidden();
-  }
-  const firstClaim = await claimOnce(request, runnerId, credential, `saturation-claim-1-${Date.now()}`);
-  expect(firstClaim).not.toBeNull();
-
-  const secondItemId = await createFreshItem(request, projectId, `Scheduler E2E saturation 2 ${Date.now()}`);
-  const { drawer, modal } = await openRunModal(page, projectId, secondItemId);
-  await fillExactRunnerTarget(modal, runnerId, agentProfileId);
-  await modal.getByLabel('Choose…').check();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
-  await modal.getByRole('button', { name: 'Run' }).click();
-  await expect(modal).toBeHidden();
-
-  // The runner's one slot is already in use — a second claim attempt must
-  // find nothing, and the UI must keep showing the honest, unclaimed state.
-  const secondClaim = await claimOnce(request, runnerId, credential, `saturation-claim-2-${Date.now()}`);
-  expect(secondClaim, "a saturated runner's slot must not be double-leased").toBeNull();
-
-  const executionTab = drawer.getByRole('tab', { name: 'Execution' });
-  await executionTab.click();
-  await expect(drawer.getByText('Queued')).toBeVisible();
-  await page.waitForTimeout(4500); // one full poll cycle
-  await expect(drawer.getByText('Queued')).toBeVisible();
-});
-
-test('an exact-runner request is never claimed by a different, otherwise-eligible runner', async ({
-  page,
-  request,
-}) => {
-  const projectId = await getOrCreateProject(request);
-  const modelId = `opaque/model-exact-${Date.now()}`;
-  const agentProfileId = await createAgentProfile(request, `E2E exact profile ${Date.now()}`);
-  const target = await enrollRunner(request, `exact-target-${Date.now()}`, modelId);
-  const bystander = await enrollRunner(request, `exact-bystander-${Date.now()}`, modelId);
-
-  const itemId = await createFreshItem(request, projectId, `Scheduler E2E exact runner ${Date.now()}`);
-  const { drawer, modal } = await openRunModal(page, projectId, itemId);
-  await fillExactRunnerTarget(modal, target.runnerId, agentProfileId);
-  await modal.getByLabel('Choose…').check();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
-  await modal.getByRole('button', { name: 'Run' }).click();
-  await expect(modal).toBeHidden();
-
-  const bystanderClaim = await claimOnce(
-    request,
-    bystander.runnerId,
-    bystander.credential,
-    `exact-bystander-claim-${Date.now()}`,
-  );
-  expect(
-    bystanderClaim,
-    'an exact-runner selector must exclude every runner except the one it names, even an identically-capable one',
-  ).toBeNull();
-
-  const executionTab = drawer.getByRole('tab', { name: 'Execution' });
-  await executionTab.click();
-  await expect(drawer.getByText('Queued')).toBeVisible();
-
-  // The *named* runner still can claim it — proves the exclusion above was
-  // about identity, not a broken request.
-  const targetClaim = await claimOnce(request, target.runnerId, target.credential, `exact-target-claim-${Date.now()}`);
-  expect(targetClaim).not.toBeNull();
 });
 
 test('an unsupported model is blocked client-side with a named reason, using the same live capability data the scheduler enforces', async ({
