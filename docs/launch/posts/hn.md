@@ -48,7 +48,7 @@ the board); English-only UI; one contributor (me); this has never had an outside
 Full list is in the README's "Known limitations" section, and I'd rather list it there
 than have someone hit it first.
 
-18.4 MiB release binary (UI embedded, measured in CI), 1,116 tests, MIT licensed. Would
+18.4 MiB release binary (UI embedded, measured in CI), 1,049 Rust tests, MIT licensed. Would
 genuinely like the "what's missing" feedback more than the "cool" feedback — I have a
 `good first issue` label seeded with real gaps (i18n scaffolding, SMTP notifications,
 time tracking, in-UI diff review of what an agent changed) if anyone wants to poke at
