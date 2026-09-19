@@ -31,23 +31,17 @@ use uuid::Uuid;
 /// a different, incompatible shape. A doc-only mirror, not a second runtime
 /// authority: `tack-orch` must stay free of an OpenAPI dependency, so the
 /// real type cannot derive `ToSchema` itself. Defined here rather than in
-/// `crate::openapi` so this file keeps compiling standalone when loaded via
-/// `#[path]` from a separate test-binary crate root. `code` is a free
-/// string, not an enum, for the same reason — its fifteen frozen values are
-/// enumerated in `docs/contracts/runner-v1/README.md`.
-///
-/// `allow(dead_code)`: referenced only by *type* (utoipa's `ToSchema`), never
-/// constructed as a value — real responses build the runtime type instead.
-/// Invisible to `dead_code` in the library crate; only surfaces when this
-/// file is compiled standalone into a test binary with no external callers.
+/// `crate::openapi` so this stays colocated with the routes it documents.
+/// `code` is a free string, not an enum, for the same reason — its fifteen
+/// frozen values are enumerated in `docs/contracts/runner-v1/README.md`.
+/// Referenced only by *type* (utoipa's `ToSchema`), never constructed as a
+/// value — real responses build the runtime type instead.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct RunnerV1ErrorEnvelope {
     pub error: RunnerV1Error,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct RunnerV1Error {
     /// One of the fifteen frozen `docs/contracts/runner-v1/errors/*.json`
     /// codes (e.g. `not_found`, `conflict`, `idempotency_conflict`,
@@ -66,20 +60,14 @@ pub struct RunnerV1Error {
 }
 
 /// Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-/// used by `AttemptSummary.usage_economics`. Defined here,
-/// not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
-/// above is: this file must keep compiling standalone when its regression
-/// tests load it via `#[path]` from a separate test-binary crate root,
-/// where a `crate::openapi` (or any other module's) reference would not
-/// resolve. `tack-orch` has no `ToSchema`
-/// (see `usage_provenance.rs`'s own module doc), so this is a
-/// hand-verified mirror, never constructed or serialized by real code —
-/// `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
-/// carries it. `not_measured` is the honest value whenever a figure
+/// used by `AttemptSummary.usage_economics`. Defined here, not in
+/// `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.
+/// `tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module
+/// doc), so this is a hand-verified mirror, never constructed or serialized
+/// by real code. `not_measured` is the honest value whenever a figure
 /// genuinely is not known — never a fabricated zero.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-#[allow(dead_code)]
 pub enum MeasurementSourceSchema {
     Measured,
     Estimated,
@@ -93,7 +81,6 @@ pub enum MeasurementSourceSchema {
 /// not just the Rust type: unmeasured is documented as genuinely nullable,
 /// never a number defaulting to `0`.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct UsdMeasurementSchema {
     pub value: Option<f64>,
     pub source: MeasurementSourceSchema,
@@ -108,7 +95,6 @@ pub struct UsdMeasurementSchema {
 /// itself a `Measurement` — `null` only until both the attempt's
 /// `started_at`/`ended_at` are known.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct RunnerTimeCostSchema {
     pub wall_clock_ms: Option<u64>,
     pub cost_usd_estimated: UsdMeasurementSchema,
@@ -120,7 +106,6 @@ pub struct RunnerTimeCostSchema {
 /// independently-provenanced dollar dimensions, deliberately never summed
 /// into one figure.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct UsageEconomicsSchema {
     pub model_token_cost_usd_estimated: UsdMeasurementSchema,
     pub runner_time_cost: RunnerTimeCostSchema,
@@ -133,7 +118,6 @@ pub struct UsageEconomicsSchema {
 /// caller (the frontend's rendering) can show both sides of a mismatch.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[allow(dead_code)]
 pub enum ModelProvenanceSchema {
     /// The attempt ran on exactly the requested provider/model.
     Matched { provider: String, model_id: String },
@@ -215,7 +199,9 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
         })
 }
 
-fn canonical_json(value: Value) -> Value {
+/// Rebuilds a `Value` so every object passes through `FromIterator`: key
+/// order can then never affect a serialized comparison.
+pub(crate) fn canonical_json(value: Value) -> Value {
     match value {
         Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
         Value::Object(values) => Value::Object(

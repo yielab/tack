@@ -35,6 +35,9 @@ use std::sync::Arc;
 use tack_db::{Repository, repo::execution::ExecutionClock};
 use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
+use crate::handlers::executions::canonical_json;
+use crate::middleware::constant_time_eq;
+
 /// `docs/contracts/runner-v1/limits.json`'s `decision_answer_bytes_max`,
 /// mirrored exactly (pinned against the live fixture by
 /// `decision_answer_limit_matches_frozen_fixture` below) — the same limit
@@ -118,29 +121,6 @@ fn internal_error() -> (StatusCode, Json<Value>) {
 /// so it never ends up echoed into a JSON log line the way a body field might.
 pub const DECISION_TOKEN_HEADER: &str = "x-tack-decision-token";
 
-/// Byte-wise constant-time equality, duplicated verbatim from
-/// `crate::middleware::constant_time_eq` rather than imported — this module
-/// is loaded standalone via `#[path]` inside
-/// `crates/tack-api/tests/runner_protocol/decisions.rs` (a module tree with
-/// no `middleware` module of its own; see this
-/// file's own module doc comment on why it stays deliberately decoupled from
-/// other files), so a `crate::middleware::...` path would fail to resolve
-/// there even though it resolves fine once this module is wired into the
-/// real crate. Same reasoning as this file's existing
-/// `canonical_json`/`canonical_string` duplication of `executions.rs`'s
-/// identical pair.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    std::hint::black_box(
-        a.iter()
-            .zip(b.iter())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0,
-    )
-}
-
 /// Resolving a decision releases whatever the harness/runner is blocked on
 /// — a materially higher-privilege action than the ordinary operator
 /// `x-tack-principal` gate covers. The safe default: an unconfigured
@@ -196,25 +176,6 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
                 json!({}),
             )
         })
-}
-
-/// Recursively rebuilds a `Value`, forcing every object through
-/// `FromIterator` so key order can never affect the serialized comparison
-/// used for idempotent-replay detection — mirrors
-/// `handlers/executions.rs`'s identical `canonical_json`/`canonical_string`
-/// pair (duplicated here rather than imported, to avoid coupling this module
-/// to that file).
-fn canonical_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, canonical_json(value)))
-                .collect(),
-        ),
-        other => other,
-    }
 }
 
 fn canonical_string(value: &Value) -> String {

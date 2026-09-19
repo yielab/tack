@@ -3311,16 +3311,11 @@ export interface components {
         };
         /**
          * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-         *     used by `AttemptSummary.usage_economics`. Defined here,
-         *     not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
-         *     above is: this file must keep compiling standalone when its regression
-         *     tests load it via `#[path]` from a separate test-binary crate root,
-         *     where a `crate::openapi` (or any other module's) reference would not
-         *     resolve. `tack-orch` has no `ToSchema`
-         *     (see `usage_provenance.rs`'s own module doc), so this is a
-         *     hand-verified mirror, never constructed or serialized by real code —
-         *     `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
-         *     carries it. `not_measured` is the honest value whenever a figure
+         *     used by `AttemptSummary.usage_economics`. Defined here, not in
+         *     `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.
+         *     `tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module
+         *     doc), so this is a hand-verified mirror, never constructed or serialized
+         *     by real code. `not_measured` is the honest value whenever a figure
          *     genuinely is not known — never a fabricated zero.
          * @enum {string}
          */
@@ -3579,15 +3574,11 @@ export interface components {
          *     a different, incompatible shape. A doc-only mirror, not a second runtime
          *     authority: `tack-orch` must stay free of an OpenAPI dependency, so the
          *     real type cannot derive `ToSchema` itself. Defined here rather than in
-         *     `crate::openapi` so this file keeps compiling standalone when loaded via
-         *     `#[path]` from a separate test-binary crate root. `code` is a free
-         *     string, not an enum, for the same reason — its fifteen frozen values are
-         *     enumerated in `docs/contracts/runner-v1/README.md`.
-         *
-         *     `allow(dead_code)`: referenced only by *type* (utoipa's `ToSchema`), never
-         *     constructed as a value — real responses build the runtime type instead.
-         *     Invisible to `dead_code` in the library crate; only surfaces when this
-         *     file is compiled standalone into a test binary with no external callers.
+         *     `crate::openapi` so this stays colocated with the routes it documents.
+         *     `code` is a free string, not an enum, for the same reason — its fifteen
+         *     frozen values are enumerated in `docs/contracts/runner-v1/README.md`.
+         *     Referenced only by *type* (utoipa's `ToSchema`), never constructed as a
+         *     value — real responses build the runtime type instead.
          */
         RunnerV1ErrorEnvelope: {
             error: components["schemas"]["RunnerV1Error"];
