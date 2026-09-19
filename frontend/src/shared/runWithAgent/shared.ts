@@ -481,10 +481,10 @@ export function shouldHideTargetPicker(activeRunnerCount: number, fleetCount: nu
  * embedded case — a remote runner can supply execution capacity with the
  * embedded one off. `/api/executions` and its sibling routes are mounted
  * unconditionally regardless of either (`frontend/e2e/run-with-agent.spec.ts`'s
- * own header note: "an always-on operator surface, NOT gated behind
- * TACK_ORCH_ENABLE"), so this function still uses the more general,
- * directly-observable signal: zero active runners (local or remote) reads
- * as "execution is off," since no runner ever enrolls until one is started.
+ * own header note calls this "the always-on operator surface"), so this
+ * function still uses the more general, directly-observable signal: zero
+ * active runners (local or remote) reads as "execution is off," since no
+ * runner ever enrolls until one is started.
  */
 export function isExecutionOff(activeRunnerCount: number): boolean {
   return activeRunnerCount === 0;
