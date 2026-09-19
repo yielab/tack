@@ -144,6 +144,21 @@ export interface HarnessCapability {
    * scheduler's own `select.rs` treats them the same).
    */
   model_passthrough?: CapabilityValue;
+  /**
+   * Whether this harness can pause a run and ask the operator before it
+   * acts, for a request whose `permission_policy.approvals` is `"ask"` —
+   * mirrors the Rust `HarnessCapability::decisions` field
+   * (`crates/tack-orch/src/execution/capabilities.rs`), optional for the
+   * same reason `model_passthrough` is: absent on an older runner or the
+   * shared fake probe, never a fabricated `null`. This is distinct from
+   * `RunnerCapabilities.features.decisions`, which only says the protocol
+   * path exists on the runner at all, not which harness can actually use
+   * it. Only `support === 'supported'` unlocks the "Ask me" approvals
+   * choice — `'advisory'` and absent both mean "not attested" and are
+   * rejected identically to `'unsupported'`, matching the scheduler's own
+   * `select.rs` treatment.
+   */
+  decisions?: CapabilityValue;
 }
 
 export interface CapabilityLimits {
