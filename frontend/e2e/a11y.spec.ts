@@ -124,17 +124,11 @@ test('global settings has no accessibility violations', async ({ page }) => {
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-// Agents page — Advanced section (frontend/src/features/agents/runnerFleet/**
-// — a distinct, harness-agnostic execution runner from the legacy Docket
-// scans above, which happen to share the word "fleet"). The operator
-// execution/fleet/runner/profile routes this section calls
-// (`/api/executions`, `/api/runner-fleets`, `/api/runners/*`,
-// `/api/agent-profiles`) are NOT gated behind
-// `TACK_ORCH_ENABLE` (`crates/tack-api/src/router.rs`'s
-// `operator_execution_routes` is merged into `/api` independently of
-// `orch_routes`) — so these scans hit the real, unmodified webServer with no
-// `page.route` interception at all, including a genuine enroll round-trip
-// against `POST /api/runners/enrollment`.
+// Agents page — Advanced section (frontend/src/features/agents/runnerFleet/**).
+// The routes it calls (`/api/executions`, `/api/runner-fleets`,
+// `/api/runners/*`, `/api/agent-profiles`) are always on, so these scans hit
+// the real, unmodified webServer with no `page.route` interception at all,
+// including a genuine enroll round-trip against `POST /api/runners/enrollment`.
 // Collapsed by default (its vocabulary lives only here), so every
 // scan below opens it first.
 
@@ -217,9 +211,7 @@ test('agents page — creating a fleet via the form has no accessibility violati
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-// "Run with agent" (`frontend/src/shared/runWithAgent/**`). These routes are
-// NOT gated behind `TACK_ORCH_ENABLE` — no orchestration setup needed to
-// reach this surface's populated state. The two states scanned are the
+// "Run with agent" (`frontend/src/shared/runWithAgent/**`). The two states scanned are the
 // highest-risk ones for focus/labelling per this file's own established
 // precedent (a modal with several distinct field groups, and a tab panel
 // rendering a list with
