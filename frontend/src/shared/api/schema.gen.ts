@@ -2855,7 +2855,12 @@ export interface components {
             /** Format: uuid */
             item_id: string;
             metadata: unknown;
-            /** @description `tack_orch::execution::PermissionPolicy` (`{tools, network}`). */
+            /**
+             * @description `tack_orch::execution::PermissionPolicy` (`{tools, network,
+             *     approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
+             *     `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
+             *     matched harness does not attest `decisions: supported`.
+             */
             permission_policy: unknown;
             /**
              * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,

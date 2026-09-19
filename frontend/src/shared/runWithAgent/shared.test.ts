@@ -13,6 +13,7 @@ import {
   describeProjectModelDefault,
   projectDefaultModelPair,
   isModelPassthroughAttested,
+  isDecisionsAttested,
   parseModelDefaultConvention,
   resolveAutoModelPolicy,
   type RunWithAgentFormValues,
@@ -32,6 +33,7 @@ function values(overrides: Partial<RunWithAgentFormValues> = {}): RunWithAgentFo
     modelId: null,
     timeoutSeconds: 1800,
     allowNetwork: false,
+    approvals: 'auto',
     tools: ['read', 'write'],
     repository: { kind: 'git', remote: 'git@example.com:org/repo.git', baseRevision: 'main', subdirectory: null },
     idempotencyKey: 'fixed-key',
@@ -507,5 +509,30 @@ describe('isModelPassthroughAttested', () => {
   });
   it('is true only for "supported"', () => {
     expect(isModelPassthroughAttested(harness({ model_passthrough: { support: 'supported', reason: null } }))).toBe(true);
+  });
+});
+
+// The modal's own submit path (`buildCreateExecutionInput`) and its own
+// control-gating helper (`isDecisionsAttested`), exercised together as the
+// one scenario D2 adds a control for: the wire only ever carries `"ask"` as
+// an explicit, deliberate choice, and that choice is only ever offered for
+// a harness that attested it can honour it.
+describe('approvals ("Ask me before acting")', () => {
+  it('ask sends permission_policy.approvals, automatic omits it, and an unsupported harness cannot select ask', () => {
+    const askInput = buildCreateExecutionInput(values({ approvals: 'ask' }));
+    expect((askInput.permission_policy as Record<string, unknown>).approvals).toBe('ask');
+
+    const autoInput = buildCreateExecutionInput(values({ approvals: 'auto' }));
+    expect(autoInput.permission_policy as Record<string, unknown>).not.toHaveProperty('approvals');
+
+    const unsupportedHarness: HarnessCapability = {
+      harness_kind: 'codex',
+      installed_version: '1.0.0',
+      probe_error: null,
+      probed_at: '2026-09-19T00:00:00Z',
+      model_combinations: [],
+      decisions: { support: 'unsupported', reason: 'nothing pauses a run to await a decision' },
+    };
+    expect(isDecisionsAttested(unsupportedHarness)).toBe(false);
   });
 });
