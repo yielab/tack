@@ -8,7 +8,7 @@ number comes from `scripts/maintainability.py` (this plan's tool) or from the on
 commands in [Appendix A](#appendix-a--commands-behind-the-numbers); re-run them before
 quoting — this plan's own §5 estimate for M4 was off by an order of magnitude, and the
 board carried it for a wave before anyone re-ran the command. This plan is workspace-wide; the harness adapters have their own,
-narrower audit in [`harness-maintainability-audit.md`](../closed-cycles/plans/harness-maintainability-audit.md),
+narrower audit in [`harness-maintainability-audit.md`](harness-maintainability-audit.md),
 and its card T0 is referenced here rather than repeated.
 
 **Decide:** approve (1) one place for each kind of test and a size budget per file and per

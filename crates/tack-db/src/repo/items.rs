@@ -155,7 +155,7 @@ impl Repository {
     }
 
     /// The optimistic-concurrency counter an `ETag` is derived from
-    /// (migration 034; see docs/plans/agnostic-control-plane.md D4). A
+    /// (migration 034). A
     /// dedicated read rather than folding `version` into [`get_item`](Self::get_item)'s
     /// `Item`-shaped query: `tack_core::models::Item` has no `version` field,
     /// so a caller that needs the counter asks for it separately rather than

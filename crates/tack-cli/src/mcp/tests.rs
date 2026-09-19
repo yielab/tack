@@ -154,12 +154,11 @@ fn update_item_requires_a_field() {
 
 // ── MCP write path: If-Match ──────────────────────────────────
 //
-// `update_item`/`move_item` now read the item before writing it so they
-// can send back its `ETag` as `If-Match` — closing the race named in
-// `docs/plans/agnostic-control-plane.md` trap T2: an agent write via MCP
-// was the one path in the whole system with no way to attach a header
-// at all, so it was unconditionally last-write-wins even after every
-// other writer already had a precondition to send.
+// `update_item`/`move_item` read the item before writing it so they can
+// send back its `ETag` as `If-Match`. An MCP tool call has no way to
+// attach a header of its own, so without this an agent's write would be
+// the one last-write-wins path while every other writer sends a
+// precondition.
 
 // Run a blocking closure on a thread allowed to block. `TackClient` is
 // synchronous `reqwest`; calling it directly from a `#[tokio::test]`

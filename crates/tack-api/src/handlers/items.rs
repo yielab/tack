@@ -14,8 +14,8 @@ use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
 
-/// A version-derived `ETag`, not a content hash (see
-/// docs/plans/agnostic-control-plane.md D4). Quoted per RFC 7232 so a
+/// A version-derived `ETag`, not a content hash: the counter changes on
+/// every write, and no body has to be hashed. Quoted per RFC 7232 so a
 /// client only ever needs to echo the string back verbatim via `If-Match`
 /// — no quote-stripping or parsing on either side, which is also why the
 /// value embeds the id: a client that (incorrectly) sends back an `ETag`
