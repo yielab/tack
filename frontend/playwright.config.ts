@@ -69,7 +69,11 @@ export default defineConfig({
   // One test file shouldn't leak state into another; each creates what it needs.
   fullyParallel: true,
   forbidOnly: isCI,
-  retries: isCI ? 2 : 0,
+  // One retry in CI, only so a failure leaves a trace and a video behind
+  // (`on-first-retry` below). A test that passes on the retry is flaky, and
+  // `failOnFlakyTests` keeps the run red for it — see docs/TESTING.md.
+  retries: isCI ? 1 : 0,
+  failOnFlakyTests: isCI,
   // SQLite is single-writer; serialize in CI to avoid write-contention flakes.
   workers: isCI ? 1 : undefined,
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : 'list',
