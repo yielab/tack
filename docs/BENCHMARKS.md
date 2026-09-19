@@ -1,6 +1,6 @@
 # Tack — Footprint & Performance Benchmarks
 
-_Last measured against `develop` at workspace version 0.1.0-beta.8._
+_Last measured against `develop` at workspace version 0.1.0-beta.8, 2026-09-19._
 
 Tack's pitch is "fast, single-binary, self-hosted." This page replaces that claim
 with numbers you can reproduce. **Everything below is one process and one SQLite
@@ -16,21 +16,23 @@ file — no Postgres, no Redis, no Docker.**
 | Build | `cargo build --release -p tack-cli --features embed-spa` (LTO, `opt-level="z"`, stripped) |
 
 Numbers are hardware-dependent; the point is the **order of magnitude** and that
-you can re-run the method below on your own box.
+you can re-run the method below on your own box. These were taken on a desktop in use,
+with the CPU governor on `powersave`; the published `v0.1.0-beta.7` binary, measured the
+same way in the same minute, gave the same latencies (health p50 0.8–1.0 ms), so read a
+difference from an older copy of this page as the machine, not the code.
 
 ## Footprint
 
 | Metric | Value | How measured |
 | --- | --- | --- |
-| **Binary size** (UI embedded) | **21.0 MiB** | `ls -l target/release/tack` — single file, SPA embedded via `embed-spa`, stripped by the release profile |
-| **Binary size** (no UI) | 20.3 MiB | the same release build without `embed-spa` |
-| **Cold start** (launch → first `/api/health` 200) | **~150 ms** | wall-clock poll loop, fresh empty DB; 144–256 ms across four runs |
-| **Idle RSS** (resident memory, settled) | **~19.5 MiB** | `VmRSS` from `/proc/<pid>/status`, 1 s after ready |
+| **Binary size** (UI embedded) | **18.5 MiB** | `ls -l target/release/tack` — single file, SPA embedded via `embed-spa`, stripped by the release profile |
+| **Binary size** (no UI) | 17.9 MiB | the same release build without `embed-spa` |
+| **Cold start** (launch → first `/api/health` 200) | **~155 ms** | wall-clock poll loop, fresh empty DB; 149–164 ms across six runs |
+| **Idle RSS** (resident memory, settled) | **~18.3 MiB** | `VmRSS` from `/proc/<pid>/status`, 1 s after ready |
 
-The two size rows are 0.7 MiB apart, which is the whole web UI. The binary is twice
-what it was before the execution fleet existed, and the UI is not why: the runner
-protocol, the scheduler, the execution domain and their dependencies are. Embedding
-the UI is nearly free; executing work is not.
+The two size rows are about 0.6 MiB apart, which is the whole web UI. The rest of the
+binary is the API server, the SQLite driver, and the runner/execution domain that
+`tack serve --with-runner` uses — embedding the UI is nearly free next to that.
 
 For comparison, a typical Postgres-backed PM stack starts at hundreds of MiB of
 resident memory across multiple containers before the app serves a request. Tack's
@@ -43,12 +45,12 @@ held 100 items in one project.
 
 | Endpoint | p50 | p95 | p99 |
 | --- | --- | --- | --- |
-| `GET /api/health` | 0.12 ms | 0.34 ms | 0.62 ms |
-| `GET /api/projects/:id/items` (100 items) | 1.69 ms | 2.67 ms | 3.48 ms |
-| `GET /api/projects/:id/search?q=…` (FTS5) | 1.13 ms | 2.82 ms | 3.82 ms |
+| `GET /api/health` | 0.53 ms | 1.95 ms | 3.38 ms |
+| `GET /api/projects/:id/items` (100 items) | 1.79 ms | 4.73 ms | 9.11 ms |
+| `GET /api/projects/:id/search?q=…` (FTS5) | 1.31 ms | 6.35 ms | 7.57 ms |
 
-Concurrent read throughput (32 client workers, `GET …/items`): **~786 req/s,
-p99 ≈ 50 ms**. _Caveat: this number is bounded by the Python test client (GIL +
+Concurrent read throughput (32 client workers, `GET …/items`): **~760 req/s,
+p99 ≈ 54 ms**. _Caveat: this number is bounded by the Python test client (GIL +
 `urllib` overhead), not the server — treat it as a conservative floor, not a
 ceiling._ For a rigorous throughput/saturation curve use the k6 baseline below.
 
