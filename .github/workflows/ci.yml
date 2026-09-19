@@ -248,11 +248,11 @@ jobs:
         with:
           tool: nextest
       # The floor is the workspace line total this job itself measured on
-      # `develop`, minus one point: 76.88 % (17 177 of 22 344 lines, summed
+      # `develop`, minus one point: 79.93 % (17 842 of 22 323 lines, summed
       # `LH`/`LF` over the `coverage-lcov` artifact). Re-measure here, not on
       # a workstation, before changing it.
-      - name: Test + workspace coverage (>= 75.88% lines)
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 75.88
+      - name: Test + workspace coverage (>= 78.93% lines)
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93
       - name: Upload coverage report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

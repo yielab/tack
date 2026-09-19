@@ -330,7 +330,7 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | T2 | done, in `develop` — 55 HTTP tests across the four handlers; `create_template` now runs its own validation. 25 per-route token tests were cut at review: the gate is one layer, pinned once in `crud.rs` |
 | T3 | done, in `develop` — two scheduler rules re-proved through a browser removed, the last fixed wait replaced, `failOnFlakyTests` on, every spec listed by journey in `docs/TESTING.md` |
 | T4 | done, in `develop` — weekly `mutants` job, report-only, `tack-db`'s repository layer in four shards |
-| Coverage floor | done — CI measured 76.88 % on `develop` after T2 (17 177 of 22 344 lines); the floor is 75.88 |
+| Coverage floor | done — CI measured 79.93 % on `develop` (17 842 of 22 323 lines); the floor is 78.93. Three of those points were always there: five API test files compiled their own copy of the handlers with `#[path]`, so coverage never counted them |
 
 ### What walking `approvals: ask` end to end found
 
