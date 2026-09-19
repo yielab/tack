@@ -50,5 +50,5 @@ $ gh api graphql -f query='{ repository(owner:"yielab", name:"tack") {
 - Post Topic 1 first; it's the one every launch-post draft in `docs/launch/posts/`
   implicitly points readers toward (each draft says "what's missing" feedback is wanted
   more than reactions).
-- Neither topic references this repository's internal planning board — consistent with
-  the rest of this card's material.
+- Neither topic references this repository's internal planning board, consistent with
+  the rest of the material in `docs/launch/`.

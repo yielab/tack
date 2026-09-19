@@ -17,8 +17,9 @@ system, not pitching it.
 ## First-comment text (posted immediately after submitting, as the author)
 
 Built this because I wanted a project manager that could dispatch a board item to
-Claude Code or Codex against my own repo, without running anyone else's server or
-handing over model credentials. The board and the runner are separate concerns on
+Claude Code, Codex, or another coding-agent CLI against my own repo, without running
+anyone else's server or handing over model credentials. The board and the runner are
+separate concerns on
 purpose: the board (Rust/Axum/SQLite, one binary) never executes code or holds a model
 credential; a small runner process does that, pulling work over an HTTP protocol and
 reporting back.
@@ -32,7 +33,7 @@ binary running in two Docker containers, not a staged dev build.
 
 Current state, honestly: 0 users outside my own testing, one contributor (me), no
 accounts system (one shared bearer token), no notifications, English-only. MIT
-licensed, 1,420 tests, `cargo nextest run --workspace` green. Feedback on the fencing/
+licensed, 1,116 tests, `cargo nextest run --workspace` green. Feedback on the fencing/
 lease design or the crate-boundary rules (`tack-core` has zero I/O; the orchestration
 crate is structurally barred from depending on the HTTP layer) is more useful to me
 right now than general reactions to the pitch.

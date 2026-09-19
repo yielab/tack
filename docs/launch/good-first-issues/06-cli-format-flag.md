@@ -6,15 +6,15 @@
 
 Every `tack` CLI subcommand that prints structured output has its **own** `--json: bool`
 flag, repeated per-subcommand rather than declared once — `grep -c 'json: bool'
-crates/tack-cli/src/main.rs` currently returns 89. There is no CSV output option
+crates/tack-cli/src/main.rs` currently returns 85. There is no CSV output option
 anywhere, and no single top-level `--format` flag; the top-level `Cli` struct
 (`crates/tack-cli/src/main.rs`, near the top of the file) only has `--api-url` and
 `--token` at that scope.
 
 ## Why this is worth doing
 
-89 copies of the same boolean means adding a third output mode today would mean editing
-89 call sites individually — exactly the kind of thing a `--format table|json|csv`
+85 copies of the same boolean means adding a third output mode today would mean editing
+85 call sites individually — exactly the kind of thing a `--format table|json|csv`
 enum, declared once, would prevent. This is also a good task to learn the CLI's actual
 shape: it's a thin HTTP client (`crates/tack-cli/src/client.rs` wraps `reqwest`) that
 talks to the same API a browser would, never opening the database directly (`tack-cli`
@@ -44,7 +44,7 @@ One command with all three formats working, each covered by a test asserting on 
 literal formatted output (header row present for `csv`, valid JSON for `json`, etc.),
 plus the new `--format` flag documented in `docs/book/src/user-guide/cli.md`. A
 follow-up issue for converting the remaining commands is a completely reasonable thing
-to open rather than trying to do all 89 call sites in one PR.
+to open rather than trying to do all 85 call sites in one PR.
 
 ## Before you start
 

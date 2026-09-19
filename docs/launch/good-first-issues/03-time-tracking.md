@@ -58,4 +58,4 @@ validation, a repository test under `crates/tack-db/tests/`, and a handler test 
 
 Read `CONTRIBUTING.md` in full — its "How To Add a New Feature" section is written for
 exactly this kind of change. This issue does not require reading this repository's
-internal planning board (`TODO.md`) to get started.
+internal planning docs to get started.
