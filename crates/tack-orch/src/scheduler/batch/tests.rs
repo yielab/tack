@@ -32,6 +32,7 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
                 additional: BTreeMap::new(),
             }],
             model_passthrough: None,
+            decisions: None,
             additional: BTreeMap::new(),
         }],
     }
@@ -48,6 +49,7 @@ fn request(id: &str, priority: Priority, created_at: DateTime<Utc>) -> Schedulin
             provider: RequestedModelProvider::new("anthropic"),
             model_id: RequestedModelId::new("opaque/sonnet"),
         },
+        approvals: None,
         required_labels: BTreeMap::new(),
         created_at,
     }

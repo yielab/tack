@@ -6258,7 +6258,7 @@
           },
           "metadata": {},
           "permission_policy": {
-            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network}`)."
+            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },
           "repository_snapshot": {
             "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`)."

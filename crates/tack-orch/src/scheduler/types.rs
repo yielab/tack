@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::execution::{
-    ExecutionRequestId, HarnessCapability, HarnessKind, RequestedModelId, RequestedModelProvider,
-    RunnerId, RunnerSelector,
+    Approvals, ExecutionRequestId, HarnessCapability, HarnessKind, RequestedModelId,
+    RequestedModelProvider, RunnerId, RunnerSelector,
 };
 
 /// Mirrors `agent_runners.state` (migration 040). Only [`RunnerState::Active`]
@@ -75,6 +75,11 @@ pub struct SchedulingRequest {
     pub priority: Priority,
     pub requested_harness_kind: HarnessKind,
     pub requested_model: ModelSelector,
+    /// Mirrors `PermissionPolicy::approvals`: absent means [`Approvals::Auto`].
+    /// [`Approvals::Ask`] narrows eligibility to a candidate whose matched
+    /// harness attests `decisions: supported` — see
+    /// [`IneligibleReason::DecisionsNotSupported`].
+    pub approvals: Option<Approvals>,
     /// Every key/value must match the candidate's own `labels` exactly. An
     /// empty map imposes no constraint.
     pub required_labels: BTreeMap<String, String>,
@@ -144,6 +149,14 @@ pub enum IneligibleReason {
     /// accepts an unspecified model, so auto-select is ineligible everywhere
     /// rather than guessed safe.
     AutoSelectNotVerified {
+        harness: HarnessKind,
+    },
+    /// The request asked [`Approvals::Ask`] and this candidate's matched
+    /// harness does not attest `decisions: supported` — `Advisory` and an
+    /// absent attestation are rejected the same as `Unsupported`, so a run
+    /// is never silently handed to a harness that would just ignore the
+    /// operator's choice and run as `auto`.
+    DecisionsNotSupported {
         harness: HarnessKind,
     },
 }

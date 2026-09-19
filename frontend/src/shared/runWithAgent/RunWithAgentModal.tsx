@@ -27,6 +27,7 @@ import {
   describeProjectModelDefault,
   projectDefaultModelPair,
   isModelPassthroughAttested,
+  isDecisionsAttested,
   resolveAutoModelPolicy,
   type RunWithAgentFormValues,
 } from './shared';
@@ -169,6 +170,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [customModelId, setCustomModelId] = createSignal('');
   const [timeoutSeconds, setTimeoutSeconds] = createSignal(3600);
   const [allowNetwork, setAllowNetwork] = createSignal(false);
+  const [approvals, setApprovals] = createSignal<'auto' | 'ask'>('auto');
   const [toolsText, setToolsText] = createSignal('');
   const [repoExpanded, setRepoExpanded] = createSignal(false);
   const [repoKind, setRepoKind] = createSignal('git');
@@ -194,6 +196,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     setCustomModelId('');
     setTimeoutSeconds(3600);
     setAllowNetwork(false);
+    setApprovals('auto');
     setToolsText('');
     setRepoExpanded(false);
     setRepoKind('git');
@@ -304,6 +307,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     return undefined;
   });
   const passthroughAttested = createMemo(() => isModelPassthroughAttested(targetHarnessCapability()));
+  // Whether the selected harness attests `decisions: supported` — unlocks
+  // "Ask me" below (`shared.ts#isDecisionsAttested`). Same gating pattern as
+  // `passthroughAttested` above, one field over.
+  const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
+
+  // Never leave "Ask me" selected against a harness that can't honour it —
+  // switching harness (or a fresh capability report arriving) silently
+  // falls back to Automatic rather than letting a stale, now-invalid choice
+  // reach submit through a merely-disabled control.
+  createEffect(() => {
+    if (!decisionsAttested() && approvals() === 'ask') setApprovals('auto');
+  });
 
   const modelProvider = (): string | null => {
     if (modelMode() === 'project') return projectDefaultModelPair(project()?.default_model ?? null).provider;
@@ -388,6 +403,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       modelId: modelId(),
       timeoutSeconds: timeoutSeconds(),
       allowNetwork: allowNetwork(),
+      approvals: approvals(),
       tools: toolsText()
         .split(',')
         .map((t) => t.trim())
@@ -618,6 +634,46 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
               <input type="checkbox" checked={allowNetwork()} onChange={(e) => setAllowNetwork(e.currentTarget.checked)} />
               Allow network access
             </label>
+            <div class="space-y-1">
+              <p id="run-approvals-label" class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                Approvals
+              </p>
+              <div
+                role="radiogroup"
+                aria-labelledby="run-approvals-label"
+                class="flex flex-col gap-1.5 text-sm"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                <label class="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="approvals"
+                    checked={approvals() === 'auto'}
+                    onChange={() => setApprovals('auto')}
+                  />
+                  Automatic
+                </label>
+                <label class="flex items-center gap-1.5" style={{ opacity: decisionsAttested() ? 1 : 0.6 }}>
+                  <input
+                    type="radio"
+                    name="approvals"
+                    checked={approvals() === 'ask'}
+                    disabled={!decisionsAttested()}
+                    onChange={() => setApprovals('ask')}
+                  />
+                  Ask me
+                </label>
+              </div>
+              <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <Show
+                  when={decisionsAttested()}
+                  fallback="This harness can't pause to ask — it always decides on its own."
+                >
+                  Automatic lets the agent decide on its own. Ask me pauses before each tool call and waits for
+                  your answer in the run's decision inbox.
+                </Show>
+              </p>
+            </div>
           </fieldset>
 
           <Show when={structuralErrors().length > 0}>
