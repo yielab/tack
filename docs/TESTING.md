@@ -187,7 +187,7 @@ file — no separate workflow per tier:
 | Job | What it runs |
 |---|---|
 | `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI regenerate-and-diff gate |
-| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 74.81`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (74.81%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
+| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 75.88`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (75.88%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
 | `frontend` | schema drift, type-check, **Vitest with coverage thresholds** (70% lines/functions/statements, 60% branches — decision 7), token lint, build, entry-bundle budget |
 | `docs` | `mdbook build` + link check |
 | `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` |
@@ -227,7 +227,7 @@ no local protection against schema drift there — CI's `frontend` job still cat
 make coverage   # CI's coverage floors locally: one instrumented workspace run + Vitest thresholds
 ```
 
-Floors `make coverage` and CI enforce: workspace line coverage ≥ 74.81 % (the total measured
+Floors `make coverage` and CI enforce: workspace line coverage ≥ 75.88 % (the total measured
 by the command in `ci.yml`'s `coverage` job, minus one point); frontend Vitest ≥ 70 %
 lines/functions/statements and ≥ 60 % branches. On a pull request CI also requires 80 % of
 the changed lines to be covered (`diff-cover`).
