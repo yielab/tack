@@ -247,11 +247,12 @@ jobs:
         uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: nextest
-      # The floor is the measured workspace line total minus one point:
-      # 75.81 % (19 555 of 25 794 lines) from `cargo llvm-cov report
-      # --summary-only` after this command. Re-measure before changing it.
-      - name: Test + workspace coverage (>= 74.81% lines)
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 74.81
+      # The floor is the workspace line total this job itself measured on
+      # `develop`, minus one point: 76.88 % (17 177 of 22 344 lines, summed
+      # `LH`/`LF` over the `coverage-lcov` artifact). Re-measure here, not on
+      # a workstation, before changing it.
+      - name: Test + workspace coverage (>= 75.88% lines)
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 75.88
       - name: Upload coverage report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

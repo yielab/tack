@@ -326,5 +326,28 @@ All on 2026-09-18, by the user. Nothing in this plan waits on a decision.
 | D1 | done, in `develop` — claude-code asks through `--permission-prompt-tool stdio`; the walk through the real binary and the operator route is D2's |
 | R3b · R4 | done, in `develop` — migrations 064–074; the pre-upgrade snapshot was only ever taken before a table rebuild, so R4 widened it to a migration that drops a table, and proved it |
 | H4 · T1 | done, in `develop` — the wave gate's five claims all had a better home already; six tests and 1 106 lines fewer |
-| D2 · T2 | running |
-| T3 · T4 | not started |
+| D2 | done, in `develop` — the Approvals choice in "Run with agent", the scheduler refusing `ask` for a harness that cannot, and the walk below |
+| T2 | done, in `develop` — 55 HTTP tests across the four handlers; `create_template` now runs its own validation. 25 per-route token tests were cut at review: the gate is one layer, pinned once in `crud.rs` |
+| T3 | done, in `develop` — two scheduler rules re-proved through a browser removed, the last fixed wait replaced, `failOnFlakyTests` on, every spec listed by journey in `docs/TESTING.md` |
+| T4 | done, in `develop` — weekly `mutants` job, report-only, `tack-db`'s repository layer in four shards |
+| Coverage floor | done — CI measured 76.88 % on `develop` after T2 (17 177 of 22 344 lines); the floor is 75.88 |
+
+### What walking `approvals: ask` end to end found
+
+Walked on 2026-09-19: the real `claude` 2.1.273, a loopback stand-in for the model
+server, `tack serve --with-runner` on a scratch database, the question answered through
+the operator route with `TACK_EXECUTION_DECISION_TOKEN`. Allow: the question is pending
+one second after dispatch, the file the tool makes is absent until the answer, present two
+seconds after it, and the attempt succeeds. Deny: the file is never made. Without the token
+the resolve route answers 403. Three defects, all fixed in `develop`:
+
+- **The answer never reached the harness.** The first decision poll sent no cursor, the
+  server refuses one, and the engine dropped the error. D1's tests used a stand-in protocol
+  that accepted it. The cursor is now required by the type.
+- **An idle runner claimed about a hundred times a second.** The server answers "no work"
+  at once with `retry_after_ms`; the engine discarded it. This predates Phase 64.
+- **`make e2e` rewrote the operator's own keychain entry** `vercel-ai-gateway/default`.
+  The E2E server now cannot reach the session keychain (Linux only).
+
+Left as they are, pinned by T2's tests: deleting a built-in or an unknown template answers
+204 and deletes nothing; the server accepts `wait_ms` on a claim and never waits.
