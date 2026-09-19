@@ -17,7 +17,7 @@ clap.workspace = true
 # store crate directly instead — this crate needs both (fall back to a file
 # when no platform store answers; use a mock store in tests).
 keyring-core = "1.0.0"
-# III-H1: the runner's own HTTP transport. Reused from the workspace table
+# The runner's own HTTP transport. Reused from the workspace table
 # (already used by tack-api/tack-orch/tack-cli), not a new version pin.
 reqwest = { workspace = true }
 serde.workspace = true

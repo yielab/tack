@@ -378,8 +378,8 @@ jobs:
             crates/tack-desktop
           key: ${{ matrix.platform }}
 
-      # Same packages as ci.yml's `desktop` job, on the same runner image the
-      # dispatch checklist verified them against (docs/agent-handoffs/part-vii/README.md).
+      # Same packages as ci.yml's `desktop` job, on the same runner image already
+      # verified to install them cleanly.
       - name: Install Tauri's Linux system dependencies
         if: matrix.os == 'ubuntu-22.04'
         run: |
