@@ -9,7 +9,7 @@ the existing "vocabulary" system (`crates/tack-core/src/vocabulary.rs`), which r
 *domain terms* per project type ("Sprint" → "Phase" for a construction project) — it
 never translates a *language*. Checked directly: `grep -rn 'i18n\|locale' frontend/src`
 turns up nothing but `.localeCompare()` calls used for deterministic string sorting
-(e.g. `frontend/src/features/table/Table.tsx:49`), not translation. There is no
+(e.g. `frontend/src/features/table/Table.tsx:45`), not translation. There is no
 `i18next`/`@solid-primitives/i18n`-style library in `frontend/package.json`, no message
 catalog, and every user-facing string in `frontend/src/features/*` (each UI area lives
 in its own folder there — `board/`, `dashboard/`, `settings/`, etc.) is a literal

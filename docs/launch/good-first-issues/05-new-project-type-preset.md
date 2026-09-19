@@ -22,13 +22,14 @@ adding an eleventh preset touches exactly two match arms plus one new function e
 2. Add the variant to `ProjectType` in `crates/tack-core/src/models.rs`, including its
    `Display` impl arm.
 3. Add a `your_domain_workflow()` function in `crates/tack-core/src/workflow.rs`
-   (`construction_workflow()` right above the dispatch match at line 198 is a complete,
-   readable example of the shape expected — a `WorkflowConfig` with `StatusDef` entries
-   and WIP limits where they make sense) and wire it into `workflow_for_type()`.
+   (`construction_workflow()`, further down the same file, is a complete, readable
+   example of the shape expected — a `WorkflowConfig` with `StatusDef` entries and WIP
+   limits where they make sense) and wire it into `workflow_for_type()` (the dispatch
+   match at line 198).
 4. Add a vocabulary map in `crates/tack-core/src/vocabulary.rs::vocabulary_for_type()`
    (the `Construction` arm is the existing example — a dozen or so term renames).
 5. There's already a test asserting new-domain mappings resolve correctly
-   (`workflow_for_type_maps_new_domains` in `crates/tack-core/src/workflow.rs`) — extend
+   (`workflow_for_type_maps_new_domains` in `crates/tack-core/src/workflow/tests.rs`) — extend
    it for the new variant rather than writing a parallel one.
 
 ## What "done" looks like for a first PR

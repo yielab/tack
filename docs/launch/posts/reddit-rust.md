@@ -16,7 +16,8 @@ recoverable state, not an incident
 
 Six-crate Cargo workspace (`tack-core`, `tack-db`, `tack-orch`, `tack-api`, `tack-runner`,
 `tack-cli`), Axum + `sqlx`/SQLite on the server, a separate binary for the piece that
-actually shells out to an agent CLI (Claude Code / Codex). The layering rule that's
+actually shells out to an agent CLI (four supported today: Claude Code, Codex, docket,
+opencode). The layering rule that's
 actually enforced, not just documented: `tack-core` has zero I/O — no `tokio`, no
 `sqlx`, nothing — and `tack-orch` (the reconciliation/execution-domain crate) is not
 permitted to depend on `tack-api`, checked by grep in CI so it can't regress silently.
@@ -32,16 +33,15 @@ deferred transactions here deadlock under real concurrency, and that's caught by
 concurrency tests running against a file-backed DB rather than the shared in-memory
 harness (the in-memory one won't reproduce it).
 
-Numbers, measured today (`2026-09-06`), not aspirational:
+Numbers, measured today (`2026-09-19`), not aspirational:
 
 | | |
 | --- | --- |
-| Rust | 127,815 lines across the six crates (`find crates -name '*.rs' \| xargs wc -l`) |
-| Tests | 1,420 passed, 7 skipped, 0 failed, `cargo nextest run --workspace`, ~26s |
-| Migrations | 62, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
-| API surface | 97 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
-| Release binary | 19.3 MiB static, `x86_64-unknown-linux-musl`, `lto = true, opt-level = "z"` |
-| Idle RSS | ~13.6 MiB (`/proc/<pid>/status`, `VmRSS`) |
+| Rust | 96,629 lines across the six crates (`find crates -name '*.rs' \| xargs wc -l`) |
+| Tests | 1,116 passed, 7 skipped, 0 failed, `cargo nextest run --workspace`, ~26s |
+| Migrations | 72, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
+| API surface | 78 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
+| Release binary | 18.4 MiB, `lto = true, opt-level = "z"`, measured in CI (`stat -c%s target/release/tack`) |
 
 Frontend is SolidJS, types generated from the OpenAPI spec rather than hand-kept in
 sync — `schema.gen.ts` is regenerated and diffed in CI so a Rust response-shape change
