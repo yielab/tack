@@ -4,17 +4,13 @@
 //! the storage primitive's own unit tests live beside it in
 //! `artifact_storage.rs`. This file proves the HTTP wiring end to end.
 
-// `lifecycle`'s own copy of this same `#[path]` load is a second,
-// independent module tree over the identical file — allowed deliberately,
-// see that module's own comment on its copy. `artifact_download::routes(...)`
-// below is proven as its own, separately-constructed local router (never
-// merged with the runner-only `runner_protocol::routes(...)` router),
-// isolating this file's claims from the production router's own auth and
-// mounting — that route is also mounted in the real production router and
-// proven end to end by the `wiring` binary's `artifact.rs`.
-#[allow(clippy::duplicate_mod)]
-#[path = "../../src/handlers/runner_protocol.rs"]
-mod runner_protocol;
+// `artifact_download::routes(...)` below is proven as its own,
+// separately-constructed local router (never merged with the runner-only
+// `runner_protocol::routes(...)` router), isolating this file's claims from
+// the production router's own auth and mounting — that route is also
+// mounted in the real production router and proven end to end by the
+// `wiring` binary's `artifact.rs`.
+use tack_api::handlers::runner_protocol;
 
 use std::sync::{Arc, Mutex};
 

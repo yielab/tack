@@ -9,9 +9,7 @@
 //! `runner_auth` lives at `handlers/runner_protocol/runner_auth.rs` (a
 //! submodule of this file) rather than a sibling `handlers/runner_auth.rs`.
 //! Rust resolves `mod runner_auth;` relative to *this file's own path*
-//! (`runner_protocol.rs` → `runner_protocol/`), so the submodule still
-//! resolves correctly when a test pulls this file in via
-//! `#[path = "../src/handlers/runner_protocol.rs"]`.
+//! (`runner_protocol.rs` → `runner_protocol/`).
 //!
 //! Every write below validates attempt id + runner identity (from the
 //! authenticated bearer credential, never a request-body field) + fencing
@@ -54,32 +52,17 @@ use tack_orch::execution::{
 use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
 use uuid::Uuid;
 
-// An explicit `#[path]` (rather than relying on the implicit `foo.rs` ->
-// `foo/` submodule-directory convention) keeps this resolution correct
-// regardless of how `runner_protocol.rs` itself was included — in
-// particular, when a test pulls this file in via
-// `#[path = "../src/handlers/runner_protocol.rs"] mod runner_protocol;`,
-// rustc's mod-directory inference for an explicitly-`#[path]`-loaded file is
-// the file's own directory, not `<stem>/`, so an implicit `mod runner_auth;`
-// here resolves to the wrong (nonexistent) sibling path. This attribute
-// pins it to the actual nested file.
-#[path = "runner_protocol/runner_auth.rs"]
 pub mod runner_auth;
 
-// Nested the same way `runner_auth` is (see that `mod` line's own
-// comment) — declaring these as submodules of this already-registered file
-// keeps them reachable without touching `handlers/mod.rs`.
-// `artifact_storage` is the pure storage module (safe paths,
-// streaming write/read); `retention` is the pure event/artifact sweep logic;
-// `artifact_download` is the operator-facing content-download handler,
-// deliberately never merged into this file's own `routes()` (that router is
-// runner-credential-only — see its own doc comment) — it is mounted
-// separately in `router.rs`.
-#[path = "runner_protocol/artifact_download.rs"]
+// Declared as submodules of this already-registered file, keeping them
+// reachable without touching `handlers/mod.rs`. `artifact_storage` is the
+// pure storage module (safe paths, streaming write/read); `retention` is
+// the pure event/artifact sweep logic; `artifact_download` is the
+// operator-facing content-download handler, deliberately never merged into
+// this file's own `routes()` (that router is runner-credential-only — see
+// its own doc comment) — it is mounted separately in `router.rs`.
 pub mod artifact_download;
-#[path = "runner_protocol/artifact_storage.rs"]
 pub mod artifact_storage;
-#[path = "runner_protocol/retention.rs"]
 pub mod retention;
 
 use artifact_storage::{ArtifactContentError, ArtifactStorage};
@@ -121,13 +104,7 @@ impl RunnerProtocolState {
     /// root without changing `new`'s call signature. Production
     /// (`router.rs#runner_protocol_routes`) calls this to swap in the
     /// operator-configured `TACK_STORAGE_DIR`. Also used directly by
-    /// `runner_protocol/artifact_events.rs`; `#[allow(dead_code)]` because
-    /// the unrelated `runner_protocol/lifecycle.rs` also loads this file via
-    /// `#[path]` (for its own auth non-substitution test) without calling
-    /// this — see
-    /// `artifact_download.rs`'s module-level allow for the fuller
-    /// precedent.
-    #[allow(dead_code)]
+    /// `runner_protocol/artifact_events.rs`.
     pub fn with_artifact_storage_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
         self.artifact_storage = Arc::new(ArtifactStorage::new(root.into()));
         self

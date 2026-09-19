@@ -1,11 +1,7 @@
-//! HTTP tests for `handlers/executions.rs` and `handlers/runner_admin.rs`,
-//! loaded via `#[path]` — global-router registration is proven separately
-//! (`production_router.rs`).
+//! HTTP tests for `handlers/executions.rs` and `handlers/runner_admin.rs` —
+//! global-router registration is proven separately (`production_router.rs`).
 
-#[path = "../../src/handlers/executions.rs"]
-mod executions;
-#[path = "../../src/handlers/runner_admin.rs"]
-mod runner_admin;
+use tack_api::handlers::{executions, runner_admin};
 
 use crate::common;
 // Local alias: every route in this file sends as the default "operator-1"

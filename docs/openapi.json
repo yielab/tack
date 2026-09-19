@@ -7570,7 +7570,7 @@
       },
       "MeasurementSourceSchema": {
         "type": "string",
-        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when its regression\ntests load it via `#[path]` from a separate test-binary crate root,\nwhere a `crate::openapi` (or any other module's) reference would not\nresolve. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero.",
+        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here, not in\n`crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.\n`tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module\ndoc), so this is a hand-verified mirror, never constructed or serialized\nby real code. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero.",
         "enum": [
           "measured",
           "estimated",
@@ -8238,7 +8238,7 @@
       },
       "RunnerV1ErrorEnvelope": {
         "type": "object",
-        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this file keeps compiling standalone when loaded via\n`#[path]` from a separate test-binary crate root. `code` is a free\nstring, not an enum, for the same reason — its fifteen frozen values are\nenumerated in `docs/contracts/runner-v1/README.md`.\n\n`allow(dead_code)`: referenced only by *type* (utoipa's `ToSchema`), never\nconstructed as a value — real responses build the runtime type instead.\nInvisible to `dead_code` in the library crate; only surfaces when this\nfile is compiled standalone into a test binary with no external callers.",
+        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this stays colocated with the routes it documents.\n`code` is a free string, not an enum, for the same reason — its fifteen\nfrozen values are enumerated in `docs/contracts/runner-v1/README.md`.\nReferenced only by *type* (utoipa's `ToSchema`), never constructed as a\nvalue — real responses build the runtime type instead.",
         "required": [
           "error"
         ],

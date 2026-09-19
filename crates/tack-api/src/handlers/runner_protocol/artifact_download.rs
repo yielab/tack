@@ -15,13 +15,6 @@
 //! back chunk-by-chunk (`futures::stream::unfold` over a `tokio::fs::File`, no
 //! whole-file read into memory) — the read-side half of the streaming design
 //! `artifact_storage.rs` uses on the write side.
-//!
-//! The module-level `dead_code` allow exists because
-//! `runner_protocol/artifact_events.rs` and `runner_protocol/lifecycle.rs` each load
-//! an independent copy of this file's tree via their own `#[path]` (see each file's
-//! `#[allow(clippy::duplicate_mod)]`), and `lifecycle`'s copy never calls into this
-//! module — so it alone would otherwise flag every item here as unused.
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

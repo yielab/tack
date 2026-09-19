@@ -4,12 +4,7 @@
 //! its own router directly from `decisions::routes(...)`, bypassing
 //! production `router.rs`/`require_token` layering.
 
-// Loaded via `#[path]` for a directly-constructed router isolated from this
-// module's own production mounting. The name collision with this file's own
-// module path (`decisions::decisions`) is coincidental, not nesting.
-#[allow(clippy::module_inception)]
-#[path = "../../src/handlers/decisions.rs"]
-mod decisions;
+use tack_api::handlers::decisions;
 
 use std::sync::{Arc, Mutex};
 

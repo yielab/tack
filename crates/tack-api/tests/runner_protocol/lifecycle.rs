@@ -7,16 +7,7 @@
 //! directly from `runner_protocol::routes`, bypassing the production
 //! router.
 
-// Loaded via `#[path]` so `runner_protocol.rs`'s own `mod runner_auth;`
-// resolves and compiles here without registering the auth module in
-// `handlers.rs`. `artifact_events` and `enrollment` load the same file
-// again under their own module paths (further independent trees clippy's
-// default lints forbid); allowed here since sharing one module would also
-// collapse each file's own colocated unit tests into one, changing this
-// binary's test count.
-#[allow(clippy::duplicate_mod)]
-#[path = "../../src/handlers/runner_protocol.rs"]
-mod runner_protocol;
+use tack_api::handlers::runner_protocol;
 
 use std::sync::{Arc, Mutex};
 

@@ -7,16 +7,9 @@
 //! methods. Each test builds its own router directly from
 //! `runner_protocol::routes`, bypassing the production router.
 
-// See `lifecycle.rs`'s identical `#[path]` load for why this is a second,
-// independent module tree rather than a shared one.
-#[allow(clippy::duplicate_mod)]
-#[path = "../../src/handlers/runner_protocol.rs"]
-mod runner_protocol;
-
-// Loaded read-only (never modified) so the operator/runner auth
+// `executions` is used read-only here so the operator/runner auth
 // non-substitution test below can exercise the real operator router.
-#[path = "../../src/handlers/executions.rs"]
-mod executions;
+use tack_api::handlers::{executions, runner_protocol};
 
 use std::sync::{Arc, Mutex};
 
