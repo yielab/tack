@@ -421,8 +421,12 @@ make audit           # cargo audit (Rust) + npm audit --audit-level=high (fronte
 ```
 
 Runs in CI as the **security** job (`cargo-audit` via the RustSec advisory DB +
-`npm audit`). [Dependabot](../.github/dependabot.yml) opens weekly grouped
-update PRs for cargo, npm and GitHub Actions.
+`npm audit`). [Dependabot](../.github/dependabot.yml) opens grouped monthly update PRs
+for cargo, npm and GitHub Actions, and security updates as advisories appear.
+
+`npm audit` exits 1 both for a finding and when npm's advisory endpoint is down. CI tries
+three times; a finding fails the job, an outage that outlasts the tries is a warning on the
+run, because no commit can fix it.
 
 Known, justified Rust advisory exceptions live in
 [`.cargo/audit.toml`](../.cargo/audit.toml) with a documented reason each — the
