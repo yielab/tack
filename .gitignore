@@ -72,3 +72,6 @@ cloudflared.yml
 !/crates/tack-desktop/binaries/.gitkeep
 /crates/tack-desktop/gen/
 /crates/tack-desktop/target/
+
+# cargo-mutants output
+mutants.out*/
