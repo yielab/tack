@@ -319,7 +319,7 @@ Sections from the next release on are generated from the commit history by
 The harness-agnostic runner fleet built since `v0.1.0-beta.6` — a durable execution
 domain, the pull-based `tack-runner` binary, and real Codex/Claude Code/OpenCode harness
 adapters (Phases 50–57; see the
-[roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057) for the
+[roadmap](docs/closed-cycles/boards/roadmap-phases-0-57.md#harness-agnostic-runner-fleet-phases-5057) for the
 full capability table) — is downloadable for the first time in this release. CI has
 packaged `tack-runner` into its own per-platform archive since `7d78de3` (2026-08-19); the
 gap since then was purely that no tag had been cut to put it on a release page.
@@ -375,7 +375,7 @@ path can't silently recur, and it's now also the repository's default branch.
 - **Harness-agnostic runner fleet (Phases 50–57).** A durable execution domain, the
   pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode harness adapters, fleet
   scheduling, decisions, artifacts, and model profiles. See the
-  [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057) for
+  [roadmap](docs/closed-cycles/boards/roadmap-phases-0-57.md#harness-agnostic-runner-fleet-phases-5057) for
   the definition-of-done table and `docs/agent-handoffs/part-iii/` for per-card evidence.
 - **`README.md` rewritten** as a standard open-source landing page (features, screenshots,
   requirements, install, status, architecture), with screenshots and the hero GIF
