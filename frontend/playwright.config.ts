@@ -150,6 +150,14 @@ export default defineConfig({
         // connection in the suite is refused and no spec can see a live event.
         TACK_ALLOWED_ORIGINS: `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`,
         PATH: `${HARNESS_SHIMS_DIR}:${process.env.PATH}`,
+        // The provider-key spec deletes and rewrites `vercel-ai-gateway/default`
+        // through the real secret store. With the session's Secret Service
+        // reachable that is the operator's own keychain entry, so the bus is
+        // pointed at a socket that does not exist and the store falls back to
+        // its owner-only file under `storage-e2e`. Linux only: the macOS
+        // Keychain is not reached over D-Bus, and nothing here keeps a run
+        // there away from it.
+        DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent/tack-e2e-no-keychain',
       },
     },
     {

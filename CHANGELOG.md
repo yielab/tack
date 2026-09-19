@@ -11,6 +11,23 @@ Sections from the next release on are generated from the commit history by
 
 ## [Unreleased]
 
+### Added
+
+- **A run can ask before it acts.** "Run with agent" has an Approvals choice, Automatic or
+  Ask me (`permission_policy.approvals`, `auto` or `ask`). With Ask me the agent pauses
+  before each tool call and the question waits in the attempt's decision inbox; one nobody
+  answers before the attempt's deadline is answered as a deny. Offered only for a harness
+  that can pause — claude-code today.
+- Two more harnesses on the same runner: `docket` and `opencode`.
+
+### Fixed
+
+- **An idle runner claimed work about a hundred times a second.** The server answers a
+  claim with no work at once and says when to ask again; the runner ignored that. It now
+  waits for the hint — one claim every five seconds when there is nothing to do.
+- `make e2e` on a Linux desktop no longer overwrites the `vercel-ai-gateway/default` entry
+  in your own keychain; the E2E server keeps its secrets in a file under `storage-e2e`.
+
 ### Removed
 
 - `model_profiles`: the `POST`/`GET /api/model-profiles` routes, the `list_model_profiles`
