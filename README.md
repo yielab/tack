@@ -288,7 +288,7 @@ the single `tack` binary — no Docker, no database server, no separate frontend
 | --- | --- |
 | **Platform** | Linux, macOS (Intel + Apple Silicon), Windows |
 | **Browser** | Any current Chrome, Firefox, Safari, or Edge |
-| **Footprint** | 18.4 MiB binary (UI embedded), from CI's release build — full footprint and latency methodology in [Benchmarks](docs/BENCHMARKS.md) |
+| **Footprint** | 18.5 MiB binary (UI embedded), ~18 MiB idle memory — measured in [Benchmarks](docs/BENCHMARKS.md) |
 
 Building from source instead needs [Rust 1.94+](https://rustup.rs/) and
 [Node.js 22+](https://nodejs.org/).
