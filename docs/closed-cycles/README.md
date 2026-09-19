@@ -13,8 +13,9 @@ Part closed.
   phases from `Planned`, three "Next" cycles, and the Harness-Agnostic Runner Fleet
   chapter), moved verbatim with the same one-line notice; `roadmap.md` keeps only what
   is ahead.
-- `plans/` — a plan whose phase has landed or whose design was replaced (today: the
-  harness maintainability audit that specified IX-M5).
+- `plans/` — a plan whose phase has landed or whose design was replaced: the harness
+  maintainability audit, the Phase 63 specification, and the agnostic control plane plan
+  whose bridge Phase 64 retired.
 - `handoffs/part-<n>/` — the per-card handoffs for a closed Part, moved out of
   `docs/agent-handoffs/part-<roman>/`.
 

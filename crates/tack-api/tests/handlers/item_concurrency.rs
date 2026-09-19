@@ -5,8 +5,7 @@
 //! `If-Match` header still succeeds unchanged, for callers that predate it.
 //!
 //! **The gate is the sequential tests, not the concurrent ones** — each
-//! sequential test's own doc comment explains what it proves and why; see
-//! `docs/plans/agnostic-control-plane.md` for the full reasoning.
+//! sequential test's own doc comment explains what it proves and why.
 
 use crate::common;
 use axum::Router;
@@ -270,9 +269,7 @@ async fn patch_with_an_if_match_for_a_different_item_is_rejected() {
 /// actually compared `provided` against the header's expected value, the
 /// second `PATCH` would simply read the item's current version fresh,
 /// claim it uncontested, and return `200`. That makes this test fail 100%
-/// of the time against that mutation, with no scheduler dependence —
-/// verified deterministic over 20+ local runs (see
-/// `docs/plans/agnostic-control-plane.md` for the full reasoning).
+/// of the time against that mutation, with no scheduler dependence.
 #[tokio::test]
 async fn stale_if_match_is_rejected_with_412_with_no_racer() {
     let (app, _state) = app_with_state().await;

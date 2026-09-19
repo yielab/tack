@@ -39,7 +39,7 @@ names why, a `ControlPlane` trait with no docket nouns left in it, a **GitHub Ac
 adapter** chosen because it shares none of docket's shape, an inbound telemetry channel
 pushed from inside a run, per-item model choice owned by Tack, and the GitHub pipeline
 finished in both directions (which closes Phase 21). Full plan with per-item verification
-commands in [docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md);
+commands in [docs/closed-cycles/plans/agnostic-control-plane.md](../../closed-cycles/plans/agnostic-control-plane.md);
 task cards in [`docs/closed-cycles/boards/part-2.md`](../../closed-cycles/boards/part-2.md).
 
 **Status correction (2026-08-06):** Phases 39–42 exist in the current unreleased working
@@ -876,7 +876,7 @@ Every platform's result is either measured or marked `not_measured`; none is ass
 
 **Status:** open — **the priority board**, ahead of the release tag and the publish list.
 Created 2026-09-11. The board is Part IX in `TODO.md` (top of the file); the specification
-is `docs/plans/human-maintainability.md`; the dispatch plan is
+is `docs/closed-cycles/plans/human-maintainability.md`; the dispatch plan is
 `docs/agent-handoffs/part-ix/README.md`. All three were created from the audit this
 section summarises.
 
