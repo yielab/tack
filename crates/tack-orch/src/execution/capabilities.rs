@@ -104,6 +104,19 @@ pub struct HarnessCapability {
     /// `Unsupported`; `None` behaves as if the field did not exist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_passthrough: Option<CapabilityValue>,
+    /// Whether **this harness** can pause a run and ask the operator before
+    /// it acts, for a request whose `permission_policy.approvals` is `ask`.
+    /// A runner's top-level `features.decisions` only says whether the
+    /// protocol path exists on this runner at all; which harness can
+    /// actually use it differs per adapter (claude-code's grammar keeps
+    /// stdin open and answers a `can_use_tool` question, codex/docket/
+    /// opencode never open one), so the scheduler reads this field, not
+    /// `features.decisions`, to admit or refuse an `ask` request. Same
+    /// absence/support rule as `model_passthrough`: only `Supported`
+    /// counts, `Advisory` and an absent attestation both mean "not
+    /// attested" and are treated like `Unsupported`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decisions: Option<CapabilityValue>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

@@ -915,6 +915,10 @@ where
                 CapabilitySupport::Supported,
                 descriptor.model_passthrough,
             )),
+            // The grammar's own honest promise, not a second, possibly
+            // divergent claim — `declared_capabilities` below reuses the
+            // exact same call.
+            decisions: Some(self.grammar.capabilities().decisions),
             additional,
         }
     }

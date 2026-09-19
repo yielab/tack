@@ -257,6 +257,7 @@ fn empty_capabilities() -> RunnerCapabilities {
             probed_at: Utc::now(),
             model_combinations: Vec::new(),
             model_passthrough: None,
+            decisions: None,
             additional: Default::default(),
         }],
         features: tack_orch::execution::FeatureCapabilities {

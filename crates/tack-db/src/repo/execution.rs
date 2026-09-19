@@ -289,6 +289,10 @@ pub struct QueuedRequestForScheduling {
     /// convention — see `tack_orch::scheduler::wiring`'s module doc for why
     /// no dedicated column exists yet.
     pub metadata: String,
+    /// JSON object string (`execution_requests.permission_policy`). The
+    /// caller reads an `approvals` key from this the same lenient way it
+    /// reads `priority` off `metadata`.
+    pub permission_policy: String,
 }
 
 /// A fleet's configured concurrency ceiling alongside its current, observed
@@ -2312,7 +2316,8 @@ impl Repository {
     ) -> Result<Vec<QueuedRequestForScheduling>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
-             requested_model_provider, requested_model_id, created_at, metadata \
+             requested_model_provider, requested_model_id, created_at, metadata, \
+             permission_policy \
              FROM execution_requests WHERE state='queued' AND \
              ((selector_kind='exact_runner' AND selector_id=?) OR \
              (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m \
@@ -2333,6 +2338,7 @@ impl Repository {
                 requested_model_id: row.get("requested_model_id"),
                 created_at: row.get("created_at"),
                 metadata: row.get("metadata"),
+                permission_policy: row.get("permission_policy"),
             })
             .collect())
     }

@@ -4,8 +4,8 @@ use chrono::TimeZone;
 
 use super::*;
 use crate::execution::{
-    ExecutionRequestId, HarnessCapability, ModelCombination, ModelId, ModelProvider,
-    RequestedModelId, RequestedModelProvider,
+    CapabilityValue, ExecutionRequestId, HarnessCapability, ModelCombination, ModelId,
+    ModelProvider, RequestedModelId, RequestedModelProvider,
 };
 use crate::scheduler::types::Priority;
 
@@ -34,6 +34,7 @@ fn harness(
             })
             .collect(),
         model_passthrough: None,
+        decisions: None,
         additional: BTreeMap::new(),
     }
 }
@@ -65,6 +66,7 @@ fn request() -> SchedulingRequest {
             provider: RequestedModelProvider::new("anthropic"),
             model_id: RequestedModelId::new("opaque/sonnet"),
         },
+        approvals: None,
         required_labels: BTreeMap::new(),
         created_at: now(),
     }
@@ -385,6 +387,93 @@ fn undeclared_model_combination_is_named_not_a_bare_bool() {
             );
         }
         other => panic!("expected NoEligibleRunner, got {other:?}"),
+    }
+}
+
+/// A `decisions` capability value at the given support level, for building
+/// one harness's `decisions` field in the table below.
+fn decisions_capability(support: CapabilitySupport) -> CapabilityValue {
+    CapabilityValue {
+        support,
+        reason: Some("test attestation".to_string()),
+        additional: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn ask_is_gated_on_the_matched_harness_own_decisions_capability() {
+    struct Case {
+        name: &'static str,
+        approvals: Option<Approvals>,
+        decisions: Option<CapabilityValue>,
+        selected: bool,
+    }
+    let cases = [
+        Case {
+            name: "auto is unaffected by an unsupported decisions capability",
+            approvals: Some(Approvals::Auto),
+            decisions: Some(decisions_capability(CapabilitySupport::Unsupported)),
+            selected: true,
+        },
+        Case {
+            name: "an absent approvals field behaves like auto",
+            approvals: None,
+            decisions: Some(decisions_capability(CapabilitySupport::Unsupported)),
+            selected: true,
+        },
+        Case {
+            name: "ask is accepted when the harness attests decisions supported",
+            approvals: Some(Approvals::Ask),
+            decisions: Some(decisions_capability(CapabilitySupport::Supported)),
+            selected: true,
+        },
+        Case {
+            name: "ask is refused when the harness attests decisions unsupported",
+            approvals: Some(Approvals::Ask),
+            decisions: Some(decisions_capability(CapabilitySupport::Unsupported)),
+            selected: false,
+        },
+        Case {
+            name: "ask is refused when the harness never attested decisions",
+            approvals: Some(Approvals::Ask),
+            decisions: None,
+            selected: false,
+        },
+    ];
+    for case in cases {
+        let mut c = candidate("runner-a");
+        c.harnesses[0].decisions = case.decisions;
+        let mut req = request();
+        req.approvals = case.approvals;
+        let outcome = select_runner(&req, &[c], now(), &SchedulingPolicy::default());
+        match outcome {
+            SelectionOutcome::Selected(_) => {
+                assert!(
+                    case.selected,
+                    "{}: expected refusal, was selected",
+                    case.name
+                );
+            }
+            SelectionOutcome::NoEligibleRunner { reasons } => {
+                assert!(
+                    !case.selected,
+                    "{}: expected selection, was refused",
+                    case.name
+                );
+                // Nothing to claim: the sole candidate's own ineligibility
+                // is the only reason reported, never a partial pick.
+                assert_eq!(reasons.len(), 1, "{}", case.name);
+                assert_eq!(
+                    reasons[0].1,
+                    IneligibleReason::DecisionsNotSupported {
+                        harness: HarnessKind::new("claude_code"),
+                    },
+                    "{}",
+                    case.name
+                );
+            }
+            other => panic!("{}: unexpected outcome {other:?}", case.name),
+        }
     }
 }
 
