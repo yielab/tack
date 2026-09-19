@@ -262,3 +262,10 @@ offer instead. Left as an open question for later, not decided here.
   documentation cards to fix — this ADR only corrects the one sentence it owns.
 - Nothing in the wire contract, its test fixtures, or any existing adapter code changes
   as a result of this ADR by itself.
+
+## Amendment — 2026-09-19: built
+
+Read from the code on 2026-09-19. Decisions 1, 2, 3 and 6 are in the tree: the runner's
+secret store (`crates/tack-runner/src/secrets.rs`, the OS keychain with an owner-only file
+fallback), the loopback-only write routes (`handlers/local_runner.rs`), the runner-fetched
+catalog, and the key panel and the on/off switch on the Agents page.
