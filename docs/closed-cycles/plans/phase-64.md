@@ -1,3 +1,5 @@
+> **Archived 2026-09-20.** Phase 64 closed on 2026-09-19. What was still open here is now a task in `docs/plans/phase-65.md`; paths in this file are as they were when it was live.
+
 # Plan: executing Phase 64
 
 How the stages of Phase 64 (`docs/book/src/roadmap.md`, ADR 0068) are cut into tasks an
