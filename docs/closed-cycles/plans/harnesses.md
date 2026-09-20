@@ -1,3 +1,5 @@
+> **Archived 2026-09-20.** Phase 64 closed on 2026-09-19. What was still open here is now a task in `docs/plans/phase-65.md`; paths in this file are as they were when it was live.
+
 # Plan: four harnesses on one core
 
 Implements ADR 0066 (docket as a third harness) and ADR 0067 (opencode readmitted as a

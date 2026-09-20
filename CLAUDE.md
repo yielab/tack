@@ -10,12 +10,12 @@ backend via Axum + SQLite, SolidJS frontend) and the runner (a worker that execu
 your code and credentials, embedded via `tack serve --with-runner`). Multiple workflows,
 per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 
-## Release — what's next
+## What's next
 
-Phase 64 shipped 2026-09-19: the Docket control-plane bridge is gone, and the runner,
-harnesses, MCP and desktop app are the product surface. What's left is cutting the
-release tag and working through `docs/LAUNCH-CHECKLIST.md`. Decisions go in an ADR,
-intent in `docs/book/src/roadmap.md`, history in commits.
+Phase 64 shipped 2026-09-19; the runner, harnesses, MCP and desktop app are the product
+surface. Phase 65 is live, and `docs/plans/phase-65.md` is the only list of pending work:
+the release tag, inbound GitHub sync, `tack start` and the harness upgrades, in four waves.
+Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
 
