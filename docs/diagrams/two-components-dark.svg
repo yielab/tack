@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" role="img" aria-labelledby="title desc">
   <title id="title">Tack's two components</title>
-  <desc id="desc">The board, one instance, holding leases, fencing and history, on the left. Runners, many instances, each launching a harness near your code and credentials, on the right. A single arrow runs from the runners to the board, labeled "pulls work" — the board never calls out.</desc>
+  <desc id="desc">The board, one instance, holding leases, fencing and history, on the left. Runners, many instances, each launching one harness — Claude Code, Codex, docket or opencode — near your code and credentials, on the right. A single arrow runs from the runners to the board, labeled "pulls work" — the board never calls out.</desc>
   <defs>
     <marker id="arrowhead-dark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#cbd5e1"/>
@@ -25,17 +25,25 @@
   <text x="740" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#ccfbf1" >RUNNERS</text>
   <text x="740" y="106" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#99f6e4">(many)</text>
 
-  <!-- two runner mini-cards, each with a harness label beneath -->
+  <!-- four runner mini-cards, one per harness the fleet can launch -->
   <g font-family="system-ui, sans-serif">
-    <rect x="632" y="140" width="100" height="56" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
-    <text x="682" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
-    <text x="682" y="216" text-anchor="middle" font-size="12" fill="#5eead4">Claude Code</text>
+    <rect x="638" y="140" width="96" height="52" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
+    <text x="686" y="162" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
+    <text x="686" y="180" text-anchor="middle" font-size="12" fill="#5eead4">Claude Code</text>
 
-    <rect x="748" y="140" width="100" height="56" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
-    <text x="798" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
-    <text x="798" y="216" text-anchor="middle" font-size="12" fill="#5eead4">Codex</text>
+    <rect x="746" y="140" width="96" height="52" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
+    <text x="794" y="162" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
+    <text x="794" y="180" text-anchor="middle" font-size="12" fill="#5eead4">Codex</text>
+
+    <rect x="638" y="204" width="96" height="52" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
+    <text x="686" y="226" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
+    <text x="686" y="244" text-anchor="middle" font-size="12" fill="#5eead4">docket</text>
+
+    <rect x="746" y="204" width="96" height="52" rx="8" fill="#134e4a" stroke="#2dd4bf" stroke-width="1.5"/>
+    <text x="794" y="226" text-anchor="middle" font-size="13" font-weight="600" fill="#ccfbf1">runner</text>
+    <text x="794" y="244" text-anchor="middle" font-size="12" fill="#5eead4">opencode</text>
   </g>
-  <text x="740" y="248" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#99f6e4" font-style="italic">lives where your code already is</text>
+  <text x="740" y="286" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#99f6e4" font-style="italic">lives where your code already is</text>
 
   <rect x="580" y="322" width="320" height="66" rx="10" fill="#115e59" stroke="#2dd4bf" stroke-width="1.5"/>
   <text x="740" y="349" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#ccfbf1">credentials stay here</text>
@@ -44,5 +52,6 @@
   <!-- the pull arrow: one direction only, runner to board -->
   <line x1="550" y1="270" x2="415" y2="270" stroke="#cbd5e1" stroke-width="2.5" marker-end="url(#arrowhead-dark)"/>
   <text x="482" y="252" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#e2e8f0">pulls work</text>
-  <text x="482" y="292" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#94a3b8">runner-initiated — the board never calls out</text>
+  <text x="482" y="288" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">runner-initiated —</text>
+  <text x="482" y="301" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">the board never calls out</text>
 </svg>
