@@ -1309,12 +1309,235 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
     assert_eq!(after_304.status, in_progress);
 
     // The whole exchange only ever sent GET: an inbound poll must never
-    // itself trigger the outbound push.
+    // itself trigger the outbound push. Polls 1–3 each also fetch the
+    // linked issue's comments (unmocked here, so each gets wiremock's
+    // default 404 and is logged and skipped) — poll 4's 304 short-circuits
+    // before that fetch, so seven GETs in all, still never a PATCH or POST.
     let all_requests = gh.received_requests().await.unwrap();
-    assert_eq!(all_requests.len(), 4, "expected exactly the four GET polls");
+    assert_eq!(
+        all_requests.len(),
+        7,
+        "expected the four issue-state GETs plus a comments GET for polls 1-3"
+    );
     assert!(
         all_requests.iter().all(|r| r.method.as_str() == "GET"),
         "an inbound poll must never itself fire an outbound PATCH: {all_requests:?}"
+    );
+}
+
+/// Outbound: posting a comment through the API on a linked item pushes it to
+/// the issue, best-effort, and stores the id GitHub returns — shaped like
+/// `completing_github_item_pushes_issue_close` above but for
+/// `handlers::comments::create_comment`'s hook.
+#[tokio::test]
+async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id() {
+    use wiremock::matchers::{body_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+    let project = tack_test_support::make_project(&repo, workspace_id).await;
+    let initial_status = project.workflow.initial_status().unwrap();
+    let item = repo
+        .create_item(
+            project.id,
+            &initial_status,
+            tack_core::models::CreateItem {
+                title: "Fix the thing".into(),
+                description: None,
+                item_type: Some(tack_core::models::ItemType::Task),
+                parent_id: None,
+                priority: Some(tack_core::models::Priority::Medium),
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await
+        .expect("create item");
+    repo.set_github_link(item.id, "acme/widgets", 42)
+        .await
+        .expect("link item to issue #42");
+
+    Mock::given(method("POST"))
+        .and(path("/repos/acme/widgets/issues/42/comments"))
+        .and(body_json(json!({ "body": "hello from tack" })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "id": 555 })))
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
+    let state = tack_api::AppState {
+        repo,
+        config: AppConfig {
+            github_token: Some("tok".into()),
+            github_api_base: gh.uri(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    };
+    let app = tack_api::router::build_router(state.clone());
+
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{}/comments", item.id),
+        json!({"content": "hello from tack", "author": "alice"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["content"], "hello from tack");
+
+    assert!(
+        wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42/comments").await,
+        "expected a POST mirroring the comment onto GitHub issue #42"
+    );
+
+    // The push is spawned fire-and-forget; poll (bounded by wall-clock time,
+    // not a fixed sleep) until the id it stores lands.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut stored = Vec::new();
+    while std::time::Instant::now() < deadline {
+        stored = state.repo.list_github_comment_ids(item.id).await.unwrap();
+        if !stored.is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        stored,
+        vec![555],
+        "the id GitHub returned for the new comment must be stored"
+    );
+}
+
+/// Inbound: the poll creates a Tack comment for each GitHub comment id it
+/// hasn't stored yet, attributed to the GitHub login on the first line. A
+/// second poll of the same response creates nothing more, and a comment
+/// mirrored in is never posted back out — the mock server only ever sees
+/// GET, never the POST `creating_comment_on_linked_item_pushes_it_to_github_
+/// and_stores_the_id` above exercises.
+#[tokio::test]
+async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+    let project = tack_test_support::make_project(&repo, workspace_id).await;
+    let initial_status = project.workflow.initial_status().unwrap();
+    let item = repo
+        .create_item(
+            project.id,
+            &initial_status,
+            tack_core::models::CreateItem {
+                title: "Fix the thing".into(),
+                description: None,
+                item_type: Some(tack_core::models::ItemType::Task),
+                parent_id: None,
+                priority: Some(tack_core::models::Priority::Medium),
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await
+        .expect("create item");
+    repo.set_github_link(item.id, "acme/widgets", 42)
+        .await
+        .expect("link item to issue #42");
+
+    // The issue is in the `since` list on both polls (a new comment bumps
+    // its `updated_at`), open both times: no state change, only comments.
+    // Neither mock pins `since`, so the second poll, which sends one, still
+    // reads the same two comments and has to recognise them by stored id.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(query_param("state", "all"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"number": 42, "state": "open", "updated_at": "2026-03-01T10:00:00Z"}
+        ])))
+        .mount(&gh)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues/42/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id": 101, "body": "first comment", "user": {"login": "alice"}},
+            {"id": 102, "body": "second comment", "user": {"login": "bob"}},
+        ])))
+        .mount(&gh)
+        .await;
+
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
+    let state = tack_api::AppState {
+        repo,
+        config: AppConfig {
+            github_token: Some("tok".into()),
+            github_api_base: gh.uri(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    };
+    let mut etags = std::collections::HashMap::new();
+
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let comments = state.repo.list_comments(item.id).await.unwrap();
+    assert_eq!(
+        comments.len(),
+        2,
+        "both GitHub comments must be mirrored in"
+    );
+    assert!(
+        comments[0].content.starts_with("@alice on GitHub:\n\n"),
+        "got: {:?}",
+        comments[0].content
+    );
+    assert!(
+        comments[1].content.starts_with("@bob on GitHub:\n\n"),
+        "got: {:?}",
+        comments[1].content
+    );
+
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let comments_after_second_poll = state.repo.list_comments(item.id).await.unwrap();
+    assert_eq!(
+        comments_after_second_poll.len(),
+        2,
+        "a poll reading the same GitHub comments again must create nothing more"
+    );
+
+    let all_requests = gh.received_requests().await.unwrap();
+    assert_eq!(
+        all_requests.len(),
+        4,
+        "two polls, each one issues GET and one comments GET: {all_requests:?}"
+    );
+    assert!(
+        all_requests.iter().all(|r| r.method.as_str() == "GET"),
+        "a comment mirrored in must never itself be pushed back out: {all_requests:?}"
     );
 }
 

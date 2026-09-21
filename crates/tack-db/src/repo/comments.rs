@@ -97,6 +97,37 @@ impl Repository {
             updated_at: now,
         })
     }
+
+    /// The GitHub comment ids already mirrored onto this item, either
+    /// direction — the inbound poll's "have I already created this one"
+    /// check.
+    #[instrument(skip(self))]
+    pub async fn list_github_comment_ids(&self, item_id: Uuid) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT github_comment_id FROM comments
+             WHERE item_id = ? AND github_comment_id IS NOT NULL",
+        )
+        .bind(item_id.to_string())
+        .fetch_all(self.pool())
+        .await
+    }
+
+    /// Record the GitHub comment id a Tack comment mirrors — set after an
+    /// outbound push succeeds, or right after a comment is created from the
+    /// inbound poll.
+    #[instrument(skip(self))]
+    pub async fn set_comment_github_id(
+        &self,
+        comment_id: Uuid,
+        github_comment_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE comments SET github_comment_id = ? WHERE id = ?")
+            .bind(github_comment_id)
+            .bind(comment_id.to_string())
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(sqlx::FromRow)]
