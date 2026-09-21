@@ -64,16 +64,58 @@ echo "Running install.sh for real (not just resolving its URL):"
 install_dir="$(mktemp -d)"
 trap 'rm -rf "$install_dir"' EXIT
 
-if TACK_INSTALL_DIR="$install_dir" sh install.sh; then
+install_log="$install_dir/install.log"
+if TACK_INSTALL_DIR="$install_dir" sh install.sh 2>&1 | tee "$install_log"; then
   if [ -x "$install_dir/tack" ] && version="$("$install_dir/tack" --version 2>&1)"; then
     printf 'OK   install.sh installed a working tack: %s\n' "$version"
   else
     printf 'FAIL install.sh exited 0 but left no working tack binary at %s/tack\n' "$install_dir" >&2
     fail=1
   fi
+
+  # The installer must not only work, it must have checked what it installed.
+  # Silently losing the SHA256SUMS step would leave every other assertion here
+  # green while the advertised one-liner went back to executing an unverified
+  # binary — the same shape as the bug this script exists for, one layer down.
+  if grep -q 'Checksum verified' "$install_log"; then
+    printf 'OK   install.sh verified the archive against the release SHA256SUMS\n'
+  else
+    printf 'FAIL install.sh installed without verifying a checksum\n' >&2
+    fail=1
+  fi
 else
   printf 'FAIL install.sh exited non-zero — the advertised install command is broken\n' >&2
   fail=1
+fi
+
+# ── The packaging recipes must carry the published digests ──────────────────
+# Nobody exercises a Homebrew formula or a PKGBUILD from CI, so a wrong digest
+# sits there until a stranger taps it and gets a hash mismatch, which reads as
+# a tampered download rather than as stale packaging. scripts/sync-packaging.sh
+# regenerates all three from a release; this only checks they were run.
+echo
+echo "Checking packaging/ digests against the release they name:"
+pkg_tag="$(grep -o 'v[0-9][^"]*' packaging/aur/PKGBUILD | head -n 1 || true)"
+if [ -z "$pkg_tag" ]; then
+  printf 'FAIL could not read the tag out of packaging/aur/PKGBUILD\n' >&2
+  fail=1
+elif ! sums="$(curl -fsSL --max-time 15 "https://github.com/yielab/tack/releases/download/$pkg_tag/SHA256SUMS")"; then
+  printf 'SKIP %s publishes no SHA256SUMS (pre-v0.1.0-beta.7 release)\n' "$pkg_tag"
+else
+  for asset_platform in linux-x86_64 macos-aarch64 macos-x86_64; do
+    want="$(printf '%s\n' "$sums" \
+      | awk -v f="tack-$pkg_tag-$asset_platform.tar.gz" '$2 == f || $2 == "*" f { print $1; exit }')"
+    if [ -z "$want" ]; then
+      printf 'FAIL %s has no tack-%s-%s.tar.gz\n' "$pkg_tag" "$pkg_tag" "$asset_platform" >&2
+      fail=1
+    elif grep -rq "$want" packaging/; then
+      printf 'OK   packaging/ carries the published %s digest\n' "$asset_platform"
+    else
+      printf 'FAIL no file under packaging/ carries the published %s digest — run scripts/sync-packaging.sh %s\n' \
+        "$asset_platform" "$pkg_tag" >&2
+      fail=1
+    fi
+  done
 fi
 
 exit "$fail"

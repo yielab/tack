@@ -5,7 +5,9 @@
 #
 # Options (environment variables):
 #   TACK_INSTALL_DIR   target directory (default: $HOME/.local/bin)
-#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.6 (default: newest)
+#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.9 (default: newest)
+#   TACK_SKIP_CHECKSUM set to 1 to skip SHA256SUMS verification (only needed
+#                      for v0.1.0-beta.6 and earlier, which predate the file)
 #
 # Installs the single `tack` binary (server + CLI, web UI embedded). No Docker,
 # no database server — run `tack` and open http://localhost:3210.
@@ -19,6 +21,14 @@ REPO="yielab/tack"
 INSTALL_DIR="${TACK_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${TACK_VERSION:-}"
 API="https://api.github.com/repos/$REPO/releases"
+
+# Tags are published as `v0.1.0-beta.9`; accept the bare version too rather
+# than failing with "no asset for 0.1.0-beta.9", which reads like the release
+# is missing when only the prefix is.
+case "$VERSION" in
+  ""|v*) ;;
+  *) VERSION="v$VERSION" ;;
+esac
 
 err() { printf 'tack-install: %s\n' "$1" >&2; exit 1; }
 
@@ -59,7 +69,7 @@ fi
 # /releases/latest deliberately excludes.
 suffix="-${platform}.tar.gz"
 echo "Looking up the newest tack release for ${platform}…"
-urls="$(fetch "$API?per_page=20" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/')" \
+urls="$(fetch "$API?per_page=100" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/')" \
   || err "could not query the releases API"
 
 # Every release also publishes a `tack-runner-<tag>-<platform>.tar.gz` archive,
@@ -82,6 +92,53 @@ trap 'rm -rf "$tmp"' EXIT
 
 printf 'Downloading %s …\n' "$asset"
 download "$url" "$tmp/$asset" || err "download failed: $url"
+
+# ── Verify the archive against the release's own SHA256SUMS ───────────────────
+# release.yml publishes SHA256SUMS beside the archives and its own comment
+# tells consumers to verify with it — this is that consumer, and the one most
+# people use, since it is what the README's one-liner runs. Fail closed: a
+# mismatch, a missing line, an unreachable checksum file or no way to compute
+# a digest all stop the install rather than executing an unverified binary.
+# TACK_SKIP_CHECKSUM=1 is the deliberate way out, needed only for
+# v0.1.0-beta.6 and earlier, which predate the file.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$1" | sed 's/.*= *//'
+  else
+    return 1
+  fi
+}
+
+if [ "${TACK_SKIP_CHECKSUM:-0}" = 1 ]; then
+  printf 'Skipping checksum verification (TACK_SKIP_CHECKSUM=1).\n' >&2
+else
+  # Same release, same directory: .../download/<tag>/<asset> -> .../SHA256SUMS
+  sums_url="${url%/*}/SHA256SUMS"
+  fetch "$sums_url" > "$tmp/SHA256SUMS" 2>/dev/null \
+    || err "could not fetch $sums_url — releases before v0.1.0-beta.7 have no
+       checksum file; re-run with TACK_SKIP_CHECKSUM=1 to install without it"
+
+  # `sha256sum` writes "<digest>  <name>"; the binary-mode form prefixes the
+  # name with "*". Match the whole field rather than a substring, so one
+  # asset name can never be satisfied by another's line.
+  expected="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS")"
+  [ -n "$expected" ] || err "SHA256SUMS has no entry for $asset"
+
+  actual="$(sha256_of "$tmp/$asset")" \
+    || err "need sha256sum, shasum or openssl to verify the download; re-run
+       with TACK_SKIP_CHECKSUM=1 to install without verifying"
+
+  [ "$actual" = "$expected" ] || err "checksum mismatch for $asset
+       expected $expected
+       got      $actual
+       The download does not match what the release published. Not installing."
+
+  printf 'Checksum verified against the release SHA256SUMS.\n'
+fi
 
 # ── Extract & install ─────────────────────────────────────────────────────────
 tar xzf "$tmp/$asset" -C "$tmp" || err "extract failed"

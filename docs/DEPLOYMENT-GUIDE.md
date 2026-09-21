@@ -51,7 +51,11 @@ gh attestation verify tack --repo yielab/tack   # provenance (optional)
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
 ```
 
-Resolves the newest release asset for your platform and installs `tack`.
+Resolves the newest release asset for your platform and installs `tack`. It
+verifies the archive against that release's own `SHA256SUMS` before extracting
+anything, and refuses to install on a mismatch — Option A's manual check, done
+for you. Releases before `v0.1.0-beta.7` predate that file; installing one of
+those needs `TACK_SKIP_CHECKSUM=1`, which is the only way to skip the check.
 
 ### Option C — build from source
 

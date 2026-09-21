@@ -18,10 +18,7 @@ conflicts=('tack')
 _tag="v0.1.0-beta.7"
 _pkgdir="tack-${_tag}-linux-x86_64"
 source=("${url}/releases/download/${_tag}/${_pkgdir}.tar.gz")
-# Computed from a local build standing in for the real release asset (the
-# tag above is not yet published) — replace with the digest from the
-# published release's SHA256SUMS before submitting this package.
-sha256sums=('1f15ac5b69fca569e268a2a9bf334a4ae0630e32853d0716a5d6910a2808df6c')
+sha256sums=('9faf72396a4a8804521ad878dacebd9925ae2ef86803866dd89c9ca5daddb074')
 
 package() {
   cd "$_pkgdir"
