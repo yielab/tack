@@ -137,6 +137,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("073_drop_control_planes", &MIGRATION_073[..]),
         ordinary("074_drop_template_orchestration", &MIGRATION_074[..]),
         ordinary("075_github_links_synced_at", &MIGRATION_075[..]),
+        ordinary("076_comments_github_comment_id", &MIGRATION_076[..]),
     ]
 }
 
@@ -1673,3 +1674,9 @@ const MIGRATION_074: [&str; 1] = ["ALTER TABLE project_templates DROP COLUMN orc
 // a link (including one created before this migration). Drives the poll's
 // `since` query per repo (the max across its links) — see `github_sync.rs`.
 const MIGRATION_075: [&str; 1] = ["ALTER TABLE github_links ADD COLUMN synced_at TEXT"];
+
+// Integer, nullable: the GitHub comment id this Tack comment mirrors, either
+// direction. Set after an outbound push succeeds, or when a comment is
+// created from an inbound poll. A stored id is the "already mirrored" check
+// that keeps a comment from bouncing back out — see `github_sync.rs`.
+const MIGRATION_076: [&str; 1] = ["ALTER TABLE comments ADD COLUMN github_comment_id INTEGER"];

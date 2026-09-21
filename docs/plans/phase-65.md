@@ -385,7 +385,7 @@ of the released product asks for it, and then through an ADR where a decision is
 | M3 | done 2026-09-20: docket ships no `harness-v1.1`; U8 does not start |
 | U1 | landed 2026-09-20 |
 | U4 | closed 2026-09-20: not available; neither the event stream nor `opencode export` names the served model (M2) |
-| G2 | open |
+| G2 | landed 2026-09-20 |
 | U2 · U3 · G3 | open |
 | U5 | closed 2026-09-20: nothing to share (see the task) |
 | U6 · U7 | open |
