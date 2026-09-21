@@ -119,9 +119,17 @@ fn an_ask_request_keeps_stdin_open_and_asks_the_host() {
 /// over. Any other captured line means nothing here.
 #[test]
 fn a_permission_request_line_becomes_a_question() {
+    let spec = request(Some("anthropic"), &["Bash"], true);
+    let run = RunContext {
+        spec: &spec,
+        endpoint: None,
+        scratch: std::path::Path::new("unused"),
+    };
     let request_line =
         include_str!("../fixtures/claude_code/2.1.273/ask-tool-permission-request.jsonl");
-    let signal = ClaudeCodeGrammar.signal(request_line).expect("a question");
+    let signal = ClaudeCodeGrammar
+        .signal(&run, request_line)
+        .expect("a question");
     let StreamSignal::Question(question) = signal else {
         panic!("expected a question, got {signal:?}");
     };
@@ -139,11 +147,14 @@ fn a_permission_request_line_becomes_a_question() {
 
     let result_line = include_str!("../fixtures/claude_code/2.1.273/ask-result.jsonl");
     assert_eq!(
-        ClaudeCodeGrammar.signal(result_line),
+        ClaudeCodeGrammar.signal(&run, result_line),
         Some(StreamSignal::Finished)
     );
 
-    assert_eq!(ClaudeCodeGrammar.signal("{\"type\":\"assistant\"}"), None);
+    assert_eq!(
+        ClaudeCodeGrammar.signal(&run, "{\"type\":\"assistant\"}"),
+        None
+    );
 }
 
 /// `allow_once` writes `{"behavior":"allow"}`; anything else, including an
