@@ -40,6 +40,14 @@ provider's `env_key` were set to an obviously fake value.
   `--ask-for-approval` or `--full-auto` flag in 0.149.1; see `exec-help.txt`).
 - `app-server-approval.txt` — a trimmed `codex app-server` transcript over stdio: the one
   stdout line carrying an approval request, and the one stdin line answering it.
+- `app-server-thread-start.txt` — two `{"id":2,"result":...}` lines, one per `sandbox` value
+  (`"read-only"`, `"workspace-write"`) piped as `thread/start`'s own `sandbox` field into
+  `codex app-server`, confirming both spellings `CodexGrammar::invocation` already sends to
+  `--sandbox` are accepted there too.
+- `app-server-turn.txt` — the last `thread/tokenUsage/updated` notification and the terminal
+  `turn/completed` line cut from `appserver-transcript-1.txt` (one of the M1 probe's full
+  `initialize`/`thread/start`/`turn/start` round trips, not itself in this repo), for a
+  command that never needed to escalate past the sandbox.
 
 ## Measured
 
@@ -98,6 +106,20 @@ provider's `env_key` were set to an obviously fake value.
   "approved"}` instead is rejected by codex's own deserializer (logged to stderr) and the
   item completes `"failed"`; the accepted decision values are `accept`, `acceptForSession`,
   `acceptWithExecpolicyAmendment`, `applyNetworkPolicyAmendment`, `decline`, `cancel`.
+  `thread/start`'s own `sandbox` field accepts the same two spellings `--sandbox` does,
+  `"read-only"` and `"workspace-write"` (`app-server-thread-start.txt`); `CodexGrammar::signal`
+  sends whichever one `--sandbox` would, from the same tool-list mapping. Piping nothing, or
+  piping only `initialize`, into `codex app-server` under a scratch environment still makes it
+  exit status 0 within 0.2s once stdin reaches EOF, so `StreamSignal::Finished` closing stdin
+  is all a run needs to end (measured by the launching session, 2026-09-21). **The adapter now
+  drives `app-server` for an `ask` request**: `CodexGrammar::invocation` swaps the whole
+  invocation for the `-c` overrides (unchanged) followed by `app-server` alone when
+  `permission_policy.approvals` is `Ask`; `signal`/`answer` drive
+  `initialize` -> `thread/start` -> `turn/start` from the replies, turn one
+  `item/commandExecution/requestApproval` line into a question, and read the verdict off the
+  terminal `turn/completed` line (or a JSON-RPC `error` answering `thread/start`/`turn/start`),
+  with usage read from the last `thread/tokenUsage/updated` notification instead of `exec
+  --json`'s own `turn.completed` line.
 
 ## Unverified — documented guesses, not facts
 
@@ -117,12 +139,12 @@ provider's `env_key` were set to an obviously fake value.
    fixture, which only exemplifies `"harness_reported"`.
 4. Session resume is still unverified. `exec --json`'s usage output and `exec`'s own
    sandbox/approval flags are no longer unverified (see "Measured" above and the
-   `0.149.1/exec-*` fixtures); a decision/approval protocol is now observed too, but only on
-   `codex app-server` (`app-server-approval.txt`), a transport `CodexGrammar` does not drive —
-   `codex exec`, the one this adapter actually runs, never asks. Each capability is still
-   reported honestly (`unsupported`/`advisory` with a reason) rather than assumed
-   (`CodexGrammar::capabilities`); these captures are vendor evidence for a later change, not a
-   capability-table change itself.
+   `0.149.1/exec-*` fixtures); the decision/approval protocol observed on `codex app-server`
+   (`app-server-approval.txt`, `app-server-thread-start.txt`) is no longer a transport
+   `CodexGrammar` merely knows about — it now drives it, for an `ask` request only, and
+   `decisions` is reported `Supported` for that reason (`CodexGrammar::capabilities`). `codex
+   exec`, which this adapter still drives for every other request, never asks under any flag
+   measured.
 5. Codex's real model-discovery mechanism (if any) is unverified, so
    `HarnessCapability::model_combinations` is always empty — never a hardcoded list.
 6. `permission_policy.tools` now selects `--sandbox` (see "Measured" above); what remains a
@@ -130,9 +152,11 @@ provider's `env_key` were set to an obviously fake value.
    `workspace-write` process across every tool a request might grant — only the two
    fixtures' own write/outside-write denials were observed, not the full space of what
    `bash`/`edit`/`write`/`apply_patch` could attempt. `permission_policy.network` and
-   `budgets` still have no `exec` flag to map onto and are never passed; `approvals` adds no
-   flag because no measured flag ever changes whether `exec` prompts (see "Measured" above).
-   The capability table declares `permission_policy: advisory` for this harness
+   `budgets` still have no `exec` flag to map onto and are never passed; `approvals == Ask`
+   no longer adds a flag to `exec` — no measured flag ever changes whether `exec` prompts (see
+   "Measured" above) — it instead swaps the whole invocation for `app-server`, which does ask
+   (see "Measured" above and finding 4). The capability table declares `permission_policy:
+   advisory` for this harness
    (`CodexGrammar::capabilities`) rather than leaving the difference silent.
 7. Codex runs with an environment that carries neither `HOME` nor `PATH`
    (`codex::DESCRIPTOR.inherited_env` is empty). Whether its tool commands find a user's

@@ -1,0 +1,18 @@
+captured
+env -i HOME=<scratch>/home CODEX_HOME=<scratch>/home PATH=/usr/bin:/bin:/home/ox/.local/bin DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/tack-no-keychain FAKE_API_KEY=fake-key timeout 10 codex -c model_provider=tack_provider -c 'model_providers.tack_provider.name="tack loopback"' -c 'model_providers.tack_provider.base_url="http://127.0.0.1:8999/v1"' -c 'model_providers.tack_provider.env_key="FAKE_API_KEY"' -c 'model_providers.tack_provider.wire_api="responses"' app-server
+env: HOME, CODEX_HOME, PATH, DBUS_SESSION_BUS_ADDRESS, FAKE_API_KEY
+2026-09-21
+
+Two separate runs, each piping one `initialize` line then one `thread/start` line into
+`codex app-server`, differing only in the `sandbox` value: `"read-only"` and
+`"workspace-write"`. `cwd` was a scratch git-initialized directory (`git init`, never
+`~/Sites`); `model` was the literal string `"fake-model"`; no `modelProvider` key was put in
+either `thread/start` request itself (the `-c model_provider=...` override above still
+points the whole process at a loopback address, so nothing dialed out to a real model
+endpoint even though `turn/start` was never sent and no fake server was listening on
+127.0.0.1:8999 — `thread/start` alone never reaches the configured provider). This fixture
+holds the two `{"id":2,"result":...}` lines, one per run, verbatim except the scratch
+`<scratch>` path rewritten to `/capture`. Both sandbox spellings were accepted: the results'
+own `sandbox.type` came back `"readOnly"` and `"workspaceWrite"` respectively, so
+`CodexGrammar::signal`'s `thread/start` request uses the same `"read-only"`/
+`"workspace-write"` strings `CodexGrammar::invocation` already sends to `--sandbox`.
