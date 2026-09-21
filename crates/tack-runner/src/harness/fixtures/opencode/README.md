@@ -19,6 +19,15 @@ Each `1.18.30/*.ndjson` fixture has a sibling `*.ndjson.provenance` text file: i
 `/capture`) or `constructed`. All three fixtures here are `captured` — `completed`, `tool_denied`
 and `cut_short` were all reproduced against the real binary, so none needed constructing.
 
+A second measurement pass (served model, asking, shared install) added nine more, and a
+re-check by the session that launched it added `adapter_shape_attempt.txt`; all
+`captured`, all with a `.provenance` sibling in the same style: `served_model.ndjson` and
+`served_model_export.json` (served-vs-requested model, see "Measured" below), `asking_run.ndjson`
++ `asking_run.stderr.txt` and `asking_acp.txt` (whether a permission ask pauses over each
+interface), and `shared_install.du.txt` plus `shared_install_run1.strace.txt` /
+`_run2.strace.txt` / `_run3.strace.txt` (three attempts, shared `npm_config_cache` across two of
+them).
+
 ## Two measurements the adapter's design rests on
 
 ### 1. Does a fresh config directory reach the network?
@@ -95,6 +104,56 @@ this tree trusts blindly.
   `cancelled`; any other exit with no terminal event is `malformed_output`.
 - `opencode --version` prints a plain `1.18.30` — the existing `local_process::parse_version`
   reads it unchanged.
+- **No served model anywhere.** With the fake model server answering every chunk's `model`
+  field as `served-model-xyz` while the request names `tack/requested-model`, neither the
+  `--format json` event stream (`served_model.ndjson`) nor `opencode export <sessionID>`
+  (`served_model_export.json`) ever mentions `served-model-xyz` — both only ever name the
+  *requested* model (`info.model`/`modelID`/`providerID` in the export, nothing at all in the
+  event stream). `DESCRIPTOR.observes_served_model: false` has nothing left to read even in a
+  surface the adapter doesn't currently parse.
+- **`opencode run` never pauses for an ask; `opencode acp` does.** With `permission.bash` set
+  to `"ask"` and no interactive terminal: `opencode run` auto-rejects in under a second with
+  no question ever appearing on stdout (`asking_run.ndjson` — only the already-rejected
+  `tool_use` event) — the one line that names the ask (`permission requested: bash (...);
+  auto-rejecting`) is on stderr, not stdout (`asking_run.stderr.txt`), and nothing on stdin
+  gets a chance to matter. `opencode acp --pure`, driven as a JSON-RPC client over its own
+  stdio, sends a real `session/request_permission` *request* (carrying an `id` and the tool
+  call's `optionId` choices) and leaves it genuinely pending — a parallel run left unanswered
+  for 15s never proceeded — until a matching `{"id":...,"result":{"outcome":...}}` line is
+  written to stdin, at which point the tool call actually runs and the turn completes
+  (`asking_acp.txt`). The two interfaces disagree on `decisions` capability, not just on
+  formatting.
+- **A per-attempt network round-trip that a shared `npm_config_cache` does not avoid.** Three
+  separate fresh-scratch-HOME `opencode run` attempts (none reusing another's `HOME`,
+  `XDG_*`, or `BUN_INSTALL`) each made the identical `strace -f -e trace=connect` pattern:
+  24 zero-port IPv4/IPv6 address-preference probes then 2 real, `EINPROGRESS` port-443
+  connects to the same Cloudflare-anycast range this file's own "Does a fresh config
+  directory reach the network?" measurement attributes to `registry.npmjs.org`
+  (`shared_install_run1/2/3.strace.txt`) — including the two attempts whose `npm_config_cache`
+  pointed at the first attempt's (already-used, still-warm) cache directory. Inspecting what
+  landed there (two 240KB temp files, never promoted to a committed cache entry) showed a real
+  npm-registry metadata response for `@opencode-ai/plugin`. None of the three attempts wrote a
+  `node_modules` directory anywhere, and each stayed under 1MB (`shared_install.du.txt`) — a
+  sharp contrast with an earlier same-session attempt (fresh scratch HOME, otherwise identical
+  command) that needed a real ~220MB install first, matching this file's original "about 220MB
+  from the registry" finding above. This run could not pin down why: the most likely
+  explanation found along the way is a pre-existing, real (non-scratch) global package cache
+  at `~/.bun/install/cache` on the measuring machine — already populated with
+  `@ai-sdk/openai-compatible` from months before this session, unrelated to any of this
+  session's own scratch directories — that the `opencode`/`bun` runtime appears to consult
+  regardless of `HOME` or `BUN_INSTALL`. That candidate explanation is itself unverified: this
+  measurement only confirms that whatever mechanism is responsible, sharing `npm_config_cache`
+  alone did not make an attempt network-free, and an attempt-cost estimate of "~220MB, once,
+  from a cold machine" should not be read as "~220MB every time" without re-checking on a
+  machine known not to have this warm.
+- **Re-checked the same day in the adapter's exact shape** (`adapter_shape_attempt.txt`): an
+  untraced fresh-HOME attempt completed with no package install and under 1 MB on disk;
+  three attempts under `strace` each installed `@opencode-ai/plugin` with **npm** (a
+  `package-lock.json`, 63 MB of `node_modules` in each of the two config directories, 95 MB
+  in `$HOME/.npm`, about 6 s) and then waited for nothing until their timeout without ever
+  reaching the model. `BUN_INSTALL_CACHE_DIR` is not consulted. The install-then-hang is not
+  explained; what holds for the adapter is that a completing attempt downloads nothing a
+  cache could save, and the registry round trip happens regardless.
 
 ## Unverified — documented guesses, not facts
 

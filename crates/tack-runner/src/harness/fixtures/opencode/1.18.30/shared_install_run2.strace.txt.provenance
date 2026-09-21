@@ -1,0 +1,11 @@
+captured
+Same command and trace as `shared_install_run1.strace.txt`, for attempt 2 in
+`shared_install.du.txt`: fresh scratch HOME, `npm_config_cache` pointed at attempt 1's
+`$HOME/.npm` (empty at the time -- attempt 1 made no npm-cache writes of its own; see
+`shared_install.du.txt`'s note). The connect pattern is identical to attempt 1's, line for
+line (24 zero-port probes, then 2 real port-443 connects). The temp files described in
+`shared_install.du.txt` (two 240KB npm-registry metadata fetches for `@opencode-ai/plugin`,
+inspected directly) are what these two port-443 connects correspond to. Ran under the same
+env-var list as `shared_install_run1.strace.txt.provenance`, plus `npm_config_cache`
+pointed at attempt 1's `$HOME/.npm`, and `HOME=/capture/home-7`.
+Captured 2026-09-20.

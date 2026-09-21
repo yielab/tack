@@ -1,0 +1,236 @@
+{
+  "info": {
+    "id": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+    "slug": "jolly-falcon",
+    "projectID": "global",
+    "directory": "/capture/workspace-1",
+    "path": "capture/workspace-1",
+    "title": "tack",
+    "agent": "build",
+    "model": {
+      "id": "requested-model",
+      "providerID": "tack",
+      "variant": "default"
+    },
+    "version": "1.18.30",
+    "summary": {
+      "additions": 0,
+      "deletions": 0,
+      "files": 0
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 16,
+      "output": 7,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "permission": [
+      {
+        "permission": "question",
+        "pattern": "*",
+        "action": "deny"
+      },
+      {
+        "permission": "plan_enter",
+        "pattern": "*",
+        "action": "deny"
+      },
+      {
+        "permission": "plan_exit",
+        "pattern": "*",
+        "action": "deny"
+      }
+    ],
+    "time": {
+      "created": 1789949534382,
+      "updated": 1789949535098
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1789949534426
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "tack",
+          "modelID": "requested-model"
+        },
+        "summary": {
+          "diffs": []
+        },
+        "id": "msg_0c14e60da001MO08yPQ6fxv1qa",
+        "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj"
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "\"Write a short greeting to greeting.txt\"",
+          "id": "prt_0c14e60de001nfxDMBjT12hiE5",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e60da001MO08yPQ6fxv1qa"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_0c14e60da001MO08yPQ6fxv1qa",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/capture/workspace-1",
+          "root": "/"
+        },
+        "cost": 0,
+        "tokens": {
+          "total": 16,
+          "input": 11,
+          "output": 5,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "modelID": "requested-model",
+        "providerID": "tack",
+        "time": {
+          "created": 1789949534791,
+          "completed": 1789949535069
+        },
+        "finish": "tool-calls",
+        "id": "msg_0c14e6247001QWWje6g0pBMcNJ",
+        "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj"
+      },
+      "parts": [
+        {
+          "type": "step-start",
+          "id": "prt_0c14e62fd001LEpVZM14gFOPaB",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e6247001QWWje6g0pBMcNJ"
+        },
+        {
+          "type": "tool",
+          "tool": "write",
+          "callID": "call_1",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "greeting.txt",
+              "content": "hello from the fake model server; canary=[REDACTED]\n"
+            },
+            "output": "Wrote file successfully.",
+            "metadata": {
+              "diagnostics": {},
+              "filepath": "/capture/workspace-1/greeting.txt",
+              "exists": false,
+              "truncated": false
+            },
+            "title": "capture/workspace-1/greeting.txt",
+            "time": {
+              "start": 1789949534980,
+              "end": 1789949535062
+            }
+          },
+          "id": "prt_0c14e62ff001bN5PpkV0mzCU5j",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e6247001QWWje6g0pBMcNJ"
+        },
+        {
+          "reason": "tool-calls",
+          "type": "step-finish",
+          "tokens": {
+            "total": 16,
+            "input": 11,
+            "output": 5,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "cost": 0,
+          "id": "prt_0c14e6359001DtOQnSuVk9I86n",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e6247001QWWje6g0pBMcNJ"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_0c14e60da001MO08yPQ6fxv1qa",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/capture/workspace-1",
+          "root": "/"
+        },
+        "cost": 0,
+        "tokens": {
+          "total": 7,
+          "input": 5,
+          "output": 2,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "modelID": "requested-model",
+        "providerID": "tack",
+        "time": {
+          "created": 1789949535070,
+          "completed": 1789949535088
+        },
+        "finish": "stop",
+        "id": "msg_0c14e635e001ADJI6kzvL0mH7z",
+        "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj"
+      },
+      "parts": [
+        {
+          "type": "step-start",
+          "id": "prt_0c14e636b001YEUzx9DrDxNAdc",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e635e001ADJI6kzvL0mH7z"
+        },
+        {
+          "type": "text",
+          "text": "Done.",
+          "time": {
+            "start": 1789949535084,
+            "end": 1789949535086
+          },
+          "id": "prt_0c14e636c001PiPHKeq0pU4xHa",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e635e001ADJI6kzvL0mH7z"
+        },
+        {
+          "reason": "stop",
+          "type": "step-finish",
+          "tokens": {
+            "total": 7,
+            "input": 5,
+            "output": 2,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "cost": 0,
+          "id": "prt_0c14e636f001cYaUm9NtjTlAwy",
+          "sessionID": "ses_f3eb19f51ffegksNTgDpNb2gJj",
+          "messageID": "msg_0c14e635e001ADJI6kzvL0mH7z"
+        }
+      ]
+    }
+  ]
+}

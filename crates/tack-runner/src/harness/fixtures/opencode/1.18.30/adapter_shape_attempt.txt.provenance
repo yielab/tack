@@ -1,0 +1,9 @@
+captured
+Four `env -i PATH=... HOME=/capture/<attempt> XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME
+OPENCODE_CONFIG_DIR OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1
+OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT
+AI_GATEWAY_API_KEY timeout <n> [strace -f -tt -e trace=connect,execve -o <log> --] opencode
+run --pure --format json --title tack -m tack/requested-model "Write a short greeting to
+greeting.txt"` runs, sizes from `du -sh`, timeline from the strace log, request counts from
+the fake's own log. Two attempts also set BUN_INSTALL_CACHE_DIR to one scratch directory.
+Captured 2026-09-20 by the session that launched M2, on the same machine, after M2's runs.

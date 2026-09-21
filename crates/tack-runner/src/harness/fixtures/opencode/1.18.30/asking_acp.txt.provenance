@@ -1,0 +1,24 @@
+captured
+A small JSON-RPC driver script (kept outside the repo) spoke ACP to a real `opencode acp
+--pure` over its own stdio, timestamping every line sent and received: `initialize`,
+`session/new` (`cwd` a dedicated scratch workspace, `mcpServers: []`), then
+`session/prompt` asking for a bash command, against a loopback fake `/v1/chat/completions`
+(a title-generation call is answered with plain text so it never consumes the tool-call
+turn; the real turn answers with a `bash` tool call), with the injected config's
+`permission.bash` set to `"ask"`. At t=3.50s a `session/request_permission` JSON-RPC
+*request* (with an `id`) appeared on stdout naming the pending tool call and three
+`optionId`s (`once`/`always`/reject`); it was left unanswered for 4 more seconds (still
+pending -- confirmed by a separate, otherwise-identical run left unanswered for the full
+15s capture window, which never proceeded) before the driver wrote a matching
+`{"id":0,"result":{"outcome":{"outcome":"selected","optionId":"once"}}}` line to stdin.
+The bash tool then actually ran and the turn completed normally afterward -- a line on
+stdin does release it, unlike `opencode run` (see `asking_run.ndjson`/`.stderr.txt`).
+The `session/new` response's `configOptions[0].options` (opencode's built-in model
+picker catalog, unrelated to this capture) is elided in this fixture; nothing else is
+changed beyond the `/capture` path rewrite. Ran under:
+`HOME=/capture/home-2 XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME OPENCODE_CONFIG_DIR
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT (top-level "model":"tack/fake-model", needed
+because ACP's session/new has no -m equivalent) AI_GATEWAY_API_KEY opencode acp --pure`,
+driven over its stdio by the external script.
+Captured 2026-09-20.
