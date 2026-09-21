@@ -850,6 +850,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::items::get_item,
         handlers::items::update_item,
         handlers::items::delete_item,
+        handlers::items::get_item_github_link,
+        handlers::items::put_item_github_link,
+        handlers::items::delete_item_github_link,
         // ── Sprints ───────────────────────────────────────────────────────
         handlers::sprints::create_sprint,
         handlers::sprints::list_sprints,
@@ -947,6 +950,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::RunnerV1Error,
         PaginatedItems,
         ItemDetail,
+        handlers::items::GithubLinkBody,
         handlers::boards_multi::BoardViewResponse,
         handlers::boards_multi::BoardColumnWithItems,
         tack_core::models::UpdateSprint,

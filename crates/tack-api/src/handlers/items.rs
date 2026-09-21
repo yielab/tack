@@ -3,6 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -297,12 +298,11 @@ pub async fn update_item(
 }
 
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
-/// Done boundary, close (or reopen) its GitHub issue. No-op unless a
-/// `TACK_GITHUB_TOKEN` is configured and the item has a `github_links` row.
+/// Done boundary, close (or reopen) its GitHub issue. No-op unless a token
+/// resolves (the item's project's own `github_token_ref`, else
+/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// item has a `github_links` row.
 pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status: &str) {
-    let Some(token) = state.config.github_token.clone() else {
-        return;
-    };
     if item.status == old_status {
         return;
     }
@@ -310,6 +310,10 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
         return;
     };
     let Ok(Some(proj)) = state.repo.get_project(item.project_id).await else {
+        return;
+    };
+    let Some(token) = crate::github_sync::github_token_for_project(state, item.project_id).await
+    else {
         return;
     };
     let Some(closed) = crate::github_sync::state_change(
@@ -398,6 +402,121 @@ pub async fn delete_item(
     }
 
     Ok(Json(serde_json::json!({"deleted": true})))
+}
+
+/// Body of `PUT /api/items/{id}/github-link` and the response of
+/// `GET /api/items/{id}/github-link` — the one new type this route family
+/// needs.
+#[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
+pub struct GithubLinkBody {
+    /// "owner/repo" or a full GitHub URL — parsed the same way
+    /// `POST /api/projects/{id}/import-github` parses its own `repo` field.
+    pub repo: String,
+    pub issue_number: i64,
+}
+
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{id}/github-link",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "The item's current GitHub link", body = GithubLinkBody),
+        (status = 404, description = "Item not found, or not linked", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn get_item_github_link(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<GithubLinkBody>> {
+    state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+    let (repo, issue_number) = state
+        .repo
+        .get_github_link(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} has no GitHub link")))?;
+    Ok(Json(GithubLinkBody { repo, issue_number }))
+}
+
+/// Manually links an item to a GitHub issue for push-only status sync — the
+/// same `github_links` row `POST /api/projects/{id}/import-github` writes
+/// for every item it creates, settable here for an item that was never
+/// imported.
+#[instrument(skip(state))]
+#[utoipa::path(
+    put,
+    path = "/api/items/{id}/github-link",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    request_body = GithubLinkBody,
+    responses(
+        (status = 204, description = "Linked"),
+        (status = 400, description = "Invalid repo or issue number", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn put_item_github_link(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<GithubLinkBody>,
+) -> ApiResult<StatusCode> {
+    state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+    let (owner, repo_name) =
+        super::import_github::parse_github_repo(&input.repo).ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "Invalid GitHub repo '{}'. Use 'owner/repo' or a full GitHub URL.",
+                input.repo
+            ))
+        })?;
+    if input.issue_number < 1 {
+        return Err(ApiError::BadRequest("issue_number must be >= 1".into()));
+    }
+    state
+        .repo
+        .set_github_link(id, &format!("{owner}/{repo_name}"), input.issue_number)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Removes an item's manual (or imported) GitHub link. `204` even when the
+/// item had no link — matches `rm -f`, not `rm`.
+#[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/items/{id}/github-link",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 204, description = "Unlinked (or was already unlinked)"),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn delete_item_github_link(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+    state.repo.remove_github_link(id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[instrument(skip(state))]

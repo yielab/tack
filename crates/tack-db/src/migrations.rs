@@ -138,6 +138,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("074_drop_template_orchestration", &MIGRATION_074[..]),
         ordinary("075_github_links_synced_at", &MIGRATION_075[..]),
         ordinary("076_comments_github_comment_id", &MIGRATION_076[..]),
+        ordinary("077_projects_github_token_ref", &MIGRATION_077[..]),
     ]
 }
 
@@ -1680,3 +1681,11 @@ const MIGRATION_075: [&str; 1] = ["ALTER TABLE github_links ADD COLUMN synced_at
 // created from an inbound poll. A stored id is the "already mirrored" check
 // that keeps a comment from bouncing back out — see `github_sync.rs`.
 const MIGRATION_076: [&str; 1] = ["ALTER TABLE comments ADD COLUMN github_comment_id INTEGER"];
+
+// Text, nullable: a `store:<name>` or `env:<VAR>` reference to a secret
+// holding this project's own GitHub token — never the token value itself.
+// Resolved only by the server, for its own outbound push/poll calls (see
+// `github_sync::github_token_for_project`); scrubbed to NULL by
+// `remote_backup::scrub_snapshot_secrets` before any backup bundle leaves
+// the process.
+const MIGRATION_077: [&str; 1] = ["ALTER TABLE projects ADD COLUMN github_token_ref TEXT"];

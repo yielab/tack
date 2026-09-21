@@ -269,6 +269,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
         .route(
+            "/items/{id}/github-link",
+            get(items::get_item_github_link)
+                .put(items::put_item_github_link)
+                .delete(items::delete_item_github_link),
+        )
+        .route(
             "/projects/{project_id}/sprints",
             post(sprints::create_sprint),
         )

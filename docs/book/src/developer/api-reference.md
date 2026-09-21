@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (78 paths, 109 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](../../../openapi.json) (79 paths, 112 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -136,6 +136,46 @@ Items: the universal work unit (epics, tasks, bugs, …).
 | 400 | Invalid transition / validation error | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 | 412 | If-Match did not match the current item version — nothing was written | `ErrorEnvelope` |
+
+#### `DELETE /api/items/{id}/github-link`
+
+Removes an item's manual (or imported) GitHub link. `204` even when the
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | Unlinked (or was already unlinked) | — |
+| 404 | Item not found | `ErrorEnvelope` |
+
+#### `GET /api/items/{id}/github-link`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The item's current GitHub link | `GithubLinkBody` |
+| 404 | Item not found, or not linked | `ErrorEnvelope` |
+
+#### `PUT /api/items/{id}/github-link`
+
+Manually links an item to a GitHub issue for push-only status sync — the
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Item ID |
+
+**Request body:** `GithubLinkBody`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | Linked | — |
+| 400 | Invalid repo or issue number | `ErrorEnvelope` |
+| 404 | Item not found | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/items`
 
