@@ -4,7 +4,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::CreateComment;
+use tack_core::models::{Comment, CreateComment};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -32,7 +32,40 @@ pub async fn create_comment(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let comment = state.repo.create_comment(item_id, input).await?;
+    maybe_sync_github(&state, item_id, &comment).await;
     Ok(Json(serde_json::to_value(comment).unwrap()))
+}
+
+/// Best-effort, fire-and-forget GitHub push: mirror a newly created user
+/// comment onto its item's linked GitHub issue, and store the returned id
+/// so the inbound poll never mirrors it back in. No-op unless a
+/// `TACK_GITHUB_TOKEN` is configured and the item has a `github_links` row.
+/// Only ever called for a comment created through this handler, so a
+/// comment mirrored in from GitHub (created directly via the db repo by
+/// `github_sync::poll_once`) is never a candidate here.
+async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
+    let Some(token) = state.config.github_token.clone() else {
+        return;
+    };
+    let Ok(Some((repo, number))) = state.repo.get_github_link(item_id).await else {
+        return;
+    };
+    let base = state.config.github_api_base.clone();
+    let body = comment.content.clone();
+    let comment_id = comment.id;
+    let db = state.repo.clone();
+    tokio::spawn(async move {
+        match crate::github_sync::push_issue_comment(&base, &token, &repo, number, &body).await {
+            Ok(github_id) => {
+                if let Err(error) = db.set_comment_github_id(comment_id, github_id).await {
+                    tracing::warn!(comment_id = %comment_id, %error, "storing GitHub comment id failed");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(repo = %repo, issue = number, %error, "GitHub comment push failed");
+            }
+        }
+    });
 }
 
 #[instrument(skip(state))]
