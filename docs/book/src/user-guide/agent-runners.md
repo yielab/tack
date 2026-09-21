@@ -97,7 +97,7 @@ you've already picked one.
 | Harness | Install | Reaches a model through | What it measures | Pauses to ask you | Honours the permission policy | Can't |
 |---|---|---|---|---|---|---|
 | `codex` | The official Codex CLI, e.g. `npm install -g @openai/codex` | Its own login (ChatGPT/API-key session) needs no Tack configuration. A Tack-configured Vercel AI Gateway key also reaches it, over the OpenAI Responses wire — Anthropic's own API doesn't serve that wire, so it's never an option here. | Tokens, read from the run's own terminal line (`exec --json`'s `turn.completed`). Cost is never measured: no such field exists in the output. The model that actually served the request is never confirmed — Tack records the one you requested, tagged `requested_not_confirmed`. | **Yes** — over `codex app-server`, and only when the request's permission policy sets `approvals` to `ask` and a command needs to escalate beyond the sandbox | Advisory — your tool list picks codex's sandbox mode (a write-capable tool grants `--sandbox workspace-write`, otherwise `--sandbox read-only`); your network flag and budget never reach it | Resume a session, report a cost, confirm which model served a request, or honour a network deny or a budget |
-| `claude-code` | `npm install -g @anthropic-ai/claude-code` | Its own login (a Claude subscription or its own API key) needs no Tack configuration. A Tack-configured endpoint can be Anthropic's own API directly, or the Vercel AI Gateway — both over the Anthropic Messages wire. | Tokens and cost, from the run's own result line — advisory, because an auxiliary model's cost is folded into the total while token counts were only confirmed to cover the primary turn. The served model is confirmed from its own session-start line on a direct connection; routed through the gateway, it's recorded `requested_not_confirmed` instead, since a gateway can still substitute a model underneath it. | **Yes** — the only harness that does, and only when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
+| `claude-code` | `npm install -g @anthropic-ai/claude-code` | Its own login (a Claude subscription or its own API key) needs no Tack configuration. A Tack-configured endpoint can be Anthropic's own API directly, or the Vercel AI Gateway — both over the Anthropic Messages wire. | Tokens and cost, from the run's own result line — advisory, because an auxiliary model's cost is folded into the total while token counts were only confirmed to cover the primary turn. The served model is confirmed from its own session-start line on a direct connection; routed through the gateway, it's recorded `requested_not_confirmed` instead, since a gateway can still substitute a model underneath it. | **Yes** — before every tool call, when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
 | `docket` | From the [docket project](https://github.com/yielab/docket), following its own install instructions | Always needs a Tack-configured endpoint — the Vercel AI Gateway, over the OpenAI Chat Completions wire; Anthropic's own API doesn't serve that wire either. It has no login of its own that this adapter uses. | Tokens, genuinely read from its result line, and a served model that's a real observation of the endpoint's own response — never downgraded to `requested_not_confirmed`, even behind a gateway. Cost is never measured: the installed version always reports it `null`. | No — a tool call that would need one is refused immediately instead | Not at all — it applies its own tool-policy engine; your tool list, network flag and budget never reach it | Resume, pause for a decision, report a cost, or enforce the permission policy |
 | `opencode` | `brew install opencode` | Always needs a Tack-configured endpoint — its own vendor logins are out of scope for this adapter — the Vercel AI Gateway, over the same OpenAI Chat Completions wire as docket. | Tokens, summed across every step of the run. The served model is never confirmed — every run is recorded `requested_not_confirmed`, because nothing in its output names what actually answered. Cost is never measured for a model it doesn't recognize. | **Yes** — but only over `opencode acp`, and only when the request's permission policy sets `approvals` to `ask`: each granted tool then pauses on its own request until answered | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Confirm which model served a request, or run at all against a request that denies network — see below |
 
@@ -114,9 +114,11 @@ A few things above are easy to trip over:
 - **codex maps your tool list onto its sandbox mode, and says what it still can't.**
   A tool list granting `bash`, `shell`, `edit`, `write` or `apply_patch` runs codex under
   `--sandbox workspace-write`; an empty or read-only tool list runs it under
-  `--sandbox read-only`. Codex's sandbox never prompts on a denial — a write it disallows
-  just fails inside the tool call — so there's nothing to pause for either way. Your
-  network flag and budget still never reach it: `codex exec` has no flag for either.
+  `--sandbox read-only`. Under "Automatic" the sandbox never prompts on a denial — a write it
+  disallows just fails inside the tool call. Under "Ask me" codex runs as `codex app-server`
+  instead and pauses only for a command that needs to escalate beyond that sandbox; a command
+  inside it still runs without asking. Your network flag and budget never reach it either way:
+  codex has no flag for either.
 - **claude-code's network deny is narrower than it sounds.** `network: false` only
   blocks the WebFetch and WebSearch tools by name; its Bash tool can still reach the
   network if your tool list grants it, so a network-sensitive item needs its tool list
@@ -131,9 +133,11 @@ agent"** dialog this is the "Approvals" choice, "Automatic" or "Ask me"; the CLI
 API set it directly (`--permission-policy
 '{"tools":[...],"network":...,"approvals":"ask"}'`). Unset, or `"auto"`, never pauses.
 
-Only claude-code honours `ask` today. For any other harness the dialog disables "Ask me"
-and says why, and a request built by hand that asks anyway is never scheduled onto a
-runner that would ignore the choice and run as `auto`.
+claude-code, codex and opencode honour `ask`; docket does not. Each one pauses at a different
+point: claude-code before every tool call, opencode before every call to a tool your list
+grants, codex only for a command that needs to escalate beyond its sandbox. For a harness that
+does not honour it the dialog disables "Ask me" and says why, and a request built by hand that
+asks anyway is never scheduled onto a runner that would ignore the choice and run as `auto`.
 
 The question appears in the attempt's decision inbox, in the same item view as the run's
 timeline and artifacts. Answering it needs `TACK_EXECUTION_DECISION_TOKEN`, a secret
@@ -693,7 +697,7 @@ but the runner cannot promise the process actually stops.
 |---|---|---|
 | `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across all four harnesses — `AdapterRegistry::register_probe` rejects a stronger claim at registration, before any attempt can reference it |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
-| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — today, only claude-code, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
+| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — claude-code, codex and opencode, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
 | `artifacts` | `advisory` (every adapter) | None of the harnesses tested can guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
