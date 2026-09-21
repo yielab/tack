@@ -33,17 +33,29 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     inherited_env: &["PATH"],
     model_passthrough: "requested_model_id is forwarded verbatim via `-m tack/<model id>`; \
                         opencode validates it at run time, so no model list is claimed",
-    probe_notes: &[(
-        "tested_version",
-        "measured against opencode 1.18.30 (ADR 0067 decision 9); an untested version still \
-         probes Advisory rather than a refusal",
-    )],
+    probe_notes: &[
+        (
+            "tested_version",
+            "measured against opencode 1.18.30 (ADR 0067 decision 9); an untested version still \
+             probes Advisory rather than a refusal",
+        ),
+        (
+            "served_model",
+            "measured against opencode 1.18.30, 2026-09-20: neither the --format json event \
+             stream nor opencode export ever names the served model, so it is not available",
+        ),
+    ],
     credential_note: "opencode reads its provider credential from the `apiKey` field of the \
                       config this adapter injects via OPENCODE_CONFIG_CONTENT, which references \
                       the resolved endpoint's own credential_env_var by name. Tack injects that \
                       variable into the process environment; opencode's own vendor logins are \
                       out of scope (ADR 0067 decision 10).",
     credential_env: None,
+    // Measured against opencode 1.18.30, 2026-09-20, with the fake model
+    // server answering every chunk's `model` as a value distinct from the
+    // requested one: neither the `--format json` event stream
+    // (`served_model.ndjson`) nor `opencode export` (`served_model_export.json`)
+    // ever names it — both only ever name the requested model.
     observes_served_model: false,
 };
 
@@ -139,6 +151,10 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
         succeeded: last_reason.as_deref() == Some("stop") && !saw_error,
         terminal_reason: serde_json::json!({ "reason": last_reason }),
         harness_version: None,
+        // Neither the event stream nor `opencode export` ever names the
+        // served model (`fixtures/opencode/1.18.30/served_model.ndjson`,
+        // `served_model_export.json`, opencode 1.18.30, 2026-09-20) — both
+        // only ever name the requested model, so there is nothing to read.
         observed_model: None,
         tokens_in: Some(tokens_in),
         tokens_out: Some(tokens_out),

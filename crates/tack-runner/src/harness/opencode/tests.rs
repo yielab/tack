@@ -163,15 +163,21 @@ fn read(stdout: &str, exit: ProcessExit) -> RunReport {
 
 /// `(fixture, exit, succeeded, tokens in, tokens out)`. `tool_denied` sums
 /// tokens across both its `step_finish` events; `cut_short` has none.
+/// `served_model` proves the served-model measurement itself: the fake
+/// server answered every chunk's `model` as `served-model-xyz` while the
+/// request named `tack/requested-model`, and `observed_model` still reads
+/// `None` below.
 #[test]
 fn events_become_a_report_over_captured_fixtures() {
     let completed = include_str!("../fixtures/opencode/1.18.30/completed.ndjson");
     let tool_denied = include_str!("../fixtures/opencode/1.18.30/tool_denied.ndjson");
     let cut_short = include_str!("../fixtures/opencode/1.18.30/cut_short.ndjson");
+    let served_model = include_str!("../fixtures/opencode/1.18.30/served_model.ndjson");
     let rows = [
         (completed, ProcessExit::Exited(0), true, 7, 3),
         (tool_denied, ProcessExit::Exited(0), true, 14, 6),
         (cut_short, ProcessExit::Exited(143), false, 0, 0),
+        (served_model, ProcessExit::Exited(0), true, 16, 7),
     ];
     for (transcript, exit, succeeded, tokens_in, tokens_out) in rows {
         let report = read(transcript, exit);
@@ -192,8 +198,10 @@ fn events_become_a_report_over_captured_fixtures() {
 
 /// One JSON chat-completions chunk stream per call, over `text/event-stream`:
 /// a `write` tool call, then a final message. The served model id is fixed
-/// and never read by this adapter (ADR 0067 decision 3) — every event
-/// stream lacks a model field at all, so there is nothing to echo.
+/// and never read by this adapter (ADR 0067 decision 3): against opencode
+/// 1.18.30 (2026-09-20), neither the `--format json` event stream nor
+/// `opencode export` ever names a served model distinct from the requested
+/// one, so there is nothing to echo.
 const SERVED_MODEL: &str = "served/observed-model-x";
 const FAKE_KEY: &str = "sk-fake-canary-71c2";
 
