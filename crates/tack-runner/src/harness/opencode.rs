@@ -31,7 +31,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     ),
     native_provider: "opencode",
     inherited_env: &["PATH"],
-    min_capture_bytes: (0, 0),
     model_passthrough: "requested_model_id is forwarded verbatim via `-m tack/<model id>`; \
                         opencode validates it at run time, so no model list is claimed",
     probe_notes: &[(
