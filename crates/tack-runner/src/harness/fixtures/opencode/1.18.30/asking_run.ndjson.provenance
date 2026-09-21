@@ -1,0 +1,17 @@
+captured
+Real `opencode run --pure --format json --title tack -m tack/fake-model "Run a bash
+command that prints a greeting"` against `opencode 1.18.30`, a scratch `HOME`, and a
+loopback fake answering a `bash` tool call, with the injected `permission` block's `bash`
+set to `"ask"` (`edit`/`task`/`webfetch` all `"deny"`) rather than the adapter's own
+`"allow"`/`"deny"` pair. stdin was `/dev/null` (no interactive terminal). The process
+exited on its own in under a second: the tool call's own `state.status` is `"error"`
+with `"The user rejected permission..."`, `step_finish.reason` is `"tool-calls"`, and no
+second model turn ever happened (only 1 POST reached the fake server, not the 2 a
+recovered turn would produce) -- nothing on this file's stdout ever asks for an answer.
+The one line that names the ask is on stderr, not stdout: see the sibling
+`asking_run.stderr.txt`. Ran under:
+`HOME=/capture/home-2 XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME OPENCODE_CONFIG_DIR
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT AI_GATEWAY_API_KEY opencode run --pure
+--format json --title tack -m tack/fake-model "Run a bash command that prints a greeting"`.
+Captured 2026-09-20.

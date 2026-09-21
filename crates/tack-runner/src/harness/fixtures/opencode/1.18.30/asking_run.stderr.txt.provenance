@@ -1,0 +1,7 @@
+captured
+stderr from the same invocation as `asking_run.ndjson` (see that file's provenance for the
+full command and environment). This one line is the only place the "ask" appears at all in
+non-interactive `opencode run`: it announces the auto-rejection after the fact, never pauses
+for an answer, and nothing on stdin -- not even sent here -- would have had anything to
+release. Contrast `asking_acp.txt`, where the same ask genuinely pauses over `opencode acp`.
+Captured 2026-09-20.
