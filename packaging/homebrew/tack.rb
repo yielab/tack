@@ -7,13 +7,10 @@ class Tack < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/yielab/tack/releases/download/v#{version}/tack-v#{version}-macos-aarch64.tar.gz"
-      # Placeholder: no macOS build has been produced to compute this from.
-      # Replace with the real digest from the published release's
-      # SHA256SUMS before this formula is submitted to a tap.
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "8ec107f9423b29f4579183853fd32f834cb656850a68a29ca6a32913943227ac"
     else
       url "https://github.com/yielab/tack/releases/download/v#{version}/tack-v#{version}-macos-x86_64.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "e0016852bcae01da032e94de57e86346fe0fcf1e877512ce8962a6f43230265d"
     end
   end
 
@@ -26,7 +23,7 @@ class Tack < Formula
     end
 
     url "https://github.com/yielab/tack/releases/download/v#{version}/tack-v#{version}-linux-x86_64.tar.gz"
-    sha256 "1f15ac5b69fca569e268a2a9bf334a4ae0630e32853d0716a5d6910a2808df6c"
+    sha256 "9faf72396a4a8804521ad878dacebd9925ae2ef86803866dd89c9ca5daddb074"
   end
 
   def install

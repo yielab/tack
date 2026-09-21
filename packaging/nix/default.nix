@@ -13,10 +13,7 @@ stdenvNoCC.mkDerivation rec {
 
   src = fetchurl {
     url = "https://github.com/yielab/tack/releases/download/v${version}/tack-v${version}-linux-x86_64.tar.gz";
-    # Computed from a local build standing in for the real release asset
-    # (the tag above is not yet published) — replace with the digest from
-    # the published release's SHA256SUMS.
-    sha256 = "1f15ac5b69fca569e268a2a9bf334a4ae0630e32853d0716a5d6910a2808df6c";
+    sha256 = "9faf72396a4a8804521ad878dacebd9925ae2ef86803866dd89c9ca5daddb074";
   };
 
   sourceRoot = "tack-v${version}-linux-x86_64";

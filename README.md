@@ -413,6 +413,10 @@ processes on the machine serving the UI; see
 and [`docs/CONFIG.md`](docs/CONFIG.md#embedded-runner-tack-serve---with-runner) for
 credential storage, the capability matrix, and what a runner can honestly promise.
 
+The one-liner checks what it downloads: every release publishes a `SHA256SUMS`
+file, and the installer verifies the archive against it before extracting,
+refusing to install on a mismatch.
+
 > The binary is not code-signed yet. On macOS, right-click **Open** the first time
 > (or run `xattr -d com.apple.quarantine tack`). On Windows, use
 > **More info → Run anyway** if SmartScreen appears.
