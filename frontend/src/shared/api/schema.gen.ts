@@ -594,7 +594,7 @@ export interface paths {
         };
         get: operations["get_item_github_link"];
         /**
-         * Manually links an item to a GitHub issue for push-only status sync — the
+         * Manually links an item to a GitHub issue so status and comments sync both ways — the
          *     same `github_links` row `POST /api/projects/{id}/import-github` writes
          *     for every item it creates, settable here for an item that was never
          *     imported.

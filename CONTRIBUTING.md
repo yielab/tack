@@ -155,7 +155,8 @@ Tack/
 │   │       ├── workspace.rs     # Isolated per-attempt workspace/worktree
 │   │       ├── secrets.rs       # Local vendor credential storage
 │   │       └── harness/         # local_process.rs (the shared lifecycle), process.rs, redact.rs,
-│   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs
+│   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs,
+│   │                            # docket.rs, opencode.rs
 │   └── tack-cli/             # clap CLI (talks to API over HTTP, never opens the DB)
 │       └── src/
 │           ├── main.rs         # `Commands` enum + dispatch

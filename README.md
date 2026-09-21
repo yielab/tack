@@ -143,7 +143,7 @@ Under the hood, Tack is two components, built to be one product.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/two-components-dark.svg">
-    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code or Codex — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
+    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, docket, or opencode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
   </picture>
 </p>
 
@@ -217,8 +217,9 @@ installed and credentialed on that runner's machine. [Running an agent](#running
 covers exactly which agent runs, how it's credentialed, and what happens when one
 crashes mid-attempt; this list covers what else that buys you:
 
-- Structured decisions for human-in-the-loop approval, and structured artifacts on
-  every run — not a log dump to grep through
+- A run that asks before it acts: with Approvals set to **Ask me**, Claude Code, Codex
+  and opencode pause and the question waits in the item's decision inbox — plus
+  structured artifacts on every run, not a log dump to grep through
 - Measured usage only — cost and token counts are shown as measured or explicitly
   **not measured**, never estimated or silently shown as zero
 - One **Agents** page owns the path from an installed binary to a finished run: turn
@@ -247,10 +248,12 @@ CI, or a webhook consumer. None of these require agent execution to be turned on
 either:
 
 - A REST API described by a checked-in [OpenAPI spec](docs/openapi.json), plus a CLI
-  with JSON output and shell completions
+  with JSON output and shell completions — `tack start <id>` moves an item to in
+  progress and checks out its branch in one step
 - `tack mcp` — lets Claude Code, Codex, and other MCP clients read and update the
   board through normal workflow validation
-- Outbound signed webhooks and optional GitHub push sync
+- Outbound signed webhooks, and optional GitHub sync: a linked issue's state and
+  comments flow both ways — out on every change, in on a poll
 - A desktop app with a tray icon, and `tack service install` for a per-user background
   service — closing the window, or the terminal, does not stop the work
 
@@ -341,11 +344,9 @@ same server underneath:
 - **macOS:** the `.dmg`, Apple Silicon or Intel.
 - **Windows:** the `.msi` — run it.
 
-All four are built for every release and published on the
-[releases page](https://github.com/yielab/tack/releases). **The first release to carry
-them has not been tagged yet** — until it is, build the app from source with
-`make desktop`, or run the server directly with the binary below, which is published
-today.
+All four are built for every release from `v0.1.0-beta.9` on and published on the
+[releases page](https://github.com/yielab/tack/releases); `make desktop` builds the app
+from source.
 
 ![Tack's desktop window open on the Agents page, showing agent execution on and Codex and Claude Code both detected on the machine](docs/screenshots/desktop-window.png)
 
@@ -411,8 +412,7 @@ credential storage, the capability matrix, and what a runner can honestly promis
 
 Tack is in public beta. The core project-management product — workflows, views, DAGs,
 search, backup — is complete, and so is the harness-agnostic execution fleet described
-above. The published release archives predate the fleet; until the next tag, install it
-from the `develop` branch with the Cargo command above.
+above; `v0.1.0-beta.9` is the first tag that ships the fleet and the desktop bundles.
 
 **Harness proof** — every row below was checked against the actual installed binaries on
 a real machine, not mocked out. `claude-code` and `codex` are the two with a recorded live run; what `docket` and

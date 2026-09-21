@@ -1,4 +1,4 @@
-//! Item ↔ GitHub issue links for push-only status sync.
+//! Item ↔ GitHub issue links: status and comments sync both ways over them.
 
 use sqlx::SqlitePool;
 use uuid::Uuid;

@@ -24,11 +24,13 @@ tasks in four waves, with a "Decided" table so no task re-opens a settled decisi
 
 ## Phase 65 — the release, and every open item in one sequence
 
-**Status:** open 2026-09-20. **Plan:** `docs/plans/phase-65.md`.
+**Status:** open 2026-09-20; Waves 1–4 landed 2026-09-21, and the release is prepared
+(version `0.1.0-beta.9`, its changelog section, the docs). What remains is Wave 0.
+**Plan:** `docs/plans/phase-65.md`.
 
 | Wave | What lands | Who |
 |---|---|---|
-| 0 | Ruleset required checks, branch and build-dir cleanup, the Dependabot decision, the repository description, the `v0.1.0-beta.8` tag, the publish list, one macOS and one Windows install, the signing decision. | the user; refused to agents or costs money |
+| 0 | Ruleset required checks, branch and build-dir cleanup, the Dependabot decision, the repository description, the `v0.1.0-beta.9` tag, the publish list, one macOS and one Windows install, the signing decision. | the user; refused to agents or costs money |
 | 1 | Measurements of codex, opencode and docket's contract, each a captured fixture; `tack start` / `tack open`; inbound GitHub issue state by polling. | Sonnet agents |
 | 2 | The capture cap leaves the harness descriptor; opencode's served model; GitHub comments both ways. | Sonnet agents |
 | 3 | codex reads usage and the served model, then applies the permission policy; opencode attempts share one package cache; per-project GitHub token and manual issue link. | Sonnet agents |

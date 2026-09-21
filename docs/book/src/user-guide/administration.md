@@ -283,8 +283,9 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
 | `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL; enables event POSTs |
 | `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>`. Never logged |
-| `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope) for issue push-back. Never logged |
+| `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope); status and comments sync out to linked issues, and the poll below may start. Never logged |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root (override for GitHub Enterprise) |
+| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval for linked issues; `0` is off |
 | `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL; omit for AWS S3 |
 | `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — required to enable remote backup |
 | `TACK_BACKUP_REGION` | `auto` | S3 region (`auto` for Cloudflare R2) |

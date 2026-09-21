@@ -9,62 +9,47 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
-## [Unreleased]
+## [0.1.0-beta.9] - 2026-09-21
+
+The first tag since `v0.1.0-beta.7`. The version had moved to `0.1.0-beta.8` on
+2026-09-07 without a tag, so everything since beta.7 ships here — the Agents page, the
+desktop app and its bundles, the four harnesses, a run that asks before it acts, and
+GitHub sync in both directions.
 
 ### Added
 
+- **GitHub sync flows both ways.** With `TACK_GITHUB_TOKEN` set and
+  `TACK_GITHUB_POLL_SECONDS` above zero, a poll reads every linked issue: one closed on
+  GitHub moves its item to the workflow's first Done status, one reopened moves it to the
+  first Todo status, and a new issue comment appears on the item attributed to its GitHub
+  login. A comment posted on a linked item is posted to its issue. Nothing echoes — a
+  change that came in never triggers a push back out — and there is no webhook receiver,
+  because Tack listens on loopback by default. `docs/GITHUB-SYNC.md` has the flow.
+- **Any item can be linked to a GitHub issue by hand**, from the item's side panel or
+  `PUT`/`DELETE /api/items/{id}/github-link`, not only through an import. A project can
+  carry its own token as a secret reference (`github_token_ref`), resolved before
+  `TACK_GITHUB_TOKEN`, never returned by any route and scrubbed from remote backup
+  snapshots.
+- **`tack start <id>` and `tack open <id>`.** `start` moves the item to the first
+  in-progress status and checks out its branch in one step, the way `tack branch
+  --checkout` does; a status change the workflow refuses reports the server's error and
+  creates no branch. `open` prints the item's web URL and opens it with `$BROWSER` when
+  set. Both take `--json`.
+- **codex reports token usage**, read from its own `turn.completed` line. Cost stays
+  not measured and the served model stays `requested_not_confirmed`: the output carries
+  neither, measured on codex 0.149.1.
+- **codex applies the permission policy as its sandbox mode.** A write-capable tool in
+  the request's tool list runs it under `--sandbox workspace-write`, anything else under
+  `--sandbox read-only`. The network flag and the budget still never reach it.
 - **A run can ask before it acts.** "Run with agent" has an Approvals choice, Automatic or
   Ask me (`permission_policy.approvals`, `auto` or `ask`). With Ask me the agent pauses
   before each tool call and the question waits in the attempt's decision inbox; one nobody
-  answers before the attempt's deadline is answered as a deny. Offered only for a harness
-  that can pause — claude-code today.
+  answers before the attempt's deadline is answered as a deny. Three harnesses pause,
+  each at its own point: claude-code before every tool call, opencode (run as
+  `opencode acp`) before every call to a tool the request grants, and codex (run as
+  `codex app-server`) only for a command that must escalate beyond its sandbox. docket
+  never pauses, and the dialog says so instead of offering the choice.
 - Two more harnesses on the same runner: `docket` and `opencode`.
-
-### Fixed
-
-- **An idle runner claimed work about a hundred times a second.** The server answers a
-  claim with no work at once and says when to ask again; the runner ignored that. It now
-  waits for the hint — one claim every five seconds when there is nothing to do.
-- `make e2e` and `scripts/smoke.sh` on a Linux desktop no longer overwrite the
-  `vercel-ai-gateway/default` entry in your own keychain; both keep their secrets in a
-  file under their own state directory.
-
-### Removed
-
-- `model_profiles`: the `POST`/`GET /api/model-profiles` routes, the `list_model_profiles`
-  MCP tool, and the Model profiles panel on the Agents page. The table was a saved label
-  consulted by nothing; scheduling and model resolution never read it.
-- The Docket control plane's frontend pages: Fleet, Approvals, Economics, the
-  provisioning wizard, and the two orchestration settings panels (global and
-  per-project), along with their sidebar/tab entries and E2E coverage. `tack-orch`'s
-  `ControlPlane` trait, reconciler and schema are unaffected for now — they are
-  removed in later steps of the same retirement.
-- The Docket control plane's remaining board-view surface: the *Dispatch* action on
-  an item (its card menu and the item-detail drawer's "Dispatch to agents" button),
-  the *Dispatch sprint* dialog and its DAG-ordered dry run, and the agent-activity
-  badges and tab on the Board/List/Table/item-detail views. *Run with agent* is the
-  way to run an agent on an item now.
-- The Docket control plane's API and CLI surface: the `/api/orch/*` routes,
-  `/api/control-planes*`, `/api/settings/orchestration`, `POST /api/items/{id}/dispatch`,
-  `/api/sprints/{id}/dispatch` (+ `/dry-run`), the approvals inbox
-  (`/api/approvals*`), one-click pod provisioning (`/api/templates/{id}/provision`),
-  per-product cost derived from docket's events (`/api/economics/*`), and
-  DAG-ordered sprint dispatch. The `TACK_ORCH_ENABLE`, `TACK_ORCH_POLL_SECS`,
-  `TACK_ORCH_EVENT_RETENTION_DAYS`, `TACK_ORCH_APPROVAL_TOKEN` and
-  `TACK_ORCH_DISPATCH_TOKEN` variables, and the `tack orch` CLI commands, go with
-  it. Docket is now reached the same way as any other coding agent: as a harness
-  (`--harness docket`) on a runner-v1 execution request. A project template no longer
-  accepts an `orchestration` block; one already stored on a template is ignored. This upgrade also drops the
-  bridge's own schema — `control_planes` and the nine `orch_*` tables — outright; any
-  pre-existing rows survive only in the automatic pre-upgrade snapshot this upgrade
-  takes beside the database file, not in the running database itself.
-
----
-
-## [0.1.0-beta.8] - 2026-09-07
-
-### Added
-
 - **An Agents page** (`/agents`) is the one screen that owns the whole path from an
   installed binary to a completed attempt: turn agent execution on with a single
   switch (no restart, no flag), see which harnesses this machine has and whether
@@ -73,7 +58,7 @@ Sections from the next release on are generated from the commit history by
   earned by an observation, never asserted.
 - **Vercel AI Gateway as a runner-held provider.** A single key, pasted once on the
   Agents page (or set with `tack runner secret set` for a remote runner), routes
-  either bundled harness through the gateway's own per-harness endpoint and exposes
+  each bundled harness through the gateway's own per-harness endpoint and exposes
   its model catalog — price, context window and modality per model — to the model
   picker. The key lives only in the runner's own secret store; the board and its
   database never see it. `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`
@@ -119,6 +104,12 @@ Sections from the next release on are generated from the commit history by
 
 ### Changed
 
+- **The capture cap leaves the harness descriptor.** Output capture keeps the head and
+  the tail of a stream, so a harness no longer declares a minimum; the runner's
+  configured limits apply alone.
+- **opencode's served model is recorded `requested_not_confirmed` on every run**, with
+  the reason measured on opencode 1.18.30: nothing in its event stream or its export
+  names the model that answered.
 - **`toml` 0.8 → 1.1 and `validator` 0.20 → 0.21.** No behavior a user can observe:
   config parsing (`tack.toml`, the runner's journal, `AttemptJournal` round-trips) and
   every `#[validate(...)]` field rule compile and pass unchanged.
@@ -172,8 +163,50 @@ Sections from the next release on are generated from the commit history by
   `tracing-appender` pulls `time` (1.88), and the `idna`/`icu` stack needs 1.86.
   `cargo +1.89.0 build --workspace --locked` is clean.
 
+### Removed
+
+- `model_profiles`: the `POST`/`GET /api/model-profiles` routes, the `list_model_profiles`
+  MCP tool, and the Model profiles panel on the Agents page. The table was a saved label
+  consulted by nothing; scheduling and model resolution never read it.
+- The Docket control plane's frontend pages: Fleet, Approvals, Economics, the
+  provisioning wizard, and the two orchestration settings panels (global and
+  per-project), along with their sidebar/tab entries and E2E coverage. `tack-orch`'s
+  `ControlPlane` trait, reconciler and schema are unaffected for now — they are
+  removed in later steps of the same retirement.
+- The Docket control plane's remaining board-view surface: the *Dispatch* action on
+  an item (its card menu and the item-detail drawer's "Dispatch to agents" button),
+  the *Dispatch sprint* dialog and its DAG-ordered dry run, and the agent-activity
+  badges and tab on the Board/List/Table/item-detail views. *Run with agent* is the
+  way to run an agent on an item now.
+- The Docket control plane's API and CLI surface: the `/api/orch/*` routes,
+  `/api/control-planes*`, `/api/settings/orchestration`, `POST /api/items/{id}/dispatch`,
+  `/api/sprints/{id}/dispatch` (+ `/dry-run`), the approvals inbox
+  (`/api/approvals*`), one-click pod provisioning (`/api/templates/{id}/provision`),
+  per-product cost derived from docket's events (`/api/economics/*`), and
+  DAG-ordered sprint dispatch. The `TACK_ORCH_ENABLE`, `TACK_ORCH_POLL_SECS`,
+  `TACK_ORCH_EVENT_RETENTION_DAYS`, `TACK_ORCH_APPROVAL_TOKEN` and
+  `TACK_ORCH_DISPATCH_TOKEN` variables, and the `tack orch` CLI commands, go with
+  it. Docket is now reached the same way as any other coding agent: as a harness
+  (`--harness docket`) on a runner-v1 execution request. A project template no longer
+  accepts an `orchestration` block; one already stored on a template is ignored. This upgrade also drops the
+  bridge's own schema — `control_planes` and the nine `orch_*` tables — outright; any
+  pre-existing rows survive only in the automatic pre-upgrade snapshot this upgrade
+  takes beside the database file, not in the running database itself.
+- The Amazon Alexa voice integration: `POST /api/alexa`, `TACK_ALEXA_SKILL_ID`,
+  `TACK_ALEXA_SHARED_SECRET`, the `alexa_skill_id` / `alexa_shared_secret` keys in
+  `tack.toml`, `docs/ALEXA.md`, and the Cloudflare tunnel hooks in `make run` / `make dev`
+  that existed only to give that endpoint a public HTTPS URL. The endpoint had been off by
+  default since it shipped. A `tack.toml` that still sets the keys is accepted and ignored;
+  the `tunnel` make target is gone.
+
 ### Fixed
 
+- **An idle runner claimed work about a hundred times a second.** The server answers a
+  claim with no work at once and says when to ask again; the runner ignored that. It now
+  waits for the hint — one claim every five seconds when there is nothing to do.
+- `make e2e` and `scripts/smoke.sh` on a Linux desktop no longer overwrite the
+  `vercel-ai-gateway/default` entry in your own keychain; both keep their secrets in a
+  file under their own state directory.
 - **Editing a sprint saves.** The sprint editor sent `PATCH /api/sprints/{id}`, which the
   router never registered — every edit answered `405` and the dialog reported a failure with
   no way forward. The route exists now and replaces a sprint's name, goal and dates as a
@@ -228,7 +261,7 @@ Sections from the next release on are generated from the commit history by
   arriving after the attempt was announced as `preparing` propagated as an engine error
   and left the attempt there silently. Every such rejection is now reported as a `failed`
   attempt with `harness_rejected` as its reason.
-- **"Run with agent" can dispatch again, for either bundled harness.** Its submit gate
+- **"Run with agent" can dispatch again, for every bundled harness.** Its submit gate
   checked only a target's *declared* model list, never `model_passthrough` — since
   neither `codex` nor `claude-code` declares a model list at all (both rely on
   passthrough), every explicit model choice was refused before this fix, on both
@@ -300,18 +333,11 @@ Sections from the next release on are generated from the commit history by
   reads as "not installed."** Both the desktop app (launched from a `.desktop` entry,
   Finder, or the Start menu) and `tack service` under systemd's user manager inherit a
   minimal session `PATH` that commonly excludes nvm, npm's global prefix, `~/.local/bin`,
-  `~/.cargo/bin`, `~/.bun/bin`, and Homebrew. Both harness adapters now fall back to that
+  `~/.cargo/bin`, `~/.bun/bin`, and Homebrew. Every harness adapter now falls back to that
   fixed, documented list of per-user install locations after an ordinary `PATH` search
   comes up empty, and the "not found" error names every directory it actually searched.
 
-### Removed
-
-- The Amazon Alexa voice integration: `POST /api/alexa`, `TACK_ALEXA_SKILL_ID`,
-  `TACK_ALEXA_SHARED_SECRET`, the `alexa_skill_id` / `alexa_shared_secret` keys in
-  `tack.toml`, `docs/ALEXA.md`, and the Cloudflare tunnel hooks in `make run` / `make dev`
-  that existed only to give that endpoint a public HTTPS URL. The endpoint had been off by
-  default since it shipped. A `tack.toml` that still sets the keys is accepted and ignored;
-  the `tunnel` make target is gone.
+[0.1.0-beta.9]: https://github.com/yielab/tack/compare/v0.1.0-beta.7...v0.1.0-beta.9
 
 ---
 

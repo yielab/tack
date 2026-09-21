@@ -1,6 +1,6 @@
 # Import and Export
 
-Tack can pull issues in from GitHub and Linear, push status changes back to linked GitHub issues, and export an entire project to JSON, YAML, or CSV. All import and export operations are exposed over the HTTP API; there is no dedicated CLI subcommand for them.
+Tack can pull issues in from GitHub and Linear, keep linked GitHub issues in sync both ways, and export an entire project to JSON, YAML, or CSV. All import and export operations are exposed over the HTTP API; there is no dedicated CLI subcommand for them.
 
 The examples below use a base URL of `http://127.0.0.1:3210` and assume a server started with `tack serve`. If you set `TACK_API_TOKEN`, add `-H "Authorization: Bearer <token>"` to every request.
 
@@ -8,7 +8,7 @@ The examples below use a base URL of `http://127.0.0.1:3210` and assume a server
 
 ## How do I import GitHub issues?
 
-`POST /api/projects/{id}/import-github` fetches the issues from a repository and creates one Tack item per issue in the target project. Pull requests are skipped automatically. Each created item is recorded in the `github_links` table so its status can later be pushed back to GitHub (see [GitHub push-back sync](#how-do-i-keep-github-issues-in-sync-after-import)).
+`POST /api/projects/{id}/import-github` fetches the issues from a repository and creates one Tack item per issue in the target project. Pull requests are skipped automatically. Each created item is recorded in the `github_links` table so its status and comments can later sync with GitHub (see [GitHub sync](#how-do-i-keep-github-issues-in-sync-after-import)).
 
 **Via API:**
 
@@ -110,21 +110,20 @@ The response reports `{ "created": N, "skipped": N }`.
 
 ## How do I keep GitHub issues in sync after import?
 
-Items imported from GitHub stay linked to their source issue. When you set the `TACK_GITHUB_TOKEN` environment variable, Tack pushes status changes back to GitHub.
+Items imported from GitHub stay linked to their source issue, and any other item can be linked by hand — the **Link GitHub issue** row in the item's side panel, or `PUT /api/items/{id}/github-link` with `{"repo": "owner/name", "issue_number": 42}` (`DELETE` unlinks). When `TACK_GITHUB_TOKEN` is set, the link carries state and comments in both directions:
 
-This sync is **push-only** (Tack → GitHub) and tracks open/closed state only:
+- **Out, on every change:** moving a linked item into a Done-category status closes its GitHub issue; moving it back out of Done reopens it. A comment posted on the item is posted onto the issue.
+- **In, on a poll** (`TACK_GITHUB_POLL_SECONDS`, off at `0`): a closed issue moves its item to the workflow's first Done-category status, a reopened one to the first Todo-category status, and a new comment on the issue appears on the item, attributed to its GitHub login.
 
-- Moving a linked item into a Done-category status closes its GitHub issue.
-- Moving it back out of Done reopens the issue.
+Both directions are best-effort — failures are logged but never block or fail the item update or the comment — and neither echoes: a change that came in never triggers a push back out. Title edits and same-category status moves trigger no GitHub call; labels and assignees are not mirrored. There is no webhook receiver: Tack listens on loopback by default, so GitHub could not reach it.
 
-The push is best-effort and fire-and-forget — failures are logged but never block or fail the item update. Title edits and same-category status moves trigger no GitHub call. There is no inbound sync (GitHub never overwrites Tack), and comments, labels, and assignees are not mirrored.
-
-The feature is off by default and configured entirely through environment variables:
+The feature is off by default and configured through environment variables. A project can also carry its own token as a secret reference (`PATCH /api/projects/{id}` with `{"github_token_ref": "store:<name>"}`), resolved before the global one and never returned by any route:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TACK_GITHUB_TOKEN` | none | PAT with `repo` scope. Enables push-back; never logged. Without it, push is inert. |
+| `TACK_GITHUB_TOKEN` | none | PAT with `repo` scope. Enables both directions; never logged. Without it, the link is inert. |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | API root override for GitHub Enterprise or testing. |
+| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Needs the token too. |
 
 For full details, see [GitHub Sync](../../../GITHUB-SYNC.md).
 

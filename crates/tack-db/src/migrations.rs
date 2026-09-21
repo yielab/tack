@@ -814,7 +814,7 @@ const MIGRATION_017: [&str; 1] = [
 ];
 
 const MIGRATION_018: [&str; 1] = [
-    // Links a Tack item to a GitHub issue for push-only status sync.
+    // Links a Tack item to a GitHub issue for status sync (push at first; both ways since 075).
     // One issue per item; removed automatically when the item is deleted.
     "CREATE TABLE IF NOT EXISTS github_links (
         item_id TEXT PRIMARY KEY NOT NULL REFERENCES items(id) ON DELETE CASCADE,

@@ -53,7 +53,7 @@ a machine this one is not. They are listed once, here, with the command.
 | 0.3 | Remove two stale build directories, about 16 GB. | `rm -rf /var/tmp/tack-agent-targets/integrate /var/tmp/tack-measure/claude-ask` |
 | 0.4 | Dependabot alert 21: `glib` 0.18.5 in the desktop lockfile, pinned by the GTK3 `wry` line, no upgrade path, same class as the `deny.toml` exceptions. Dismiss or keep. | `gh api -X PATCH repos/yielab/tack/dependabot/alerts/21 -f state=dismissed -f dismissed_reason=tolerable_risk` |
 | 0.5 | The repository description names four harnesses. | `gh repo edit yielab/tack --description "..."` |
-| 0.6 | Walk `docs/LAUNCH-CHECKLIST.md` and tag `v0.1.0-beta.8` (`grep '^version' Cargo.toml` already says so). | `git tag v0.1.0-beta.8 && git push origin v0.1.0-beta.8` |
+| 0.6 | Walk `docs/LAUNCH-CHECKLIST.md` and tag `v0.1.0-beta.9` (`grep '^version' Cargo.toml` says so since 2026-09-21; beta.8 was never tagged, so its changes and Waves 1–4 ship together). | `git tag v0.1.0-beta.9 && git push origin v0.1.0-beta.9` |
 | 0.7 | The publish list in the checklist: seven issues, four posts, two Discussions. | as written there |
 | 0.8 | Install on a macOS and a Windows machine once, following `README.md`. | `curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh \| sh`, and the `.dmg` / `.msi` from the tag above |
 | 0.9 | Code signing (ADR 0062 §7): an Apple developer account and a Windows certificate. Until decided, nothing is scheduled. | — |
@@ -393,4 +393,5 @@ of the released product asks for it, and then through an ADR where a decision is
 | U7 | landed 2026-09-21 |
 | U6 | landed 2026-09-21 |
 | U8 | does not start: docket ships no `harness-v1.1` (M3) |
+| Waves 1–4 | complete 2026-09-21; release prepared the same day (version `0.1.0-beta.9`, changelog section, docs) |
 | Wave 0 | with the user |

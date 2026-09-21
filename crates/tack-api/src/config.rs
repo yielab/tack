@@ -46,7 +46,8 @@ pub struct AppConfig {
     pub webhook_secret: Option<String>,
 
     /// Optional GitHub personal access token (`repo` scope). When set, item
-    /// status changes are pushed back to linked GitHub issues (push-only).
+    /// status changes and comments are pushed to linked GitHub issues, and the
+    /// inbound poll (`github_poll_seconds`) may start.
     /// Never logged.
     #[serde(default)]
     pub github_token: Option<String>,

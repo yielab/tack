@@ -120,9 +120,10 @@ enroll` call, no token to copy anywhere.
   authenticates itself using its own mechanism; Tack does not read, store, forward, or
   proxy any of it, embedded or standalone. `tack runner doctor` reports exactly what
   this machine's own harnesses declare — run it yourself rather than trusting a stale
-  copy in this file. The two current harnesses, mirrored from a real `tack runner
+  copy in this file. The two harnesses with a login of their own, mirrored from a real `tack runner
   doctor` run on a machine with both installed — the harness vocabulary itself is open
-  (a runner may report any kind string), this build just ships adapters for these two:
+  (a runner may report any kind string); `docket` and `opencode` always need a configured
+  endpoint and are described in the book's [Choosing a harness](book/src/user-guide/agent-runners.md#choosing-a-harness):
 
   | Harness | How it authenticates | Gateway-routed variant (`[provider.vercel_ai_gateway]`) |
   |---|---|---|
