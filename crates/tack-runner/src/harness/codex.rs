@@ -27,7 +27,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     ),
     native_provider: "openai",
     inherited_env: &[],
-    min_capture_bytes: (0, 0),
     model_passthrough: "requested_model_id is forwarded verbatim via --model and a request \
                         without one is rejected before spawn; the Codex CLI validates the model \
                         at run time, so no model list is claimed",
