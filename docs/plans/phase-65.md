@@ -369,7 +369,8 @@ of the released product asks for it, and then through an ADR where a decision is
 
 | Task | State |
 |---|---|
-| M1 · M2 · G1 | open |
+| M2 · G1 | open |
+| M1 | done 2026-09-20: usage on `turn.completed`, no served model, no `exec` flag asks, `app-server` asks over stdio |
 | C1 | landed 2026-09-20 |
 | M3 | done 2026-09-20: docket ships no `harness-v1.1`; U8 does not start |
 | U1 · U4 · G2 | open |

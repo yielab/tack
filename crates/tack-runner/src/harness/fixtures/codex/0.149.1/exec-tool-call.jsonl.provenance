@@ -1,0 +1,11 @@
+captured
+codex -c model_provider=tack_provider -c 'model_providers.tack_provider.name="tack loopback"' -c 'model_providers.tack_provider.base_url="http://127.0.0.1:8938/v1"' -c 'model_providers.tack_provider.env_key="FAKE_API_KEY"' -c 'model_providers.tack_provider.wire_api="responses"' exec --json --model fake-model --skip-git-repo-check --sandbox danger-full-access "run the shell command: echo hello"
+env: HOME, XDG_CONFIG_HOME, CODEX_HOME, OPENAI_API_KEY, FAKE_API_KEY
+2026-09-20
+
+Run against the Python loopback fake standing in for the OpenAI Responses wire (see
+README.md's "Fixture provenance" section for the fake's own command line), in a scratch
+HOME/XDG_CONFIG_HOME/CODEX_HOME never touching ~/.codex, inside a throwaway git-initialized
+workspace. `--sandbox danger-full-access` was used only to get one clean, unrestricted tool
+call on disk; `exec-sandbox-read-only.jsonl` and the other per-flag fixtures beside this one
+show the same call under the other sandbox/approval flags.
