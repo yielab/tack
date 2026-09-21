@@ -294,8 +294,10 @@ pub async fn import_github(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Parse "owner/repo", "https://github.com/owner/repo", or
-/// "https://github.com/owner/repo.git" into (owner, repo).
-fn parse_github_repo(input: &str) -> Option<(String, String)> {
+/// "https://github.com/owner/repo.git" into (owner, repo). `pub(crate)` so
+/// `handlers::items`'s manual GitHub-link routes validate a repo the same
+/// way the bulk importer does, without a second parser.
+pub(crate) fn parse_github_repo(input: &str) -> Option<(String, String)> {
     let s = input.trim().trim_end_matches('/').trim_end_matches(".git");
 
     let path = s

@@ -585,6 +585,32 @@ export interface paths {
         patch: operations["update_item"];
         trace?: never;
     };
+    "/api/items/{id}/github-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_item_github_link"];
+        /**
+         * Manually links an item to a GitHub issue for push-only status sync — the
+         *     same `github_links` row `POST /api/projects/{id}/import-github` writes
+         *     for every item it creates, settable here for an item that was never
+         *     imported.
+         */
+        put: operations["put_item_github_link"];
+        post?: never;
+        /**
+         * Removes an item's manual (or imported) GitHub link. `204` even when the
+         *     item had no link — matches `rm -f`, not `rm`.
+         */
+        delete: operations["delete_item_github_link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{item_id}/attachments": {
         parameters: {
             query?: never;
@@ -3211,6 +3237,20 @@ export interface components {
              */
             token?: string | null;
         };
+        /**
+         * @description Body of `PUT /api/items/{id}/github-link` and the response of
+         *     `GET /api/items/{id}/github-link` — the one new type this route family
+         *     needs.
+         */
+        GithubLinkBody: {
+            /** Format: int64 */
+            issue_number: number;
+            /**
+             * @description "owner/repo" or a full GitHub URL — parsed the same way
+             *     `POST /api/projects/{id}/import-github` parses its own `repo` field.
+             */
+            repo: string;
+        };
         HashMap: {
             [key: string]: string;
         };
@@ -3366,6 +3406,15 @@ export interface components {
             created_at: string;
             default_model?: null | components["schemas"]["ProjectModelDefault"];
             description?: string | null;
+            /**
+             * @description A `store:<name>` or `env:<VAR>` reference to a secret holding this
+             *     project's own GitHub token — never the token value itself (see
+             *     `tack_runner::secrets::SecretStore::resolve`). Resolved only
+             *     server-side, for the server's own outbound GitHub push/poll calls;
+             *     see `tack-api`'s `github_sync::github_token_for_project` for the
+             *     resolution order (this reference first, then `TACK_GITHUB_TOKEN`).
+             */
+            github_token_ref?: string | null;
             /** Format: uuid */
             id: string;
             name: string;
@@ -3691,6 +3740,15 @@ export interface components {
             archived?: boolean | null;
             default_model?: null | components["schemas"]["ProjectModelDefault"];
             description?: string | null;
+            /**
+             * @description A plain `Option<String>`, not a double-`Option`, like every other
+             *     optional field on this DTO: an absent key leaves the stored
+             *     reference untouched. Since there is no `null` to spell "clear" with
+             *     here, clearing is done by sending the empty string, which the
+             *     repository (`tack_db::repo::projects::update_project`) stores as SQL
+             *     `NULL` rather than as a literal empty string.
+             */
+            github_token_ref?: string | null;
             name?: string | null;
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
@@ -4775,6 +4833,111 @@ export interface operations {
             };
             /** @description If-Match did not match the current item version — nothing was written */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_item_github_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item's current GitHub link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubLinkBody"];
+                };
+            };
+            /** @description Item not found, or not linked */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    put_item_github_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubLinkBody"];
+            };
+        };
+        responses: {
+            /** @description Linked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid repo or issue number */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_item_github_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unlinked (or was already unlinked) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Item not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

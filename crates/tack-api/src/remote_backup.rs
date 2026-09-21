@@ -264,10 +264,13 @@ const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
 /// file so they never ship inside a downloadable or uploadable bundle.
 ///
 /// The single chokepoint for scrubbing backup secrets — every table with a
-/// secret-bearing column must be handled here: today that is only
-/// `app_meta`'s [`SENSITIVE_META_KEYS`], deleted outright. Removing
-/// `install_id` means a restore regenerates a fresh one via [`install_id`]
-/// on first use, never adopting the source install's identity.
+/// secret-bearing column must be handled here: today that is `app_meta`'s
+/// [`SENSITIVE_META_KEYS`], deleted outright, and `projects.github_token_ref`
+/// (a secret *reference*, never the token value, but still install-local —
+/// see `tack_core::models::Project::github_token_ref`), nulled outright.
+/// Removing `install_id` means a restore regenerates a fresh one via
+/// [`install_id`] on first use, never adopting the source install's
+/// identity.
 ///
 /// **Add new secret columns here, not just to this doc comment**, and
 /// before the trailing `VACUUM` so the freed bytes actually drop from the
@@ -297,10 +300,23 @@ pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
             .await?;
     }
 
-    // A plain DELETE leaves the secret bytes in freed/overwritten pages
-    // (the SQLite freelist), so a hex-dump of the snapshot would still reveal
-    // them. VACUUM rewrites the file and physically drops that content — it
-    // must run after every scrub step above, not before.
+    // Unlike `app_meta` above, `projects` is a core table present in every
+    // schema this binary understands, so a defensive `CREATE TABLE IF NOT
+    // EXISTS` would be the wrong guard here (it would silently paper over a
+    // snapshot missing a table it should always have). Instead this
+    // tolerates its own query error — the smaller of the two guards the
+    // doc comment above allows — and logs rather than fails the scrub.
+    if let Err(error) = sqlx::query("UPDATE projects SET github_token_ref = NULL")
+        .execute(&mut conn)
+        .await
+    {
+        warn!(%error, "scrubbing projects.github_token_ref failed (table may be absent)");
+    }
+
+    // A plain DELETE/UPDATE leaves the secret bytes in freed/overwritten
+    // pages (the SQLite freelist), so a hex-dump of the snapshot would still
+    // reveal them. VACUUM rewrites the file and physically drops that
+    // content — it must run after every scrub step above, not before.
     sqlx::query("VACUUM").execute(&mut conn).await?;
 
     use sqlx::Connection;

@@ -25,13 +25,18 @@ use tower::ServiceExt;
 use crate::common::test_app_with_local_runner;
 
 /// Records every call it receives so a test can assert on which methods
-/// actually ran, without needing a real runner process.
+/// actually ran, without needing a real runner process. `pub(crate)` so the
+/// sibling `crud` module can seed it as the project-token source for
+/// `push_uses_the_project_token_before_the_environment_token`.
 #[derive(Default)]
-struct FakeControl {
+pub(crate) struct FakeControl {
     running: AtomicBool,
     start_calls: std::sync::atomic::AtomicUsize,
     set_secret_calls: std::sync::Mutex<Vec<(String, String)>>,
     secrets: std::sync::Mutex<Vec<SecretMeta>>,
+    /// Name → value, filled by `set_secret` — what `resolve_secret` reads
+    /// back, so a test can seed `store:<name>` to resolve to a chosen value.
+    secret_values: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 #[async_trait::async_trait]
@@ -73,6 +78,10 @@ impl LocalRunnerControl for FakeControl {
             name: name.to_owned(),
             set_at: Some(Utc::now()),
         });
+        self.secret_values
+            .lock()
+            .unwrap()
+            .insert(name.to_owned(), value.to_owned());
         Ok(())
     }
 
@@ -83,6 +92,18 @@ impl LocalRunnerControl for FakeControl {
 
     async fn catalog(&self) -> CatalogSnapshot {
         CatalogSnapshot::NotConfigured
+    }
+
+    async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {
+        let name = reference.strip_prefix("store:").unwrap_or(reference);
+        self.secret_values
+            .lock()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| {
+                LocalRunnerControlError::SecretStore(format!("no secret named {name:?}"))
+            })
     }
 }
 

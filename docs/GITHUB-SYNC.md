@@ -34,8 +34,12 @@ comment, and in from GitHub on a poll.
 
 - Importing a repo (`POST /api/projects/:id/import-github`) now records a row in the
   new `github_links` table for every created item: `(item_id, repo, issue_number)`.
-- So any item that came from a GitHub import is automatically push-linked. (Manually
-  linking arbitrary items is a future enhancement.)
+- So any item that came from a GitHub import is automatically push-linked.
+- Any item can also be linked by hand, from the item's side panel or directly:
+  `PUT /api/items/{id}/github-link` with `{"repo": "owner/name", "issue_number": 42}`
+  creates or replaces the link; `DELETE /api/items/{id}/github-link` removes it
+  (not an error when there was none); `GET /api/items/{id}/github-link` returns the
+  current link, or a 404 when the item isn't linked.
 
 ## Configuration
 
@@ -49,6 +53,17 @@ interval are required before it starts.
 | `TACK_GITHUB_TOKEN` | _(none)_ | PAT with `repo` scope; enables push and poll. Never logged. |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | Override for GitHub Enterprise / testing against a mock. |
 | `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds. `0` is off. |
+
+A project can also carry its own token, referenced rather than stored directly:
+`PATCH /api/projects/{id}` with `{"github_token_ref": "store:<name>"}`, where
+`<name>` is a secret already stored through
+`PUT /api/local-runner/secrets/{name}`. A push or poll request for that project's
+repo resolves the project's own reference first and falls back to
+`TACK_GITHUB_TOKEN` only when the project has none, or its reference doesn't
+resolve. The token value itself is never returned by any route — only the
+reference. The poll still only *starts* when `TACK_GITHUB_TOKEN` is set; a
+project's own reference can only choose which token an already-running poll
+uses for that project's repo, never start the poll on its own.
 
 ## Flow
 
@@ -97,7 +112,6 @@ interval are required before it starts.
 
 - A GitHub webhook receiver (decided against — see "Scope" above).
 - Mirroring labels, assignees, or title.
-- Per-project tokens / a UI to link individual items.
 - Conflict resolution beyond "Tack pushes, last write wins" for push; the poll moves an
   item only when the issue's state and the item's status category disagree, and only
   ever creates a comment, never edits or deletes one either direction.

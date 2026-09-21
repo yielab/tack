@@ -1,5 +1,9 @@
 import { ApiError, request, requestWithHeaders } from './client';
 import type { Item, ItemPage, ItemDetail, CreateItem, UpdateItem } from '../types';
+import type { components } from './schema.gen';
+
+/** The body of `PUT .../github-link` and the response of `GET .../github-link`. */
+export type GithubLink = components['schemas']['GithubLinkBody'];
 
 /** Page size used when walking the paginated item-list endpoint. */
 const LIST_PAGE_SIZE = 200;
@@ -72,4 +76,23 @@ export const items = {
   },
 
   remove: (id: string) => request<void>(`/items/${id}`, { method: 'DELETE' }),
+
+  /** The item's current GitHub link, or `null` when it has none (a 404). */
+  getGithubLink: async (itemId: string): Promise<GithubLink | null> => {
+    try {
+      return await request<GithubLink>(`/items/${itemId}/github-link`);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  },
+
+  setGithubLink: (itemId: string, repo: string, issueNumber: number) =>
+    request<void>(`/items/${itemId}/github-link`, {
+      method: 'PUT',
+      body: JSON.stringify({ repo, issue_number: issueNumber }),
+    }),
+
+  removeGithubLink: (itemId: string) =>
+    request<void>(`/items/${itemId}/github-link`, { method: 'DELETE' }),
 };

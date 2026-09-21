@@ -51,6 +51,9 @@ impl Repository {
             vocabulary,
             workflow,
             default_model: None,
+            // Left NULL: a fresh project has no project-level token
+            // reference until an operator sets one via `update_project`.
+            github_token_ref: None,
             created_at: now,
             updated_at: now,
             archived: false,
@@ -60,7 +63,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
         let row = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at
              FROM projects WHERE id = ?"
         )
         .bind(id.to_string())
@@ -73,7 +76,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at
              FROM projects WHERE workspace_id = ? AND archived = 0 ORDER BY updated_at DESC"
         )
         .bind(workspace_id.to_string())
@@ -134,6 +137,23 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
+        if let Some(ref token_ref) = input.github_token_ref {
+            // The empty string is how the client spells "clear" for this
+            // plain (non-double-`Option`) field — stored as SQL NULL, never
+            // as a literal empty string. See `UpdateProject::github_token_ref`'s
+            // doc comment.
+            let value: Option<&str> = if token_ref.is_empty() {
+                None
+            } else {
+                Some(token_ref.as_str())
+            };
+            sqlx::query("UPDATE projects SET github_token_ref = ?, updated_at = ? WHERE id = ?")
+                .bind(value)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
         if let Some(archived) = input.archived {
             sqlx::query("UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?")
                 .bind(archived as i32)
@@ -168,6 +188,7 @@ struct ProjectRow {
     vocabulary: String,
     workflow: String,
     default_model: Option<String>,
+    github_token_ref: Option<String>,
     archived: i32,
     created_at: String,
     updated_at: String,
@@ -201,6 +222,7 @@ impl ProjectRow {
             workflow: serde_json::from_str(&self.workflow)
                 .unwrap_or_else(|_| tack_core::workflow::simple_workflow()),
             default_model,
+            github_token_ref: self.github_token_ref,
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),

@@ -38,16 +38,22 @@ pub async fn create_comment(
 
 /// Best-effort, fire-and-forget GitHub push: mirror a newly created user
 /// comment onto its item's linked GitHub issue, and store the returned id
-/// so the inbound poll never mirrors it back in. No-op unless a
-/// `TACK_GITHUB_TOKEN` is configured and the item has a `github_links` row.
-/// Only ever called for a comment created through this handler, so a
-/// comment mirrored in from GitHub (created directly via the db repo by
-/// `github_sync::poll_once`) is never a candidate here.
+/// so the inbound poll never mirrors it back in. No-op unless a token
+/// resolves (the item's project's own `github_token_ref`, else
+/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// item has a `github_links` row. Only ever called for a comment created
+/// through this handler, so a comment mirrored in from GitHub (created
+/// directly via the db repo by `github_sync::poll_once`) is never a
+/// candidate here.
 async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
-    let Some(token) = state.config.github_token.clone() else {
+    let Ok(Some((repo, number))) = state.repo.get_github_link(item_id).await else {
         return;
     };
-    let Ok(Some((repo, number))) = state.repo.get_github_link(item_id).await else {
+    let Ok(Some(item)) = state.repo.get_item(item_id).await else {
+        return;
+    };
+    let Some(token) = crate::github_sync::github_token_for_project(state, item.project_id).await
+    else {
         return;
     };
     let base = state.config.github_api_base.clone();
