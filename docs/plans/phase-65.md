@@ -208,10 +208,10 @@ server's error and no branch is created.
 ### G1 — GitHub inbound: issue state
 
 **Files:** `crates/tack-api/src/github_sync.rs` and its tests; `crates/tack-api/src/config.rs`
-(`github_poll_seconds`, default `0` = off); `crates/tack-api/src/lib.rs` (the poll task,
-started beside the backup scheduler); `crates/tack-db/src/repo/github_links.rs`
+(`github_poll_seconds`, default `0` = off); `crates/tack-api/src/lib.rs` (the poll task) and
+`crates/tack-api/src/server.rs` (spawned beside the backup scheduler); `crates/tack-db/src/repo/github_links.rs`
 (`synced_at`, and a `list_links_for_repo`); `crates/tack-db/src/migrations.rs` (one
-migration, `075_github_links_synced_at`); `crates/tack-api/tests/handlers/import_github.rs`
+migration, `075_github_links_synced_at`); `crates/tack-api/tests/handlers/crud.rs`
 (one wiremock test: closed on GitHub → item moves to the project's first done status;
 reopened → first todo status); `docs/GITHUB-SYNC.md`; `docs/CONFIG.md`.
 
@@ -369,7 +369,8 @@ of the released product asks for it, and then through an ADR where a decision is
 
 | Task | State |
 |---|---|
-| M2 · G1 | open |
+| M2 | open |
+| G1 | landed 2026-09-20 |
 | M1 | done 2026-09-20: usage on `turn.completed`, no served model, no `exec` flag asks, `app-server` asks over stdio |
 | C1 | landed 2026-09-20 |
 | M3 | done 2026-09-20: docket ships no `harness-v1.1`; U8 does not start |
