@@ -69,13 +69,13 @@ in `develop`.
 |---|---|---|
 | **1** | **M1** measure codex · **M2** measure opencode · **M3** read docket's contract · **C1** `tack start` · **G1** GitHub inbound state | now |
 | **2** | **U1** capture cap out of the descriptor · **U4** opencode served model · **G2** GitHub comments | U1: now · U4: M2 · G2: G1 |
-| **3** | **U2** codex usage and served model → **U3** codex permission policy (serial) · **U5** opencode shared install · **G3** per-project token and manual link | U2: M1, U1 · U5: U4 · G3: G2 |
-| **4** | **U6** codex asks · **U7** opencode asks · **U8** docket cancel, artifacts, asks | U6: U3, M1 · U7: U5, M2 · U8: M3 says docket's `harness-v1.1` shipped |
+| **3** | **U2** codex usage and served model → **U3** codex permission policy (serial) · ~~**U5** opencode shared install~~ (closed by M2) · **G3** per-project token and manual link | U2: M1, U1 · G3: G2 |
+| **4** | **U6** codex asks · **U7** opencode asks · ~~**U8** docket cancel, artifacts, asks~~ (M3: no `harness-v1.1`) | U6: U3, M1 · U7: U4, M2 |
 
 ```
 M1 ──────────────► U2 ► U3 ► U6
-M2 ──► U4 ► U5 ► U7
-M3 ──────────────────────► U8   (only when docket ships harness-v1.1)
+M2 ──► U4 ► U7            (U5 closed by M2: nothing to share)
+M3 ──────────────────────► U8   (does not start: docket ships no harness-v1.1)
 U1 ──► U2
 C1
 G1 ► G2 ► G3
@@ -300,7 +300,8 @@ policy" cell is rewritten from the measurement.
 ### U4 — opencode confirms the served model
 
 **Files:** `crates/tack-runner/src/harness/opencode.rs`, `opencode/tests.rs`, the M2
-fixture. Only if M2 found a field.
+fixture. M2 found no field (`served_model.ndjson`, `served_model_export.json`): the task
+rewrites the capability reason from the measurement and closes as "not available".
 
 **Done when:** the served model is read from the field, or the capability reason quotes the
 measurement and its date and the task closes as "not available".
@@ -318,6 +319,12 @@ that the cache is warm.
 **Done when:** the second real-binary run's `du -sh` matches M2's warm number in a test
 comment, with the command; the doc row's "Can't" cell is rewritten.
 
+**Closed 2026-09-20 by M2 and its re-check** (`fixtures/opencode/1.18.30/shared_install.du.txt`,
+`adapter_shape_attempt.txt`): an attempt that completes installs nothing and stays under
+1 MB, the registry round trip happens with a warm cache too, and `BUN_INSTALL_CACHE_DIR` is
+not consulted. There is no per-attempt download for a shared cache to remove, so nothing is
+built; the refusal of a network-denying request stays with its reason. U7 no longer waits on U5.
+
 ### U6 — codex asks
 
 **Files:** as U2, and `harness/local_process.rs` only if `app-server` needs a command shape
@@ -333,10 +340,12 @@ reports it; the doc row says "Yes".
 
 ### U7 — opencode asks
 
-**Files:** as U4. Only if M2 found stdio asking in `run` or `acp`.
+**Files:** as U4. M2 found stdio asking in `acp` only (`asking_acp.txt`): a
+`session/request_permission` JSON-RPC request on stdout, released by one
+`{"id":…,"result":{"outcome":{"outcome":"selected","optionId":"once"}}}` line on stdin;
+`run` auto-rejects on stderr (`asking_run.stderr.txt`).
 
-Same shape as U6. If only `acp` asks, the grammar's command is `acp` under `ask` and `run`
-otherwise.
+Same shape as U6. The grammar's command is `acp` under `ask` and `run` otherwise.
 
 **Done when:** as U6, for opencode.
 
@@ -369,12 +378,14 @@ of the released product asks for it, and then through an ADR where a decision is
 
 | Task | State |
 |---|---|
-| M2 | open |
+| M2 | done 2026-09-20: no served model on any surface; `run` auto-rejects, `acp` asks over stdio; the plugin install is npm's and a shared cache does not remove the registry round trip |
 | G1 | landed 2026-09-20 |
 | M1 | done 2026-09-20: usage on `turn.completed`, no served model, no `exec` flag asks, `app-server` asks over stdio |
 | C1 | landed 2026-09-20 |
 | M3 | done 2026-09-20: docket ships no `harness-v1.1`; U8 does not start |
 | U1 · U4 · G2 | open |
-| U2 · U3 · U5 · G3 | open |
-| U6 · U7 · U8 | open |
+| U2 · U3 · G3 | open |
+| U5 | closed 2026-09-20: nothing to share (see the task) |
+| U6 · U7 | open |
+| U8 | does not start: docket ships no `harness-v1.1` (M3) |
 | Wave 0 | with the user |

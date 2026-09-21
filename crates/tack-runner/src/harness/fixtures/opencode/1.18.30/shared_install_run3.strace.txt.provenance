@@ -1,0 +1,11 @@
+captured
+Same command and trace as `shared_install_run1.strace.txt`, for attempt 3 in
+`shared_install.du.txt`: fresh scratch HOME, but `npm_config_cache` pointed at attempt
+1's `$HOME/.npm`, which by this point already held attempt 2's two leftover temp files
+(itself written there because attempt 2 used the same shared `npm_config_cache` target).
+The connect pattern is identical to attempt 1's, line for line (24 zero-port probes, then
+2 real port-443 connects): a warm, shared `npm_config_cache` target did not make this
+attempt skip the network. Ran under the same env-var list as
+`shared_install_run1.strace.txt.provenance`, plus `npm_config_cache` pointed at attempt
+1's `$HOME/.npm`, and `HOME=/capture/home-9`.
+Captured 2026-09-20.

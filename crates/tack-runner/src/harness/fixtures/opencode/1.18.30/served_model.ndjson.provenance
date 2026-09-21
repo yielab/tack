@@ -1,0 +1,17 @@
+captured
+Real `opencode run --pure --format json --title tack -m tack/requested-model "Write a
+short greeting to greeting.txt"` against `opencode 1.18.30`, a scratch `HOME`/`OPENCODE_CONFIG_DIR`
+(rewritten to `/capture` below), and a loopback fake `/v1/chat/completions` answering a
+`write` tool call then a final "Done." turn -- the same sequenced-tool-call shape
+`mount_sequenced_tool_call` in `opencode/tests.rs` mounts -- except every chunk's `model`
+field is `served-model-xyz`, deliberately different from the requested `tack/requested-model`,
+so a field that echoed the served model back would be visible by inspection (`grep -c
+served-model-xyz` on this file returns 0). Ran under:
+`HOME=/capture/home-1 XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME OPENCODE_CONFIG_DIR
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT AI_GATEWAY_API_KEY opencode run --pure
+--format json --title tack -m tack/requested-model "Write a short greeting to greeting.txt"`,
+cwd a dedicated scratch workspace directory (never the real project tree -- opencode treats
+its cwd as the session's project directory and does a "project copy refresh" over it, which
+hangs indefinitely against a large real repo).
+Captured 2026-09-20.

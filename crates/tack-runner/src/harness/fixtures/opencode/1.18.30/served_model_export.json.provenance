@@ -1,0 +1,11 @@
+captured
+`opencode export <sessionID>` for the same session as `served_model.ndjson`, run
+immediately after it against the same `HOME`/`OPENCODE_CONFIG_DIR` (no `OPENCODE_CONFIG_CONTENT`
+needed for export). Checks the one other surface that names a session's model: `info.model`
+and each message's `modelID`/`providerID` here are always the *requested* model
+(`requested-model`/`tack`), never `served-model-xyz` (`grep -c served-model-xyz` on this file
+also returns 0). Ran under:
+`HOME=/capture/home-1 XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME OPENCODE_CONFIG_DIR
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+OPENCODE_DISABLE_SHARE=1 opencode export ses_f3eb19f51ffegksNTgDpNb2gJj`.
+Captured 2026-09-20.
