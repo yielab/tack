@@ -1,0 +1,10 @@
+captured
+codex -c model_provider=tack_provider -c 'model_providers.tack_provider.name="tack loopback"' -c 'model_providers.tack_provider.base_url="http://127.0.0.1:8940/v1"' -c 'model_providers.tack_provider.env_key="FAKE_API_KEY"' -c 'model_providers.tack_provider.wire_api="responses"' exec --json --model fake-model --skip-git-repo-check --sandbox read-only "write a file"
+env: HOME, XDG_CONFIG_HOME, CODEX_HOME, OPENAI_API_KEY, FAKE_API_KEY
+2026-09-20
+
+The fake server's tool call carried `{"cmd": "touch write-test.txt"}` for this capture (its
+own `FAKE_TOOL_CMD` env var, set on the fake process, not on codex). The call proceeded with
+no approval prompt, then failed inside codex's own sandbox: `touch: cannot touch
+'write-test.txt': Read-only file system`, exit code 1 (confirmed from the fake server's
+logged `function_call_output`, not shown on stdout at all — see README.md "Measured").

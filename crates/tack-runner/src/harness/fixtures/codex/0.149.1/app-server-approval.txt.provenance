@@ -1,0 +1,17 @@
+captured
+codex -c model_provider=tack_provider -c 'model_providers.tack_provider.name="tack loopback"' -c 'model_providers.tack_provider.base_url="http://127.0.0.1:8944/v1"' -c 'model_providers.tack_provider.env_key="FAKE_API_KEY"' -c 'model_providers.tack_provider.wire_api="responses"' app-server
+env: HOME, XDG_CONFIG_HOME, CODEX_HOME, OPENAI_API_KEY, FAKE_API_KEY, PROBE_DECISION
+2026-09-20
+
+`codex app-server` speaks newline-delimited JSON-RPC over stdio (no Content-Length framing;
+confirmed empirically). Driven by a scratch Python JSON-RPC client (not in the repo, under
+/var/tmp/tack-measure/wave1/m1/appserver_probe.py) that sent, in order: `initialize`,
+`thread/start` (cwd the scratch git workspace, approvalPolicy "on-request", sandbox
+"workspace-write", modelProvider "tack_provider", model "fake-model"), then `turn/start`
+with one text input. The fake Responses server's tool call for this capture carried
+`sandbox_permissions: "require_escalated"` and a `justification`, both merged into the
+`exec_command` call's arguments via the fake server's own `FAKE_TOOL_EXTRA_ARGS` env var —
+that's what makes codex ask instead of just running it (a plain `echo hello` call under the
+same `on-request` policy executed with no approval request at all — see README.md
+"Measured"). The client answered the resulting `item/commandExecution/requestApproval`
+request with `{"id": 0, "result": {"decision": "accept"}}` (`PROBE_DECISION=accept`).
