@@ -286,11 +286,14 @@ impl SupervisedProcess {
     /// the same bounded head/tail capture, offering each line to `signal`;
     /// a [`StreamSignal::Question`] goes out on `questions_tx` and this loop
     /// blocks on `answers_rx` for the reply, which `answer` turns into the
-    /// bytes written back to the child's stdin. A `StreamSignal::Finished`,
-    /// a dropped answer channel, or EOF all close stdin and end the loop —
-    /// the child's own exit (or the timeout) is what this method actually
-    /// waits on. `signal`/`answer` stay generic closures rather than a
-    /// `HarnessGrammar` reference so this module keeps no per-CLI knowledge.
+    /// bytes written back to the child's stdin. A `StreamSignal::Reply`
+    /// writes its bytes straight back to the child's stdin without waiting
+    /// on a question at all, for a grammar driving its own handshake. A
+    /// `StreamSignal::Finished`, a dropped answer channel, or EOF all close
+    /// stdin and end the loop — the child's own exit (or the timeout) is
+    /// what this method actually waits on. `signal`/`answer` stay generic
+    /// closures rather than a `HarnessGrammar` reference so this module
+    /// keeps no per-CLI knowledge.
     pub async fn wait_with_capture_and_questions(
         mut self,
         limits: &ProcessLimits,
@@ -351,6 +354,14 @@ impl SupervisedProcess {
                                 .unwrap_or_else(|| deny_option(&question))
                         };
                         let bytes = answer(&question, &resolved);
+                        let Some(pipe) = stdin.as_mut() else { break };
+                        if pipe.write_all(&bytes).await.is_err()
+                            || pipe.write_all(b"\n").await.is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Some(StreamSignal::Reply(bytes)) => {
                         let Some(pipe) = stdin.as_mut() else { break };
                         if pipe.write_all(&bytes).await.is_err()
                             || pipe.write_all(b"\n").await.is_err()

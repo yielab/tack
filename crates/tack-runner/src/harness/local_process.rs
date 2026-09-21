@@ -182,7 +182,12 @@ pub trait HarnessGrammar: Send + Sync + 'static {
 
     /// What a line of this CLI's stdout means to the core, if anything.
     /// Only ever consulted when [`Invocation::stdin_stays_open`] was set.
-    fn signal(&self, _line: &str) -> Option<StreamSignal> {
+    /// `run` is what the grammar needs to build the handshake's requests
+    /// from a reply: the prompt text is
+    /// `run.spec.work.request.resolved_agent_profile.instructions`, the
+    /// workspace is `run.spec.workspace.path`, and the endpoint and scratch
+    /// dir are its own fields.
+    fn signal(&self, _run: &RunContext<'_>, _line: &str) -> Option<StreamSignal> {
         None
     }
 
@@ -1033,11 +1038,16 @@ where
             ..
         } = self.take_running(&handle.process_id).await?;
         let result = if let Some((questions_tx, answers_rx)) = record.interactive.take() {
+            let run_context = RunContext {
+                spec: &record.spec,
+                endpoint: record.endpoint.as_ref(),
+                scratch: &record.scratch,
+            };
             process
                 .wait_with_capture_and_questions(
                     &record.limits,
                     &record.secrets,
-                    |line| self.grammar.signal(line),
+                    |line| self.grammar.signal(&run_context, line),
                     |question, answer| self.grammar.answer(question, answer),
                     questions_tx,
                     answers_rx,
