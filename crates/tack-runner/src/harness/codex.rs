@@ -4,10 +4,10 @@
 //! Vendor findings — what is measured, what is a documented guess, and at
 //! which version — are in `fixtures/codex/README.md`.
 
-use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
 
 use crate::harness::{
-    HarnessError,
+    DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
@@ -113,6 +113,107 @@ fn describe_capture(output: &CapturedOutput) -> serde_json::Value {
     })
 }
 
+/// `--sandbox`'s value, and the value `signal`'s `thread/start` request puts
+/// under `sandbox`: a write-capable tool (`bash`, `shell`, `edit`, `write`
+/// or `apply_patch`, case-insensitively) selects `workspace-write`; an empty
+/// or read-only tool list selects `read-only` (measured accepted by
+/// `codex app-server` too — `fixtures/codex/README.md` "Measured",
+/// `app-server-thread-start.txt`).
+fn sandbox_mode(tools: &[String]) -> &'static str {
+    let write_capable = ["bash", "shell", "edit", "write", "apply_patch"]
+        .iter()
+        .any(|tool| grants(tools, tool));
+    if write_capable {
+        "workspace-write"
+    } else {
+        "read-only"
+    }
+}
+
+/// Reads an `app-server` stream's verdict and usage, or `None` when the
+/// stream carries neither a `turn/completed` line nor a JSON-RPC `error`
+/// answering the `thread/start` (id 2) or `turn/start` (id 3) request —
+/// the two shapes `exec --json` output never produces, so their absence is
+/// what tells `report` to fall back to its exit-code-only path instead.
+fn app_server_report(result: &ProcessResult) -> Option<RunReport> {
+    let mut turn_status: Option<String> = None;
+    let mut rpc_error: Option<String> = None;
+    let mut tokens_in: Option<u64> = None;
+    let mut tokens_out: Option<u64> = None;
+    for line in result.stdout.text.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        if matches!(
+            event.get("id").and_then(serde_json::Value::as_u64),
+            Some(2) | Some(3)
+        ) && let Some(error) = event.get("error")
+        {
+            rpc_error = Some(
+                error
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .map_or_else(|| error.to_string(), str::to_owned),
+            );
+        }
+        match event.get("method").and_then(serde_json::Value::as_str) {
+            Some("thread/tokenUsage/updated") => {
+                if let Some(value) = event
+                    .pointer("/params/tokenUsage/total/inputTokens")
+                    .and_then(serde_json::Value::as_u64)
+                {
+                    tokens_in = Some(value);
+                }
+                if let Some(value) = event
+                    .pointer("/params/tokenUsage/total/outputTokens")
+                    .and_then(serde_json::Value::as_u64)
+                {
+                    tokens_out = Some(value);
+                }
+            }
+            Some("turn/completed") => {
+                turn_status = event
+                    .pointer("/params/turn/status")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+            }
+            _ => {}
+        }
+    }
+    if rpc_error.is_none() && turn_status.is_none() {
+        return None;
+    }
+    let succeeded = rpc_error.is_none()
+        && result.exit == ProcessExit::Exited(0)
+        && turn_status.as_deref() == Some("completed");
+    let (code, message) = match &rpc_error {
+        Some(error) => ("app_server_error", error.clone()),
+        None if succeeded => ("completed", "codex app-server turn completed".to_owned()),
+        None => (
+            "turn_failed",
+            format!(
+                "codex app-server turn finished with status {}",
+                turn_status.as_deref().unwrap_or("unknown")
+            ),
+        ),
+    };
+    Some(RunReport {
+        succeeded,
+        terminal_reason: serde_json::json!({
+            "code": code,
+            "message": message,
+            "stdout": describe_capture(&result.stdout),
+            "stderr": describe_capture(&result.stderr),
+        }),
+        harness_version: None,
+        observed_model: None,
+        tokens_in,
+        tokens_out,
+        duration_ms: None,
+        cost_usd: None,
+    })
+}
+
 impl HarnessGrammar for CodexGrammar {
     fn descriptor(&self) -> &'static HarnessDescriptor {
         &DESCRIPTOR
@@ -123,20 +224,20 @@ impl HarnessGrammar for CodexGrammar {
     /// — the `grants` convention `opencode.rs` uses) selects
     /// `--sandbox workspace-write`; an empty or read-only tool list selects
     /// `--sandbox read-only`. Never `danger-full-access`, never
-    /// `--dangerously-bypass-approvals-and-sandbox`. `permission_policy.approvals`
-    /// adds no flag at all: the scheduler never routes `ask` to a harness
-    /// whose `decisions` capability is unsupported, and codex's stays
-    /// unsupported, so `approvals` is always treated as `auto` here — and on
-    /// codex-cli 0.149.1 `exec --json` never prompts under any flag measured
-    /// (`exec-tool-call.jsonl`, `exec-sandbox-read-only.jsonl`,
-    /// `exec-approve-for-me.jsonl`, `exec-bypass-approvals-and-sandbox.jsonl`),
-    /// so the non-prompting form is simply the plain one, with no separate
-    /// approval flag to add. `network` and `budgets` have no `exec` flag and
-    /// are not passed; `capabilities` declares `permission_policy` advisory
-    /// for that reason.
+    /// `--dangerously-bypass-approvals-and-sandbox`. `permission_policy.approvals ==
+    /// Some(Approvals::Ask)` adds no flag to `exec` — on codex-cli 0.149.1 `exec --json`
+    /// never prompts under any flag measured (`exec-tool-call.jsonl`,
+    /// `exec-sandbox-read-only.jsonl`, `exec-approve-for-me.jsonl`,
+    /// `exec-bypass-approvals-and-sandbox.jsonl`) — it instead swaps the whole
+    /// invocation for the `-c` overrides (unchanged) followed by `app-server` alone,
+    /// which speaks newline-delimited JSON-RPC over stdio and does ask
+    /// (`fixtures/codex/README.md` "Measured"); `signal`/`answer` drive that protocol.
+    /// Any other request keeps today's `exec` line, byte for byte. `network` and
+    /// `budgets` have no `exec` flag and are not passed; `capabilities` declares
+    /// `permission_policy` advisory for that reason.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         let mut args = Vec::new();
-        // `-c` overrides are global flags and must precede `exec`.
+        // `-c` overrides are global flags and must precede the subcommand.
         if let Some(endpoint) = run.endpoint {
             let overrides = [
                 format!("model_provider={PROVIDER_KEY}"),
@@ -161,16 +262,19 @@ impl HarnessGrammar for CodexGrammar {
                 args.extend(["-c".to_owned(), value]);
             }
         }
+        if matches!(
+            run.spec.work.request.permission_policy.approvals,
+            Some(Approvals::Ask)
+        ) {
+            args.push("app-server".to_owned());
+            return Ok(Invocation {
+                args,
+                stdin_stays_open: true,
+                ..Invocation::default()
+            });
+        }
         let model = run.spec.work.request.requested_model_id.as_ref();
-        let tools = &run.spec.work.request.permission_policy.tools;
-        let write_capable = ["bash", "shell", "edit", "write", "apply_patch"]
-            .iter()
-            .any(|tool| grants(tools, tool));
-        let sandbox = if write_capable {
-            "workspace-write"
-        } else {
-            "read-only"
-        };
+        let sandbox = sandbox_mode(&run.spec.work.request.permission_policy.tools);
         args.extend([
             "exec".to_owned(),
             "--json".to_owned(),
@@ -185,12 +289,163 @@ impl HarnessGrammar for CodexGrammar {
         })
     }
 
-    /// The verdict is read from the exit status alone: the failure shape of
-    /// `exec --json` output is unverified, so it is kept as evidence and
-    /// never interpreted for that. Usage is read from the terminal
-    /// `turn.completed` line when the stream has one; the served model is
-    /// still not named anywhere in the stream.
+    /// An `app-server` run's first stdin line is the JSON-RPC `initialize`
+    /// request `signal` needs a reply to before it can drive `thread/start`;
+    /// any other run takes the prompt as plain text, unframed, exactly as
+    /// before.
+    fn prompt(&self, prompt: String, stdin_stays_open: bool) -> Vec<u8> {
+        if !stdin_stays_open {
+            return prompt.into_bytes();
+        }
+        let message = serde_json::json!({
+            "id": 1,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "tack", "version": env!("CARGO_PKG_VERSION")}},
+        });
+        let mut line = message.to_string().into_bytes();
+        line.push(b'\n');
+        line
+    }
+
+    /// Drives the `app-server` handshake from each reply
+    /// (`initialize` -> `thread/start` -> `turn/start`) and turns one
+    /// `item/commandExecution/requestApproval` line into a question; a
+    /// `turn/completed` line, or a JSON-RPC `error` answering `thread/start`
+    /// (id 2) or `turn/start` (id 3), ends the run (measured;
+    /// `fixtures/codex/README.md` "Measured"). Only ever consulted for an
+    /// `ask` run.
+    fn signal(&self, run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
+        let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let id = value.get("id").and_then(serde_json::Value::as_u64);
+        let method = value.get("method").and_then(serde_json::Value::as_str);
+
+        if id == Some(1) && value.get("result").is_some() {
+            let request = &run.spec.work.request;
+            let workspace_root = &run.spec.workspace.path;
+            let cwd = match request.repository.subdirectory.as_deref() {
+                Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
+                _ => workspace_root.clone(),
+            };
+            let sandbox = sandbox_mode(&request.permission_policy.tools);
+            let model = request
+                .requested_model_id
+                .as_ref()
+                .map_or_else(String::new, |model| model.as_str().to_owned());
+            let mut params = serde_json::Map::new();
+            params.insert(
+                "cwd".to_owned(),
+                serde_json::json!(cwd.display().to_string()),
+            );
+            params.insert("approvalPolicy".to_owned(), serde_json::json!("on-request"));
+            params.insert("sandbox".to_owned(), serde_json::json!(sandbox));
+            params.insert("model".to_owned(), serde_json::json!(model));
+            if run.endpoint.is_some() {
+                params.insert("modelProvider".to_owned(), serde_json::json!(PROVIDER_KEY));
+            }
+            let reply = serde_json::json!({"id": 2, "method": "thread/start", "params": params});
+            return Some(StreamSignal::Reply(
+                serde_json::to_vec(&reply).unwrap_or_default(),
+            ));
+        }
+        if id == Some(2) && value.get("result").is_some() {
+            let thread_id = value.pointer("/result/thread/id")?.clone();
+            let prompt = run
+                .spec
+                .work
+                .request
+                .resolved_agent_profile
+                .instructions
+                .clone();
+            let reply = serde_json::json!({
+                "id": 3,
+                "method": "turn/start",
+                "params": {
+                    "threadId": thread_id,
+                    "approvalPolicy": "on-request",
+                    "input": [{"type": "text", "text": prompt}],
+                },
+            });
+            return Some(StreamSignal::Reply(
+                serde_json::to_vec(&reply).unwrap_or_default(),
+            ));
+        }
+        if method == Some("item/commandExecution/requestApproval") {
+            let params = value.get("params")?;
+            let command = params.get("command").and_then(serde_json::Value::as_str)?;
+            let reason = params.get("reason").and_then(serde_json::Value::as_str);
+            let mut prompt = format!("Allow command: {command}?");
+            if let Some(reason) = reason {
+                prompt.push_str(&format!(" ({reason})"));
+            }
+            let mut metadata = serde_json::Map::new();
+            metadata.insert("command".to_owned(), serde_json::json!(command));
+            if let Some(cwd) = params.get("cwd") {
+                metadata.insert("cwd".to_owned(), cwd.clone());
+            }
+            if let Some(reason) = reason {
+                metadata.insert("reason".to_owned(), serde_json::json!(reason));
+            }
+            if let Some(item_id) = params.get("itemId") {
+                metadata.insert("item_id".to_owned(), item_id.clone());
+            }
+            if let Some(turn_id) = params.get("turnId") {
+                metadata.insert("turn_id".to_owned(), turn_id.clone());
+            }
+            return Some(StreamSignal::Question(Question {
+                vendor_id: value.get("id")?.to_string(),
+                kind: "tool_permission".to_owned(),
+                prompt,
+                options: vec![
+                    DecisionOption {
+                        option_id: "accept".to_owned(),
+                        label: "Allow once".to_owned(),
+                    },
+                    DecisionOption {
+                        option_id: "decline".to_owned(),
+                        label: "Deny".to_owned(),
+                    },
+                ],
+                metadata,
+            }));
+        }
+        if method == Some("turn/completed") {
+            return Some(StreamSignal::Finished);
+        }
+        if matches!(id, Some(2) | Some(3)) && value.get("error").is_some() {
+            return Some(StreamSignal::Finished);
+        }
+        None
+    }
+
+    /// `accept` is the only option that releases the pending command;
+    /// anything else — including an option this grammar never offered — is
+    /// answered `decline` rather than left to hang codex's own pending
+    /// request (measured; `fixtures/codex/README.md` "Measured"). The
+    /// vendor id round-trips through JSON so a number stays a number.
+    fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
+        let decision = if answer.option_id.as_deref() == Some("accept") {
+            "accept"
+        } else {
+            "decline"
+        };
+        let id: serde_json::Value =
+            serde_json::from_str(&question.vendor_id).unwrap_or(serde_json::Value::Null);
+        let payload = serde_json::json!({"id": id, "result": {"decision": decision}});
+        serde_json::to_vec(&payload).unwrap_or_default()
+    }
+
+    /// An `app-server` run's turn/completed line (and any JSON-RPC `error`
+    /// answering `thread/start`/`turn/start`) decides the verdict; any other
+    /// run is read the way it always was: the exit status alone, the
+    /// failure shape of `exec --json` output being unverified. Usage for an
+    /// `app-server` run comes from its last `thread/tokenUsage/updated`
+    /// notification instead of the `turn.completed` line `exec --json`
+    /// prints; the served model is still not named anywhere in either
+    /// stream.
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        if let Some(report) = app_server_report(result) {
+            return report;
+        }
         let (succeeded, code, message) = match result.exit {
             ProcessExit::Exited(0) => (true, "completed", "codex exited successfully".to_owned()),
             ProcessExit::Exited(code) => (
@@ -244,11 +499,14 @@ impl HarnessGrammar for CodexGrammar {
                 "codex session resume has not been observed and is not implemented",
             ),
             decisions: capability(
-                CapabilitySupport::Unsupported,
-                "`codex exec`, the one this adapter drives, never asks: no sandbox or approval \
-                 flag measured on codex-cli 0.149.1 produced an interactive prompt in `--json` \
-                 output. `codex app-server` does ask over stdio, but this adapter does not \
-                 drive that transport, so nothing here pauses a run to await a decision",
+                CapabilitySupport::Supported,
+                "measured against codex-cli 0.149.1 (`app-server-approval.txt`): over `codex \
+                 app-server` with `approvalPolicy: \"on-request\"`, a command that needs to \
+                 escalate beyond the sandbox pauses on one \
+                 `item/commandExecution/requestApproval` request until it is answered `accept` \
+                 or `decline`; a command inside the sandbox runs without asking. `codex exec`, \
+                 which this adapter drives for every other request, never asks under any flag \
+                 measured, so `app-server` is only ever used when the request itself asks",
             ),
             artifacts: capability(
                 CapabilitySupport::Advisory,
