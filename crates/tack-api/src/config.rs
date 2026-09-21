@@ -56,6 +56,12 @@ pub struct AppConfig {
     #[serde(default = "default_github_api_base")]
     pub github_api_base: String,
 
+    /// Inbound GitHub poll interval in seconds. `0` (the default) is off; the
+    /// poll only starts when this is nonzero **and** `github_token` is set.
+    /// See `docs/GITHUB-SYNC.md`.
+    #[serde(default)]
+    pub github_poll_seconds: u64,
+
     // ── Remote backup (S3-compatible object storage) ──────────────────────────
     /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
     /// Example: `https://<account>.r2.cloudflarestorage.com`
@@ -171,6 +177,7 @@ impl Default for AppConfig {
             webhook_secret: None,
             github_token: None,
             github_api_base: default_github_api_base(),
+            github_poll_seconds: 0,
             backup_endpoint: None,
             backup_bucket: None,
             backup_region: default_backup_region(),
@@ -396,6 +403,9 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.github_api_base = v;
+        }
+        if let Ok(v) = std::env::var("TACK_GITHUB_POLL_SECONDS") {
+            config.github_poll_seconds = v.parse().unwrap_or(0);
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_ENDPOINT")
             && !v.is_empty()

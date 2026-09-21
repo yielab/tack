@@ -1134,6 +1134,190 @@ async fn completing_github_item_pushes_issue_close() {
     );
 }
 
+/// The inbound poll: `poll_once` takes an `AppState`, not a `Router`, so
+/// there is no HTTP path into it — the project/item/link are seeded
+/// straight through the repo layer instead of via `import-github`. Three
+/// polls in sequence: closed → the first Done status, reopened (with
+/// `since` now carrying the prior poll's `updated_at`) → the first Todo
+/// status, then a 304 → no write. The final assertion pins the one
+/// invariant the plan calls out: an inbound move must never itself fire an
+/// outbound PATCH (`handlers::items::maybe_sync_github`'s echo).
+#[tokio::test]
+async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() {
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+    let project = tack_test_support::make_project(&repo, workspace_id).await;
+    let initial_status = project.workflow.initial_status().unwrap();
+    assert_eq!(
+        initial_status, "Backlog",
+        "scrum's first Todo-category status"
+    );
+    let item = repo
+        .create_item(
+            project.id,
+            &initial_status,
+            tack_core::models::CreateItem {
+                title: "Fix the thing".into(),
+                description: None,
+                item_type: Some(tack_core::models::ItemType::Task),
+                parent_id: None,
+                priority: Some(tack_core::models::Priority::Medium),
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await
+        .expect("create item");
+    repo.set_github_link(item.id, "acme/widgets", 42)
+        .await
+        .expect("link item to issue #42");
+
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
+    let state = tack_api::AppState {
+        repo,
+        config: AppConfig {
+            github_token: Some("tok".into()),
+            github_api_base: gh.uri(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    };
+    let mut etags = std::collections::HashMap::new();
+
+    // Poll 1: closed on GitHub, no prior `synced_at` so no `since` param yet.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(query_param("state", "all"))
+        .and(query_param_is_missing("since"))
+        .respond_with(ResponseTemplate::new(200).insert_header("ETag", "\"etag-1\"").set_body_json(
+            json!([{"number": 42, "state": "closed", "updated_at": "2026-02-01T00:00:00Z"}]),
+        ))
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    assert_eq!(summary.issues_updated, 1);
+    let after_close = state.repo.get_item(item.id).await.unwrap().unwrap();
+    assert_eq!(
+        after_close.status, "Done",
+        "closed on GitHub moves the item to the first Done status"
+    );
+
+    // Poll 2: reopened on GitHub; `since` now carries poll 1's `updated_at`.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(query_param("state", "all"))
+        .and(query_param("since", "2026-02-01T00:00:00Z"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("ETag", "\"etag-2\"")
+                .set_body_json(
+                    json!([{"number": 42, "state": "open", "updated_at": "2026-03-01T00:00:00Z"}]),
+                ),
+        )
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    assert_eq!(summary.issues_updated, 1);
+    let after_reopen = state.repo.get_item(item.id).await.unwrap().unwrap();
+    assert_eq!(
+        after_reopen.status, "Backlog",
+        "reopened on GitHub moves the item to the first Todo status"
+    );
+
+    // Poll 3: the item is being worked on and the issue is still open →
+    // categories agree, so the poll leaves it in progress (never back to Todo).
+    let in_progress = project
+        .workflow
+        .statuses
+        .iter()
+        .find(|s| s.category == tack_core::workflow::StatusCategory::InProgress)
+        .map(|s| s.name.clone())
+        .expect("scrum has an in-progress status");
+    state
+        .repo
+        .update_item_atomically(
+            item.id,
+            tack_core::models::UpdateItem {
+                status: Some(in_progress.clone()),
+                ..Default::default()
+            },
+            &project.workflow,
+            None,
+        )
+        .await
+        .expect("move to in progress");
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(query_param("state", "all"))
+        .and(query_param("since", "2026-03-01T00:00:00Z"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("ETag", "\"etag-3\"")
+                .set_body_json(
+                    json!([{"number": 42, "state": "open", "updated_at": "2026-03-02T00:00:00Z"}]),
+                ),
+        )
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    assert_eq!(
+        summary.issues_updated, 0,
+        "same category on both sides: no move"
+    );
+    let still_working = state.repo.get_item(item.id).await.unwrap().unwrap();
+    assert_eq!(still_working.status, in_progress);
+
+    // Poll 4: GitHub answers 304 (nothing changed since poll 3) → no write.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(query_param("state", "all"))
+        .and(query_param("since", "2026-03-02T00:00:00Z"))
+        .respond_with(ResponseTemplate::new(304))
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    assert_eq!(summary.issues_updated, 0, "a 304 must do no write");
+    let after_304 = state.repo.get_item(item.id).await.unwrap().unwrap();
+    assert_eq!(after_304.status, in_progress);
+
+    // The whole exchange only ever sent GET: an inbound poll must never
+    // itself trigger the outbound push.
+    let all_requests = gh.received_requests().await.unwrap();
+    assert_eq!(all_requests.len(), 4, "expected exactly the four GET polls");
+    assert!(
+        all_requests.iter().all(|r| r.method.as_str() == "GET"),
+        "an inbound poll must never itself fire an outbound PATCH: {all_requests:?}"
+    );
+}
+
 /// Polls a mock GitHub server's received requests, bounded by wall-clock
 /// time rather than a fixed per-iteration sleep, for a fire-and-forget push
 /// that already reached the given path.

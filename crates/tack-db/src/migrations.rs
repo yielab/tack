@@ -136,6 +136,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("072_drop_orch_trace_cursors", &MIGRATION_072[..]),
         ordinary("073_drop_control_planes", &MIGRATION_073[..]),
         ordinary("074_drop_template_orchestration", &MIGRATION_074[..]),
+        ordinary("075_github_links_synced_at", &MIGRATION_075[..]),
     ]
 }
 
@@ -1666,3 +1667,9 @@ const MIGRATION_073: [&str; 1] = ["DROP TABLE control_planes"];
 // The column held a template's configuration for the bridge dropped above;
 // nothing selects or binds it.
 const MIGRATION_074: [&str; 1] = ["ALTER TABLE project_templates DROP COLUMN orchestration"];
+
+// RFC 3339 text, nullable: the timestamp of the linked issue's `updated_at`
+// as of the last successful inbound poll. Null until the first poll touches
+// a link (including one created before this migration). Drives the poll's
+// `since` query per repo (the max across its links) — see `github_sync.rs`.
+const MIGRATION_075: [&str; 1] = ["ALTER TABLE github_links ADD COLUMN synced_at TEXT"];
