@@ -1,0 +1,7 @@
+captured
+codex exec --help
+env: HOME, XDG_CONFIG_HOME, CODEX_HOME
+2026-09-20
+
+Run against the installed binary directly (`codex --version` reports `codex-cli 0.149.1`);
+no network or fake server involved. Verbatim stdout.
