@@ -21,21 +21,30 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     program: "codex",
     wire: Wire::OpenAiResponses,
     model_selection: ModelSelection::Explicit(
-        "codex does not report which model an auto-selected run used, so the model that ran \
-         could not be recorded; requested_model_provider and requested_model_id are both \
-         required",
+        "the served model is not available on codex-cli 0.149.1 (measured 2026-09-20): no \
+         line of `exec --json` names which model answered, so the model that ran could not \
+         be recorded; requested_model_provider and requested_model_id are both required",
     ),
     native_provider: "openai",
     inherited_env: &[],
     model_passthrough: "requested_model_id is forwarded verbatim via --model and a request \
                         without one is rejected before spawn; the Codex CLI validates the model \
                         at run time, so no model list is claimed",
-    probe_notes: &[],
+    probe_notes: &[(
+        "served_model",
+        "measured against codex-cli 0.149.1, 2026-09-20: no line of `exec --json` names the \
+         model that answered; the only model-shaped line is a `type:\"error\"` item echoing \
+         the `--model` flag back, so it is not available",
+    )],
     credential_note: "Codex authenticates itself (its own CLI login, or an API key it reads from \
                       its own config). Tack never reads, stores or forwards it. No host \
                       environment is forwarded into a run: only entries set on the execution \
                       request's own `environment` reach the codex process.",
     credential_env: None,
+    // Measured against codex-cli 0.149.1, 2026-09-20: no line of `exec
+    // --json` ever names a served model distinct from the requested one —
+    // the only model-shaped line is a `type:"error"` item echoing the
+    // `--model` flag back.
     observes_served_model: false,
 };
 
@@ -60,6 +69,33 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
     }
     let truncated: String = text.chars().take(max_chars).collect();
     format!("{truncated}\u{2026} (truncated)")
+}
+
+/// Scans every stdout line for the terminal `turn.completed` line and
+/// reads `usage.input_tokens`/`usage.output_tokens` off it — the only two
+/// fields `RunReport` has a place for (measured on codex-cli 0.149.1,
+/// 2026-09-20; `fixtures/codex/README.md`). The cached/cache-write/
+/// reasoning breakdown the same object carries has no field in
+/// `RunReport`, so it is not folded in or guessed at, and `cost_usd` stays
+/// `None`: no such field exists in the output. A stream with no
+/// `turn.completed` line leaves both `None`.
+fn usage_from_output(stdout: &str) -> (Option<u64>, Option<u64>) {
+    for line in stdout.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        if event.get("type").and_then(serde_json::Value::as_str) != Some("turn.completed") {
+            continue;
+        }
+        let tokens_in = event
+            .pointer("/usage/input_tokens")
+            .and_then(serde_json::Value::as_u64);
+        let tokens_out = event
+            .pointer("/usage/output_tokens")
+            .and_then(serde_json::Value::as_u64);
+        return (tokens_in, tokens_out);
+    }
+    (None, None)
 }
 
 fn describe_capture(output: &CapturedOutput) -> serde_json::Value {
@@ -115,9 +151,11 @@ impl HarnessGrammar for CodexGrammar {
         })
     }
 
-    /// Read from the exit status alone. The shape of `exec --json` output
-    /// is unverified, so its content is kept as evidence and never
-    /// interpreted; usage and the served model stay unmeasured.
+    /// The verdict is read from the exit status alone: the failure shape of
+    /// `exec --json` output is unverified, so it is kept as evidence and
+    /// never interpreted for that. Usage is read from the terminal
+    /// `turn.completed` line when the stream has one; the served model is
+    /// still not named anywhere in the stream.
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
         let (succeeded, code, message) = match result.exit {
             ProcessExit::Exited(0) => (true, "completed", "codex exited successfully".to_owned()),
@@ -138,15 +176,25 @@ impl HarnessGrammar for CodexGrammar {
                 "codex exceeded its configured timeout and was killed".to_owned(),
             ),
         };
-        RunReport::verdict(
+        let (tokens_in, tokens_out) = usage_from_output(&result.stdout.text);
+        RunReport {
             succeeded,
-            serde_json::json!({
+            terminal_reason: serde_json::json!({
                 "code": code,
                 "message": message,
                 "stdout": describe_capture(&result.stdout),
                 "stderr": describe_capture(&result.stderr),
             }),
-        )
+            harness_version: None,
+            // The served model is not named anywhere in `exec --json`'s
+            // stream (measured against codex-cli 0.149.1, 2026-09-20; see
+            // `fixtures/codex/README.md`), so nothing is read for it here.
+            observed_model: None,
+            tokens_in,
+            tokens_out,
+            duration_ms: None,
+            cost_usd: None,
+        }
     }
 
     fn capabilities(&self) -> FeatureCapabilities {
@@ -172,9 +220,10 @@ impl HarnessGrammar for CodexGrammar {
                  artifact discovery is implemented",
             ),
             usage: capability(
-                CapabilitySupport::Unsupported,
-                "token and cost usage have not been observed in codex output; only wall-clock \
-                 duration is measured",
+                CapabilitySupport::Advisory,
+                "input_tokens and output_tokens are real measurements, read from `exec \
+                 --json`'s terminal `turn.completed` line, measured on codex-cli 0.149.1; no \
+                 cost_usd field exists in the output, so cost is never reported",
             ),
             additional: policy_capability(
                 CapabilitySupport::Unsupported,

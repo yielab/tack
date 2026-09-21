@@ -112,9 +112,43 @@ fn the_exit_status_alone_decides_the_verdict() {
 fn codex_declares_what_it_does_not_enforce() {
     let declared = CodexGrammar.capabilities();
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
-    assert_eq!(declared.usage.support, CapabilitySupport::Unsupported);
+    assert_eq!(declared.usage.support, CapabilitySupport::Advisory);
     assert_eq!(
         declared.additional["permission_policy"]["support"],
         "unsupported"
     );
+}
+
+/// `(transcript, succeeded, tokens_in, tokens_out)`. Numbers for the real
+/// capture are re-measured straight off its own `turn.completed` line
+/// (`grep turn.completed exec-tool-call.jsonl`), not trusted from a brief.
+/// `no_turn_completed` is the same capture with that line stripped,
+/// standing in for a transcript that never reaches one.
+#[test]
+fn usage_is_read_from_the_turn_completed_line() {
+    let exec_tool_call = include_str!("../fixtures/codex/0.149.1/exec-tool-call.jsonl");
+    let no_turn_completed: String = exec_tool_call
+        .lines()
+        .filter(|line| !line.contains("turn.completed"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let state = scratch("codex-usage");
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: None,
+        scratch: state.path(),
+    };
+    let rows = [
+        (exec_tool_call, true, Some(57), Some(10)),
+        (no_turn_completed.as_str(), true, None, None),
+    ];
+    for (transcript, succeeded, tokens_in, tokens_out) in rows {
+        let report = CodexGrammar.report(&run, &finished(ProcessExit::Exited(0), transcript));
+        assert_eq!(report.succeeded, succeeded, "{transcript:?}");
+        assert_eq!(report.tokens_in, tokens_in, "{transcript:?}");
+        assert_eq!(report.tokens_out, tokens_out, "{transcript:?}");
+        assert_eq!(report.observed_model, None, "{transcript:?}");
+        assert_eq!(report.cost_usd, None, "{transcript:?}");
+    }
 }
