@@ -68,6 +68,54 @@ pub async fn push_issue_state(
     Ok(())
 }
 
+/// POST a new comment onto a GitHub issue, returning the id GitHub assigns
+/// it — stored so the inbound poll never mirrors it back in, and so a
+/// second push attempt (there isn't one yet) would know it already went out.
+///
+/// `base`, `token`, `repo`, `issue_number` are as [`push_issue_state`].
+pub async fn push_issue_comment(
+    base: &str,
+    token: &str,
+    repo: &str,
+    issue_number: i64,
+    body: &str,
+) -> anyhow::Result<i64> {
+    let client = reqwest::Client::builder()
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
+        .timeout(std::time::Duration::from_secs(15))
+        // A redirect target is remote input — never forward the token to it.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+
+    let url = format!(
+        "{}/repos/{}/issues/{}/comments",
+        base.trim_end_matches('/'),
+        repo,
+        issue_number
+    );
+
+    let resp = client
+        .post(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "body": body }))
+        .send()
+        .await?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub POST {url} returned {status}");
+    }
+    let created: CreatedComment = resp.json().await?;
+    Ok(created.id)
+}
+
+/// The id GitHub assigns a newly created comment.
+#[derive(serde::Deserialize)]
+struct CreatedComment {
+    id: i64,
+}
+
 /// The fields the inbound poll reads off one GitHub issue. Deliberately
 /// narrow — body, labels, assignee are never deserialized here.
 #[derive(serde::Deserialize)]
@@ -75,6 +123,19 @@ struct GithubIssue {
     number: i64,
     state: String,
     updated_at: String,
+}
+
+/// The fields the inbound poll reads off one GitHub issue comment.
+#[derive(serde::Deserialize)]
+struct GithubComment {
+    id: i64,
+    body: String,
+    user: GithubCommentAuthor,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubCommentAuthor {
+    login: String,
 }
 
 /// What one [`poll_once`] iteration did, for a caller (a test, or the
@@ -176,10 +237,21 @@ async fn poll_repo(
         issues.iter().map(|issue| (issue.number, issue)).collect();
 
     let mut updated = 0;
-    for (item_id, issue_number, _) in &links {
+    for link in &links {
+        let (item_id, issue_number, _synced_at) = link;
+
+        // Only an issue the `since` list returned has changed: a new comment
+        // bumps the issue's `updated_at`, so an issue absent here has
+        // neither a state change nor a comment to read.
         let Some(issue) = issues_by_number.get(issue_number) else {
             continue;
         };
+
+        // Inbound comments: mirror any GitHub comment on this issue not yet
+        // stored on the item, whether or not its state changed.
+        if let Err(error) = sync_inbound_comments(state, client, base, token, repo, link).await {
+            tracing::warn!(item_id = %item_id, %error, "GitHub inbound comment sync failed");
+        }
         let closed = issue.state == "closed";
 
         let Ok(Some(item)) = state.repo.get_item(*item_id).await else {
@@ -236,6 +308,68 @@ async fn poll_repo(
     }
 
     Ok(updated)
+}
+
+/// Mirror any GitHub comment on `link`'s issue not yet stored on its item,
+/// attributed to the GitHub login in the body's first line. Reads the db
+/// repo directly (never `handlers::comments::create_comment`), so a comment
+/// created here is never itself pushed back out to GitHub.
+async fn sync_inbound_comments(
+    state: &crate::router::AppState,
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    repo: &str,
+    link: &(uuid::Uuid, i64, Option<String>),
+) -> anyhow::Result<()> {
+    let (item_id, issue_number, since) = link;
+
+    let url = format!(
+        "{}/repos/{}/issues/{}/comments",
+        base.trim_end_matches('/'),
+        repo,
+        issue_number
+    );
+    let mut request = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"));
+    if let Some(since) = since {
+        request = request.query(&[("since", since.as_str())]);
+    }
+
+    let resp = request.send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub GET {url} returned {status}");
+    }
+
+    let comments: Vec<GithubComment> = resp.json().await?;
+    if comments.is_empty() {
+        return Ok(());
+    }
+
+    let stored = state.repo.list_github_comment_ids(*item_id).await?;
+    for comment in comments {
+        if stored.contains(&comment.id) {
+            continue;
+        }
+        let created = state
+            .repo
+            .create_comment(
+                *item_id,
+                tack_core::models::CreateComment {
+                    content: format!("@{} on GitHub:\n\n{}", comment.user.login, comment.body),
+                    author: Some(comment.user.login.clone()),
+                },
+            )
+            .await?;
+        state
+            .repo
+            .set_comment_github_id(created.id, comment.id)
+            .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
