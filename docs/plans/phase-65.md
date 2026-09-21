@@ -53,7 +53,7 @@ a machine this one is not. They are listed once, here, with the command.
 | 0.3 | Remove the stale measurement directories. Re-measured 2026-09-21 (`du -sh`): `/var/tmp/tack-agent-targets/integrate` is already gone; `claude-ask` 92 KB, `ask-walk` 23 MB, `wave1` 954 MB remain. | `rm -rf /var/tmp/tack-measure/claude-ask /var/tmp/tack-measure/ask-walk /var/tmp/tack-measure/wave1` |
 | 0.4 | **Done 2026-09-21.** Alert 21 dismissed as `tolerable_risk`: `glib` 0.18.5 arrives only through `tauri 2.11.5 -> gtk 0.18.2 -> atk`, the fix (`glib` 0.20) is the GTK4 line, and `wry` pins `gtk 0.18`, so no Tauri 2.x release moves off GTK3. Pull requests #52 and #53 were closed as superseded — `develop` already pins both action SHAs they proposed. | `gh api -X PATCH repos/yielab/tack/dependabot/alerts/21 -f state=dismissed -f dismissed_reason=tolerable_risk` |
 | 0.5 | **Done 2026-09-21.** The description names all four harnesses. The eleven topics and the homepage were already current and were left alone. | `gh repo edit yielab/tack --description "..."` |
-| 0.6 | Walk `docs/LAUNCH-CHECKLIST.md` and tag `v0.1.0-beta.9` (`grep '^version' Cargo.toml` says so since 2026-09-21; beta.8 was never tagged, so its changes and Waves 1–4 ship together). | `git tag v0.1.0-beta.9 && git push origin v0.1.0-beta.9` |
+| 0.6 | **Done 2026-09-21.** All nine checklist items walked and green, `main` fast-forwarded to `ca97e48`, `v0.1.0-beta.9` tagged and pushed. Release run 35657940977: thirteen jobs, all success. Twenty-three assets, including the five desktop bundles, and `packaging/` re-pointed with `scripts/sync-packaging.sh`. The published one-liner was then run end to end and verified its checksum. |
 | 0.7 | The publish list in the checklist: seven issues, four posts, two Discussions. | as written there |
 | 0.8 | Install on a macOS and a Windows machine once, following `README.md`. | `curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh \| sh`, and the `.dmg` / `.msi` from the tag above |
 | 0.9 | Code signing (ADR 0062 §7): an Apple developer account and a Windows certificate. Until decided, nothing is scheduled. | — |
@@ -394,4 +394,4 @@ of the released product asks for it, and then through an ADR where a decision is
 | U6 | landed 2026-09-21 |
 | U8 | does not start: docket ships no `harness-v1.1` (M3) |
 | Waves 1–4 | complete 2026-09-21; release prepared the same day (version `0.1.0-beta.9`, changelog section, docs) |
-| Wave 0 | 0.1, 0.2, 0.4 and 0.5 done 2026-09-21 (ruleset, branches, Dependabot, description). What is left is the tag and what hangs off it: 0.3, 0.6, 0.7, 0.8, 0.9 |
+| Wave 0 | 0.1, 0.2, 0.4, 0.5 and 0.6 done 2026-09-21 — `v0.1.0-beta.9` is published. What is left is 0.3, 0.7, 0.8 and 0.9 |

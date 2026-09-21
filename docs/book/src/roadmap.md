@@ -24,8 +24,10 @@ tasks in four waves, with a "Decided" table so no task re-opens a settled decisi
 
 ## Phase 65 — the release, and every open item in one sequence
 
-**Status:** open 2026-09-20; Waves 1–4 landed 2026-09-21, and the release is prepared
-(version `0.1.0-beta.9`, its changelog section, the docs). What remains is Wave 0.
+**Status:** open 2026-09-20; Waves 1–4 landed 2026-09-21 and `v0.1.0-beta.9` shipped the
+same day — the first tag with the four-harness fleet and the desktop bundles
+(`.AppImage`, `.deb`, two `.dmg`, `.msi`). What remains of Wave 0 is the publish list
+and the platforms this machine cannot verify.
 **Plan:** `docs/plans/phase-65.md`.
 
 | Wave | What lands | Who |
