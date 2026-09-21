@@ -1,0 +1,44 @@
+Trimmed transcript of `codex app-server` over stdio (one JSON object per line, no
+Content-Length framing), driven with a scratch client that ran `initialize`, `thread/start`
+(approvalPolicy "on-request", sandbox "workspace-write"), then `turn/start` on a prompt whose
+one tool call carried `sandbox_permissions: "require_escalated"` — the same field
+`crates/tack-runner/src/harness/codex.rs`'s tool schema capture shows the real `exec_command`
+tool exposes. Irrelevant lines (remoteControl/status/changed, thread/started echoes,
+tokenUsage/rateLimits notifications) are omitted; `...` marks each omission. Every
+`/var/tmp/...` scratch path has been rewritten to `/capture`.
+
+stdin:  {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "tack-measure", "version": "0.0.0"}}}
+stdout: {"id":1,"result":{"userAgent":"tack-measure/0.149.1 (Ubuntu 24.4.0; x86_64) unknown (tack-measure; 0.0.0)","codexHome":"/capture/home-5","platformFamily":"unix","platformOs":"linux"}}
+...
+stdin:  {"id": 2, "method": "thread/start", "params": {"cwd": "/capture/wsrepo", "approvalPolicy": "on-request", "sandbox": "workspace-write", "modelProvider": "tack_provider", "model": "fake-model"}}
+stdout: {"id":2,"result":{"thread":{"id":"01a0c150-f620-7352-a5a0-bc78f70024c3", ... },"model":"fake-model","modelProvider":"tack_provider","cwd":"/capture/wsrepo","approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false, ... }}}
+...
+stdin:  {"id": 3, "method": "turn/start", "params": {"threadId": "01a0c150-f620-7352-a5a0-bc78f70024c3", "approvalPolicy": "on-request", "input": [{"type": "text", "text": "run the shell command: echo hello"}]}}
+...
+stdout: {"method":"item/started","params":{"item":{"type":"commandExecution","id":"call_1","command":"/usr/bin/zsh -lc 'touch escalated-write.txt'","cwd":"/capture/wsrepo","status":"inProgress", ... },"threadId":"01a0c150-f620-7352-a5a0-bc78f70024c3","turnId":"01a0c150-f680-75a0-b23c-91710faa7add", ... }}
+
+# --- THE APPROVAL REQUEST: exactly one line on stdout, verbatim (only the scratch cwd was rewritten) ---
+stdout: {"method":"item/commandExecution/requestApproval","id":0,"params":{"threadId":"01a0c150-f620-7352-a5a0-bc78f70024c3","turnId":"01a0c150-f680-75a0-b23c-91710faa7add","itemId":"call_1","startedAtMs":1789949703932,"environmentId":"local","reason":"need to write a file","command":"/usr/bin/zsh -lc 'touch escalated-write.txt'","cwd":"/capture/wsrepo","commandActions":[{"type":"unknown","command":"touch escalated-write.txt"}],"proposedExecpolicyAmendment":["touch","escalated-write.txt"],"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["touch","escalated-write.txt"]}},"cancel"]}}
+
+# --- THE ANSWER: exactly one line on stdin, verbatim, releases the pending call ---
+stdin:  {"id": 0, "result": {"decision": "accept"}}
+
+stdout: {"method":"serverRequest/resolved","params":{"threadId":"01a0c150-f620-7352-a5a0-bc78f70024c3","requestId":0},"emittedAtMs":1789949703998}
+...
+stdout: {"method":"item/completed","params":{"item":{"type":"commandExecution","id":"call_1","command":"/usr/bin/zsh -lc 'touch escalated-write.txt'","cwd":"/capture/wsrepo","status":"completed","exitCode":0, ... },"threadId":"01a0c150-f620-7352-a5a0-bc78f70024c3","turnId":"01a0c150-f680-75a0-b23c-91710faa7add", ... }}
+...
+stdout: {"method":"turn/completed","params":{"threadId":"01a0c150-f620-7352-a5a0-bc78f70024c3","turn":{"id":"01a0c150-f680-75a0-b23c-91710faa7add", ... ,"status":"completed", ... }}}
+
+Confirmed released: after the accept answer, `escalated-write.txt` existed in the scratch
+workspace (`ls` after the run), and the terminal `item/completed` for `call_1` carries
+`exitCode:0` rather than the `status:"failed"` seen when the same request was answered with
+an invalid decision value instead (below).
+
+Separately measured (not this transcript): answering the same request line with
+`{"id": 0, "result": {"decision": "approved"}}` — the value this crate's own
+`ExecCommandApprovalResponse`/legacy naming might suggest — is rejected. codex's stderr logs
+`failed to deserialize CommandExecutionRequestApprovalResponse: unknown variant 'approved',
+expected one of 'accept', 'acceptForSession', 'acceptWithExecpolicyAmendment',
+'applyNetworkPolicyAmendment', 'decline', 'cancel'`, and the pending command item then
+completes with `status:"failed"` and no `exitCode` — a malformed answer denies by default
+rather than hanging.
