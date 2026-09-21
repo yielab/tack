@@ -63,6 +63,12 @@ fn toml_quoted(value: &str) -> String {
     format!("{value:?}")
 }
 
+/// Whether `tools` names `tool` (case-insensitively), the same convention
+/// `opencode.rs`'s own `grants` uses.
+fn grants(tools: &[String], tool: &str) -> bool {
+    tools.iter().any(|name| name.eq_ignore_ascii_case(tool))
+}
+
 fn bounded_preview(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_owned();
@@ -112,9 +118,22 @@ impl HarnessGrammar for CodexGrammar {
         &DESCRIPTOR
     }
 
-    /// `permission_policy` and `budgets` are not applied; `capabilities`
-    /// declares that rather than guessing a mapping onto Codex's sandbox
-    /// and approval flags, which have not been measured.
+    /// `permission_policy.tools` maps onto `--sandbox`: a write-capable tool
+    /// (`bash`, `shell`, `edit`, `write` or `apply_patch`, case-insensitively
+    /// — the `grants` convention `opencode.rs` uses) selects
+    /// `--sandbox workspace-write`; an empty or read-only tool list selects
+    /// `--sandbox read-only`. Never `danger-full-access`, never
+    /// `--dangerously-bypass-approvals-and-sandbox`. `permission_policy.approvals`
+    /// adds no flag at all: the scheduler never routes `ask` to a harness
+    /// whose `decisions` capability is unsupported, and codex's stays
+    /// unsupported, so `approvals` is always treated as `auto` here — and on
+    /// codex-cli 0.149.1 `exec --json` never prompts under any flag measured
+    /// (`exec-tool-call.jsonl`, `exec-sandbox-read-only.jsonl`,
+    /// `exec-approve-for-me.jsonl`, `exec-bypass-approvals-and-sandbox.jsonl`),
+    /// so the non-prompting form is simply the plain one, with no separate
+    /// approval flag to add. `network` and `budgets` have no `exec` flag and
+    /// are not passed; `capabilities` declares `permission_policy` advisory
+    /// for that reason.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         let mut args = Vec::new();
         // `-c` overrides are global flags and must precede `exec`.
@@ -143,7 +162,22 @@ impl HarnessGrammar for CodexGrammar {
             }
         }
         let model = run.spec.work.request.requested_model_id.as_ref();
-        args.extend(["exec".to_owned(), "--json".to_owned(), "--model".to_owned()]);
+        let tools = &run.spec.work.request.permission_policy.tools;
+        let write_capable = ["bash", "shell", "edit", "write", "apply_patch"]
+            .iter()
+            .any(|tool| grants(tools, tool));
+        let sandbox = if write_capable {
+            "workspace-write"
+        } else {
+            "read-only"
+        };
+        args.extend([
+            "exec".to_owned(),
+            "--json".to_owned(),
+            "--sandbox".to_owned(),
+            sandbox.to_owned(),
+            "--model".to_owned(),
+        ]);
         args.push(model.map_or_else(String::new, |model| model.as_str().to_owned()));
         Ok(Invocation {
             args,
@@ -211,8 +245,10 @@ impl HarnessGrammar for CodexGrammar {
             ),
             decisions: capability(
                 CapabilitySupport::Unsupported,
-                "codex's approval behaviour has not been observed; nothing pauses a run to \
-                 await a decision",
+                "`codex exec`, the one this adapter drives, never asks: no sandbox or approval \
+                 flag measured on codex-cli 0.149.1 produced an interactive prompt in `--json` \
+                 output. `codex app-server` does ask over stdio, but this adapter does not \
+                 drive that transport, so nothing here pauses a run to await a decision",
             ),
             artifacts: capability(
                 CapabilitySupport::Advisory,
@@ -226,9 +262,13 @@ impl HarnessGrammar for CodexGrammar {
                  cost_usd field exists in the output, so cost is never reported",
             ),
             additional: policy_capability(
-                CapabilitySupport::Unsupported,
-                "the request's tool list, network flag and budgets are not passed to codex; \
-                 its sandbox and approval flags have not been measured",
+                CapabilitySupport::Advisory,
+                "the request's tool list is enforced as codex's sandbox mode (a write-capable \
+                 tool grants `--sandbox workspace-write`, none grants `--sandbox read-only`; \
+                 read-only's denial of a write was observed, and workspace-write's denial of a \
+                 write outside the workspace was observed through `--approve-for-me`); network \
+                 and budgets are not passed at all because `codex exec` 0.149.1 has no flag for \
+                 either",
             ),
         }
     }

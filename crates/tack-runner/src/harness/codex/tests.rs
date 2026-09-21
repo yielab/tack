@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::harness::test_support::{finished, gateway, scratch, secret_store, spec};
+use tack_orch::execution::Approvals;
 
 fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
     let secrets = secret_store(state);
@@ -27,7 +28,18 @@ fn a_direct_request_passes_only_the_model() {
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
     assert_eq!(
         invocation.args,
-        ["exec", "--json", "--model", "opaque/model-alpha"]
+        // The fixture request's own tools are `shell`/`filesystem`; `shell`
+        // is write-capable, so this lands on `workspace-write`
+        // (`the_permission_policy_maps_onto_the_sandbox_flag` covers the
+        // rest of the mapping).
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--model",
+            "opaque/model-alpha"
+        ]
     );
     assert!(invocation.env.is_empty());
 }
@@ -113,10 +125,53 @@ fn codex_declares_what_it_does_not_enforce() {
     let declared = CodexGrammar.capabilities();
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
     assert_eq!(declared.usage.support, CapabilitySupport::Advisory);
+    assert_eq!(declared.decisions.support, CapabilitySupport::Unsupported);
     assert_eq!(
         declared.additional["permission_policy"]["support"],
-        "unsupported"
+        "advisory"
     );
+}
+
+/// One row per policy value the mapping cares about: the tool list alone
+/// selects the sandbox mode; `approvals` and `network` never change the
+/// args (each is compared against the same expected args as the first row,
+/// which fixes `tools: []`, `network: false` and `approvals: None`).
+#[test]
+fn the_permission_policy_maps_onto_the_sandbox_flag() {
+    let state = scratch("codex-permission-policy");
+    let rows: [(&[&str], bool, Option<Approvals>, &str); 6] = [
+        (&[], false, None, "read-only"),
+        (&["bash"], false, None, "workspace-write"),
+        (&["Edit"], false, None, "workspace-write"),
+        (&["read"], false, None, "read-only"),
+        (&[], false, Some(Approvals::Auto), "read-only"),
+        (&[], true, None, "read-only"),
+    ];
+    for (tools, network, approvals, sandbox) in rows {
+        let mut request = spec(DESCRIPTOR.kind, state.path());
+        request.work.request.permission_policy.tools =
+            tools.iter().map(|tool| (*tool).to_owned()).collect();
+        request.work.request.permission_policy.network = network;
+        request.work.request.permission_policy.approvals = approvals;
+        let run = RunContext {
+            spec: &request,
+            endpoint: None,
+            scratch: state.path(),
+        };
+        let args = CodexGrammar.invocation(&run).expect("invocation").args;
+        assert_eq!(
+            args,
+            [
+                "exec",
+                "--json",
+                "--sandbox",
+                sandbox,
+                "--model",
+                "opaque/model-alpha"
+            ],
+            "{tools:?} network={network} approvals={approvals:?}"
+        );
+    }
 }
 
 /// `(transcript, succeeded, tokens_in, tokens_out)`. Numbers for the real
