@@ -388,7 +388,7 @@ of the released product asks for it, and then through an ADR where a decision is
 | G2 | landed 2026-09-20 |
 | U2 | landed 2026-09-21 |
 | U3 | landed 2026-09-21 |
-| G3 | open |
+| G3 | landed 2026-09-21 |
 | U5 | closed 2026-09-20: nothing to share (see the task) |
 | U6 · U7 | open |
 | U8 | does not start: docket ships no `harness-v1.1` (M3) |
