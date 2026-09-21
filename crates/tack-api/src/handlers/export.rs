@@ -241,6 +241,7 @@ pub async fn import_project(
                         workflow: Some(src.workflow.clone()),
                         vocabulary: Some(src.vocabulary.clone()),
                         default_model: None,
+                        github_token_ref: None,
                         archived: None,
                     },
                 )

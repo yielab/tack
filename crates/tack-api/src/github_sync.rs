@@ -13,6 +13,39 @@
 //! trigger an outbound push back to GitHub — the two directions only ever
 //! meet through the item's stored status, not through a shared code path.
 
+/// The single place the token-resolution order lives: a project's own
+/// `github_token_ref` (resolved through the embedded runner's secret store,
+/// when one is wired into this `AppState`), falling through to the
+/// environment's `TACK_GITHUB_TOKEN` when the project has no reference, no
+/// runner control is wired in, or the reference fails to resolve. A
+/// resolution failure logs the reference *name* — never the value — at
+/// `warn` and falls through rather than failing the caller.
+/// `handlers::items::maybe_sync_github` and `handlers::comments::
+/// maybe_sync_github` call this instead of reading `state.config.
+/// github_token` directly; so does the inbound poll's `poll_repo`.
+pub(crate) async fn github_token_for_project(
+    state: &crate::router::AppState,
+    project_id: uuid::Uuid,
+) -> Option<String> {
+    if let Ok(Some(project)) = state.repo.get_project(project_id).await
+        && let Some(reference) = project.github_token_ref.as_deref()
+        && let Some(local_runner) = &state.local_runner
+    {
+        match local_runner.resolve_secret(reference).await {
+            Ok(value) => return Some(value),
+            Err(error) => {
+                tracing::warn!(
+                    project_id = %project_id,
+                    reference = %reference,
+                    %error,
+                    "GitHub token reference did not resolve"
+                );
+            }
+        }
+    }
+    state.config.github_token.clone()
+}
+
 /// Decide whether a status change warrants a GitHub push, and in which direction.
 ///
 /// Returns `Some(true)` to close the issue, `Some(false)` to reopen it, or
@@ -148,7 +181,10 @@ pub struct PollSummary {
 
 /// Poll every linked GitHub repo once for issue-state changes. No-op
 /// (`Ok(PollSummary::default())`) when no `github_token` is configured — the
-/// same gate the outbound push in `handlers::items::maybe_sync_github` uses.
+/// poll only *starts* on the environment token; it does not gate on any
+/// project's `github_token_ref` (a project reference can only ever narrow
+/// which token a given repo's requests use once the poll is already
+/// running — see `poll_repo`).
 ///
 /// A per-repo failure (a bad response, a network error) is logged and
 /// skipped rather than failing the whole poll; ids only are logged, never
@@ -200,6 +236,18 @@ async fn poll_repo(
     if links.is_empty() {
         return Ok(0);
     }
+
+    // Links for one repo come from one import, so one project: the first
+    // link's item's project decides which token this repo's requests use.
+    // Falls back to the env token already passed in when there is no
+    // project-level reference, no runner control wired in, or it fails to
+    // resolve — see `github_token_for_project`.
+    let project_token = match state.repo.get_item(links[0].0).await {
+        Ok(Some(item)) => github_token_for_project(state, item.project_id).await,
+        _ => None,
+    };
+    let token: &str = project_token.as_deref().unwrap_or(token);
+
     let since = links
         .iter()
         .filter_map(|(_, _, synced_at)| synced_at.clone())

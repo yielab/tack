@@ -235,6 +235,7 @@ async fn update_project() {
                 vocabulary: None,
                 workflow: None,
                 default_model: None,
+                github_token_ref: None,
                 archived: None,
             },
         )

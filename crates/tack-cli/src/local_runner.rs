@@ -517,6 +517,15 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
                 .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY),
         )
     }
+
+    async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {
+        let state = self.state.lock().await;
+        let store = SecretStore::open(&state.runner_config.secret_store_path());
+        store
+            .resolve(reference)
+            .map(|value| value.expose().to_owned())
+            .map_err(|error| LocalRunnerControlError::SecretStore(error.to_string()))
+    }
 }
 
 /// How long a stopped runner task is given to actually exit before a

@@ -51,6 +51,10 @@ impl Repository {
         github_links::get_link(self.pool(), item_id).await
     }
 
+    pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), sqlx::Error> {
+        github_links::remove_link(self.pool(), item_id).await
+    }
+
     // ────────────────────────────────────────────────────────────────────────────────
     // Board Methods
     // ────────────────────────────────────────────────────────────────────────────────

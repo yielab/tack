@@ -9,6 +9,8 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
+use std::sync::Arc;
+use tack_api::LocalRunnerControl;
 use tack_api::config::AppConfig;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -235,12 +237,32 @@ async fn backup_roundtrip_with_file_db() {
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
     let (app, _) = common::test_app_with_file_db(&db_url).await;
 
+    // A project carrying a GitHub token *reference* must never appear in the
+    // backed-up bytes — `scrub_snapshot_secrets` nulls it before the
+    // snapshot leaves the process.
+    let pid = common::create_project(&app, "P", "software").await;
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{pid}"),
+        json!({"github_token_ref": "store:gh"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
     // Backup should succeed and return a SQLite file.
     let (status, backup_bytes) = raw_bytes(&app, Method::GET, "/api/backup", &[], Vec::new()).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         backup_bytes.starts_with(b"SQLite format 3\x00"),
         "backup must be a valid SQLite file"
+    );
+    assert!(
+        !backup_bytes
+            .windows(b"store:gh".len())
+            .any(|window| window == b"store:gh"),
+        "the project's github_token_ref reference must never appear in the backed-up bytes"
     );
 
     // Staging the backup should succeed and write a .restore file.
@@ -1131,6 +1153,187 @@ async fn completing_github_item_pushes_issue_close() {
     assert!(
         wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42").await,
         "expected a PATCH closing GitHub issue #42 after completion"
+    );
+}
+
+// ─── Manual GitHub link ──────────────────────────────────────────────
+
+/// Link, read, unlink, then confirm the link is gone — plus one bad PUT.
+#[tokio::test]
+async fn manual_github_link_is_set_read_and_removed() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let item_id = common::create_item(&app, pid, "Item").await;
+    let link_uri = format!("/api/items/{item_id}/github-link");
+
+    let (status, _) = common::send(
+        &app,
+        "PUT",
+        &link_uri,
+        json!({"repo": "acme/widgets", "issue_number": 42}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = common::send(&app, "GET", &link_uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["repo"], "acme/widgets");
+    assert_eq!(body["issue_number"], 42);
+
+    let (status, _) = common::send(&app, "DELETE", &link_uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = common::send(&app, "GET", &link_uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unlinked reads back as 404");
+
+    let (status, _) = common::send(
+        &app,
+        "PUT",
+        &link_uri,
+        json!({"repo": "not a repo", "issue_number": 1}),
+        &[],
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "an unparseable repo is the ordinary validation error"
+    );
+}
+
+/// A manually linked item (never imported) still closes its GitHub issue on
+/// Done — the "UI row links an item and the item then closes its issue on
+/// Done" done-when, proven on the API side.
+#[tokio::test]
+async fn manual_github_link_closes_the_issue_on_done() {
+    use wiremock::matchers::{body_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/repos/acme/widgets/issues/42"))
+        .and(body_json(json!({ "state": "closed" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "number": 42 })))
+        .mount(&gh)
+        .await;
+
+    let config = AppConfig {
+        github_api_base: gh.uri(),
+        github_token: Some("tok".into()),
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_config(config).await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let item_id = common::create_item(&app, pid, "Item").await;
+
+    let (status, _) = common::send(
+        &app,
+        "PUT",
+        &format!("/api/items/{item_id}/github-link"),
+        json!({"repo": "acme/widgets", "issue_number": 42}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/items/{item_id}"),
+        json!({"status":"Done"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert!(
+        wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42").await,
+        "expected a PATCH closing GitHub issue #42 after a manual link and completion"
+    );
+}
+
+/// A project-level `github_token_ref` (resolved through the embedded
+/// runner's secret store) is used for that project's push, in preference to
+/// the environment's `TACK_GITHUB_TOKEN` — and the project response never
+/// carries the resolved value, only the reference.
+#[tokio::test]
+async fn push_uses_the_project_token_before_the_environment_token() {
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/repos/acme/widgets/issues/42"))
+        .and(header("authorization", "Bearer project-tok"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "number": 42 })))
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let control = Arc::new(crate::local_runner::FakeControl::default());
+    control
+        .set_secret("gh", "project-tok")
+        .await
+        .expect("seed the fake secret store");
+    let control: Arc<dyn LocalRunnerControl> = control;
+
+    let config = AppConfig {
+        github_api_base: gh.uri(),
+        github_token: Some("env-tok".into()),
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_local_runner(config, Some(control)).await;
+    let pid = common::create_project(&app, "P", "software").await;
+
+    let (status, project_body) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{pid}"),
+        json!({"github_token_ref": "store:gh"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(project_body["github_token_ref"], "store:gh");
+    assert!(
+        !project_body.to_string().contains("project-tok"),
+        "the project response must carry the reference, never the resolved token value"
+    );
+
+    let item_id = common::create_item(&app, pid, "Item").await;
+    let (status, _) = common::send(
+        &app,
+        "PUT",
+        &format!("/api/items/{item_id}/github-link"),
+        json!({"repo": "acme/widgets", "issue_number": 42}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/items/{item_id}"),
+        json!({"status":"Done"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert!(
+        wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42").await,
+        "expected the push to reach GitHub using the project token"
+    );
+
+    let all_requests = gh.received_requests().await.unwrap();
+    assert!(
+        !all_requests.iter().any(
+            |r| r.headers.get("authorization").and_then(|v| v.to_str().ok())
+                == Some("Bearer env-tok")
+        ),
+        "the environment token must never be used once a project token resolves: {all_requests:?}"
     );
 }
 
