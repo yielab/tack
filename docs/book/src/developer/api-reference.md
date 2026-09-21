@@ -163,7 +163,7 @@ Removes an item's manual (or imported) GitHub link. `204` even when the
 
 #### `PUT /api/items/{id}/github-link`
 
-Manually links an item to a GitHub issue for push-only status sync — the
+Manually links an item to a GitHub issue so status and comments sync both ways — the
 
 | Param | In | Type | Required | Description |
 |---|---|---|---|---|

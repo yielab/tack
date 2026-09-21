@@ -32,7 +32,7 @@ impl Repository {
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
-    // GitHub link methods (push-only status sync)
+    // GitHub link methods (status and comment sync, both directions)
     // ────────────────────────────────────────────────────────────────────────────────
 
     pub async fn set_github_link(

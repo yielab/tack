@@ -43,7 +43,7 @@ executor that is off until something turns it on. Nothing below requires a runne
 | Needs an active runner (embedded or remote) | |
 |---|---|
 | Clicking **Run with agent** on an item | ❌ shows "Agent execution is off" instead of a form |
-| Codex or Claude Code actually running against your code | ❌ nothing to run it |
+| A harness (Claude Code, Codex, docket or opencode) actually running against your code | ❌ nothing to run it |
 
 Nothing silently queues forever: the button tells you there's no runner to give the
 request to, rather than accepting one that no runner will ever claim.

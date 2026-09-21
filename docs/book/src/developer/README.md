@@ -220,7 +220,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │   └── src/
 │   │       ├── main.rs      Startup, config, registry
 │   │       ├── engine.rs    Claim → prepare → run → report loop
-│   │       ├── harness/     Adapters per coding agent (codex, claude_code)
+│   │       ├── harness/     Adapters per coding agent (codex, claude_code, docket, opencode)
 │   │       ├── journal.rs   Local attempt journal for crash recovery
 │   │       └── workspace.rs Per-attempt working directory + credentials
 │   │

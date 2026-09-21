@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/yielab/tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/tack/actions/workflows/ci.yml)
 
-**A project board that can hand its own items to an AI coding agent — Claude Code or
-Codex — and track the run as part of the item's history.** Self-hosted, one binary,
+**A project board that can hand its own items to an AI coding agent — Claude Code,
+Codex, docket, or opencode — and track the run as part of the item's history.** Self-hosted, one binary,
 no cloud account.
 
 <img src="screenshots/hero.gif" width="98%" alt="A board item assigned to Claude Code through Run with agent, tracked live from Leased to Succeeded, with its Execution tab showing the matched model and measured cost">
@@ -27,8 +27,8 @@ Under the hood, Tack is two components, built to be one product.
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
-> an isolated workspace, launches the coding agent you already use — Claude Code or
-> Codex — and reports back. **It holds the keys; the board never sees them.**
+> an isolated workspace, launches the coding agent you already use — Claude Code,
+> Codex, docket, or opencode — and reports back. **It holds the keys; the board never sees them.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its
@@ -39,7 +39,7 @@ Under the hood, Tack is two components, built to be one product.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/two-components-dark.svg">
-  <img src="diagrams/two-components-light.svg" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code or Codex — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
+  <img src="diagrams/two-components-light.svg" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, docket, or opencode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
 </picture>
 
 ---
@@ -68,7 +68,7 @@ Six terms recur throughout this documentation:
 
 ## Quick links
 
-- [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Codex or Claude Code
+- [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Claude Code, Codex, docket, or opencode
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
 - [Architecture Overview](developer/README.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit

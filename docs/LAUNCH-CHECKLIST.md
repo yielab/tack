@@ -26,9 +26,13 @@ automatically — every step under "Publish list" is a human action.
 1. **Tag the release.** Nothing has shipped since `v0.1.0-beta.7`, and that tag
    predates the desktop bundles — the releases page has no `.AppImage`, `.deb`,
    `.dmg`, or `.msi` yet, so every download link in the README resolves to a page
-   without the app on it. Bump the version in `Cargo.toml`, then:
+   without the app on it. The workspace version is already `0.1.0-beta.9` in every
+   manifest (`Cargo.toml`, `crates/tack-desktop/Cargo.toml`, `tauri.conf.json`,
+   `frontend/package.json`) and `CHANGELOG.md` carries that section, so the tag is
+   the only step left (a `0.1.0-beta.8` version was bumped but never tagged; its
+   changes ship here):
    ```bash
-   git tag vX.Y.Z && git push origin vX.Y.Z
+   git tag v0.1.0-beta.9 && git push origin v0.1.0-beta.9
    ```
    `release.yml` builds and publishes the archives, the four desktop bundles, and the
    SBOMs, and refuses the tag outright if it doesn't match `Cargo.toml`.
