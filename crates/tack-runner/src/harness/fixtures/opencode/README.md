@@ -122,7 +122,24 @@ this tree trusts blindly.
   for 15s never proceeded — until a matching `{"id":...,"result":{"outcome":...}}` line is
   written to stdin, at which point the tool call actually runs and the turn completes
   (`asking_acp.txt`). The two interfaces disagree on `decisions` capability, not just on
-  formatting.
+  formatting. `decisions` is driven entirely over `acp` (`OpencodeGrammar::signal`/`answer`);
+  `run` still never pauses. The adapter's own `ask` shape adds one config field `-m` has no
+  ACP equivalent for: a top-level `"model": "tack/<id>"` key (ACP's `session/new` has no `-m`
+  flag to carry it), and each granted tool moves from `"allow"` to `"ask"` in the same
+  injected `permission` block.
+- **`opencode acp --pure` exits 0 within 0.9s of stdin reaching EOF**, once `initialize` has
+  been answered and nothing further is written — measured against the adapter's own shape
+  (a `session/prompt` conversation driven to its id-3 result), so closing stdin on
+  `StreamSignal::Finished` is all a run needs to end.
+- **A session driven over `acp` makes an extra, tool-less chat-completions call before the
+  real turn.** Against the adapter's own injected config and a fake model server, a real
+  `opencode acp --pure` session sent exactly three requests to it: first one with no `tools`
+  field at all — its `messages[0].content` is opencode's own built-in title-generation
+  prompt ("You are a title generator...") — then the real turn's two calls (the `bash` tool
+  call, then the final message), each carrying a non-empty `tools` array. The live test's
+  fake server tells the two apart the same way: a request with no `tools` gets a harmless
+  plain-text reply that can never consume the tool-call turn, regardless of where in the
+  sequence it lands.
 - **A per-attempt network round-trip that a shared `npm_config_cache` does not avoid.** Three
   separate fresh-scratch-HOME `opencode run` attempts (none reusing another's `HOME`,
   `XDG_*`, or `BUN_INSTALL`) each made the identical `strace -f -e trace=connect` pattern:
@@ -160,9 +177,10 @@ this tree trusts blindly.
 1. `cancel: Advisory`, never `Supported`: the bash tool's own child was observed (via `ps`,
    ADR 0067) to survive `SIGTERM` in its own process/session group; whether every tool a run
    starts behaves the same way is not separately confirmed here.
-2. `resume`/`decisions: Unsupported`: no reattachment interface and no ask-the-operator event
-   were observed; `--continue`/`--session` were read from `--help` text, not exercised against a
-   real paused run.
+2. `resume: Unsupported`: no reattachment interface was observed; `--continue`/`--session`
+   were read from `--help` text, not exercised against a real paused run. `decisions` is no
+   longer unverified: it is `Supported`, driven entirely over `acp` (see "Measured" above),
+   with `run` unchanged.
 3. `artifacts: Advisory`: only the staged stdout/stderr log is claimed; nothing in the event
    stream names a file opencode's own tools wrote, so no per-file artifact discovery is
    implemented.

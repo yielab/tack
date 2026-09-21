@@ -9,9 +9,11 @@ use super::*;
 use crate::harness::HarnessAdapter;
 use crate::harness::local_process::LocalProcessHarness;
 use crate::harness::process::{ProcessExit, ProcessLimits};
-use crate::harness::test_support::{finished, gateway, scratch, secret_store, spec};
+use crate::harness::test_support::{
+    finished, gateway, harness_for, scratch, script, secret_store, spec,
+};
 use crate::secrets::SecretStore;
-use tack_orch::execution::{RequestedModelId, RequestedModelProvider};
+use tack_orch::execution::{Approvals, RequestedModelId, RequestedModelProvider};
 
 fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
     let secrets = secret_store(state);
@@ -84,6 +86,61 @@ fn a_request_becomes_a_run_command_and_environment() {
     assert!(content["provider"]["tack"]["models"]["opaque/model-alpha"].is_object());
 }
 
+/// `ask` swaps `run --format json -m tack/<model>` for `acp --pure`, keeps
+/// stdin open, and gains the top-level `model` config key `-m` has no ACP
+/// equivalent for; every granted tool goes to `"ask"` instead of `"allow"`.
+/// `auto` (absent counts as `auto`) keeps the command line byte for byte.
+#[test]
+fn an_ask_request_becomes_acp_with_a_model_and_ask_permissions() {
+    let state = scratch("opencode-ask-invocation");
+    let scratch_dir = scratch("opencode-ask-invocation-scratch");
+    let endpoint = endpoint(state.path());
+    let mut request = networked(state.path());
+    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+    request.work.request.permission_policy.tools =
+        vec!["edit".to_owned(), "bash".to_owned(), "task".to_owned()];
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let invocation = OpencodeGrammar.invocation(&run).expect("invocation");
+    assert_eq!(invocation.args, ["acp", "--pure"]);
+    assert!(invocation.stdin_stays_open);
+    let content: serde_json::Value =
+        serde_json::from_str(&invocation.env["OPENCODE_CONFIG_CONTENT"]).expect("valid json");
+    assert_eq!(content["model"], "tack/opaque/model-alpha");
+    for key in ["edit", "bash", "task"] {
+        assert_eq!(content["permission"][key], "ask", "{key}");
+    }
+    assert_eq!(content["permission"]["webfetch"], "allow");
+
+    let baseline = OpencodeGrammar
+        .invocation(&RunContext {
+            spec: &networked(state.path()),
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        })
+        .expect("invocation");
+    assert_eq!(
+        baseline.args,
+        [
+            "run",
+            "--pure",
+            "--format",
+            "json",
+            "--title",
+            "tack",
+            "-m",
+            "tack/opaque/model-alpha"
+        ]
+    );
+    assert!(!baseline.stdin_stays_open);
+    let baseline_content: serde_json::Value =
+        serde_json::from_str(&baseline.env["OPENCODE_CONFIG_CONTENT"]).expect("valid json");
+    assert!(baseline_content.get("model").is_none());
+}
+
 #[test]
 fn the_permission_block_is_a_table_over_policies() {
     let state = scratch("opencode-permission");
@@ -116,6 +173,15 @@ fn the_permission_block_is_a_table_over_policies() {
             assert_eq!(permission[key], want, "{tools:?} {key}");
         }
     }
+}
+
+#[test]
+fn opencode_declares_decisions_supported_over_acp() {
+    let declared = OpencodeGrammar.capabilities();
+    assert_eq!(declared.decisions.support, CapabilitySupport::Supported);
+    let reason = declared.decisions.reason.as_deref().unwrap_or_default();
+    assert!(reason.contains("acp"), "{reason}");
+    assert!(reason.contains("session/request_permission"), "{reason}");
 }
 
 #[test]
@@ -194,6 +260,308 @@ fn events_become_a_report_over_captured_fixtures() {
     }
     let cancelled = read(cut_short, ProcessExit::Exited(143));
     assert_eq!(cancelled.terminal_reason["reason"], "cancelled");
+}
+
+/// The `[t=…] STDOUT: ` prefix a captured-conversation fixture uses, stripped
+/// so the JSON itself is what a test reads. `SEND:`/`AUTO-RESPOND:` lines
+/// are a different marker and never match.
+fn stdout_json_lines(fixture: &str) -> Vec<&str> {
+    fixture
+        .lines()
+        .filter_map(|line| line.split_once("STDOUT: ").map(|(_, json)| json))
+        .collect()
+}
+
+/// The fixture's own `/* elided: ... */` comment — present on exactly one
+/// captured line, marking data the capture session left out for a human
+/// reader — is not valid JSON and never appears in a real vendor line;
+/// stripped here so that one line still parses like every other.
+fn strip_elided_comment(line: &str) -> std::borrow::Cow<'_, str> {
+    match (line.find("/*"), line.find("*/")) {
+        (Some(start), Some(end)) if end > start => {
+            let mut owned = String::with_capacity(line.len());
+            owned.push_str(&line[..start]);
+            owned.push_str(&line[end + 2..]);
+            std::borrow::Cow::Owned(owned)
+        }
+        _ => std::borrow::Cow::Borrowed(line),
+    }
+}
+
+/// The one line of `fixture` whose parsed JSON satisfies `matches`.
+fn find_json<'a>(lines: &[&'a str], matches: impl Fn(&Value) -> bool) -> &'a str {
+    lines
+        .iter()
+        .copied()
+        .find(|line| {
+            serde_json::from_str::<Value>(&strip_elided_comment(line))
+                .map(|value| matches(&value))
+                .unwrap_or(false)
+        })
+        .expect("a line matching the predicate")
+}
+
+/// `prompt()`'s handshake bytes, then every line of `asking_acp.txt`'s own
+/// captured conversation read back through `signal()`: the id-1 and id-2
+/// results drive the rest of the handshake from their own replies, the
+/// `session/request_permission` line becomes a question, the id-3 result
+/// ends the run, and a `session/update` notification means nothing here.
+#[test]
+fn an_ask_request_becomes_an_acp_conversation() {
+    let state = scratch("opencode-ask-conversation");
+    let request = networked(state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: None,
+        scratch: state.path(),
+    };
+
+    let framed = OpencodeGrammar.prompt("do it".to_owned(), true);
+    let message: Value = serde_json::from_slice(&framed).expect("one JSON line");
+    assert_eq!(message["method"], "initialize");
+    assert_eq!(message["id"], 1);
+    assert_eq!(message["params"]["protocolVersion"], 1);
+    assert_eq!(framed.last(), Some(&b'\n'));
+    let plain = OpencodeGrammar.prompt("do it".to_owned(), false);
+    assert_eq!(plain, b"do it");
+
+    let fixture = include_str!("../fixtures/opencode/1.18.30/asking_acp.txt");
+    let lines = stdout_json_lines(fixture);
+
+    let reply_bytes = |signal: StreamSignal| -> Value {
+        let StreamSignal::Reply(bytes) = signal else {
+            panic!("expected a reply, got {signal:?}");
+        };
+        serde_json::from_slice(&bytes).expect("valid json")
+    };
+
+    // the id-1 result -> the session/new request.
+    let id1_result = find_json(&lines, |v| v.get("id").and_then(Value::as_i64) == Some(1));
+    let got = reply_bytes(OpencodeGrammar.signal(&run, id1_result).expect("a reply"));
+    assert_eq!(
+        got,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {
+                "cwd": working_directory(&run).display().to_string(),
+                "mcpServers": [],
+            },
+        })
+    );
+
+    // the id-2 result -> the session/prompt request, carrying its session
+    // id and this request's own prompt. The fixture's own line elides its
+    // built-in model catalog with a `/* ... */` comment for a human
+    // reader; stripped so this parses like the real vendor line would.
+    let id2_result = find_json(&lines, |v| v.get("id").and_then(Value::as_i64) == Some(2));
+    let id2_result = strip_elided_comment(id2_result);
+    let got = reply_bytes(OpencodeGrammar.signal(&run, &id2_result).expect("a reply"));
+    assert_eq!(
+        got,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": "ses_f3eab904affeINRQ0ml40TzJph",
+                "prompt": [{"type": "text", "text": request.work.request.resolved_agent_profile.instructions}],
+            },
+        })
+    );
+
+    // session/request_permission -> a question.
+    let permission_line = find_json(&lines, |v| {
+        v.get("method").and_then(Value::as_str) == Some("session/request_permission")
+    });
+    let signal = OpencodeGrammar
+        .signal(&run, permission_line)
+        .expect("a question");
+    let StreamSignal::Question(question) = signal else {
+        panic!("expected a question, got {signal:?}");
+    };
+    assert_eq!(question.vendor_id, "0");
+    assert_eq!(question.kind, "tool_permission");
+    assert!(question.prompt.contains("echo hello-from-bash-tool"));
+    assert_eq!(
+        question
+            .options
+            .iter()
+            .map(|option| option.option_id.as_str())
+            .collect::<Vec<_>>(),
+        ["once", "reject"]
+    );
+    assert_eq!(question.metadata["tool_call_id"], "call_1");
+    assert_eq!(question.metadata["kind"], "execute");
+
+    // the id-3 result -> Finished.
+    let id3_result = find_json(&lines, |v| v.get("id").and_then(Value::as_i64) == Some(3));
+    assert_eq!(
+        OpencodeGrammar.signal(&run, id3_result),
+        Some(StreamSignal::Finished)
+    );
+
+    // a session/update notification -> nothing.
+    let update_line = find_json(&lines, |v| {
+        v.get("method").and_then(Value::as_str) == Some("session/update")
+    });
+    assert_eq!(OpencodeGrammar.signal(&run, update_line), None);
+}
+
+/// `once` writes the fixture's own AUTO-RESPOND line, `id` a JSON number;
+/// anything else, including an answer this grammar never offered, rejects.
+#[test]
+fn an_answer_becomes_a_permission_outcome() {
+    let question = Question {
+        vendor_id: "0".to_owned(),
+        kind: "tool_permission".to_owned(),
+        prompt: "Allow echo hello-from-bash-tool?".to_owned(),
+        options: vec![
+            DecisionOption {
+                option_id: "once".to_owned(),
+                label: "Allow once".to_owned(),
+            },
+            DecisionOption {
+                option_id: "reject".to_owned(),
+                label: "Deny".to_owned(),
+            },
+        ],
+        metadata: serde_json::Map::new(),
+    };
+
+    let fixture = include_str!("../fixtures/opencode/1.18.30/asking_acp.txt");
+    let auto_respond = fixture
+        .lines()
+        .find_map(|line| line.split_once("AUTO-RESPOND: ").map(|(_, json)| json))
+        .expect("the fixture's own auto-respond line");
+    let expected: Value = serde_json::from_str(auto_respond).expect("fixture json");
+    assert!(expected["id"].is_number());
+
+    let allow = DecisionAnswer {
+        option_id: Some("once".to_owned()),
+        text: None,
+    };
+    let bytes = OpencodeGrammar.answer(&question, &allow);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).expect("valid json"),
+        expected
+    );
+
+    for option_id in ["reject", "an-option-this-grammar-never-offered"] {
+        let deny = DecisionAnswer {
+            option_id: Some(option_id.to_owned()),
+            text: None,
+        };
+        let bytes = OpencodeGrammar.answer(&question, &deny);
+        let got: Value = serde_json::from_slice(&bytes).expect("valid json");
+        assert_eq!(
+            got["result"]["outcome"]["optionId"], "reject",
+            "{option_id}"
+        );
+        assert_eq!(got["id"], 0);
+    }
+}
+
+/// The id-3 result decides the verdict and usage over the same captured
+/// conversation; a `stopReason` other than `end_turn`, or a JSON-RPC
+/// `error` on id 1-3, fails the run.
+#[test]
+fn acp_events_become_a_report_over_a_captured_conversation() {
+    let fixture = include_str!("../fixtures/opencode/1.18.30/asking_acp.txt");
+    let lines = stdout_json_lines(fixture);
+    let id3_result = find_json(&lines, |v| v.get("id").and_then(Value::as_i64) == Some(3));
+
+    let report = read(id3_result, ProcessExit::Exited(0));
+    assert!(report.succeeded, "{:?}", report.terminal_reason);
+    assert_eq!((report.tokens_in, report.tokens_out), (Some(5), Some(2)));
+
+    let cancelled = id3_result.replace("\"end_turn\"", "\"cancelled\"");
+    let report = read(&cancelled, ProcessExit::Exited(0));
+    assert!(!report.succeeded, "{:?}", report.terminal_reason);
+
+    let errored = read(
+        r#"{"jsonrpc":"2.0","id":3,"error":{"code":-32000,"message":"boom"}}"#,
+        ProcessExit::Exited(1),
+    );
+    assert!(!errored.succeeded);
+    assert_eq!(errored.terminal_reason["message"], "boom");
+}
+
+/// The core drives the real grammar through a `/bin/sh` shim that replays
+/// the protocol: `initialize` gets the id-1 result, `session/new` the id-2
+/// result, `session/prompt` the `session/request_permission` line; the
+/// shim then echoes the answer it reads back (`GOT:$answer`) before the
+/// id-3 result. Proves the whole handshake end to end without the real
+/// `opencode` binary.
+#[tokio::test]
+async fn the_core_drives_opencode_through_a_shim_that_asks() {
+    let state = scratch("opencode-ask-shim");
+    let secrets = secret_store(state.path());
+    secrets
+        .set("key", "a-resolvable-value")
+        .expect("seed store");
+
+    let body = r#"read -r _initialize
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+read -r _session_new
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"ses_shim"}}'
+read -r _session_prompt
+printf '%s\n' '{"jsonrpc":"2.0","id":0,"method":"session/request_permission","params":{"sessionId":"ses_shim","toolCall":{"toolCallId":"call_1","title":"echo hello-from-bash-tool","kind":"execute"}}}'
+read -r answer
+echo "GOT:$answer"
+printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":5,"outputTokens":2}}}'
+exit 0"#;
+    let harness = harness_for(OpencodeGrammar, script(state.path(), body), state.path())
+        .with_providers(gateway("key"));
+    let mut request = spec(DESCRIPTOR.kind, state.path());
+    request.work.request.requested_model_provider = Some(RequestedModelProvider::new(
+        crate::config::VERCEL_AI_GATEWAY_PROVIDER,
+    ));
+    request.work.request.requested_model_id = Some(RequestedModelId::new("fake-model"));
+    request.work.request.permission_policy.network = true;
+    request.work.request.permission_policy.tools = vec!["bash".to_owned()];
+    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+
+    let handle = harness.start(&request).await.expect("start");
+    let (mut questions_rx, answers_tx) = harness
+        .decision_channels(&handle)
+        .await
+        .expect("an ask request exposes decision channels");
+
+    let drive = async {
+        let question = questions_rx.recv().await.expect("question");
+        assert!(
+            question.prompt.contains("echo hello-from-bash-tool"),
+            "{question:?}"
+        );
+        let answer = DecisionAnswer {
+            option_id: Some("once".to_owned()),
+            text: None,
+        };
+        let _ = answers_tx.send(answer).await;
+    };
+    let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
+    let outcome = outcome.expect("wait");
+
+    assert_eq!(
+        outcome.terminal_state,
+        crate::client::AttemptState::Succeeded,
+        "{:?}",
+        outcome.terminal_reason
+    );
+    assert_eq!(outcome.usage.tokens_in.value, Some(5));
+    let staged = outcome.terminal_reason["artifact"]["staged_path"]
+        .as_str()
+        .expect("run log staged");
+    let log = std::fs::read_to_string(staged).expect("read staged log");
+    let got_line = log
+        .lines()
+        .find(|line| line.starts_with("GOT:"))
+        .unwrap_or_else(|| panic!("no GOT: line in the staged log: {log}"));
+    let got: Value = serde_json::from_str(got_line.trim_start_matches("GOT:")).expect("valid json");
+    assert_eq!(got["id"], 0);
+    assert_eq!(got["result"]["outcome"]["optionId"], "once");
 }
 
 /// One JSON chat-completions chunk stream per call, over `text/event-stream`:
@@ -378,6 +746,133 @@ async fn the_real_opencode_edits_a_file_against_a_fake_model_server() {
 
     assert_live_outcome(&outcome, workspace.path());
     assert_key_handling(&server, &outcome).await;
+    assert_eq!(
+        real_home_config_mtime(),
+        real_home_before,
+        "real HOME must never be touched"
+    );
+}
+
+/// Measured against a real `opencode acp --pure` session: a request whose
+/// body carries no `tools` (opencode's own title-generation call, which
+/// exists under `acp` but not under `run`) is answered with harmless plain
+/// text, never a tool call, so it can never consume the real turn no matter
+/// where in the sequence it lands. The first request that does carry
+/// `tools` gets the bash tool call; every one after that gets `Done.`.
+#[derive(Default)]
+struct SequencedBashCall {
+    tool_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl wiremock::Respond for SequencedBashCall {
+    fn respond(&self, request: &wiremock::Request) -> wiremock::ResponseTemplate {
+        let body: Value = request.body_json().unwrap_or_default();
+        let has_tools = body
+            .get("tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty());
+        let body = if !has_tools {
+            sse(&[
+                serde_json::json!({"id": "title", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "content": "asked"}, "finish_reason": null}]}),
+                serde_json::json!({"id": "title", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}}),
+            ])
+        } else if self
+            .tool_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            == 0
+        {
+            let arguments = serde_json::json!({"command": "echo asked > asked.txt"}).to_string();
+            sse(&[
+                serde_json::json!({"id": "c1", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "tool_calls": [{"index": 0, "id": "call_1",
+                    "type": "function", "function": {"name": "bash", "arguments": arguments}}]},
+                    "finish_reason": null}]}),
+                serde_json::json!({"id": "c1", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {}, "finish_reason": "tool_calls"}],
+                    "usage": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16}}),
+            ])
+        } else {
+            sse(&[
+                serde_json::json!({"id": "c2", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {"role": "assistant", "content": "Done."}, "finish_reason": null}]}),
+                serde_json::json!({"id": "c2", "model": SERVED_MODEL, "choices": [{"index": 0,
+                    "delta": {}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}}),
+            ])
+        };
+        wiremock::ResponseTemplate::new(200).set_body_raw(body, "text/event-stream")
+    }
+}
+
+async fn mount_sequenced_bash_call(server: &wiremock::MockServer) {
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/chat/completions"))
+        .respond_with(SequencedBashCall::default())
+        .mount(server)
+        .await;
+}
+
+/// Drives the real `opencode acp --pure` through an `ask` request that
+/// grants only `bash`: a `session/request_permission` line must pause the
+/// run until answered, the same as the shim proves, but against the real
+/// binary and a real ACP handshake this adapter did not script itself.
+#[tokio::test]
+async fn the_real_opencode_asks_before_bash_over_acp() {
+    if crate::harness::locate::locate_installed(DESCRIPTOR.program).is_err() {
+        eprintln!("skipping live opencode test: `opencode` not found on PATH");
+        return;
+    }
+    let real_home_before = real_home_config_mtime();
+    let state = scratch("opencode-live-ask");
+    let workspace = scratch("opencode-live-ask-workspace");
+    let secrets = secret_store(state.path());
+    secrets.set("key", FAKE_KEY).expect("seed store");
+
+    let server = wiremock::MockServer::start().await;
+    mount_sequenced_bash_call(&server).await;
+    let _base_url_override = BaseUrlOverride::set(&server.uri());
+
+    let harness = live_harness(state.path().join("staging"), secrets);
+    let mut request = live_request(workspace.path());
+    request.work.request.permission_policy.tools = vec!["bash".to_owned()];
+    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+    request.work.request.resolved_agent_profile.instructions =
+        "Run a bash command that writes asked.txt".to_owned();
+
+    let handle = harness.start(&request).await.expect("start");
+    let (mut questions_rx, answers_tx) = harness
+        .decision_channels(&handle)
+        .await
+        .expect("an ask request exposes decision channels");
+
+    let drive = async {
+        let question = questions_rx.recv().await.expect("question");
+        assert!(question.prompt.contains("asked.txt"), "{question:?}");
+        assert!(
+            questions_rx.try_recv().is_err(),
+            "exactly one question expected before it is answered"
+        );
+        let answer = DecisionAnswer {
+            option_id: Some("once".to_owned()),
+            text: None,
+        };
+        let _ = answers_tx.send(answer).await;
+    };
+    let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
+    let outcome = outcome.expect("wait");
+
+    assert_eq!(
+        outcome.terminal_state,
+        crate::client::AttemptState::Succeeded,
+        "{:?}",
+        outcome.terminal_reason
+    );
+    assert!(workspace.path().join("asked.txt").exists());
+    assert_key_handling(&server, &outcome).await;
+    assert!(outcome.usage.tokens_in.value.unwrap_or(0) > 0);
     assert_eq!(
         real_home_config_mtime(),
         real_home_before,
