@@ -18,7 +18,6 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     model_selection: ModelSelection::Explicit("a model is required"),
     native_provider: "native",
     inherited_env: &[],
-    min_capture_bytes: (0, 0),
     model_passthrough: "forwarded verbatim",
     probe_notes: &[("note", "attached to every probe")],
     credential_note: "",
