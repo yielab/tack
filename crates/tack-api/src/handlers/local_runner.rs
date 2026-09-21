@@ -186,6 +186,15 @@ pub trait LocalRunnerControl: Send + Sync {
     /// Computed fresh on every call, never cached, so there is nothing to
     /// invalidate.
     async fn catalog(&self) -> CatalogSnapshot;
+
+    /// Read-only resolution of a stored `secret_reference`
+    /// (`store:<name>` or `env:<VARIABLE>`, see
+    /// `tack_runner::secrets::SecretStore::resolve`) for the server's own
+    /// outbound calls — e.g. a project's GitHub token
+    /// (`github_sync::github_token_for_project`). The value never leaves
+    /// the process in a response or a log; only the reference *name* may
+    /// ever be logged by a caller.
+    async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError>;
 }
 
 fn require_control(state: &AppState) -> ApiResult<Arc<dyn LocalRunnerControl>> {

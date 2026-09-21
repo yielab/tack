@@ -1527,6 +1527,136 @@
         }
       }
     },
+    "/api/items/{id}/github-link": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "operationId": "get_item_github_link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item's current GitHub link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubLinkBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found, or not linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Manually links an item to a GitHub issue for push-only status sync — the\nsame `github_links` row `POST /api/projects/{id}/import-github` writes\nfor every item it creates, settable here for an item that was never\nimported.",
+        "operationId": "put_item_github_link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubLinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Linked"
+          },
+          "400": {
+            "description": "Invalid repo or issue number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Removes an item's manual (or imported) GitHub link. `204` even when the\nitem had no link — matches `rm -f`, not `rm`.",
+        "operationId": "delete_item_github_link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unlinked (or was already unlinked)"
+          },
+          "404": {
+            "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{item_id}/attachments": {
       "get": {
         "tags": [
@@ -7299,6 +7429,24 @@
           }
         }
       },
+      "GithubLinkBody": {
+        "type": "object",
+        "description": "Body of `PUT /api/items/{id}/github-link` and the response of\n`GET /api/items/{id}/github-link` — the one new type this route family\nneeds.",
+        "required": [
+          "repo",
+          "issue_number"
+        ],
+        "properties": {
+          "issue_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repo": {
+            "type": "string",
+            "description": "\"owner/repo\" or a full GitHub URL — parsed the same way\n`POST /api/projects/{id}/import-github` parses its own `repo` field."
+          }
+        }
+      },
       "HashMap": {
         "type": "object",
         "additionalProperties": {
@@ -7737,6 +7885,13 @@
               "string",
               "null"
             ]
+          },
+          "github_token_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A `store:<name>` or `env:<VAR>` reference to a secret holding this\nproject's own GitHub token — never the token value itself (see\n`tack_runner::secrets::SecretStore::resolve`). Resolved only\nserver-side, for the server's own outbound GitHub push/poll calls;\nsee `tack-api`'s `github_sync::github_token_for_project` for the\nresolution order (this reference first, then `TACK_GITHUB_TOKEN`)."
           },
           "id": {
             "type": "string",
@@ -8656,6 +8811,13 @@
               "string",
               "null"
             ]
+          },
+          "github_token_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A plain `Option<String>`, not a double-`Option`, like every other\noptional field on this DTO: an absent key leaves the stored\nreference untouched. Since there is no `null` to spell \"clear\" with\nhere, clearing is done by sending the empty string, which the\nrepository (`tack_db::repo::projects::update_project`) stores as SQL\n`NULL` rather than as a literal empty string."
           },
           "name": {
             "type": [

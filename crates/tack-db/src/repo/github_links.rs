@@ -23,6 +23,16 @@ pub async fn set_link(
     Ok(())
 }
 
+/// Remove the GitHub link for an item, if any. Not an error if it was
+/// already absent — matches `rm -f`, not `rm`.
+pub async fn remove_link(pool: &SqlitePool, item_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM github_links WHERE item_id = ?")
+        .bind(item_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Fetch the `(repo, issue_number)` linked to an item, if any.
 pub async fn get_link(
     pool: &SqlitePool,

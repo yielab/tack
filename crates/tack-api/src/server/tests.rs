@@ -313,6 +313,16 @@ impl LocalRunnerControl for RecordingControl {
     async fn catalog(&self) -> crate::handlers::local_runner::CatalogSnapshot {
         crate::handlers::local_runner::CatalogSnapshot::NotConfigured
     }
+    async fn resolve_secret(
+        &self,
+        _reference: &str,
+    ) -> Result<String, crate::handlers::local_runner::LocalRunnerControlError> {
+        Err(
+            crate::handlers::local_runner::LocalRunnerControlError::SecretStore(
+                "RecordingControl never resolves a secret".into(),
+            ),
+        )
+    }
 }
 
 /// The regression this seam exists to prevent: a preference saved from

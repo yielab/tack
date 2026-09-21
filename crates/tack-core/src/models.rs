@@ -33,6 +33,13 @@ pub struct Project {
     pub vocabulary: VocabularyMap,
     pub workflow: WorkflowConfig,
     pub default_model: Option<ProjectModelDefault>,
+    /// A `store:<name>` or `env:<VAR>` reference to a secret holding this
+    /// project's own GitHub token — never the token value itself (see
+    /// `tack_runner::secrets::SecretStore::resolve`). Resolved only
+    /// server-side, for the server's own outbound GitHub push/poll calls;
+    /// see `tack-api`'s `github_sync::github_token_for_project` for the
+    /// resolution order (this reference first, then `TACK_GITHUB_TOKEN`).
+    pub github_token_ref: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub archived: bool,
@@ -450,6 +457,13 @@ pub struct UpdateProject {
     pub vocabulary: Option<VocabularyMap>,
     pub workflow: Option<WorkflowConfig>,
     pub default_model: Option<ProjectModelDefault>,
+    /// A plain `Option<String>`, not a double-`Option`, like every other
+    /// optional field on this DTO: an absent key leaves the stored
+    /// reference untouched. Since there is no `null` to spell "clear" with
+    /// here, clearing is done by sending the empty string, which the
+    /// repository (`tack_db::repo::projects::update_project`) stores as SQL
+    /// `NULL` rather than as a literal empty string.
+    pub github_token_ref: Option<String>,
     pub archived: Option<bool>,
 }
 

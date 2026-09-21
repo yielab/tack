@@ -209,6 +209,7 @@ pub(crate) async fn build_project_from_template(
         vocabulary: Some(template.vocabulary.clone()),
         workflow: Some(template.workflow.clone()),
         default_model: None,
+        github_token_ref: None,
         archived: None,
     };
 

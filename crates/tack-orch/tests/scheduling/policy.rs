@@ -225,6 +225,7 @@ async fn project_tier_reads_the_real_default_model_column() {
                 provider: "openai".into(),
                 model_id: "opaque/model-alpha".into(),
             }),
+            github_token_ref: None,
             archived: None,
         },
     )
