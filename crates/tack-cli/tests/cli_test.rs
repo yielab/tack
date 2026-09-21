@@ -277,6 +277,117 @@ fn config_save_and_reload() {
     }
 }
 
+// ── start (GET project workflow, then PATCH item to the first in-progress status) ──
+
+#[tokio::test]
+async fn start_patches_item_to_first_in_progress_status() {
+    let server = MockServer::start().await;
+    let project_id = "ffffffff-0000-0000-0000-000000000000";
+    let item_id = "11111111-0000-0000-0000-000000000000";
+
+    Mock::given(method("GET"))
+        .and(path(format!("/api/projects/{project_id}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": project_id,
+            "workflow": {
+                "workflow_type": "kanban",
+                "statuses": [
+                    {"name": "To Do", "category": "todo", "order": 0, "wip_limit": null},
+                    {"name": "In Progress", "category": "in_progress", "order": 1, "wip_limit": null},
+                    {"name": "Done", "category": "done", "order": 2, "wip_limit": null},
+                ],
+            },
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("PATCH"))
+        .and(path(format!("/api/items/{item_id}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": item_id,
+            "status": "In Progress",
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let (project, patched) = run_blocking(move || {
+        let config = make_config(&uri);
+        let client = TackClient::new(&config).unwrap();
+        let project = client.get(&format!("/projects/{project_id}")).unwrap();
+        let target_status = project["workflow"]["statuses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["category"].as_str() == Some("in_progress"))
+            .min_by_key(|s| s["order"].as_i64().unwrap_or(i64::MAX))
+            .and_then(|s| s["name"].as_str())
+            .unwrap()
+            .to_string();
+        let patched = client
+            .patch(
+                &format!("/items/{item_id}"),
+                &serde_json::json!({"status": target_status}),
+            )
+            .unwrap();
+        (project, patched)
+    })
+    .await;
+
+    assert_eq!(
+        project["workflow"]["statuses"][1]["category"],
+        "in_progress"
+    );
+    assert_eq!(patched["status"], "In Progress");
+}
+
+// ── open (GET item, resolve project_id) ────────────────────────────────────────
+
+#[tokio::test]
+async fn open_gets_item_to_resolve_web_url() {
+    let server = MockServer::start().await;
+    let project_id = "22222222-0000-0000-0000-000000000000";
+    let item_id = "33333333-0000-0000-0000-000000000000";
+
+    Mock::given(method("GET"))
+        .and(path(format!("/api/items/{item_id}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {
+                "id": item_id,
+                "project_id": project_id,
+                "title": "Fix login bug",
+            },
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let base_url = uri.clone();
+    let resp = run_blocking(move || {
+        let config = make_config(&uri);
+        TackClient::new(&config)
+            .unwrap()
+            .get(&format!("/items/{item_id}"))
+    })
+    .await;
+
+    assert!(resp.is_ok());
+    let resp = resp.unwrap();
+    let item = resp.get("item").unwrap_or(&resp);
+    assert_eq!(item["project_id"], project_id);
+
+    let url = format!(
+        "{}/projects/{}/board?item={}",
+        base_url.trim_end_matches('/'),
+        item["project_id"].as_str().unwrap(),
+        item["id"].as_str().unwrap(),
+    );
+    assert_eq!(
+        url,
+        format!("{base_url}/projects/{project_id}/board?item={item_id}")
+    );
+}
+
 // ── vocab fetch falls back gracefully when project 404s ───────────────────────
 
 #[tokio::test]

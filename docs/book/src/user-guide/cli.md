@@ -82,6 +82,23 @@ of the form `<prefix>/<short-id>-<title-slug>`. Without `--checkout` it prints
 the `git checkout -b …` command (handy to `eval` or copy-paste); with
 `--checkout` it runs it. Add `--json` for `{ branch, item_id, checked_out }`.
 
+```sh
+# Move an item to the first in-progress status and check out its branch
+tack start <item-id>
+
+# Print an item's web URL (and open it in $BROWSER when set)
+tack open <item-id>
+```
+
+`tack start` moves the item to the first status of the workflow's in-progress
+category (the same `PATCH /items/{id}` path `tack move` uses), then does what
+`tack branch <id> --checkout` does. If the workflow refuses the status change,
+the server's error is reported and no branch is created. Add `--json` for
+`{ item_id, status, branch }`.
+
+`tack open` prints the item's web URL. With `$BROWSER` set, it also opens the
+URL with that command. Add `--json` for `{ item_id, url }`.
+
 ---
 
 ## Sprints
