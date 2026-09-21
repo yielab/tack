@@ -48,10 +48,14 @@ pub struct Question {
 /// What one line of a harness's stdout means to the core, when the run is
 /// listening for a pause-and-ask conversation. `Finished` is what lets the
 /// core close the child's stdin, which is what lets a CLI that keeps
-/// listening past its own terminal line actually exit.
+/// listening past its own terminal line actually exit. `Reply` is how a
+/// grammar drives its own protocol's handshake (initialize, open a session,
+/// send the prompt) from the replies it reads, before any question arrives:
+/// write these bytes to the child's stdin as one line and keep listening.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamSignal {
     Question(Question),
+    Reply(Vec<u8>),
     Finished,
 }
 

@@ -1,7 +1,12 @@
 //! Shared by every harness test module: a request built from the contract's
 //! claim fixture, scratch directories, and locators for the fake harness.
 
-use std::{collections::BTreeMap, path::Path, path::PathBuf, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 use tack_orch::execution::{
     AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot, HarnessKind,
@@ -13,8 +18,8 @@ use crate::client::{
 };
 use crate::harness::{
     ExecutionSpec,
-    local_process::BinaryLocator,
-    process::{CapturedOutput, ProcessExit, ProcessResult},
+    local_process::{BinaryLocator, HarnessGrammar, LocalProcessHarness},
+    process::{CapturedOutput, ProcessExit, ProcessLimits, ProcessResult},
 };
 use crate::secrets::SecretStore;
 
@@ -147,4 +152,28 @@ pub fn finished(exit: ProcessExit, stdout: &str) -> ProcessResult {
         },
         stderr: CapturedOutput::default(),
     }
+}
+
+pub fn limits() -> ProcessLimits {
+    ProcessLimits {
+        termination_grace: Duration::from_millis(150),
+        ..ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10))
+    }
+}
+
+/// Builds a harness around `grammar`, for driving a real grammar through
+/// the core against a shim script (see [`script`]).
+pub fn harness_for<G: HarnessGrammar>(
+    grammar: G,
+    locator: BinaryLocator,
+    state: &Path,
+) -> LocalProcessHarness<G, FixedClock> {
+    LocalProcessHarness::new(
+        grammar,
+        locator,
+        clock(),
+        limits(),
+        state.join("staging"),
+        secret_store(state),
+    )
 }
