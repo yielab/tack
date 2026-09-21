@@ -7,7 +7,7 @@ pkgname=tack-bin
 # AUR forbids "-" in pkgver; the upstream release tag's pre-release suffix
 # ("0.1.0-beta.7") becomes dots here, and pkgrel tracks packaging-only
 # revisions of the same upstream version.
-pkgver=0.1.0.beta.7
+pkgver=0.1.0.beta.9
 pkgrel=1
 pkgdesc="Single-binary project manager with an agent-execution runner"
 arch=('x86_64')
@@ -15,10 +15,10 @@ url="https://github.com/yielab/tack"
 license=('MIT')
 provides=('tack')
 conflicts=('tack')
-_tag="v0.1.0-beta.7"
+_tag="v0.1.0-beta.9"
 _pkgdir="tack-${_tag}-linux-x86_64"
 source=("${url}/releases/download/${_tag}/${_pkgdir}.tar.gz")
-sha256sums=('9faf72396a4a8804521ad878dacebd9925ae2ef86803866dd89c9ca5daddb074')
+sha256sums=('30a70b4c97cf2b52aae86ca5d461776c312974a2408e43e993fc756853efdab4')
 
 package() {
   cd "$_pkgdir"

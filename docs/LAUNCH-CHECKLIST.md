@@ -23,19 +23,16 @@ automatically — every step under "Publish list" is a human action.
 
 ## Publish list — everything a human does, in order
 
-1. **Tag the release.** Nothing has shipped since `v0.1.0-beta.7`, and that tag
-   predates the desktop bundles — the releases page has no `.AppImage`, `.deb`,
-   `.dmg`, or `.msi` yet, so every download link in the README resolves to a page
-   without the app on it. The workspace version is already `0.1.0-beta.9` in every
-   manifest (`Cargo.toml`, `crates/tack-desktop/Cargo.toml`, `tauri.conf.json`,
-   `frontend/package.json`) and `CHANGELOG.md` carries that section, so the tag is
-   the only step left (a `0.1.0-beta.8` version was bumped but never tagged; its
-   changes ship here):
+1. **Tag the release.** **Done 2026-09-21 — `v0.1.0-beta.9`**, the first tag with the
+   desktop bundles on the releases page. `main` was fast-forwarded to the same commit
+   first, since that is what the install one-liner and the landing page serve. A
+   `0.1.0-beta.8` version was bumped on 2026-09-07 but never tagged, so its changes
+   shipped here. For the next one:
    ```bash
-   git tag v0.1.0-beta.9 && git push origin v0.1.0-beta.9
+   git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   `release.yml` builds and publishes the archives, the four desktop bundles, and the
-   SBOMs, and refuses the tag outright if it doesn't match `Cargo.toml`.
+   `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
+   and refuses the tag outright if it doesn't match `Cargo.toml`.
 2. **Open the seven `good first issue` GitHub issues** from the drafts in
    `docs/launch/good-first-issues/`, applying the existing `good first issue` label
    (already on the repo — `gh label list --repo yielab/tack --search "good first issue"`).

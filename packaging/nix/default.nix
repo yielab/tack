@@ -9,11 +9,11 @@
 
 stdenvNoCC.mkDerivation rec {
   pname = "tack";
-  version = "0.1.0-beta.7";
+  version = "0.1.0-beta.9";
 
   src = fetchurl {
     url = "https://github.com/yielab/tack/releases/download/v${version}/tack-v${version}-linux-x86_64.tar.gz";
-    sha256 = "9faf72396a4a8804521ad878dacebd9925ae2ef86803866dd89c9ca5daddb074";
+    sha256 = "30a70b4c97cf2b52aae86ca5d461776c312974a2408e43e993fc756853efdab4";
   };
 
   sourceRoot = "tack-v${version}-linux-x86_64";
