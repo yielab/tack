@@ -2,12 +2,12 @@
 
 What `crates/tack-runner/src/harness/codex.rs` is built on, and what in it is still a
 documented guess. `exec --json` output, `exec --help`'s own flag names, and an `app-server`
-approval round trip are now captured under `0.149.1/` (see "Fixture provenance" below);
-`CodexGrammar::report` still reads only the exit status, because those captures are new
-vendor evidence for a future change to the grammar, not a change to
-`codex.rs` itself. The grammar's tests are pure
-(command line and exit reading); the live tests in `tests/live/codex.rs` resolve a real
-`codex` from `PATH`, skip cleanly without it, and are `#[ignore]`d.
+approval round trip are now captured under `0.149.1/` (see "Fixture provenance" below).
+`CodexGrammar::report` reads token usage off the terminal `turn.completed` line, but its
+verdict is still the exit status alone, and the served model is still not read from
+anywhere in the stream — see "Measured" below. The grammar's tests are pure
+(command line, exit reading and the usage line); the live tests in `tests/live/codex.rs`
+resolve a real `codex` from `PATH`, skip cleanly without it, and are `#[ignore]`d.
 
 What a user reads about this harness — install, capabilities, caveats — is
 [Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
@@ -58,12 +58,15 @@ provider's `env_key` were set to an obviously fake value.
   already the effective default for a per-invocation `-c` provider override — the adapter
   sets it explicitly anyway, defensively, matching the vendor's own documented shape
   (`CodexGrammar::invocation`).
-- **Usage is in the output.** `exec --json`'s terminal `turn.completed` line carries a real
-  `usage` object — `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`,
-  `output_tokens`, `reasoning_output_tokens` — every one of these captures (`exec-tool-call.jsonl`
-  and the per-flag fixtures beside it). No `cost_usd` field appears anywhere. The adapter does
-  not parse this yet (`CodexGrammar::report` still reads only the exit status); this is
-  evidence for that future change, not the change itself.
+- **Usage is in the output, and is now read.** `exec --json`'s terminal `turn.completed`
+  line carries a real `usage` object — `input_tokens`, `cached_input_tokens`,
+  `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens` — every one of
+  these captures (`exec-tool-call.jsonl` and the per-flag fixtures beside it).
+  `CodexGrammar::report` reads `input_tokens`/`output_tokens` off that line into `tokens_in`/
+  `tokens_out`; the cached/cache-write/reasoning breakdown has no field in `RunReport`, so it
+  is not folded in. No `cost_usd` field appears anywhere, so cost is never reported. The
+  run's pass/fail verdict is still the exit status alone: this line is read for usage only,
+  never to re-derive the verdict.
 - **The served model is not in the output.** Nothing in `exec --json` names which model
   answered as opposed to which was requested; the only model-shaped line is a `type:"error"`
   warning ("Model metadata for `<model>` not found...") that just echoes the `--model` flag
