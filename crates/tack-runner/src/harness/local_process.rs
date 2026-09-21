@@ -82,11 +82,6 @@ pub struct HarnessDescriptor {
     /// The child's environment is otherwise exactly what the request and
     /// the provider injection put there.
     pub inherited_env: &'static [&'static str],
-    /// Capture caps this CLI's transcript needs. The effective cap is the
-    /// larger of this and the runner's configured limit: capture keeps the
-    /// head of a stream, and a grammar that reads a terminal line loses it
-    /// if the transcript is cut short.
-    pub min_capture_bytes: (usize, usize),
     /// Why a requested model id is accepted without a model list.
     pub model_passthrough: &'static str,
     /// Extra key/value notes attached to every probe report.
@@ -435,11 +430,10 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     }
 
     fn run_limits(&self, spec: &ExecutionSpec) -> ProcessLimits {
-        let (min_stdout, min_stderr) = self.grammar.descriptor().min_capture_bytes;
         let requested = spec.work.request.timeout_seconds;
         ProcessLimits {
-            max_stdout_bytes: self.limits.max_stdout_bytes.max(min_stdout),
-            max_stderr_bytes: self.limits.max_stderr_bytes.max(min_stderr),
+            max_stdout_bytes: self.limits.max_stdout_bytes,
+            max_stderr_bytes: self.limits.max_stderr_bytes,
             timeout: if requested > 0 {
                 Duration::from_secs(requested.min(MAX_TIMEOUT_SECONDS))
             } else {

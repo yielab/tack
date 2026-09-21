@@ -29,7 +29,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     ),
     native_provider: "docket",
     inherited_env: &["PATH"],
-    min_capture_bytes: (0, 0),
     model_passthrough: "requested_model_id is forwarded verbatim after the requested provider, \
                         joined as <provider>/<model id> for --model; docket validates the \
                         result at run time, so no model list is claimed",

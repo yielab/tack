@@ -29,8 +29,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     // `claude` finds its login session under `HOME`, and its Bash tool runs
     // a real shell that needs `PATH`. Nothing else is inherited.
     inherited_env: &["HOME", "PATH"],
-    // The terminal `result` object is the last line of the transcript.
-    min_capture_bytes: (16 * 1024 * 1024, 4 * 1024 * 1024),
     model_passthrough: "requested_model_id is forwarded verbatim via --model; the CLI validates \
                         it at run time (an invalid model returns is_error:true), so no model \
                         list is claimed",
