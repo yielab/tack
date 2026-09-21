@@ -152,6 +152,24 @@ enum Commands {
         json: bool,
     },
 
+    /// Move an item to the first in-progress status and check out its branch
+    Start {
+        /// Item ID
+        id: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Print an item's web URL, opening it in $BROWSER when set
+    Open {
+        /// Item ID
+        id: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run a Model Context Protocol (MCP) server over stdio for AI agents
     Mcp,
 
@@ -929,6 +947,10 @@ fn main() -> anyhow::Result<()> {
             json,
         } => cmd_branch(&client, id, checkout, prefix, json),
 
+        Commands::Start { id, json } => cmd_start(&client, id, json),
+
+        Commands::Open { id, json } => cmd_open(&client, &config.base_url, id, json),
+
         Commands::Mcp => tack_cli::mcp::run(&client),
 
         Commands::Search {
@@ -1399,6 +1421,117 @@ fn cmd_branch(
         // name goes to stderr context-free for scripting via the last word.
         println!("git checkout -b {branch}");
     }
+    Ok(())
+}
+
+fn cmd_start(client: &TackClient, id: String, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.get(&format!("/items/{id}"))?;
+    let item = resp.get("item").unwrap_or(&resp);
+
+    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let item_type = item
+        .get("item_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("task");
+    // The server echoes the canonical id; fall back to the user-supplied one.
+    let item_id = item
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&id)
+        .to_string();
+    let project_id = item
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("item {item_id} has no project_id"))?;
+
+    // Find the first (lowest `order`) in-progress-category status in the
+    // project's workflow, the same way `find_first_done_status` in
+    // tack-core picks a status by category rather than by name.
+    let project = client.get(&format!("/projects/{project_id}"))?;
+    let target_status = project["workflow"]["statuses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| s["category"].as_str() == Some("in_progress"))
+        .min_by_key(|s| s["order"].as_i64().unwrap_or(i64::MAX))
+        .and_then(|s| s["name"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("project {project_id} has no in-progress status"))?
+        .to_string();
+
+    // A status change the workflow refuses surfaces here as the server's
+    // error (via `client.patch`'s `?`) and returns before any branch is
+    // created.
+    let body = json!({ "status": target_status });
+    let patch_resp = client.patch(&format!("/items/{item_id}"), &body)?;
+    let status = patch_resp
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&target_status)
+        .to_string();
+
+    let branch = git::branch_name(item_type, &item_id, title, None);
+
+    let checkout_status = std::process::Command::new("git")
+        .args(["checkout", "-b", &branch])
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run git: {e}"))?;
+    if !checkout_status.success() {
+        anyhow::bail!("git checkout -b {branch} failed");
+    }
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "item_id": item_id,
+                "status": status,
+                "branch": branch,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("Started {}: → {status}", &item_id[..8.min(item_id.len())]);
+    println!("Switched to a new branch '{branch}'");
+    Ok(())
+}
+
+fn cmd_open(client: &TackClient, base_url: &str, id: String, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.get(&format!("/items/{id}"))?;
+    let item = resp.get("item").unwrap_or(&resp);
+
+    let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or(&id);
+    let project_id = item
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("item {item_id} has no project_id"))?;
+
+    // The web UI's item detail drawer is deep-linkable via `?item=<id>` on
+    // any of the work-surface lenses (see frontend/src/features/item-detail/
+    // ItemDetailDrawer.tsx); `board` is the default lens.
+    let url = format!(
+        "{}/projects/{project_id}/board?item={item_id}",
+        base_url.trim_end_matches('/')
+    );
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "item_id": item_id,
+                "url": url,
+            }))?
+        );
+    } else {
+        println!("{url}");
+    }
+
+    if let Ok(browser) = std::env::var("BROWSER")
+        && !browser.is_empty()
+    {
+        let _ = std::process::Command::new(browser).arg(&url).status();
+    }
+
     Ok(())
 }
 

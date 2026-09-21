@@ -192,7 +192,7 @@ added it where present. U8 starts only on four `present`.
 
 **Files:** `crates/tack-cli/src/main.rs` (one `Start` and one `Open` subcommand beside
 `Branch`, and `cmd_start`, `cmd_open` beside `cmd_branch`); `crates/tack-cli/src/git.rs`
-only if `cmd_branch`'s checkout becomes a shared function; `crates/tack-cli/tests/cli.rs`
+only if `cmd_branch`'s checkout becomes a shared function; `crates/tack-cli/tests/cli_test.rs`
 (rows in the existing wiremock table); `docs/book/src/user-guide/cli.md`.
 
 `tack open <id>` prints the item's web URL and opens it with `$BROWSER` when set, else
@@ -369,7 +369,9 @@ of the released product asks for it, and then through an ADR where a decision is
 
 | Task | State |
 |---|---|
-| M1 · M2 · M3 · C1 · G1 | open |
+| M1 · M2 · G1 | open |
+| C1 | landed 2026-09-20 |
+| M3 | done 2026-09-20: docket ships no `harness-v1.1`; U8 does not start |
 | U1 · U4 · G2 | open |
 | U2 · U3 · U5 · G3 | open |
 | U6 · U7 · U8 | open |
