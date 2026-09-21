@@ -79,7 +79,14 @@ provider's `env_key` were set to an obviously fake value.
   denies any write the call attempts (`Read-only file system`, exit 1 inside the tool's own
   output) — and a denied call does not appear as any `item.*` line in `--json` at all; only a
   successful one does (`exec-sandbox-read-only.jsonl`, `exec-approve-for-me.jsonl`). None of
-  these flags ever produced an interactive ask in `exec --json`.
+  these flags ever produced an interactive ask in `exec --json`. **The adapter now passes
+  `--sandbox`**, chosen from the request's tool list alone: a write-capable tool (`bash`,
+  `shell`, `edit`, `write` or `apply_patch`, case-insensitively) selects
+  `--sandbox workspace-write`; an empty or read-only tool list selects
+  `--sandbox read-only`. `--sandbox danger-full-access` and
+  `--dangerously-bypass-approvals-and-sandbox` are never passed — nothing measured here
+  justifies handing out the flag that let a write outside the workspace succeed. No approval
+  flag is ever added, since none of the measured flags change whether `exec` prompts.
 - **`codex app-server` does ask over stdio.** Default transport is `stdio://`, framed as one
   JSON object per line (no Content-Length headers). Under `approvalPolicy:"on-request"`, a
   plain command still auto-runs with no prompt — asking is tied to the tool call's own
@@ -118,13 +125,14 @@ provider's `env_key` were set to an obviously fake value.
    capability-table change itself.
 5. Codex's real model-discovery mechanism (if any) is unverified, so
    `HarnessCapability::model_combinations` is always empty — never a hardcoded list.
-6. How a request's `permission_policy` (tool list, network flag) and `budgets` map onto
-   Codex's sandbox and approval flags is still unmeasured in the sense that matters here: the
-   adapter passes none of them. What the flags themselves do in isolation is now measured
-   (see "Measured" above and `0.149.1/exec-sandbox-read-only.jsonl`,
-   `exec-approve-for-me.jsonl`, `exec-bypass-approvals-and-sandbox.jsonl`) — deciding which
-   flag a given `permission_policy`/`budgets` request should map to is separate follow-up
-   work. The capability table declares `permission_policy: unsupported` for this harness
+6. `permission_policy.tools` now selects `--sandbox` (see "Measured" above); what remains a
+   documented guess, not a fact, is how the OS-level sandbox actually contains a real
+   `workspace-write` process across every tool a request might grant — only the two
+   fixtures' own write/outside-write denials were observed, not the full space of what
+   `bash`/`edit`/`write`/`apply_patch` could attempt. `permission_policy.network` and
+   `budgets` still have no `exec` flag to map onto and are never passed; `approvals` adds no
+   flag because no measured flag ever changes whether `exec` prompts (see "Measured" above).
+   The capability table declares `permission_policy: advisory` for this harness
    (`CodexGrammar::capabilities`) rather than leaving the difference silent.
 7. Codex runs with an environment that carries neither `HOME` nor `PATH`
    (`codex::DESCRIPTOR.inherited_env` is empty). Whether its tool commands find a user's
