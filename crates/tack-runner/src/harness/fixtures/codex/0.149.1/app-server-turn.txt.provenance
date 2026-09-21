@@ -1,0 +1,14 @@
+cut from transcript
+/var/tmp/tack-measure/wave1/m1/appserver-transcript-1.txt (scratch path, not part of this repo)
+env: HOME, XDG_CONFIG_HOME, CODEX_HOME, OPENAI_API_KEY, FAKE_API_KEY
+2026-09-20
+
+That transcript was a full `initialize` -> `thread/start` -> `turn/start` round trip driven
+by `appserver_probe.py` against the same loopback fake standing in for the OpenAI Responses
+wire this README's "Fixture provenance" section describes, for a plain
+`echo hello` command that never needed to escalate past the sandbox (no
+`item/commandExecution/requestApproval` line appears in it at all — see
+`app-server-approval.txt` for the escalating case, captured separately). This fixture holds
+its last `thread/tokenUsage/updated` notification (`tokenUsage.total.inputTokens: 57`,
+`outputTokens: 10`) and its terminal `turn/completed` line, kept verbatim; neither line
+carries a scratch path, so there was nothing to rewrite to `/capture`.
