@@ -35,3 +35,26 @@ pub async fn get_link(
             .await?;
     Ok(row)
 }
+
+/// List every `(item_id, issue_number, synced_at)` linked to one repo — what
+/// the inbound poll needs to compute `since` (the max `synced_at` across the
+/// set) and to map a returned issue number back to its item. `synced_at` is
+/// `None` for a link the poll has never touched.
+pub async fn list_links_for_repo(
+    pool: &SqlitePool,
+    repo: &str,
+) -> Result<Vec<(Uuid, i64, Option<String>)>, sqlx::Error> {
+    let rows: Vec<(String, i64, Option<String>)> =
+        sqlx::query_as("SELECT item_id, issue_number, synced_at FROM github_links WHERE repo = ?")
+            .bind(repo)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(item_id, issue_number, synced_at)| {
+            Uuid::parse_str(&item_id)
+                .ok()
+                .map(|item_id| (item_id, issue_number, synced_at))
+        })
+        .collect())
+}
