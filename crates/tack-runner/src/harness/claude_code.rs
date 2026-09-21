@@ -344,7 +344,7 @@ impl HarnessGrammar for ClaudeCodeGrammar {
     /// `result` line is what tells the core the conversation is over, so it
     /// can close stdin and let the CLI exit. Any other line — `system`,
     /// `assistant`, `user`/tool-result — means nothing to the core here.
-    fn signal(&self, line: &str) -> Option<StreamSignal> {
+    fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
         let value: Value = serde_json::from_str(line.trim()).ok()?;
         match value.get("type").and_then(Value::as_str) {
             Some("control_request")

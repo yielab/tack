@@ -4,7 +4,7 @@
 use super::*;
 use crate::harness::DecisionOption;
 use crate::harness::test_support::{
-    FixedClock, clock, fake_harness, gateway, scratch, script, secret_store, set_env,
+    FixedClock, fake_harness, gateway, harness_for, scratch, script, secret_store, set_env,
     set_secret_reference, spec,
 };
 
@@ -114,8 +114,12 @@ impl HarnessGrammar for TestGrammar {
     }
 
     /// The fake harness's `ask` mode prints exactly one `ASK:<prompt>`
-    /// line; anything else means nothing to this grammar.
-    fn signal(&self, line: &str) -> Option<StreamSignal> {
+    /// line; anything else means nothing to this grammar. A stdout line
+    /// exactly `WHO` drives a handshake reply instead of a question.
+    fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
+        if line == "WHO" {
+            return Some(StreamSignal::Reply(b"reply-from-grammar".to_vec()));
+        }
         let prompt = line.strip_prefix("ASK:")?;
         Some(StreamSignal::Question(Question {
             vendor_id: "q1".to_owned(),
@@ -143,22 +147,8 @@ impl HarnessGrammar for TestGrammar {
 
 type Harness = LocalProcessHarness<TestGrammar, FixedClock>;
 
-fn limits() -> ProcessLimits {
-    ProcessLimits {
-        termination_grace: Duration::from_millis(150),
-        ..ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10))
-    }
-}
-
 fn harness_with(grammar: TestGrammar, locator: BinaryLocator, state: &Path) -> Harness {
-    LocalProcessHarness::new(
-        grammar,
-        locator,
-        clock(),
-        limits(),
-        state.join("staging"),
-        secret_store(state),
-    )
+    harness_for(grammar, locator, state)
 }
 
 fn harness(state: &Path) -> Harness {
@@ -516,6 +506,53 @@ async fn a_question_is_answered_and_the_run_continues() {
             "{sent:?}: {outcome:?}"
         );
     }
+}
+
+/// A `StreamSignal::Reply` reaches the child's stdin before any question
+/// does, driving a handshake from a shim (not the fake harness) that only
+/// asks once it has been replied to.
+#[tokio::test]
+async fn a_reply_line_drives_the_handshake() {
+    let state = scratch("reply");
+    let grammar = TestGrammar {
+        descriptor: &PLAIN,
+        observed_model: None,
+        ask: true,
+    };
+    let body = r#"read -r _prompt
+echo WHO
+read -r reply
+echo "GOT:$reply"
+echo "ASK:do-thing"
+read -r answer
+echo "fake-harness-answered:$answer"
+exit 0"#;
+    let harness = harness_with(grammar, script(state.path(), body), state.path());
+    let request = spec(KIND, state.path());
+
+    let handle = harness.start(&request).await.expect("start");
+    let (mut questions_rx, answers_tx) = harness
+        .decision_channels(&handle)
+        .await
+        .expect("an ask request exposes decision channels");
+
+    let drive = async {
+        let question = questions_rx.recv().await.expect("question");
+        assert_eq!(question.prompt, "do-thing");
+        let answer = DecisionAnswer {
+            option_id: Some("allow".to_owned()),
+            text: None,
+        };
+        let _ = answers_tx.send(answer).await;
+    };
+    let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
+    let outcome = outcome.expect("wait").terminal_reason;
+    let stdout = outcome["stdout"].as_str().unwrap_or_default();
+    assert!(stdout.contains("GOT:reply-from-grammar"), "{outcome:?}");
+    assert!(
+        stdout.contains("fake-harness-answered:allow"),
+        "{outcome:?}"
+    );
 }
 
 // ---- what reaches the child ----------------------------------------------
