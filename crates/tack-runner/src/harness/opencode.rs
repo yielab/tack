@@ -8,10 +8,10 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
 
 use crate::harness::{
-    HarnessError,
+    DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
@@ -163,6 +163,115 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
     }
 }
 
+/// The working directory `session/new`'s `cwd` names: the same arithmetic
+/// `local_process.rs`'s `prepare` uses for the child's own working directory
+/// (the workspace root, plus `request.repository.subdirectory` when it is
+/// non-empty).
+fn working_directory(run: &RunContext<'_>) -> std::path::PathBuf {
+    let workspace_root = run.spec.workspace.path.clone();
+    match run.spec.work.request.repository.subdirectory.as_deref() {
+        Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
+        _ => workspace_root,
+    }
+}
+
+fn line_bytes(value: &Value) -> Vec<u8> {
+    value.to_string().into_bytes()
+}
+
+/// A `session/request_permission` request becomes a question: `vendor_id`
+/// is the request's own `id` serialized back to JSON text (so a number
+/// stays a number when [`OpencodeGrammar::answer`] parses it back), the
+/// prompt names the pending tool call's title, and the options are `once`
+/// then `reject` — `always` is never offered, so the operator's own deny
+/// (the core answers an unanswered question with the last option) lands on
+/// `reject`.
+fn permission_question(value: &Value) -> StreamSignal {
+    let vendor_id = value.get("id").cloned().unwrap_or(Value::Null).to_string();
+    let tool_call = value.pointer("/params/toolCall");
+    let title = tool_call
+        .and_then(|call| call.get("title"))
+        .and_then(Value::as_str)
+        .unwrap_or("a tool call");
+    let mut metadata = serde_json::Map::new();
+    if let Some(tool_call) = tool_call {
+        if let Some(id) = tool_call.get("toolCallId") {
+            metadata.insert("tool_call_id".to_owned(), id.clone());
+        }
+        if let Some(kind) = tool_call.get("kind") {
+            metadata.insert("kind".to_owned(), kind.clone());
+        }
+        if let Some(raw_input) = tool_call.get("rawInput") {
+            metadata.insert("raw_input".to_owned(), raw_input.clone());
+        }
+    }
+    StreamSignal::Question(Question {
+        vendor_id,
+        kind: "tool_permission".to_owned(),
+        prompt: format!("Allow {title}?"),
+        options: vec![
+            DecisionOption {
+                option_id: "once".to_owned(),
+                label: "Allow once".to_owned(),
+            },
+            DecisionOption {
+                option_id: "reject".to_owned(),
+                label: "Deny".to_owned(),
+            },
+        ],
+        metadata,
+    })
+}
+
+/// An `ask` run speaks JSON-RPC over stdout: `session/request_permission`
+/// becomes a question; the id-1 and id-2 results drive the rest of the
+/// handshake (`session/new`, then `session/prompt`) from the reply itself;
+/// the id-3 result closes the run. Neither shape appears in a `run`
+/// transcript, so a line this never recognizes falls through to
+/// `parse_run_output`, unchanged.
+fn parse_output(result: &ProcessResult) -> RunReport {
+    for line in result.stdout.text.lines() {
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        let Some(id) = value
+            .get("id")
+            .and_then(Value::as_i64)
+            .filter(|id| (1..=3).contains(id))
+        else {
+            continue;
+        };
+        if let Some(error) = value.get("error") {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("opencode acp reported an error")
+                .to_owned();
+            return RunReport::verdict(
+                false,
+                serde_json::json!({"reason": "acp_error", "id": id, "message": message}),
+            );
+        }
+        if id == 3
+            && let Some(res) = value.get("result")
+        {
+            let stop_reason = res.get("stopReason").and_then(Value::as_str);
+            return RunReport {
+                succeeded: matches!(result.exit, ProcessExit::Exited(0))
+                    && stop_reason == Some("end_turn"),
+                terminal_reason: serde_json::json!({ "stopReason": stop_reason }),
+                harness_version: None,
+                observed_model: None,
+                tokens_in: res.pointer("/usage/inputTokens").and_then(Value::as_u64),
+                tokens_out: res.pointer("/usage/outputTokens").and_then(Value::as_u64),
+                duration_ms: None,
+                cost_usd: None,
+            };
+        }
+    }
+    parse_run_output(result)
+}
+
 impl HarnessGrammar for OpencodeGrammar {
     fn descriptor(&self) -> &'static HarnessDescriptor {
         &DESCRIPTOR
@@ -197,14 +306,23 @@ impl HarnessGrammar for OpencodeGrammar {
         let opencode_home = run.scratch.join("opencode-home");
         let config_dir = opencode_home.join("config");
 
+        // `ask` swaps only the permission surface and the command line
+        // measured against a real `opencode acp --pure`: every granted tool
+        // is `"ask"` instead of `"allow"`, so each call pauses on a
+        // `session/request_permission` request instead of running; `run`
+        // (absent counts as `run`) keeps every flag and config field exactly
+        // as measured before this ever existed.
+        let ask = matches!(request.permission_policy.approvals, Some(Approvals::Ask));
+        let granted = if ask { "ask" } else { "allow" };
+
         let tools = &request.permission_policy.tools;
         let permission = serde_json::json!({
             "webfetch": if request.permission_policy.network { "allow" } else { "deny" },
-            "task": if grants(tools, "task") { "allow" } else { "deny" },
-            "edit": if grants(tools, "edit") { "allow" } else { "deny" },
-            "bash": if grants(tools, "bash") { "allow" } else { "deny" },
+            "task": if grants(tools, "task") { granted } else { "deny" },
+            "edit": if grants(tools, "edit") { granted } else { "deny" },
+            "bash": if grants(tools, "bash") { granted } else { "deny" },
         });
-        let config_content = serde_json::json!({
+        let mut config_content = serde_json::json!({
             "provider": {
                 "tack": {
                     "npm": "@ai-sdk/openai-compatible",
@@ -217,6 +335,12 @@ impl HarnessGrammar for OpencodeGrammar {
             },
             "permission": permission,
         });
+        if ask {
+            // ACP's `session/new` has no `-m` equivalent (measured): the
+            // model is named once, at the top level of the injected config,
+            // instead.
+            config_content["model"] = serde_json::json!(format!("tack/{model_id}"));
+        }
 
         let mut env = BTreeMap::new();
         env.insert("HOME".to_owned(), opencode_home.display().to_string());
@@ -233,20 +357,26 @@ impl HarnessGrammar for OpencodeGrammar {
             config_content.to_string(),
         );
 
-        let mut args: Vec<String> = ["run", "--pure", "--format", "json", "--title", "tack", "-m"]
-            .map(str::to_owned)
-            .into();
-        args.push(format!("tack/{model_id}"));
+        let args: Vec<String> = if ask {
+            vec!["acp".to_owned(), "--pure".to_owned()]
+        } else {
+            let mut args: Vec<String> =
+                ["run", "--pure", "--format", "json", "--title", "tack", "-m"]
+                    .map(str::to_owned)
+                    .into();
+            args.push(format!("tack/{model_id}"));
+            args
+        };
 
         Ok(Invocation {
             args,
             env,
-            ..Invocation::default()
+            stdin_stays_open: ask,
         })
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
-        parse_run_output(result)
+        parse_output(result)
     }
 
     fn capabilities(&self) -> FeatureCapabilities {
@@ -265,9 +395,13 @@ impl HarnessGrammar for OpencodeGrammar {
                  an in-flight run",
             ),
             decisions: capability(
-                CapabilitySupport::Unsupported,
-                "a denied permission auto-rejects rather than pausing in non-interactive mode; \
-                 no question event was observed on stdout",
+                CapabilitySupport::Supported,
+                "measured against opencode 1.18.30, 2026-09-20: over `opencode acp --pure`, a \
+                 tool the request grants is set to \"ask\" in the injected permission block and \
+                 each call pauses on one session/request_permission request on stdout until this \
+                 adapter answers it once or reject on stdin; `opencode run` auto-rejects instead \
+                 with no question ever appearing, so this transport is only used when the \
+                 request's approvals is ask",
             ),
             artifacts: capability(
                 CapabilitySupport::Advisory,
@@ -283,10 +417,105 @@ impl HarnessGrammar for OpencodeGrammar {
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "webfetch is gated on permission_policy.network and edit/bash/task on \
-                 tool-list membership, each through opencode's own `permission` block; budgets \
-                 are not passed at all",
+                 tool-list membership, each through opencode's own `permission` block, granted \
+                 as \"allow\" or, when the request's approvals is ask, as \"ask\" (so \
+                 `opencode acp --pure` pauses on session/request_permission instead of running \
+                 it); budgets are not passed at all",
             ),
         }
+    }
+
+    /// An `ask` run reads ACP over stdin: the first bytes are the one
+    /// `initialize` request measured against a real `opencode acp --pure`
+    /// (`fixtures/opencode/1.18.30/asking_acp.txt`); the rest of the
+    /// handshake is driven from the replies `signal` reads. Any other run
+    /// takes the prompt as plain text on stdin, as today.
+    fn prompt(&self, prompt: String, stdin_stays_open: bool) -> Vec<u8> {
+        if !stdin_stays_open {
+            return prompt.into_bytes();
+        }
+        let initialize = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientCapabilities": {"fs": {"readTextFile": false, "writeTextFile": false}},
+            },
+        });
+        let mut line = initialize.to_string().into_bytes();
+        line.push(b'\n');
+        line
+    }
+
+    /// The id-1 result replies with `session/new`; the id-2 result replies
+    /// with `session/prompt`, carrying the session id it names and this
+    /// request's own prompt text; `session/request_permission` becomes a
+    /// question; the id-3 result, or a JSON-RPC `error` on id 1-3, ends the
+    /// conversation. A `session/update` notification (no numeric `id`) means
+    /// nothing to the core here.
+    fn signal(&self, run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
+        let value: Value = serde_json::from_str(line.trim()).ok()?;
+        if value.get("method").and_then(Value::as_str) == Some("session/request_permission") {
+            return Some(permission_question(&value));
+        }
+        let id = value.get("id")?.as_i64()?;
+        if value.get("error").is_some() {
+            return Some(StreamSignal::Finished);
+        }
+        let result = value.get("result")?;
+        match id {
+            1 => Some(StreamSignal::Reply(line_bytes(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "session/new",
+                "params": {
+                    "cwd": working_directory(run).display().to_string(),
+                    "mcpServers": [],
+                },
+            })))),
+            2 => {
+                let session_id = result.get("sessionId")?.as_str()?;
+                let prompt = run
+                    .spec
+                    .work
+                    .request
+                    .resolved_agent_profile
+                    .instructions
+                    .clone();
+                Some(StreamSignal::Reply(line_bytes(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "session/prompt",
+                    "params": {
+                        "sessionId": session_id,
+                        "prompt": [{"type": "text", "text": prompt}],
+                    },
+                }))))
+            }
+            3 => Some(StreamSignal::Finished),
+            _ => None,
+        }
+    }
+
+    /// `once` is the only answer that releases the tool call; every other
+    /// answer — including one this grammar never offered — is `reject`,
+    /// which `session/request_permission`'s own reply shape always accepts.
+    /// `vendor_id` is parsed back to the JSON value it was serialized from,
+    /// so a numeric request id is answered as a number.
+    fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
+        let option_id = if answer.option_id.as_deref() == Some("once") {
+            "once"
+        } else {
+            "reject"
+        };
+        let id: Value = serde_json::from_str(&question.vendor_id).unwrap_or(Value::Null);
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {"outcome": {"outcome": "selected", "optionId": option_id}},
+        });
+        serde_json::to_vec(&payload).unwrap_or_default()
     }
 }
 
