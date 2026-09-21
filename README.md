@@ -31,7 +31,7 @@ it costs you to run:
   accounts, no subscriptions, nothing running in someone else's cloud.
 
 <p align="center">
-  <img src="docs/screenshots/agents-flow.gif" width="49%" alt="The Agents page's Test run control: a real dispatch against claude-code, watched live to Succeeded, with the harness's login flipping to Verified and its measured cost shown" />
+  <img src="docs/screenshots/agents-flow.gif" width="49%" alt="The Agents page's Test run control: a real dispatch against claude-code, watched live from Leased through Running to Succeeded, ending on the matched request, the model it actually ran on, and a measured token cost" />
   <img src="docs/screenshots/attempt.png" width="49%" alt="An item's Execution tab: a real attempt shown Succeeded, its requested-vs-actual model matched against claude-sonnet-4-5, and its usage economics — token cost measured, wall-clock cost explicitly Not measured rather than shown as zero." />
 </p>
 
@@ -259,26 +259,35 @@ either:
 
 ## Screenshots
 
-The board and the Agents page are up top — these two carry the rest of the signal
-that's specific to Tack rather than table stakes for any PM tool.
+The agent surfaces are up top, in [Running an agent](#running-an-agent) — they carry
+the signal that's specific to Tack. These are the project manager underneath it: the
+part that works on day one with no runner attached.
 
 <p align="center">
+  <img src="docs/screenshots/board.png" width="49%" alt="Board — Kanban with WIP limits (3/5, 2/3) and drag-and-drop, with a banner offering to turn agent execution on for this board" />
   <img src="docs/screenshots/timeline.png" width="49%" alt="Timeline — dependency-aware Gantt view; the same DAG that decides what an agent is eligible to pick up next" />
-  <img src="docs/screenshots/dashboard.png" width="49%" alt="Dashboard — status distribution and throughput, the same measured-not-estimated posture applied to project-level reporting" />
 </p>
 
-**Timeline** is the dependency DAG that also gates agent eligibility — an item
-blocked on an unfinished dependency isn't just visually behind a bar, it isn't
-handed to a runner yet either. **Dashboard** applies the same "measured, not
-estimated" rule the Agents page uses for run cost to project-level throughput.
+**Board** is the plain Kanban any tracker gives you, plus the one thing this one adds:
+the banner offering to turn agent execution on, which is the whole distance between a
+tracker and a board that can run its own items. **Timeline** is the dependency DAG that
+also gates agent eligibility — an item blocked on an unfinished dependency isn't just
+visually behind a bar, it isn't handed to a runner yet either.
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="49%" alt="Overview — total items, completion rate, and status and priority distribution, the same measured-not-estimated posture applied to project-level reporting" />
+  <img src="docs/screenshots/list.png" width="49%" alt="List — sortable rows with inline editing, each carrying its priority and its workflow status" />
+</p>
+
+**Overview** applies the same "measured, not estimated" rule the Agents page uses for
+run cost to project-level throughput. **List** is the same items as the board, sorted
+and edited in place.
 
 <details>
-<summary>Plain Kanban and list views, plus the vocabulary editor</summary>
+<summary>The vocabulary editor — the UI, CLI and API all follow it</summary>
 <br>
 
-![Board — Kanban with WIP limits and drag-and-drop](docs/screenshots/board.png)
-![List — sortable rows with inline editing](docs/screenshots/list.png)
-![Vocabulary editor — rename any term to match your domain](docs/screenshots/settings-vocabulary.png)
+![Vocabulary editor — rename any term (Task, Sprint, Epic, Backlog…) to match your domain; blank falls back to the default label](docs/screenshots/settings-vocabulary.png)
 
 </details>
 
@@ -348,7 +357,7 @@ All four are built for every release from `v0.1.0-beta.9` on and published on th
 [releases page](https://github.com/yielab/tack/releases); `make desktop` builds the app
 from source.
 
-![Tack's desktop window open on the Agents page, showing agent execution on and Codex and Claude Code both detected on the machine](docs/screenshots/desktop-window.png)
+![Tack's desktop window open on the Agents page, agent execution running, with the two harnesses that machine had installed — Codex and Claude Code — each detected and version-stamped](docs/screenshots/desktop-window.png)
 
 The app adds an icon to your system tray. **Closing the window doesn't stop
 it** — the board keeps running, and the tray icon reopens the window. **Quit
