@@ -1,0 +1,17 @@
+captured
+`strace -f -e trace=connect -o ... -- opencode run ...` for attempt 1 in
+`shared_install.du.txt` (no `npm_config_cache` override; npm's own default,
+`$HOME/.npm`, was used and only received two 240KB temp files -- see that file). Lines
+shown here are every `connect()` to a non-loopback destination, unfiltered otherwise: 24
+zero-port IPv4/IPv6 probes (an immediate `AF_UNSPEC` "disconnect" follows each --
+address-preference racing, no data sent) to Cloudflare-anycast addresses, then 2 real
+port-443 connects (`EINPROGRESS`, i.e. actually initiated) to the same address range --
+the same one the existing `fixtures/opencode/README.md` "Does a fresh config directory
+reach the network?" measurement attributes to `registry.npmjs.org`. Ran under:
+`HOME=/capture/home-6 XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME BUN_INSTALL
+OPENCODE_CONFIG_DIR OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1
+OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT
+AI_GATEWAY_API_KEY strace -f -e trace=connect -o shared-install-run1.strace.log --
+opencode run --pure --format json --title tack -m tack/requested-model "Write a short
+greeting to greeting.txt"`.
+Captured 2026-09-20.

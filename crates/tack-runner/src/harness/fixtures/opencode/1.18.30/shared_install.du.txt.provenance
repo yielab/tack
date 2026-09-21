@@ -1,0 +1,17 @@
+captured
+`du -sh` of three fresh scratch `HOME` directories, each after one `opencode run` (see
+`shared_install_run1.strace.txt`/`shared_install_run3.strace.txt` for the matching
+`connect()` traces), attempts 2 and 3 with `npm_config_cache` pointed at attempt 1's
+`$HOME/.npm`. Ran under (per attempt, `HOME`/`OPENCODE_CONFIG_DIR` fresh each time):
+`HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME BUN_INSTALL OPENCODE_CONFIG_DIR
+OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+OPENCODE_DISABLE_SHARE=1 OPENCODE_CONFIG_CONTENT AI_GATEWAY_API_KEY [npm_config_cache: only
+attempts 2 and 3] opencode run --pure --format json --title tack -m tack/requested-model
+"Write a short greeting to greeting.txt"`.
+An earlier same-session attempt against a fresh scratch HOME (not one of the three
+measured here, no longer on disk) needed a real ~220MB install under
+`$OPENCODE_CONFIG_DIR/node_modules` and the XDG-default `opencode` config dir before it
+could answer at all; none of the three attempts captured here needed any install to
+complete the same command. See README.md "Measured" for what this run could and could not
+establish about why, and for the limits of what "shared install" means in this environment.
+Captured 2026-09-20.

@@ -1,0 +1,38 @@
+Four `opencode run` attempts in the adapter's exact shape (`OpencodeGrammar::invocation`:
+scratch HOME, XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, OPENCODE_CONFIG_DIR, the four
+OPENCODE_DISABLE_* variables, OPENCODE_CONFIG_CONTENT naming the `tack` provider on
+`@ai-sdk/openai-compatible` at a loopback baseURL, AI_GATEWAY_API_KEY set to a fake value),
+each under `env -i` with only PATH added, each from a fresh empty cwd, against
+`fake_server.py` (the same loopback fake as `shared_install.du.txt`), on 2026-09-20 by the
+session that launched M2, after M2's three attempts. The command every time:
+
+  opencode run --pure --format json --title tack -m tack/requested-model \
+    "Write a short greeting to greeting.txt"
+
+Attempt D, no tracer, `timeout 120`:
+  completed in under 45 s; the fake received 2 POSTs to /v1/chat/completions
+  8.0K   /capture/diag/config          (no node_modules, no package.json)
+  460K   /capture/diag/.npm
+  12K    /capture/diag/xdg-cache
+
+Attempts A, B, C, each wrapped in `strace -f -e trace=connect` (C also `-e trace=execve`
+with `-tt`), `timeout 300` (A, B) and `timeout 150` (C):
+  every one exited 124 with empty stdout and stderr and 0 requests at the fake
+  220M   /capture/cold                 (A; B and C identical to the megabyte)
+  63M    /capture/cold/config/node_modules
+  63M    /capture/cold/xdg-config/opencode/node_modules
+  95M    /capture/cold/.npm
+  package.json {"dependencies":{"@opencode-ai/plugin":"1.18.30"}} and a package-lock.json
+  in both config directories: the installer is npm, not bun.
+  C's timeline: execve of opencode at 21:45:23.8; 15 connects to port 443 between
+  21:45:24.7 and 21:45:29.6 (the install, about 6 s); then no connect and no execve for the
+  remaining 145 s. A and B pointed BUN_INSTALL_CACHE_DIR at one scratch directory; it stayed
+  at 4.0K in both, and B installed again although A had just filled the same directory.
+  The operator's ~/.bun/install/cache mtime did not change across A and B.
+
+Not explained: why the three traced attempts install the plugin package and then wait for
+nothing, while the untraced one installs nothing and completes. What is settled for the
+adapter is narrower and does not depend on that: in its own shape an attempt that completes
+costs under 1 MB on disk and no package install, and the round trip to the npm registry
+happens either way (`shared_install_run1/2/3.strace.txt`). There is no per-attempt download
+for a shared cache to remove.

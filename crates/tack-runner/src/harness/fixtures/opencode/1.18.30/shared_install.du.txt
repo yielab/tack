@@ -1,0 +1,51 @@
+Three `opencode run` attempts, three fresh scratch HOMEs (`home-6`, `home-7`, `home-9`
+below, rewritten to `/capture/home-N`), same command each time:
+  opencode run --pure --format json --title tack -m tack/requested-model \
+    "Write a short greeting to greeting.txt"
+against a loopback fake at /v1/chat/completions (fake_server.py) and a real, unmodified
+registry.npmjs.org over the network. HOME/XDG_*/BUN_INSTALL/OPENCODE_CONFIG_DIR all under
+the attempt's own scratch HOME; never the operator's real ~/.config or ~/.local/share.
+
+attempt 1 (home-6), immediately after its run, before anything pointed at its cache:
+  872K  /capture/home-6   (recorded right after the run; see note below)
+8.0K	  /capture/home-6/config
+12K	  /capture/home-6/xdg-cache
+12K	  /capture/home-6/xdg-config
+312K	  /capture/home-6/xdg-data
+
+attempt 2 (home-7), fresh scratch HOME, npm_config_cache pointed at home-6's $HOME/.npm:
+380K	  /capture/home-7
+8.0K	  /capture/home-7/config
+12K	  /capture/home-7/xdg-cache
+12K	  /capture/home-7/xdg-config
+312K	  /capture/home-7/xdg-data
+
+attempt 3 (home-9), fresh scratch HOME, npm_config_cache pointed at home-6's $HOME/.npm
+again (now holding attempt 2's leftovers) -- repeats attempt 2's setup to see whether a
+second reuse of the same cache path changes anything:
+384K	  /capture/home-9
+8.0K	  /capture/home-9/config
+12K	  /capture/home-9/xdg-cache
+12K	  /capture/home-9/xdg-config
+316K	  /capture/home-9/xdg-data
+
+home-6/.npm after attempt 2 wrote into it (attempt 2's npm_config_cache target):
+  /capture/home-6/.npm/_cacache/tmp/3d25ffee-d8c1-4987-aba1-80b2352cad04
+  /capture/home-6/.npm/_cacache/tmp/ecf17dff-8a06-40d4-a7af-b16f4449aa71
+  492K  /capture/home-6/.npm
+
+NOTE on attempt 1's number above: home-6 was measured at 380K immediately after its own
+run (no node_modules, no .npm dir at all -- it made no npm-cache writes of its own). Its
+size shown here is larger because it was later reused, unmodified, as the shared
+npm_config_cache TARGET for attempts 2 and 3, which wrote two 240K npm-registry metadata
+temp files into home-6/.npm/_cacache/tmp/ (see shared_install_run1.strace.txt and
+shared_install_run3.strace.txt for what produced them). Neither temp file was ever
+promoted into a committed, reusable cache entry by either attempt.
+
+None of the three attempts wrote a node_modules directory or a package.json anywhere
+under their own scratch HOME, and none needed one to complete: the "write" tool call and
+final answer both round-tripped through the loopback fake normally in every attempt (see
+each attempt's own request log, 2 POSTs to /v1/chat/completions each). This did not
+reproduce the ~220MB per-attempt @opencode-ai/plugin install this fixture set's own
+README already documented from an earlier measurement -- see README.md "Measured" for
+what this run could and could not explain about that difference.
