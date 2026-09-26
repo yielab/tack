@@ -2,6 +2,8 @@
 
 Two ways to get Tack running: **install the binary** (the fast path — no build tools, you just want to use Tack) or **run from source in development mode** (for contributors and people who want hot reload). Pick the one that matches you.
 
+Prefer pictures? The [Step-by-Step Tutorial](tutorial.md) walks this same page's install → project → tasks → agent-run path once, end to end, with a real screenshot at every step.
+
 ---
 
 ## Install and run (the fast path)
