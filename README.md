@@ -129,7 +129,9 @@ tack serve --with-runner
 
 Open **<http://localhost:3210>**. The installer checks every download against the
 release's `SHA256SUMS`. Other ways to install — Cargo, a release archive, Windows —
-are in the [Quick Start](docs/book/src/user-guide/quick-start.md).
+are in the [Quick Start](docs/book/src/user-guide/quick-start.md). The
+[Step-by-Step Tutorial](docs/book/src/user-guide/tutorial.md) walks the whole path
+from here to a finished agent run, with a real screenshot at every step.
 
 **About `--with-runner`:** it starts a runner inside the same process, so agent runs
 work right away. Without it, the board works fully and you can turn agents on later

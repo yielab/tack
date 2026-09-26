@@ -65,6 +65,7 @@ export default defineConfig({
     '**/screenshots.spec.ts',
     '**/recovery-demo.spec.ts',
     '**/agent-assets.spec.ts',
+    '**/tutorial-assets.spec.ts',
   ],
   // One test file shouldn't leak state into another; each creates what it needs.
   fullyParallel: true,

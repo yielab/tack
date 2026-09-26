@@ -7,6 +7,7 @@
 # User Guide
 
 - [Quick Start](user-guide/quick-start.md)
+- [Step-by-Step Tutorial](user-guide/tutorial.md)
 - [Views](user-guide/views.md)
 - [Working with Items](user-guide/items.md)
 - [Command Palette & Search](user-guide/command-palette.md)
