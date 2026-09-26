@@ -7,13 +7,12 @@ import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
-import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -30,6 +29,7 @@ const ItemCard: Component<{
   onEdit: (item: Item) => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
+  const [isHovered, setIsHovered] = createSignal(false);
 
   const handleDragStart = (e: DragEvent) => {
     setIsDragging(true);
@@ -46,57 +46,62 @@ const ItemCard: Component<{
     return suffix ? `${e} ${suffix}` : `${e}`;
   };
 
+  const raised = () => isHovered() && !isDragging();
+
   return (
     <div
       draggable={true}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
-        background: 'var(--color-bg-base)',
-        border: '1px solid var(--color-border-light)',
-        'border-radius': '11px',
-        padding: '11px 12px',
+        background: 'var(--color-bg-app)',
+        border: raised() ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+        'border-radius': 'var(--radius-item)',
+        padding: '12px 13px',
+        display: 'flex',
+        'flex-direction': 'column',
+        gap: '7px',
         cursor: 'pointer',
-        'box-shadow': 'var(--shadow-sm)',
-        transition: 'border-color .12s, box-shadow .12s, transform .12s',
+        'box-shadow': raised() ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+        transform: raised() ? 'translateY(-1px)' : 'none',
+        transition: 'border-color .12s, box-shadow .12s, transform .12s, opacity .12s',
         opacity: isDragging() ? 0.4 : 1,
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-accent-line)';
-        e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-        e.currentTarget.style.transform = 'translateY(-1px)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-border-light)';
-        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
     >
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'margin-bottom': '7px' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '7px' }}>
         <TypeBadge type={props.item.item_type} label={props.typeLabel} />
         <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10.5px', color: 'var(--color-text-tertiary)' }}>
           {shortId(props.item.id)}
         </span>
-        <div style={{ flex: 1 }} />
-        <RunWithAgentButton
-          itemId={props.item.id}
-          itemTitle={props.item.title}
-          projectId={props.item.project_id}
-          showStateChip
-          compact
-        />
+        <div style={{ 'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px' }}>
+          <RunWithAgentButton
+            itemId={props.item.id}
+            itemTitle={props.item.title}
+            projectId={props.item.project_id}
+            showStateChip
+            compact
+          />
+        </div>
       </div>
-      <h4 style={{ 'font-size': '13px', 'font-weight': 600, margin: '0 0 9px', 'line-height': 1.35, color: 'var(--color-text-primary)' }}>
+      <h4 style={{
+        'font-family': 'var(--font-body)', 'font-size': '14px', 'font-weight': 700, 'font-synthesis': 'auto',
+        'letter-spacing': 'normal', margin: 0, 'line-height': 1.3, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
+      }}>
         {props.item.title}
       </h4>
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px' }}>
         <Show when={props.item.priority !== 'none'}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
         </Show>
         <div style={{ flex: 1 }} />
         <Show when={estimate()}>
-          <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10px', 'font-weight': 500, color: 'var(--color-text-secondary)', background: 'var(--color-chip)', padding: '1px 6px', 'border-radius': '5px' }}>
+          <span style={{
+            'font-family': 'var(--font-mono)', 'font-size': '10.5px', 'font-weight': 500, color: 'var(--color-text-secondary)',
+            background: 'var(--color-bg-panel)', padding: '2px 7px', 'border-radius': 'var(--radius-pill)',
+          }}>
             {estimate()}
           </span>
         </Show>
@@ -133,34 +138,38 @@ const BoardColumnView: Component<{
 
   return (
     <section style={{
-      width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column',
-      'max-height': '100%', background: 'var(--color-bg-base)',
-      border: '1px solid var(--color-border-light)', 'border-radius': '13px',
+      width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column', gap: '6px',
+      'max-height': '100%', background: 'var(--color-bg-panel)',
+      'border-radius': '26px', padding: '12px 10px',
     }}>
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '12px 13px 10px' }}>
-        <span style={{ width: '8px', height: '8px', 'border-radius': '99px', 'flex-shrink': 0, background: props.dotColor }} />
-        <h3 style={{ 'font-size': '12.5px', 'font-weight': 700, margin: 0, 'letter-spacing': '.01em', color: 'var(--color-text-primary)' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
+        <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
+        <h3 style={{
+          'font-family': 'var(--font-body)', 'font-size': '14px', 'font-weight': 700, 'font-synthesis': 'auto',
+          'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
+        }}>
           {props.column.status}
         </h3>
-        <span style={{ 'font-size': '11px', 'font-weight': 600, color: 'var(--color-text-tertiary)' }}>
+        <span style={{ 'font-size': '12px', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>
           {props.column.items.length}
         </span>
-        <div style={{ flex: 1 }} />
         <Show when={props.column.wip_limit != null}>
           <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
         </Show>
         <button
           onClick={() => props.onAddItem(props.column.status)}
           title="Add item"
+          class="focus:outline-none focus-visible:ring-2"
           style={{
-            width: '22px', height: '22px', 'border-radius': '6px', border: 'none',
-            background: 'transparent', cursor: 'pointer', color: 'var(--color-text-tertiary)',
-            display: 'flex', 'align-items': 'center', 'justify-content': 'center',
+            'margin-left': 'auto', width: '22px', height: '22px', 'border-radius': '50%', border: 'none',
+            background: 'var(--color-bg-app)', cursor: 'pointer', color: 'var(--color-text-secondary)',
+            display: 'grid', 'place-items': 'center', padding: 0, 'flex-shrink': 0,
+            transition: 'color .12s, box-shadow .12s',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-border-subtle)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary-600)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
-          <IconPlus size={14} />
+          <IconPlus size={13} />
         </button>
       </div>
       <div
@@ -169,10 +178,12 @@ const BoardColumnView: Component<{
         onDrop={handleDrop}
         style={{
           flex: 1, 'overflow-y': 'auto', display: 'flex', 'flex-direction': 'column', gap: '8px',
-          padding: '2px 11px 12px',
-          'border-radius': '0 0 13px 13px',
-          outline: isDragOver() ? '2px solid var(--color-accent-line)' : 'none',
-          'outline-offset': '-4px',
+          padding: '2px 2px 4px',
+          'border-radius': 'var(--radius-item)',
+          outline: isDragOver() ? '2px dashed var(--color-primary-600)' : 'none',
+          'outline-offset': '-2px',
+          background: isDragOver() ? 'var(--color-accent-soft)' : 'transparent',
+          transition: 'background-color .12s',
         }}
       >
         <For each={props.column.items}>
@@ -185,12 +196,44 @@ const BoardColumnView: Component<{
           )}
         </For>
         <Show when={props.column.items.length === 0}>
-          <div style={{ border: '1.5px dashed var(--color-border-light)', 'border-radius': '9px', padding: '18px', 'text-align': 'center', 'font-size': '11.5px', color: 'var(--color-text-tertiary)' }}>
+          <div style={{
+            'min-height': '70px', display: 'grid', 'place-items': 'center',
+            border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-item)',
+            padding: '12px', 'text-align': 'center', 'font-size': '12px', color: 'var(--color-text-tertiary)',
+          }}>
             Drop items here
           </div>
         </Show>
       </div>
     </section>
+  );
+};
+
+/** Loading placeholder in the loaded board's shape: panel columns holding
+ *  rounded card blocks. */
+const BoardLoadingSkeleton: Component = () => {
+  const columns = [[80, 80, 64], [80, 64], [80, 80, 80], [64]];
+  return (
+    <div style={{ display: 'flex', gap: '14px', 'align-items': 'flex-start' }} aria-hidden="true">
+      <For each={columns}>
+        {(cards) => (
+          <div style={{
+            width: '282px', 'flex-shrink': 0, background: 'var(--color-bg-panel)', 'border-radius': '26px',
+            padding: '12px', display: 'flex', 'flex-direction': 'column', gap: '8px',
+          }}>
+            <Skeleton width="60%" height="14px" rounded />
+            <For each={cards}>
+              {(h) => (
+                <div
+                  class="animate-pulse"
+                  style={{ height: `${h}px`, 'border-radius': '18px', background: 'var(--color-bg-app)', opacity: 0.7 }}
+                />
+              )}
+            </For>
+          </div>
+        )}
+      </For>
+    </div>
   );
 };
 
@@ -333,31 +376,39 @@ const Board: Component = () => {
     socketStatus() === 'open' ? 'Live'
       : socketStatus() === 'connecting' || socketStatus() === 'reconnecting' ? 'Connecting…'
         : 'Offline';
-  const liveColor = () =>
-    socketStatus() === 'open' ? 'var(--color-success-600)'
-      : socketStatus() === 'closed' ? 'var(--color-text-tertiary)'
-        : 'var(--color-warning-600)';
+  // Realtime pill: soft fill + ink text + dot, per connection state.
+  const livePill = (): { bg: string; fg: string; dot: string } =>
+    socketStatus() === 'open'
+      ? { bg: 'var(--color-success-100)', fg: 'var(--color-success-600)', dot: 'var(--color-success-600)' }
+      : socketStatus() === 'closed'
+        ? { bg: 'var(--color-bg-subtle)', fg: 'var(--color-text-secondary)', dot: 'var(--color-text-tertiary)' }
+        : { bg: 'var(--color-warning-100)', fg: 'var(--color-warning-600)', dot: 'var(--color-warning-600)' };
 
   return (
     <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, height: '100%' }}>
       {/* board toolbar */}
-      <div style={{ 'flex-shrink': 0, padding: '13px 18px 11px', display: 'flex', 'align-items': 'center', gap: '10px', 'border-bottom': '1px solid var(--color-border-subtle)' }}>
-        <h1 style={{ 'font-size': '17px', 'font-weight': 800, 'letter-spacing': '-.01em', margin: 0, color: 'var(--color-text-primary)' }}>
+      <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px' }}>
+        <h1 style={{ 'font-size': '34px', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
           {vocab.t('board')}
         </h1>
         <Show when={sock()}>
           <span style={{
-            display: 'inline-flex', 'align-items': 'center', gap: '5px', 'font-size': '11px', 'font-weight': 600,
-            color: liveColor(),
-            background: socketStatus() === 'open' ? 'var(--color-success-100)' : 'var(--color-chip)',
-            padding: '3px 8px', 'border-radius': '99px',
+            display: 'inline-flex', 'align-items': 'center', gap: '6px', 'font-size': '12px', 'font-weight': 600,
+            color: livePill().fg, background: livePill().bg,
+            padding: '3px 10px', 'border-radius': 'var(--radius-pill)', 'white-space': 'nowrap',
           }}>
-            <span style={{ width: '6px', height: '6px', 'border-radius': '99px', background: liveColor(), animation: socketStatus() === 'open' ? 'tk-pulse 2s ease-in-out infinite' : 'none' }} />
+            <span style={{
+              width: '7px', height: '7px', 'border-radius': '50%', background: livePill().dot,
+              'box-shadow': socketStatus() === 'open' ? '0 0 0 3px color-mix(in srgb, var(--color-success-600) 22%, transparent)' : 'none',
+              animation: socketStatus() === 'open' ? 'tk-pulse 2s ease-in-out infinite' : 'none',
+            }} />
             {liveLabel()}
           </span>
         </Show>
-        <span style={{ 'font-size': '12px', color: 'var(--color-text-tertiary)' }}>·</span>
-        <span style={{ 'font-size': '12px', color: 'var(--color-text-secondary)' }}>{itemCount()} items</span>
+        <span style={{ display: 'inline-flex', gap: '4px', 'font-size': '13px', color: 'var(--color-text-secondary)' }}>
+          <span style={{ color: 'var(--color-text-tertiary)' }}>·</span>
+          <span>{itemCount()} items</span>
+        </span>
         <div style={{ flex: 1 }} />
         <Show when={assignees().length > 0}>
           <AvatarStack names={assignees()} max={5} />
@@ -366,18 +417,18 @@ const Board: Component = () => {
 
       <FirstRunBanner hasItems={itemCount() > 0} />
 
-      <Show when={!loading()} fallback={<div style={{ padding: '16px 18px' }}><BoardSkeleton /></div>}>
+      <Show when={!loading()} fallback={<div style={{ padding: '6px 22px 22px', 'overflow-x': 'auto' }}><BoardLoadingSkeleton /></div>}>
         <Show
           when={projectId()}
           fallback={<div style={{ 'text-align': 'center', padding: '48px', color: 'var(--color-text-secondary)' }}>Please select a project from the Projects page</div>}
         >
           <Show when={(currentBoard()?.columns ?? []).length > 0 && (currentBoard()?.columns ?? []).every((col) => col.items.length === 0)}>
-            <div style={{ padding: '16px 18px 0' }}>
+            <div style={{ padding: '10px 22px 0' }}>
               <EmptyProjectGuide onAddItem={() => handleAddItem(currentBoard()!.columns[0].status)} />
             </div>
           </Show>
 
-          <div style={{ flex: 1, 'overflow-x': 'auto', 'overflow-y': 'hidden', padding: '16px 18px 18px' }}>
+          <div style={{ flex: 1, 'overflow-x': 'auto', 'overflow-y': 'hidden', padding: '6px 22px 22px' }}>
             <div style={{ display: 'flex', gap: '14px', height: '100%', 'align-items': 'flex-start' }}>
               <For each={currentBoard()?.columns || []}>
                 {(column) => (

@@ -38,24 +38,24 @@ const ExecutionToggle: Component = () => {
   };
 
   return (
-    <section class="space-y-3">
-      <div class="flex items-center gap-3">
-        <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5">
+      <div class="flex items-center gap-2.5">
+        <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Agent execution on this machine
         </h2>
         <Show when={!status.loading && !unavailable() && !loadFailed()}>
-          <Badge tone={status()!.state === 'running' ? 'success' : 'neutral'}>
+          <Badge class="ml-auto" tone={status()!.state === 'running' ? 'success' : 'neutral'}>
             {status()!.state === 'running' ? 'Running' : 'Stopped'}
           </Badge>
         </Show>
       </div>
 
       <Show when={status.loading}>
-        <Skeleton height="60px" />
+        <Skeleton height="60px" class="rounded-[22px]" />
       </Show>
 
       <Show when={unavailable()}>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
           Not available from this screen — this is a remote-runner deployment (this server
           isn't bound to its own loopback address, or this build has no embedded runner
           wired in), so it can never run one here for security reasons. Enroll a runner on
@@ -65,16 +65,16 @@ const ExecutionToggle: Component = () => {
       </Show>
 
       <Show when={loadFailed()}>
-        <div class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load the current state.{' '}
-          <button type="button" class="underline" onClick={() => void refetch()}>
+          <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
           </button>
         </div>
       </Show>
 
       <Show when={!status.loading && !unavailable() && !loadFailed()}>
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-3">
           <Button
             variant={status()!.enabled ? 'secondary' : 'primary'}
             loading={toggling()}
@@ -83,7 +83,7 @@ const ExecutionToggle: Component = () => {
           >
             {status()!.enabled ? 'Turn off' : 'Turn on'}
           </Button>
-          <span class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+          <span class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={status()!.since}
               fallback={status()!.enabled ? 'Starting…' : 'Off since this server started.'}

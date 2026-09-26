@@ -1,7 +1,7 @@
 import { lazy } from 'solid-js';
 import { useLocation } from '@solidjs/router';
 import type { RouteDefinition } from '@solidjs/router';
-import { Button } from '../shared/ui';
+import { Button, BrandMark } from '../shared/ui';
 import WorkLayout from './WorkLayout';
 
 const Projects      = lazy(() => import('../features/projects/Projects'));
@@ -51,13 +51,18 @@ export const routes: RouteDefinition[] = [
 function NotFound() {
   const location = useLocation();
   return (
-    <div class="flex flex-col items-center justify-center py-24 text-center">
-      <div class="mb-4 text-7xl" aria-hidden="true">🔍</div>
-      <h1 class="text-2xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="flex flex-col items-start gap-3.5 py-14 lg:px-6">
+      <BrandMark size={110} />
+      <h1 class="text-[34px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Page not found
       </h1>
-      <p class="text-sm mb-6 max-w-xs" style={{ color: 'var(--color-text-secondary)' }}>
-        <code class="font-mono">{location.pathname}</code> doesn't exist.
+      <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <code
+          class="font-mono rounded-lg px-2 py-0.5"
+          style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
+        >
+          {location.pathname}
+        </code>{' '}doesn't exist.
       </p>
       <Button onClick={() => history.back()}>Go back</Button>
     </div>

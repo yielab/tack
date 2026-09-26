@@ -56,8 +56,9 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
   };
 
   return (
-    <div class="space-y-3">
-      <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+    <div class="space-y-4">
+      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
         Description
       </h3>
       <RichTextEditor
@@ -65,11 +66,10 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         onChange={props.onDescriptionChange}
         placeholder="Add details, acceptance criteria, or notes…"
       />
+      </section>
 
-      <h3
-        class="pt-3 text-sm font-semibold"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
+      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
         Link GitHub issue
       </h3>
       <Show
@@ -90,8 +90,8 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </div>
         }
       >
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+        <div class="flex items-center justify-between gap-2 rounded-[20px] py-2 pl-4 pr-2" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+          <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>
             {link()!.repo}#{link()!.issue_number}
           </span>
           <Button
@@ -104,6 +104,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </Button>
         </div>
       </Show>
+      </section>
     </div>
   );
 };

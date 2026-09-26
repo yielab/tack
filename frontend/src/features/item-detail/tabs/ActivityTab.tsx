@@ -1,7 +1,7 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, EmptyState } from '../../../shared/ui';
+import { Button, EmptyState, Icons } from '../../../shared/ui';
 import type { Comment } from '../../../shared/types';
 
 export interface ActivityTabProps {
@@ -61,23 +61,23 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
   };
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <Show
         when={(comments() ?? []).length > 0}
-        fallback={<EmptyState title="No comments yet" description="Start the discussion below." />}
+        fallback={
+          <EmptyState
+            icon={<Icons.IconComment size={28} />}
+            title="No comments yet"
+            description="Start the discussion below."
+          />
+        }
       >
-        <ul class="space-y-3">
+        <ul class="space-y-2">
           <For each={comments()}>
             {(c) => (
-              <li
-                class="rounded-lg border p-3"
-                style={{
-                  'background-color': 'var(--color-bg-base)',
-                  'border-color': 'var(--color-border-light)',
-                }}
-              >
+              <li class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
                 <div class="mb-1 flex items-center justify-between text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                  <span>{c.author || 'Anonymous'}</span>
+                  <span class="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c.author || 'Anonymous'}</span>
                   <span>{relativeTime(c.created_at)}</span>
                 </div>
                 <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-primary)' }}>
@@ -102,7 +102,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
           placeholder="Write a comment…"
           rows={3}
           disabled={posting()}
-          class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="w-full resize-none rounded-[20px] border px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',

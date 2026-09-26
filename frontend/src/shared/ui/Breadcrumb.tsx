@@ -55,7 +55,7 @@ export default function Breadcrumb() {
             <span style={{ color: 'var(--color-text-tertiary)' }} class="shrink-0">Work</span>
             <span style={{ color: 'var(--color-text-tertiary)' }} class="shrink-0 mx-0.5">›</span>
           </Show>
-          <span style={{ color: 'var(--color-primary-600)' }} class="font-semibold shrink-0">
+          <span style={{ color: 'var(--color-accent-ink)' }} class="font-bold shrink-0">
             {section()}
           </span>
         </Show>

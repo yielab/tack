@@ -14,6 +14,14 @@ export interface IconProps {
 
 type Glyph = Component<IconProps>;
 
+// A glyph's markup is built once, at module load, and a DOM node can sit in
+// only one place — so each rendered icon takes its own copy, or every earlier
+// instance of the same icon is left an empty <svg>.
+function clone(el: JSX.Element): JSX.Element {
+  if (Array.isArray(el)) return el.map(clone);
+  return el instanceof Node ? el.cloneNode(true) : el;
+}
+
 function stroke(
   path: JSX.Element,
   defaults?: { width?: number },
@@ -25,12 +33,12 @@ function stroke(
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      stroke-width={props['stroke-width'] ?? defaults?.width ?? 1.6}
+      stroke-width={props['stroke-width'] ?? defaults?.width ?? 1.9}
       class={props.class}
       style={props.style}
       aria-hidden="true"
     >
-      {path}
+      {clone(path)}
     </svg>
   );
 }
@@ -44,17 +52,17 @@ export const IconSearch = stroke(
 
 export const IconPlus = stroke(
   <path d="M8 3v10M3 8h10" stroke-linecap="round" stroke-width="2" />,
-  { width: 2 },
+  { width: 2.2 },
 );
 
 export const IconChevronDown = stroke(
   <path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconChevronRight = stroke(
   <path d="M6 3l4 5-4 5" stroke-linecap="round" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconBoard = stroke(
@@ -74,7 +82,7 @@ export const IconTable = stroke(
     <rect x="2.2" y="3" width="11.6" height="10" rx="1.5" />
     <path d="M2.2 6.4h11.6M2.2 9.7h11.6M6.2 6.4V13" stroke-linecap="round" />
   </>,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconCalendar = stroke(
@@ -82,22 +90,22 @@ export const IconCalendar = stroke(
     <rect x="2.2" y="3" width="11.6" height="11" rx="2" />
     <path d="M2.2 6.2h11.6M5.5 1.8v2.4M10.5 1.8v2.4" stroke-linecap="round" />
   </>,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconTimeline = stroke(
   <path d="M2 4h7M5 8h7M3 12h6" stroke-linecap="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconSprint = stroke(
   <path d="M3.5 14V2.5M3.5 3c2-1.2 4.5-1.2 6.5 0s4.5 1.2 6.5 0M3.5 9c2-1.2 4.5-1.2 6.5 0" stroke-linecap="round" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconOverview = stroke(
   <path d="M2 13h12M4.5 13V8M8 13V4M11.5 13V9.5" stroke-linecap="round" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconProjects = stroke(
@@ -105,7 +113,7 @@ export const IconProjects = stroke(
     <path d="M2 5.5l6-3 6 3-6 3z" />
     <path d="M2 5.5v5l6 3 6-3v-5" stroke-linecap="round" />
   </>,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconTemplates = stroke(
@@ -113,7 +121,7 @@ export const IconTemplates = stroke(
     <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2" />
     <path d="M2.2 6h11.6M6 6v7.8" stroke-linecap="round" />
   </>,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconSettings = stroke(
@@ -126,12 +134,12 @@ export const IconSun = stroke(
     <circle cx="8" cy="8" r="3.2" />
     <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1" stroke-linecap="round" />
   </>,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconMoon = stroke(
   <path d="M13.5 9.2A5.6 5.6 0 0 1 6.8 2.5 5.6 5.6 0 1 0 13.5 9.2z" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconFilter = stroke(
@@ -140,12 +148,12 @@ export const IconFilter = stroke(
 
 export const IconLink = stroke(
   <path d="M6.5 9.5l3-3M5.5 7l-1.2 1.2a2.4 2.4 0 0 0 3.4 3.4L9 10.3M10.5 9l1.2-1.2a2.4 2.4 0 0 0-3.4-3.4L7 5.7" stroke-linecap="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconComment = stroke(
   <path d="M3 4.5h10v6H8l-3 2.5V10.5H3z" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 export const IconClose = stroke(
@@ -155,7 +163,7 @@ export const IconClose = stroke(
 
 export const IconAttachment = stroke(
   <path d="M11 5L6 10a2 2 0 0 0 2.8 2.8l5-5a3.4 3.4 0 0 0-4.8-4.8l-5 5a4.8 4.8 0 0 0 6.8 6.8L14 11" stroke-linecap="round" stroke-linejoin="round" />,
-  { width: 1.5 },
+  { width: 1.8 },
 );
 
 /** Agent glyph for the Agents nav entry — a small terminal/console shape. */
@@ -170,26 +178,31 @@ export const IconAgent = stroke(
 
 /** Tack brand mark — teal pin with a check (uses accent + surface tokens). */
 export const BrandMark: Component<{ size?: number; class?: string }> = (props) => (
+  // The sail: the nautical "tack" — mainsail in the accent, jib in the second
+  // accent, a hull in ink, on a soft round ground.
   <svg
-    width={props.size ?? 26}
-    height={props.size ?? 26}
+    width={props.size ?? 30}
+    height={props.size ?? 30}
     viewBox="0 0 64 64"
     class={props.class}
     style={{ 'flex-shrink': 0 }}
     aria-hidden="true"
   >
+    <circle cx="32" cy="32" r="32" fill="var(--color-accent2-soft)" />
     <path
-      d="M32 4c-12 0-21 9-21 21 0 14 21 35 21 35s21-21 21-35C53 13 44 4 32 4z"
+      d="M31 10c-8 10-13 20-14 30h14z"
       fill="var(--color-primary-600)"
-    />
-    <circle cx="32" cy="25" r="13" fill="var(--color-bg-base)" />
-    <path
-      d="M25.5 25.5 L30 30 L39 20.5"
-      fill="none"
       stroke="var(--color-primary-600)"
-      stroke-width="4.5"
-      stroke-linecap="round"
+      stroke-width="4"
       stroke-linejoin="round"
     />
+    <path
+      d="M35 16c6 7 10 15 11 24H35z"
+      fill="var(--color-accent2)"
+      stroke="var(--color-accent2)"
+      stroke-width="4"
+      stroke-linejoin="round"
+    />
+    <path d="M13 45h38c-2 6-8 10-19 10s-17-4-19-10z" fill="var(--color-text-primary)" />
   </svg>
 );

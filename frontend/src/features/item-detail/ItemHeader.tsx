@@ -1,6 +1,6 @@
 import { type Component, createSignal, createEffect, For, Show } from 'solid-js';
 import { createResource } from 'solid-js';
-import { Field, Select, Badge, TypeBadge, typeKey } from '../../shared/ui';
+import { Field, Select, Badge, TypeBadge, typeKey, Icons } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { api } from '../../shared/api';
@@ -55,7 +55,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const statuses = () => workflow()?.statuses ?? [];
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-5">
       {/* Type + id */}
       <div class="flex items-center gap-2">
         <TypeBadge type={props.item.item_type} label={vocab.t(typeKey(props.item.item_type))} />
@@ -72,7 +72,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        class="w-full rounded-lg border border-transparent px-2 py-1 text-2xl font-bold transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
+        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-[20px] border-2 border-transparent px-2 py-1 text-[30px] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'transparent',
           color: 'var(--color-text-primary)',
@@ -82,7 +82,12 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       />
 
       {/* Status pills */}
-      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status">
+      <div
+        class="inline-flex max-w-full flex-wrap gap-1 rounded-[22px] p-1"
+        style={{ 'background-color': 'var(--color-bg-panel)' }}
+        role="group"
+        aria-label="Status"
+      >
         <For each={statuses()}>
           {(s) => {
             const active = () => props.item.status === s.name;
@@ -91,12 +96,14 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
                 type="button"
                 onClick={() => { if (!active()) props.onPatch({ status: s.name }); }}
                 aria-pressed={active() ? 'true' : 'false'}
+                class="focus:outline-none focus-visible:ring-2"
                 style={{
-                  padding: '5px 11px', 'border-radius': '8px', cursor: 'pointer',
-                  'font-size': '12px', 'font-weight': 600, 'font-family': 'inherit',
-                  border: '1px solid ' + (active() ? 'transparent' : 'var(--color-border-light)'),
-                  background: active() ? 'var(--color-primary-600)' : 'var(--color-bg-base)',
+                  padding: '6px 14px', 'border-radius': '999px', cursor: 'pointer',
+                  'font-size': '13px', 'font-weight': active() ? 600 : 500, 'font-family': 'inherit',
+                  border: 'none',
+                  background: active() ? 'var(--color-primary-600)' : 'transparent',
                   color: active() ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+                  '--tw-ring-color': 'var(--color-focus-ring)',
                 }}
               >
                 {s.name}
@@ -107,7 +114,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       </div>
 
       {/* Field grid */}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-x-[18px] gap-y-3.5">
         <Select
           label="Priority"
           value={props.item.priority}
@@ -151,7 +158,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
 
       {/* Tags */}
       <div>
-        <p class="mb-1 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+        <p class="mb-1.5 text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
           Tags
         </p>
         <div class="flex flex-wrap items-center gap-1.5">
@@ -164,9 +171,10 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
                     type="button"
                     aria-label={`Remove ${tag}`}
                     onClick={() => removeTag(tag)}
-                    class="leading-none hover:opacity-70"
+                    class="grid place-items-center rounded-full leading-none hover:opacity-70 focus:outline-none focus-visible:ring-2"
+                    style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
                   >
-                    ×
+                    <Icons.IconClose size={10} stroke-width={2.4} />
                   </button>
                 </span>
               </Badge>
@@ -182,7 +190,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
               }
             }}
             placeholder="Add tag…"
-            class="min-w-[6rem] flex-1 rounded-md border px-2 py-1 text-sm focus:outline-none focus-visible:ring-2"
+            class="min-w-[6rem] flex-1 rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',

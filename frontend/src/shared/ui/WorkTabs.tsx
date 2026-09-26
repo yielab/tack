@@ -5,13 +5,13 @@ import { useVocab } from '../vocab/useVocab';
 
 // `vocab` marks lenses whose label is resolved from the project vocabulary
 // (e.g. `sprint` → "Phase" for a construction project).
-const TABS: { lens: Lens; label: string; icon: string; vocab?: string }[] = [
-  { lens: 'board',    label: 'Board',    icon: '⬛' },
-  { lens: 'list',     label: 'List',     icon: '☰'  },
-  { lens: 'table',    label: 'Table',    icon: '▦'  },
-  { lens: 'calendar', label: 'Calendar', icon: '📅' },
-  { lens: 'timeline', label: 'Timeline', icon: '📊' },
-  { lens: 'sprint',   label: 'Sprint',   icon: '🏃', vocab: 'sprint' },
+const TABS: { lens: Lens; label: string; vocab?: string }[] = [
+  { lens: 'board',    label: 'Board' },
+  { lens: 'list',     label: 'List' },
+  { lens: 'table',    label: 'Table' },
+  { lens: 'calendar', label: 'Calendar' },
+  { lens: 'timeline', label: 'Timeline' },
+  { lens: 'sprint',   label: 'Sprint', vocab: 'sprint' },
 ];
 
 export default function WorkTabs() {
@@ -32,26 +32,27 @@ export default function WorkTabs() {
 
   return (
     <div
-      class="flex items-center gap-1 px-1 py-1 rounded-lg"
-      style={{ background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-light)' }}
+      class="inline-flex items-center gap-[3px] p-[3px] rounded-full"
+      style={{ background: 'var(--color-bg-panel)' }}
     >
       <For each={TABS}>
         {(tab) => (
           <A
             href={`/projects/${projectId()}/${tab.lens}`}
             onClick={() => setLastLens(tab.lens)}
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+            class="flex items-center px-3.5 py-[5px] rounded-full text-[13px] transition-all"
             style={activeLens() === tab.lens
               ? {
-                  background: 'var(--color-bg-base)',
-                  color: 'var(--color-primary-600)',
-                  'box-shadow': '0 1px 3px var(--color-shadow)',
+                  background: 'var(--color-bg-app)',
+                  color: 'var(--color-accent-ink)',
+                  'font-weight': 700,
+                  'box-shadow': 'var(--shadow-sm)',
                 }
               : {
-                  color: 'var(--color-text-secondary)',
+                  color: 'var(--color-text-primary)',
+                  'font-weight': 500,
                 }}
           >
-            <span class="text-xs">{tab.icon}</span>
             {tab.vocab ? t(tab.vocab) : tab.label}
           </A>
         )}

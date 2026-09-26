@@ -94,44 +94,48 @@ const ProviderKeyPanel: Component = () => {
   };
 
   return (
-    <section class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
-      <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-2.5">
+      <h2
+        class="text-[11px] font-bold uppercase tracking-[0.1em]"
+        style={{ color: 'var(--color-text-tertiary)', 'font-family': 'var(--font-body)' }}
+      >
         Vercel AI Gateway key
       </h2>
 
       <Show when={unavailable()}>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
           Not available from this screen — this is a remote-runner deployment. On the runner's own
           machine:
         </p>
         <pre
-          class="overflow-x-auto rounded-lg border p-3 font-mono text-xs"
-          style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-primary)' }}
+          class="overflow-x-auto rounded-[14px] bg-app px-3 py-2 font-mono text-xs"
+          style={{ color: 'var(--color-text-primary)' }}
         >
           tack runner secret set {VERCEL_AI_GATEWAY_SECRET_NAME}
         </pre>
-        <Button variant="secondary" size="sm" onClick={() => void refetchAll()}>
+        <Button variant="secondary" size="sm" class="self-start" onClick={() => void refetchAll()}>
           Re-check
         </Button>
       </Show>
 
       <Show when={loadFailed()}>
-        <div class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load the current key state.{' '}
-          <button type="button" class="underline" onClick={() => void refetchAll()}>
+          <button type="button" class="font-bold underline" onClick={() => void refetchAll()}>
             Retry
           </button>
         </div>
       </Show>
 
       <Show when={!unavailable() && !loadFailed()}>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
           Write-only — pasted here, it is never shown or sent back again.{' '}
           <a
             href="https://vercel.com/ai-gateway"
             target="_blank"
             rel="noreferrer"
             class="underline"
+            style={{ color: 'var(--color-accent-ink)' }}
           >
             Get a Vercel AI Gateway key
           </a>
@@ -145,7 +149,7 @@ const ProviderKeyPanel: Component = () => {
                 e.preventDefault();
                 void save();
               }}
-              class="max-w-md space-y-3"
+              class="space-y-3"
             >
               <Field
                 label="API key"
@@ -176,21 +180,22 @@ const ProviderKeyPanel: Component = () => {
             </form>
           }
         >
-          <div class="flex flex-wrap items-center gap-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <div class="flex flex-wrap items-center gap-2.5 rounded-full bg-app px-3.5 py-2.5 text-[13px]" style={{ color: 'var(--color-text-primary)' }}>
+            <span class="h-2 w-2 flex-none rounded-full" style={{ background: 'var(--color-success-600)' }} aria-hidden="true" />
             <span>
               Set {stored()!.set_at ? new Date(stored()!.set_at!).toLocaleDateString() : '(unknown date)'}
             </span>
-            <button type="button" class="underline" onClick={() => setEditing(true)}>
+            <button type="button" class="ml-auto font-semibold" style={{ color: 'var(--color-accent-ink)' }} onClick={() => setEditing(true)}>
               Replace
             </button>
-            <button type="button" class="underline" disabled={saving()} onClick={() => void remove()}>
+            <button type="button" class="font-semibold" style={{ color: 'var(--color-danger-600)' }} disabled={saving()} onClick={() => void remove()}>
               Remove
             </button>
           </div>
         </Show>
 
         <Show when={!status.loading && status() !== undefined}>
-          <p class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+          <p class="text-[12.5px]" style={{ color: 'var(--color-text-primary)' }}>
             {catalogText(status()!.catalog)}
           </p>
         </Show>

@@ -39,17 +39,17 @@ const PriorityDot: Component<PriorityDotProps> = (props) => (
     style={{
       display: 'inline-flex',
       'align-items': 'center',
-      gap: '4px',
-      'font-size': '10.5px',
-      'font-weight': 600,
+      gap: '6px',
+      'font-size': '12px',
+      'font-weight': 500,
       color: 'var(--color-text-secondary)',
     }}
   >
     <span
       style={{
-        width: '7px',
-        height: '7px',
-        'border-radius': '2px',
+        width: '8px',
+        height: '8px',
+        'border-radius': '3px',
         background: priorityColor(props.priority),
         'flex-shrink': 0,
       }}

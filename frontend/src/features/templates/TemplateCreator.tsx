@@ -33,48 +33,68 @@ function Section(props: {
 }) {
   return (
     <div
-      class="rounded-xl border overflow-hidden"
-      style={{ 'border-color': 'var(--color-border-light)' }}
+      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-[28px]' : 'rounded-[32px]'}`}
     >
       <button
         type="button"
         onClick={props.onToggle}
-        class="w-full flex items-center justify-between p-4 text-left transition-colors hover:opacity-80"
-        style={{ 'background-color': 'var(--color-bg-elevated)' }}
+        aria-expanded={props.open}
+        class={`w-full flex items-center gap-2.5 text-left transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2 ${props.open ? 'rounded-t-[28px] px-[22px] pt-[18px] pb-1' : 'rounded-[32px] px-[22px] py-3'}`}
+        style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
       >
-        <div class="flex items-center gap-3">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                {props.title}
-              </span>
-              <Show when={props.badge}>
-                <Badge tone="success">{props.badge}</Badge>
-              </Show>
-            </div>
-            <p class="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-              {props.description}
-            </p>
-          </div>
-        </div>
-        <Show when={props.open} fallback={<FiChevronRight size={16} style={{ color: 'var(--color-text-tertiary)' }} />}>
-          <FiChevronDown size={16} style={{ color: 'var(--color-text-tertiary)' }} />
+        <Show when={props.open} fallback={<FiChevronRight size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />}>
+          <FiChevronDown size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
+        </Show>
+        <span class={`font-heading ${props.open ? 'text-lg' : 'text-[17px]'}`} style={{ color: 'var(--color-text-primary)' }}>
+          {props.title}
+        </span>
+        <Show when={props.badge}>
+          <Badge tone="primary">{props.badge}</Badge>
+        </Show>
+        <Show when={!props.open}>
+          <span class="ml-auto min-w-0 text-right text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            {props.description}
+          </span>
         </Show>
       </button>
       <Show when={props.open}>
-        <div
-          class="p-4 border-t space-y-3"
-          style={{
-            'border-color': 'var(--color-border-light)',
-            'background-color': 'var(--color-bg-base)',
-          }}
-        >
+        <div class="px-[22px] pb-[18px] pt-1 space-y-3">
+          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+            {props.description}
+          </p>
           {props.children}
         </div>
       </Show>
     </div>
   );
 }
+
+// Inputs inside a panel sit on the app ground (pill single-line controls).
+const inPanelInput =
+  'rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2';
+const inPanelInputStyle = {
+  'background-color': 'var(--color-bg-app)',
+  'border-color': 'var(--color-border-light)',
+  color: 'var(--color-text-primary)',
+  '--tw-ring-color': 'var(--color-focus-ring)',
+};
+// Multi-line controls use the item radius.
+const textareaStyle = {
+  'background-color': 'var(--color-bg-base)',
+  color: 'var(--color-text-primary)',
+  'border-color': 'var(--color-border-medium)',
+  '--tw-ring-color': 'var(--color-focus-ring)',
+};
+// A row item inside a section panel.
+const itemStyle = {
+  'background-color': 'var(--color-bg-app)',
+  'box-shadow': 'var(--shadow-sm)',
+};
+const iconBtnClass =
+  'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2';
+const addBtnClass =
+  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
+const addBtnStyle = { 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' };
 
 // ── field type meta ───────────────────────────────────────────────────────────
 const FIELD_TYPES = [
@@ -274,29 +294,23 @@ export default function TemplateCreator() {
   ];
 
   return (
-    <div class="min-h-screen p-6" style={{ 'background-color': 'var(--color-bg-base)' }}>
-      <div class="max-w-2xl mx-auto">
+    <div class="lg:px-6 lg:py-3">
+      <div class="max-w-[760px]">
         {/* Header */}
-        <div class="mb-8">
-          <h1 class="text-3xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+        <div class="mb-4">
+          <h1 class="text-[36px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             Create Project Template
           </h1>
-          <p style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             Define a reusable project blueprint — workflow, vocabulary, custom fields, and boards.
             Sections left collapsed use the project type defaults.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} class="space-y-4">
+        <form onSubmit={handleSubmit} class="flex flex-col gap-4">
           {/* ── Basic Information ─────────────────────────────────────────── */}
-          <div
-            class="rounded-xl border p-6 space-y-4"
-            style={{
-              'border-color': 'var(--color-border-light)',
-              'background-color': 'var(--color-bg-elevated)',
-            }}
-          >
-            <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <div class="grid grid-cols-1 gap-x-4 gap-y-3 rounded-[28px] bg-panel px-[22px] py-5 sm:grid-cols-2">
+            <h3 class="text-lg sm:col-span-2" style={{ color: 'var(--color-text-primary)' }}>
               Basic Information
             </h3>
 
@@ -307,23 +321,6 @@ export default function TemplateCreator() {
               onInput={(e) => setName(e.currentTarget.value)}
               placeholder="e.g., Web Development Project"
             />
-
-            <FieldShell label="Description" for="template-description">
-              <textarea
-                id="template-description"
-                value={description()}
-                onInput={(e) => setDescription(e.currentTarget.value)}
-                rows={2}
-                placeholder="Describe what this template is for..."
-                class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
-                style={{
-                  'background-color': 'var(--color-bg-base)',
-                  color: 'var(--color-text-primary)',
-                  'border-color': 'var(--color-border-medium)',
-                  '--tw-ring-color': 'var(--color-focus-ring)',
-                }}
-              />
-            </FieldShell>
 
             <Select
               label="Project Type"
@@ -339,6 +336,18 @@ export default function TemplateCreator() {
                 )}
               </For>
             </Select>
+
+            <FieldShell label="Description" for="template-description" class="sm:col-span-2">
+              <textarea
+                id="template-description"
+                value={description()}
+                onInput={(e) => setDescription(e.currentTarget.value)}
+                rows={2}
+                placeholder="Describe what this template is for..."
+                class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                style={textareaStyle}
+              />
+            </FieldShell>
           </div>
 
           {/* ── Workflow ──────────────────────────────────────────────────── */}
@@ -358,36 +367,20 @@ export default function TemplateCreator() {
             <div class="space-y-2">
               <For each={statusRows()}>
                 {(row) => (
-                  <div
-                    class="flex items-center gap-3 rounded-lg border p-3"
-                    style={{
-                      'border-color': 'var(--color-border-light)',
-                      'background-color': 'var(--color-bg-elevated)',
-                    }}
-                  >
+                  <div class="grid grid-cols-[minmax(0,1fr)_150px_auto_32px] items-center gap-2">
                     <input
                       type="text"
                       value={row.name}
                       placeholder="Status name"
                       onInput={(e) => setStatusField(row.id, 'name', e.currentTarget.value)}
-                      class="flex-1 rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                      style={{
-                        'background-color': 'var(--color-bg-base)',
-                        'border-color': 'var(--color-border-medium)',
-                        color: 'var(--color-text-primary)',
-                        '--tw-ring-color': 'var(--color-focus-ring)',
-                      }}
+                      class={`min-w-0 ${inPanelInput}`}
+                      style={inPanelInputStyle}
                     />
                     <select
                       value={row.category}
                       onChange={(e) => setStatusField(row.id, 'category', e.currentTarget.value)}
-                      class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                      style={{
-                        'background-color': 'var(--color-bg-base)',
-                        'border-color': 'var(--color-border-medium)',
-                        color: 'var(--color-text-primary)',
-                        '--tw-ring-color': 'var(--color-focus-ring)',
-                      }}
+                      class={inPanelInput}
+                      style={inPanelInputStyle}
                     >
                       <option value="todo">To Do</option>
                       <option value="in_progress">In Progress</option>
@@ -403,20 +396,15 @@ export default function TemplateCreator() {
                         value={row.wip_limit}
                         placeholder="∞"
                         onInput={(e) => setStatusField(row.id, 'wip_limit', e.currentTarget.value)}
-                        class="w-16 rounded-lg border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
-                        style={{
-                          'background-color': 'var(--color-bg-base)',
-                          'border-color': 'var(--color-border-medium)',
-                          color: 'var(--color-text-primary)',
-                          '--tw-ring-color': 'var(--color-focus-ring)',
-                        }}
+                        class="w-16 rounded-full border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
+                        style={inPanelInputStyle}
                       />
                     </div>
                     <button
                       type="button"
                       onClick={() => removeStatus(row.id)}
-                      class="shrink-0 rounded-md p-1.5"
-                      style={{ color: 'var(--color-text-tertiary)' }}
+                      class={iconBtnClass}
+                      style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       title="Remove status"
                     >
                       <FiTrash2 size={16} />
@@ -429,8 +417,8 @@ export default function TemplateCreator() {
             <button
               type="button"
               onClick={addStatus}
-              class="flex items-center gap-2 rounded-lg border border-dashed px-4 py-2 text-sm font-medium w-full justify-center"
-              style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-secondary)' }}
+              class={addBtnClass}
+              style={addBtnStyle}
             >
               <FiPlus size={16} /> Add Status
             </button>
@@ -448,22 +436,19 @@ export default function TemplateCreator() {
               Leave fields blank to keep the default label.
             </p>
 
-            <div
-              class="overflow-hidden rounded-xl border"
-              style={{ 'border-color': 'var(--color-border-light)' }}
-            >
+            <div class="overflow-hidden rounded-[20px]" style={itemStyle}>
               <table class="w-full text-sm">
                 <thead>
-                  <tr style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+                  <tr>
                     <th
-                      class="w-1/3 px-4 py-3 text-left font-semibold"
-                      style={{ color: 'var(--color-text-secondary)' }}
+                      class="w-1/3 px-4 pt-3 pb-2 text-left text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Default
                     </th>
                     <th
-                      class="px-4 py-3 text-left font-semibold"
-                      style={{ color: 'var(--color-text-secondary)' }}
+                      class="px-4 pt-3 pb-2 text-left text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Custom label
                     </th>
@@ -490,13 +475,8 @@ export default function TemplateCreator() {
                               value={vocabEdits()[key] ?? ''}
                               placeholder={def}
                               onInput={(e) => setVocabKey(key, e.currentTarget.value)}
-                              class="w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                              style={{
-                                'background-color': 'var(--color-bg-base)',
-                                'border-color': 'var(--color-border-medium)',
-                                color: 'var(--color-text-primary)',
-                                '--tw-ring-color': 'var(--color-focus-ring)',
-                              }}
+                              class={`w-full ${inPanelInput}`}
+                              style={{ ...inPanelInputStyle, 'background-color': 'var(--color-bg-base)' }}
                             />
                           </td>
                         </tr>
@@ -527,17 +507,11 @@ export default function TemplateCreator() {
               <div class="space-y-2">
                 <For each={customFields()}>
                   {(field, i) => (
-                    <div
-                      class="flex items-center gap-3 rounded-lg border px-4 py-3"
-                      style={{
-                        'border-color': 'var(--color-border-light)',
-                        'background-color': 'var(--color-bg-elevated)',
-                      }}
-                    >
+                    <div class="flex items-center gap-3 rounded-[20px] px-4 py-3" style={itemStyle}>
                       <span class="text-lg">{fieldTypeIcon(field.field_type)}</span>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
-                          <span class="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                          <span class="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
                             {field.name}
                           </span>
                           <Badge>{fieldTypeLabel(field.field_type)}</Badge>
@@ -554,16 +528,16 @@ export default function TemplateCreator() {
                       <button
                         type="button"
                         onClick={() => openEditFieldModal(i())}
-                        class="text-xs px-2 py-1 rounded"
-                        style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-base)' }}
+                        class="rounded-full px-3 py-1 text-xs font-semibold transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
+                        style={{ color: 'var(--color-accent-ink)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => removeField(i())}
-                        class="shrink-0 rounded-md p-1.5"
-                        style={{ color: 'var(--color-text-tertiary)' }}
+                        class={iconBtnClass}
+                        style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                         title="Remove field"
                       >
                         <FiTrash2 size={16} />
@@ -577,8 +551,8 @@ export default function TemplateCreator() {
             <button
               type="button"
               onClick={openAddFieldModal}
-              class="flex items-center gap-2 rounded-lg border border-dashed px-4 py-2 text-sm font-medium w-full justify-center"
-              style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-secondary)' }}
+              class={addBtnClass}
+              style={addBtnStyle}
             >
               <FiPlus size={16} /> Add Custom Field
             </button>
@@ -599,51 +573,35 @@ export default function TemplateCreator() {
             <div class="space-y-2">
               <For each={boards()}>
                 {(board, i) => (
-                  <div
-                    class="flex items-start gap-3 rounded-lg border p-3"
-                    style={{
-                      'border-color': 'var(--color-border-light)',
-                      'background-color': 'var(--color-bg-elevated)',
-                    }}
-                  >
+                  <div class="flex items-start gap-3 rounded-[20px] p-3" style={itemStyle}>
                     <div class="flex-1 space-y-2">
                       <input
                         type="text"
                         value={board.name}
                         placeholder="Board name"
                         onInput={(e) => setBoardField(i(), 'name', e.currentTarget.value)}
-                        class="w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                        style={{
-                          'background-color': 'var(--color-bg-base)',
-                          'border-color': 'var(--color-border-medium)',
-                          color: 'var(--color-text-primary)',
-                          '--tw-ring-color': 'var(--color-focus-ring)',
-                        }}
+                        class={`w-full ${inPanelInput}`}
+                        style={{ ...inPanelInputStyle, 'background-color': 'var(--color-bg-base)' }}
                       />
                       <input
                         type="text"
                         value={board.description}
                         placeholder="Description (optional)"
                         onInput={(e) => setBoardField(i(), 'description', e.currentTarget.value)}
-                        class="w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                        style={{
-                          'background-color': 'var(--color-bg-base)',
-                          'border-color': 'var(--color-border-medium)',
-                          color: 'var(--color-text-primary)',
-                          '--tw-ring-color': 'var(--color-focus-ring)',
-                        }}
+                        class={`w-full ${inPanelInput}`}
+                        style={{ ...inPanelInputStyle, 'background-color': 'var(--color-bg-base)' }}
                       />
                     </div>
                     <Show when={i() === 0}>
-                      <span class="text-xs px-2 py-1 rounded mt-1" style={{ color: 'var(--color-text-tertiary)', 'background-color': 'var(--color-bg-subtle)' }}>
+                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-[11px] font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
                         Default
                       </span>
                     </Show>
                     <button
                       type="button"
                       onClick={() => removeBoard(i())}
-                      class="flex-shrink-0 rounded-md p-1.5 mt-1"
-                      style={{ color: 'var(--color-text-tertiary)' }}
+                      class={`mt-0.5 ${iconBtnClass}`}
+                      style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       title="Remove board"
                     >
                       <FiTrash2 size={16} />
@@ -656,18 +614,15 @@ export default function TemplateCreator() {
             <button
               type="button"
               onClick={addBoard}
-              class="flex items-center gap-2 rounded-lg border border-dashed px-4 py-2 text-sm font-medium w-full justify-center"
-              style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-secondary)' }}
+              class={addBtnClass}
+              style={addBtnStyle}
             >
               <FiPlus size={16} /> Add Board
             </button>
           </Section>
 
           {/* ── Form Actions ──────────────────────────────────────────────── */}
-          <div
-            class="flex justify-end gap-2 border-t pt-4"
-            style={{ 'border-color': 'var(--color-border-light)' }}
-          >
+          <div class="flex justify-end gap-2.5">
             <Button type="button" variant="secondary" onClick={() => navigate('/templates')}>
               Cancel
             </Button>
@@ -713,13 +668,8 @@ export default function TemplateCreator() {
               onInput={(e) => setFieldDescription(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
-              style={{
-                'background-color': 'var(--color-bg-base)',
-                color: 'var(--color-text-primary)',
-                'border-color': 'var(--color-border-medium)',
-                '--tw-ring-color': 'var(--color-focus-ring)',
-              }}
+              class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              style={textareaStyle}
             />
           </FieldShell>
 
@@ -737,13 +687,8 @@ export default function TemplateCreator() {
                 rows={4}
                 required
                 placeholder={'Option 1\nOption 2\nOption 3'}
-                class="w-full rounded-lg border px-3 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
-                style={{
-                  'background-color': 'var(--color-bg-base)',
-                  color: 'var(--color-text-primary)',
-                  'border-color': 'var(--color-border-medium)',
-                  '--tw-ring-color': 'var(--color-focus-ring)',
-                }}
+                class="w-full rounded-[20px] border px-3.5 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                style={textareaStyle}
               />
             </FieldShell>
           </Show>
@@ -757,14 +702,12 @@ export default function TemplateCreator() {
               checked={fieldRequired()}
               onChange={(e) => setFieldRequired(e.currentTarget.checked)}
               class="h-4 w-4 rounded"
+              style={{ 'accent-color': 'var(--color-primary-600)' }}
             />
             Required field (must be filled for all items)
           </label>
 
-          <div
-            class="flex justify-end gap-2 border-t pt-4"
-            style={{ 'border-color': 'var(--color-border-light)' }}
-          >
+          <div class="flex justify-end gap-2.5 pt-2">
             <Button type="button" variant="secondary" onClick={() => setShowFieldModal(false)}>
               Cancel
             </Button>

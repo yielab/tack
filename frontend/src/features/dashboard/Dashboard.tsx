@@ -4,7 +4,12 @@ import { api } from '../../shared/api';
 import { useProject } from '../../shared/state/projectContext';
 import { computeDashboardStats } from './computeStats';
 import { useVocab } from '../../shared/vocab/useVocab';
-import { Button, EmptyState } from '../../shared/ui';
+import { Button, EmptyState, Skeleton } from '../../shared/ui';
+import { IconOverview } from '../../shared/ui/icons';
+import { priorityColor } from '../../shared/ui/PriorityDot';
+import { typeBadgeTone } from '../../shared/ui/TypeBadge';
+import type { JSX } from 'solid-js';
+import type { Priority } from '../../shared/types';
 
 export default function Dashboard() {
   const params = useParams();
@@ -20,257 +25,198 @@ export default function Dashboard() {
     computeDashboardStats(items() || [], project()?.workflow?.statuses || [], new Date()),
   );
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'critical': return 'var(--color-danger)';
-      case 'high': return 'var(--color-warning)';
-      case 'medium': return 'var(--color-primary-400)';
-      case 'low': return 'var(--color-success)';
-      default: return 'var(--color-text-tertiary)';
-    }
-  };
-
   const getStatusCategoryColor = (category: string) => {
     switch (category) {
-      case 'done': return 'var(--color-success)';
+      case 'done': return 'var(--color-success-600)';
       case 'in_progress': return 'var(--color-primary-600)';
-      case 'todo': return 'var(--color-text-tertiary)';
-      default: return 'var(--color-primary-500)';
+      case 'todo': return 'var(--color-accent2)';
+      default: return 'var(--color-primary-600)';
     }
   };
 
-  return (
-    <div class="min-h-screen p-6" style={{ background: 'var(--color-bg-base)' }}>
-      <div class="max-w-7xl mx-auto">
-        {/* Header */}
-        <div class="mb-6">
-          <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-            Overview
-          </h1>
-          <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            Project statistics and progress
-          </p>
-        </div>
+  const pct = (n: number) => (stats().totalItems > 0 ? Math.round((n / stats().totalItems) * 100) : 0);
 
-        {/* No items yet */}
-        <Show when={!items.loading && (items() ?? []).length === 0}>
+  return (
+    <div class="flex flex-col gap-[18px]">
+      {/* Header */}
+      <div>
+        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>
+          Overview
+        </h1>
+        <p class="mt-0.5 text-[13px] text-content-muted">
+          Project statistics and progress
+        </p>
+      </div>
+
+      {/* Loading */}
+      <Show when={items.loading && !items()}>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5" aria-hidden="true">
+          <For each={[1, 2, 3, 4]}>{() => <Skeleton height="90px" class="rounded-[24px]!" />}</For>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
+          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-[28px]!" />}</For>
+        </div>
+      </Show>
+
+      {/* No items yet */}
+      <Show when={!items.loading && (items() ?? []).length === 0}>
+        <div class="rounded-[28px] bg-panel">
           <EmptyState
-            icon="📈"
+            icon={<IconOverview size={28} />}
             title="No data to show yet"
             description="Statistics appear here once you add items to your project. Start in Board or List."
             action={
-              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/projects/${projectId}/board`)}>
                 Go to Board
               </Button>
             }
           />
-        </Show>
+        </div>
+      </Show>
 
-        {/* Stats Grid */}
-        <Show when={(items() ?? []).length > 0}>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          {/* Total Items */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Total Items</p>
-                <p class="text-3xl font-bold mt-2" style={{ color: 'var(--color-text-primary)' }}>
-                  {stats().totalItems}
-                </p>
-              </div>
-              <div class="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'var(--color-primary-100)' }}>
-                <span class="text-2xl">📊</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Completed Items */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Completed</p>
-                <p class="text-3xl font-bold mt-2" style={{ color: 'var(--color-text-primary)' }}>
-                  {stats().doneItems}
-                </p>
-              </div>
-              <div class="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
-                <span class="text-2xl">✅</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Completion Rate */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Completion Rate</p>
-                <p class="text-3xl font-bold mt-2" style={{ color: 'var(--color-text-primary)' }}>
-                  {stats().completionRate}%
-                </p>
-              </div>
-              <div class="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'var(--color-primary-100)' }}>
-                <span class="text-2xl">📈</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Throughput */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Completed (7 / 30 days)</p>
-                <p class="text-3xl font-bold mt-2" style={{ color: 'var(--color-text-primary)' }}>
-                  {stats().throughput7} <span class="text-lg" style={{ color: 'var(--color-text-tertiary)' }}>/ {stats().throughput30}</span>
-                </p>
-                <p class="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
-                  +{stats().recentItems} added in 7 days
-                </p>
-              </div>
-              <div class="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'rgba(251, 146, 60, 0.1)' }}>
-                <span class="text-2xl">🔥</span>
-              </div>
-            </div>
-          </div>
+      {/* Stats Grid */}
+      <Show when={(items() ?? []).length > 0}>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <StatTile label="Total Items" accent>
+            {stats().totalItems}
+          </StatTile>
+          <StatTile label="Completed">
+            {stats().doneItems}
+          </StatTile>
+          <StatTile label="Completion Rate">
+            {stats().completionRate}%
+          </StatTile>
+          <StatTile
+            label="Completed (7 / 30 days)"
+            sub={<>+{stats().recentItems} added in 7 days</>}
+          >
+            {stats().throughput7} <span class="text-lg text-content-subtle">/ {stats().throughput30}</span>
+          </StatTile>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {/* Status Distribution */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>Status Distribution</h2>
-            <div class="space-y-3">
-              <For each={stats().byStatus}>
-                {(status) => {
-                  const percentage = stats().totalItems > 0
-                    ? Math.round((status.count / stats().totalItems) * 100)
-                    : 0;
-                  return (
-                    <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                          {status.name}
-                        </span>
-                        <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                          {status.count} ({percentage}%)
-                        </span>
-                      </div>
-                      <div class="w-full rounded-full h-2" style={{ background: 'var(--color-border-light)' }}>
-                        <div
-                          class="h-2 rounded-full"
-                          style={{ width: `${percentage}%`, background: getStatusCategoryColor(status.category) }}
-                        />
-                      </div>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          </div>
+          <MeterCard title="Status Distribution">
+            <For each={stats().byStatus}>
+              {(status) => (
+                <Meter
+                  label={status.name}
+                  value={`${status.count} (${pct(status.count)}%)`}
+                  percent={pct(status.count)}
+                  color={getStatusCategoryColor(status.category)}
+                />
+              )}
+            </For>
+          </MeterCard>
 
-          {/* Priority Distribution */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>Priority Distribution</h2>
-            <div class="space-y-3">
-              <For each={Object.entries(stats().byPriority)}>
-                {([priority, count]) => {
-                  const percentage = stats().totalItems > 0
-                    ? Math.round((count / stats().totalItems) * 100)
-                    : 0;
-                  return (
-                    <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-sm font-medium capitalize" style={{ color: 'var(--color-text-primary)' }}>
-                          {priority}
-                        </span>
-                        <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                          {count} ({percentage}%)
-                        </span>
-                      </div>
-                      <div class="w-full rounded-full h-2" style={{ background: 'var(--color-border-light)' }}>
-                        <div
-                          class="h-2 rounded-full"
-                          style={{ width: `${percentage}%`, background: getPriorityColor(priority) }}
-                        />
-                      </div>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          </div>
+          {/* Priority Distribution — same colours as PriorityDot */}
+          <MeterCard title="Priority Distribution">
+            <For each={Object.entries(stats().byPriority)}>
+              {([priority, count]) => (
+                <Meter
+                  label={priority}
+                  capitalize
+                  value={`${count} (${pct(count)}%)`}
+                  percent={pct(count)}
+                  color={priorityColor(priority as Priority)}
+                />
+              )}
+            </For>
+          </MeterCard>
 
           {/* Type Distribution */}
-          <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-            <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>Item Types</h2>
-            <div class="space-y-3">
-              <For each={stats().byType}>
-                {(type) => {
-                  const percentage = stats().totalItems > 0
-                    ? Math.round((type.count / stats().totalItems) * 100)
-                    : 0;
-                  return (
-                    <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-sm font-medium capitalize" style={{ color: 'var(--color-text-primary)' }}>
-                          {type.name}
-                        </span>
-                        <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                          {type.count} ({percentage}%)
-                        </span>
-                      </div>
-                      <div class="w-full rounded-full h-2" style={{ background: 'var(--color-border-light)' }}>
-                        <div
-                          class="h-2 rounded-full"
-                          style={{ width: `${percentage}%`, background: 'var(--color-primary-600)' }}
-                        />
-                      </div>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          </div>
+          <MeterCard title="Item Types">
+            <For each={stats().byType}>
+              {(type) => (
+                <Meter
+                  label={type.name}
+                  capitalize
+                  value={`${type.count} (${pct(type.count)}%)`}
+                  percent={pct(type.count)}
+                  color={typeBarColor(type.name)}
+                />
+              )}
+            </For>
+          </MeterCard>
 
           {/* Story Points Progress */}
           <Show when={stats().totalEstimate > 0}>
-            <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-              <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>{t('story_points')} Progress</h2>
-              <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Total Points</span>
-                  <span class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                    {stats().totalEstimate}
-                  </span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Completed</span>
-                  <span class="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>
-                    {stats().completedEstimate}
-                  </span>
-                </div>
-                <div>
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                      Progress
-                    </span>
-                    <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      {Math.round((stats().completedEstimate / stats().totalEstimate) * 100)}%
-                    </span>
-                  </div>
-                  <div class="w-full rounded-full h-3" style={{ background: 'var(--color-border-light)' }}>
-                    <div
-                      class="h-3 rounded-full"
-                      style={{
-                        width: `${(stats().completedEstimate / stats().totalEstimate) * 100}%`,
-                        background: 'linear-gradient(to right, var(--color-success), var(--color-success))'
-                      }}
-                    />
-                  </div>
-                </div>
+            <MeterCard title={`${t('story_points')} Progress`}>
+              <div class="flex items-center justify-between text-[13px]">
+                <span class="text-content-muted">Total Points</span>
+                <span class="font-heading text-2xl text-content">
+                  {stats().totalEstimate}
+                </span>
               </div>
-            </div>
+              <div class="flex items-center justify-between text-[13px]">
+                <span class="text-content-muted">Completed</span>
+                <span class="font-heading text-2xl" style={{ color: 'var(--color-success-600)' }}>
+                  {stats().completedEstimate}
+                </span>
+              </div>
+              <Meter
+                label="Progress"
+                value={`${Math.round((stats().completedEstimate / stats().totalEstimate) * 100)}%`}
+                percent={(stats().completedEstimate / stats().totalEstimate) * 100}
+                color="var(--color-success-600)"
+              />
+            </MeterCard>
           </Show>
         </div>
-        </Show>{/* end: items > 0 */}
+      </Show>{/* end: items > 0 */}
+    </div>
+  );
+}
+
+/** Bar colour per item type — the same hue family TypeBadge uses; neutral
+ *  types fall back to the secondary text tone so the bar stays visible. */
+function typeBarColor(key: string): string {
+  const fg = typeBadgeTone(key).fg;
+  return fg === 'var(--color-text-secondary)' ? 'var(--color-text-tertiary)' : fg;
+}
+
+function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; children: JSX.Element }) {
+  return (
+    <div
+      class="rounded-[28px] px-5 py-[18px] flex flex-col gap-1.5"
+      style={props.accent
+        ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-on-accent)' }
+        : { 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
+    >
+      <p
+        class="text-xs font-bold"
+        style={{ color: props.accent ? 'var(--color-on-accent)' : 'var(--color-text-secondary)' }}
+      >
+        {props.label}
+      </p>
+      <p class="font-heading leading-none" style={{ 'font-size': '40px' }}>
+        {props.children}
+      </p>
+      <Show when={props.sub}>
+        <p class="text-xs text-content-subtle">{props.sub}</p>
+      </Show>
+    </div>
+  );
+}
+
+function MeterCard(props: { title: string; children: JSX.Element }) {
+  return (
+    <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
+      <h2 class="text-lg text-content">{props.title}</h2>
+      {props.children}
+    </div>
+  );
+}
+
+function Meter(props: { label: string; value: string; percent: number; color: string; capitalize?: boolean }) {
+  return (
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center text-[13px]">
+        <span class="text-content" classList={{ capitalize: !!props.capitalize }}>{props.label}</span>
+        <span class="ml-auto text-content-muted">{props.value}</span>
+      </div>
+      <div class="w-full h-[7px] rounded-full bg-app">
+        <div class="h-full rounded-full" style={{ width: `${props.percent}%`, background: props.color }} />
       </div>
     </div>
   );

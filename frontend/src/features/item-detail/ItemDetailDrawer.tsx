@@ -105,7 +105,7 @@ const ItemDetailDrawer: Component = () => {
   };
 
   return (
-    <Drawer isOpen={!!itemId()} onClose={close} title="Item details" width="md">
+    <Drawer isOpen={!!itemId()} onClose={close} title="Item details" width="lg">
       <Show
         when={item()}
         fallback={
@@ -124,8 +124,8 @@ const ItemDetailDrawer: Component = () => {
                 the request that just appeared is immediately visible,
                 without a page navigation. */}
             <div
-              class="flex flex-wrap items-center gap-3 rounded-lg border p-3"
-              style={{ 'background-color': 'var(--color-bg-subtle)', 'border-color': 'var(--color-border-light)' }}
+              class="flex flex-wrap items-center gap-3 rounded-[28px] px-5 py-4"
+              style={{ 'background-color': 'var(--color-bg-panel)' }}
             >
               <RunWithAgentButton
                 itemId={it().id}

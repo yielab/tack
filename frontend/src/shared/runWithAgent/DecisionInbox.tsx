@@ -13,6 +13,7 @@ import {
   type DecisionRecord,
   type ResolveDecisionResult,
 } from '../execution';
+import RadioRow from './RadioRow';
 
 export interface DecisionInboxProps {
   requestId: string;
@@ -99,8 +100,11 @@ const DecisionRow: Component<{
 
   return (
     <li
-      class="space-y-2 rounded-lg border p-3"
-      style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}
+      class="space-y-3 p-4"
+      style={{
+        'border-radius': isPending() ? '26px' : 'var(--radius-item)',
+        'background-color': isPending() ? 'var(--color-accent-soft)' : 'var(--color-bg-panel)',
+      }}
     >
       <div class="flex flex-wrap items-center gap-2">
         {/* Pending / expired / resolved are visually AND semantically
@@ -118,12 +122,12 @@ const DecisionRow: Component<{
         <Show when={!isPending() && !isExpired() && !isResolved()}>
           <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
         </Show>
-        <span class="text-xs" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.decision.decision_id}
         </span>
       </div>
 
-      <p class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+      <p class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
         {props.decision.prompt}
       </p>
 
@@ -144,7 +148,7 @@ const DecisionRow: Component<{
       </Show>
 
       <Show when={isPending()}>
-        <form class="space-y-2" onSubmit={submit}>
+        <form class="space-y-3" onSubmit={submit}>
           <Show
             when={hasOptions()}
             fallback={
@@ -157,22 +161,20 @@ const DecisionRow: Component<{
               />
             }
           >
-            <fieldset class="space-y-1.5">
-              <legend class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <fieldset class="flex flex-col gap-2">
+              <legend class="mb-2 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
                 Choose an answer
               </legend>
               <For each={props.decision.options}>
                 {(opt) => (
-                  <label class="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                    <input
-                      type="radio"
-                      name={`decision-${props.decision.decision_id}`}
-                      value={opt.option_id}
-                      checked={optionId() === opt.option_id}
-                      onChange={() => setOptionId(opt.option_id)}
-                    />
+                  <RadioRow
+                    name={`decision-${props.decision.decision_id}`}
+                    value={opt.option_id}
+                    checked={optionId() === opt.option_id}
+                    onChange={() => setOptionId(opt.option_id)}
+                  >
                     {opt.label}
-                  </label>
+                  </RadioRow>
                 )}
               </For>
             </fieldset>
@@ -182,7 +184,7 @@ const DecisionRow: Component<{
             value={text()}
             onInput={(e) => setText(e.currentTarget.value)}
           />
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={busy() || !optionId().trim()} loading={busy()}>
               Resolve
             </Button>
@@ -230,8 +232,8 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   return (
     <div class="space-y-3">
       <div
-        class="flex flex-wrap items-end gap-2 rounded-lg p-2.5"
-        style={{ border: '1px solid var(--color-border-light)', 'background-color': 'var(--color-bg-subtle)' }}
+        class="flex flex-wrap items-end gap-2 rounded-[20px] px-4 py-3"
+        style={{ 'background-color': 'var(--color-bg-panel)' }}
       >
         <Field
           label="Your decision token"

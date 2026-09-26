@@ -54,9 +54,9 @@ test('board view has no accessibility violations', async ({ page, request }) => 
 });
 
 // Palette × mode coverage. Design tokens live on two independent axes — mode
-// (light/dark) × palette (teal/clay/graphite) — six combinations, and every
-// scan above always runs under the one combination Playwright's default
-// color scheme plus no stored palette produces: teal/light. The other five
+// (light/dark) × palette (harbor/teal/clay/graphite) — eight combinations, and
+// every scan above always runs under the one combination Playwright's default
+// color scheme plus no stored palette produces: harbor/light. The others
 // were never scanned by anything, ever, until this file added them; a hand
 // probe found one of them (graphite/light) genuinely broken at the time —
 // `--color-primary-600` used directly as text on light surfaces, a role only
@@ -74,11 +74,13 @@ test('board view has no accessibility violations', async ({ page, request }) => 
 // (`Sidebar.tsx`), breadcrumb (`Breadcrumb.tsx`) and work-lens tabs
 // (`WorkTabs.tsx`) it renders in every project route — already covers most of
 // the token surface a page-specific scan would add on top. This leaves every
-// page-specific scan above running only ever under teal/light, and every
+// page-specific scan above running only ever under harbor/light, and every
 // feature-specific token usage those pages alone reach (e.g. economics'
 // warning-band progress bar, the fleet health chips) unscanned under any
 // other palette or mode.
-const OTHER_MODES_AND_PALETTES: Array<['teal' | 'clay' | 'graphite', 'light' | 'dark']> = [
+const OTHER_MODES_AND_PALETTES: Array<['harbor' | 'teal' | 'clay' | 'graphite', 'light' | 'dark']> = [
+  ['harbor', 'dark'],
+  ['teal', 'light'],
   ['teal', 'dark'],
   ['clay', 'light'],
   ['clay', 'dark'],

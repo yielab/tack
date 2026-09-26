@@ -120,10 +120,10 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         <div
           class="sticky top-0 z-40 flex items-center gap-3.5"
           style={{
-            height: '54px',
+            height: '58px',
             'flex-shrink': 0,
-            padding: '0 18px',
-            'background-color': 'var(--color-bg-base)',
+            padding: '0 24px',
+            'background-color': 'var(--color-bg-app)',
             'border-bottom': '1px solid var(--color-border-light)',
           }}
         >
@@ -142,10 +142,9 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             title={projectId() ? 'New item' : 'New project'}
             style={{
               display: 'flex', 'align-items': 'center', gap: '6px',
-              padding: '8px 13px', 'border-radius': '9px', border: 'none', cursor: 'pointer',
+              padding: '7px 16px', 'border-radius': 'var(--radius-pill)', border: 'none', cursor: 'pointer',
               background: 'var(--color-primary-600)', color: 'var(--color-on-accent)',
-              'font-family': 'inherit', 'font-size': '12.5px', 'font-weight': 700,
-              'box-shadow': 'var(--shadow-sm)',
+              'font-family': 'var(--font-heading)', 'font-size': '14px',
             }}
           >
             <IconPlus size={14} /> New
@@ -156,10 +155,10 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             onClick={() => openPalette()}
             title="Command palette"
             style={{
-              display: 'flex', 'align-items': 'center', padding: '7px 9px',
-              'border-radius': '8px', cursor: 'pointer',
-              border: '1px solid var(--color-border-light)', background: 'var(--color-bg-app)',
-              color: 'var(--color-text-tertiary)', 'font-family': 'var(--font-mono)', 'font-size': '11px',
+              display: 'flex', 'align-items': 'center', padding: '6px 10px',
+              'border-radius': 'var(--radius-pill)', cursor: 'pointer',
+              border: '1px solid var(--color-border-light)', background: 'transparent',
+              color: 'var(--color-text-secondary)', 'font-family': 'var(--font-mono)', 'font-size': '11px',
             }}
           >
             ⌃K

@@ -70,13 +70,24 @@ const AgentsPanel: Component = () => {
     }
   };
 
+  // Radio dot drawn over the native input (kept for semantics + keyboard):
+  // an accent-filled ring when checked, a plain outline otherwise.
+  const radioStyle = (checked: boolean) => ({
+    'border-color': checked ? 'var(--color-primary-600)' : 'var(--color-border-strong)',
+    'background-color': checked ? 'var(--color-primary-600)' : 'var(--color-bg-base)',
+    'box-shadow': checked ? 'inset 0 0 0 4px var(--color-bg-panel)' : 'none',
+    '--tw-ring-color': 'var(--color-focus-ring)',
+  });
+  const RADIO =
+    'h-[18px] w-[18px] shrink-0 cursor-pointer appearance-none rounded-full border-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
+
   return (
-    <div class="max-w-xl space-y-4">
+    <div class="flex max-w-xl flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]">
       <div>
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="text-[19px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Default model
         </h3>
-        <p class="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="mt-1.5 text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
           Used when an execution request and its agent profile both leave the model
           unspecified. There's no live model catalog to pick from yet — type the provider
           and model id exactly as the harness expects them.
@@ -85,21 +96,25 @@ const AgentsPanel: Component = () => {
 
       <FieldShell label="Mode">
         <div class="flex gap-4 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-          <label class="flex items-center gap-1.5">
+          <label class="flex cursor-pointer items-center gap-2">
             <input
               type="radio"
               name="default-model-mode"
               checked={mode() === 'auto'}
               onChange={() => setMode('auto')}
+              class={RADIO}
+              style={radioStyle(mode() === 'auto')}
             />
             Auto-select
           </label>
-          <label class="flex items-center gap-1.5">
+          <label class="flex cursor-pointer items-center gap-2">
             <input
               type="radio"
               name="default-model-mode"
               checked={mode() === 'explicit'}
               onChange={() => setMode('explicit')}
+              class={RADIO}
+              style={radioStyle(mode() === 'explicit')}
             />
             Specific model
           </label>
@@ -107,18 +122,20 @@ const AgentsPanel: Component = () => {
       </FieldShell>
 
       <Show when={mode() === 'explicit'}>
-        <Field
-          label="Provider"
-          placeholder="openai"
-          value={provider()}
-          onInput={(e) => setProvider(e.currentTarget.value)}
-        />
-        <Field
-          label="Model ID"
-          placeholder="opaque/model-alpha"
-          value={modelId()}
-          onInput={(e) => setModelId(e.currentTarget.value)}
-        />
+        <div class="grid gap-2 sm:grid-cols-2 [&_input]:font-mono [&_input]:text-[12.5px]">
+          <Field
+            label="Provider"
+            placeholder="openai"
+            value={provider()}
+            onInput={(e) => setProvider(e.currentTarget.value)}
+          />
+          <Field
+            label="Model ID"
+            placeholder="opaque/model-alpha"
+            value={modelId()}
+            onInput={(e) => setModelId(e.currentTarget.value)}
+          />
+        </div>
       </Show>
 
       <Show when={mode() === 'unset'}>
@@ -128,7 +145,12 @@ const AgentsPanel: Component = () => {
         </p>
       </Show>
 
-      <Button onClick={() => void save()} loading={saving()} disabled={saving() || mode() === 'unset'}>
+      <Button
+        class="self-start"
+        onClick={() => void save()}
+        loading={saving()}
+        disabled={saving() || mode() === 'unset'}
+      >
         Save
       </Button>
     </div>

@@ -119,9 +119,9 @@ const SearchBar: Component<SearchBarProps> = (props) => {
       <div
         style={{
           display: 'flex', 'align-items': 'center', gap: '8px',
-          padding: '7px 11px', 'border-radius': '9px',
-          background: 'var(--color-bg-app)',
-          border: '1px solid ' + (focused() ? 'var(--color-accent-line)' : 'var(--color-border-light)'),
+          padding: '7px 14px', 'border-radius': 'var(--radius-pill)',
+          background: 'var(--color-bg-panel)',
+          border: '1px solid ' + (focused() ? 'var(--color-primary-600)' : 'transparent'),
           color: 'var(--color-text-secondary)',
         }}
       >
@@ -148,7 +148,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           placeholder={props.placeholder ?? 'Search items…'}
           style={{
             flex: 1, 'min-width': 0, border: 'none', outline: 'none', background: 'transparent',
-            'font-family': 'inherit', 'font-size': '12.5px', color: 'var(--color-text-primary)',
+            'font-family': 'inherit', 'font-size': '13px', color: 'var(--color-text-primary)',
           }}
         />
         <Show when={query()} fallback={<KbdHint>⌃/</KbdHint>}>
@@ -168,7 +168,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           style={{
             position: 'absolute', 'z-index': 50, width: '360px', 'max-width': '78vw', right: 0, 'margin-top': '8px',
             background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)',
-            'border-radius': '13px', 'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
+            'border-radius': 'var(--radius-xl)', 'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
             animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
           }}
         >
@@ -182,7 +182,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
                     onMouseEnter={() => setSelectedIndex(index())}
                     style={{
                       width: '100%', display: 'flex', 'flex-direction': 'column', gap: '5px',
-                      padding: '9px 10px', 'border-radius': '9px', border: 'none', cursor: 'pointer',
+                      padding: '9px 12px', 'border-radius': 'var(--radius-lg)', border: 'none', cursor: 'pointer',
                       'text-align': 'left', 'font-family': 'inherit',
                       background: active() ? 'var(--color-accent-soft)' : 'transparent',
                     }}

@@ -4,6 +4,7 @@ import { Modal, Button, Field, Select, FieldShell, Badge } from '../../shared/ui
 import { api } from '../../shared/api';
 import type { ProjectType, ProjectTemplate } from '../../shared/types';
 import { toast } from '../../shared/ui/toast';
+import { projectTypeTone } from '../../shared/ui/projectTypeTone';
 
 const PROJECT_TYPE_OPTIONS = [
   { value: 'software', label: 'Software (Scrum)' },
@@ -20,22 +21,28 @@ const PROJECT_TYPE_OPTIONS = [
 ];
 
 /** Domain metadata for grouping template cards. Order defines section order. */
-const DOMAINS: { type: ProjectType; label: string; icon: string }[] = [
-  { type: 'software', label: 'Software Development', icon: '💻' },
-  { type: 'web', label: 'Web Project', icon: '🌐' },
-  { type: 'mobile', label: 'Mobile App', icon: '📱' },
-  { type: 'construction', label: 'Construction', icon: '🏗️' },
-  { type: 'personal', label: 'Personal', icon: '👤' },
-  { type: 'homework', label: 'Homework', icon: '📚' },
-  { type: 'maintenance', label: 'Maintenance', icon: '🔧' },
-  { type: 'legal', label: 'Legal / Case', icon: '⚖️' },
-  { type: 'research', label: 'Research / Lab', icon: '🔬' },
-  { type: 'event', label: 'Event Planning', icon: '🎉' },
-  { type: 'custom', label: 'Custom', icon: '⚙️' },
+const DOMAINS: { type: ProjectType; label: string }[] = [
+  { type: 'software', label: 'Software Development' },
+  { type: 'web', label: 'Web Project' },
+  { type: 'mobile', label: 'Mobile App' },
+  { type: 'construction', label: 'Construction' },
+  { type: 'personal', label: 'Personal' },
+  { type: 'homework', label: 'Homework' },
+  { type: 'maintenance', label: 'Maintenance' },
+  { type: 'legal', label: 'Legal / Case' },
+  { type: 'research', label: 'Research / Lab' },
+  { type: 'event', label: 'Event Planning' },
+  { type: 'custom', label: 'Custom' },
 ];
 
-const domainIcon = (type: string) =>
-  DOMAINS.find((d) => d.type === type)?.icon ?? '⚙️';
+/** Small type-hue dot (replaces the old decorative domain emoji). */
+const TypeDot = (props: { type: string }) => (
+  <span
+    class="inline-block h-2 w-2 shrink-0 rounded-full"
+    style={{ 'background-color': projectTypeTone(props.type).fg }}
+    aria-hidden="true"
+  />
+);
 
 /** Workflow column names in board order. */
 function workflowColumns(t: ProjectTemplate): string[] {
@@ -143,31 +150,37 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     }
   };
 
+  // Items inside the picker: item radius, app fill, 2px accent border when chosen.
   const cardBaseStyle = {
-    'background-color': 'var(--color-bg-base)',
-    'border-color': 'var(--color-border-medium)',
+    'background-color': 'var(--color-bg-app)',
+    'border-color': 'transparent',
+    'box-shadow': 'var(--shadow-sm)',
   };
   const cardSelectedStyle = {
-    'background-color': 'var(--color-bg-active)',
-    'border-color': 'var(--color-focus-ring)',
+    'background-color': 'var(--color-accent-soft)',
+    'border-color': 'var(--color-primary-600)',
+    'box-shadow': 'var(--shadow-md)',
   };
+  const cardClass =
+    'rounded-[20px] border-2 p-3 text-left transition-[border-color,box-shadow,background-color] ' +
+    'hover:border-[var(--color-primary-600)] focus:outline-none focus-visible:ring-2';
 
   const renderPreview = (t: ProjectTemplate) => {
     const columns = workflowColumns(t);
     const samples = vocabSamples(t);
     return (
       <div
-        class="mt-2 rounded-md p-2 text-xs"
-        style={{ 'background-color': 'var(--color-bg-sunken)', color: 'var(--color-text-secondary)' }}
+        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-[11px]"
+        style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
       >
         <Show when={columns.length > 0}>
-          <div class="mb-1 flex flex-wrap gap-1">
+          <div class="flex flex-wrap items-center gap-1">
             <For each={columns}>
               {(col, i) => (
                 <>
                   <span
-                    class="rounded px-1.5 py-0.5"
-                    style={{ 'background-color': 'var(--color-bg-active)' }}
+                    class="rounded-full px-2 py-0.5"
+                    style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)' }}
                   >
                     {col}
                   </span>
@@ -193,11 +206,10 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       <form onSubmit={handleSubmit} class="space-y-4">
         <Show when={error()}>
           <div
-            class="rounded-lg border p-3 text-sm"
+            class="rounded-[22px] px-4 py-2.5 text-sm font-semibold"
             style={{
-              'background-color': 'var(--color-danger-50)',
-              'border-color': 'var(--color-danger-100)',
-              color: 'var(--color-danger-700)',
+              'background-color': 'var(--color-danger-100)',
+              color: 'var(--color-danger-600)',
             }}
           >
             {error()}
@@ -221,7 +233,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             placeholder="A brief description of your project..."
             rows={2}
             disabled={loading()}
-            class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',
@@ -238,7 +250,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             <button
               type="button"
               onClick={() => setSelectedTemplate(null)}
-              class="w-full rounded-lg border p-3 text-left transition-colors focus:outline-none focus-visible:ring-2"
+              class={`w-full ${cardClass}`}
               style={{
                 ...(selectedTemplate() === null ? cardSelectedStyle : cardBaseStyle),
                 '--tw-ring-color': 'var(--color-focus-ring)',
@@ -249,7 +261,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                   ✨ Start blank
                 </span>
                 <Show when={selectedTemplate() === null}>
-                  <Badge tone="info">Selected</Badge>
+                  <Badge tone="primary">Selected</Badge>
                 </Show>
               </div>
               <p class="mt-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
@@ -269,7 +281,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             </Show>
 
             <Show when={templates.loading}>
-              <div class="text-sm" style={{ color: 'var(--color-text-subtle)' }}>
+              <div class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
                 Loading templates…
               </div>
             </Show>
@@ -280,10 +292,10 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 {(group) => (
                   <div>
                     <div
-                      class="mb-1.5 text-xs font-semibold uppercase tracking-wide"
-                      style={{ color: 'var(--color-text-subtle)' }}
+                      class="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      style={{ color: 'var(--color-text-tertiary)' }}
                     >
-                      {group.icon} {group.label}
+                      <TypeDot type={group.type} /> {group.label}
                     </div>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <For each={group.items}>
@@ -302,7 +314,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                               onBlur={() =>
                                 setPreviewId((cur) => (cur === t.id ? null : cur))
                               }
-                              class="rounded-lg border p-3 text-left transition-colors focus:outline-none focus-visible:ring-2"
+                              class={cardClass}
                               style={{
                                 ...(isSelected() ? cardSelectedStyle : cardBaseStyle),
                                 '--tw-ring-color': 'var(--color-focus-ring)',
@@ -310,10 +322,10 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                             >
                               <div class="flex items-start justify-between gap-2">
                                 <span
-                                  class="font-medium"
+                                  class="flex items-center gap-1.5 font-semibold"
                                   style={{ color: 'var(--color-text-primary)' }}
                                 >
-                                  {domainIcon(t.project_type)} {t.name}
+                                  <TypeDot type={t.project_type} /> {t.name}
                                 </span>
                                 <Show when={t.is_builtin}>
                                   <Badge tone="neutral">Built-in</Badge>

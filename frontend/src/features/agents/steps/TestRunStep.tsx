@@ -116,15 +116,15 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
   };
 
   return (
-    <section class="space-y-3">
-      <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5">
+      <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Test run
       </h2>
 
       <Show
         when={props.project}
         fallback={
-          <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
             Choose a project above to run a test.
           </p>
         }
@@ -132,7 +132,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
         <Show
           when={target()}
           fallback={
-            <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
               No active, installed agent to test — turn on agent execution (step 1) or
               install one (step 2) first.
             </p>
@@ -142,24 +142,24 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
             <Show
               when={!itemId()}
               fallback={
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
                   Runs {picked().harness.harness_kind} on{' '}
                   {isThisMachineRunner(picked().runner) ? 'this machine' : picked().runner.name}.
                 </p>
               }
             >
-              <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
                 Creates an "{TEST_RUN_ITEM_TITLE}" item on this project and runs it against{' '}
                 {picked().harness.harness_kind} on{' '}
                 {isThisMachineRunner(picked().runner) ? 'this machine' : picked().runner.name}.
               </p>
-              <div class="grid gap-3 sm:grid-cols-2">
+              <div class="grid gap-x-3.5 gap-y-2.5 sm:grid-cols-2 [&_input]:font-mono [&_input]:text-[12.5px]">
                 <Field label="Repository remote" placeholder="git@example.com:org/repo.git" value={remote()} onInput={(e) => setRemote(e.currentTarget.value)} />
                 <Field label="Base revision" placeholder="main" value={baseRevision()} onInput={(e) => setBaseRevision(e.currentTarget.value)} />
                 <Field label="Provider" placeholder="openai" value={modelProvider()} onInput={(e) => setModelProvider(e.currentTarget.value)} />
                 <Field label="Model ID" placeholder="opaque/model-alpha" value={modelId()} onInput={(e) => setModelId(e.currentTarget.value)} />
               </div>
-              <Button onClick={() => void run()} loading={running()} disabled={running()}>
+              <Button class="self-start" onClick={() => void run()} loading={running()} disabled={running()}>
                 Run test
               </Button>
             </Show>

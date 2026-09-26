@@ -14,7 +14,11 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../shared/types';
-import { Button } from '../../shared/ui';
+import { Button, Badge, EmptyState } from '../../shared/ui';
+import { IconList } from '../../shared/ui/icons';
+import { priorityColor } from '../../shared/ui/PriorityDot';
+import { typeBadgeTone } from '../../shared/ui/TypeBadge';
+import type { Priority } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2 } from 'solid-icons/fi';
 
@@ -206,79 +210,62 @@ export default function List() {
 
   return (
     <div class="h-full flex flex-col">
-      {/* Modern Header */}
-      <div class="sticky top-0 z-10 bg-[var(--color-bg-base)] border-b border-[var(--color-border-light)] shadow-sm">
-        <div class="px-8 py-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-[var(--color-text-primary)] tracking-tight">
-                {project()?.name || 'List View'}
-              </h1>
-              <p class="text-sm text-[var(--color-text-secondary)] mt-1 font-medium">
-                {flattenedItems().length} {flattenedItems().length === 1 ? 'item' : 'items'}
-              </p>
-            </div>
+      {/* Header */}
+      <div class="sticky top-0 z-10 bg-app pb-4">
+        <div class="flex items-end gap-2.5">
+          <div class="min-w-0">
+            <h1 class="text-content m-0 leading-tight truncate" style={{ 'font-size': '34px' }}>
+              {project()?.name || 'List View'}
+            </h1>
+            <p class="text-[13px] text-content-subtle">
+              {flattenedItems().length} {flattenedItems().length === 1 ? 'item' : 'items'}
+            </p>
+          </div>
 
-            <div class="flex items-center gap-2">
-              <Show when={allExpandableIds().length > 0}>
-                <button
-                  onClick={expandAll}
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors"
-                  style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-primary-600)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                  title="Expand all"
-                >
-                  <FiMaximize2 size={14} />
-                  Expand all
-                </button>
-                <button
-                  onClick={collapseAll}
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors"
-                  style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-primary-600)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                  title="Collapse all"
-                >
-                  <FiMinimize2 size={14} />
-                  Collapse all
-                </button>
-              </Show>
-              <Button onClick={() => startCreating()}>
-                <FiPlus size={18} />
-                New Item
+          <div class="ml-auto flex items-center gap-2">
+            <Show when={allExpandableIds().length > 0}>
+              <Button variant="ghost" onClick={expandAll} title="Expand all">
+                <FiMaximize2 size={14} />
+                Expand all
               </Button>
-            </div>
+              <Button variant="ghost" onClick={collapseAll} title="Collapse all">
+                <FiMinimize2 size={14} />
+                Collapse all
+              </Button>
+            </Show>
+            <Button onClick={() => startCreating()}>
+              <FiPlus size={16} />
+              New Item
+            </Button>
           </div>
         </div>
       </div>
 
-      <div class="flex-1 overflow-auto px-8 py-6">
+      <div class="flex-1 overflow-auto">
         <Show when={projectId} fallback={
-          <div class="flex items-center justify-center h-64">
-            <div class="text-center">
-              <div class="text-4xl mb-4">📋</div>
-              <p class="text-[var(--color-text-secondary)] text-lg">Select a project from the sidebar</p>
-            </div>
+          <div class="rounded-[28px] bg-panel">
+            <EmptyState icon={<IconList size={28} />} title="Select a project from the sidebar" />
           </div>
         }>
-          {/* Modern Items List */}
+          {/* Items */}
           <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
             <DragDropSensors />
             <SortableProvider ids={flattenedItems().map(i => i.id)}>
               <div class="max-w-6xl">
                 <Show when={flattenedItems().length > 0} fallback={
-                  <div class="flex items-center justify-center h-64 bg-[var(--color-bg-elevated)] rounded-xl border-2 border-dashed border-[var(--color-border-light)]">
-                    <div class="text-center">
-                      <div class="text-5xl mb-4">✨</div>
-                      <p class="text-[var(--color-text-secondary)] text-lg mb-4">No items yet</p>
-                      <Button variant="ghost" onClick={() => startCreating()}>
-                        Create your first item
-                      </Button>
-                    </div>
+                  <div class="rounded-[28px] bg-panel">
+                    <EmptyState
+                      icon={<IconList size={28} />}
+                      title="No items yet"
+                      action={
+                        <Button variant="secondary" size="sm" onClick={() => startCreating()}>
+                          Create your first item
+                        </Button>
+                      }
+                    />
                   </div>
                 }>
-                  <div class="space-y-1">
+                  <div class="flex flex-col gap-2.5">
                     <For each={flattenedItems()}>
                       {(item) => (
                         <>
@@ -338,7 +325,7 @@ export default function List() {
   );
 }
 
-// Modern Sortable Item Row
+// Sortable item row — a pill on the page ground, indented by level.
 function ItemRow(props: {
   item: ItemWithChildren;
   types: ItemTypeConfig[];
@@ -352,62 +339,44 @@ function ItemRow(props: {
   const [showActions, setShowActions] = createSignal(false);
   const itemType = (typeof props.item.item_type === 'string' ? props.item.item_type : 'task') as ItemType;
   const typeConfig = () => props.types.find(t => t.value === itemType) ?? props.types[2] ?? { emoji: '📝', label: itemType };
+  const typeTone = typeBadgeTone(itemType);
   const priorityConfig = PRIORITIES.find(p => p.value === props.item.priority) || PRIORITIES[2];
   const hasChildren = props.item.children.length > 0;
-
-  // Indent based on level
-  const indentStyle = () => ({
-    'padding-left': `${props.item.level * 2.5}rem`
-  });
 
   return (
     <div
       ref={sortable.ref}
-      class={`
-        group relative rounded-lg mb-2 transition-all duration-200
-        ${sortable.isActiveDraggable ? 'opacity-50 scale-95 shadow-lg' : ''}
-      `}
+      class={`group relative rounded-full transition-[box-shadow,border-color,opacity] duration-200 ${sortable.isActiveDraggable ? 'opacity-50' : ''}`}
       style={{
-        "background-color": "var(--color-bg-elevated)",
-        "border": "1px solid var(--color-border-light)"
+        'margin-left': `${props.item.level * 40}px`,
+        'background-color': 'var(--color-bg-panel)',
+        border: showActions() ? '2px solid var(--color-accent-line)' : '2px solid transparent',
+        'box-shadow': showActions() || sortable.isActiveDraggable ? 'var(--shadow-md)' : 'none',
       }}
-      onMouseEnter={(e) => {
-        setShowActions(true);
-        e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)";
-        e.currentTarget.style.borderColor = "var(--color-primary-200)";
-      }}
-      onMouseLeave={(e) => {
-        setShowActions(false);
-        e.currentTarget.style.boxShadow = "";
-        e.currentTarget.style.borderColor = "var(--color-border-light)";
-      }}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
     >
-      <div class="flex items-center gap-3 px-4 py-3" style={indentStyle()}>
+      <div class="flex items-center gap-2.5 px-3.5 py-2.5">
         {/* Drag Handle */}
         <div {...sortable.dragActivators} class="cursor-grab active:cursor-grabbing flex-shrink-0">
-          <FiMenu size={16} class="text-[var(--color-text-tertiary)] hover:text-brand transition-colors" />
+          <FiMenu size={15} class="text-content-subtle hover:text-brand transition-colors" />
         </div>
 
         {/* Expand/Collapse */}
         <button
           onClick={props.onToggleExpand}
-          class={`flex-shrink-0 p-1 rounded transition-colors ${hasChildren ? '' : 'invisible'}`}
-          style={{
-            color: hasChildren ? "var(--color-text-secondary)" : undefined
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+          class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-full text-content-muted hover:bg-sunken transition-colors ${hasChildren ? '' : 'invisible'}`}
         >
-          {props.isExpanded ? <FiChevronDown size={16} /> : <FiChevronRight size={16} />}
+          {props.isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
         </button>
 
-        {/* Type Badge */}
+        {/* Type tile */}
         <div
-          class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg"
-          style={{ "background-color": "var(--color-primary-50)" }}
+          class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center font-heading text-sm"
+          style={{ 'background-color': typeTone.bg, color: typeTone.fg }}
           title={typeConfig().label}
         >
-          {typeConfig().emoji}
+          {typeConfig().label.charAt(0).toUpperCase()}
         </div>
 
         {/* Title - Clickable */}
@@ -416,60 +385,40 @@ function ItemRow(props: {
           class="flex-1 min-w-0 text-left group/title"
         >
           <div class="flex items-center gap-2">
-            <span class="text-base font-medium text-[var(--color-text-primary)] group-hover/title:text-brand transition-colors truncate">
+            <span class="text-sm font-bold text-content group-hover/title:text-brand transition-colors truncate">
               {props.item.title}
             </span>
             <Show when={hasChildren}>
-              <span
-                class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full"
-                style={{
-                  "background-color": "var(--color-bg-subtle)",
-                  color: "var(--color-text-secondary)"
-                }}
-              >
-                {props.item.children.length}
-              </span>
+              <Badge class="flex-shrink-0">{props.item.children.length}</Badge>
             </Show>
           </div>
           <Show when={props.item.description}>
-            <p class="text-xs text-[var(--color-text-tertiary)] truncate mt-1">
+            <p class="text-xs text-content-subtle truncate">
               {props.item.description?.replace(/<[^>]*>/g, '').substring(0, 80)}
             </p>
           </Show>
         </button>
 
-        {/* Priority Badge */}
-        <div
-          class="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md"
-          style={{ "background-color": "var(--color-bg-subtle)" }}
-        >
-          <span class="text-sm">{priorityConfig.emoji}</span>
-          <span class="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>{priorityConfig.label}</span>
-        </div>
-
-        {/* Status Badge */}
+        {/* Priority pill — coloured edge instead of an emoji */}
         <span
-          class="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium whitespace-nowrap"
+          class="flex-shrink-0 inline-flex items-center rounded-full px-2.5 py-[3px] text-xs font-semibold whitespace-nowrap text-content-muted"
           style={{
-            "background-color": "var(--color-primary-100)",
-            color: "var(--color-primary-700)"
+            'background-color': 'var(--color-bg-app)',
+            'box-shadow': `inset 3px 0 0 ${priorityColor(priorityConfig.value as Priority)}`,
           }}
         >
-          {props.item.status}
+          {priorityConfig.label}
         </span>
+
+        {/* Status */}
+        <Badge tone="info" class="flex-shrink-0">{props.item.status}</Badge>
 
         {/* Tags */}
         <Show when={props.item.tags && props.item.tags.length > 0}>
           <div class="flex-shrink-0 flex gap-1">
             <For each={props.item.tags?.slice(0, 2)}>
               {(tag) => (
-                <span
-                  class="text-xs px-2 py-1 rounded-md font-medium"
-                  style={{
-                    "background-color": "var(--color-info-light)",
-                    color: "var(--color-info)"
-                  }}
-                >
+                <span class="text-[11px] font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
                   {tag}
                 </span>
               )}
@@ -481,35 +430,18 @@ function ItemRow(props: {
         <div class={`flex-shrink-0 flex items-center gap-1 transition-opacity ${showActions() ? 'opacity-100' : 'opacity-0'}`}>
           <button
             onClick={props.onAddChild}
-            class="p-2 rounded-md transition-colors"
-            style={{ color: "var(--color-text-tertiary)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "var(--color-primary-600)";
-              e.currentTarget.style.backgroundColor = "var(--color-primary-50)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--color-text-tertiary)";
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
+            class="w-7 h-7 rounded-full grid place-items-center bg-app text-content-muted hover:text-brand transition-colors"
             title="Add child item"
           >
-            <FiPlus size={16} />
+            <FiPlus size={14} />
           </button>
           <button
             onClick={props.onDelete}
-            class="p-2 rounded-md transition-colors"
-            style={{ color: "var(--color-text-tertiary)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "var(--color-danger)";
-              e.currentTarget.style.backgroundColor = "var(--color-danger-light)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--color-text-tertiary)";
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
+            class="w-7 h-7 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
+            style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
             title="Delete"
           >
-            <FiTrash2 size={16} />
+            <FiTrash2 size={13} />
           </button>
         </div>
       </div>
@@ -517,7 +449,11 @@ function ItemRow(props: {
   );
 }
 
-// Modern Inline Create Form
+const pillControl =
+  'flex-shrink-0 min-h-8 text-[13px] px-3 rounded-full border-0 bg-app text-content ' +
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]';
+
+// Inline create form — a soft accent pill under its parent.
 function CreateForm(props: {
   level: number;
   types: ItemTypeConfig[];
@@ -530,105 +466,63 @@ function CreateForm(props: {
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const indentStyle = () => ({
-    'padding-left': `${props.level * 2.5}rem`
-  });
-
   return (
     <div
-      class="rounded-lg mb-2"
-      style={{
-        "background-color": "var(--color-primary-50)",
-        border: "2px solid var(--color-primary-200)"
-      }}
+      class="flex items-center gap-2 p-2 rounded-full bg-accent-soft"
+      style={{ 'margin-left': `${props.level * 40}px` }}
     >
-      <div class="flex items-center gap-3 px-4 py-3" style={indentStyle()}>
-        {/* Spacer for alignment */}
-        <div class="w-4 flex-shrink-0" />
-        <div class="w-6 flex-shrink-0" />
+      {/* Type Selector */}
+      <select
+        value={props.type}
+        onChange={(e) => props.onTypeChange(e.currentTarget.value as ItemType)}
+        class={pillControl}
+      >
+        <For each={props.types}>
+          {(t) => <option value={t.value}>{t.emoji} {t.label}</option>}
+        </For>
+      </select>
 
-        {/* Type Selector */}
-        <select
-          value={props.type}
-          onChange={(e) => props.onTypeChange(e.currentTarget.value as ItemType)}
-          class="flex-shrink-0 text-sm px-3 py-2 border rounded-lg focus:ring-2"
-          style={{
-            "border-color": "var(--color-primary-300)",
-            "background-color": "var(--color-bg-base)",
-            color: "var(--color-text-primary)",
-            "outline-color": "var(--color-primary-500)"
-          }}
-        >
-          <For each={props.types}>
-            {(t) => <option value={t.value}>{t.emoji} {t.label}</option>}
-          </For>
-        </select>
+      {/* Priority Selector */}
+      <select
+        value={props.priority}
+        onChange={(e) => props.onPriorityChange(e.currentTarget.value)}
+        class={pillControl}
+      >
+        <For each={PRIORITIES}>
+          {(p) => <option value={p.value}>{p.emoji} {p.label}</option>}
+        </For>
+      </select>
 
-        {/* Priority Selector */}
-        <select
-          value={props.priority}
-          onChange={(e) => props.onPriorityChange(e.currentTarget.value)}
-          class="flex-shrink-0 text-sm px-3 py-2 border rounded-lg focus:ring-2"
-          style={{
-            "border-color": "var(--color-primary-300)",
-            "background-color": "var(--color-bg-base)",
-            color: "var(--color-text-primary)",
-            "outline-color": "var(--color-primary-500)"
-          }}
-        >
-          <For each={PRIORITIES}>
-            {(p) => <option value={p.value}>{p.emoji} {p.label}</option>}
-          </For>
-        </select>
+      {/* Title Input */}
+      <input
+        type="text"
+        value={props.title}
+        onInput={(e) => props.onTitleChange(e.currentTarget.value)}
+        onKeyPress={(e) => {
+          if (e.key === 'Enter') props.onSave();
+          if (e.key === 'Escape') props.onCancel();
+        }}
+        placeholder="Item title... (Enter to save, Esc to cancel)"
+        class={`${pillControl} flex-1 min-w-0 px-4 placeholder-[var(--color-text-tertiary)]`}
+        autofocus
+      />
 
-        {/* Title Input */}
-        <input
-          type="text"
-          value={props.title}
-          onInput={(e) => props.onTitleChange(e.currentTarget.value)}
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') props.onSave();
-            if (e.key === 'Escape') props.onCancel();
-          }}
-          placeholder="Item title... (Enter to save, Esc to cancel)"
-          class="flex-1 text-sm px-4 py-2 border rounded-lg focus:ring-2"
-          style={{
-            "border-color": "var(--color-primary-300)",
-            "background-color": "var(--color-bg-base)",
-            color: "var(--color-text-primary)",
-            "outline-color": "var(--color-primary-500)"
-          }}
-          classList={{
-            "placeholder-[var(--color-text-tertiary)]": true
-          }}
-          autofocus
-        />
-
-        {/* Actions */}
-        <button
-          onClick={props.onSave}
-          class="flex-shrink-0 p-2 rounded-lg transition-colors shadow-sm"
-          style={{
-            color: "var(--color-on-accent)",
-            "background-color": "var(--color-primary-600)"
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-primary-700)"}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "var(--color-primary-600)"}
-          title="Save (Enter)"
-        >
-          <FiCheck size={18} />
-        </button>
-        <button
-          onClick={props.onCancel}
-          class="flex-shrink-0 p-2 rounded-lg transition-colors"
-          style={{ color: "var(--color-text-secondary)" }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-          title="Cancel (Esc)"
-        >
-          <FiX size={18} />
-        </button>
-      </div>
+      {/* Actions */}
+      <button
+        onClick={props.onSave}
+        class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
+        style={{ color: 'var(--color-on-accent)', 'background-color': 'var(--color-primary-600)' }}
+        title="Save (Enter)"
+      >
+        <FiCheck size={16} />
+      </button>
+      <button
+        onClick={props.onCancel}
+        class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center bg-app text-content-muted hover:text-content transition-colors"
+        title="Cancel (Esc)"
+      >
+        <FiX size={16} />
+      </button>
     </div>
   );
 }

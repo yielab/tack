@@ -2,7 +2,10 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
-import { Button, Field, FieldShell, Modal, Badge, EmptyState } from '../../shared/ui';
+import { FiTrash2 } from 'solid-icons/fi';
+import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton } from '../../shared/ui';
+import { IconTemplates } from '../../shared/ui/icons';
+import { projectTypePillStyle, projectTypeTone } from '../../shared/ui/projectTypeTone';
 import type { ProjectTemplate } from '../../shared/types';
 
 /** Workflow column names in board order (for the preset preview). */
@@ -32,7 +35,7 @@ function templateSummaryChips(t: ProjectTemplate) {
   if (vocabCount > 0) chips.push({ label: `${vocabCount} vocab overrides` });
 
   const fieldCount = t.custom_fields?.length ?? 0;
-  if (fieldCount > 0) chips.push({ label: `${fieldCount} custom fields`, tone: 'success' });
+  if (fieldCount > 0) chips.push({ label: `${fieldCount} custom fields`, tone: 'info' });
 
   const boardCount = t.default_boards?.length ?? 0;
   if (boardCount > 0) chips.push({ label: `${boardCount} board${boardCount > 1 ? 's' : ''}` });
@@ -55,18 +58,29 @@ export default function Templates() {
   );
 
   const projectTypes = [
-    { value: 'software', label: 'Software Development', icon: '💻', color: 'blue' },
-    { value: 'web', label: 'Web Project', icon: '🌐', color: 'cyan' },
-    { value: 'mobile', label: 'Mobile App', icon: '📱', color: 'purple' },
-    { value: 'construction', label: 'Construction', icon: '🏗️', color: 'orange' },
-    { value: 'personal', label: 'Personal', icon: '👤', color: 'green' },
-    { value: 'homework', label: 'Homework', icon: '📚', color: 'yellow' },
-    { value: 'maintenance', label: 'Maintenance', icon: '🔧', color: 'red' },
-    { value: 'legal', label: 'Legal / Case', icon: '⚖️', color: 'indigo' },
-    { value: 'research', label: 'Research / Lab', icon: '🔬', color: 'teal' },
-    { value: 'event', label: 'Event Planning', icon: '🎉', color: 'pink' },
-    { value: 'custom', label: 'Custom', icon: '⚙️', color: 'gray' },
+    { value: 'software', label: 'Software Development' },
+    { value: 'web', label: 'Web Project' },
+    { value: 'mobile', label: 'Mobile App' },
+    { value: 'construction', label: 'Construction' },
+    { value: 'personal', label: 'Personal' },
+    { value: 'homework', label: 'Homework' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'legal', label: 'Legal / Case' },
+    { value: 'research', label: 'Research / Lab' },
+    { value: 'event', label: 'Event Planning' },
+    { value: 'custom', label: 'Custom' },
   ];
+
+  /** Filter chip: a pill, accent-filled when active, with a type-hue dot. */
+  const chipClass =
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] transition-colors ' +
+    'focus:outline-none focus-visible:ring-2';
+  const chipStyle = (active: boolean) => ({
+    'background-color': active ? 'var(--color-primary-600)' : 'var(--color-bg-panel)',
+    color: active ? 'var(--color-on-accent)' : 'var(--color-text-primary)',
+    'font-weight': active ? 600 : 400,
+    '--tw-ring-color': 'var(--color-focus-ring)',
+  });
 
   const getTypeInfo = (type: string) => {
     return projectTypes.find(t => t.value === type) || projectTypes[projectTypes.length - 1];
@@ -112,75 +126,101 @@ export default function Templates() {
   };
 
   return (
-    <div class="min-h-screen bg-app p-6">
-      <div class="max-w-7xl mx-auto">
+    <div class="flex flex-col gap-5 lg:px-6 lg:py-3">
         {/* Header */}
-        <div class="mb-8">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h1 class="text-3xl font-bold text-content">
-                Project Templates
-              </h1>
-              <p class="text-content-muted mt-1">
-                Start your project with a pre-configured template
-              </p>
-            </div>
-            <div class="flex gap-2">
-              <Button onClick={() => navigate('/templates/new')}>+ Create Template</Button>
-              <Button variant="secondary" onClick={() => navigate('/projects')}>
-                Back to Projects
-              </Button>
-            </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <h1 class="text-[34px] leading-tight text-content">
+              Project Templates
+            </h1>
+            <p class="text-content-muted mt-1">
+              Start your project with a pre-configured template
+            </p>
           </div>
+          <div class="ml-auto flex gap-3">
+            <Button onClick={() => navigate('/templates/new')}>+ Create Template</Button>
+            <Button variant="secondary" onClick={() => navigate('/projects')}>
+              Back to Projects
+            </Button>
+          </div>
+        </div>
 
-          {/* Type Filter */}
-          <div class="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setSelectedType(null)}
-              class="px-3 py-1.5 text-sm rounded-lg transition-colors"
-              classList={{
-                'bg-brand-100 text-brand-700': selectedType() === null,
-                'bg-sunken text-content-muted': selectedType() !== null,
-              }}
-            >
-              All Templates
-            </button>
-            <For each={projectTypes}>
-              {(type) => (
-                <button
-                  onClick={() => setSelectedType(type.value)}
-                  class="px-3 py-1.5 text-sm rounded-lg transition-colors"
-                  classList={{
-                    'bg-brand-100 text-brand-700': selectedType() === type.value,
-                    'bg-sunken text-content-muted': selectedType() !== type.value,
+        {/* Type Filter */}
+        <div class="flex flex-wrap gap-2">
+          <button
+            onClick={() => setSelectedType(null)}
+            aria-pressed={selectedType() === null}
+            class={chipClass}
+            style={chipStyle(selectedType() === null)}
+          >
+            All Templates
+          </button>
+          <For each={projectTypes}>
+            {(type) => (
+              <button
+                onClick={() => setSelectedType(type.value)}
+                aria-pressed={selectedType() === type.value}
+                class={chipClass}
+                style={chipStyle(selectedType() === type.value)}
+              >
+                <span
+                  class="h-[9px] w-[9px] shrink-0 rounded-full"
+                  style={{
+                    'background-color':
+                      selectedType() === type.value
+                        ? 'var(--color-on-accent)'
+                        : projectTypeTone(type.value).fg,
                   }}
-                >
-                  {type.icon} {type.label}
-                </button>
-              )}
-            </For>
-          </div>
+                  aria-hidden="true"
+                />
+                {type.label}
+              </button>
+            )}
+          </For>
         </div>
 
         {/* Templates Grid */}
         <Show when={templates.loading}>
-          <div class="text-center py-12 text-content-subtle">Loading templates...</div>
+          <div class="flex flex-col gap-2.5" role="status">
+            <p class="text-sm text-content-subtle">Loading templates...</p>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+              <For each={[1, 2, 3]}>
+                {() => (
+                  <div class="flex h-[190px] flex-col gap-2.5 rounded-[28px] bg-panel p-5">
+                    <Skeleton width="60%" height="18px" />
+                    <Skeleton width="40%" height="12px" />
+                    <Skeleton width="90%" height="10px" />
+                    <div class="mt-auto">
+                      <Skeleton height="34px" rounded />
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
         </Show>
 
         <Show when={templates.error}>
-          <div class="text-center py-12 text-danger-500">Failed to load templates</div>
+          <div
+            class="rounded-full px-5 py-3 text-sm font-semibold"
+            style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
+            role="alert"
+          >
+            Failed to load templates
+          </div>
         </Show>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           <For each={templates()}>
             {(template: ProjectTemplate) => {
               const typeInfo = getTypeInfo(template.project_type);
+              const tone = projectTypeTone(typeInfo.value);
               const showPreview = () => previewId() === template.id;
               const columns = () => workflowColumns(template);
               const samples = () => vocabSamples(template);
               return (
                 <div
-                  class="bg-elevated rounded-lg border border-line p-6 hover:shadow-lg transition-shadow"
+                  class="flex flex-col gap-[9px] rounded-[28px] border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                   tabindex="0"
                   onMouseEnter={() => setPreviewId(template.id)}
                   onMouseLeave={() =>
@@ -192,18 +232,23 @@ export default function Templates() {
                   }
                 >
                   {/* Header */}
-                  <div class="flex items-start justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                      <div class="text-3xl">{typeInfo.icon}</div>
-                      <div>
-                        <h3 class="text-lg font-semibold text-content">
-                          {template.name}
-                        </h3>
-                        <span class={`text-xs px-2 py-0.5 rounded bg-${typeInfo.color}-100 dark:bg-${typeInfo.color}-900/30 text-${typeInfo.color}-700 dark:text-${typeInfo.color}-300`}>
-                          {typeInfo.label}
-                        </span>
-                      </div>
-                    </div>
+                  <div class="flex items-center gap-2.5">
+                    <span
+                      class="h-[30px] w-[30px] shrink-0 rounded-full"
+                      style={{
+                        'background-color': tone.bg,
+                        'box-shadow': `inset 0 0 0 2px ${tone.fg}`,
+                      }}
+                      aria-hidden="true"
+                    />
+                    <h3 class="min-w-0 text-lg leading-[1.15] text-content">
+                      {template.name}
+                    </h3>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span style={projectTypePillStyle(typeInfo.value)}>
+                      {typeInfo.label}
+                    </span>
                     <Show when={template.is_builtin}>
                       <Badge tone="info">Built-in</Badge>
                     </Show>
@@ -211,7 +256,7 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-sm text-content-muted mb-3">
+                    <p class="text-[13px] leading-[1.4] text-content-muted">
                       {template.description}
                     </p>
                   </Show>
@@ -220,7 +265,7 @@ export default function Templates() {
                   {(() => {
                     const chips = templateSummaryChips(template);
                     return chips.length > 0 ? (
-                      <div class="flex flex-wrap gap-1.5 mb-3">
+                      <div class="flex flex-wrap gap-1.5">
                         <For each={chips}>
                           {(chip) => <Badge tone={chip.tone}>{chip.label}</Badge>}
                         </For>
@@ -230,13 +275,13 @@ export default function Templates() {
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
                   <Show when={showPreview() && (columns().length > 0 || samples().length > 0)}>
-                    <div class="rounded-md p-2 text-xs mb-1 bg-sunken text-content-muted">
+                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[11px] text-content-muted">
                       <Show when={columns().length > 0}>
-                        <div class="mb-1 flex flex-wrap items-center gap-1">
+                        <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>
                             {(col, i) => (
                               <>
-                                <span class="rounded px-1.5 py-0.5 bg-app">{col}</span>
+                                <span class="rounded-full bg-panel px-2 py-0.5 text-content">{col}</span>
                                 <Show when={i() < columns().length - 1}>
                                   <span aria-hidden="true">→</span>
                                 </Show>
@@ -254,7 +299,7 @@ export default function Templates() {
                   </Show>
 
                   {/* Actions */}
-                  <div class="flex gap-2 mt-4">
+                  <div class="mt-auto flex gap-2 pt-1">
                     <Button class="flex-1" onClick={() => handleUseTemplate(template)}>
                       Use Template
                     </Button>
@@ -263,8 +308,9 @@ export default function Templates() {
                         variant="danger"
                         onClick={() => handleDeleteTemplate(template.id)}
                         title="Delete template"
+                        aria-label="Delete template"
                       >
-                        🗑️
+                        <FiTrash2 size={16} />
                       </Button>
                     </Show>
                   </div>
@@ -275,15 +321,17 @@ export default function Templates() {
         </div>
 
         <Show when={templates() && templates()!.length === 0}>
-          <EmptyState
-            icon="📋"
-            title={selectedType() ? 'No templates found for this type' : 'No templates yet'}
-            action={
-              <Button onClick={() => navigate('/templates/new')}>
-                Create Your First Template
-              </Button>
-            }
-          />
+          <div class="rounded-[28px] border-2 border-dashed border-line px-6">
+            <EmptyState
+              icon={<IconTemplates size={26} style={{ color: 'var(--color-accent2-ink)' }} />}
+              title={selectedType() ? 'No templates found for this type' : 'No templates yet'}
+              action={
+                <Button onClick={() => navigate('/templates/new')}>
+                  Create Your First Template
+                </Button>
+              }
+            />
+          </div>
         </Show>
 
         {/* Create Project from Template Modal */}
@@ -294,13 +342,13 @@ export default function Templates() {
           size="sm"
         >
           <div
-            class="mb-4 rounded-lg p-3"
-            style={{ 'background-color': 'var(--color-bg-active)' }}
+            class="mb-4 rounded-[20px] px-4 py-3"
+            style={{ 'background-color': 'var(--color-accent-soft)' }}
           >
-            <div class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            <div class="text-xs" style={{ color: 'var(--color-accent-ink)' }}>
               Using template:
             </div>
-            <div class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <div class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
               {selectedTemplate()?.name}
             </div>
           </div>
@@ -321,7 +369,7 @@ export default function Templates() {
                 onInput={(e) => setProjectDescription(e.currentTarget.value)}
                 rows={3}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -332,7 +380,7 @@ export default function Templates() {
             </FieldShell>
 
             <div
-              class="rounded-lg p-3 text-sm"
+              class="rounded-[22px] px-4 py-2.5 text-sm"
               style={{
                 'background-color': 'var(--color-info-50)',
                 color: 'var(--color-info-700)',
@@ -341,7 +389,7 @@ export default function Templates() {
               This will create a new project with the template's workflow, vocabulary, custom fields, and boards.
             </div>
 
-            <div class="flex justify-end gap-2 pt-2">
+            <div class="flex justify-end gap-2.5 pt-2">
               <Button type="button" variant="secondary" onClick={() => setShowCreateProjectModal(false)}>
                 Cancel
               </Button>
@@ -349,7 +397,6 @@ export default function Templates() {
             </div>
           </form>
         </Modal>
-      </div>
     </div>
   );
 }

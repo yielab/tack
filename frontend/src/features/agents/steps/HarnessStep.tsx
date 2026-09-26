@@ -1,4 +1,4 @@
-import { type Component, For, Show } from 'solid-js';
+import { type Component, type JSX, For, Show } from 'solid-js';
 import { Badge, Button } from '../../../shared/ui';
 import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { RunnerSummary } from '../../../shared/execution/api';
@@ -34,48 +34,69 @@ function statusLabel(harness: HarnessCapability | undefined): { text: string; to
   return { text: 'Not found', tone: 'neutral' };
 }
 
+/** The round initial badge each row leads with — decorative, cycled by
+ *  position so neighbouring rows never share a fill. Tokens only. */
+const INITIAL_BADGE_STYLES: readonly JSX.CSSProperties[] = [
+  { background: 'var(--color-primary-600)', color: 'var(--color-on-accent)' },
+  { background: 'var(--color-accent2)', color: 'var(--color-bg-app)' },
+  { background: 'var(--color-accent-line)', color: 'var(--color-accent-ink)' },
+  { background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' },
+];
+
 const HarnessStep: Component<HarnessStepProps> = (props) => {
   return (
-    <section class="space-y-3">
-      <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-[22px] py-5">
+      <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Agents on this machine
       </h2>
 
       <Show
         when={props.thisMachineRunner}
         fallback={
-          <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
             Turn on agent execution above to see what's installed here.
           </p>
         }
       >
-        <div class="space-y-2">
+        <div class="flex flex-col gap-2.5">
           <For each={HARNESS_KINDS}>
-            {(kind) => {
+            {(kind, index) => {
               const harness = () => findHarness(harnessesOf(props.thisMachineRunner), kind.value);
               const status = () => statusLabel(harness());
               return (
-                <div class="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm" style={{ 'border-color': 'var(--color-border-light)' }}>
-                  <span class="font-medium" style={{ color: 'var(--color-text-primary)' }}>{kind.label}</span>
+                <div class="flex flex-wrap items-center gap-3 rounded-[22px] bg-app px-3.5 py-3 text-sm">
+                  <span
+                    class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-[17px]"
+                    style={INITIAL_BADGE_STYLES[index() % INITIAL_BADGE_STYLES.length]}
+                    aria-hidden="true"
+                  >
+                    {kind.label.charAt(0)}
+                  </span>
+                  <div class="flex min-w-0 flex-col">
+                    <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{kind.label}</span>
+                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{kind.value}</span>
+                  </div>
                   <Badge tone={status().tone}>{status().text}</Badge>
                   <Show when={status().text === 'Not found'}>
-                    <code class="rounded px-2 py-0.5 font-mono text-xs" style={{ background: 'var(--color-chip)', color: 'var(--color-text-secondary)' }}>
+                    <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[11.5px]" style={{ color: 'var(--color-text-secondary)' }}>
                       {HARNESS_INSTALL_COMMAND[kind.value] ?? 'see the vendor\'s own install instructions'}
                     </code>
                   </Show>
                   <Show when={status().text === 'Could not check'}>
-                    <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{harness()?.probe_error}</span>
+                    <span class="basis-full pl-[52px] font-mono text-[11px]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>
                   </Show>
                 </div>
               );
             }}
           </For>
-          <Button variant="secondary" size="sm" loading={props.rechecking} onClick={props.onRecheck}>
-            Re-check
-          </Button>
-          <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            Re-checking restarts agent execution on this machine to run a fresh check.
-          </p>
+          <div class="flex flex-wrap items-center gap-2.5">
+            <Button variant="secondary" size="sm" loading={props.rechecking} onClick={props.onRecheck}>
+              Re-check
+            </Button>
+            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              Re-checking restarts agent execution on this machine to run a fresh check.
+            </p>
+          </div>
         </div>
       </Show>
     </section>

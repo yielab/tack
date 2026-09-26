@@ -31,17 +31,30 @@ function describeEventPayload(payload: unknown): string {
   return String(payload);
 }
 
-const EventRow: Component<{ event: EventSummary }> = (props) => (
-  <li class="flex flex-col gap-0.5 border-l-2 py-1 pl-3" style={{ 'border-color': 'var(--color-border-medium)' }}>
-    <div class="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-      <Badge tone="neutral">{props.event.source}</Badge>
-      <span style={{ 'font-family': 'var(--font-mono)' }}>{props.event.kind}</span>
+const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => (
+  <li class="grid grid-cols-[14px_minmax(0,1fr)_auto] gap-3">
+    {/* Rail: a dot per event, joined by a line to the next one. */}
+    <div class="flex flex-col items-center" aria-hidden="true">
+      <span class="mt-1 h-3 w-3 flex-none rounded-full" style={{ 'background-color': 'var(--color-primary-600)' }} />
+      <Show when={!props.last}>
+        <span class="my-1 w-0.5 flex-1" style={{ 'background-color': 'var(--color-border-light)' }} />
+      </Show>
+    </div>
+    <div class="min-w-0 pb-3.5">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {props.event.kind}
+        </span>
+        <Badge tone="neutral">{props.event.source}</Badge>
+      </div>
+      <p class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
+        {describeEventPayload(props.event.payload)}
+      </p>
+    </div>
+    <div class="flex flex-col items-end text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>
       <span>#{props.event.sequence}</span>
     </div>
-    <p class="text-sm break-words" style={{ color: 'var(--color-text-primary)' }}>
-      {describeEventPayload(props.event.payload)}
-    </p>
   </li>
 );
 
@@ -74,8 +87,10 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
         <EmptyState title="No events reported yet" />
       </Show>
       <Show when={!events.loading && !events.error && (events() ?? []).length > 0}>
-        <ul class="space-y-1">
-          <For each={events()}>{(event) => <EventRow event={event} />}</For>
+        <ul>
+          <For each={events()}>
+            {(event, i) => <EventRow event={event} last={i() === (events() ?? []).length - 1} />}
+          </For>
         </ul>
       </Show>
     </div>

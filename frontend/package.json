@@ -17,7 +17,8 @@
     "gen:api": "openapi-typescript ../docs/openapi.json -o src/shared/api/schema.gen.ts"
   },
   "dependencies": {
-    "@fontsource/hanken-grotesk": "^5.3.0",
+    "@fontsource/caprasimo": "^5.3.0",
+    "@fontsource/figtree": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@solidjs/router": "^1.0.0",
     "@thisbeyond/solid-dnd": "^0.7.5",

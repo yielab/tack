@@ -9,7 +9,7 @@ export interface FieldsTabProps {
 }
 
 const controlClass =
-  'w-full rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
+  'w-full rounded-full border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1';
 const controlStyle = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
@@ -62,7 +62,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             rows={3}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
-            class={controlClass + ' resize-none'}
+            class={controlClass.replace('rounded-full', 'rounded-[20px]') + ' resize-none'}
             style={controlStyle}
           />
         );
@@ -93,6 +93,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             checked={cur() === true}
             onChange={(e) => void setValue(def.id, e.currentTarget.checked)}
             class="h-4 w-4 rounded"
+            style={{ 'accent-color': 'var(--color-primary-600)' }}
           />
         );
       case 'select':
@@ -137,9 +138,9 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
   };
 
   return (
-    <div class="space-y-6">
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+    <div class="space-y-4">
+      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Custom fields
         </h3>
         <Show
@@ -156,11 +157,8 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section
-        class="space-y-3 border-t pt-4"
-        style={{ 'border-color': 'var(--color-border-light)' }}
-      >
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Roles
         </h3>
         <Show when={(roles() ?? []).length > 0} fallback={<EmptyState title="No roles defined" />}>
@@ -168,10 +166,10 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             <For each={roles()}>
               {(role) => (
                 <label
-                  class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+                  class="flex cursor-pointer items-center gap-2 rounded-full border-2 px-3.5 py-1.5 text-sm font-medium"
                   style={{
-                    'background-color': 'var(--color-bg-base)',
-                    'border-color': 'var(--color-border-light)',
+                    'background-color': 'var(--color-bg-app)',
+                    'border-color': assigned().has(role.id) ? 'var(--color-primary-600)' : 'transparent',
                     color: 'var(--color-text-primary)',
                   }}
                 >
@@ -180,6 +178,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
                     checked={assigned().has(role.id)}
                     onChange={() => void toggleRole(role.id)}
                     class="h-4 w-4 rounded"
+                    style={{ 'accent-color': 'var(--color-primary-600)' }}
                   />
                   {role.name}
                 </label>

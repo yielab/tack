@@ -203,17 +203,20 @@ const EnrollmentPanel: Component = () => {
   };
 
   return (
-    <div class="space-y-5">
-      <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+    <div class="space-y-3.5">
+      <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
         Enroll issues a one-time token a <code class="font-mono">tack-runner</code> process exchanges for a
         durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}
-        <A href="/agents">Agents</A> page for a live runner roster.
+        <A href="/agents" class="underline" style={{ color: 'var(--color-accent-ink)' }}>Agents</A> page for a live runner roster.
       </p>
 
       {/* Enroll form */}
-      <form onSubmit={(e) => void submitEnroll(e)} class="max-w-md space-y-3 rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <form
+        onSubmit={(e) => void submitEnroll(e)}
+        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-[28px] bg-panel px-5 py-[18px] sm:grid-cols-3"
+      >
+        <h3 class="col-span-full text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
         </h3>
         <Field
@@ -223,47 +226,46 @@ const EnrollmentPanel: Component = () => {
           value={name()}
           onInput={(e) => setName(e.currentTarget.value)}
         />
-        <div class="grid grid-cols-2 gap-3">
-          <Field
-            label="Total capacity"
-            type="number"
-            min="0"
-            required
-            value={totalCapacity()}
-            onInput={(e) => setTotalCapacity(e.currentTarget.value)}
-            hint="Concurrent attempts this runner can run."
-          />
-          <Field
-            label="Available capacity"
-            type="number"
-            min="0"
-            required
-            value={availableCapacity()}
-            onInput={(e) => setAvailableCapacity(e.currentTarget.value)}
-            hint="Usually equal to total at enrollment."
-          />
-        </div>
         <Field
+          label="Total capacity"
+          type="number"
+          min="0"
+          required
+          value={totalCapacity()}
+          onInput={(e) => setTotalCapacity(e.currentTarget.value)}
+          hint="Concurrent attempts this runner can run."
+        />
+        <Field
+          label="Available capacity"
+          type="number"
+          min="0"
+          required
+          value={availableCapacity()}
+          onInput={(e) => setAvailableCapacity(e.currentTarget.value)}
+          hint="Usually equal to total at enrollment."
+        />
+        <Field
+          class="sm:col-span-2 [&_input]:font-mono"
           label="Labels (JSON object, optional)"
           placeholder='{"region":"us-east"}'
           value={labelsRaw()}
           onInput={(e) => setLabelsRaw(e.currentTarget.value)}
           hint="A flat string map the scheduler can filter on."
         />
-        <Button type="submit" loading={enrolling()} disabled={enrolling() || !name().trim()}>
+        <Button type="submit" class="justify-self-start sm:mt-5" loading={enrolling()} disabled={enrolling() || !name().trim()}>
           Enroll
         </Button>
       </form>
 
       {/* Session-local roster */}
       <div class="space-y-2">
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)', 'font-family': 'var(--font-body)' }}>
           Runners enrolled or revoked this session
         </h3>
         <Show
           when={sessionRunners().length > 0}
           fallback={
-            <p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-[13px]" style={{ color: 'var(--color-text-tertiary)' }}>
               None yet — enroll a runner above, or revoke one by ID below.
             </p>
           }
@@ -271,22 +273,20 @@ const EnrollmentPanel: Component = () => {
           <div class="space-y-2">
             <For each={sessionRunners()}>
               {(runner) => (
-                <div>
-                  <RunnerHealthCard
-                    name={runner.name}
-                    runnerId={runner.runnerId}
-                    connectionStatus={runner.connectionStatus}
-                    connectionReason={runner.connectionReason}
-                    capacity={
-                      runner.totalCapacity !== null && runner.availableCapacity !== null
-                        ? { total: runner.totalCapacity, available: runner.availableCapacity }
-                        : null
-                    }
-                    labels={runner.labels}
-                    capabilities={null}
-                  />
-                  <Show when={runner.connectionStatus !== 'unconfigured'}>
-                    <div class="mt-1">
+                <RunnerHealthCard
+                  name={runner.name}
+                  runnerId={runner.runnerId}
+                  connectionStatus={runner.connectionStatus}
+                  connectionReason={runner.connectionReason}
+                  capacity={
+                    runner.totalCapacity !== null && runner.availableCapacity !== null
+                      ? { total: runner.totalCapacity, available: runner.availableCapacity }
+                      : null
+                  }
+                  labels={runner.labels}
+                  capabilities={null}
+                  action={
+                    runner.connectionStatus !== 'unconfigured' ? (
                       <Button
                         size="sm"
                         variant="danger"
@@ -296,9 +296,9 @@ const EnrollmentPanel: Component = () => {
                       >
                         Revoke runner
                       </Button>
-                    </div>
-                  </Show>
-                </div>
+                    ) : undefined
+                  }
+                />
               )}
             </For>
           </div>
@@ -308,29 +308,31 @@ const EnrollmentPanel: Component = () => {
       {/* Manual revoke by ID — the fallback for a runner not enrolled this session */}
       <form
         onSubmit={(e) => void submitManualRevoke(e)}
-        class="max-w-md space-y-3 rounded-lg border p-3"
-        style={{ 'border-color': 'var(--color-border-light)' }}
+        class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]"
       >
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID
         </h3>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           For a runner enrolled outside this session (e.g. before a page reload, or by another operator).
         </p>
-        <Field
-          label="Runner ID"
-          placeholder="runr_..."
-          value={revokeTargetId()}
-          onInput={(e) => setRevokeTargetId(e.currentTarget.value)}
-        />
-        <Button
-          type="submit"
-          variant="danger"
-          loading={revokingManual()}
-          disabled={revokingManual() || !revokeTargetId().trim()}
-        >
-          Revoke
-        </Button>
+        <div class="flex flex-wrap items-end gap-2.5">
+          <Field
+            class="min-w-[200px] flex-1 [&_input]:font-mono"
+            label="Runner ID"
+            placeholder="runr_..."
+            value={revokeTargetId()}
+            onInput={(e) => setRevokeTargetId(e.currentTarget.value)}
+          />
+          <Button
+            type="submit"
+            variant="danger"
+            loading={revokingManual()}
+            disabled={revokingManual() || !revokeTargetId().trim()}
+          >
+            Revoke
+          </Button>
+        </div>
       </form>
 
       {/* One-time token modal */}
@@ -357,8 +359,8 @@ const EnrollmentPanel: Component = () => {
                   Enrollment token
                 </p>
                 <p
-                  class="break-all rounded border p-2 font-mono text-sm select-all"
-                  style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-primary)' }}
+                  class="mt-1 break-all rounded-[14px] bg-app px-3 py-2 font-mono text-sm select-all"
+                  style={{ color: 'var(--color-text-primary)' }}
                 >
                   {token().enrollment_token}
                 </p>

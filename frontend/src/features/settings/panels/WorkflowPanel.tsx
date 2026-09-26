@@ -79,50 +79,61 @@ const WorkflowPanel: Component = () => {
     }
   };
 
+  // Row controls: pills on the page ground, sitting inside a surface-filled row.
+  const control = {
+    'background-color': 'var(--color-bg-app)',
+    'border-color': 'var(--color-border-light)',
+    color: 'var(--color-text-primary)',
+    '--tw-ring-color': 'var(--color-focus-ring)',
+  };
+
   return (
-    <div class="space-y-3">
-      <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+    <div class="flex max-w-[880px] flex-col gap-2.5">
+      <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
         Define the columns and WIP limits for this project's board.
       </p>
 
-      <div class="space-y-2">
+      <div class="flex flex-col gap-2">
         <For each={rows()}>
           {(row) => (
-            <div class="flex items-center gap-3 rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-elevated)' }}>
+            <div class="flex flex-wrap items-center gap-2 rounded-[22px] bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
               <input
                 type="text"
                 value={row.name}
                 placeholder="Status name"
                 onInput={(e) => setField(row.id, 'name', e.currentTarget.value)}
-                class="flex-1 rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
+                class="min-h-8 min-w-0 flex-1 rounded-full border px-3.5 py-1 text-sm focus:outline-none focus-visible:ring-2"
+                style={control}
               />
               <select
                 value={row.category}
                 onChange={(e) => setField(row.id, 'category', e.currentTarget.value)}
-                class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
+                class="min-h-8 w-[150px] rounded-full border px-3.5 py-1 text-[13px] focus:outline-none focus-visible:ring-2"
+                style={control}
               >
                 <option value="todo">To Do</option>
                 <option value="in_progress">In Progress</option>
                 <option value="done">Done</option>
               </select>
-              <div class="flex flex-shrink-0 items-center gap-1.5">
-                <span class="whitespace-nowrap text-xs" style={{ color: 'var(--color-text-tertiary)' }}>WIP</span>
+              <label
+                class="flex min-h-8 w-[96px] flex-shrink-0 items-center gap-1 rounded-full border px-3.5 text-[13px] focus-within:ring-2"
+                style={control}
+              >
+                <span class="whitespace-nowrap" style={{ color: 'var(--color-text-tertiary)' }}>WIP</span>
                 <input
                   type="number"
                   min="1"
                   value={row.wip_limit}
                   placeholder="∞"
                   onInput={(e) => setField(row.id, 'wip_limit', e.currentTarget.value)}
-                  class="w-16 rounded-lg border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
-                  style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
+                  class="w-full min-w-0 bg-transparent text-[13px] focus:outline-none"
+                  style={{ color: 'var(--color-text-primary)' }}
                 />
-              </div>
+              </label>
               <button
                 onClick={() => removeStatus(row.id)}
-                class="flex-shrink-0 rounded-md p-1.5"
-                style={{ color: 'var(--color-text-tertiary)' }}
+                class="flex-shrink-0 rounded-full p-1.5 transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
+                style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                 title="Remove status"
                 aria-label="Remove status"
               >
@@ -135,8 +146,12 @@ const WorkflowPanel: Component = () => {
 
       <button
         onClick={addStatus}
-        class="flex items-center gap-2 rounded-lg border border-dashed px-4 py-2 text-sm font-medium"
-        style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-secondary)' }}
+        class="flex items-center justify-center gap-2 rounded-full border-2 border-dashed p-2 text-[13px] font-semibold transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
+        style={{
+          'border-color': 'var(--color-border-light)',
+          color: 'var(--color-text-secondary)',
+          '--tw-ring-color': 'var(--color-focus-ring)',
+        }}
       >
         <FiPlus size={16} /> Add Status
       </button>

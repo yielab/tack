@@ -113,14 +113,14 @@ export default function FieldsPanel() {
   };
 
   return (
-    <div>
+    <div class="max-w-[560px]">
       <div>
-        <div class="mb-4 flex items-center justify-end">
+        <div class="mb-2.5 flex items-center justify-end">
           <Button onClick={openCreateModal}>+ Add Field</Button>
         </div>
 
         {/* Fields List */}
-        <div class="space-y-4">
+        <div class="flex flex-col gap-2.5">
           <Show when={fields.loading}>
             <div class="text-center py-12 text-content-subtle">Loading fields...</div>
           </Show>
@@ -133,48 +133,47 @@ export default function FieldsPanel() {
             {(field: CustomField) => {
               const typeInfo = getFieldTypeInfo(field.field_type);
               return (
-                <div class="bg-elevated rounded-lg border border-line p-6">
-                  <div class="flex items-start justify-between">
-                    <div class="flex-1">
-                      <div class="flex items-center gap-3 mb-2">
-                        <span class="text-2xl">{typeInfo.icon}</span>
-                        <div>
-                          <h3 class="text-lg font-semibold text-content">
-                            {field.name}
-                          </h3>
-                          <div class="flex items-center gap-2 mt-1">
-                            <Badge>{typeInfo.label}</Badge>
-                            <Show when={field.required}>
-                              <Badge tone="danger">Required</Badge>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
+                <div class="flex flex-col gap-1.5 rounded-[26px] bg-panel px-4 py-3.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span
+                      class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm"
+                      style={{ 'background-color': 'var(--color-bg-app)' }}
+                      aria-hidden="true"
+                    >
+                      {typeInfo.icon}
+                    </span>
+                    <h3 class="text-sm font-bold text-content" style={{ 'font-family': 'var(--font-body)' }}>
+                      {field.name}
+                    </h3>
+                    <Badge>{typeInfo.label}</Badge>
+                    <Show when={field.required}>
+                      <Badge tone="danger">Required</Badge>
+                    </Show>
+                  </div>
 
-                      <Show when={field.description}>
-                        <p class="text-sm text-content-muted mb-2">
-                          {field.description}
-                        </p>
-                      </Show>
+                  <Show when={field.description}>
+                    <p class="text-[12.5px] text-content-muted">{field.description}</p>
+                  </Show>
 
-                      <Show when={field.options && field.options.length > 0}>
-                        <div class="mt-2">
-                          <span class="text-xs text-content-subtle">Options: </span>
-                          <span class="text-sm text-content-muted">
-                            {field.options!.join(', ')}
-                          </span>
-                        </div>
-                      </Show>
+                  <Show when={field.options && field.options.length > 0}>
+                    <div class="text-[12.5px]">
+                      <span class="text-content-subtle">Options: </span>
+                      <span class="text-content-muted">{field.options!.join(', ')}</span>
                     </div>
+                  </Show>
 
-                    <div class="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => openEditModal(field)}>
-                        Edit
-                      </Button>
-                      <Button size="sm" variant="danger" onClick={() => handleDelete(field.id)}>
-                        Delete
-                      </Button>
-                    </div>
+                  <div class="flex items-center gap-1.5">
+                    <Button size="sm" variant="ghost" onClick={() => openEditModal(field)}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      style={{ color: 'var(--color-danger-600)' }}
+                      onClick={() => handleDelete(field.id)}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
               );
@@ -227,7 +226,7 @@ export default function FieldsPanel() {
                 onInput={(e) => setDescription(e.currentTarget.value)}
                 rows={2}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -251,7 +250,7 @@ export default function FieldsPanel() {
                   rows={4}
                   required
                   placeholder="Option 1&#10;Option 2&#10;Option 3"
-                  class="w-full rounded-lg border px-3 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                  class="w-full rounded-xl border px-3.5 py-2.5 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                   style={{
                     'background-color': 'var(--color-bg-base)',
                     color: 'var(--color-text-primary)',

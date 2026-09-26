@@ -67,23 +67,22 @@ const Drawer: Component<DrawerProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex h-full w-full flex-col focus:outline-none',
+              'flex h-full w-full flex-col focus:outline-none sm:rounded-l-[28px]',
               WIDTH[props.width ?? 'lg']
             )}
             style={{
               'background-color': 'var(--color-bg-app)',
-              'border-left': '1px solid var(--color-border-light)',
               'box-shadow': 'var(--shadow-lg)',
               animation: 'tk-drawer .22s cubic-bezier(.2,.7,.3,1)',
             }}
           >
             <Show when={props.title}>
               <div
-                class="flex items-center justify-between border-b p-4"
+                class="flex items-center justify-between border-b px-6 py-4"
                 style={{ 'border-color': 'var(--color-border-light)' }}
               >
                 <h2
-                  class="text-lg font-semibold"
+                  class="text-xl"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
                   {props.title}
@@ -91,24 +90,24 @@ const Drawer: Component<DrawerProps> = (props) => {
                 <button
                   onClick={props.onClose}
                   aria-label="Close"
-                  class="rounded p-1 transition-colors focus:outline-none focus-visible:ring-2"
+                  class="rounded-full p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
                   style={{
                     color: 'var(--color-text-tertiary)',
                     '--tw-ring-color': 'var(--color-focus-ring)',
                   }}
                 >
-                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       stroke-linecap="round"
                       stroke-linejoin="round"
-                      stroke-width="2"
+                      stroke-width="2.75"
                       d="M6 18L18 6M6 6l12 12"
                     />
                   </svg>
                 </button>
               </div>
             </Show>
-            <div class="flex-1 overflow-y-auto p-4">{props.children}</div>
+            <div class="flex-1 overflow-y-auto px-6 py-4">{props.children}</div>
           </div>
         </div>
       </Portal>
