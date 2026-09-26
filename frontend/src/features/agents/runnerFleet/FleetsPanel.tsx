@@ -1,6 +1,7 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button, EmptyState, Field, Select, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
+import { IconAgent } from '../../../shared/ui/icons';
 import { fleetsApi, runnersApi, type FleetSummary, type RunnerSummary } from '../../../shared/execution';
 import { parseOptionalJsonObject } from './format';
 import { runnerStateBadge } from './RunnerHealthCard';
@@ -136,25 +137,33 @@ const FleetsPanel: Component = () => {
       <Show when={!fleets.loading && fleets.error === undefined}>
         <Show
           when={rows().length > 0}
-          fallback={<EmptyState icon="🚚" title="No fleets yet" description="A fleet is a named group a fleet-selector request can target." />}
+          fallback={
+            <div class="rounded-[28px] border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
+              <EmptyState
+                icon={<IconAgent size={26} />}
+                title="No fleets yet"
+                description="A fleet is a named group a fleet-selector request can target."
+              />
+            </div>
+          }
         >
           <ul class="space-y-2">
             <For each={rows()}>
               {(fleet) => (
-                <li class="rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)' }}>
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                <li class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {fleet.name}
                     </span>
-                    <span class="font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
                       {fleet.fleet_id}
                     </span>
-                    <Badge tone="neutral">
+                    <Badge class="ml-auto" tone="neutral">
                       {fleet.concurrency_limit === null ? 'no concurrency cap' : `cap ${fleet.concurrency_limit}`}
                     </Badge>
                   </div>
-                  <div class="mt-2">
-                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
+                  <div class="flex flex-col gap-2">
+                    <p class="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
                       Members
                     </p>
                     <Show
@@ -173,11 +182,11 @@ const FleetsPanel: Component = () => {
                           </p>
                         }
                       >
-                        <ul class="mt-1 space-y-1">
+                        <ul class="flex flex-col gap-1.5">
                           <For each={membersOf(fleet.fleet_id)}>
                             {(runner) => (
-                              <li class="flex items-center gap-2">
-                                <span class="text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                              <li class="flex items-center gap-2 rounded-full bg-app py-1 pl-3 pr-1">
+                                <span class="text-[13px]" style={{ color: 'var(--color-text-primary)' }}>
                                   {runner.name}
                                 </span>
                                 <Badge tone={runnerStateBadge(runner.state).tone}>
@@ -207,21 +216,23 @@ const FleetsPanel: Component = () => {
                           </p>
                         }
                       >
-                        <div class="mt-2 flex items-end gap-2">
-                          <Select
-                            label="Add runner"
-                            value={selectedRunner()[fleet.fleet_id] ?? ''}
-                            onInput={(e) => {
-                              const value = e.currentTarget.value;
-                              setSelectedRunner((prev) => ({ ...prev, [fleet.fleet_id]: value }));
-                            }}
-                            options={[
-                              { value: '', label: 'Select a runner' },
-                              ...nonMembersOf(fleet.fleet_id).map((r) => ({ value: r.runner_id, label: r.name })),
-                            ]}
-                          />
+                        <div class="flex items-end gap-2">
+                          <div class="min-w-0 flex-1">
+                            <Select
+                              label="Add runner"
+                              value={selectedRunner()[fleet.fleet_id] ?? ''}
+                              onInput={(e) => {
+                                const value = e.currentTarget.value;
+                                setSelectedRunner((prev) => ({ ...prev, [fleet.fleet_id]: value }));
+                              }}
+                              options={[
+                                { value: '', label: 'Select a runner' },
+                                ...nonMembersOf(fleet.fleet_id).map((r) => ({ value: r.runner_id, label: r.name })),
+                              ]}
+                            />
+                          </div>
                           <Button
-                            size="sm"
+                            variant="secondary"
                             loading={busyKey() === `add:${fleet.fleet_id}`}
                             disabled={!selectedRunner()[fleet.fleet_id] || busyKey() !== null}
                             onClick={() => void addMember(fleet.fleet_id)}
@@ -240,9 +251,9 @@ const FleetsPanel: Component = () => {
       </Show>
 
       <Show when={fleets.error !== undefined}>
-        <div class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load fleets.{' '}
-          <button type="button" class="underline" onClick={() => void refetch()}>
+          <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
           </button>
         </div>
@@ -251,12 +262,12 @@ const FleetsPanel: Component = () => {
       <Show
         when={showForm()}
         fallback={
-          <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setShowForm(true)}>
             + Create fleet
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)' }}>
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-[28px] bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="backend-fleet" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <Field
             label="Concurrency limit (optional)"

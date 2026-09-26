@@ -31,6 +31,7 @@ import {
   resolveAutoModelPolicy,
   type RunWithAgentFormValues,
 } from './shared';
+import RadioRow from './RadioRow';
 
 /** A model id typed by hand, unlocked only when the selected harness attests
  *  `model_passthrough: supported` for the current target (`shared.ts#isModelPassthroughAttested`). */
@@ -445,23 +446,29 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       <Show
         when={!executionOff()}
         fallback={
-          <div class="space-y-3 py-6 text-center text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <p>Agent execution is off.</p>
+          <div class="flex flex-col items-center gap-4 py-8 text-center">
+            <p class="font-heading text-xl" style={{ color: 'var(--color-text-primary)' }}>
+              Agent execution is off.
+            </p>
             <A
               href="/agents"
-              class="inline-flex items-center gap-1 font-medium"
-              style={{ color: 'var(--color-primary-600)' }}
+              class="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-semibold focus:outline-none focus-visible:ring-2"
+              style={{
+                'background-color': 'var(--color-accent-soft)',
+                color: 'var(--color-accent-ink)',
+                '--tw-ring-color': 'var(--color-focus-ring)',
+              }}
             >
               Turn it on
             </A>
           </div>
         }
       >
-        <form class="space-y-5" onSubmit={submit}>
+        <form class="space-y-6" onSubmit={submit}>
           {/* ── Target ──────────────────────────────────────────────────── */}
           <Show when={!hideTargetPicker()}>
-            <fieldset class="space-y-2">
-              <legend class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <fieldset class="space-y-3">
+              <legend class={LEGEND_CLASS} style={{ color: 'var(--color-text-primary)' }}>
                 Where it runs
               </legend>
               <Select
@@ -486,14 +493,17 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
           {/* ── Agent ───────────────────────────────────────────────────── */}
           <fieldset class="space-y-3">
-            <legend class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <legend class={LEGEND_CLASS} style={{ color: 'var(--color-text-primary)' }}>
               Agent
             </legend>
             <Show
               when={agentProfiles.loading || agentProfilesData().length > 0}
               fallback={
-                <div class="space-y-2">
-                  <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No agent profile exists yet.</p>
+                <div
+                  class="flex flex-wrap items-center justify-between gap-3 rounded-[20px] px-4 py-3"
+                  style={{ 'background-color': 'var(--color-bg-app)' }}
+                >
+                  <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
                   <Button size="sm" variant="secondary" loading={creatingProfile()} onClick={createDefaultProfile}>
                     Create default profile
                   </Button>
@@ -518,34 +528,21 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
               options={harnessOptions().map((h) => ({ value: h.value, label: h.label }))}
             />
 
-            <div class="space-y-2">
-              <div class="flex flex-col gap-1.5 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+            <div class="space-y-3">
+              <div class="flex flex-col gap-2">
                 <Show when={projectDefaultLabel()}>
                   {(label) => (
-                    <label class="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="model-mode"
-                        checked={modelMode() === 'project'}
-                        onChange={() => setModelMode('project')}
-                      />
+                    <RadioRow name="model-mode" checked={modelMode() === 'project'} onChange={() => setModelMode('project')}>
                       Project default — {label()}
-                    </label>
+                    </RadioRow>
                   )}
                 </Show>
-                <label class="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="model-mode"
-                    checked={modelMode() === 'choose'}
-                    onChange={() => setModelMode('choose')}
-                  />
+                <RadioRow name="model-mode" checked={modelMode() === 'choose'} onChange={() => setModelMode('choose')}>
                   Choose…
-                </label>
-                <label class="flex items-center gap-1.5">
-                  <input type="radio" name="model-mode" checked={modelMode() === 'auto'} onChange={() => setModelMode('auto')} />
+                </RadioRow>
+                <RadioRow name="model-mode" checked={modelMode() === 'auto'} onChange={() => setModelMode('auto')}>
                   Auto (let the runner decide)
-                </label>
+                </RadioRow>
               </div>
               <Show when={modelMode() === 'choose'}>
                 <Select
@@ -573,15 +570,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           </fieldset>
 
           {/* ── Repository ──────────────────────────────────────────────── */}
-          <fieldset class="space-y-2">
-            <legend class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <fieldset class="space-y-3">
+            <legend class={LEGEND_CLASS} style={{ color: 'var(--color-text-primary)' }}>
               Repository
             </legend>
             <Show
               when={repoExpanded()}
               fallback={
-                <div class="flex items-center justify-between gap-3 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                  <span>{repoSummary()}</span>
+                <div
+                  class="flex items-center justify-between gap-3 rounded-full py-2 pl-4 pr-2 text-xs"
+                  style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-secondary)' }}
+                >
+                  <span class="min-w-0 break-words">{repoSummary()}</span>
                   <Button type="button" size="sm" variant="secondary" onClick={() => setRepoExpanded(true)}>
                     Change for this run
                   </Button>
@@ -614,55 +614,53 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
           {/* ── Permissions & budget ────────────────────────────────────── */}
           <fieldset class="space-y-3">
-            <legend class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <legend class={LEGEND_CLASS} style={{ color: 'var(--color-text-primary)' }}>
               Permissions &amp; budget
             </legend>
-            <Field
-              label="Timeout (seconds)"
-              type="number"
-              min="1"
-              value={timeoutSeconds()}
-              onInput={(e) => setTimeoutSeconds(Number(e.currentTarget.value))}
-            />
-            <Field
-              label="Allowed tools"
-              value={toolsText()}
-              onInput={(e) => setToolsText(e.currentTarget.value)}
-              hint="Comma-separated. Leave blank for none."
-            />
-            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-              <input type="checkbox" checked={allowNetwork()} onChange={(e) => setAllowNetwork(e.currentTarget.checked)} />
+            <div class="grid grid-cols-2 gap-3">
+              <Field
+                label="Timeout (seconds)"
+                type="number"
+                min="1"
+                value={timeoutSeconds()}
+                onInput={(e) => setTimeoutSeconds(Number(e.currentTarget.value))}
+              />
+              <Field
+                label="Allowed tools"
+                value={toolsText()}
+                onInput={(e) => setToolsText(e.currentTarget.value)}
+                hint="Comma-separated. Leave blank for none."
+              />
+            </div>
+            <label
+              class="flex cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm"
+              style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)' }}
+            >
+              <input
+                type="checkbox"
+                class="h-4 w-4"
+                style={{ 'accent-color': 'var(--color-primary-600)' }}
+                checked={allowNetwork()}
+                onChange={(e) => setAllowNetwork(e.currentTarget.checked)}
+              />
               Allow network access
             </label>
-            <div class="space-y-1">
-              <p id="run-approvals-label" class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+            <div class="space-y-2">
+              <p id="run-approvals-label" class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                 Approvals
               </p>
-              <div
-                role="radiogroup"
-                aria-labelledby="run-approvals-label"
-                class="flex flex-col gap-1.5 text-sm"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                <label class="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="approvals"
-                    checked={approvals() === 'auto'}
-                    onChange={() => setApprovals('auto')}
-                  />
+              <div role="radiogroup" aria-labelledby="run-approvals-label" class="grid grid-cols-2 gap-2">
+                <RadioRow name="approvals" checked={approvals() === 'auto'} onChange={() => setApprovals('auto')}>
                   Automatic
-                </label>
-                <label class="flex items-center gap-1.5" style={{ opacity: decisionsAttested() ? 1 : 0.6 }}>
-                  <input
-                    type="radio"
-                    name="approvals"
-                    checked={approvals() === 'ask'}
-                    disabled={!decisionsAttested()}
-                    onChange={() => setApprovals('ask')}
-                  />
+                </RadioRow>
+                <RadioRow
+                  name="approvals"
+                  checked={approvals() === 'ask'}
+                  disabled={!decisionsAttested()}
+                  onChange={() => setApprovals('ask')}
+                >
                   Ask me
-                </label>
+                </RadioRow>
               </div>
               <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 <Show
@@ -677,12 +675,15 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           </fieldset>
 
           <Show when={structuralErrors().length > 0}>
-            <ul class="space-y-1 text-xs" style={{ color: 'var(--color-danger-600)' }}>
+            <ul
+              class="space-y-1 rounded-[20px] px-4 py-3 text-xs font-medium"
+              style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
+            >
               <For each={structuralErrors()}>{(msg) => <li>{msg}</li>}</For>
             </ul>
           </Show>
 
-          <div class="flex justify-end gap-2 border-t pt-3" style={{ 'border-color': 'var(--color-border-light)' }}>
+          <div class="flex justify-end gap-2 pt-1">
             <Button type="button" variant="secondary" onClick={props.onClose} disabled={submitting()}>
               Cancel
             </Button>
@@ -696,9 +697,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   );
 };
 
+/** Fieldset titles take the display face, sized as a section title. */
+const LEGEND_CLASS = 'mb-1 font-heading text-lg';
+
 const CombinationGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
-  <div class="space-y-1">
-    <p class="flex items-start gap-1.5 text-xs" style={{ color: props.gate.advisory ? 'var(--color-warning-700)' : props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
+  <div class="space-y-1.5">
+    <p class="flex items-start gap-2 text-xs" style={{ color: props.gate.advisory ? 'var(--color-warning-700)' : props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
       <Show when={!props.gate.allowed}>
         <Badge tone="danger">Unsupported</Badge>
       </Show>
@@ -708,14 +712,14 @@ const CombinationGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelS
       <Show when={props.gate.allowed && !props.gate.advisory}>
         <Badge tone="success">Supported</Badge>
       </Show>
-      <span>{props.gate.reason}</span>
+      <span class="pt-0.5">{props.gate.reason}</span>
     </p>
     <Show when={props.gate.fix}>
       {(fix) => (
         <A
           href={fix().href}
-          class="inline-flex items-center gap-1 text-xs font-medium"
-          style={{ color: 'var(--color-primary-600)' }}
+          class="inline-flex items-center gap-1 text-xs font-semibold hover:underline"
+          style={{ color: 'var(--color-accent-ink)' }}
         >
           {fix().label}
         </A>

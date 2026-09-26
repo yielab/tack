@@ -25,20 +25,20 @@ export interface ProviderStepProps {
  */
 const ProviderStep: Component<ProviderStepProps> = (props) => {
   return (
-    <section class="space-y-4">
-      <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <section class="flex flex-col gap-2.5">
+      <h2 class="pt-2 text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Provider
       </h2>
 
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="space-y-3 rounded-lg border p-4" style={{ 'border-color': 'var(--color-border-light)' }}>
-          <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <div class="grid gap-3 md:grid-cols-2">
+        <div class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]">
+          <h3 class="text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             Use the agent's own login
           </h3>
           <Show
             when={props.thisMachineRunner}
             fallback={
-              <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
                 Turn on agent execution above to see which agents are installed here.
               </p>
             }
@@ -50,20 +50,20 @@ const ProviderStep: Component<ProviderStepProps> = (props) => {
                 const verified = () => props.verifiedHarnessKinds.has(kind.value);
                 return (
                   <Show when={installed()}>
-                    <div class="space-y-1.5 text-sm">
+                    <div class="flex flex-col gap-2 text-sm">
                       <div class="flex items-center gap-2">
-                        <span class="font-medium" style={{ color: 'var(--color-text-primary)' }}>{kind.label}</span>
-                        <Badge tone={verified() ? 'success' : 'neutral'}>
+                        <span class="text-[13px] font-bold" style={{ color: 'var(--color-text-primary)' }}>{kind.label}</span>
+                        <Badge class="ml-auto" tone={verified() ? 'success' : 'neutral'}>
                           {verified() ? 'Verified' : 'Present, unverified'}
                         </Badge>
                       </div>
                       <pre
-                        class="overflow-x-auto rounded-lg border p-2 font-mono text-xs"
-                        style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-primary)' }}
+                        class="overflow-x-auto rounded-[14px] bg-app px-3 py-2 font-mono text-xs"
+                        style={{ color: 'var(--color-text-primary)' }}
                       >
                         {HARNESS_LOGIN_COMMAND[kind.value] ?? kind.value}
                       </pre>
-                      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                      <p class="text-xs italic" style={{ color: 'var(--color-text-secondary)' }}>
                         {CANNOT_OBSERVE_VENDOR_LOGIN}
                       </p>
                     </div>
@@ -74,12 +74,12 @@ const ProviderStep: Component<ProviderStepProps> = (props) => {
           </Show>
         </div>
 
-        <div class="rounded-lg border p-4" style={{ 'border-color': 'var(--color-border-light)' }}>
-          <h3 class="mb-3 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <div class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]">
+          <h3 class="text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             Use Vercel AI Gateway
           </h3>
           <ProviderKeyPanel />
-          <p class="mt-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          <p class="text-[11.5px]" style={{ color: 'var(--color-text-tertiary)' }}>
             This is this one provider's own catalog — the count above is not the full
             picture of every model this machine can reach.
           </p>

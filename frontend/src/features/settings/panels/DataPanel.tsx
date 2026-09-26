@@ -72,13 +72,17 @@ const DataPanel: Component = () => {
     }
   };
 
+  const CARD = 'flex flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]';
+  const TITLE = 'text-[19px] leading-tight';
+  const NOTE = 'text-[12.5px]';
+
   return (
-    <div class="max-w-xl space-y-6">
-      <section class="space-y-2">
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="flex max-w-xl flex-col gap-3">
+      <section class={CARD}>
+        <h3 class={TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Export
         </h3>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => void exportAs('json')} disabled={busy()}>
             Export JSON
           </Button>
@@ -91,53 +95,52 @@ const DataPanel: Component = () => {
         </div>
       </section>
 
-      <section class="space-y-2 border-t pt-4" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <section class={CARD}>
+        <h3 class={TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Import
         </h3>
 
-        <div class="space-y-3">
-          <div>
-            <p class="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-              Restore a full project from a previously exported JSON or YAML snapshot (creates a new project).
-            </p>
-            <Button onClick={() => importJsonInput?.click()} disabled={busy()}>
-              Import from JSON / YAML…
-            </Button>
-            <input
-              ref={importJsonInput}
-              type="file"
-              accept="application/json,.json,application/x-yaml,.yaml,.yml"
-              class="hidden"
-              onChange={(e) => {
-                const f = e.currentTarget.files?.[0];
-                e.currentTarget.value = '';
-                if (f) void importSnapshot(f);
-              }}
-            />
-          </div>
+        <p class={NOTE} style={{ color: 'var(--color-text-secondary)' }}>
+          Restore a full project from a previously exported JSON or YAML snapshot (creates a new project).
+        </p>
+        <Button class="self-start" onClick={() => importJsonInput?.click()} disabled={busy()}>
+          Import from JSON / YAML…
+        </Button>
+        <input
+          ref={importJsonInput}
+          type="file"
+          accept="application/json,.json,application/x-yaml,.yaml,.yml"
+          class="hidden"
+          onChange={(e) => {
+            const f = e.currentTarget.files?.[0];
+            e.currentTarget.value = '';
+            if (f) void importSnapshot(f);
+          }}
+        />
 
-          <div>
-            <p class="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-              Add items to this project from a CSV file. Required column: <code>title</code>.
-              Optional: <code>description</code>, <code>type</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>estimate</code>.
-            </p>
-            <Button variant="secondary" onClick={() => importCsvInput?.click()} disabled={busy()}>
-              Import items from CSV…
-            </Button>
-            <input
-              ref={importCsvInput}
-              type="file"
-              accept="text/csv,.csv"
-              class="hidden"
-              onChange={(e) => {
-                const f = e.currentTarget.files?.[0];
-                e.currentTarget.value = '';
-                if (f) void importFromCsv(f);
-              }}
-            />
-          </div>
-        </div>
+        <p class={`${NOTE} mt-1.5`} style={{ color: 'var(--color-text-secondary)' }}>
+          Add items to this project from a CSV file. Required column: <code class="font-mono">title</code>.
+          Optional: <code class="font-mono">description</code>, <code class="font-mono">type</code>, <code class="font-mono">status</code>, <code class="font-mono">priority</code>, <code class="font-mono">assignee</code>, <code class="font-mono">estimate</code>.
+        </p>
+        <Button
+          variant="secondary"
+          class="self-start"
+          onClick={() => importCsvInput?.click()}
+          disabled={busy()}
+        >
+          Import items from CSV…
+        </Button>
+        <input
+          ref={importCsvInput}
+          type="file"
+          accept="text/csv,.csv"
+          class="hidden"
+          onChange={(e) => {
+            const f = e.currentTarget.files?.[0];
+            e.currentTarget.value = '';
+            if (f) void importFromCsv(f);
+          }}
+        />
       </section>
     </div>
   );

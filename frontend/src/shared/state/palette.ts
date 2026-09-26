@@ -2,25 +2,26 @@
 //
 // The second theme axis alongside theme.ts (light/dark mode). A palette swaps
 // the accent + surface token *values* via a `data-palette` attribute on <html>;
-// the token CSS in index.css supplies the per-palette overrides. "teal" is the
-// default and carries NO attribute (keeps the markup clean and the default fast).
+// the token CSS in index.css supplies the per-palette overrides. "harbor"
+// (harbor blue + coral) is the default. "teal" is the base token set and
+// carries NO attribute.
 
 import { createSignal } from 'solid-js';
 
-export type Palette = 'teal' | 'clay' | 'graphite';
+export type Palette = 'harbor' | 'teal' | 'clay' | 'graphite';
 
-export const PALETTES: Palette[] = ['teal', 'clay', 'graphite'];
+export const PALETTES: Palette[] = ['harbor', 'teal', 'clay', 'graphite'];
 
 const KEY = 'tack_palette';
 
 export function getStoredPalette(): Palette {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === 'teal' || v === 'clay' || v === 'graphite') return v;
+    if (v === 'harbor' || v === 'teal' || v === 'clay' || v === 'graphite') return v;
   } catch {
     /* localStorage unavailable */
   }
-  return 'teal';
+  return 'harbor';
 }
 
 const [palette, setPaletteSignal] = createSignal<Palette>(getStoredPalette());

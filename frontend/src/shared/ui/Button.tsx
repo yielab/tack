@@ -17,23 +17,23 @@ export interface ButtonProps
 }
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-sm',
+  sm: 'px-3 py-[5px] text-xs',
   md: 'px-4 py-2 text-sm',
-  lg: 'px-5 py-2.5 text-base',
+  lg: 'px-5 py-2.5 text-[15px]',
 };
 
 function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
   switch (variant) {
     case 'secondary':
       return {
-        'background-color': 'var(--color-bg-base)',
+        'background-color': 'transparent',
         color: 'var(--color-text-primary)',
-        border: '1px solid var(--color-border-medium)',
+        border: '1px solid var(--color-border-strong)',
       };
     case 'ghost':
       return {
         'background-color': 'transparent',
-        color: 'var(--color-text-secondary)',
+        color: 'var(--color-accent-ink)',
       };
     case 'danger':
       return {
@@ -57,7 +57,9 @@ function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
   }
 }
 
-/** Token-driven button. Colors come only from CSS variables. */
+/** Token-driven pill button, set in the display face. Colors come only from
+ *  CSS variables; hover/pressed darken the fill via `filter` so every variant
+ *  and palette gets a themed state without its own hover token. */
 const Button: Component<ButtonProps> = (props) => {
   const [local, rest] = splitProps(props, [
     'variant',
@@ -77,9 +79,10 @@ const Button: Component<ButtonProps> = (props) => {
       disabled={isDisabled()}
       aria-busy={local.loading ? 'true' : undefined}
       class={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-1.5 rounded-full font-heading whitespace-nowrap transition-[filter,background-color]',
+        'hover:brightness-[.94] active:brightness-[.88]',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+        'disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:brightness-100',
         SIZE[local.size ?? 'md'],
         local.class
       )}

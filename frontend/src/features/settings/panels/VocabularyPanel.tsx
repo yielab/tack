@@ -1,7 +1,8 @@
 import { type Component, createSignal, createEffect, For } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button } from '../../../shared/ui';
+import { Button, TypeBadge } from '../../../shared/ui';
+import type { ItemType } from '../../../shared/types';
 import { useProject } from '../../../shared/state/projectContext';
 import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../../../shared/vocab/vocab';
 
@@ -45,18 +46,38 @@ const VocabularyPanel: Component = () => {
 
   const previewTypes = () => getItemTypeList(edits());
 
-  return (
-    <div class="space-y-4">
-      <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-        Rename any term to match your domain. Blank fields fall back to the default label.
-      </p>
+  // A customised term reads as an accent pill; a blank one shows its default
+  // as a muted placeholder on the surface fill.
+  const inputStyle = (custom: boolean) => ({
+    'background-color': custom ? 'var(--color-accent-soft)' : 'var(--color-bg-panel)',
+    'border-color': custom ? 'var(--color-accent-line)' : 'transparent',
+    color: custom ? 'var(--color-accent-ink)' : 'var(--color-text-primary)',
+    'font-weight': custom ? 600 : 400,
+    '--tw-ring-color': 'var(--color-focus-ring)',
+  });
 
-      <div class="overflow-hidden rounded-xl border" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <table class="w-full text-sm">
+  return (
+    <div class="grid max-w-[880px] gap-[18px] md:grid-cols-[1fr_280px]">
+      <div class="flex flex-col gap-1.5">
+        <p class="mb-1.5 text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          Rename any term to match your domain. Blank fields fall back to the default label.
+        </p>
+
+        <table class="w-full border-separate border-spacing-y-1.5 text-[13px]">
           <thead>
-            <tr style={{ 'background-color': 'var(--color-bg-subtle)' }}>
-              <th class="w-1/3 px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Default</th>
-              <th class="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Custom label</th>
+            <tr>
+              <th
+                class="w-[130px] pr-3 text-left text-[11px] font-bold uppercase tracking-[.08em]"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                Default
+              </th>
+              <th
+                class="text-left text-[11px] font-bold uppercase tracking-[.08em]"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                Custom label
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -64,21 +85,16 @@ const VocabularyPanel: Component = () => {
               {(key) => {
                 const def = resolveLabel(undefined, key);
                 return (
-                  <tr class="border-t" style={{ 'border-color': 'var(--color-border-light)' }}>
-                    <td class="px-4 py-2.5 font-medium" style={{ color: 'var(--color-text-secondary)' }}>{def}</td>
-                    <td class="px-4 py-2">
+                  <tr>
+                    <td class="pr-3" style={{ color: 'var(--color-text-primary)' }}>{def}</td>
+                    <td>
                       <input
                         type="text"
                         value={edits()[key] ?? ''}
                         placeholder={def}
                         onInput={(e) => setKey(key, e.currentTarget.value)}
-                        class="w-full rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-                        style={{
-                          'background-color': 'var(--color-bg-base)',
-                          'border-color': 'var(--color-border-medium)',
-                          color: 'var(--color-text-primary)',
-                          '--tw-ring-color': 'var(--color-focus-ring)',
-                        }}
+                        class="min-h-[30px] w-full rounded-full border px-3.5 py-1 text-[13px] focus:outline-none focus-visible:ring-2"
+                        style={inputStyle(!!(edits()[key] ?? '').trim())}
                       />
                     </td>
                   </tr>
@@ -89,25 +105,36 @@ const VocabularyPanel: Component = () => {
         </table>
       </div>
 
-      <div class="rounded-xl border p-4" style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-subtle)' }}>
-        <p class="mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
-          Preview — item type labels
-        </p>
-        <div class="flex flex-wrap gap-2">
-          <For each={previewTypes()}>
-            {(t) => (
-              <span class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium"
-                style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)', color: 'var(--color-text-primary)' }}>
-                {t.emoji} {t.label}
-              </span>
-            )}
-          </For>
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-2.5 rounded-[26px] bg-panel p-4">
+          <p
+            class="text-[10.5px] font-bold uppercase tracking-[.1em]"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            Preview — item type labels
+          </p>
+          <div class="flex flex-wrap gap-1.5">
+            <For each={previewTypes()}>
+              {(t) => (
+                <TypeBadge
+                  type={t.value as ItemType}
+                  label={t.label}
+                  style={{ 'font-size': '12px', padding: '3px 10px' }}
+                />
+              )}
+            </For>
+          </div>
         </div>
-      </div>
 
-      <Button onClick={() => void save()} loading={saving()} disabled={saving() || !dirty()}>
-        Save vocabulary
-      </Button>
+        <Button
+          class="self-start"
+          onClick={() => void save()}
+          loading={saving()}
+          disabled={saving() || !dirty()}
+        >
+          Save vocabulary
+        </Button>
+      </div>
     </div>
   );
 };

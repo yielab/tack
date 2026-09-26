@@ -1,4 +1,4 @@
-import { type Component, For, Show } from 'solid-js';
+import { type Component, type JSX, For, Show } from 'solid-js';
 import { Badge, type BadgeTone } from '../../../shared/ui';
 import { gateFeature, gateFeatureAcrossRunners, type FeatureName } from '../../../shared/execution';
 import type { RunnerCapabilities } from '../../../shared/execution';
@@ -84,6 +84,9 @@ export interface RunnerHealthCardProps {
    *  own doc comment. Wired so a future data source needs no further
    *  design work here. */
   capabilities: RunnerCapabilities | null;
+  /** Optional control rendered at the right of the header row (the
+   *  enrollment roster's "Revoke runner"). Presentation slot only. */
+  action?: JSX.Element;
 }
 
 /**
@@ -98,67 +101,61 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
 
   return (
     <div
-      class="rounded-lg border p-3"
-      style={{ 'border-color': 'var(--color-border-light)' }}
+      class="flex flex-col gap-2 rounded-[28px] bg-panel px-5 py-4"
       data-connection-status={props.connectionStatus}
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <span class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
           {props.name}
         </span>
-        <span class="font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
           {props.runnerId}
         </span>
         <Badge tone={STATUS_TONE[props.connectionStatus]}>{STATUS_LABEL[props.connectionStatus]}</Badge>
+        <Show when={props.action}>
+          <div class="ml-auto">{props.action}</div>
+        </Show>
       </div>
-      <p class="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
         {props.connectionReason}
       </p>
 
-      <div class="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-        {props.capacity ? formatCapacity(props.capacity.total, props.capacity.available) : 'capacity unknown'}
+      <div class="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <span>
+          {props.capacity ? formatCapacity(props.capacity.total, props.capacity.available) : 'capacity unknown'}
+        </span>
+        <For each={labelChips()}>
+          {(chip) => (
+            <span
+              class="rounded-full px-2.5 py-[3px] font-mono text-[11px]"
+              style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+            >
+              {chip}
+            </span>
+          )}
+        </For>
       </div>
 
-      <Show when={labelChips().length > 0}>
-        <div class="mt-2 flex flex-wrap gap-1">
-          <For each={labelChips()}>
-            {(chip) => (
-              <span
-                class="font-mono text-[10.5px]"
-                style={{
-                  padding: '2px 7px',
-                  'border-radius': '5px',
-                  background: 'var(--color-chip)',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                {chip}
-              </span>
-            )}
-          </For>
-        </div>
-      </Show>
-
-      <div class="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <div class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
         Protocol version: {props.capabilities?.protocol_version ?? 'not reported'}
       </div>
 
-      <div class="mt-2">
-        <p class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
+      <div class="flex flex-wrap items-center gap-1.5 text-xs">
+        <p style={{ color: 'var(--color-text-tertiary)' }}>
           Harnesses
         </p>
         <Show
           when={props.capabilities && props.capabilities.harnesses.length > 0}
           fallback={
-            <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p style={{ color: 'var(--color-text-tertiary)' }}>
               no harness capability data available
             </p>
           }
         >
-          <ul class="mt-1 space-y-0.5">
+          <ul class="flex flex-wrap gap-1.5">
             <For each={props.capabilities?.harnesses ?? []}>
               {(h) => (
-                <li class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <li class="rounded-full bg-app px-2.5 py-[3px]" style={{ color: 'var(--color-text-secondary)' }}>
                   <span class="font-mono">{h.harness_kind}</span> v{h.installed_version}
                   <Show when={h.probe_error}>
                     {(err) => (
@@ -172,11 +169,11 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         </Show>
       </div>
 
-      <div class="mt-2">
-        <p class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
+      <div class="flex flex-wrap items-center gap-1.5 text-xs">
+        <p style={{ color: 'var(--color-text-tertiary)' }}>
           Feature support
         </p>
-        <ul class="mt-1 space-y-0.5">
+        <ul class="flex flex-wrap gap-1.5">
           <For each={FEATURES}>
             {(feature) => {
               const gate = () =>
@@ -184,13 +181,16 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
                   ? gateFeature(props.capabilities, feature)
                   : gateFeatureAcrossRunners([], feature);
               return (
-                <li class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <li
+                  class="inline-flex flex-wrap items-center gap-1 rounded-full bg-app py-[3px] pl-2.5 pr-[3px]"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
                   {FEATURE_LABEL[feature]}:{' '}
                   <Badge tone={gate().enabled ? 'success' : 'neutral'}>
                     {gate().enabled ? 'supported' : 'not supported'}
                   </Badge>
                   <Show when={gate().reason}>
-                    <span style={{ color: 'var(--color-text-tertiary)' }}> — {gate().reason}</span>
+                    <span class="pr-2" style={{ color: 'var(--color-text-tertiary)' }}> — {gate().reason}</span>
                   </Show>
                 </li>
               );

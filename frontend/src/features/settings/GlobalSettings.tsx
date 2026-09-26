@@ -12,12 +12,18 @@ import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, Badge } from '../../shared/ui';
 import { getStoredTheme, setTheme, type Theme } from '../../shared/state/theme';
+import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 
 const THEMES: { value: Theme; label: string }[] = [
-  { value: 'light', label: '☀️ Light' },
-  { value: 'dark', label: '🌙 Dark' },
-  { value: 'system', label: '💻 System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
 ];
+
+// Setting card: a surface-filled container (no border — the fill contrast
+// against the page ground does the work) with a display-face title.
+const CARD = 'flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5';
+const CARD_TITLE = 'text-[21px] leading-tight';
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -195,14 +201,14 @@ const GlobalSettings: Component = () => {
   const [dbStats] = createResource(showSystem, () => api.system.dbStats());
 
   return (
-    <div class="max-w-2xl mx-auto px-6 py-8 space-y-10">
-      <div class="flex items-baseline justify-between gap-3">
-        <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="flex max-w-[760px] flex-col gap-[22px] px-6 py-8 sm:px-12">
+      <div class="flex items-end gap-3">
+        <h1 class="text-[38px] leading-none" style={{ color: 'var(--color-text-primary)' }}>
           Settings
         </h1>
         <Show when={health()}>
           {(h) => (
-            <span class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+            <span class="ml-auto font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               Tack v{h().version}
             </span>
           )}
@@ -210,36 +216,47 @@ const GlobalSettings: Component = () => {
       </div>
 
       {/* Appearance */}
-      <section class="space-y-3">
-        <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <section class={CARD}>
+        <h2 class={CARD_TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Appearance
         </h2>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
           Theme is saved to this browser.
         </p>
-        <div class="flex gap-2">
+        <div
+          class="inline-flex gap-[3px] self-start rounded-full p-[3px] text-[13px]"
+          style={{ 'background-color': 'var(--color-bg-app)' }}
+        >
           <For each={THEMES}>
             {(t) => (
-              <Button
-                variant={theme() === t.value ? 'primary' : 'secondary'}
+              <button
+                type="button"
+                aria-pressed={theme() === t.value ? 'true' : 'false'}
                 onClick={() => chooseTheme(t.value)}
+                class="rounded-full px-4 py-1.5 transition-colors focus:outline-none focus-visible:ring-2"
+                style={{
+                  'background-color': theme() === t.value ? 'var(--color-primary-600)' : 'transparent',
+                  color: theme() === t.value ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+                  'font-weight': theme() === t.value ? 700 : 500,
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
               >
                 {t.label}
-              </Button>
+              </button>
             )}
           </For>
         </div>
       </section>
 
       {/* Data & Backup (local) */}
-      <section class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <section class={CARD}>
+        <h2 class={CARD_TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Local Backup
         </h2>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
           Download a full database backup file, or restore from a previous one.
         </p>
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2.5">
           <Button onClick={() => void downloadBackup()} loading={backingUp()} disabled={backingUp()}>
             Download backup
           </Button>
@@ -263,9 +280,9 @@ const GlobalSettings: Component = () => {
       </section>
 
       {/* Cloud / external backup */}
-      <section class="space-y-4 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <div class="flex items-center gap-3">
-          <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+      <section class={CARD}>
+        <div class="flex items-center gap-2.5">
+          <h2 class={CARD_TITLE} style={{ color: 'var(--color-text-primary)' }}>
             Cloud Backup
           </h2>
           <Show
@@ -275,13 +292,13 @@ const GlobalSettings: Component = () => {
             <Badge tone="success">Connected</Badge>
           </Show>
         </div>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
           Sync your database to an external S3-compatible store (Cloudflare R2,
           Backblaze B2, AWS S3, MinIO). Enter the destination once, then back up
           or restore with one click.
         </p>
 
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="grid gap-x-3.5 gap-y-2.5 sm:grid-cols-2 [&_input]:font-mono [&_input]:text-[12.5px]">
           <Field
             label="Endpoint URL"
             placeholder="https://<account>.r2.cloudflarestorage.com"
@@ -343,7 +360,7 @@ const GlobalSettings: Component = () => {
             disabled={!configured() || cloudBackingUp()}
             title={configured() ? 'Sync the database to cloud storage now' : 'Configure cloud storage first'}
           >
-            <FiUploadCloud size={16} class="mr-1.5" /> Back up now
+            <FiUploadCloud size={16} /> Back up now
           </Button>
           <Button
             variant="secondary"
@@ -352,7 +369,7 @@ const GlobalSettings: Component = () => {
             disabled={!configured() || cloudRestoring()}
             title="Restore the latest cloud backup (applied on next restart)"
           >
-            <FiDownloadCloud size={16} class="mr-1.5" /> Restore latest
+            <FiDownloadCloud size={16} /> Restore latest
           </Button>
           <Button
             variant="secondary"
@@ -361,11 +378,12 @@ const GlobalSettings: Component = () => {
             disabled={!configured() || cloudVerifying()}
             title="Download and validate the latest cloud backup without restoring it"
           >
-            <FiCheckCircle size={16} class="mr-1.5" /> Verify latest
+            <FiCheckCircle size={16} /> Verify latest
           </Button>
           <Show when={configured()}>
             <Button
-              variant="ghost"
+              variant="secondary"
+              class="px-2.5!"
               onClick={() => void refetchBackups()}
               title="Refresh the list of cloud backups"
             >
@@ -376,17 +394,23 @@ const GlobalSettings: Component = () => {
 
         {/* Existing cloud backups */}
         <Show when={configured()}>
-          <div class="rounded-lg border" style={{ 'border-color': 'var(--color-border-light)' }}>
+          <div
+            class="flex flex-col rounded-[22px] px-3.5 py-2.5"
+            style={{ 'background-color': 'var(--color-bg-app)' }}
+          >
             <p
-              class="px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b"
-              style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}
+              class="pb-1.5 pt-1 text-[10.5px] font-bold uppercase tracking-[.1em]"
+              style={{ color: 'var(--color-text-tertiary)' }}
             >
               Cloud backups
             </p>
             <Show
               when={(cloudBackups() ?? []).length > 0}
               fallback={
-                <p class="px-3 py-3 text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                <p
+                  class="border-t py-2 text-[13px]"
+                  style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}
+                >
                   {cloudBackups.loading ? 'Loading…' : 'No cloud backups yet.'}
                 </p>
               }
@@ -395,18 +419,16 @@ const GlobalSettings: Component = () => {
                 <For each={cloudBackups()}>
                   {(b) => (
                     <li
-                      class="flex items-center justify-between gap-3 px-3 py-2 text-sm border-b last:border-b-0"
+                      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 text-[13px]"
                       style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' }}
                     >
-                      <div class="min-w-0">
-                        <div style={{ color: 'var(--color-text-primary)' }}>
-                          {new Date(b.created_at).toLocaleString()}
-                        </div>
-                        <div class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                          {b.item_count} items · {formatBytes(b.bundle_size_bytes)}
-                        </div>
-                      </div>
-                      <div class="flex items-center gap-1">
+                      <span class="font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                        {new Date(b.created_at).toLocaleString()}
+                      </span>
+                      <span>
+                        {b.item_count} items · {formatBytes(b.bundle_size_bytes)}
+                      </span>
+                      <span class="ml-auto flex items-center gap-1.5">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -423,7 +445,7 @@ const GlobalSettings: Component = () => {
                         >
                           Restore
                         </Button>
-                      </div>
+                      </span>
                     </li>
                   )}
                 </For>
@@ -432,27 +454,34 @@ const GlobalSettings: Component = () => {
           </div>
         </Show>
 
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-[11.5px]" style={{ color: 'var(--color-text-tertiary)' }}>
           Restoring is staged and applied on the next server restart. Schema newer
           than your running version is rejected.
         </p>
       </section>
 
       {/* System (advanced) */}
-      <section class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
+      <section
+        class={showSystem() ? 'flex flex-col gap-3 rounded-[28px] px-[22px] py-3.5' : 'rounded-full px-[22px] py-3.5'}
+        style={{ 'background-color': 'var(--color-bg-panel)' }}
+      >
         <button
           type="button"
           onClick={() => setShowSystem((s) => !s)}
-          class="text-lg font-semibold"
-          style={{ color: 'var(--color-text-primary)' }}
+          aria-expanded={showSystem() ? 'true' : 'false'}
+          class="flex w-full items-center gap-2.5 rounded-full text-left focus:outline-none focus-visible:ring-2"
+          style={{ color: 'var(--color-text-primary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
         >
-          System {showSystem() ? '▾' : '▸'}
+          <Show when={showSystem()} fallback={<IconChevronRight size={16} />}>
+            <IconChevronDown size={16} />
+          </Show>
+          <span class="font-heading text-lg">System</span>
         </button>
         <Show when={showSystem()}>
-          <div class="space-y-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <div class="space-y-3 pb-1.5 text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
             <Show when={health()}>
               {(h) => (
-                <div>
+                <div class="font-mono text-xs">
                   <div>Status: {h().status}</div>
                   <div>Version: {h().version}</div>
                   <div>Migrations applied: {h().migrations_applied}</div>
@@ -461,16 +490,24 @@ const GlobalSettings: Component = () => {
             </Show>
             <Show when={dbStats()}>
               {(s) => (
-                <div>
-                  <p class="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                <div
+                  class="rounded-[22px] px-3.5 py-2.5"
+                  style={{ 'background-color': 'var(--color-bg-app)' }}
+                >
+                  <p
+                    class="pb-1.5 pt-1 text-[10.5px] font-bold uppercase tracking-[.1em]"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
                     Table row counts
                   </p>
                   <ul class="mt-1 grid grid-cols-2 gap-x-6">
                     <For each={Object.entries(s().tables)}>
                       {([table, count]) => (
-                        <li class="flex justify-between">
+                        <li class="flex justify-between py-0.5">
                           <span>{table}</span>
-                          <span>{count}</span>
+                          <span class="font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                            {count}
+                          </span>
                         </li>
                       )}
                     </For>

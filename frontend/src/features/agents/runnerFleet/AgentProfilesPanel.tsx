@@ -1,6 +1,7 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Button, EmptyState, Field, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
+import { IconSettings } from '../../../shared/ui/icons';
 import { agentProfilesApi, type AgentProfileSummary } from '../../../shared/execution';
 import { parseOptionalJsonObject } from './format';
 
@@ -88,26 +89,28 @@ const AgentProfilesPanel: Component = () => {
         <Show
           when={rows().length > 0}
           fallback={
-            <EmptyState
-              icon="🧭"
-              title="No agent profiles yet"
-              description="An agent profile bundles the instructions and tool/limits policy an execution request snapshots at creation."
-            />
+            <div class="rounded-[28px] border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
+              <EmptyState
+                icon={<IconSettings size={26} />}
+                title="No agent profiles yet"
+                description="An agent profile bundles the instructions and tool/limits policy an execution request snapshots at creation."
+              />
+            </div>
           }
         >
           <ul class="space-y-2">
             <For each={rows()}>
               {(profile) => (
-                <li class="rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)' }}>
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                <li class="flex flex-col gap-1.5 rounded-[28px] bg-panel px-5 py-[18px]">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {profile.name}
                     </span>
-                    <span class="font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
                       {profile.agent_profile_id}
                     </span>
                   </div>
-                  <p class="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
+                  <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
                 </li>
               )}
             </For>
@@ -116,9 +119,9 @@ const AgentProfilesPanel: Component = () => {
       </Show>
 
       <Show when={profiles.error !== undefined}>
-        <div class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load agent profiles.{' '}
-          <button type="button" class="underline" onClick={() => void refetch()}>
+          <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
           </button>
         </div>
@@ -127,12 +130,12 @@ const AgentProfilesPanel: Component = () => {
       <Show
         when={showForm()}
         fallback={
-          <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setShowForm(true)}>
             + Create agent profile
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-lg border p-3" style={{ 'border-color': 'var(--color-border-light)' }}>
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-[28px] bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="reviewer" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <Field
             label="Instructions"

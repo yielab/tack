@@ -1,6 +1,7 @@
 import { type Component, Show, createResource, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
 import { runnersApi } from '../execution';
+import { IconAgent } from '../ui/icons';
 
 // Lives in `shared/**`, not `features/agents/**`: `Board.tsx`
 // (`features/board/**`) mounts this, and `architecture.test.ts` forbids one
@@ -53,14 +54,15 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
   return (
     <Show when={props.hasItems && !dismissed() && !runnersResult.loading && !runnersResult.error && !anyActiveAgent()}>
       <div
-        class="mx-[18px] mt-3 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm"
-        style={{ 'border-color': 'var(--color-accent-line)', background: 'var(--color-accent-soft)', color: 'var(--color-text-primary)' }}
+        class="mx-[22px] mt-1 mb-2 flex items-center gap-3 rounded-full py-3 pl-[22px] pr-4 text-sm"
+        style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }}
       >
-        <span class="flex-1">This board can run its items with an agent.</span>
-        <A href="/agents" class="font-semibold underline">Turn on</A>
+        <IconAgent size={18} class="flex-shrink-0" />
+        <span class="flex-1 min-w-0">This board can run its items with an agent.</span>
+        <A href="/agents" class="font-bold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>Turn on</A>
         <button
           type="button"
-          class="text-xs"
+          class="rounded-full px-1.5 text-[13px] focus:outline-none focus-visible:ring-2"
           style={{ color: 'var(--color-text-secondary)' }}
           aria-label="Dismiss"
           onClick={() => {

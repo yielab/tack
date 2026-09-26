@@ -5,7 +5,7 @@ Tack ships a two-axis theme system: a **mode** (light or dark) and a **palette**
 sidebar and take effect instantly across the whole app.
 
 The controls live in the **sidebar footer**: a sun/moon button toggles the mode,
-and three coloured dots switch the palette.
+and four coloured dots switch the palette.
 
 ---
 
@@ -19,11 +19,12 @@ overrides the OS preference from then on.
 
 ## Palette
 
-Three palettes ship, each available in light and dark:
+Four palettes ship, each available in light and dark:
 
 | Palette | Accent | Feel |
 |---------|--------|------|
-| **Teal** (default) | teal | calm, the default brand |
+| **Harbor** (default) | harbor blue, with coral | soft, nautical, the default brand |
+| **Teal** | teal | calm |
 | **Clay** | warm terracotta | warm, earthy |
 | **Graphite** | lime on neutral grey | high-contrast, understated |
 
@@ -37,11 +38,11 @@ chart re-colours immediately — there is no reload and no per-view setting.
 Both choices are saved in the browser's `localStorage`:
 
 - `tack_theme` → `light` \| `dark` \| `system`
-- `tack_palette` → `teal` \| `clay` \| `graphite`
+- `tack_palette` → `harbor` \| `teal` \| `clay` \| `graphite`
 
 Because Tack is local-first and single-user, appearance is **per browser** — it is
 not stored in the database and not synced between machines. Clearing site data
-resets both to their defaults (system mode, Teal palette).
+resets both to their defaults (system mode, Harbor palette).
 
 ## Accessibility
 

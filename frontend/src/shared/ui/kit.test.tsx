@@ -8,6 +8,7 @@ import Field from './Field';
 import Modal from './Modal';
 import Drawer from './Drawer';
 import Tabs from './Tabs';
+import { IconList } from './icons';
 
 const disposers: Array<() => void> = [];
 function mount(comp: () => unknown) {
@@ -138,5 +139,19 @@ describe('Tabs', () => {
     expect(tabs()[0].getAttribute('aria-selected')).toBe('false');
     expect(tabs()[1].getAttribute('aria-selected')).toBe('true');
     expect(c.textContent).toContain('panel-b');
+  });
+});
+
+describe('icons', () => {
+  it('draws every instance of the same icon, not just the last one rendered', () => {
+    const c = mount(() => (
+      <>
+        <IconList />
+        <IconList />
+      </>
+    ));
+    const svgs = c.querySelectorAll('svg');
+    expect(svgs).toHaveLength(2);
+    svgs.forEach((svg) => expect(svg.querySelector('path')).not.toBeNull());
   });
 });

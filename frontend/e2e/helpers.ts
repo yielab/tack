@@ -45,7 +45,7 @@ export async function waitForApp(page: Page): Promise<void> {
  */
 export async function setPaletteAndTheme(
   page: Page,
-  palette: 'teal' | 'clay' | 'graphite',
+  palette: 'harbor' | 'teal' | 'clay' | 'graphite',
   mode: 'light' | 'dark',
 ): Promise<void> {
   await page.addInitScript(

@@ -11,10 +11,12 @@ const controlStyle: JSX.CSSProperties = {
   'background-color': 'var(--color-bg-base)',
   color: 'var(--color-text-primary)',
   'border-color': 'var(--color-border-medium)',
+  'caret-color': 'var(--color-primary-600)',
 };
 
+// Single-line controls are pills; multi-line ones use the item radius.
 const controlClass =
-  'w-full rounded-lg border px-3 py-2 transition-colors ' +
+  'w-full min-h-9 rounded-full border px-3.5 py-1.5 text-sm transition-colors ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -36,8 +38,8 @@ export const FieldShell: Component<FieldShellProps> = (props) => (
     <Show when={props.label}>
       <label
         for={props.for}
-        class="text-sm font-medium"
-        style={{ color: 'var(--color-text-primary)' }}
+        class="text-xs"
+        style={{ color: 'var(--color-text-secondary)' }}
       >
         {props.label}
         <Show when={props.required}>
@@ -93,7 +95,11 @@ const Field: Component<FieldProps> = (props) => {
         required={local.required}
         aria-invalid={local.error ? 'true' : undefined}
         class={controlClass}
-        style={{ ...controlStyle, ...ringStyle }}
+        style={{
+          ...controlStyle,
+          ...ringStyle,
+          ...(typeof local.style === 'object' ? local.style : {}),
+        }}
       />
     </FieldShell>
   );

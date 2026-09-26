@@ -65,25 +65,20 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
   };
 
   return (
-    <li
-      class="space-y-2 rounded-lg border p-3"
-      style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}
-    >
+    <li class="space-y-2 rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {props.artifact.name}
         </span>
         <Badge tone="neutral">{props.artifact.kind}</Badge>
         <Show when={!props.artifact.content_verified}>
           <Badge tone="warning">Not verified yet</Badge>
         </Show>
-        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span class="text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {formatSize(props.artifact.size_bytes)}
         </span>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <Button size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
+        <Button
+          class="ml-auto" size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
           Download
         </Button>
       </div>

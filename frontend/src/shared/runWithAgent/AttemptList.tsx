@@ -1,7 +1,7 @@
 import { type Component, For, Show, createSignal } from 'solid-js';
 import { Badge, Button } from '../ui';
 import type { AttemptSummary } from '../execution';
-import { describeModelProvenance, formatUsageEconomics } from './attemptFormat';
+import { NOT_MEASURED_TEXT, describeModelProvenance, formatUsageEconomics } from './attemptFormat';
 import ArtifactDownloadPanel from './ArtifactDownloadPanel';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
@@ -19,12 +19,9 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
   const economics = () => formatUsageEconomics(props.attempt.usage_economics);
 
   return (
-    <li
-      class="space-y-2 rounded-lg border p-3"
-      style={{ 'background-color': 'var(--color-bg-subtle)', 'border-color': 'var(--color-border-light)' }}
-    >
+    <li class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Attempt #{props.attempt.attempt_number}
         </span>
         <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
@@ -34,29 +31,27 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
           </span>
         </Show>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          runner {props.attempt.runner_id}
-        </span>
-        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           leased {relativeTimeFromIso(props.attempt.lease_issued_at)}
+        </span>
+        <span class="ml-auto text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          runner {props.attempt.runner_id}
         </span>
       </div>
 
       {/* Model provenance — a distinct, honest tone per case, never a bare
           "matched" boolean. */}
-      <div class="flex items-start gap-1.5 text-xs">
+      <div class="flex items-start gap-2 text-xs">
         <Badge tone={provenance().tone}>{provenance().label}</Badge>
-        <span style={{ color: 'var(--color-text-secondary)' }}>{provenance().detail}</span>
+        <span class="pt-0.5" style={{ color: 'var(--color-text-secondary)' }}>{provenance().detail}</span>
       </div>
 
       {/* Usage/economics — every dollar figure honestly labeled, "Not
-          measured" rendered as literal text, never $0.00. */}
-      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-        <dt style={{ color: 'var(--color-text-tertiary)' }}>Model/token cost</dt>
-        <dd>{economics().modelTokenCostUsd}</dd>
-        <dt style={{ color: 'var(--color-text-tertiary)' }}>Runner time</dt>
-        <dd>{economics().runnerTime.wallClock}</dd>
-        <dt style={{ color: 'var(--color-text-tertiary)' }}>Runner time cost</dt>
-        <dd>{economics().runnerTime.costUsd}</dd>
+          measured" rendered as literal text, never $0.00. One tile per
+          figure, never summed. */}
+      <dl class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <CostTile label="Model/token cost" value={economics().modelTokenCostUsd} />
+        <CostTile label="Runner time" value={economics().runnerTime.wallClock} />
+        <CostTile label="Runner time cost" value={economics().runnerTime.costUsd} />
       </dl>
 
       <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded()}>
@@ -64,16 +59,16 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
       </Button>
 
       <Show when={expanded()}>
-        <div class="space-y-3 border-t pt-3" style={{ 'border-color': 'var(--color-border-light)' }}>
+        <div class="space-y-5 border-t pt-4" style={{ 'border-color': 'var(--color-border-light)' }}>
           <section>
-            <h4 class="mb-1 text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Timeline
             </h4>
             <EventTimeline requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
           </section>
 
           <section>
-            <h4 class="mb-1 text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Decisions
             </h4>
             <DecisionInbox
@@ -84,7 +79,7 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
           </section>
 
           <section>
-            <h4 class="mb-1 text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Artifacts
             </h4>
             <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
@@ -92,6 +87,31 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
         </div>
       </Show>
     </li>
+  );
+};
+
+/** One cost/usage figure as a tile. An unmeasured figure keeps its literal
+ *  "Not measured" text and is set apart (italic, dashed underline) so it can
+ *  never be read as a real amount. */
+const CostTile: Component<{ label: string; value: string }> = (props) => {
+  const unmeasured = () => props.value === NOT_MEASURED_TEXT;
+  return (
+    <div class="rounded-[20px] px-3.5 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <dt class="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        {props.label}
+      </dt>
+      <dd class="mt-0.5 text-sm">
+        <span
+          class={unmeasured() ? 'inline-block border-b border-dashed italic' : 'font-semibold'}
+          style={{
+            color: unmeasured() ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+            'border-color': 'var(--color-border-medium)',
+          }}
+        >
+          {props.value}
+        </span>
+      </dd>
+    </div>
   );
 };
 

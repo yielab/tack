@@ -8,6 +8,25 @@ import type { CreateItem, Item } from '../types';
 import { toast } from './toast';
 import { getItemTypeMap, resolveLabel } from '../vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
+import { priorityColor } from './PriorityDot';
+
+/** Choice chip (type / priority / estimate): a pill; the chosen one gets the
+ *  accent-soft fill, accent ink and a 2px accent ring. */
+const chipClass = (selected: boolean) =>
+  'transition-all focus:outline-none focus-visible:ring-2 ' +
+  (selected ? 'ring-2 ring-[var(--color-primary-600)]' : 'hover:brightness-[.96]');
+const chipStyle = (selected: boolean) => ({
+  'background-color': selected ? 'var(--color-accent-soft)' : 'var(--color-bg-subtle)',
+  color: selected ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
+  '--tw-ring-color': 'var(--color-primary-600)',
+});
+const sectionLabel = 'block text-xs font-semibold mb-2';
+const pillInputStyle = {
+  'background-color': 'var(--color-bg-base)',
+  'border-color': 'var(--color-border-medium)',
+  color: 'var(--color-text-primary)',
+  '--tw-ring-color': 'var(--color-focus-ring)',
+};
 
 export interface CreateItemModalProps {
   isOpen: boolean;
@@ -220,11 +239,10 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Error message */}
         <Show when={error()}>
           <div
-            class="rounded-lg border p-3 text-sm"
+            class="rounded-[22px] px-4 py-2.5 text-sm font-semibold"
             style={{
-              'background-color': 'var(--color-danger-50)',
-              'border-color': 'var(--color-danger-100)',
-              color: 'var(--color-danger-700)',
+              'background-color': 'var(--color-danger-100)',
+              color: 'var(--color-danger-600)',
             }}
           >
             {error()}
@@ -247,7 +265,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           {/* Item Type (only in create mode) */}
           <Show when={mode() === 'create'} fallback={<div />}>
             <div>
-              <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
+              <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
                 Type
               </label>
               <div class="flex flex-wrap gap-1.5">
@@ -256,18 +274,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                     <button
                       type="button"
                       onClick={() => setItemType(type as ItemType)}
-                      class={`
-                        px-2.5 py-1.5 rounded-md text-xs font-medium transition-all
-                        ${
-                          itemType() === type
-                            ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                            : 'hover:bg-sunken'
-                        }
-                      `}
-                      style={{
-                        "background-color": itemType() === type ? undefined : "var(--color-bg-subtle)",
-                        color: itemType() === type ? undefined : "var(--color-text-secondary)"
-                      }}
+                      class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(itemType() === type)}`}
+                      style={chipStyle(itemType() === type)}
                       disabled={loading()}
                     >
                       <span class="mr-0.5">{config.emoji}</span>
@@ -281,7 +289,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
           {/* Priority */}
           <div>
-            <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
+            <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
               Priority
             </label>
             <div class="flex flex-wrap gap-1.5">
@@ -290,21 +298,15 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   <button
                     type="button"
                     onClick={() => setPriority(prio as Priority)}
-                    class={`
-                      px-2.5 py-1.5 rounded-md text-xs font-medium transition-all
-                      ${
-                        priority() === prio
-                          ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                          : 'hover:bg-sunken'
-                      }
-                    `}
-                    style={{
-                      "background-color": priority() === prio ? undefined : "var(--color-bg-subtle)",
-                      color: priority() === prio ? undefined : "var(--color-text-secondary)"
-                    }}
+                    class={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(priority() === prio)}`}
+                    style={chipStyle(priority() === prio)}
                     disabled={loading()}
                   >
-                    <span class="mr-0.5">{config.emoji}</span>
+                    <span
+                      class="h-2 w-2 shrink-0 rounded-[3px]"
+                      style={{ background: priorityColor(prio as Priority) }}
+                      aria-hidden="true"
+                    />
                     {config.label}
                   </button>
                 )}
@@ -315,7 +317,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Description with WYSIWYG */}
         <div>
-          <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
+          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
             Description
           </label>
           <RichTextEditor
@@ -328,7 +330,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Story Points - Compact */}
         <div>
-          <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
+          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
             {resolveLabel(props.vocabulary, 'story_points')}
           </label>
           <div class="flex flex-wrap gap-1.5">
@@ -337,18 +339,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 <button
                   type="button"
                   onClick={() => setEstimate(estimate() === value ? null : value)}
-                  class={`
-                    w-9 h-9 rounded-md text-sm font-semibold transition-all
-                    ${
-                      estimate() === value
-                        ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                        : 'hover:bg-sunken'
-                    }
-                  `}
-                  style={{
-                    "background-color": estimate() === value ? undefined : "var(--color-bg-subtle)",
-                    color: estimate() === value ? undefined : "var(--color-text-secondary)"
-                  }}
+                  class={`w-9 h-9 rounded-full font-mono text-[13px] font-semibold ${chipClass(estimate() === value)}`}
+                  style={chipStyle(estimate() === value)}
                   disabled={loading()}
                 >
                   {value}
@@ -361,7 +353,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Subtasks/Child Items */}
         <Show when={(mode() === 'create' && itemType() !== 'subtask') || mode() === 'edit'}>
           <div>
-            <label class="block text-sm font-medium text-content-muted mb-2">
+            <label class={`${sectionLabel} text-content-muted`}>
               {mode() === 'edit' ? 'Child Items' : 'Subtasks'}
             </label>
 
@@ -370,7 +362,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               <div class="space-y-2 mb-3">
                 <For each={subtasks()}>
                   {(subtask) => (
-                    <div class="flex items-center gap-2 bg-sunken px-3 py-2 rounded-lg">
+                    <div class="flex items-center gap-2 bg-sunken px-4 py-2 rounded-full">
                       <span class="flex-1 text-content">{subtask.title}</span>
                       <button
                         type="button"
@@ -390,12 +382,12 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               <div class="space-y-2 mb-3">
                 <For each={childItems()}>
                   {(child) => (
-                    <div class="flex items-center gap-2 bg-sunken px-3 py-2 rounded-lg">
+                    <div class="flex items-center gap-2 bg-sunken px-4 py-2 rounded-full">
                       <span class="text-sm text-content-subtle">
                         {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
                       </span>
                       <span class="flex-1 text-content">{child.title}</span>
-                      <span class="text-xs px-2 py-0.5 rounded bg-info-100 text-info-700">
+                      <span class="text-[11px] font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
                         {child.status}
                       </span>
                       <button
@@ -428,7 +420,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   }
                 }}
                 placeholder={mode() === 'edit' ? 'Add a child item...' : 'Add a subtask...'}
-                class="flex-1 px-3 py-2 border border-line-medium rounded-lg bg-elevated text-content placeholder-content-faint focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                class="flex-1 min-h-9 px-3.5 py-1.5 text-sm border rounded-full placeholder-content-faint focus:outline-none focus-visible:ring-2"
+                style={pillInputStyle}
                 disabled={loading()}
               />
               <Button
@@ -446,7 +439,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Tags */}
         <div>
-          <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
+          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
             Tags
           </label>
 
@@ -455,7 +448,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             <div class="flex flex-wrap gap-1.5 mb-2">
               <For each={tags()}>
                 {(tag) => (
-                  <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-brand-100 text-brand-700 rounded-md text-xs font-medium">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-[11px] font-bold">
                     {tag}
                     <button
                       type="button"
@@ -483,12 +476,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 }
               }}
               placeholder="Add tags (frontend, api...)"
-              class="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all"
-              style={{
-                "background-color": "var(--color-bg-base)",
-                "border-color": "var(--color-border-medium)",
-                color: "var(--color-text-primary)"
-              }}
+              class="flex-1 min-h-9 px-3.5 py-1.5 border rounded-full text-sm focus:outline-none focus-visible:ring-2 transition-all"
+              style={pillInputStyle}
               disabled={loading()}
             />
             <Button

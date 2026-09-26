@@ -1,7 +1,7 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, EmptyState } from '../../../shared/ui';
+import { Button, EmptyState, Icons } from '../../../shared/ui';
 
 export interface FilesTabProps {
   itemId: string;
@@ -75,13 +75,15 @@ const FilesTab: Component<FilesTabProps> = (props) => {
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        class="cursor-pointer rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors"
+        class="flex cursor-pointer flex-col items-center gap-2 rounded-[28px] border-2 border-dashed px-5 py-7 text-center text-sm transition-colors focus:outline-none focus-visible:ring-2"
         style={{
           'border-color': dragOver() ? 'var(--color-primary-500)' : 'var(--color-border-medium)',
           'background-color': dragOver() ? 'var(--color-bg-active)' : 'transparent',
           color: 'var(--color-text-secondary)',
+          '--tw-ring-color': 'var(--color-focus-ring)',
         }}
       >
+        <Icons.IconAttachment size={22} />
         <Show when={uploading()} fallback={<>Drop files here, or click to browse (max 50 MB).</>}>
           Uploading…
         </Show>
@@ -99,24 +101,18 @@ const FilesTab: Component<FilesTabProps> = (props) => {
 
       <Show
         when={(files() ?? []).length > 0}
-        fallback={<EmptyState title="No attachments yet" />}
+        fallback={<EmptyState icon={<Icons.IconAttachment size={28} />} title="No attachments yet" />}
       >
-        <ul class="space-y-1">
+        <ul class="space-y-2 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
           <For each={files()}>
             {(f) => (
-              <li
-                class="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                style={{
-                  'background-color': 'var(--color-bg-base)',
-                  'border-color': 'var(--color-border-light)',
-                }}
-              >
+              <li class="flex items-center justify-between gap-2 rounded-[20px] py-2.5 pl-4 pr-2 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
                 <div class="min-w-0 flex-1">
                   <a
                     href={api.attachments.downloadUrl(f.id)}
                     download={f.filename}
-                    class="block truncate font-medium hover:underline"
-                    style={{ color: 'var(--color-primary-700)' }}
+                    class="block truncate font-semibold hover:underline"
+                    style={{ color: 'var(--color-accent-ink)' }}
                   >
                     {f.filename}
                   </a>

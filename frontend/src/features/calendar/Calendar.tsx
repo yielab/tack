@@ -5,6 +5,7 @@ import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { priorityColor } from '../../shared/ui/PriorityDot';
+import { IconCalendar } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
 
 export default function Calendar() {
@@ -124,205 +125,170 @@ export default function Calendar() {
     setDragOverUnscheduled(false);
   };
 
-  return (
-    <div class="min-h-screen p-6" style={{ 'background-color': 'var(--color-bg-base)' }}>
-      <div class="max-w-7xl mx-auto">
-        <div class="mb-6">
-          <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Calendar</h1>
-          <p class="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            Drag items between days to reschedule. Drop on "Unscheduled" to clear a due date.
-          </p>
-        </div>
+  const PRIORITY_LEGEND = [
+    { label: 'Critical', priority: 'critical' },
+    { label: 'High',     priority: 'high' },
+    { label: 'Medium',   priority: 'medium' },
+    { label: 'Low',      priority: 'low' },
+  ] as const;
 
-        <Show when={(items() ?? []).length === 0}>
+  return (
+    <div class="flex flex-col gap-3">
+      <div>
+        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>Calendar</h1>
+        <p class="mt-0.5 text-[13px] text-content-muted">
+          Drag items between days to reschedule. Drop on "Unscheduled" to clear a due date.
+        </p>
+      </div>
+
+      <Show when={(items() ?? []).length === 0}>
+        <div class="rounded-[28px] bg-panel">
           <EmptyState
-            icon="📅"
+            icon={<IconCalendar size={28} />}
             title="No items to show on the calendar"
             description="Add items with due dates in Board or List — they'll appear here automatically."
             action={
-              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/projects/${projectId}/board`)}>
                 Go to Board
               </Button>
             }
           />
-        </Show>
+        </div>
+      </Show>
 
-        <Show when={(items() ?? []).length > 0}>
-          {/* Calendar Controls */}
-          <div
-            class="rounded-lg p-4 mb-6"
-            style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}
-          >
-            <div class="flex items-center justify-between">
-              <Button variant="secondary" onClick={previousMonth}>← Previous</Button>
-              <div class="flex items-center gap-4">
-                <h2 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                  {monthName()}
-                </h2>
-                <Button size="sm" onClick={goToday}>Today</Button>
-              </div>
-              <Button variant="secondary" onClick={nextMonth}>Next →</Button>
-            </div>
+      <Show when={(items() ?? []).length > 0}>
+        {/* Calendar controls + priority legend */}
+        <div class="flex flex-wrap items-center gap-2.5">
+          <Button variant="secondary" onClick={previousMonth}>← Previous</Button>
+          <h2 class="mx-1.5 text-content" style={{ 'font-size': '22px' }}>
+            {monthName()}
+          </h2>
+          <Button variant="secondary" size="sm" onClick={goToday}>Today</Button>
+          <Button variant="secondary" onClick={nextMonth}>Next →</Button>
+          <div class="ml-auto flex flex-wrap gap-3 text-xs text-content-muted">
+            <For each={PRIORITY_LEGEND}>
+              {(p) => (
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityColor(p.priority) }} />
+                  {p.label}
+                </span>
+              )}
+            </For>
           </div>
+        </div>
 
-          {/* Calendar Grid */}
-          <div
-            class="rounded-lg overflow-hidden"
-            style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}
-          >
-            {/* Weekday Headers */}
-            <div class="grid grid-cols-7" style={{ 'border-bottom': '1px solid var(--color-border-light)' }}>
-              <For each={['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']}>
-                {(day) => (
+        {/* Calendar Grid */}
+        <div class="grid grid-cols-7 gap-1.5">
+          {/* Weekday Headers */}
+          <For each={['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']}>
+            {(day) => (
+              <div class="px-2 text-[11px] font-bold uppercase tracking-[.08em] text-content-subtle">
+                {day}
+              </div>
+            )}
+          </For>
+
+          {/* Calendar Days */}
+          <For each={calendarDays()}>
+            {(day) => (
+              <div
+                class="min-w-0 rounded-[18px] p-2 flex flex-col gap-1"
+                style={{
+                  'min-height': '118px',
+                  'background-color': day === null
+                    ? 'transparent'
+                    : dragOverDay() === day
+                    ? 'var(--color-accent2-soft)'
+                    : isToday(day)
+                    ? 'var(--color-accent-soft)'
+                    : 'var(--color-bg-panel)',
+                  outline: dragOverDay() === day ? '2px solid var(--color-accent2)' : 'none',
+                  'outline-offset': '-2px',
+                }}
+                onDragOver={day !== null ? (e) => handleDayDragOver(e, day) : undefined}
+                onDragLeave={day !== null ? clearDragOver : undefined}
+                onDrop={day !== null ? (e) => handleDayDrop(e, day) : undefined}
+              >
+                <Show when={day !== null}>
                   <div
-                    class="p-3 text-center text-sm font-semibold"
-                    style={{
-                      color: 'var(--color-text-secondary)',
-                      'background-color': 'var(--color-bg-base)',
-                      'border-right': '1px solid var(--color-border-light)',
-                    }}
+                    class="text-xs font-bold"
+                    style={{ color: isToday(day!) ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}
                   >
                     {day}
                   </div>
-                )}
-              </For>
-            </div>
 
-            {/* Calendar Days */}
-            <div class="grid grid-cols-7">
-              <For each={calendarDays()}>
-                {(day) => (
-                  <div
-                    class="min-h-32 p-2"
-                    style={{
-                      'border-right': '1px solid var(--color-border-light)',
-                      'border-bottom': '1px solid var(--color-border-light)',
-                      'background-color': day === null
-                        ? 'var(--color-bg-base)'
-                        : dragOverDay() === day
-                        ? 'var(--color-primary-50)'
-                        : isToday(day)
-                        ? 'rgba(59,130,246,0.07)'
-                        : 'transparent',
-                      'outline': dragOverDay() === day ? '2px solid var(--color-primary-400)' : 'none',
-                      'outline-offset': '-2px',
-                    }}
-                    onDragOver={day !== null ? (e) => handleDayDragOver(e, day) : undefined}
-                    onDragLeave={day !== null ? clearDragOver : undefined}
-                    onDrop={day !== null ? (e) => handleDayDrop(e, day) : undefined}
-                  >
-                    <Show when={day !== null}>
-                      <div class="flex flex-col h-full">
+                  <div class="flex-1 flex flex-col gap-1 overflow-y-auto max-h-24">
+                    <For each={getItemsForDate(day!)}>
+                      {(item) => (
                         <div
-                          class="text-sm font-semibold mb-2"
-                          style={{
-                            color: isToday(day!)
-                              ? 'var(--color-primary-600)'
-                              : 'var(--color-text-primary)',
-                          }}
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, item.id)}
+                          onClick={() => setSearchParams({ item: item.id })}
+                          class="text-[11px] px-2 py-[3px] rounded-[10px] cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
+                          style={getPriorityStyle(item.priority)}
+                          title={`${item.title} — drag to reschedule`}
                         >
-                          {day}
+                          <div class="font-bold truncate">{item.title}</div>
+                          <div class="truncate">{item.status}</div>
                         </div>
-
-                        <div class="flex-1 space-y-1 overflow-y-auto max-h-24">
-                          <For each={getItemsForDate(day!)}>
-                            {(item) => (
-                              <div
-                                draggable={true}
-                                onDragStart={(e) => handleDragStart(e, item.id)}
-                                onClick={() => setSearchParams({ item: item.id })}
-                                class="text-xs p-1 rounded cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity select-none"
-                                style={getPriorityStyle(item.priority)}
-                                title={`${item.title} — drag to reschedule`}
-                              >
-                                <div class="font-medium truncate">{item.title}</div>
-                                <div class="opacity-80 truncate">{item.status}</div>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-
-                        <Show when={getItemsForDate(day!).length > 3}>
-                          <div class="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
-                            +{getItemsForDate(day!).length - 3} more
-                          </div>
-                        </Show>
-                      </div>
-                    </Show>
+                      )}
+                    </For>
                   </div>
-                )}
-              </For>
-            </div>
-          </div>
 
-          {/* Unscheduled tray — drag items here to clear their due date */}
-          <div
-            class="mt-6 rounded-lg p-4 transition-colors"
-            style={{
-              'background-color': dragOverUnscheduled()
-                ? 'var(--color-primary-50)'
-                : 'var(--color-bg-elevated)',
-              border: dragOverUnscheduled()
-                ? '2px dashed var(--color-primary-400)'
-                : '2px dashed var(--color-border-medium)',
-            }}
-            onDragOver={handleUnscheduledDragOver}
-            onDragLeave={clearDragOver}
-            onDrop={handleUnscheduledDrop}
-          >
-            <h3 class="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-              Unscheduled ({unscheduledItems().length}) — drop here to remove a due date
-            </h3>
-            <Show
-              when={unscheduledItems().length > 0}
-              fallback={
-                <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                  All items have due dates — drag one here to unschedule it.
-                </p>
-              }
-            >
-              <div class="flex flex-wrap gap-2">
-                <For each={unscheduledItems()}>
-                  {(item) => (
-                    <div
-                      draggable={true}
-                      onDragStart={(e) => handleDragStart(e, item.id)}
-                      onClick={() => setSearchParams({ item: item.id })}
-                      class="text-xs px-2 py-1 rounded cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity select-none"
-                      style={getPriorityStyle(item.priority)}
-                      title={`${item.title} — drag onto a day to schedule`}
-                    >
-                      {item.title}
+                  <Show when={getItemsForDate(day!).length > 3}>
+                    <div class="text-[11px] text-content-muted">
+                      +{getItemsForDate(day!).length - 3} more
                     </div>
-                  )}
-                </For>
+                  </Show>
+                </Show>
               </div>
-            </Show>
-          </div>
+            )}
+          </For>
+        </div>
 
-          {/* Priority Legend */}
-          <div
-            class="mt-4 rounded-lg p-4"
-            style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}
+        {/* Unscheduled tray — drag items here to clear their due date */}
+        <div
+          class="rounded-[28px] px-4 py-3 flex flex-col gap-2 transition-colors"
+          style={{
+            'background-color': dragOverUnscheduled() ? 'var(--color-accent2-soft)' : 'transparent',
+            border: dragOverUnscheduled()
+              ? '2px dashed var(--color-accent2)'
+              : '2px dashed var(--color-border-light)',
+          }}
+          onDragOver={handleUnscheduledDragOver}
+          onDragLeave={clearDragOver}
+          onDrop={handleUnscheduledDrop}
+        >
+          <h3 class="font-sans text-[13px] font-bold text-content">
+            Unscheduled ({unscheduledItems().length}) — drop here to remove a due date
+          </h3>
+          <Show
+            when={unscheduledItems().length > 0}
+            fallback={
+              <p class="text-xs text-content-subtle">
+                All items have due dates — drag one here to unschedule it.
+              </p>
+            }
           >
-            <div class="flex flex-wrap gap-4">
-              <For each={[
-                { label: 'Critical', priority: 'critical' },
-                { label: 'High',     priority: 'high' },
-                { label: 'Medium',   priority: 'medium' },
-                { label: 'Low',      priority: 'low' },
-              ] as const}>
-                {(p) => (
-                  <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded" style={{ 'background-color': priorityColor(p.priority) }} />
-                    <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{p.label}</span>
+            <div class="flex flex-wrap gap-1.5">
+              <For each={unscheduledItems()}>
+                {(item) => (
+                  <div
+                    draggable={true}
+                    onDragStart={(e) => handleDragStart(e, item.id)}
+                    onClick={() => setSearchParams({ item: item.id })}
+                    class="text-xs font-semibold px-2.5 py-[3px] rounded-full cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
+                    style={getPriorityStyle(item.priority)}
+                    title={`${item.title} — drag onto a day to schedule`}
+                  >
+                    {item.title}
                   </div>
                 )}
               </For>
             </div>
-          </div>
-        </Show>
-      </div>
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { type Component, type JSX } from 'solid-js';
 import { A, useParams } from '@solidjs/router';
 import { Button } from '../../shared/ui';
+import { IconBoard } from './icons';
 import { useVocab } from '../vocab/useVocab';
 
 interface Props {
@@ -10,27 +11,32 @@ interface Props {
 const Step: Component<{ n: number; title: string; description: string; action: JSX.Element }> = (
   props,
 ) => (
-  <div class="flex gap-4">
+  <div
+    class="grid items-center gap-3.5 p-3.5 grid-cols-[44px_1fr] sm:grid-cols-[44px_1fr_auto]"
+    style={{ background: 'var(--color-bg-app)', 'border-radius': '24px' }}
+  >
     <div
-      class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+      class="font-heading w-10 h-10 rounded-full grid place-items-center text-lg"
       style={{
-        background: 'var(--color-primary-100)',
-        color: 'var(--color-primary-700)',
+        background: 'var(--color-primary-600)',
+        color: 'var(--color-on-accent)',
       }}
     >
       {props.n}
     </div>
-    <div class="flex-1 min-w-0">
-      <p class="text-sm font-semibold mb-0.5" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="min-w-0">
+      <p class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
         {props.title}
       </p>
-      <p class="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
         {props.description}
       </p>
-      {props.action}
     </div>
+    <div class="col-start-2 sm:col-start-auto whitespace-nowrap">{props.action}</div>
   </div>
 );
+
+const linkClass = 'inline-flex items-center gap-1 text-[13px] font-bold hover:underline';
 
 const EmptyProjectGuide: Component<Props> = (props) => {
   const params = useParams();
@@ -38,68 +44,67 @@ const EmptyProjectGuide: Component<Props> = (props) => {
   const pid = () => params.id;
 
   return (
-    <div class="flex flex-col items-center justify-center py-16 px-4">
-      <div class="w-full max-w-md">
-        <div class="text-center mb-8">
-          <div class="text-5xl mb-4" aria-hidden="true">🚀</div>
-          <h2 class="text-xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+    <div class="w-full max-w-[900px] flex flex-col gap-4 py-4">
+      <div class="flex items-center gap-4">
+        <div
+          class="flex-shrink-0 w-[84px] h-[84px] rounded-full grid place-items-center"
+          style={{ background: 'var(--color-accent2-soft)', color: 'var(--color-accent2-ink)' }}
+          aria-hidden="true"
+        >
+          <IconBoard size={34} />
+        </div>
+        <div class="min-w-0">
+          <h2 class="text-2xl" style={{ color: 'var(--color-text-primary)' }}>
             Your project is ready
           </h2>
           <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             Three steps to hit the ground running.
           </p>
         </div>
+      </div>
 
-        <div
-          class="rounded-xl border p-6 space-y-6"
-          style={{
-            'background-color': 'var(--color-bg-elevated)',
-            'border-color': 'var(--color-border-light)',
-          }}
-        >
-          <Step
-            n={1}
-            title="Add your first item"
-            description="Create a task, bug, epic — whatever your workflow calls it."
-            action={
-              <Button onClick={props.onAddItem}>+ Add item</Button>
-            }
-          />
+      <div
+        class="flex flex-col gap-1.5 p-2.5"
+        style={{ background: 'var(--color-bg-panel)', 'border-radius': '32px' }}
+      >
+        <Step
+          n={1}
+          title="Add your first item"
+          description="Create a task, bug, epic — whatever your workflow calls it."
+          action={
+            <Button onClick={props.onAddItem}>+ Add item</Button>
+          }
+        />
 
-          <div style={{ 'border-top': '1px solid var(--color-border-light)' }} />
+        <Step
+          n={2}
+          title="Make it yours"
+          description={'Rename "Task", "Sprint", and "Epic" to match your domain — software, construction, research, anything.'}
+          action={
+            <A
+              href={`/projects/${pid()}/settings?tab=vocabulary`}
+              class={linkClass}
+              style={{ color: 'var(--color-accent-ink)' }}
+            >
+              Open Vocabulary settings &rarr;
+            </A>
+          }
+        />
 
-          <Step
-            n={2}
-            title="Make it yours"
-            description={'Rename "Task", "Sprint", and "Epic" to match your domain — software, construction, research, anything.'}
-            action={
-              <A
-                href={`/projects/${pid()}/settings?tab=vocabulary`}
-                class="inline-flex items-center gap-1 text-sm font-medium"
-                style={{ color: 'var(--color-primary-600)' }}
-              >
-                Open Vocabulary settings &rarr;
-              </A>
-            }
-          />
-
-          <div style={{ 'border-top': '1px solid var(--color-border-light)' }} />
-
-          <Step
-            n={3}
-            title={`Plan a ${t('sprint').toLowerCase()}`}
-            description="Group items into time-boxed iterations to track progress."
-            action={
-              <A
-                href={`/projects/${pid()}/sprint`}
-                class="inline-flex items-center gap-1 text-sm font-medium"
-                style={{ color: 'var(--color-text-tertiary)' }}
-              >
-                Go to {t('sprint')} →
-              </A>
-            }
-          />
-        </div>
+        <Step
+          n={3}
+          title={`Plan a ${t('sprint').toLowerCase()}`}
+          description="Group items into time-boxed iterations to track progress."
+          action={
+            <A
+              href={`/projects/${pid()}/sprint`}
+              class={linkClass}
+              style={{ color: 'var(--color-accent-ink)' }}
+            >
+              Go to {t('sprint')} →
+            </A>
+          }
+        />
       </div>
     </div>
   );

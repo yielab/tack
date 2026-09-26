@@ -9,39 +9,48 @@
  * dist/assets.
  */
 @font-face {
-  font-family: 'Hanken Grotesk';
+  font-family: 'Figtree';
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url('@fontsource/hanken-grotesk/files/hanken-grotesk-latin-400-normal.woff2') format('woff2');
+  src: url('@fontsource/figtree/files/figtree-latin-400-normal.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Hanken Grotesk';
+  font-family: 'Figtree';
   font-style: normal;
   font-display: swap;
   font-weight: 500;
-  src: url('@fontsource/hanken-grotesk/files/hanken-grotesk-latin-500-normal.woff2') format('woff2');
+  src: url('@fontsource/figtree/files/figtree-latin-500-normal.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Hanken Grotesk';
+  font-family: 'Figtree';
   font-style: normal;
   font-display: swap;
   font-weight: 600;
-  src: url('@fontsource/hanken-grotesk/files/hanken-grotesk-latin-600-normal.woff2') format('woff2');
+  src: url('@fontsource/figtree/files/figtree-latin-600-normal.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Hanken Grotesk';
+  font-family: 'Figtree';
   font-style: normal;
   font-display: swap;
   font-weight: 700;
-  src: url('@fontsource/hanken-grotesk/files/hanken-grotesk-latin-700-normal.woff2') format('woff2');
+  src: url('@fontsource/figtree/files/figtree-latin-700-normal.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Hanken Grotesk';
+  font-family: 'Figtree';
   font-style: normal;
   font-display: swap;
   font-weight: 800;
-  src: url('@fontsource/hanken-grotesk/files/hanken-grotesk-latin-800-normal.woff2') format('woff2');
+  src: url('@fontsource/figtree/files/figtree-latin-800-normal.woff2') format('woff2');
+}
+/* Caprasimo is the display voice: headings, step numbers, primary actions.
+   It ships in one weight only. */
+@font-face {
+  font-family: 'Caprasimo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource/caprasimo/files/caprasimo-latin-400-normal.woff2') format('woff2');
 }
 @font-face {
   font-family: 'JetBrains Mono';
@@ -63,8 +72,9 @@
  *
  * Single source of theme values. The token system has TWO axes:
  *   - mode    → `.dark` class on <html> (theme.ts). `:root` holds LIGHT.
- *   - palette → `data-palette="clay|graphite"` attr on <html> (palette.ts).
- *               No attribute = the default **Teal** palette.
+ *   - palette → `data-palette="harbor|clay|graphite"` attr on <html>
+ *               (palette.ts). **Harbor** (harbor blue + coral) is the default
+ *               palette.ts applies; no attribute = the Teal base values below.
  *
  * Component code (shared/ui/* and features) consumes ONLY these `--color-*`
  * names via inline `style` — never raw hex or Tailwind color literals — so a
@@ -77,7 +87,7 @@
  */
 
 /* ============================================================= *
- *  TEAL — light (default palette, base values + shared aliases) *
+ *  TEAL — light (base values + shared aliases; no data-palette) *
  * ============================================================= */
 :root {
   /* — primitives — */
@@ -140,6 +150,11 @@
   --shadow-xl: 0 22px 52px rgb(15 40 35 / 0.22);
 
   /* — derived aliases (re-resolve per active palette) — */
+  /* Panel: the second ground tone. Large containers (board columns, setting
+     cards, the sidebar) sit on it; the items inside them go back to bg-base. */
+  --color-bg-panel: var(--color-bg-sidebar);
+  /* accent2 as readable text on accent2-soft. */
+  --color-accent2-ink: var(--color-accent2);
   --color-chip: var(--color-bg-subtle);
   --color-bg-hover: var(--color-bg-subtle);
   --color-bg-active: var(--color-accent-soft);
@@ -173,8 +188,8 @@
   --color-info-50: var(--color-accent2-soft);
   --color-info-100: var(--color-accent2-soft);
   --color-info-500: var(--color-accent2);
-  --color-info-600: var(--color-accent2);
-  --color-info-700: var(--color-accent2);
+  --color-info-600: var(--color-accent2-ink);
+  --color-info-700: var(--color-accent2-ink);
 
   /* Back-compat aliases (pre-redesign names still referenced in places). */
   --color-success: var(--color-success-600);
@@ -188,13 +203,23 @@
 
   --color-focus-ring: var(--color-primary-600);
 
-  /* Radius (static across themes). */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  /* Radius (static across themes). The shape language is over-rounded:
+     controls (buttons, inputs, tags, tabs) are pills, items inside a
+     container are --radius-item, the containers themselves --radius-card. */
+  /* These names also back Tailwind's rounded-sm/-md/-lg/-xl/-2xl utilities. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-item: 20px;
+  --radius-card: 28px;
+  --radius-pill: 999px;
 
-  /* Mono font token (JetBrains Mono — ids, kbd hints, estimates). */
+  /* Type: Caprasimo is the display voice (headings, step numbers, primary
+     actions), Figtree the body, JetBrains Mono ids, kbd hints, estimates. */
+  --font-heading: 'Caprasimo', ui-serif, Georgia, serif;
+  --font-body: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -400,6 +425,101 @@
   --color-danger-100: rgb(248 113 113 / 0.13);
 }
 
+/* ============================================================ *
+ *  HARBOR — light (default palette: harbor blue + coral)       *
+ * ============================================================ */
+/* Surfaces, text and ramps from the harborCoral palette in the Claude Design
+   handoff. Where the handoff uses coral (accent-2) for "done" states, the
+   success tokens below stay green: coral sits too close to danger to carry
+   both meanings. Every text pairing clears WCAG AA 4.5:1. */
+:root[data-palette="harbor"] {
+  --color-bg-app: #eef0e8;
+  --color-bg-base: #f6f7f2;
+  --color-bg-elevated: #f6f7f2;
+  --color-bg-sidebar: #dbe4dc;
+  --color-bg-panel: #dbe4dc;
+  --color-bg-subtle: #e3e9e3;
+
+  --color-border-light: #cbd5ce;
+  --color-border-subtle: #e3e9e3;
+
+  --color-text-primary: #16222a;
+  --color-text-secondary: #3f4d49;
+  /* 4.66:1 on bg-panel, the darkest light surface. */
+  --color-text-tertiary: #566660;
+
+  --color-on-accent: #f3f5ef;
+  --color-accent-soft: #e4eef4;
+  --color-accent-line: #c6dae7;
+  --color-accent-ink: #1e4057;
+  --color-accent2: #c8664a;
+  --color-accent2-soft: #fcece6;
+  /* coral as text: the base coral is 3.35:1 on the ground, so text uses the
+     700 step. */
+  --color-accent2-ink: #8a3e27;
+
+  --color-primary-600: #2e5f7f;
+
+  --color-success-600: #36602f;
+  --color-success-100: #e6f0dc;
+  --color-warning-600: #7a540e;
+  --color-warning-100: #fdf3dc;
+  --color-danger-600: #a3392a;
+  --color-danger-100: #f9e5e0;
+
+  --color-bg-overlay: rgb(29 40 37 / 0.5);
+  --color-text-inverse: #f3f5ef;
+
+  --shadow-sm: 0 1px 2px rgb(29 40 37 / 0.14);
+  --shadow-md: 0 3px 10px rgb(29 40 37 / 0.16);
+  --shadow-lg: 0 12px 32px rgb(29 40 37 / 0.22);
+  --shadow-xl: 0 18px 44px rgb(29 40 37 / 0.26);
+}
+
+/* ============================== *
+ *  HARBOR — dark                 *
+ * ============================== */
+.dark[data-palette="harbor"] {
+  --color-bg-app: #0f1a22;
+  --color-bg-base: #142129;
+  --color-bg-elevated: #1a2a34;
+  --color-bg-sidebar: #18262f;
+  --color-bg-panel: #18262f;
+  --color-bg-subtle: #1f2f39;
+
+  --color-border-light: #2a3b45;
+  --color-border-subtle: #1c2b34;
+
+  --color-text-primary: #e8eef0;
+  --color-text-secondary: #a0afb6;
+  --color-text-tertiary: #93a3aa;
+
+  --color-on-accent: #0f1a22;
+  --color-accent-soft: rgb(111 166 201 / 0.14);
+  --color-accent-line: rgb(111 166 201 / 0.3);
+  --color-accent-ink: #a9cde3;
+  --color-accent2: #e58f74;
+  --color-accent2-soft: rgb(229 143 116 / 0.14);
+  --color-accent2-ink: #f2b5a2;
+
+  --color-primary-600: #6fa6c9;
+
+  --color-success-600: #7fc98a;
+  --color-success-100: rgb(127 201 138 / 0.14);
+  --color-warning-600: #e8c585;
+  --color-warning-100: rgb(232 197 133 / 0.14);
+  --color-danger-600: #f08a78;
+  --color-danger-100: rgb(240 138 120 / 0.14);
+
+  --color-bg-overlay: rgb(7 13 17 / 0.62);
+  --color-text-inverse: #0f1a22;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 3px 10px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.55);
+  --shadow-xl: 0 22px 52px rgb(0 0 0 / 0.62);
+}
+
 /*
  * Tailwind utility bridge. Tailwind v4 only generates color utilities
  * for names in its `--color-*` namespace. The runtime tokens above live in
@@ -428,6 +548,7 @@
   --color-accent-ink: var(--color-accent-ink);
   --color-accent2: var(--color-accent2);
   --color-accent2-soft: var(--color-accent2-soft);
+  --color-accent2-ink: var(--color-accent2-ink);
   --color-on-accent: var(--color-on-accent);
 
   /* Semantic ramps (expose existing scales as utilities) */
@@ -457,6 +578,7 @@
   --color-surface: var(--color-bg-base);
   --color-elevated: var(--color-bg-elevated);
   --color-sidebar: var(--color-bg-sidebar);
+  --color-panel: var(--color-bg-panel);
   --color-sunken: var(--color-bg-subtle);
   --color-chip: var(--color-chip);
   --color-hover: var(--color-bg-hover);
@@ -476,7 +598,8 @@
   --color-line-strong: var(--color-border-strong);
 
   /* Fonts */
-  --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
   --font-mono: var(--font-mono);
 }
 
@@ -567,10 +690,44 @@
     --color-danger-600: #f87171;
     --color-danger-100: rgb(248 113 113 / 0.13);
   }
+  /* keep in sync with .dark[data-palette="harbor"] above */
+  :root[data-palette="harbor"]:not(.light):not(.dark) {
+    --color-bg-app: #0f1a22;
+    --color-bg-base: #142129;
+    --color-bg-elevated: #1a2a34;
+    --color-bg-sidebar: #18262f;
+    --color-bg-panel: #18262f;
+    --color-bg-subtle: #1f2f39;
+    --color-border-light: #2a3b45;
+    --color-border-subtle: #1c2b34;
+    --color-text-primary: #e8eef0;
+    --color-text-secondary: #a0afb6;
+    --color-text-tertiary: #93a3aa;
+    --color-on-accent: #0f1a22;
+    --color-accent-soft: rgb(111 166 201 / 0.14);
+    --color-accent-line: rgb(111 166 201 / 0.3);
+    --color-accent-ink: #a9cde3;
+    --color-accent2: #e58f74;
+    --color-accent2-soft: rgb(229 143 116 / 0.14);
+    --color-accent2-ink: #f2b5a2;
+    --color-primary-600: #6fa6c9;
+    --color-success-600: #7fc98a;
+    --color-success-100: rgb(127 201 138 / 0.14);
+    --color-warning-600: #e8c585;
+    --color-warning-100: rgb(232 197 133 / 0.14);
+    --color-danger-600: #f08a78;
+    --color-danger-100: rgb(240 138 120 / 0.14);
+    --color-bg-overlay: rgb(7 13 17 / 0.62);
+    --color-text-inverse: #0f1a22;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 3px 10px rgb(0 0 0 / 0.35);
+    --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.55);
+    --shadow-xl: 0 22px 52px rgb(0 0 0 / 0.62);
+  }
 }
 
 body {
-  font-family: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   margin: 0;
   min-height: 100vh;
   font-size: 14px;
@@ -580,6 +737,20 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* The display face carries every heading by default. In the base layer, so a
+   Tailwind utility (font-sans, font-bold) on a heading that should read in the
+   body face still wins. Caprasimo has one weight: never synthesize a bold. */
+@layer base {
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+}
+h1, h2, h3, h4, .font-heading { font-synthesis: none; }
+
+::selection { background: color-mix(in srgb, var(--color-primary-600) 28%, transparent); }
 
 #root {
   min-height: 100vh;

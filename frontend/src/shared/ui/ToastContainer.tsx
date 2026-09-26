@@ -17,13 +17,13 @@ const ToastItem: Component<{ toast: Toast }> = (props) => (
   <div
     style={{
       display: 'flex', 'align-items': 'center', gap: '9px',
-      padding: '10px 15px', 'border-radius': '11px',
+      padding: '10px 18px', 'border-radius': '999px',
       background: 'var(--color-text-primary)', color: 'var(--color-bg-app)',
-      'font-size': '12.5px', 'font-weight': 600, 'box-shadow': 'var(--shadow-lg)',
+      'font-size': '13px', 'font-weight': 600, 'box-shadow': 'var(--shadow-lg)',
       animation: 'tk-toast .2s ease', 'pointer-events': 'auto',
     }}
   >
-    <span style={{ width: '7px', height: '7px', 'border-radius': '99px', background: dotColor(props.toast.type), 'flex-shrink': 0 }} />
+    <span style={{ width: '8px', height: '8px', 'border-radius': '99px', background: dotColor(props.toast.type), 'flex-shrink': 0 }} />
     <span style={{ flex: 1, 'min-width': 0 }}>{props.toast.message}</span>
     <button
       onClick={() => removeToast(props.toast.id)}

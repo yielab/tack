@@ -2,7 +2,8 @@ import { createSignal, createResource, createMemo, For, Show } from 'solid-js';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
-import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
+import { Button, Field, FieldShell, Badge, Modal, EmptyState } from '../../shared/ui';
+import { IconSprint } from '../../shared/ui/icons';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
@@ -195,35 +196,29 @@ export default function Sprints() {
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div class="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 9rem)' }}>
+    <div class="flex flex-col gap-3.5 overflow-hidden" style={{ height: 'calc(100vh - 9rem)' }}>
       {/* Header */}
-      <div
-        class="shrink-0 px-6 py-4 border-b flex items-center justify-between"
-        style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-base)' }}
-      >
+      <div class="shrink-0 flex items-end gap-3">
         <div>
-          <h1 class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+          <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>
             {t('sprint')} Planning
           </h1>
-          <p class="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="mt-0.5 text-[13px] text-content-muted">
             Drag items from the {t('backlog').toLowerCase()} into a {t('sprint').toLowerCase()}, or between {t('sprint').toLowerCase()}s.
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>+ New {t('sprint')}</Button>
+        <Button class="ml-auto" onClick={openCreate}>+ New {t('sprint')}</Button>
       </div>
 
       {/* Two-pane board */}
-      <div class="flex-1 flex overflow-hidden">
+      <div class="flex-1 min-h-0 flex gap-3.5 overflow-hidden">
         {/* ── Left: Backlog ─────────────────────────────────────────── */}
         <div
-          class="w-72 shrink-0 flex flex-col border-r overflow-hidden transition-colors"
+          class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-[28px] overflow-hidden transition-colors"
           style={{
-            'border-color': 'var(--color-border-light)',
-            'background-color': dragOverZone() === 'backlog'
-              ? 'var(--color-primary-50)'
-              : 'var(--color-bg-subtle)',
+            'background-color': 'var(--color-accent2-soft)',
             outline: dragOverZone() === 'backlog'
-              ? '2px solid var(--color-primary-400)'
+              ? '2px dashed var(--color-primary-600)'
               : 'none',
             'outline-offset': '-2px',
           }}
@@ -231,20 +226,15 @@ export default function Sprints() {
           onDragLeave={clearDragOver}
           onDrop={(e) => handleDrop(e, 'backlog')}
         >
-          <div class="px-4 py-3 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
-            <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          <div class="flex items-center gap-2">
+            <span class="font-heading text-lg" style={{ color: 'var(--color-accent2-ink)' }}>
               {t('backlog')}
             </span>
-            <span
-              class="ml-2 text-xs px-1.5 py-0.5 rounded-full"
-              style={{ 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-secondary)' }}
-            >
-              {backlogItems().length}
-            </span>
+            <Badge>{backlogItems().length}</Badge>
           </div>
 
           <div
-            class="flex-1 overflow-y-auto p-3 space-y-2"
+            class="flex-1 overflow-y-auto flex flex-col gap-2"
             tabindex="0"
             aria-label={`${t('backlog')} items`}
           >
@@ -252,7 +242,7 @@ export default function Sprints() {
               when={backlogItems().length > 0}
               fallback={
                 <div class="flex items-center justify-center h-32 text-center">
-                  <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  <p class="text-xs text-content-muted">
                     All items are assigned to {t('sprint').toLowerCase()}s.
                   </p>
                 </div>
@@ -267,7 +257,7 @@ export default function Sprints() {
 
         {/* ── Right: Sprint lanes ───────────────────────────────────── */}
         <div
-          class="flex-1 flex overflow-x-auto overflow-y-hidden"
+          class="flex-1 min-w-0 flex overflow-x-auto overflow-y-hidden"
           tabindex="0"
           aria-label={`${t('sprint')} lanes`}
         >
@@ -275,17 +265,17 @@ export default function Sprints() {
             when={(activeSprints()?.length ?? 0) > 0}
             fallback={
               <div class="flex-1 flex items-center justify-center">
-                <div class="text-center">
-                  <p class="text-3xl mb-4">🏃</p>
-                  <p class="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-                    No active {t('sprint').toLowerCase()}s yet
-                  </p>
-                  <Button onClick={openCreate}>Create your first {t('sprint')}</Button>
+                <div class="rounded-[28px] bg-panel px-8">
+                  <EmptyState
+                    icon={<IconSprint size={28} />}
+                    title={`No active ${t('sprint').toLowerCase()}s yet`}
+                    action={<Button variant="secondary" size="sm" onClick={openCreate}>Create your first {t('sprint')}</Button>}
+                  />
                 </div>
               </div>
             }
           >
-            <div class="flex gap-4 p-4 h-full">
+            <div class="flex gap-3.5 h-full">
               <For each={activeSprints()}>
                 {(sprint) => {
                   const stats = sprintStats(sprint.id);
@@ -294,23 +284,21 @@ export default function Sprints() {
 
                   return (
                     <div
-                      class="w-72 shrink-0 flex flex-col rounded-xl transition-colors overflow-hidden"
+                      class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-[28px] bg-panel overflow-hidden transition-colors"
                       style={{
-                        'background-color': isOver() && canAccept
-                          ? 'var(--color-primary-50)'
-                          : 'var(--color-bg-elevated)',
-                        border: isOver() && canAccept
-                          ? '2px solid var(--color-primary-400)'
-                          : '1px solid var(--color-border-light)',
+                        outline: isOver() && canAccept
+                          ? '2px dashed var(--color-primary-600)'
+                          : 'none',
+                        'outline-offset': '-2px',
                       }}
                       onDragOver={canAccept ? (e) => handleDragOver(e, sprint.id) : undefined}
                       onDragLeave={canAccept ? clearDragOver : undefined}
                       onDrop={canAccept ? (e) => handleDrop(e, sprint.id) : undefined}
                     >
                       {/* Sprint header */}
-                      <div class="px-4 pt-4 pb-3 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
-                        <div class="flex items-start justify-between mb-1">
-                          <span class="font-semibold text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      <div class="flex flex-col gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="font-heading text-lg truncate text-content">
                             {sprint.name}
                           </span>
                           <Badge tone={STATUS_TONE[sprint.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
@@ -319,85 +307,68 @@ export default function Sprints() {
                         </div>
 
                         <Show when={sprint.start_date || sprint.end_date}>
-                          <p class="text-xs mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <p class="font-mono text-[11.5px] text-content-muted">
                             {formatDate(sprint.start_date) ?? '?'} → {formatDate(sprint.end_date) ?? '?'}
                           </p>
                         </Show>
 
                         {/* Capacity row */}
-                        <div class="flex items-center justify-between text-xs mb-1.5">
-                          <span style={{ color: 'var(--color-text-secondary)' }}>
+                        <div class="flex items-center justify-between text-xs text-content">
+                          <span>
                             {stats.done}/{stats.total} items · {stats.donePts}/{stats.totalPts} pts
                           </span>
-                          <span style={{ color: 'var(--color-text-secondary)' }}>{stats.pct}%</span>
+                          <span class="font-bold">{stats.pct}%</span>
                         </div>
-                        <div class="h-1.5 rounded-full overflow-hidden" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+                        <div class="h-1.5 rounded-full overflow-hidden bg-app">
                           <div
                             class="h-full rounded-full transition-all"
                             style={{
                               width: `${stats.pct}%`,
                               'background-color': stats.pct === 100
-                                ? 'var(--color-success-500)'
-                                : 'var(--color-primary-500)',
+                                ? 'var(--color-success-600)'
+                                : 'var(--color-primary-600)',
                             }}
                           />
                         </div>
 
                         {/* Sprint actions */}
-                        <div class="flex gap-1 mt-2">
-                          <button
-                            class="text-xs px-2 py-1 rounded"
-                            style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
-                            onClick={() => openEdit(sprint)}
-                          >
+                        <div class="flex gap-1.5">
+                          <Button variant="secondary" size="sm" onClick={() => openEdit(sprint)}>
                             Edit
-                          </button>
+                          </Button>
                           <Show when={sprint.status === 'planning'}>
-                            <button
-                              class="text-xs px-2 py-1 rounded"
-                              style={{ 'background-color': 'var(--color-success-light)', color: 'var(--color-success)' }}
-                              onClick={() => updateStatus(sprint.id, 'active')}
-                            >
+                            <Button variant="success" size="sm" onClick={() => updateStatus(sprint.id, 'active')}>
                               Start
-                            </button>
+                            </Button>
                           </Show>
                           <Show when={sprint.status === 'active'}>
-                            <button
-                              class="text-xs px-2 py-1 rounded"
-                              style={{ 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' }}
-                              onClick={() => updateStatus(sprint.id, 'review')}
-                            >
+                            <Button size="sm" onClick={() => updateStatus(sprint.id, 'review')}>
                               Complete
-                            </button>
+                            </Button>
                           </Show>
                           <Show when={sprint.status === 'review'}>
-                            <button
-                              class="text-xs px-2 py-1 rounded"
-                              style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              style={{ 'background-color': 'var(--color-bg-subtle)', border: 'none' }}
                               onClick={() => updateStatus(sprint.id, 'closed')}
                             >
                               Close
-                            </button>
+                            </Button>
                           </Show>
                         </div>
                       </div>
 
                       {/* Items */}
                       <div
-                        class="flex-1 overflow-y-auto p-3 space-y-2"
+                        class="flex-1 overflow-y-auto flex flex-col gap-2"
                         tabindex="0"
                         aria-label={`${sprint.name} items`}
                       >
                         <Show
                           when={itemsForSprint(sprint.id).length > 0}
                           fallback={
-                            <div
-                              class="flex items-center justify-center h-20 rounded-lg border-2 border-dashed text-xs"
-                              style={{
-                                'border-color': 'var(--color-border-medium)',
-                                color: 'var(--color-text-tertiary)',
-                              }}
-                            >
+                            <div class="flex items-center justify-center p-3.5 rounded-[18px] border-2 border-dashed border-line text-center text-xs text-content-muted">
                               {canAccept ? 'Drop items here' : `${t('sprint')} is closed`}
                             </div>
                           }
@@ -440,11 +411,12 @@ export default function Sprints() {
               placeholder="What will be accomplished?"
               rows={2}
               disabled={saving()}
-              class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 disabled:opacity-50"
+              class="w-full resize-none rounded-[var(--radius-item)] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
                 'border-color': 'var(--color-border-medium)',
+                '--tw-ring-color': 'var(--color-focus-ring)',
               }}
             />
           </FieldShell>
@@ -478,46 +450,38 @@ function ItemCard(props: {
       draggable={true}
       onDragStart={(e) => props.onDragStart(e, props.item)}
       onClick={() => props.onOpen({ item: props.item.id })}
-      class="rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity select-none"
-      style={{
-        'background-color': 'var(--color-bg-base)',
-        border: '1px solid var(--color-border-light)',
-      }}
+      class="shrink-0 flex flex-col gap-1 rounded-[18px] px-3 py-2.5 bg-app border-2 border-transparent hover:border-[var(--color-primary-600)] cursor-grab active:cursor-grabbing transition-[box-shadow,border-color] select-none shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)]"
     >
-      <div class="flex items-start gap-2">
+      <div class="flex items-center gap-[7px]">
         <div
-          class="mt-1 w-2 h-2 rounded-full shrink-0"
+          class="w-2 h-2 rounded-[3px] shrink-0"
           style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5">
-            <p class="flex-1 min-w-0 text-xs font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-              {props.item.title}
-            </p>
-            {/* "Run with agent" — same execution
-                surface as Board's per-card trigger: launches a single
-                item's own execution request. */}
-            <span onClick={(e) => e.stopPropagation()}>
-              <RunWithAgentButton
-                itemId={props.item.id}
-                itemTitle={props.item.title}
-                projectId={props.item.project_id}
-                compact
-              />
-            </span>
-          </div>
-          <div class="flex items-center gap-2 mt-0.5">
-            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {props.item.status}
-            </span>
-            <Show when={props.item.estimate}>
-              <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
-                {props.item.estimate} pts
-              </span>
-            </Show>
-          </div>
-        </div>
+        <p class="flex-1 min-w-0 text-[13px] font-bold truncate text-content">
+          {props.item.title}
+        </p>
+        {/* "Run with agent" — same execution
+            surface as Board's per-card trigger: launches a single
+            item's own execution request. */}
+        <span onClick={(e) => e.stopPropagation()}>
+          <RunWithAgentButton
+            itemId={props.item.id}
+            itemTitle={props.item.title}
+            projectId={props.item.project_id}
+            compact
+          />
+        </span>
+      </div>
+      <div class="flex items-center gap-2 text-[11.5px]">
+        <span class="text-content-muted">
+          {props.item.status}
+        </span>
+        <Show when={props.item.estimate}>
+          <span class="ml-auto font-bold text-accent-ink">
+            {props.item.estimate} pts
+          </span>
+        </Show>
       </div>
     </div>
   );

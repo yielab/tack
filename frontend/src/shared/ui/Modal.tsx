@@ -62,7 +62,7 @@ const Modal: Component<ModalProps> = (props) => {
     <Show when={props.isOpen}>
       <Portal>
         <div
-          class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ 'background-color': 'var(--color-bg-overlay)' }}
           onClick={handleBackdrop}
         >
@@ -73,17 +73,14 @@ const Modal: Component<ModalProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex max-h-[90vh] w-full flex-col rounded-lg shadow-xl focus:outline-none',
+              'flex max-h-[90vh] w-full flex-col rounded-[32px] focus:outline-none',
               SIZE[props.size ?? 'md']
             )}
-            style={{ 'background-color': 'var(--color-bg-elevated)' }}
+            style={{ 'background-color': 'var(--color-bg-elevated)', 'box-shadow': 'var(--shadow-lg)' }}
           >
-            <div
-              class="flex items-center justify-between border-b p-6"
-              style={{ 'border-color': 'var(--color-border-light)' }}
-            >
+            <div class="flex items-center justify-between px-6 pt-6 pb-3">
               <h2
-                class="text-xl font-semibold"
+                class="text-xl"
                 style={{ color: 'var(--color-text-primary)' }}
               >
                 {props.title}
@@ -91,23 +88,23 @@ const Modal: Component<ModalProps> = (props) => {
               <button
                 onClick={props.onClose}
                 aria-label="Close"
-                class="rounded p-1 transition-colors focus:outline-none focus-visible:ring-2"
+                class="rounded-full p-1.5 transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2"
                 style={{
                   color: 'var(--color-text-tertiary)',
                   '--tw-ring-color': 'var(--color-focus-ring)',
                 }}
               >
-                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     stroke-linecap="round"
                     stroke-linejoin="round"
-                    stroke-width="2"
+                    stroke-width="2.75"
                     d="M6 18L18 6M6 6l12 12"
                   />
                 </svg>
               </button>
             </div>
-            <div class="flex-1 overflow-y-auto p-6">{props.children}</div>
+            <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2">{props.children}</div>
           </div>
         </div>
       </Portal>

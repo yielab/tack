@@ -49,14 +49,15 @@ The system has **two axes**:
 
 - **Mode** — a `.dark` class on `<html>` (managed by `shared/state/theme.ts`).
   `:root` holds the light values; `.dark` overrides only what differs.
-- **Palette** — a `data-palette="clay|graphite"` attribute on `<html>` (managed by
-  `shared/state/palette.ts`). No attribute = the default **Teal** palette.
+- **Palette** — a `data-palette="harbor|clay|graphite"` attribute on `<html>`
+  (managed by `shared/state/palette.ts`). **Harbor** is the default the app
+  applies; no attribute = the **Teal** base values in `:root`.
 
 So the cascade is `:root` → `.dark` → `:root[data-palette="…"]` →
 `.dark[data-palette="…"]`. Each block redefines only the **primitive** values
 (backgrounds, text tiers, the accent, semantic solids); everything derived (the
 primary ramp, hover/active surfaces, inverse text, focus ring) is expressed once as
-`var()` aliases that re-resolve against whichever palette is active. Adding a fourth
+`var()` aliases that re-resolve against whichever palette is active. Adding another
 palette means adding one primitives block — nothing else changes.
 
 A Tailwind `@theme inline` block re-exposes the runtime tokens under utility names
@@ -72,10 +73,19 @@ fail otherwise.
 
 ### Typography
 
-Two self-hosted fonts (via `@fontsource`, so they work offline):
+Three self-hosted fonts (via `@fontsource`, so they work offline):
 
-- **Hanken Grotesk** — the UI sans (`--font-sans`).
+- **Caprasimo** — the display face: headings, step numbers, buttons
+  (`--font-heading`, utility `font-heading`). One weight; never bold it.
+- **Figtree** — the UI body (`--font-body`, also `--font-sans`).
 - **JetBrains Mono** — ids, estimates, and keycaps (`--font-mono`).
+
+### Shape
+
+The shape language is over-rounded. Controls — buttons, inputs, tags, tab
+pills, banners — are pills (`--radius-pill`). Containers such as board columns
+and settings cards take `--radius-card` (28px) on the `--color-bg-panel` fill,
+and the items inside them take `--radius-item` (20px) back on the page ground.
 
 ## Adding a UI component
 

@@ -50,7 +50,7 @@ const GeneralPanel: Component = () => {
   };
 
   return (
-    <div class="max-w-xl space-y-4">
+    <div class="flex max-w-[560px] flex-col gap-3">
       <Field label="Name" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
 
       <FieldShell label="Description" for="project-desc">
@@ -59,7 +59,7 @@ const GeneralPanel: Component = () => {
           rows={3}
           value={description()}
           onInput={(e) => setDescription(e.currentTarget.value)}
-          class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="min-h-20 w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',
@@ -71,23 +71,28 @@ const GeneralPanel: Component = () => {
 
       <FieldShell label="Type">
         <div>
-          <Badge>{project()?.project_type ?? '—'}</Badge>
+          <Badge tone="primary" class="text-xs!">{project()?.project_type ?? '—'}</Badge>
         </div>
       </FieldShell>
 
-      <div class="flex items-center gap-2 pt-2">
+      <div class="mt-1.5 flex items-center gap-2.5">
         <Button onClick={() => void save()} loading={saving()} disabled={saving()}>
           Save
         </Button>
         <Show
           when={project()?.archived}
           fallback={
-            <Button variant="secondary" onClick={() => void setArchived(true)}>
+            <Button
+              variant="secondary"
+              class="ml-auto"
+              style={{ color: 'var(--color-danger-600)' }}
+              onClick={() => void setArchived(true)}
+            >
               Archive project
             </Button>
           }
         >
-          <Button variant="secondary" onClick={() => void setArchived(false)}>
+          <Button variant="secondary" class="ml-auto" onClick={() => void setArchived(false)}>
             Restore project
           </Button>
         </Show>

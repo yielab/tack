@@ -1,5 +1,5 @@
 import { type Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { Badge, Button, EmptyState, Field } from '../ui';
+import { Badge, Button, EmptyState, Field, Icons } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
@@ -58,7 +58,11 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
         when={requests().length > 0}
         fallback={
           <Show when={store.listStatus() !== 'loading'}>
-            <EmptyState title="No execution requests yet" description="Use “Run with agent” to start one." />
+            <EmptyState
+              icon={<Icons.IconAgent size={28} />}
+              title="No execution requests yet"
+              description="Use “Run with agent” to start one."
+            />
           </Show>
         }
       >
@@ -139,11 +143,8 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
   });
 
   return (
-    <li class="space-y-2 rounded-lg border p-3" style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}>
+    <li class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xs" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          {summary()?.request_id ?? '—'}
-        </span>
         <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
         <Show when={!stateInfo().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -152,6 +153,9 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
         </Show>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
+        </span>
+        <span class="ml-auto text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          {summary()?.request_id ?? '—'}
         </span>
         <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>
           <Badge tone="warning">{props.record.cancellation.pending ? 'Cancellation pending' : 'Cancellation requested'}</Badge>
@@ -193,7 +197,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
           return a.data.length > 0 ? (
             <AttemptList requestId={summary()?.request_id ?? ''} attempts={a.data} />
           ) : (
-            <p class="rounded-md border border-dashed px-2 py-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+            <p class="rounded-[20px] border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
               No attempts yet.
             </p>
           );
@@ -214,8 +218,12 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
       </div>
 
       <Show when={reconcileOpen()}>
-        <form class="space-y-2 rounded-md border p-2" style={{ 'border-color': 'var(--color-border-light)' }} onSubmit={reconcile}>
-          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <form
+          class="space-y-3 rounded-[28px] p-5"
+          style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}
+          onSubmit={reconcile}
+        >
+          <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             This request needs an operator's explicit decision before it can requeue — enter the recovery key and a
             reason (audited).
           </p>
@@ -226,7 +234,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
             required
           />
           <Field label="Reason" value={reason()} onInput={(e) => setReason(e.currentTarget.value)} required />
-          <div class="flex justify-end gap-2">
+          <div class="flex justify-end gap-2 pt-1">
             <Button type="button" size="sm" variant="secondary" onClick={() => setReconcileOpen(false)} disabled={busy()}>
               Cancel
             </Button>

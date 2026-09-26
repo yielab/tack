@@ -65,20 +65,22 @@ const ProjectSettings: Component = () => {
   };
 
   return (
-    <div class="mx-auto max-w-4xl px-6 py-8">
-      <div class="flex items-start justify-between mb-1">
-        <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-          Project Settings
-        </h1>
-        <Button variant="secondary" size="sm" onClick={openSaveModal}>
+    <div class="flex flex-col gap-[18px] px-6 py-7 sm:px-12">
+      <div class="flex items-end gap-3">
+        <div class="min-w-0">
+          <h1 class="text-[36px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+            Project Settings
+          </h1>
+          <Show when={project()}>
+            <p class="truncate text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {project()!.name}
+            </p>
+          </Show>
+        </div>
+        <Button variant="secondary" class="ml-auto" onClick={openSaveModal}>
           Save as Template
         </Button>
       </div>
-      <Show when={project()}>
-        <p class="mb-6 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          {project()!.name}
-        </p>
-      </Show>
 
       <Tabs tabs={TABS} active={active()} onChange={setActive}>
         <Switch>
@@ -134,7 +136,7 @@ const ProjectSettings: Component = () => {
               onInput={(e) => setTemplateDesc(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              class="w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',

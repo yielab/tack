@@ -6,6 +6,8 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import type { Item, Priority, UpdateItem } from '../../shared/types';
+import { Button, Skeleton } from '../../shared/ui';
+import { priorityColor } from '../../shared/ui/PriorityDot';
 
 // ── Pure helpers (exported for unit testing) ──────────────────────────────────
 
@@ -76,9 +78,6 @@ const COLUMNS: ColDef[] = [
 ];
 
 const PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low', 'none'];
-const PRIORITY_EMOJI: Record<string, string> = {
-  critical: '🔥', high: '⬆️', medium: '➡️', low: '⬇️', none: '—',
-};
 
 const COLS_STORAGE_KEY = 'tack_table_cols';
 const DENSITY_STORAGE_KEY = 'tack_table_density';
@@ -116,7 +115,7 @@ export default function Table() {
   const [colMenuOpen, setColMenuOpen] = createSignal(false);
 
   // Row padding driven by the density toggle (comfortable default / compact).
-  const cellPad = () => (density() === 'compact' ? 'px-3 py-0.5' : 'px-3 py-1.5');
+  const cellPad = () => (density() === 'compact' ? 'px-3 py-1' : 'px-3 py-2.5');
 
   function toggleDensity() {
     setDensity((d) => {
@@ -206,66 +205,51 @@ export default function Table() {
   };
 
   return (
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-3.5">
       {/* Toolbar: filter + column picker */}
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3">
         <input
           type="search"
           placeholder="Filter…"
           value={query()}
           onInput={(e) => setQuery(e.currentTarget.value)}
           aria-label="Filter items"
-          class="px-3 py-1.5 rounded-md text-sm w-56"
-          style={{
-            background: 'var(--color-bg-subtle)',
-            border: '1px solid var(--color-border-light)',
-            color: 'var(--color-text-primary)',
-          }}
+          class="min-h-9 px-3.5 py-1.5 rounded-full text-sm w-56 border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
         />
-        <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <span class="text-[13px] text-content-subtle">
           {rows().length} item{rows().length === 1 ? '' : 's'}
         </span>
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={toggleDensity}
           aria-pressed={density() === 'compact'}
           title="Toggle row density"
-          class="ml-auto px-3 py-1.5 rounded-md text-sm font-medium"
-          style={{
-            background: 'var(--color-bg-subtle)',
-            border: '1px solid var(--color-border-light)',
-            color: 'var(--color-text-secondary)',
-          }}
+          class="ml-auto"
         >
           {density() === 'compact' ? 'Comfortable' : 'Compact'}
-        </button>
+        </Button>
         <div class="relative">
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => setColMenuOpen((o) => !o)}
-            class="px-3 py-1.5 rounded-md text-sm font-medium"
-            style={{
-              background: 'var(--color-bg-subtle)',
-              border: '1px solid var(--color-border-light)',
-              color: 'var(--color-text-secondary)',
-            }}
+            style={{ 'background-color': 'var(--color-bg-panel)' }}
           >
             Columns ▾
-          </button>
+          </Button>
           <Show when={colMenuOpen()}>
             <div
-              class="absolute right-0 mt-1 z-20 rounded-md py-1 min-w-40"
-              style={{
-                background: 'var(--color-bg-base)',
-                border: '1px solid var(--color-border-light)',
-                'box-shadow': '0 4px 12px var(--color-shadow)',
-              }}
+              class="absolute right-0 mt-2 z-20 w-56 flex flex-col gap-0.5 p-2.5 rounded-[22px] bg-surface"
+              style={{ 'box-shadow': 'var(--shadow-lg)' }}
             >
               <For each={COLUMNS}>
                 {(c) => (
-                  <label class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer">
+                  <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-[14px] text-[13px] text-content cursor-pointer hover:bg-sunken">
                     <input
                       type="checkbox"
+                      class="w-4 h-4"
+                      style={{ 'accent-color': 'var(--color-primary-600)' }}
                       checked={!hidden().has(c.key)}
                       onChange={() => toggleColumn(c.key)}
                     />
@@ -280,25 +264,38 @@ export default function Table() {
 
       <Show
         when={!loading()}
-        fallback={<div class="py-12 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading…</div>}
+        fallback={
+          <div class="rounded-[28px] bg-panel p-3.5 flex flex-col gap-3" role="status">
+            <span class="sr-only">Loading…</span>
+            <For each={[1, 2, 3, 4, 5]}>
+              {() => (
+                <div class="grid gap-2.5" style={{ 'grid-template-columns': '2fr 1fr 1fr 1fr' }}>
+                  <Skeleton height="10px" rounded />
+                  <Skeleton height="10px" rounded />
+                  <Skeleton height="10px" rounded />
+                  <Skeleton height="10px" rounded />
+                </div>
+              )}
+            </For>
+          </div>
+        }
       >
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="py-12 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            <div class="rounded-[28px] bg-panel py-12 text-center text-sm text-content-muted">
               No items {query() ? 'match your filter' : 'yet'}.
             </div>
           }
         >
-          <div class="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--color-border-light)' }}>
-            <table class="w-full text-sm border-collapse">
+          <div class="overflow-x-auto rounded-[28px] bg-panel px-2 pt-2 pb-1">
+            <table class="w-full border-collapse" style={{ 'font-size': '13.5px' }}>
               <thead>
-                <tr style={{ background: 'var(--color-bg-subtle)' }}>
+                <tr>
                   <For each={visibleColumns()}>
                     {(c) => (
                       <th
-                        class="text-left px-3 py-2 font-medium select-none cursor-pointer whitespace-nowrap"
-                        style={{ color: 'var(--color-text-secondary)' }}
+                        class="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-[.08em] select-none cursor-pointer whitespace-nowrap text-content-subtle border-b border-line"
                         onClick={() => toggleSort(c.key)}
                         aria-sort={sortKey() === c.key ? (sortDir() === 'asc' ? 'ascending' : 'descending') : 'none'}
                       >
@@ -315,10 +312,8 @@ export default function Table() {
                 <For each={rows()}>
                   {(item) => (
                     <tr
-                      style={{
-                        'border-top': '1px solid var(--color-border-light)',
-                        opacity: saving() === item.id ? '0.5' : '1',
-                      }}
+                      class="hover:bg-hover transition-[opacity,background-color] [&:not(:last-child)>td]:border-b [&>td]:border-line"
+                      style={{ opacity: saving() === item.id ? '0.5' : '1' }}
                     >
                       <For each={visibleColumns()}>
                         {(c) => (
@@ -328,11 +323,8 @@ export default function Table() {
                               fallback={
                                 <button
                                   type="button"
-                                  class="text-left w-full truncate"
-                                  style={{
-                                    color: 'var(--color-text-primary)',
-                                    cursor: c.editable ? 'text' : 'default',
-                                  }}
+                                  class={`text-left w-full truncate text-content decoration-dotted underline-offset-4 ${c.editable ? 'hover:underline' : ''}`}
+                                  style={{ cursor: c.editable ? 'text' : 'default' }}
                                   onClick={() => c.editable && setEditing({ id: item.id, key: c.key })}
                                 >
                                   {renderCell(item, c, typeMap)}
@@ -367,7 +359,7 @@ function renderCell(
     case 'title':
       return (
         <span class="inline-flex items-center gap-2">
-          <span class="font-medium">{item.title}</span>
+          <span class="font-bold">{item.title}</span>
         </span>
       );
     case 'item_type': {
@@ -378,11 +370,20 @@ function renderCell(
     case 'status':
       return <span>{item.status}</span>;
     case 'priority':
-      return <span>{PRIORITY_EMOJI[item.priority] ?? ''} {item.priority}</span>;
+      return (
+        <span class="inline-flex items-center gap-1.5 capitalize">
+          <span
+            class="w-2 h-2 flex-none rounded-[3px]"
+            style={{ background: priorityColor(item.priority) }}
+            aria-hidden="true"
+          />
+          {item.priority}
+        </span>
+      );
     case 'assignee':
       return <span>{item.assignee || '—'}</span>;
     case 'due_date':
-      return <span>{item.due_date ? item.due_date.slice(0, 10) : '—'}</span>;
+      return <span class="font-mono text-xs">{item.due_date ? item.due_date.slice(0, 10) : '—'}</span>;
   }
 }
 
@@ -392,10 +393,13 @@ function renderEditor(
   statuses: string[],
   commit: (item: Item, key: SortKey, raw: string) => void,
 ) {
+  // Editing: a pill control with the accent ring.
   const baseStyle = {
     background: 'var(--color-bg-base)',
-    border: '1px solid var(--color-primary-500)',
+    border: 'none',
+    'box-shadow': '0 0 0 2px var(--color-primary-600)',
     color: 'var(--color-text-primary)',
+    'font-weight': 600,
   };
   const onKey = (e: KeyboardEvent, el: HTMLInputElement | HTMLSelectElement) => {
     if (e.key === 'Enter') el.blur();
@@ -406,7 +410,7 @@ function renderEditor(
     return (
       <select
         autofocus
-        class="px-2 py-1 rounded w-full"
+        class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
         onChange={(e) => commit(item, 'status', e.currentTarget.value)}
         onBlur={(e) => commit(item, 'status', e.currentTarget.value)}
@@ -421,7 +425,7 @@ function renderEditor(
     return (
       <select
         autofocus
-        class="px-2 py-1 rounded w-full"
+        class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
         onChange={(e) => commit(item, 'priority', e.currentTarget.value)}
         onBlur={(e) => commit(item, 'priority', e.currentTarget.value)}
@@ -438,7 +442,7 @@ function renderEditor(
         type="date"
         autofocus
         value={item.due_date ? item.due_date.slice(0, 10) : ''}
-        class="px-2 py-1 rounded w-full"
+        class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
         onBlur={(e) => commit(item, 'due_date', e.currentTarget.value)}
         onKeyDown={(e) => onKey(e, e.currentTarget)}
@@ -451,7 +455,7 @@ function renderEditor(
       type="text"
       autofocus
       value={c.key === 'assignee' ? (item.assignee ?? '') : item.title}
-      class="px-2 py-1 rounded w-full"
+      class="px-3 py-1 rounded-full w-full focus:outline-none"
       style={baseStyle}
       onBlur={(e) => commit(item, c.key, e.currentTarget.value)}
       onKeyDown={(e) => onKey(e, e.currentTarget)}

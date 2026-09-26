@@ -17,23 +17,28 @@ const AdvancedSection: Component = () => {
   const [open, setOpen] = createSignal(false);
 
   return (
-    <section id="advanced" class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
-      <button
-        type="button"
-        class="flex items-center gap-2 text-sm font-semibold"
-        style={{ color: 'var(--color-text-primary)' }}
-        onClick={() => setOpen(!open())}
-        aria-expanded={open()}
-      >
-        <Show when={open()} fallback={<IconChevronRight size={14} />}>
-          <IconChevronDown size={14} />
+    <section id="advanced" class="space-y-4">
+      <div class="flex flex-wrap items-center gap-2.5 rounded-full bg-panel px-[22px] py-3.5">
+        <button
+          type="button"
+          class="flex items-center gap-2.5"
+          style={{ color: 'var(--color-text-primary)' }}
+          onClick={() => setOpen(!open())}
+          aria-expanded={open()}
+        >
+          <Show when={open()} fallback={<IconChevronRight size={14} />}>
+            <IconChevronDown size={14} />
+          </Show>
+          <span class="font-heading text-[18px]">Advanced</span>
+        </button>
+        {/* Stays unrendered while collapsed: its vocabulary belongs to Advanced only. */}
+        <Show when={open()}>
+          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+            Enroll additional machines, manage fleets, and configure agent profiles.
+          </p>
         </Show>
-        Advanced
-      </button>
+      </div>
       <Show when={open()}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          Enroll additional machines, manage fleets, and configure agent profiles.
-        </p>
         <RunnerFleetSection />
       </Show>
     </section>

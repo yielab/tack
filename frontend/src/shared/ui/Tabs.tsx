@@ -38,7 +38,7 @@ const Tabs: Component<TabsProps> = (props) => {
     <div class={props.class}>
       <div
         role="tablist"
-        class="flex gap-1 border-b"
+        class="flex border-b"
         style={{ 'border-color': 'var(--color-border-light)' }}
         onKeyDown={onKey}
       >
@@ -52,14 +52,15 @@ const Tabs: Component<TabsProps> = (props) => {
                 aria-selected={selected() ? 'true' : 'false'}
                 tabindex={selected() ? 0 : -1}
                 onClick={() => props.onChange(tab.id)}
-                class="-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2"
+                class="-mb-px border-b-[3px] px-1 pb-2.5 pt-1 mr-4 text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={{
                   'border-color': selected()
                     ? 'var(--color-primary-600)'
                     : 'transparent',
                   color: selected()
-                    ? 'var(--color-primary-700)'
+                    ? 'var(--color-accent-ink)'
                     : 'var(--color-text-secondary)',
+                  'font-weight': selected() ? 700 : 500,
                   '--tw-ring-color': 'var(--color-focus-ring)',
                 }}
               >

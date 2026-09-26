@@ -14,7 +14,7 @@ export function typeBadgeTone(key: string): { bg: string; fg: string } {
     case 'epic':
       return { bg: 'var(--color-accent-soft)', fg: 'var(--color-accent-ink)' };
     case 'feature':
-      return { bg: 'var(--color-accent2-soft)', fg: 'var(--color-accent2)' };
+      return { bg: 'var(--color-accent2-soft)', fg: 'var(--color-accent2-ink)' };
     case 'bug':
       return { bg: 'var(--color-danger-100)', fg: 'var(--color-danger-600)' };
     default:
@@ -37,7 +37,7 @@ const TypeBadge: Component<TypeBadgeProps> = (props) => {
   return (
     <span
       class={clsx(
-        'inline-flex items-center rounded-md font-semibold',
+        'inline-flex items-center whitespace-nowrap rounded-full font-bold',
         props.class
       )}
       style={{
@@ -45,7 +45,7 @@ const TypeBadge: Component<TypeBadgeProps> = (props) => {
         color: tone().fg,
         'font-size': '10.5px',
         'letter-spacing': '.01em',
-        padding: '2px 7px',
+        padding: '2px 8px',
         ...props.style,
       }}
     >
