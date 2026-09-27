@@ -49,7 +49,7 @@ platform="${os_tag}-${arch_tag}"
 
 # Only these are published as prebuilt binaries (see release.yml matrix).
 case "$platform" in
-  linux-x86_64|macos-aarch64|macos-x86_64) ;;
+  linux-x86_64|linux-aarch64|macos-aarch64|macos-x86_64) ;;
   *) err "no prebuilt binary for '$platform' yet. Build from source: https://github.com/$REPO" ;;
 esac
 
@@ -80,10 +80,23 @@ urls="$(fetch "$API?per_page=100" | grep -o '"browser_download_url": *"[^"]*"' |
 # Excluded explicitly; this script installs the board binary only.
 if [ -n "$VERSION" ]; then
   url="$(printf '%s\n' "$urls" | grep "/download/$VERSION/" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
-  [ -n "$url" ] || err "no asset for $VERSION on $platform"
+  if [ -z "$url" ]; then
+    # linux-aarch64 joined the release matrix after v0.1.0-beta.9 — a version
+    # older than that will never have this asset, which reads like a bug
+    # unless the message says so.
+    if [ "$platform" = "linux-aarch64" ]; then
+      err "no asset for $VERSION on $platform. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pick a newer tag, or build from source: https://github.com/$REPO"
+    fi
+    err "no asset for $VERSION on $platform"
+  fi
 else
   url="$(printf '%s\n' "$urls" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
-  [ -n "$url" ] || err "no published $platform asset found"
+  if [ -z "$url" ]; then
+    if [ "$platform" = "linux-aarch64" ]; then
+      err "no published $platform asset found. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pass TACK_VERSION to pick a newer tag, or build from source: https://github.com/$REPO"
+    fi
+    err "no published $platform asset found"
+  fi
 fi
 
 asset="$(basename "$url")"

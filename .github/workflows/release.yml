@@ -1,9 +1,10 @@
 name: Release
 
 # Builds single-binary distributions (server with embedded SPA + CLI) for
-# Linux, macOS (Intel + Apple Silicon), and Windows, then attaches them to a
-# GitHub Release together with a SHA256SUMS checksum file, SBOMs (CycloneDX),
-# and build-provenance attestations. Triggered by pushing a version tag:
+# Linux (x86_64 + ARM64), macOS (Intel + Apple Silicon), and Windows, then
+# attaches them to a GitHub Release together with a SHA256SUMS checksum file,
+# SBOMs (CycloneDX), and build-provenance attestations. Triggered by pushing
+# a version tag:
 #
 #   git tag v0.1.0-beta.7 && git push origin v0.1.0-beta.7
 
@@ -129,6 +130,13 @@ jobs:
             os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             archive: tar.gz
+          # ubuntu-24.04-arm is a GitHub-hosted runner (free for public repos)
+          # with native ARM64 hardware — a real musl build, no cross-linker
+          # setup needed, same as the x86_64 leg above.
+          - platform: linux-aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: tar.gz
           - platform: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
@@ -181,7 +189,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Install musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+        if: contains(matrix.target, '-linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       # cargo-auditable embeds the dependency list into the binary so it can be
@@ -517,7 +525,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,desktop-linux,desktop-macos-aarch64,desktop-macos-x86_64,desktop-windows,sbom}"
+          pattern: "{linux-x86_64,linux-aarch64,macos-aarch64,macos-x86_64,windows-x86_64,desktop-linux,desktop-macos-aarch64,desktop-macos-x86_64,desktop-windows,sbom}"
 
       - name: Generate SHA256SUMS
         working-directory: dist
@@ -541,7 +549,18 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          files: dist/*
+          # install.sh/install.ps1 ride along so every release carries a
+          # pinned copy of the installer it shipped with. The docs' one-liner
+          # fetches the script from `main`, which moves; anyone who wants the
+          # exact installer a given tag was tested with fetches it from that
+          # release instead. They come straight from the repo checked out
+          # above, not from dist/, and SHA256SUMS below stays archive-only
+          # rather than growing a second verification story for two small
+          # scripts.
+          files: |
+            dist/*
+            install.sh
+            install.ps1
           # The unsigned-app warning plus the tag's CHANGELOG section, rendered
           # above; GitHub's own generated notes (PR list, full-changelog link)
           # are appended after it.
@@ -550,6 +569,74 @@ jobs:
           # Tags with a pre-release suffix (v0.1.0-beta.7) are marked as
           # GitHub pre-releases and excluded from /releases/latest.
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  homebrew-tap:
+    name: Publish Homebrew formula
+    needs: release
+    # Same guard as `container` — only a real version-tag push publishes
+    # anything; a workflow_dispatch dry run never touches the tap.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      # Rewrites packaging/homebrew/tack.rb's version and three sha256 lines
+      # from this tag's own SHA256SUMS — needs only python3 and curl, both on
+      # ubuntu-latest already; `release` has finished by the time this job
+      # starts (needs: release), so the asset it reads is there.
+      - name: Point the formula at this release
+        run: scripts/sync-packaging.sh "$GITHUB_REF_NAME"
+
+      # `if: secrets.X` is not valid in a job- or step-level condition —
+      # secrets have to pass through `env:` first and get tested in shell.
+      - name: Check for the tap token
+        id: tap-token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TAP_TOKEN:-}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout yielab/homebrew-tap
+        if: steps.tap-token.outputs.has_token == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: yielab/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Publish the formula to the tap
+        if: steps.tap-token.outputs.has_token == 'true'
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          cp ../packaging/homebrew/tack.rb Formula/tack.rb
+          git config user.name "yielab"
+          git config user.email "info@yielab.com"
+          git add Formula/tack.rb
+          if git diff --cached --quiet; then
+            echo "Formula already matches this release — nothing to push."
+            exit 0
+          fi
+          git commit -m "tack ${GITHUB_REF_NAME}"
+          git push
+
+      # A missing token is not a release failure — the tap is a convenience
+      # on top of the archives/installer, not a gate. The manual fallback is
+      # the same two commands this job just ran.
+      - name: Note the formula was not published
+        if: steps.tap-token.outputs.has_token == 'false'
+        run: |
+          echo "::notice::HOMEBREW_TAP_TOKEN is not set — the Homebrew formula was not published to yielab/homebrew-tap. To publish it by hand: run 'scripts/sync-packaging.sh ${GITHUB_REF_NAME}' in this repo, then copy packaging/homebrew/tack.rb to Formula/tack.rb in yielab/homebrew-tap and commit/push it there."
 
   container:
     name: Publish container image (ghcr.io)
