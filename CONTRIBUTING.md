@@ -597,6 +597,13 @@ Tack uses a simple two-long-lived-branch model:
   Linux/macOS/Windows and attaches them to a GitHub Release with checksums, SBOMs,
   and build-provenance attestations. This is a maintainer action, not something a
   contributor's PR does.
+- Once that release workflow finishes, run `scripts/sync-packaging.sh <tag>` and
+  commit the refreshed recipes (`packaging/homebrew`, `aur`, `nix`, `scoop`) — they
+  name a tag and carry its digests, and nothing else updates them. The workflow's
+  `homebrew-tap` job also pushes the Homebrew formula to `yielab/homebrew-tap`
+  automatically, but only when the repository secret `HOMEBREW_TAP_TOKEN`
+  (a fine-grained PAT with `contents: write` on that repo) is set; when it isn't,
+  the job prints a notice with the manual steps instead of failing the release.
 - CI runs on pushes to `main`, `develop`, and `claude/**` branches, and on every
   pull request.
 - `tack branch <item-id>` (the CLI) can generate a conventional topic-branch name

@@ -127,9 +127,13 @@ curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
 tack serve --with-runner
 ```
 
+Or `brew install yielab/tap/tack`. On Windows,
+`irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex` in PowerShell.
+
 Open **<http://localhost:3210>**. The installer checks every download against the
-release's `SHA256SUMS`. Other ways to install — Cargo, a release archive, Windows —
-are in the [Quick Start](docs/book/src/user-guide/quick-start.md). The
+release's `SHA256SUMS`. Other ways to install — Homebrew, Scoop, Docker, a release
+archive, or building from source — are in the
+[Quick Start](docs/book/src/user-guide/quick-start.md). The
 [Step-by-Step Tutorial](docs/book/src/user-guide/tutorial.md) walks the whole path
 from here to a finished agent run, with a real screenshot at every step.
 

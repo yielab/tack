@@ -6,11 +6,9 @@ Prefer pictures? The [Step-by-Step Tutorial](tutorial.md) walks this same page's
 
 ---
 
-## Install and run (the fast path)
+## Install
 
-Tack is a single self-contained binary — the web UI, REST API, and SQLite engine are all inside one file. No runtime, database server, or container required. Choose any one of the methods below.
-
-**Prefer an app you open instead of a command you run?** Download the desktop app from the [releases page](https://github.com/yielab/tack/releases) — the `.AppImage` or `.deb` on Linux, the `.msi` on Windows, or the `.dmg` on macOS (built separately for Apple Silicon and Intel). Opening it starts the same server this page describes, inside its own window, with an icon in your system tray: closing the window leaves it running, and the tray's **Quit** is what actually stops it. If the server it started stops on its own, the tray tells you once — the status line reads "Server stopped" with the exit reason, and reopening the app starts it again; if the app is instead pointed at a server it did not start and that server goes quiet, the tray says so after a few seconds rather than staying silent. Skip to [First use](#first-use) once it's open.
+Tack is a single self-contained binary — the web UI, REST API, and SQLite engine are all inside one file. No runtime, database server, or container required. Pick any one method.
 
 | Platform | Install → first agent attempt |
 |---|---|
@@ -22,22 +20,70 @@ Tack is a single self-contained binary — the web UI, REST API, and SQLite engi
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
-tack            # starts the server + web UI at http://localhost:3210
 ```
 
-**Download a release archive** from the [releases page](https://github.com/yielab/tack/releases):
+Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. Pin a version with `TACK_VERSION=v0.1.0-beta.9`; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
+
+**Homebrew (macOS and Linux):**
+
+```sh
+brew install yielab/tap/tack
+```
+
+**Windows:**
+
+```powershell
+irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex
+```
+
+Same `TACK_VERSION` and `TACK_SKIP_CHECKSUM` env vars as above, plus `TACK_INSTALL_DIR` (default `%LOCALAPPDATA%\Programs\tack`); it verifies `SHA256SUMS` and adds the install directory to your user `PATH` — open a new terminal afterwards. Or install with Scoop:
+
+```sh
+scoop install https://raw.githubusercontent.com/yielab/tack/main/packaging/scoop/tack.json
+```
+
+Or download the `.msi` from the [releases page](https://github.com/yielab/tack/releases).
+
+**Desktop app.** Download it from the [releases page](https://github.com/yielab/tack/releases) — the `.AppImage` or `.deb` on Linux, the `.msi` on Windows, or the `.dmg` on macOS (built separately for Apple Silicon and Intel). Opening it starts the same server this page describes, inside its own window, with an icon in your system tray: closing the window leaves it running, and the tray's **Quit** is what actually stops it. If the server it started stops on its own, the tray tells you once — the status line reads "Server stopped" with the exit reason, and reopening the app starts it again; if the app is instead pointed at a server it did not start and that server goes quiet, the tray says so after a few seconds rather than staying silent. Skip to [First use](#first-use) once it's open.
+
+**Docker:** the `ghcr.io/yielab/tack` image isn't publicly pullable yet — build it yourself from the repo's `Dockerfile` instead:
+
+```sh
+git clone https://github.com/yielab/tack.git && cd tack
+docker build -t tack:latest .
+docker run -d --name tack -p 3210:3210 -v tack-data:/data tack:latest
+```
+
+See [Deployment → Docker](../developer/deployment.md#docker) for the compose file and configuration.
+
+**Manual download.** Grab the archive for your platform and `SHA256SUMS` from the [releases page](https://github.com/yielab/tack/releases), verify, then run:
 
 ```sh
 # Linux / macOS
+sha256sum -c --ignore-missing SHA256SUMS   # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
 tar xzf tack-*.tar.gz && cd tack-*/
 ./tack
 ```
 
 On **Windows**, extract the zip and double-click `tack.exe`.
 
-Then open **`http://localhost:3210`** in your browser. On first start, Tack creates `tack.db` and a `storage/` folder next to the binary and runs the schema migrations automatically. Those two paths *are* your data — back them up and you've backed up everything.
+**From source.** No `cargo install` path exists yet — see [Development mode (run from source)](#development-mode-run-from-source) below.
 
 > **First-run note (unsigned binary).** The binaries are not code-signed yet. On macOS, right-click → **Open** the first time (or run `xattr -d com.apple.quarantine tack`). On Windows, click **More info → Run anyway** if SmartScreen appears.
+
+## Start
+
+```sh
+tack            # starts the server + web UI at http://localhost:3210
+```
+
+Or start it with the embedded agent runner in one step — see [Run an item with an agent](#run-an-item-with-an-agent) below for what that adds:
+
+```sh
+tack serve --with-runner
+```
+
+Then open **`http://localhost:3210`** in your browser. On first start, Tack creates `tack.db` and a `storage/` folder next to the binary and runs the schema migrations automatically. Those two paths *are* your data — back them up and you've backed up everything.
 
 **Verify the server is up:**
 

@@ -34,6 +34,9 @@ curl http://localhost:3210/api/health
 field over the number above, which is what the build this tutorial was captured on
 reported. If this fails, see [Troubleshooting](troubleshooting.md).
 
+Homebrew, Windows, and the other install methods are in the [Quick Start —
+Install](quick-start.md#install) section.
+
 ## 2. First open
 
 Open **`http://localhost:3210`** in a browser. On a fresh database there is nothing

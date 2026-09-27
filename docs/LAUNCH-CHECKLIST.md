@@ -43,11 +43,15 @@ automatically — every step under "Publish list" is a human action.
    `Q&A` and `Ideas` categories (both already exist on the repo — no category needs
    creating).
 5. **Re-point the packaging recipes at the new release**, once its artifacts exist —
-   `packaging/{nix,homebrew,aur}` name a tag and carry its digests, and nothing else
-   updates them:
+   `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing
+   else updates them:
    ```bash
    scripts/sync-packaging.sh v0.1.0-beta.9   # then commit the diff
    ```
    Until this runs they point at the previous release. A wrong digest is not a soft
    failure: Homebrew and `makepkg` abort with a hash mismatch, which reads to a
-   stranger as a tampered download.
+   stranger as a tampered download. The release workflow's own `homebrew-tap` job
+   also runs this script and pushes `packaging/homebrew/tack.rb` straight to
+   `yielab/homebrew-tap` — but only when the repository secret `HOMEBREW_TAP_TOKEN`
+   is set; without it, the job just prints the two manual steps. Either way, this
+   repo's own `packaging/` copy still needs the commit above.
