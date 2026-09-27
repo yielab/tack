@@ -600,10 +600,27 @@ Tack uses a simple two-long-lived-branch model:
 - Once that release workflow finishes, run `scripts/sync-packaging.sh <tag>` and
   commit the refreshed recipes (`packaging/homebrew`, `aur`, `nix`, `scoop`) — they
   name a tag and carry its digests, and nothing else updates them. The workflow's
-  `homebrew-tap` job also pushes the Homebrew formula to `yielab/homebrew-tap`
-  automatically, but only when the repository secret `HOMEBREW_TAP_TOKEN`
-  (a fine-grained PAT with `contents: write` on that repo) is set; when it isn't,
-  the job prints a notice with the manual steps instead of failing the release.
+  `homebrew-tap` job also publishes the Homebrew formula to `yielab/homebrew-tap`:
+  it creates the commit through the GitHub API (so GitHub signs it), opens a pull
+  request, and enables auto-merge; the tap's own checks (audit, style, install,
+  test, and provenance of every archive the formula points at) decide whether it
+  lands. That needs the repository secret `HOMEBREW_TAP_TOKEN`; when it isn't
+  set, the job prints a notice with the manual steps instead of failing the
+  release.
+- `HOMEBREW_TAP_TOKEN` is a fine-grained personal access token scoped to the
+  single repository `yielab/homebrew-tap` with **Contents: write** and
+  **Pull requests: write** and nothing else. Give it the shortest expiry the
+  release cadence allows (90 days at most), regenerate it on expiry or on any
+  suspicion of exposure, and treat the secret's "Updated" date under
+  Settings → Secrets as the rotation record. The tap's `main` branch accepts no
+  direct pushes and no bypass, even for admins, so a leaked token can at most
+  open a pull request that still has to pass those checks.
+- Branch rules on `main` and `develop` here require green CI on pull requests
+  and forbid force-pushes and deletion. They require no reviewer approval, and
+  repository admins can push to `develop` directly, because Tack has one
+  maintainer and the pre-push hook is the gate for that path. Revisit both
+  settings (one approval, no admin bypass) the day a second person gets write
+  access.
 - CI runs on pushes to `main`, `develop`, and `claude/**` branches, and on every
   pull request.
 - `tack branch <item-id>` (the CLI) can generate a conventional topic-branch name

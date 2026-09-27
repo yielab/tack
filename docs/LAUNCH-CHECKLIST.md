@@ -51,7 +51,10 @@ automatically — every step under "Publish list" is a human action.
    Until this runs they point at the previous release. A wrong digest is not a soft
    failure: Homebrew and `makepkg` abort with a hash mismatch, which reads to a
    stranger as a tampered download. The release workflow's own `homebrew-tap` job
-   also runs this script and pushes `packaging/homebrew/tack.rb` straight to
-   `yielab/homebrew-tap` — but only when the repository secret `HOMEBREW_TAP_TOKEN`
-   is set; without it, the job just prints the two manual steps. Either way, this
-   repo's own `packaging/` copy still needs the commit above.
+   also runs this script and opens a pull request on `yielab/homebrew-tap` with
+   `packaging/homebrew/tack.rb` (signed commit via the API, auto-merge once the
+   tap's checks pass) — but only when the repository secret `HOMEBREW_TAP_TOKEN`
+   is set; without it, the job just prints the manual steps. Either way, this
+   repo's own `packaging/` copy still needs the commit above. If the tap's checks
+   fail, the pull request stays open with the failing job attached: fix in this
+   repo, re-run `sync-packaging.sh`, and push the same branch.
