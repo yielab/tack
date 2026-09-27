@@ -20,6 +20,7 @@ on:
     paths:
       - "README.md"
       - "install.sh"
+      - "install.ps1"
       - "docs/**"
       - "scripts/verify-install-urls.sh"
       - ".github/workflows/verify-install-urls.yml"
@@ -27,6 +28,7 @@ on:
     paths:
       - "README.md"
       - "install.sh"
+      - "install.ps1"
       - "docs/**"
       - "scripts/verify-install-urls.sh"
       - ".github/workflows/verify-install-urls.yml"
@@ -50,3 +52,50 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Check install URLs resolve
         run: scripts/verify-install-urls.sh
+
+  # install.sh gets exercised by the job above by way of the released
+  # archives it downloads; install.ps1 has no Linux equivalent to run it
+  # under, so it gets its own job on the one OS it's for — same "resolvable
+  # is not the same as working" reasoning, and the same asset-ordering
+  # failure mode (a bare suffix match grabbing tack-runner's zip first)
+  # applies to it too.
+  verify-windows:
+    name: Run install.ps1 on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Run install.ps1 for real and verify it
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP 'tack-install-test'
+          $env:TACK_INSTALL_DIR = $installDir
+
+          # Reset before the run: install.ps1 only calls `exit` on its
+          # failure path, so a clean run leaves $LASTEXITCODE untouched —
+          # without this it could still read 0 (or stale) from something
+          # earlier and mask a real failure that skipped `exit` entirely.
+          $LASTEXITCODE = 0
+          # *>&1 pulls in every stream, not just success output — the
+          # checksum-verified line below is printed via Write-Host, which
+          # writes to the Information stream and would otherwise be invisible
+          # to $raw.
+          .\install.ps1 *>&1 | Tee-Object -Variable raw | Out-Host
+          $output = $raw | Out-String
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "install.ps1 failed (exit code $LASTEXITCODE)"
+          }
+          if ($output -notmatch 'Checksum verified') {
+            throw "install.ps1 did not report a verified checksum"
+          }
+
+          $exe = Join-Path $installDir 'tack.exe'
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "tack.exe --version failed (exit code $LASTEXITCODE)"
+          }
