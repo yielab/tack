@@ -23,13 +23,30 @@ FILES=(
   docs/book/src/user-guide/quick-start.md
   docs/book/src/roadmap.md
   install.sh
+  install.ps1
+  packaging/scoop/tack.json
 )
+
+# Not every file above exists on every branch yet — install.ps1 and its docs
+# land from a parallel change, on develop before main. Skip what isn't there
+# instead of letting grep's "no such file" abort the sweep.
+present_files=()
+for f in "${FILES[@]}"; do
+  if [ -f "$f" ]; then
+    present_files+=("$f")
+  else
+    echo "verify-install-urls: skipping $f — not present on this branch yet"
+  fi
+done
 
 # The one-line installer's raw-content URL (whichever branch it names), and
 # the releases page linked as the alternative "download a release" method.
 pattern='https://(raw\.githubusercontent\.com/yielab/tack/[^[:space:]")]+|github\.com/yielab/tack/releases)'
 
-mapfile -t urls < <(grep -hoE "$pattern" "${FILES[@]}" | sort -u)
+urls=()
+if [ "${#present_files[@]}" -gt 0 ]; then
+  mapfile -t urls < <(grep -hoE "$pattern" "${present_files[@]}" | sort -u)
+fi
 
 if [ "${#urls[@]}" -eq 0 ]; then
   echo "verify-install-urls: found no install URLs in: ${FILES[*]}" >&2
@@ -41,8 +58,23 @@ echo "Checking ${#urls[@]} install URL(s):"
 printf '  %s\n' "${urls[@]}"
 echo
 
+# A raw.githubusercontent.com/yielab/tack/main/<path> URL is checked against
+# the checkout, not the network, when <path> exists here: on main the two are
+# the same file, and on develop (where docs can advertise a main/ URL for a
+# file that hasn't reached main yet) the file's presence in this branch is
+# the real question — a live HTTP check would just fail every time until the
+# next release, which isn't a bug this script should report.
+main_raw_prefix='https://raw.githubusercontent.com/yielab/tack/main/'
+
 fail=0
 for url in "${urls[@]}"; do
+  if [[ "$url" == "$main_raw_prefix"* ]]; then
+    local_path="${url#"$main_raw_prefix"}"
+    if [ -f "$local_path" ]; then
+      printf 'OK   [local] %s\n' "$url"
+      continue
+    fi
+  fi
   code="$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$url" || echo 000)"
   if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
     printf 'OK   [%s] %s\n' "$code" "$url"
@@ -116,6 +148,53 @@ else
       fail=1
     fi
   done
+
+  # linux-aarch64 is optional (see sync-packaging.sh's header) — release.yml
+  # only grew that build leg after v0.1.0-beta.9, so most releases still have
+  # no such asset and the Homebrew/AUR/Nix recipes stay in their no-ARM
+  # shape. Only check the digest when a recipe already claims to carry one;
+  # requiring it unconditionally would fail every release until the ARM leg
+  # exists.
+  # Match an actual filled-in url/source line, not the placeholder comments'
+  # own mention of the eventual asset name (those name it in prose, not in a
+  # url/source assignment, precisely so this check can't be fooled by them).
+  if grep -Eq 'url "[^"]*-linux-aarch64\.tar\.gz"' packaging/homebrew/tack.rb 2>/dev/null \
+    || grep -q '^source_aarch64=' packaging/aur/PKGBUILD 2>/dev/null \
+    || grep -q 'aarch64-linux' packaging/nix/default.nix 2>/dev/null; then
+    want="$(printf '%s\n' "$sums" \
+      | awk -v f="tack-$pkg_tag-linux-aarch64.tar.gz" '$2 == f || $2 == "*" f { print $1; exit }')"
+    if [ -z "$want" ]; then
+      printf 'FAIL packaging/ claims a linux-aarch64 build but %s has no tack-%s-linux-aarch64.tar.gz\n' \
+        "$pkg_tag" "$pkg_tag" >&2
+      fail=1
+    elif grep -rq "$want" packaging/; then
+      printf 'OK   packaging/ carries the published linux-aarch64 digest\n'
+    else
+      printf 'FAIL no file under packaging/ carries the published linux-aarch64 digest — run scripts/sync-packaging.sh %s\n' \
+        "$pkg_tag" >&2
+      fail=1
+    fi
+  else
+    printf 'SKIP linux-aarch64 — no recipe carries that branch yet\n'
+  fi
+
+  # Scoop's manifest carries its own "hash" field rather than a digest
+  # embedded in a URL, so it needs its own check against the same release.
+  if [ -f packaging/scoop/tack.json ]; then
+    want="$(printf '%s\n' "$sums" \
+      | awk -v f="tack-$pkg_tag-windows-x86_64.zip" '$2 == f || $2 == "*" f { print $1; exit }')"
+    got="$(grep -o '"hash":[[:space:]]*"[0-9a-fA-F]*"' packaging/scoop/tack.json | grep -o '[0-9a-fA-F]\{64\}' || true)"
+    if [ -z "$want" ]; then
+      printf 'FAIL %s has no tack-%s-windows-x86_64.zip\n' "$pkg_tag" "$pkg_tag" >&2
+      fail=1
+    elif [ "$got" = "$want" ]; then
+      printf 'OK   packaging/scoop/tack.json carries the published windows-x86_64 digest\n'
+    else
+      printf 'FAIL packaging/scoop/tack.json hash does not match the published windows-x86_64 digest — run scripts/sync-packaging.sh %s\n' \
+        "$pkg_tag" >&2
+      fail=1
+    fi
+  fi
 fi
 
 exit "$fail"
