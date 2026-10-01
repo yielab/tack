@@ -72,7 +72,7 @@ jobs:
       - name: Doc build (broken intra-doc links deny)
         run: RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps
       - name: Install nextest (prebuilt)
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: nextest
       # The suite itself runs once, instrumented, in the `coverage` job. The
@@ -154,7 +154,7 @@ jobs:
         with:
           key: mutants
       - name: Install cargo-mutants and cargo-nextest
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: cargo-mutants,cargo-nextest
       # Exit 2 is "some mutants survived" and 3 is "some timed out": both are
@@ -247,11 +247,11 @@ jobs:
         with:
           key: coverage
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: cargo-llvm-cov
       - name: Install nextest (prebuilt)
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: nextest
       # The floor is the workspace line total this job itself measured on
@@ -289,7 +289,7 @@ jobs:
         with:
           key: deny
       - name: Install cargo-deny
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: cargo-deny
       # Generated at run time (not committed) by scripts/gen-deny-toml.sh —
@@ -418,7 +418,7 @@ jobs:
           name: frontend-dist
           path: frontend/dist/
       - name: Install nextest (prebuilt)
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: nextest
       - name: Clippy with embed-spa
@@ -479,7 +479,7 @@ jobs:
         with:
           toolchain: stable
       - name: Install cargo-audit (prebuilt)
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: cargo-audit
       - name: Rust dependency audit (honors .cargo/audit.toml)
