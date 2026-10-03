@@ -13,7 +13,8 @@ service, and the codebase cleanup that retired the Docket control-plane bridge
 **Phase 64 closed on 2026-09-19.** Its plan and its chapter of this file are archived; what
 it left open is in Phase 65.
 
-**Phase 65 is the live phase**, and its plan is the only list of pending work:
+**Phase 65 is the live phase**, and its plan is the only list of pending work of that phase; Phase 66, below, is open
+beside it with its own plan:
 [`docs/plans/phase-65.md`](../../plans/phase-65.md). It folds together what the roadmap,
 the ADRs and the harness plan still owed — the release tag and `docs/LAUNCH-CHECKLIST.md`,
 inbound GitHub sync, `tack start`, and the harness upgrades — as one ordered sequence of
@@ -42,6 +43,42 @@ What Waves 1–4 build ships as `v0.1.0-beta.9`. Nothing in the phase waits on a
 the two it needed — inbound sync polls rather than receiving webhooks; opencode attempts
 share a package cache and nothing else — are taken in the plan and are one line each to
 reverse.
+
+---
+
+## Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
+
+**Status:** open 2026-10-03. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
+**ADRs:** 0069 (the brief is an entity on the item and travels), 0070 (docket contract 1.1,
+negotiated at boot; cancel becomes per-harness evidence), 0071 (evidence before deletion, the
+verifier boundary, the pushed branch and its pull request), 0072 (the "Run with agent" flow).
+
+After this phase every attempt leaves a patch, both commits and a file list; an item can
+carry a typed brief that reaches the harness and an independent verifier; a question arrives
+as a pack with options and a recommendation; a verifier's merge-readiness pack is rendered
+and accepted or rejected with a reason; a branch is pushed and its pull request followed to
+merged, closed or reverted; and one page shows escalation rate, human minutes, the
+verification tax in tokens and the acceptance rate. The verifier itself is a separate program
+Tack never contains.
+
+The interface comes first. The "Run with agent" dialog shows the whole flow from the second
+wave on — who runs it, what it gets, how far it may go, what happens after — and a step whose
+integration has not landed is shown disabled with the reason, never hidden.
+
+docket is a moving target by design. Tack negotiates the harness contract and probes each
+optional flag when the runner starts, so one Tack build works with docket `0.2.0-beta.3`, the
+coming `0.2.0-beta.4` and what follows; each docket link below starts when docket's own board
+merges the card it needs, not when docket cuts a release.
+
+| Wave | What lands | Who |
+|---|---|---|
+| 0 | Decided 2026-10-03. | the maintainer |
+| 1 | Evidence captured before the workspace is deleted; the phase's four migrations; `status_map_policy_id` moves the item; the `mrp-v1` and `brief-v1` contracts; each harness's tool list, measured; the README and the landing page lead with the desktop app. | Sonnet and Haiku agents |
+| 2 | The whole flow in the dialog, deferred steps disabled; the brief's routes and export; the consultation pack; the verifier step behind `[verify]`. | Sonnet agents |
+| 3 | The brief travels to the harness and the evidence; the brief editor; the merge-readiness review record; the pack in the runner and the inbox. | Sonnet agents |
+| 4–5 | The merge-readiness panel; the runner pushes the branch behind `[git]`; the pull request and its fate from the poll that already runs; verification and push become live controls in the dialog. | Sonnet agents |
+| 6–7 | Factory metrics, endpoint then page; the pull-request badge. | Sonnet, then Haiku |
+| A | docket in five links, following docket's Phase 35: negotiation and contract 1.1; process events and a proven cancel; asking over stdin; limits, policy and files; the recipe flag. | Sonnet; the last link Haiku |
 
 ---
 
