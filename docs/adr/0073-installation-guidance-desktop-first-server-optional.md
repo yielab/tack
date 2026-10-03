@@ -92,3 +92,6 @@ voice: the desktop app is the default, and the text says what the server form is
 landing page already exists and needs a content refactor and the release download links.
 Withdrawn as a decision record; R1 (README, launch checklist) and R2 (the landing page, in the
 studio site's repository) carry the work.
+
+**2026-10-03, correction.** The landing page that exists, `yielab.com/docket`, is docket's.
+Tack has none; R2 creates it at `yielab.com/tack` in the studio site's repository.
