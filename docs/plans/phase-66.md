@@ -149,7 +149,7 @@ Decisions this plan takes because no task can start without them. Each is one li
 | 0.2 | ADR 0070 — docket contract 1.1; cancel as per-harness evidence; `--recipe` is one flag | **Accepted**, with two amendments: docket versions are handled dynamically (below), and nothing is passed to docket as an interim — a feature is used when the docket under test has it, and not before. |
 | 0.3 | ADR 0071 — evidence, the MRP, the verifier boundary, the pushed branch and its pull request | **Accepted.** The runner may push a branch with the operator's own git credentials; off by default. |
 | 0.4 | ADR 0072 — the "Run with agent" flow | **Accepted, as a priority.** The interface and the clarity of the whole flow come first. A capability that is deferred is still shown in the form, visibly disabled, with the reason; it is never hidden. That includes a verification checkbox, disabled until the verifier integration is complete. Tasks P0, P1, P2. |
-| 0.5 | ADR 0073 — installation guidance | **Not an ADR; withdrawn as one.** The work stays: the pitch and the voice make the desktop app the default and say what `tack serve` is for (R1), and the existing landing page gets a content refactor and the release download links (R2). |
+| 0.5 | ADR 0073 — installation guidance | **Not an ADR; withdrawn as one.** The work stays: the pitch and the voice make the desktop app the default and say what `tack serve` is for (R1), and Tack gets its own landing page at `yielab.com/tack`, with the release download links, on the pattern of docket's at `yielab.com/docket` (R2). |
 | 0.6 | Which docket | **No install gate.** docket is in continuous development and is about to cut its next beta; Tack is built to be compatible with that version and the ones after it. Named from docket's own tree on 2026-10-03: tags run `v0.2.0-beta.1` → `.3`, `pyproject.toml` says `0.2.0-beta.3`, and Phases 34–35 sit under `[Unreleased]`, so the next is **`v0.2.0-beta.4`**. Tack never pins a docket version: it negotiates the contract and probes each flag (A1). |
 | 0.7 | docket's `--policy` | **No interim.** A4 writes a full `kind: policy` document in the shape docket already publishes (`../rack-cli/docs/contracts/config-v1/policy.schema.json`: `kind`, `name`, `then` required) once the docket under test accepts `--policy`; until then nothing is passed and the capability says so. |
 
@@ -1003,29 +1003,31 @@ number is re-measured or removed; the docs job of pre-push passes.
 
 **Model:** Haiku. Two files; every fact given or pointed to.
 
-### R2 — the landing page: content refactor and the release downloads
+### R2 — Tack gets its own landing page, at `yielab.com/tack`
 
 **Gate:** none. Another repository: `../newPortaflio` (the studio site, live at yielab.com),
-branch from its `main`, its own checks, never Tack's gate. The maintainer named the page as
-`yielab.com/docket`; on 2026-10-03 that route is docket's own landing
-(`app/[lang]/docket`, `content/docket-landing.ts`) and Tack has only a product entry
-(`content/products/tack*`, under `/products`). The task works on Tack's entry and reports the
-question — a dedicated `/tack` landing like docket's is a second task if the maintainer wants
-it.
+a branch from its `main`, its own checks (`npm run verify`), never Tack's gate. Decided
+2026-10-03: `yielab.com/docket` is docket's landing; Tack has none, only a product entry, and
+this task creates it on the pattern docket's page set.
 
-**Files:** `../newPortaflio/content/products/tack*` (the pitch leads with the desktop app and
-says what the server form is for, in the voice R1 set; the stale limits are corrected against
-Tack's README — the entry still says the latest tag is `0.1.0-beta.7` and that the runner has
-not shipped in a release, both false since `v0.1.0-beta.9`; a "Download" link of kind
-`release` to `https://github.com/yielab/tack/releases/latest` is added beside "GitHub", first
-in the list); the type in `../newPortaflio/content/types.ts` only if `kind: 'release'` does
-not exist; that repository's own content check (`scripts/check-content.ts`).
+**Files, all in `../newPortaflio`:** `app/[lang]/tack/page.tsx` (new, on the structure of
+`app/[lang]/docket/page.tsx`: metadata and language alternates, hero, what it is, how a run
+goes, install, known limits, links); `content/tack-landing.ts` (new, the copy in every locale
+the site has, shaped like `content/docket-landing.ts`; every claim sourced from Tack's
+`README.md` and `CHANGELOG.md` at `v0.1.0-beta.9`); `app/tack.module.css` (new, Tack's own
+tokens, not docket's); `public/tack/` (screenshots copied from Tack's `docs/screenshots/`);
+`content/site.ts` (the route joins the list `/docket` is in, so the sitemap and the redirects
+know it); `content/products/tack.ts` (the stale limits corrected — it still says the latest
+tag is `0.1.0-beta.7` and that the runner has not shipped in a release — and its primary link
+points to `/tack`). The page leads with the desktop app as the default, says in one short
+paragraph what `tack serve` is for, in the voice R1 set, and its first action is the download:
+`https://github.com/yielab/tack/releases/latest`.
 
-**Done when:** the content check and the build of that repository pass; every claim on the
-page is true of `v0.1.0-beta.9` (each checked against Tack's `README.md` and `CHANGELOG.md`);
-the download link resolves (`curl -sI`); nothing is deployed — deploying is the maintainer's.
+**Done when:** `npm run verify` passes in that repository; `/en/tack` and every other locale
+render; every claim on the page is true of `v0.1.0-beta.9`; the download link resolves
+(`curl -sI`); nothing is committed, pushed or deployed — those are the maintainer's.
 
-**Model:** Sonnet (voice and a second repository's conventions). Ceiling 100.
+**Model:** Sonnet (a new page, voice, a second repository's conventions). Ceiling 150.
 
 ## Parked — not scheduled, and why
 
@@ -1055,14 +1057,11 @@ One line each, with the trigger that turns it into a task.
   publishes `docs/contracts/operator-v1.1/` and puts evidence-v1 in harness results. Then one
   task maps docket's `consult` question onto Tack's pack in the docket grammar and reads the
   evidence block instead of keeping it opaque in `terminal_reason`.
-- **A dedicated `/tack` landing page.** Trigger: the maintainer asks for one after R2.
 - **Anything in the "Decided" table.**
 
 ## Questions for the maintainer
 
-All six were answered on 2026-10-03; the answers are the Wave 0 table. One is open, raised by
-R2 and blocking nothing: whether Tack gets a dedicated landing page like docket's, or its
-product entry is the landing.
+All six were answered on 2026-10-03; the answers are the Wave 0 table. None is open.
 
 ## Status
 
