@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evidence-v1/schema.json",
+  "title": "Attempt evidence (evidence.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "attempt_id", "harness_kind", "captured", "reason", "base_commit", "head_commit", "worktree_dirty", "files", "patch", "brief", "branch", "terminal_reason", "usage"],
+  "properties": {
+    "v": {"const": "1"},
+    "attempt_id": {"type": "string"},
+    "harness_kind": {"type": "string"},
+    "captured": {"type": "boolean", "description": "false when git could not be read; then reason is set and head_commit, worktree_dirty and patch are null."},
+    "reason": {"type": ["string", "null"]},
+    "base_commit": {"type": "string", "description": "The workspace's base_revision."},
+    "head_commit": {"type": ["string", "null"], "description": "git rev-parse HEAD; the harness may have committed."},
+    "worktree_dirty": {"type": ["boolean", "null"], "description": "The staged diff against HEAD is non-empty."},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "op"],
+        "properties": {
+          "path": {"type": "string"},
+          "op": {"enum": ["added", "modified", "deleted", "renamed"]}
+        }
+      }
+    },
+    "patch": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["sha256", "size_bytes", "truncated"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608},
+        "truncated": {"type": "boolean", "description": "The diff exceeded 8 MiB and was cut."}
+      }
+    },
+    "brief": {"description": "Filled by the brief task; null until then."},
+    "branch": {"description": "Filled by the branch-push task; null until then."},
+    "terminal_reason": {},
+    "usage": {}
+  }
+}

@@ -9,6 +9,8 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 
+use crate::evidence::GitEvidence;
+
 use super::{AttemptId, AttemptLease, RepositorySpec, WorkspaceId, journal::WorkspaceJournal};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +79,18 @@ pub trait WorktreeProvisioner: Send + Sync {
         workspace: &Workspace,
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError>;
+
+    /// What the attempt changed in `workspace`, read before the workspace is
+    /// deleted. `exclude` names workspace-relative paths that are the runner's
+    /// own, not the harness's. `Ok(None)` is a provisioner with no repository
+    /// to read.
+    async fn capture_evidence(
+        &self,
+        _workspace: &Workspace,
+        _exclude: &[&str],
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -171,6 +185,14 @@ where
         }
         self.provisioner.provision(workspace, repository).await?;
         Ok(())
+    }
+
+    pub async fn capture_evidence(
+        &self,
+        workspace: &Workspace,
+        exclude: &[&str],
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        self.provisioner.capture_evidence(workspace, exclude).await
     }
 
     /// Deletes only a resolved child of this dedicated root. The root itself,

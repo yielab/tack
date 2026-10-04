@@ -601,6 +601,22 @@ where
             // report — best-effort, see `submit_event`'s own doc comment.
             self.submit_cancellation_event(session, &mut record, &evidence)
                 .await;
+            // A partial diff is evidence too: read it before the workspace is
+            // deleted below.
+            let cancelled_reason = serde_json::json!({
+                "observation": evidence.observation,
+                "details": serde_json::Value::Object(evidence.details.clone()),
+            });
+            if let Some((scratch, staged)) = self
+                .capture_attempt_evidence(&spec, cancelled_reason, serde_json::Value::Null)
+                .await
+            {
+                for artifact in &staged {
+                    self.submit_staged_artifact(session, &record, artifact)
+                        .await;
+                }
+                let _ = std::fs::remove_dir_all(scratch);
+            }
             let report = CancellationReport {
                 protocol_version: ProtocolVersion::v1(),
                 runner_id: session.runner_id.clone(),
@@ -642,7 +658,25 @@ where
         ) {
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
-        let outcome = outcome.normalize_workspace_facts(&spec.workspace);
+        let mut outcome = outcome.normalize_workspace_facts(&spec.workspace);
+        // Read what the attempt changed before the workspace is deleted after
+        // the report; the staged files ride `terminal_reason.artifacts`.
+        let evidence_scratch = match self
+            .capture_attempt_evidence(
+                &spec,
+                outcome.terminal_reason.clone(),
+                serde_json::to_value(&outcome.usage).unwrap_or(serde_json::Value::Null),
+            )
+            .await
+        {
+            Some((scratch, staged)) => {
+                if let Some(reason) = outcome.terminal_reason.as_object_mut() {
+                    reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
+                }
+                Some(scratch)
+            }
+            None => None,
+        };
         // The runner's only call site for events and artifacts.
         // `outcome.terminal_reason` is the exact JSON the harness adapters
         // already produce (including the `artifact` key their `wait()`
@@ -653,6 +687,9 @@ where
         // event/artifact already there.
         self.submit_terminal_evidence(session, &mut record, &outcome)
             .await;
+        if let Some(scratch) = evidence_scratch {
+            let _ = std::fs::remove_dir_all(scratch);
+        }
         let report = CompletionReport {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
@@ -952,9 +989,43 @@ where
             outcome.terminal_reason.clone(),
         )
         .await;
-        if let Some(artifact) = outcome.terminal_reason.get("artifact") {
+        // `artifact` is the harness's own run log; `artifacts` is the list the
+        // engine adds (the evidence files).
+        let single = outcome.terminal_reason.get("artifact");
+        let listed = outcome
+            .terminal_reason
+            .get("artifacts")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten();
+        for artifact in single.into_iter().chain(listed) {
             self.submit_staged_artifact(session, record, artifact).await;
         }
+    }
+
+    /// Stages the evidence of one attempt, or nothing when no transport is
+    /// attached to upload it.
+    async fn capture_attempt_evidence(
+        &self,
+        spec: &ExecutionSpec,
+        terminal_reason: serde_json::Value,
+        usage: serde_json::Value,
+    ) -> Option<(std::path::PathBuf, Vec<serde_json::Value>)> {
+        self.data_protocol.as_ref()?;
+        let harness_kind = serde_json::to_value(&spec.work.request.requested_harness_kind)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        Some(
+            crate::evidence::capture(
+                &self.workspaces,
+                &spec.workspace,
+                harness_kind,
+                terminal_reason,
+                usage,
+            )
+            .await,
+        )
     }
 
     async fn submit_cancellation_event(

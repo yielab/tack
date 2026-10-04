@@ -2445,19 +2445,32 @@ fn assert_single_artifact_uploaded(
     content: &[u8],
     name: &str,
 ) {
-    assert_eq!(state.manifests.len(), 1, "exactly one artifact manifest");
-    let manifest_item = &state.manifests[0].artifacts[0];
+    // The engine also uploads `evidence.json` (a `captured: false` one here:
+    // `FakeWorktree` reads no repository); the harness's own artifact is the
+    // other manifest.
+    let manifests: Vec<_> = state
+        .manifests
+        .iter()
+        .flat_map(|report| report.artifacts.iter())
+        .filter(|item| item.kind != "evidence")
+        .collect();
+    assert_eq!(manifests.len(), 1, "exactly one harness artifact manifest");
+    let manifest_item = manifests[0];
     assert_eq!(manifest_item.sha256, sha256);
     assert_eq!(manifest_item.size_bytes, content.len() as u64);
     assert_eq!(manifest_item.name, name);
 
-    assert_eq!(state.uploads.len(), 1, "exactly one artifact upload");
-    assert_eq!(state.uploads[0].0, manifest_item.artifact_id);
+    let uploads: Vec<_> = state
+        .uploads
+        .iter()
+        .filter(|upload| upload.0 == manifest_item.artifact_id)
+        .collect();
+    assert_eq!(uploads.len(), 1, "exactly one artifact upload");
     assert_eq!(
-        state.uploads[0].1, content,
+        uploads[0].1, content,
         "the exact bytes read from the staged file were uploaded"
     );
-    assert_eq!(state.uploads[0].2.as_deref(), Some("text/plain"));
+    assert_eq!(uploads[0].2.as_deref(), Some("text/plain"));
 }
 
 #[tokio::test]
@@ -2768,4 +2781,223 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
         }
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
+}
+
+// -----------------------------------------------------------------
+// Evidence before deletion: a real git repository, a fake harness that
+// changes the workspace, and the three staged artifacts.
+// -----------------------------------------------------------------
+
+/// Provisions a workspace as a clone of a seed repository and reads evidence
+/// with the real git implementation.
+#[derive(Clone)]
+struct SeededGitWorktree {
+    seed: PathBuf,
+}
+
+#[async_trait]
+impl WorktreeProvisioner for SeededGitWorktree {
+    async fn provision(
+        &self,
+        workspace: &Workspace,
+        repository: &super::super::RepositorySpec,
+    ) -> Result<(), WorkspaceError> {
+        let seed = self.seed.display().to_string();
+        for args in [
+            vec!["init", "--quiet"],
+            vec![
+                "fetch",
+                "--quiet",
+                seed.as_str(),
+                repository.base_revision.as_str(),
+            ],
+            vec![
+                "checkout",
+                "--quiet",
+                "--detach",
+                repository.base_revision.as_str(),
+            ],
+        ] {
+            let status = std::process::Command::new("git")
+                .current_dir(&workspace.path)
+                .args(args)
+                .status()
+                .map_err(|_| WorkspaceError::GitUnavailable)?;
+            if !status.success() {
+                return Err(WorkspaceError::Git);
+            }
+        }
+        Ok(())
+    }
+
+    async fn capture_evidence(
+        &self,
+        workspace: &Workspace,
+        exclude: &[&str],
+    ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
+        crate::client::workspace::git::GitWorktreeProvisioner::default()
+            .capture_evidence(workspace, exclude)
+            .await
+    }
+}
+
+/// Wraps [`FakeAdapter`]; `start` is where the "harness" edits the workspace.
+struct ChangingAdapter {
+    inner: FakeAdapter,
+    change: fn(&Path),
+}
+
+#[async_trait]
+impl HarnessAdapter for ChangingAdapter {
+    async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
+        self.inner.validate(spec).await
+    }
+    async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
+        (self.change)(&spec.workspace.path);
+        self.inner.start(spec).await
+    }
+    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        self.inner.cancel(handle).await
+    }
+    async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+        self.inner.wait(handle).await
+    }
+    async fn reconcile(
+        &self,
+        journal: &AttemptJournal,
+    ) -> Result<RecoveryObservation, HarnessError> {
+        self.inner.reconcile(journal).await
+    }
+}
+
+/// Runs one attempt against a seeded repository holding `keep.txt` and
+/// `gone.txt`, where the fake harness runs `change`. Returns the data
+/// protocol's record and whether the workspace directory survived.
+async fn run_evidence_attempt(
+    label: &str,
+    cancelled: bool,
+    change: fn(&Path),
+) -> (FakeDataProtocol, bool) {
+    let root_dir = temporary_root(label);
+    let root = root_dir.path();
+    let seed = root.join("seed");
+    std::fs::create_dir_all(&seed).expect("seed");
+    std::fs::write(seed.join("keep.txt"), "keep\n").expect("keep");
+    std::fs::write(seed.join("gone.txt"), "gone\n").expect("gone");
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(&seed)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    git(&["init", "--quiet"]);
+    git(&["add", "-A"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    let base = git(&["rev-parse", "HEAD"]);
+
+    let mut claimed = work();
+    claimed.request.repository.base_revision = base.clone();
+    claimed.attempt.base_revision = base;
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let engine = RunnerEngine::new(
+        protocol(claimed, cancelled, false),
+        ChangingAdapter {
+            inner: adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            change,
+        },
+        journal,
+        WorkspaceManager::new(root.join("workspaces"), SeededGitWorktree { seed }),
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+    let survived = std::fs::read_dir(root.join("workspaces"))
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false);
+    (data_protocol, survived)
+}
+
+fn uploaded(state: &FakeDataProtocolState, name: &str) -> Vec<u8> {
+    let item = state
+        .manifests
+        .iter()
+        .flat_map(|report| report.artifacts.iter())
+        .find(|item| item.name == name)
+        .unwrap_or_else(|| panic!("{name} was not staged"));
+    let upload = state
+        .uploads
+        .iter()
+        .find(|upload| upload.0 == item.artifact_id)
+        .expect("uploaded");
+    assert_eq!(item.sha256, crate::harness::sha256::sha256_hex(&upload.1));
+    upload.1.clone()
+}
+
+fn write_one_delete_one(workspace: &Path) {
+    std::fs::write(workspace.join("new.txt"), "new\n").expect("write");
+    std::fs::remove_file(workspace.join("gone.txt")).expect("delete");
+}
+
+#[tokio::test]
+async fn a_changed_attempt_stages_patch_files_and_evidence_then_the_workspace_is_gone() {
+    let (data_protocol, survived) =
+        run_evidence_attempt("evidence-changed", false, write_one_delete_one).await;
+    assert!(!survived, "the workspace directory is gone afterwards");
+    let state = data_protocol.state.lock().expect("lock");
+    let kinds: Vec<_> = state
+        .manifests
+        .iter()
+        .flat_map(|report| report.artifacts.iter())
+        .filter(|item| item.kind != "log")
+        .map(|item| item.kind.as_str())
+        .collect();
+    assert_eq!(kinds, ["patch", "files", "evidence"]);
+    let patch = String::from_utf8(uploaded(&state, "changes.patch")).expect("utf8");
+    assert!(patch.contains("+new") && patch.contains("-gone"));
+    let files: Vec<crate::evidence::FileChange> =
+        serde_json::from_slice(&uploaded(&state, "files.json")).expect("files");
+    assert_eq!(files.len(), 2);
+    assert!(
+        files
+            .iter()
+            .any(|f| f.path == "new.txt" && f.op == crate::evidence::FileOp::Added)
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f.path == "gone.txt" && f.op == crate::evidence::FileOp::Deleted)
+    );
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert!(evidence.captured);
+}
+
+#[tokio::test]
+async fn an_unchanged_attempt_stages_an_empty_patch_and_no_files() {
+    let (data_protocol, _) = run_evidence_attempt("evidence-empty", false, |_| {}).await;
+    let state = data_protocol.state.lock().expect("lock");
+    assert!(uploaded(&state, "changes.patch").is_empty());
+    let files: Vec<crate::evidence::FileChange> =
+        serde_json::from_slice(&uploaded(&state, "files.json")).expect("files");
+    assert!(files.is_empty());
+}
+
+#[tokio::test]
+async fn a_cancelled_attempt_stages_what_it_had() {
+    let (data_protocol, survived) =
+        run_evidence_attempt("evidence-cancelled", true, write_one_delete_one).await;
+    assert!(!survived);
+    let state = data_protocol.state.lock().expect("lock");
+    assert!(
+        String::from_utf8(uploaded(&state, "changes.patch"))
+            .expect("utf8")
+            .contains("+new")
+    );
 }
