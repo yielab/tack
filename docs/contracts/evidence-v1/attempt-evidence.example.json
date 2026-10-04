@@ -1,0 +1,23 @@
+{
+  "v": "1",
+  "attempt_id": "att_01J00000000000000000000001",
+  "harness_kind": "claude_code",
+  "captured": true,
+  "reason": null,
+  "base_commit": "0123456789abcdef0123456789abcdef01234567",
+  "head_commit": "0123456789abcdef0123456789abcdef01234567",
+  "worktree_dirty": true,
+  "files": [
+    {"path": "src/new.rs", "op": "added"},
+    {"path": "src/old.rs", "op": "deleted"}
+  ],
+  "patch": {
+    "sha256": "6f5902ac237024bdd0c176cb93063dc4c3a41a5bd51cf5f56cc4ad8d3e9afa2f",
+    "size_bytes": 412,
+    "truncated": false
+  },
+  "brief": null,
+  "branch": null,
+  "terminal_reason": {"code": "completed", "message": "Harness exited successfully"},
+  "usage": null
+}

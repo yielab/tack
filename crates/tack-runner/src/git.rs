@@ -35,6 +35,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use super::{Workspace, WorkspaceError, WorktreeProvisioner};
+use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES};
 use crate::{
     client::RepositorySpec,
     harness::redact::{SecretMaterial, redact_query},
@@ -416,6 +417,78 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         );
         Ok(())
     }
+
+    async fn capture_evidence(
+        &self,
+        workspace: &Workspace,
+        exclude: &[&str],
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        let path = workspace.path.as_path();
+        let secrets = SecretMaterial::new();
+        // The clone is disposable, and staging is how untracked files and
+        // deletions enter one diff. The runner's own markers are never the
+        // harness's work, whatever the caller excludes.
+        let mut stage = vec![
+            "add".to_owned(),
+            "-A".to_owned(),
+            "--".to_owned(),
+            ".".to_owned(),
+        ];
+        for name in exclude
+            .iter()
+            .copied()
+            .chain([ATTEMPT_MARKER, CHECKOUT_MARKER])
+        {
+            stage.push(format!(":(exclude){name}"));
+        }
+        let stage: Vec<&str> = stage.iter().map(String::as_str).collect();
+        self.git_ok(path, &stage, &secrets).await?;
+
+        let base = workspace.base_revision.as_str();
+        let head_commit = self
+            .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
+            .await?
+            .stdout;
+        let dirty = self
+            .git_ok(path, &["diff", "--cached", "--name-only", "HEAD"], &secrets)
+            .await?;
+        // `stdout` is lossy and trimmed, and a patch must reach the server
+        // byte for byte, so git writes it to a file inside `.git` (never part
+        // of the diff, deleted with the workspace) and it is read raw.
+        let patch_file = path.join(".git").join("tack-evidence.patch");
+        self.git_ok(
+            path,
+            &[
+                "diff",
+                "--cached",
+                "--binary",
+                "--no-color",
+                "--no-ext-diff",
+                "--output=.git/tack-evidence.patch",
+                base,
+            ],
+            &secrets,
+        )
+        .await?;
+        let mut patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
+        let _ = fs::remove_file(&patch_file);
+        let truncated = patch.len() > PATCH_CAP_BYTES;
+        patch.truncate(PATCH_CAP_BYTES);
+        let listing = self
+            .git_ok(
+                path,
+                &["diff", "--cached", "--name-status", "-z", base],
+                &secrets,
+            )
+            .await?;
+        Ok(Some(GitEvidence {
+            head_commit,
+            worktree_dirty: !dirty.stdout.is_empty(),
+            files: parse_name_status(listing.stdout.as_bytes()),
+            patch,
+            truncated,
+        }))
+    }
 }
 
 struct GitOutput {
@@ -437,6 +510,34 @@ impl GitOutput {
             .collect::<Vec<_>>()
             .join(" ")
     }
+}
+
+/// Parses `git diff --name-status -z`: `M\0path\0`, and `R100\0old\0new\0`
+/// for a rename or copy, which is reported under its new path.
+fn parse_name_status(raw: &[u8]) -> Vec<FileChange> {
+    let text = String::from_utf8_lossy(raw);
+    let mut fields = text.split('\0').filter(|field| !field.is_empty());
+    let mut files = Vec::new();
+    while let Some(status) = fields.next() {
+        let renamed = status.starts_with('R') || status.starts_with('C');
+        let Some(first) = fields.next() else { break };
+        let path = if renamed {
+            fields.next().unwrap_or(first)
+        } else {
+            first
+        };
+        let op = match status.chars().next() {
+            Some('A' | 'C') => FileOp::Added,
+            Some('D') => FileOp::Deleted,
+            Some('R') => FileOp::Renamed,
+            _ => FileOp::Modified,
+        };
+        files.push(FileChange {
+            path: path.to_owned(),
+            op,
+        });
+    }
+    files
 }
 
 /// Every value that must never survive into a log line for this remote.
