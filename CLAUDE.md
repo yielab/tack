@@ -39,4 +39,4 @@ cd frontend && npm run dev                 # proxies /api; start the API first
 | Crate detail, architecture, patterns | `docs/ARCHITECTURE.md` |
 
 `docs/openapi.json`/`schema.gen.ts` are generated — never hand-edit; `./scripts/regen-
-generated.sh` regenerates both plus the lockfiles. Never `git commit` unless asked.
+generated.sh` regenerates both plus the lockfiles.
