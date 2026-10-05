@@ -941,8 +941,13 @@ one line saying why and what enables it), `RunWithAgentModal.test.tsx`;
 first link, come back, the row is `ok`). In this task the brief row, the verification
 checkbox, the push-branch checkbox and the pull-request row are all rendered `deferred`:
 "available when the brief editor lands", "available when a runner reports a verifier",
-"available when a runner reports branch push". Allowed tools: a checklist where P0 found a
-list for the selected harness, text with P0's sentence as help where it did not. The
+"available when a runner reports branch push". Allowed tools (P0, `docs/plans/measurements/
+tools-<harness>.md`): a checklist only for claude-code, whose tools `claude mcp serve` lists
+(23 names, unverified across versions, so the checklist is a suggestion beside a free-text
+field); free text for codex ("exposes no list": its MCP server lists only `codex` and
+`codex-reply`), opencode ("exposes no list": only permission keys) and docket ("exposes no
+list": bash/read/write/edit/glob/grep appear only in `docket mcp --help` prose), each with
+that sentence as help. The
 repository block shows the project's value first and its fields collapsed. Run is enabled
 only when no row is `missing`; `deferred` never blocks. No new route or column.
 
