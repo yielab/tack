@@ -2877,6 +2877,7 @@ async fn run_evidence_attempt(
     label: &str,
     cancelled: bool,
     change: fn(&Path),
+    verify: Option<crate::config::VerifyConfig>,
 ) -> (FakeDataProtocol, bool) {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
@@ -2914,6 +2915,17 @@ async fn run_evidence_attempt(
         WorkspaceManager::new(root.join("workspaces"), SeededGitWorktree { seed }),
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
+    let engine = match verify {
+        Some(config) => engine.with_verify(
+            config,
+            crate::harness::process::ProcessLimits::new(
+                1024 * 1024,
+                1024 * 1024,
+                Duration::from_secs(60),
+            ),
+        ),
+        None => engine,
+    };
     engine
         .run_once(&session(), claim_request())
         .await
@@ -2948,7 +2960,7 @@ fn write_one_delete_one(workspace: &Path) {
 #[tokio::test]
 async fn a_changed_attempt_stages_patch_files_and_evidence_then_the_workspace_is_gone() {
     let (data_protocol, survived) =
-        run_evidence_attempt("evidence-changed", false, write_one_delete_one).await;
+        run_evidence_attempt("evidence-changed", false, write_one_delete_one, None).await;
     assert!(!survived, "the workspace directory is gone afterwards");
     let state = data_protocol.state.lock().expect("lock");
     let kinds: Vec<_> = state
@@ -2981,7 +2993,7 @@ async fn a_changed_attempt_stages_patch_files_and_evidence_then_the_workspace_is
 
 #[tokio::test]
 async fn an_unchanged_attempt_stages_an_empty_patch_and_no_files() {
-    let (data_protocol, _) = run_evidence_attempt("evidence-empty", false, |_| {}).await;
+    let (data_protocol, _) = run_evidence_attempt("evidence-empty", false, |_| {}, None).await;
     let state = data_protocol.state.lock().expect("lock");
     assert!(uploaded(&state, "changes.patch").is_empty());
     let files: Vec<crate::evidence::FileChange> =
@@ -2992,7 +3004,7 @@ async fn an_unchanged_attempt_stages_an_empty_patch_and_no_files() {
 #[tokio::test]
 async fn a_cancelled_attempt_stages_what_it_had() {
     let (data_protocol, survived) =
-        run_evidence_attempt("evidence-cancelled", true, write_one_delete_one).await;
+        run_evidence_attempt("evidence-cancelled", true, write_one_delete_one, None).await;
     assert!(!survived);
     let state = data_protocol.state.lock().expect("lock");
     assert!(
@@ -3000,4 +3012,67 @@ async fn a_cancelled_attempt_stages_what_it_had() {
             .expect("utf8")
             .contains("+new")
     );
+}
+
+#[tokio::test]
+async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() {
+    let script = crate::harness::fixtures::fake_harness_path().with_file_name("fake_verifier.sh");
+    let verifier = |knob: &str| crate::config::VerifyConfig {
+        enabled: true,
+        program: "env".to_owned(),
+        args: vec![
+            knob.to_owned(),
+            "sh".to_owned(),
+            script.display().to_string(),
+        ],
+        timeout_seconds: 60,
+    };
+    let (data_protocol, _) = run_evidence_attempt(
+        "verify-ok",
+        false,
+        write_one_delete_one,
+        Some(verifier("TACK_FAKE_VERIFIER_FIXTURE=ready")),
+    )
+    .await;
+    {
+        let state = data_protocol.state.lock().expect("lock");
+        let kinds: Vec<_> = state
+            .manifests
+            .iter()
+            .flat_map(|report| report.artifacts.iter())
+            .filter(|item| item.kind != "log")
+            .map(|item| item.kind.as_str())
+            .collect();
+        assert_eq!(kinds, ["patch", "files", "evidence", "mrp"]);
+        let fixture = std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/contracts/mrp-v1/fixtures/ready.json"),
+        )
+        .expect("fixture");
+        assert_eq!(uploaded(&state, "mrp.json"), fixture);
+    }
+
+    let (data_protocol, _) = run_evidence_attempt(
+        "verify-fails",
+        false,
+        write_one_delete_one,
+        Some(verifier("TACK_FAKE_VERIFIER_EXIT_CODE=1")),
+    )
+    .await;
+    let state = data_protocol.state.lock().expect("lock");
+    assert!(
+        state
+            .manifests
+            .iter()
+            .flat_map(|r| r.artifacts.iter())
+            .all(|item| item.kind != "mrp")
+    );
+    let failed: Vec<_> = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.verify_failed")
+        .collect();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].payload["exit_code"], 1);
 }

@@ -128,6 +128,29 @@ pub struct RunnerConfig {
     /// map has no configured endpoint at all, not merely a disabled one —
     /// the harness's own subscription/login mode applies.
     pub providers: BTreeMap<String, ProviderConfig>,
+    /// The `[verify]` table: a program run after a succeeded attempt.
+    pub verify: VerifyConfig,
+}
+
+/// The `[verify]` table. Off by default; no environment variable sets it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VerifyConfig {
+    pub enabled: bool,
+    pub program: String,
+    pub args: Vec<String>,
+    pub timeout_seconds: u64,
+}
+
+impl Default for VerifyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            program: "assay".to_owned(),
+            args: vec!["verify".to_owned()],
+            timeout_seconds: 1800,
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -143,6 +166,7 @@ struct FileConfig {
     /// an unknown field via `deny_unknown_fields` on
     /// [`ProviderFileConfig`].
     provider: Option<BTreeMap<String, ProviderFileConfig>>,
+    verify: Option<VerifyConfig>,
 }
 
 #[derive(Default, Deserialize)]
@@ -175,6 +199,7 @@ impl RunnerConfig {
             state_dir: PathBuf::from(DEFAULT_STATE_DIR),
             enrollment_credential: None,
             providers,
+            verify: VerifyConfig::default(),
         }
     }
 
@@ -186,6 +211,9 @@ impl RunnerConfig {
 
         if let Some(contents) = sources.file_toml {
             let file: FileConfig = toml::from_str(contents).map_err(|_| ConfigError::Invalid)?;
+            if let Some(verify) = file.verify {
+                config.verify = verify;
+            }
             let providers = file
                 .provider
                 .unwrap_or_default()
