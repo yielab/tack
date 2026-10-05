@@ -8,11 +8,11 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
 
-use crate::client::engine::StreamSignal;
+use crate::client::engine::{Question, StreamSignal};
 use crate::harness::{
-    HarnessError,
+    DecisionAnswer, DecisionOption, HarnessError,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
@@ -187,6 +187,17 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         }
     };
 
+    // An `ask` request on a docket that offers `--answers` pauses each gated
+    // call on stdin (`fixtures/docket/contract-1.1/asked-answered.ndjson`);
+    // any other request keeps the refusal posture.
+    let ask =
+        features.answers && matches!(request.permission_policy.approvals, Some(Approvals::Ask));
+    let answer_args = if ask {
+        vec!["--answers".to_owned(), "stdin".to_owned()]
+    } else {
+        Vec::new()
+    };
+
     Ok(Invocation {
         args: [
             "harness",
@@ -205,9 +216,10 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         .map(str::to_owned)
         .into_iter()
         .chain(contract_args)
+        .chain(answer_args)
         .collect(),
         env,
-        ..Invocation::default()
+        stdin_stays_open: ask,
     })
 }
 
@@ -256,8 +268,16 @@ impl HarnessGrammar for DocketGrammar {
     }
 
     fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
-        // The result line and every other event name no group; only a line
-        // that mentions one is worth parsing.
+        if line.contains("\"approval_requested\"") {
+            return approval_question(line);
+        }
+        // The result line is the only one with a top-level `status` and no
+        // `event`; it ends the conversation so docket's stdin can close.
+        if line.contains("\"status\"") && is_result_line(line) {
+            return Some(StreamSignal::Finished);
+        }
+        // Every other event names no group; only a line that mentions one
+        // is worth parsing.
         if !line.contains("\"process_") {
             return None;
         }
@@ -270,9 +290,74 @@ impl HarnessGrammar for DocketGrammar {
         }
     }
 
+    /// One `AnswerLine` (`fixtures/docket/contract-1.1/`): `accept`
+    /// releases the call, anything else, including an option this grammar
+    /// never offered, is `decline`.
+    fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
+        let action = if answer.option_id.as_deref() == Some("accept") {
+            "accept"
+        } else {
+            "decline"
+        };
+        let payload = serde_json::json!({
+            "v": "1.1.0",
+            "token": question.metadata.get("token"),
+            "answer": {
+                "approvalToken": question.vendor_id,
+                "action": action,
+                "content": null,
+            },
+        });
+        serde_json::to_vec(&payload).unwrap_or_default()
+    }
+
     fn capabilities(&self) -> FeatureCapabilities {
         capabilities(features())
     }
+}
+
+fn is_result_line(line: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(line.trim())
+        .is_ok_and(|value| value.get("status").is_some() && value.get("event").is_none())
+}
+
+/// An `approval_requested` event: the approval's own token is `payload.token`
+/// and the line's own `token` is the run's, which every answer must name.
+fn approval_question(line: &str) -> Option<StreamSignal> {
+    let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let event = value.get("event")?;
+    if event.get("event_type")?.as_str()? != "approval_requested" {
+        return None;
+    }
+    let payload = event.get("payload")?;
+    let approval = payload.get("token")?.as_str()?;
+    let run_token = value.get("token")?.as_str()?;
+    let tool = payload.get("tool").and_then(serde_json::Value::as_str);
+    let call_id = payload.get("callId").and_then(serde_json::Value::as_str);
+    let prompt = match (tool, call_id) {
+        (Some(tool), Some(call)) => format!("Allow {tool} (call {call})?"),
+        (Some(tool), None) => format!("Allow {tool}?"),
+        _ => "Allow a gated tool call?".to_owned(),
+    };
+    let option = |option_id: &str, label: &str| DecisionOption {
+        option_id: option_id.to_owned(),
+        label: label.to_owned(),
+        description: None,
+        risks: None,
+        estimated_tokens: None,
+    };
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("token".to_owned(), run_token.into());
+    metadata.insert("tool".to_owned(), tool.into());
+    metadata.insert("callId".to_owned(), call_id.into());
+    Some(StreamSignal::Question(Question {
+        vendor_id: approval.to_owned(),
+        kind: "tool_permission".to_owned(),
+        prompt,
+        options: vec![option("accept", "Allow"), option("decline", "Deny")],
+        recommendation: None,
+        metadata,
+    }))
 }
 
 /// `base`, then `note` when the binary offers what the note describes.
@@ -319,20 +404,24 @@ fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
             "harness mode is one synchronous run to completion; no reattachment interface \
              is documented or observed",
         ),
-        decisions: capability(
-            CapabilitySupport::Unsupported,
-            &format!(
-                "{}{negotiated}",
-                derived(
+        decisions: if features.answers {
+            capability(
+                CapabilitySupport::Supported,
+                &format!(
+                    "this docket accepts --answers, so a tool call its policy gates pauses the                      run on an approval_requested event and waits for one answer line on stdin                      (accept or decline), as measured in \
+                     fixtures/docket/contract-1.1/asked-answered.ndjson{negotiated}"
+                ),
+            )
+        } else {
+            capability(
+                CapabilitySupport::Unsupported,
+                &format!(
                     "harness mode's approval posture is fixed to non-interactive refusal: a \
                      tool call that would otherwise wait for a human is denied immediately as \
-                     `blocked` rather than pausing the run to ask one",
-                    features.answers,
-                    "this docket accepts --answers, but the adapter does not drive that \
-                     channel, so the posture stays refusal",
-                )
-            ),
-        ),
+                     `blocked` rather than pausing the run to ask one{negotiated}"
+                ),
+            )
+        },
         artifacts: capability(
             CapabilitySupport::Advisory,
             &derived(
