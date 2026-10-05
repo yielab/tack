@@ -953,3 +953,16 @@ async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_desc
     );
     assert!(instructions.contains("source: "), "{instructions}");
 }
+
+#[tokio::test]
+async fn an_execution_snapshots_the_requests_choice_to_decline_verify_and_push() {
+    let (app, repo, item_id) = setup().await;
+    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    body["verify"] = serde_json::json!(false);
+    body["push_branch"] = serde_json::json!(false);
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["verify"], serde_json::json!(false));
+    assert_eq!(snapshot["push_branch"], serde_json::json!(false));
+}

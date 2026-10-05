@@ -6986,6 +6986,13 @@
           "permission_policy": {
             "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },
+          "push_branch": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`false` declines the runner's branch push for this run. The runner's own\nconfiguration decides whether a push exists; `true` never enables one."
+          },
           "repository_snapshot": {
             "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`)."
           },
@@ -7021,6 +7028,13 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "verify": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`false` declines the runner's verifier for this run. The runner's own\nconfiguration decides whether a verifier exists; `true` never enables one."
           }
         }
       },
