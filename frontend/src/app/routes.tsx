@@ -9,6 +9,7 @@ const Board         = lazy(() => import('../features/board/Board'));
 const List          = lazy(() => import('../features/list/List'));
 const Table         = lazy(() => import('../features/table/Table'));
 const Dashboard     = lazy(() => import('../features/dashboard/Dashboard'));
+const FactoryMetrics = lazy(() => import('../features/dashboard/FactoryMetrics'));
 const Sprints       = lazy(() => import('../features/sprints/Sprints'));
 const Calendar      = lazy(() => import('../features/calendar/Calendar'));
 const Timeline      = lazy(() => import('../features/timeline/Timeline'));
@@ -27,8 +28,9 @@ export const routes: RouteDefinition[] = [
   { path: '/settings', component: GlobalSettings },
 
   // Project destinations
-  { path: '/projects/:id/overview',  component: Dashboard },
-  { path: '/projects/:id/settings',  component: ProjectSettings },
+  { path: '/projects/:id/overview',   component: Dashboard },
+  { path: '/projects/:id/factory',    component: FactoryMetrics },
+  { path: '/projects/:id/settings',   component: ProjectSettings },
 
   // Work surface — all 5 lenses wrapped in WorkLayout
   {

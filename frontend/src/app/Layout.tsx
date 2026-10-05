@@ -22,7 +22,7 @@ interface LayoutProps {
 
 const VIEW_LABELS: Record<string, string> = {
   board: 'Board', list: 'List', table: 'Table', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
-  overview: 'Overview', settings: 'Settings',
+  overview: 'Overview', factory: 'Factory metrics', settings: 'Settings',
 };
 
 // Views whose document-title label comes from the project vocabulary.
@@ -96,6 +96,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/timeline`) },
         { id: 'go-sprint',    label: `Work → ${t('sprint')}`, icon: '🏃', group: 'Go to', action: () => navigate(`/projects/${pid}/sprint`) },
         { id: 'go-overview',  label: 'Overview',          icon: '📈', group: 'Go to', action: () => navigate(`/projects/${pid}/overview`) },
+        { id: 'go-factory',   label: 'Factory metrics',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/factory`) },
         { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', group: 'Go to', action: () => navigate(`/projects/${pid}/settings`) },
       );
       void lens; // used via getLastLens in sidebar

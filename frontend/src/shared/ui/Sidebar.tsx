@@ -173,6 +173,7 @@ const Sidebar: Component = () => {
           <NavButton href={`/projects/${currentProjectId()}/timeline`} icon={IconTimeline} label="Timeline" onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/sprint`} icon={IconSprint} label={t('sprint')} onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/overview`} icon={IconOverview} label="Overview" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/factory`} icon={IconOverview} label="Factory metrics" onClick={close} />
 
           <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 10px' }} />
         </Show>
