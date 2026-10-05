@@ -53,6 +53,9 @@ const BRIEF = {
 
 const RUNNER_MODEL = 'claude-sonnet-4-5';
 
+/** The drawer captures share one height, so they sit side by side. */
+const DRAWER_HEIGHT = 1300;
+
 /** A runner whose config has a verifier and pushes branches, as
  *  `tack-runner` reports them at enrollment. */
 async function enrollConfiguredRunner(request: APIRequestContext) {
@@ -346,7 +349,7 @@ test.describe.serial('README screenshots', () => {
   });
 
   test('brief', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 1300 });
+    await page.setViewportSize({ width: 1440, height: DRAWER_HEIGHT });
     await page.goto(`/projects/${projectId}/board?item=${seeded.briefItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
@@ -355,7 +358,7 @@ test.describe.serial('README screenshots', () => {
     await expect(first).toHaveValue('Sign-in works with Google and GitHub');
     await drawer.getByRole('tablist').scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(OUT_DIR, 'brief.png') });
+    await drawer.screenshot({ path: path.join(OUT_DIR, 'brief.png') });
   });
 
   test('run-with-agent', async ({ page }) => {
@@ -372,31 +375,29 @@ test.describe.serial('README screenshots', () => {
   });
 
   test('decision-inbox', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 1200 });
+    await page.setViewportSize({ width: 1440, height: DRAWER_HEIGHT });
     await page.goto(`/projects/${projectId}/board?item=${seeded.decisionItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await drawer.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
-    const card = drawer.getByText('Recommended', { exact: true }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.scrollIntoViewIfNeeded();
+    await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+    await drawer.getByRole('heading', { name: 'Decisions' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(OUT_DIR, 'decision-inbox.png') });
+    await drawer.screenshot({ path: path.join(OUT_DIR, 'decision-inbox.png') });
   });
 
   test('merge-readiness', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.setViewportSize({ width: 1440, height: DRAWER_HEIGHT });
     await page.goto(`/projects/${projectId}/board?item=${seeded.mrpItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await drawer.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
-    const heading = drawer.getByText(/^Recommendation:/).first();
-    await expect(heading).toBeVisible({ timeout: 10_000 });
-    await heading.scrollIntoViewIfNeeded();
+    await expect(drawer.getByText(/^Recommendation:/).first()).toBeVisible({ timeout: 10_000 });
+    await drawer.getByText('Merge-readiness pack', { exact: true }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(OUT_DIR, 'merge-readiness.png') });
+    await drawer.screenshot({ path: path.join(OUT_DIR, 'merge-readiness.png') });
   });
 
   test('factory-metrics', async ({ page, request }) => {
