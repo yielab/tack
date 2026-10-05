@@ -1,16 +1,36 @@
-import { type Component, For, Show, createSignal } from 'solid-js';
+import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button } from '../ui';
-import type { AttemptSummary } from '../execution';
+import { artifactsApi, type AttemptSummary } from '../execution';
 import { NOT_MEASURED_TEXT, describeModelProvenance, formatUsageEconomics } from './attemptFormat';
 import ArtifactDownloadPanel from './ArtifactDownloadPanel';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
+import MrpPanel from './MrpPanel';
 import { describeExecutionState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
   requestId: string;
   attempts: AttemptSummary[];
 }
+
+/** The pack panel, shown only when the attempt's artifacts include a
+ *  merge-readiness pack (kind `mrp`). */
+const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props) => {
+  const [artifacts] = createResource(
+    () => `${props.requestId}:${props.attemptNumber}`,
+    () => artifactsApi.list(props.requestId, props.attemptNumber).catch(() => []),
+  );
+  return (
+    <Show when={(artifacts() ?? []).some((a) => a.kind === 'mrp')}>
+      <section>
+        <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
+          Merge-readiness pack
+        </h4>
+        <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} />
+      </section>
+    </Show>
+  );
+};
 
 const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
@@ -84,6 +104,8 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
             </h4>
             <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
           </section>
+
+          <MrpSlot requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
         </div>
       </Show>
     </li>
