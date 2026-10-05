@@ -7,7 +7,7 @@
 
 **A project board that can hand its items to a coding agent — Claude Code, Codex,
 docket or opencode — and keep the run on the item's record.**
-Self-hosted. One binary, one SQLite file, no account.
+A desktop app on your machine, or the same binary as a server. One SQLite file, no account.
 
 <p align="center">
   <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and a banner offering to let this board run its items with an agent" />
@@ -115,12 +115,13 @@ Everything here works the moment Tack starts, with no agent set up.
 
 ## Get started
 
-**Desktop app.** Download it from the
-[releases page](https://github.com/yielab/tack/releases): `.AppImage` or `.deb` on
+**Desktop app — the default.** Download it from the
+[releases page](https://github.com/yielab/tack/releases/latest): `.AppImage` or `.deb` on
 Linux, `.dmg` on macOS (Apple Silicon and Intel), `.msi` on Windows. Open it and the
-board opens in its own window.
+board opens in its own window; behind it runs the same `tack serve --with-runner`.
 
-**Or the binary**, for servers or if you'd rather use a terminal:
+**The server**, `tack serve`, is the same binary and the same data, for a machine with no
+desktop, a host other people reach, or automation:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
@@ -129,7 +130,6 @@ tack serve --with-runner
 
 Or `brew install yielab/tap/tack`. On Windows,
 `irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex` in PowerShell.
-
 Open **<http://localhost:3210>**. The installer checks every download against the
 release's `SHA256SUMS`. Other ways to install — Homebrew, Scoop, Docker, a release
 archive, or building from source — are in the
@@ -137,13 +137,20 @@ archive, or building from source — are in the
 [Step-by-Step Tutorial](docs/book/src/user-guide/tutorial.md) walks the whole path
 from here to a finished agent run, with a real screenshot at every step.
 
-**About `--with-runner`:** it starts a runner inside the same process, so agent runs
-work right away. Without it, the board works fully and you can turn agents on later
-from the Agents page, no restart needed. It only runs on `localhost`, because it starts
-agent processes. For a shared server, attach a separate `tack-runner` instead:
-[Enrolling a runner](docs/book/src/user-guide/agent-runners.md#enrolling-a-runner).
+**Which one do I have?**
 
-Your data is `tack.db` plus the `storage/` folder. Back up both.
+- **Where is my data?** Either way it is `tack.db` plus the `storage/` folder; back up
+  both. The desktop app keeps them in `~/.local/share/tack` (Linux),
+  `~/Library/Application Support/tack` (macOS) or `%APPDATA%\tack` (Windows). The server
+  uses `TACK_DATABASE_URL` and `TACK_STORAGE_DIR`, which default to the folder it starts
+  in — see [`docs/CONFIG.md`](docs/CONFIG.md).
+- **Do agents run on this machine?** With the desktop app, or `tack serve --with-runner`,
+  yes: a runner starts inside the same process. Without the flag the board works fully
+  and you can turn agents on later from the Agents page, no restart needed.
+- **Do other people or machines use it?** Then run `tack serve` on the shared host and
+  attach a separate `tack-runner` where agents should run —
+  [Enrolling a runner](docs/book/src/user-guide/agent-runners.md#enrolling-a-runner).
+  `--with-runner` only runs on `localhost`, because it starts agent processes.
 
 > Binaries and the desktop app aren't code-signed yet. On macOS, right-click → **Open**
 > the first time. On Windows, choose **More info → Run anyway**.
