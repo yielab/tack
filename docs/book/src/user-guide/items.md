@@ -1,6 +1,6 @@
 # Working with Items
 
-Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Brief, Activity, Dependencies, Files, and Fields.
+Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Brief, Activity, Execution, Dependencies, Files, and Fields.
 
 ---
 
@@ -38,6 +38,8 @@ Core metadata — **assignee, priority, estimate, sprint, due date, and labels (
 ## Brief tab
 
 The Brief says what "done" means for an item, in a form a person or a program can check. It has four parts, and **Save brief** writes them all at once.
+
+<img src="../screenshots/brief.png" width="50%" alt="The Brief tab of an item: acceptance criteria, each with a kind — Manual (marked as costing a person's time), Test and Command — a title, and the fields its kind needs.">
 
 **Acceptance criteria** are the checks that must pass. Each has a title and one of six kinds:
 
@@ -83,6 +85,21 @@ Set a value by typing or selecting in the control next to the field name. Each c
 A field definition may also carry extra **validation rules** that apply on top of the type check: a regex `pattern` and `min_length`/`max_length` for strings, `min`/`max` for numbers, and `max_items` for multi-select. Values that violate these rules are rejected with a descriptive message.
 
 > If a project has no custom fields, the tab shows "No custom fields — define fields in project settings."
+
+---
+
+## Execution tab
+
+The record of every time an agent was handed this item. Each request lists its attempts, with the
+state, the runner, the model that ran against the one requested, and what it cost (or **Not
+measured**). When the attempt's branch became a pull request, a **PR #n** link and a badge (open,
+merged, closed or reverted) sit on the attempt. **Show events, decisions & artifacts** opens its
+timeline, the questions the agent asked, the files it produced, and, when a verifier ran, the
+merge-readiness pack to accept or reject. A question that is still waiting appears in the decision
+inbox on the same tab, with the options, their risks and the agent's recommendation. Everything on
+this tab, and how to start a run, is in [Agent Runners](agent-runners.md); the item's
+[Brief](#brief-tab) is what the agent is given as the definition of done. An item that was never
+run shows an empty tab, not a hidden one.
 
 ---
 

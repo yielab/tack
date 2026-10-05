@@ -13,9 +13,9 @@ token system** every component relies on.
 frontend/src/
 ├── app/          App shell — Router, Layout (sidebar + top bar), routes
 ├── features/     One folder per surface: board, list, table, calendar,
-│                 timeline, sprints, item-detail, dashboard, projects,
-│                 settings, templates, agents, approvals, economics, fleet,
-│                 provisioning
+│                 timeline, sprints, item-detail (incl. the Brief tab),
+│                 dashboard (Overview and Factory metrics), projects,
+│                 settings, templates, agents
 ├── shared/
 │   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs,
 │   │             CommandPalette, SearchBar, Sidebar, ToastContainer …) plus
@@ -25,6 +25,9 @@ frontend/src/
 │   │             commandPalette, optimistic updates, toasts)
 │   ├── api/      Typed fetch client (api.*), one module per resource
 │   ├── realtime/ Reconnecting board WebSocket
+│   ├── runWithAgent/ The run dialog (RunFlow), attempt list with its pull-request
+│   │             badge, decision inbox, merge-readiness panel, event timeline
+│   ├── execution/, agents/ Execution types and API calls; the Agents page's pieces
 │   ├── vocab/    Per-project terminology resolution (useVocab)
 │   └── types/    DTOs mirroring the backend
 └── index.css     The design tokens (see below)

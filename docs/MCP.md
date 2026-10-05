@@ -97,6 +97,8 @@ operation.
 | `cancel_execution` | write | `request_id`* | `POST /api/executions/{id}/cancel` |
 | `create_execution` | write | `item_id`*, one of `runner_id`/`fleet_id`*, `agent_profile_id`*, `harness`*, `agent_profile_snapshot`* (object), `repository`* (object), `permission_policy`* (object), `timeout_seconds`*, `model_provider`, `model_id`, `budgets`, `environment`, `metadata`, `status_map_policy_id`, `idempotency_key` | `POST /api/executions` |
 
+`status_map_policy_id` is `done_on_success` (the item moves to its first Done status when the attempt succeeds) or `done_on_mrp_accepted` (when its merge-readiness pack is accepted); omit it to leave the item's status untouched.
+
 Use the two `list_*` tools first to discover valid `fleet_id`/`agent_profile_id`
 values before calling `create_execution`. `get_execution`'s `state` can be
 `needs_operator` or `lost` — an ambiguous outcome, not just another in-progress

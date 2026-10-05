@@ -52,10 +52,11 @@ docs/                Documentation
 - Vocabulary system: customizable term mapping per project
 - Dependency graph: DAG with cycle detection (DFS-based)
 - Error types: typed domain errors (`CoreError`)
+- Item briefs (`brief.rs`) and the `mrp-v1` merge-readiness pack (`mrp.rs`): types, validation and Markdown rendering, as plain data
 
 **tack-db**:
 - SQLite via `sqlx` (async)
-- 74 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
+- 81 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
 - Repository pattern: CRUD for all entities in `repo/` submodules
 - Auto-runs migrations on startup
 - Database is created automatically if missing
@@ -88,7 +89,9 @@ docs/                Documentation
 - Owns everything the API must not: local vendor credentials, the isolated per-attempt workspace/worktree, the owner-only TOML journal written **before** spawn, and the harness subprocess itself
 - `harness/` holds the adapter layer — `process.rs` (bounded output capture, timeouts, process-group cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and `local_process.rs`, the one lifecycle every local CLI harness shares (locate, probe, request policy, environment and secrets, provider injection, spawn, cancel, reconcile, log staging, outcome). A harness is a `HarnessDescriptor` (data) plus a `HarnessGrammar` — its command line, how its output is read, what it supports, and optionally how it drives a stdio conversation (`prompt`, `signal`, `answer`) so a run can pause and ask the operator: `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. Adding one is a module plus a line in `harness::DESCRIPTORS` and one in `harness::discover`; provider wiring and `tack runner doctor` read the descriptor. The harness vocabulary itself is open (`HarnessKind::Other(String)`) — this crate ships adapters for these four, a runner may still report any kind string
 - Two traits: `client::engine::HarnessAdapter` (per-attempt lifecycle — `validate`/`start`/`cancel`/`wait`/`reconcile`) and `harness::HarnessProbe` (version/capability discovery, which needs no claimed attempt). `AdapterRegistry` implements `HarnessAdapter` by dispatching on the requested harness kind, so the engine takes exactly one adapter type
-- **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation, because every harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude`. Cancellation is `Advisory` everywhere; the scheduler must read the capability snapshot, never assume
+- **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation unless its harness announces the process groups its tools start, because every other harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude`. Only docket on contract 1.1 announces them, so cancellation is `Supported` there and `Advisory` everywhere else; the scheduler must read the capability snapshot, never assume
+- After a succeeded (or cancelled) attempt and before the workspace is deleted, the engine captures the attempt's change as evidence for every harness (`evidence.rs`), then, when the operator turned them on in the runner's TOML config, runs a verifier over it that writes a merge-readiness pack (`verify.rs`, `[verify]`) and pushes the work as a branch (`git.rs`, `[git]`). A failure of either is an event on the attempt, never a change to its outcome
+- docket is negotiated, not pinned: the runner probes which harness contract (1.0 or 1.1) and which flags the installed docket accepts at boot and everything else follows from that
 - Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`
 
 **tack-cli** (the single `tack` binary):
@@ -134,7 +137,7 @@ docs/                Documentation
 
 ## Database Schema Highlights
 
-- **74 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it)
+- **81 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests)
 - Migrations are transactional with ordered-prefix and checksum enforcement; 037/038's copy/verify/swap rebuild and 064–073's table drops each run behind an automatic pre-upgrade `VACUUM INTO` snapshot
 - **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. 16 sites in `repo/execution.rs` hit this (`grep -c 'begin_with("BEGIN IMMEDIATE")' crates/tack-db/src/repo/execution.rs`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
@@ -168,6 +171,9 @@ All routes follow RESTful conventions:
 - `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
 - `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
 - `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
+- `/api/items/{id}/brief` (GET/PUT/DELETE) — an item's brief: acceptance criteria, constraints, definition of done, risk (3 endpoints). It travels in project export and import and is rendered into the instructions a harness receives
+- `/api/executions/{request_id}/attempts/{n}/mrp` (GET), `.../mrp/viewed` and `.../mrp/review` — an attempt's merge-readiness pack, the mark that a person opened it, and the human verdict (the first verdict wins)
+- `/api/projects/{id}/metrics/factory` — the project's factory metrics: every ratio with the counts behind it, and a reason when it cannot be measured; optional `since`
 - `/api/runner/v1/*` — **Runner protocol**, 14 paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
 
 Query parameters support filtering, pagination, and search.
@@ -275,8 +281,8 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
   talks to the API directly; the browser exercises the SPA via the proxy.
 - **Security**: `cargo audit` + `npm audit` in CI; justified advisory exceptions
   in `.cargo/audit.toml`. **Performance**: k6 baseline in `tests/load/`.
-- **Integration gates** in `crates/tack-api/tests/wave2_gate.rs` — deliberately import no
-  test infrastructure from any other test module and drive the real `build_router`,
+- **Integration gates** in `crates/tack-api/tests/handlers/production_router.rs` — drive the real
+  `build_router`,
   because one area's own green tests are not evidence that the integrated system works.
 
 **A test that asserts a status code has usually not proved the claim.** The recurring failure

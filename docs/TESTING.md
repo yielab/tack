@@ -26,7 +26,7 @@ everything passes.
 ```bash
 cargo nextest run --workspace                                   # everything — ~15 s to execute on a warm build
 cargo nextest run --workspace -E 'package(tack-db)'             # one crate
-cargo nextest run --workspace -E 'binary(wave2_gate)'           # one test binary
+cargo nextest run --workspace -E 'binary(runner_contract)'        # one test binary
 cargo nextest run --workspace -E 'test(/fencing/)'              # tests whose name matches a regex
 cargo nextest run --workspace --no-capture -E 'test(<name>)'    # see println!/tracing output (runs serially)
 cargo nextest run --workspace --run-ignored ignored-only -E 'package(tack-db)'   # the perf test (50k items, p95 < 100 ms)
@@ -165,6 +165,12 @@ rewrite differs from what is committed:
 UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' && git diff --exit-code docs/openapi.json
 cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated: the fixtures are the authority
 ```
+
+Three more contracts under `docs/contracts/` are held the same way, each by tests that read
+its committed example: `brief-v1` (`crates/tack-core/src/brief/tests.rs`), `mrp-v1`
+(`crates/tack-core/tests/mrp_contract.rs`, with its four fixtures) and `evidence-v1`
+(`crates/tack-runner/tests/evidence_contract.rs`, which also pins the example's bytes). Change
+the example first, then the type.
 
 `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are generated;
 `./scripts/regen-generated.sh` does both plus the lockfiles. Never hand-edit or hand-merge

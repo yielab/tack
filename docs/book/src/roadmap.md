@@ -48,7 +48,7 @@ reverse.
 
 ## Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
 
-**Status:** open 2026-10-03. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
+**Status:** open 2026-10-03; every task in the table below is built and merged into `develop`, not yet in a release. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
 **ADRs:** 0069 (the brief is an entity on the item and travels), 0070 (docket contract 1.1,
 negotiated at boot; cancel becomes per-harness evidence), 0071 (evidence before deletion, the
 verifier boundary, the pushed branch and its pull request), 0072 (the "Run with agent" flow).
@@ -79,6 +79,16 @@ merges the card it needs, not when docket cuts a release.
 | 4–5 | The merge-readiness panel; the runner pushes the branch behind `[git]`; the pull request and its fate from the poll that already runs; verification and push become live controls in the dialog. | Sonnet agents |
 | 6–7 | Factory metrics, endpoint then page; the pull-request badge. | Sonnet, then Haiku |
 | A | docket in five links, following docket's Phase 35: negotiation and contract 1.1; process events and a proven cancel; asking over stdin; limits, policy and files; the recipe flag. | Sonnet; the last link Haiku |
+
+Left open by the work, each listed in the
+[Agent Runners](user-guide/agent-runners.md) chapter's "Known gaps" or beside the feature it limits: a docket recipe run takes no token
+budget (docket refuses one with `--recipe`) and a recipe with an Implementer step fails for
+want of a verify command; a docket run that times out, rather than being cancelled, stops
+only its main process group; the branch push runs git in a workspace the agent could have
+reconfigured; on a docket that accepts a policy, a request must name docket's own tools; and
+`tack runner doctor` does not yet print each harness's `artifacts` and `permission_policy`
+lines. Opening a pull request as a choice in the "Run with agent" dialog is shown disabled:
+a pull request is opened for a pushed branch whose item is linked to a GitHub issue.
 
 ---
 

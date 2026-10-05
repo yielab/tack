@@ -145,11 +145,12 @@ The snapshot contains:
 - `items` — every item in the project
 - `sprints` — all sprints
 - `dependencies` — all dependency edges
+- `briefs` — every item's [brief](items.md#brief-tab) (acceptance criteria, constraints, definition of done, risk)
 - `metadata` — `exported_at` timestamp, the exporting Tack `version`, and totals for items, sprints, and dependencies
 
 `format` defaults to `json`, so omitting the query parameter produces the same result. A `format=yaml` variant is also available and produces the identical structure as YAML.
 
-This snapshot is the same shape accepted by `POST /api/projects/import`, so an exported JSON or YAML file can be re-imported to recreate the project (items, sprints, parent links, and dependencies are all restored into a brand-new project).
+This snapshot is the same shape accepted by `POST /api/projects/import`, so an exported JSON or YAML file can be re-imported to recreate the project (items, sprints, parent links, dependencies and briefs are all restored into a brand-new project). A brief in the file is checked by the same rules as a save from the Brief tab, and the import is refused if one breaks them, since an export file can be edited by hand. The response counts `briefs_imported` beside the other totals.
 
 ---
 
@@ -176,7 +177,7 @@ The CSV has one row per item with these columns:
 | `parent_id` | Parent item UUID, or empty if top-level |
 | `created_at` | Creation timestamp (RFC 3339) |
 
-CSV export covers items only — it does not include sprints, dependencies, or workflow configuration. Use JSON or YAML export for a full, re-importable backup.
+CSV export covers items only — it does not include sprints, dependencies, briefs, or workflow configuration. Use JSON or YAML export for a full, re-importable backup.
 
 ---
 
