@@ -13,7 +13,7 @@ import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   shouldHideTargetPicker, isExecutionOff, describeProjectModelDefault, projectDefaultModelPair,
   isModelPassthroughAttested, isDecisionsAttested, resolveAutoModelPolicy,
-  type RunWithAgentFormValues,
+  type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow, { CUSTOM_MODEL_VALUE } from './RunFlow';
 

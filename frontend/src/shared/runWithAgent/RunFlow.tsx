@@ -33,7 +33,7 @@ export interface RunFlowProps {
   projectId: string;
   hideTargetPicker: Accessor<boolean>;
   runnersLoading: Accessor<boolean>;
-  targetOptions: Accessor<Array<{ value: string; label: string }>>;
+  targetOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   target: Accessor<string>;
   onTarget: (value: string) => void;
   rows: { runner: Accessor<PrerequisiteState>; harness: Accessor<PrerequisiteState>; profile: Accessor<PrerequisiteState>; model: Accessor<PrerequisiteState> };
@@ -41,7 +41,7 @@ export interface RunFlowProps {
   profiles: Accessor<AgentProfileSummary[]>;
   creatingProfile: Accessor<boolean>;
   createDefaultProfile: () => void;
-  harnessOptions: Accessor<Array<{ value: string; label: string }>>;
+  harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   projectDefaultLabel: Accessor<string | null | undefined>;
   modelCombos: Accessor<AggregatedModelCombination[]>;
   passthroughAttested: Accessor<boolean>;

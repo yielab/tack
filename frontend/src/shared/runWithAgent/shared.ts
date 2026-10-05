@@ -545,3 +545,18 @@ export function isModelPassthroughAttested(harness: HarnessCapability | undefine
 export function isDecisionsAttested(harness: HarnessCapability | undefined): boolean {
   return harness?.decisions?.support === 'supported';
 }
+
+/** Props of the one shared "Run with agent" modal (Board, item-detail, Sprint). */
+export interface RunWithAgentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  itemId: string;
+  itemTitle: string;
+  /** The item's project, whose model default the submit gate reads. */
+  projectId: string;
+  /** Called with the new request id after a successful create. */
+  onCreated?: (requestId: string) => void;
+  /** Tests only: replaces the capabilities the submit gate reads. The target
+   *  picker always reads the live `GET /runners`. */
+  capabilities?: () => RunnerCapabilities[];
+}
