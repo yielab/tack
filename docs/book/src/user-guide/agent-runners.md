@@ -109,7 +109,7 @@ you've already picked one.
 |---|---|---|---|---|---|---|
 | `codex` | The official Codex CLI, e.g. `npm install -g @openai/codex` | Its own login (ChatGPT/API-key session) needs no Tack configuration. A Tack-configured Vercel AI Gateway key also reaches it, over the OpenAI Responses wire — Anthropic's own API doesn't serve that wire, so it's never an option here. | Tokens, read from the run's own terminal line (`exec --json`'s `turn.completed`). Cost is never measured: no such field exists in the output. The model that actually served the request is never confirmed — Tack records the one you requested, tagged `requested_not_confirmed`. | **Yes** — over `codex app-server`, and only when the request's permission policy sets `approvals` to `ask` and a command needs to escalate beyond the sandbox | Advisory — your tool list picks codex's sandbox mode (a write-capable tool grants `--sandbox workspace-write`, otherwise `--sandbox read-only`); your network flag and budget never reach it | Resume a session, report a cost, confirm which model served a request, or honour a network deny or a budget |
 | `claude-code` | `npm install -g @anthropic-ai/claude-code` | Its own login (a Claude subscription or its own API key) needs no Tack configuration. A Tack-configured endpoint can be Anthropic's own API directly, or the Vercel AI Gateway — both over the Anthropic Messages wire. | Tokens and cost, from the run's own result line — advisory, because an auxiliary model's cost is folded into the total while token counts were only confirmed to cover the primary turn. The served model is confirmed from its own session-start line on a direct connection; routed through the gateway, it's recorded `requested_not_confirmed` instead, since a gateway can still substitute a model underneath it. | **Yes** — before every tool call, when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
-| `docket` | From the [docket project](https://github.com/yielab/docket), following its own install instructions | Always needs a Tack-configured endpoint — the Vercel AI Gateway, over the OpenAI Chat Completions wire; Anthropic's own API doesn't serve that wire either. It has no login of its own that this adapter uses. | Tokens, genuinely read from its result line, and a served model that's a real observation of the endpoint's own response — never downgraded to `requested_not_confirmed`, even behind a gateway. Cost is never measured: the installed version always reports it `null`. | No — a tool call that would need one is refused immediately instead | Not at all — it applies its own tool-policy engine; your tool list, network flag and budget never reach it | Resume, pause for a decision, report a cost, or enforce the permission policy |
+| `docket` | From the [docket project](https://github.com/yielab/docket), following its own install instructions | Always needs a Tack-configured endpoint — the Vercel AI Gateway, over the OpenAI Chat Completions wire; Anthropic's own API doesn't serve that wire either. It has no login of its own that this adapter uses. | Tokens, genuinely read from its result line, and a served model that's a real observation of the endpoint's own response — never downgraded to `requested_not_confirmed`, even behind a gateway. Cost is never measured: the installed version always reports it `null`. A recipe run has no single turn to read a served model from, so none is recorded for it. When the installed docket reports the files a run wrote, they appear in the attempt's result (paths under `.tack-runner/` are left out). | **Yes, when the installed docket accepts answers** — `tack runner doctor --json` shows it as `decisions: supported` under docket. Then, when the request's permission policy sets `approvals` to `ask`, docket pauses before each tool call its own policy gates and waits for your answer; a call its policy allows runs without a question. A docket that doesn't accept answers refuses a gated call immediately instead | Depends on the installed docket. When it accepts a policy, your tool list and network flag reach it as a policy blocking every docket tool you don't allow, and your token budget reaches it as its own limit — except on a recipe run, which takes no token limit. A docket without those flags is passed none of them and applies only its own policy engine | Resume, report a cost, take a token budget on a recipe run, or run a recipe with an Implementer step (Tack passes no verify command, so that step fails) |
 | `opencode` | `brew install opencode` | Always needs a Tack-configured endpoint — its own vendor logins are out of scope for this adapter — the Vercel AI Gateway, over the same OpenAI Chat Completions wire as docket. | Tokens, summed across every step of the run. The served model is never confirmed — every run is recorded `requested_not_confirmed`, because nothing in its output names what actually answered. Cost is never measured for a model it doesn't recognize. | **Yes** — but only over `opencode acp`, and only when the request's permission policy sets `approvals` to `ask`: each granted tool then pauses on its own request until answered | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Confirm which model served a request, or run at all against a request that denies network — see below |
 
 A few things above are easy to trip over:
@@ -122,6 +122,31 @@ A few things above are easy to trip over:
 - **docket reads its key from one fixed variable.** Whatever provider you configure,
   Tack injects its resolved credential under `DOCKET_LLM_API_KEY` — docket never sees a
   provider-named variable, and it refuses to start without one.
+- **docket is asked what it can do when the runner starts.** Tack asks the installed docket
+  which harness contract it speaks (1.0 or 1.1) and which optional flags it accepts, using calls
+  docket refuses before doing any work: no model is called and nothing is written. Tack never
+  reads docket's version number to decide anything, because an install's version string can be
+  stale while its code is current. What it found is what everything below follows from, and
+  `tack runner doctor` prints docket's version and, with `--json`, its `decisions` entry, which
+  names the contract it negotiated.
+- **docket gets your limits, policy and a list of the files it wrote, when it can take them.**
+  When the installed docket accepts them, the run's token budget goes to docket as its own limit,
+  and the run's tool list and network setting go to it as a policy that blocks every docket tool
+  the run does not allow; an empty list blocks all of them. Only docket's own tool names can be
+  used there (`read`, `write`, `edit`, `glob`, `grep`, `bash`, `fetch`, `skill`, `consult`): a run
+  that names any other tool, or allows `fetch` with network off, is refused before it starts,
+  with the field named, never quietly narrowed. docket then reports the files the run changed,
+  and they appear in the attempt's result (files under `.tack-runner/` are left out). A docket
+  without these flags gets none of them and says so: its permission policy and artifacts are
+  `unsupported`, never half-supported.
+- **docket can run a named recipe instead of a single task.** Put the recipe's name in the agent
+  profile's tool policy, as `{"docket": {"recipe": "research-review"}}`. When the installed docket
+  supports recipes, Tack passes `--recipe` and docket runs that recipe in place on the workspace.
+  docket refuses a recipe run that also carries an agent id or a token limit, so Tack leaves both
+  off: a recipe run takes no token budget. A recipe with an Implementer step needs a verify
+  command, which Tack does not pass, so that step fails with `verifyCmd required but not set`;
+  recipes without one (for example `research-review`) run to the end. The result's `task` block,
+  with each step's role and outcome, is kept in the attempt's result.
 - **codex maps your tool list onto its sandbox mode, and says what it still can't.**
   A tool list granting `bash`, `shell`, `edit`, `write` or `apply_patch` runs codex under
   `--sandbox workspace-write`; an empty or read-only tool list runs it under
@@ -144,11 +169,19 @@ agent"** dialog this is the "Approvals" choice, "Automatic" or "Ask me"; the CLI
 API set it directly (`--permission-policy
 '{"tools":[...],"network":...,"approvals":"ask"}'`). Unset, or `"auto"`, never pauses.
 
-claude-code, codex and opencode honour `ask`; docket does not. Each one pauses at a different
-point: claude-code before every tool call, opencode before every call to a tool your list
-grants, codex only for a command that needs to escalate beyond its sandbox. For a harness that
-does not honour it the dialog disables "Ask me" and says why, and a request built by hand that
-asks anyway is never scheduled onto a runner that would ignore the choice and run as `auto`.
+Claude Code, codex and opencode honour `ask`, and so does docket when the installed one accepts
+answers. Each one pauses at a different point: claude-code before every tool call, opencode
+before every call to a tool your list grants, codex only for a command that needs to escalate
+beyond its sandbox, docket before each call its own policy gates (a call its policy allows runs
+without a question). Which dockets accept answers is decided when the runner starts, by asking the
+installed one — see the docket notes above. For a harness that does not honour `ask` the dialog
+disables "Ask me" and says why, and a request built by hand that asks anyway is never scheduled
+onto a runner that would ignore the choice and run as `auto`. A docket without answer support
+still refuses a gated call outright.
+
+With docket, choosing "Ask me" pauses the agent before each gated call and waits for your answer
+in Tack. Allow lets the call run; Deny refuses it, and the agent is told it was refused and
+carries on. This works the same whether docket is running a single task or a recipe.
 
 The question appears in the attempt's decision inbox, in the same item view as the run's
 timeline and artifacts. Answering it needs `TACK_EXECUTION_DECISION_TOKEN`, a secret
@@ -700,23 +733,28 @@ protocol version, concurrency, installed harness versions, and per-feature suppo
 (`docs/contracts/runner-v1/capabilities.json`). The scheduler and UI are required to
 read this snapshot rather than assume a feature works.
 
-**The one enforced rule:** no in-tree adapter may claim `cancel: supported`.
-`AdapterRegistry::register_probe` rejects any probe that does, at registration time,
-before any attempt can reference it — `crates/tack-runner/src/harness/mod.rs`, proved
-by `harness::tests::registering_a_probe_overclaiming_cancel_support_is_rejected`.
-The reason is structural, not a policy choice: every harness's own shell tool spawns
-its subprocess in a new session outside the runner's process group, confirmed with
-`ps` against each real harness installation (see each harness's own
-`fixtures/<kind>/README.md`). `cancel` is `advisory`
-everywhere in this build — a cancellation *request* is always honored as a request,
-but the runner cannot promise the process actually stops.
+**The one enforced rule:** an adapter may claim `cancel: supported` only if its harness
+announces the process groups its shell tool starts. `AdapterRegistry::register_probe` rejects
+any other probe that does, at registration time, before any attempt can reference it —
+`crates/tack-runner/src/harness/mod.rs`, proved by
+`harness::tests::registering_a_probe_overclaiming_cancel_support_is_rejected`. The reason is
+structural: a harness's own shell tool spawns its subprocess in a new session outside the
+runner's process group, so without being told the group the runner cannot promise it stopped
+(confirmed with `ps` against each real harness installation; see each harness's own
+`fixtures/<kind>/README.md`). Only docket announces its bash calls' process groups
+(`process_started` / `process_exited`), and only when its negotiated contract is 1.1, so
+`cancel` is `supported` for docket on 1.1 and `advisory` otherwise and for the other three
+harnesses. On a cancellation the runner stops the main group, then sends SIGTERM and, after the
+grace period, SIGKILL to each announced group still live. The cancellation evidence carries
+`details.groups` as `{tracked, killed, survived}`. A harness that announces nothing always shows
+`tracked: 0`, which means nothing was reported, not that nothing was left.
 
 | Feature | Ceiling in this build | Why |
 |---|---|---|
-| `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across all four harnesses — `AdapterRegistry::register_probe` rejects a stronger claim at registration, before any attempt can reference it |
+| `cancel` | `supported` for docket on contract 1.1, `advisory` for everything else | Only a harness that announces its process groups can be held to stopping them — `AdapterRegistry::register_probe` rejects a stronger claim from any other, before any attempt can reference it |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
-| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — claude-code, codex and opencode, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
-| `artifacts` | `advisory` (every adapter) | None of the harnesses tested can guarantee artifact discovery; downgraded from an earlier `supported` claim |
+| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — claude-code, codex and opencode, and docket when the installed one accepts answers, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
+| `artifacts` | `supported` for docket when it reports the files a run wrote, `advisory` otherwise | The other harnesses cannot guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
 ---
