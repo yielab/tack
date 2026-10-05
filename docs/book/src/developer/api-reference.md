@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (79 paths, 112 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](../../../openapi.json) (80 paths, 115 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -350,6 +350,54 @@ Roles / specialties and their assignment to items.
 |---|---|---|
 | 200 | Deleted | — |
 | 404 | Role not found | `ErrorEnvelope` |
+
+---
+
+## Briefs
+
+An item's brief: acceptance criteria, constraints, definition of done.
+
+#### `DELETE /api/items/{item_id}/brief`
+
+DELETE /api/items/:item_id/brief
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `item_id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | Brief deleted | — |
+| 404 | Item not found, or it has no brief | `ErrorEnvelope` |
+
+#### `GET /api/items/{item_id}/brief`
+
+GET /api/items/:item_id/brief
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `item_id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The item's brief | `ItemBrief` |
+| 404 | Item not found, or it has no brief | `ErrorEnvelope` |
+
+#### `PUT /api/items/{item_id}/brief`
+
+PUT /api/items/:item_id/brief
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `item_id` | path | `string` | yes | Item ID |
+
+**Request body:** `UpsertItemBrief`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The brief as stored | `ItemBrief` |
+| 400 | Validation error | `ErrorEnvelope` |
+| 404 | Item not found | `ErrorEnvelope` |
 
 ---
 
