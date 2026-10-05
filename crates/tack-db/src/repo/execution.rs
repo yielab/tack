@@ -142,6 +142,8 @@ pub struct NewDecision<'a> {
     pub options: &'a str,
     pub metadata: &'a str,
     pub expires_at: Option<DateTime<Utc>>,
+    /// The runner's recommended option as JSON, stored in `recommendation`.
+    pub recommendation: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
@@ -425,6 +427,8 @@ pub struct ExecutionDecisionRow {
     pub expires_at: Option<String>,
     pub resolved_at: Option<String>,
     pub resolved_by: Option<String>,
+    pub recommendation: Option<String>,
+    pub viewed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -3222,10 +3226,32 @@ impl Repository {
             tx.commit().await?;
             return Ok(false);
         }
-        sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
-        .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(&now).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, recommendation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
+        .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(decision.recommendation).bind(&now).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(true)
+    }
+
+    /// Stamps `viewed_at` the first time an operator opens a decision; later
+    /// calls keep the first timestamp. `Ok(None)` means no such decision for
+    /// this attempt; `Ok(Some(ts))` is the stored (first) timestamp.
+    #[instrument(skip(self, clock))]
+    pub async fn mark_execution_decision_viewed(
+        &self,
+        attempt_id: &str,
+        decision_id: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let now = stamp(clock);
+        sqlx::query_scalar(
+            "UPDATE execution_decisions SET viewed_at = COALESCE(viewed_at, ?) \
+             WHERE attempt_id = ? AND decision_id = ? RETURNING viewed_at",
+        )
+        .bind(&now)
+        .bind(attempt_id)
+        .bind(decision_id)
+        .fetch_optional(self.pool())
+        .await
     }
 
     /// Every decision raised against one specific attempt (identified by its
@@ -3257,7 +3283,7 @@ impl Repository {
         };
         let rows = sqlx::query(
             "SELECT id, attempt_id, decision_id, kind, state, prompt, options, metadata, \
-             answer, expires_at, resolved_at, resolved_by, created_at, updated_at \
+             answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at \
              FROM execution_decisions WHERE attempt_id = ? ORDER BY created_at",
         )
         .bind(&attempt_id)
@@ -3278,6 +3304,8 @@ impl Repository {
                     expires_at: row.get("expires_at"),
                     resolved_at: row.get("resolved_at"),
                     resolved_by: row.get("resolved_by"),
+                    recommendation: row.get("recommendation"),
+                    viewed_at: row.get("viewed_at"),
                     created_at: row.get("created_at"),
                     updated_at: row.get("updated_at"),
                 })

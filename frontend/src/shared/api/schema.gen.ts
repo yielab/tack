@@ -3072,8 +3072,12 @@ export interface components {
             protocol_version: number;
         };
         DecisionOptionSummary: {
+            description?: string | null;
+            /** Format: int64 */
+            estimated_tokens?: number | null;
             label: string;
             option_id: string;
+            risks?: string[] | null;
         };
         /**
          * @description Schema-only mirror of `resolved_by`'s two observed shapes:
@@ -3108,10 +3112,14 @@ export interface components {
             metadata: unknown;
             options: components["schemas"]["DecisionOptionSummary"][];
             prompt: string;
+            /** @description The runner's recommended option: `{option_id, rationale, evidence_refs}`. */
+            recommendation?: unknown;
             resolved_at?: string | null;
             resolved_by?: unknown;
             state: string;
             updated_at: string;
+            /** @description When an operator first opened this decision. */
+            viewed_at?: string | null;
         };
         Dependency: {
             /** Format: date-time */
