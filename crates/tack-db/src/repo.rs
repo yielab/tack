@@ -8,6 +8,7 @@ pub mod execution;
 pub mod github_links;
 pub mod items;
 pub mod projects;
+pub mod pull_requests;
 pub mod roles;
 pub mod sprints;
 pub mod templates;

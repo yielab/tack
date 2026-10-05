@@ -12,6 +12,10 @@
 //! `handlers::items::maybe_sync_github`, so an inbound move can't itself
 //! trigger an outbound push back to GitHub — the two directions only ever
 //! meet through the item's stored status, not through a shared code path.
+//!
+//! A pull request an attempt opened (`open_pull_request`) is followed by the same
+//! poll: the `/issues` response also lists pull requests, and a stored one has its
+//! state, `merged_at` and `closed_at` kept current.
 
 /// The single place the token-resolution order lives: a project's own
 /// `github_token_ref` (resolved through the embedded runner's secret store,
@@ -143,6 +147,83 @@ pub async fn push_issue_comment(
     Ok(created.id)
 }
 
+/// GET a repository's default branch — the base a new pull request targets.
+pub async fn default_branch(base: &str, token: &str, repo: &str) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
+        .timeout(std::time::Duration::from_secs(15))
+        // A redirect target is remote input — never forward the token to it.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let url = format!("{}/repos/{}", base.trim_end_matches('/'), repo);
+    let resp = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await?;
+    let status = resp.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub GET {url} returned {status}");
+    }
+    #[derive(serde::Deserialize)]
+    struct Repo {
+        default_branch: String,
+    }
+    Ok(resp.json::<Repo>().await?.default_branch)
+}
+
+/// POST a new pull request, returning its `(number, html_url)`. Best-effort like
+/// the other pushes: the caller logs a failure and moves on.
+///
+/// `head` is the pushed branch, `base_branch` the branch it targets; `title`
+/// and `body` are used as given, so a caller never passes untrusted text as the
+/// title.
+pub async fn open_pull_request(
+    base: &str,
+    token: &str,
+    repo: &str,
+    head: &str,
+    base_branch: &str,
+    title: &str,
+    body: &str,
+) -> anyhow::Result<(i64, String)> {
+    let client = reqwest::Client::builder()
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
+        .timeout(std::time::Duration::from_secs(15))
+        // A redirect target is remote input — never forward the token to it.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+
+    let url = format!("{}/repos/{}/pulls", base.trim_end_matches('/'), repo);
+    let resp = client
+        .post(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            "title": title,
+            "head": head,
+            "base": base_branch,
+            "body": body,
+        }))
+        .send()
+        .await?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub POST {url} returned {status}");
+    }
+    let created: CreatedPullRequest = resp.json().await?;
+    Ok((created.number, created.html_url))
+}
+
+/// The number and page GitHub assigns a newly opened pull request.
+#[derive(serde::Deserialize)]
+struct CreatedPullRequest {
+    number: i64,
+    html_url: String,
+}
+
 /// The id GitHub assigns a newly created comment.
 #[derive(serde::Deserialize)]
 struct CreatedComment {
@@ -156,6 +237,21 @@ struct GithubIssue {
     number: i64,
     state: String,
     updated_at: String,
+    /// Present only on the entries that are pull requests.
+    #[serde(default)]
+    pull_request: Option<GithubPullRequestRef>,
+    #[serde(default)]
+    closed_at: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubPullRequestRef {
+    #[serde(default)]
+    merged_at: Option<String>,
 }
 
 /// The fields the inbound poll reads off one GitHub issue comment.
@@ -284,6 +380,12 @@ async fn poll_repo(
     let issues_by_number: std::collections::HashMap<i64, &GithubIssue> =
         issues.iter().map(|issue| (issue.number, issue)).collect();
 
+    for issue in issues.iter().filter(|issue| issue.pull_request.is_some()) {
+        if let Err(error) = follow_pull_request(state, repo, issue).await {
+            tracing::warn!(pull_request = issue.number, %error, "GitHub pull request follow failed");
+        }
+    }
+
     let mut updated = 0;
     for link in &links {
         let (item_id, issue_number, _synced_at) = link;
@@ -356,6 +458,55 @@ async fn poll_repo(
     }
 
     Ok(updated)
+}
+
+/// Record what GitHub says about one pull-request entry of the issues list:
+/// its state, and, when it is a `Revert` PR whose body cites `#<n>`, that the
+/// stored merged PR `n` was reverted by it.
+async fn follow_pull_request(
+    state: &crate::router::AppState,
+    repo: &str,
+    pr: &GithubIssue,
+) -> anyhow::Result<()> {
+    let Some(pull_request) = &pr.pull_request else {
+        return Ok(());
+    };
+    let merged_at = pull_request.merged_at.as_deref();
+    let pr_state = if merged_at.is_some() {
+        "merged"
+    } else if pr.state == "closed" {
+        "closed"
+    } else {
+        "open"
+    };
+    tack_db::repo::pull_requests::observe(
+        state.pool(),
+        repo,
+        pr.number,
+        pr_state,
+        merged_at,
+        pr.closed_at.as_deref(),
+    )
+    .await?;
+
+    if pr.title.as_deref().is_some_and(|t| t.starts_with("Revert")) {
+        for cited in cited_numbers(pr.body.as_deref().unwrap_or_default()) {
+            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, cited, pr.number)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Every `#<n>` in `text`.
+fn cited_numbers(text: &str) -> Vec<i64> {
+    text.split('#')
+        .skip(1)
+        .filter_map(|rest| {
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        })
+        .collect()
 }
 
 /// Mirror any GitHub comment on `link`'s issue not yet stored on its item,

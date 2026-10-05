@@ -1758,3 +1758,161 @@ async fn wait_for_gh_request(gh: &wiremock::MockServer, path: &str) -> bool {
     }
     false
 }
+
+/// Seeds an item linked to `acme/widgets#42` and returns the poll's state.
+async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+    let project = tack_test_support::make_project(&repo, workspace_id).await;
+    let item = repo
+        .create_item(
+            project.id,
+            &project.workflow.initial_status().unwrap(),
+            tack_core::models::CreateItem {
+                title: "Fix the thing".into(),
+                description: None,
+                item_type: Some(tack_core::models::ItemType::Task),
+                parent_id: None,
+                priority: Some(tack_core::models::Priority::Medium),
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await
+        .expect("create item");
+    repo.set_github_link(item.id, "acme/widgets", 42)
+        .await
+        .expect("link");
+    tack_db::repo::pull_requests::insert(
+        repo.pool(),
+        "attempt-1",
+        "acme/widgets",
+        7,
+        "https://github.com/acme/widgets/pull/7",
+        "2026-02-01T00:00:00Z",
+    )
+    .await
+    .expect("store the pull request");
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
+    tack_api::AppState {
+        repo,
+        config: AppConfig {
+            github_token: Some("tok".into()),
+            github_api_base: gh_uri,
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    }
+}
+
+/// A poll that sees `pull_request.merged_at` marks the stored PR merged; a
+/// following 304 (the ETag matched) writes nothing, shown by a state set by
+/// hand surviving it.
+#[tokio::test]
+async fn github_poll_marks_a_pull_request_merged_then_a_304_writes_nothing() {
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    let state = pull_request_poll_state(gh.uri()).await;
+    let mut etags = std::collections::HashMap::new();
+
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(header("if-none-match", "\"etag-1\""))
+        .respond_with(ResponseTemplate::new(304))
+        .expect(1)
+        .mount(&gh)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("ETag", "\"etag-1\"")
+                .set_body_json(json!([{
+                    "number": 7,
+                    "state": "closed",
+                    "updated_at": "2026-02-02T00:00:00Z",
+                    "closed_at": "2026-02-02T00:00:00Z",
+                    "title": "Tack: attempt 1 for #42",
+                    "pull_request": {"merged_at": "2026-02-02T00:00:00Z"},
+                }])),
+        )
+        .up_to_n_times(1)
+        .mount(&gh)
+        .await;
+
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, "merged");
+    assert_eq!(stored.merged_at.as_deref(), Some("2026-02-02T00:00:00Z"));
+    assert_eq!(stored.closed_at.as_deref(), Some("2026-02-02T00:00:00Z"));
+
+    sqlx::query("UPDATE pull_requests SET state = 'open'")
+        .execute(state.pool())
+        .await
+        .unwrap();
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let after_304 = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after_304.state, "open", "a 304 must write nothing");
+}
+
+/// A `Revert` PR whose body cites `#7` marks the stored merged PR 7 reverted.
+#[tokio::test]
+async fn github_poll_marks_a_reverted_pull_request() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    let state = pull_request_poll_state(gh.uri()).await;
+    tack_db::repo::pull_requests::observe(
+        state.pool(),
+        "acme/widgets",
+        7,
+        "merged",
+        Some("2026-02-02T00:00:00Z"),
+        Some("2026-02-02T00:00:00Z"),
+    )
+    .await
+    .unwrap();
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+            "number": 9,
+            "state": "open",
+            "updated_at": "2026-02-03T00:00:00Z",
+            "title": "Revert \"Tack: attempt 1 for #42\"",
+            "body": "Reverts acme/widgets#7",
+            "pull_request": {"merged_at": null},
+        }])))
+        .mount(&gh)
+        .await;
+
+    let mut etags = std::collections::HashMap::new();
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, "reverted");
+    assert_eq!(stored.reverted_by_number, Some(9));
+}
