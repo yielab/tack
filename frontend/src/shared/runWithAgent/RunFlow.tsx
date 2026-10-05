@@ -273,7 +273,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <Prerequisite
           state="deferred"
           label="Open a pull request"
-          reason={props.pushConfigured() ? 'Opening a pull request from here is not available yet; open the pushed branch on your git host.' : 'Needs a pushed branch, and this runner does not push branches.'}
+          reason={props.pushConfigured() ? 'Not chosen per run: Tack opens one for the pushed branch when the item is linked to a GitHub issue and a GitHub token is set.' : 'Needs a pushed branch, and this runner does not push branches.'}
         />
       </fieldset>
 
