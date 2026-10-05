@@ -85,6 +85,17 @@ run against.
 `ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
 see `docs/contracts/runner-v1/protocol.json`.
 
+### What the harness receives
+
+Whoever creates the request, the server writes the instructions the harness is given: the
+agent profile's own text, then the item's title and description, then the item's brief
+(its definition of done, acceptance criteria and constraints) when it has one. The title
+and description are labelled with where they came from and marked as data to work from, not
+as instructions that change the agent's rules, because an imported item's text was written
+by someone else. The brief is also saved with the request, and the attempt keeps a copy of
+it as `brief.json` beside its `evidence.json`. An item without a brief still reaches the
+harness with its title and description.
+
 ---
 
 ## Choosing a harness

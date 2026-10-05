@@ -128,6 +128,8 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     requested_model_id: values.modelId,
     agent_profile_snapshot: {
       name: values.agentProfileSnapshot.name,
+      // The profile's own text only: the server appends the item's title,
+      // description and brief, so the client composes nothing.
       instructions: values.agentProfileSnapshot.instructions,
       tool_policy: values.agentProfileSnapshot.tool_policy,
       timeout_seconds: values.timeoutSeconds,

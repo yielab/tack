@@ -43,6 +43,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const open = () => (props.isOpen ? 'open' : undefined);
   const [project] = createResource(() => (props.isOpen ? props.projectId : undefined), (id) => api.projects.get(id));
+  // 404 is "no brief yet", not a failure; the server composes what the agent
+  // receives, so this only tells the operator whether a brief will ride along.
+  const [brief] = createResource(
+    () => (props.isOpen ? props.itemId : undefined),
+    (id) => api.briefs.get(id).then(() => true, () => false),
+  );
   const [fleets] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
   const [agentProfiles, { refetch: refetchAgentProfiles }] = createResource(open, () => agentProfilesApi.list().then((r) => r.data.data));
   const [liveRunners] = createResource(open, () => runnersApi.list().then((r) => r.data.data));
@@ -257,6 +263,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             form={form}
             setForm={setForm}
             itemTitle={props.itemTitle}
+            hasBrief={() => brief() === true}
             projectId={props.projectId}
             hideTargetPicker={() => shouldHideTargetPicker(activeRunners().length, fleetsData().length)}
             runnersLoading={() => liveRunners.loading}
