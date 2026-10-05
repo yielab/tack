@@ -1030,6 +1030,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/metrics/factory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/:id/metrics/factory */
+        get: operations["factory_metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/boards": {
         parameters: {
             query?: never;
@@ -3364,6 +3381,28 @@ export interface components {
             request_id: string;
             state: string;
         };
+        FactoryMetrics: {
+            /** Format: int64 */
+            attempts: number;
+            /** Format: int64 */
+            decisions: number;
+            /** @description decisions ÷ attempts. */
+            escalation_rate: components["schemas"]["Ratio"];
+            human_minutes_per_decision: components["schemas"]["HumanMinutes"];
+            human_minutes_per_mrp: components["schemas"]["HumanMinutes"];
+            /** @description accepted ÷ reviewed. */
+            mrp_acceptance_rate: components["schemas"]["Ratio"];
+            /**
+             * Format: int64
+             * @description Packs produced in the window and not yet reviewed.
+             */
+            mrp_produced: number;
+            /** Format: int64 */
+            mrp_unreviewed: number;
+            outcomes: components["schemas"]["Outcomes"];
+            since?: string | null;
+            verification_tax: components["schemas"]["VerificationTax"];
+        };
         FleetListResponse: {
             data: components["schemas"]["FleetSummary"][];
             /** Format: int32 */
@@ -3420,6 +3459,36 @@ export interface components {
         };
         HashMap: {
             [key: string]: string;
+        };
+        /**
+         * @description Median and p90 of a human wait, in minutes. The start of each wait is
+         *     `viewed_at` when a human opened it, else `created_at`; the counts say which.
+         */
+        HumanMinutes: {
+            /**
+             * Format: int64
+             * @description Resolved rows measured.
+             */
+            measured: number;
+            /** Format: double */
+            median_minutes?: number | null;
+            /** @description `not_measured` when no row was resolved in the window. */
+            null_reason?: string | null;
+            /**
+             * Format: double
+             * @description Nearest-rank 90th percentile.
+             */
+            p90_minutes?: number | null;
+            /**
+             * Format: int64
+             * @description Of those, waits that start at `created_at` (never viewed).
+             */
+            start_created_at: number;
+            /**
+             * Format: int64
+             * @description Of those, waits that start at `viewed_at`.
+             */
+            start_viewed_at: number;
         };
         Item: {
             assignee?: string | null;
@@ -3583,6 +3652,26 @@ export interface components {
         };
         /** @enum {string} */
         MrpVerdict: "accept" | "reject";
+        Outcomes: {
+            /** Format: int64 */
+            closed: number;
+            /** Format: int64 */
+            merged: number;
+            /**
+             * Format: int64
+             * @description Pull requests opened in the window, and what each is now.
+             */
+            opened: number;
+            /**
+             * Format: int64
+             * @description Merged and not reverted.
+             */
+            pqc: number;
+            /** @description `pqc` ÷ `opened`. */
+            pqc_rate: components["schemas"]["Ratio"];
+            /** Format: int64 */
+            reverted: number;
+        };
         /**
          * @description Pagination envelope for the item-list endpoint. `total` is the
          *     unpaginated match count so clients can render "N of M".
@@ -3661,6 +3750,20 @@ export interface components {
         };
         /** @enum {string} */
         ProjectType: "software" | "web" | "mobile" | "construction" | "personal" | "homework" | "maintenance" | "legal" | "research" | "event" | "custom";
+        /** @description A ratio with the counts it came from. */
+        Ratio: {
+            /** Format: int64 */
+            denominator: number;
+            /** @description `denominator_zero` or `not_measured`; absent when `value` is present. */
+            null_reason?: string | null;
+            /** Format: int64 */
+            numerator: number;
+            /**
+             * Format: double
+             * @description `null` when `null_reason` is set.
+             */
+            value?: number | null;
+        };
         RecoveryConfirmation: {
             reason: string;
             recovery_key: string;
@@ -4000,6 +4103,42 @@ export interface components {
             source: components["schemas"]["MeasurementSourceSchema"];
             /** Format: double */
             value?: number | null;
+        };
+        VerificationTax: {
+            /**
+             * Format: int64
+             * @description Attempts counted above whose usage carries no token value.
+             */
+            attempts_unmeasured: number;
+            /** Format: int64 */
+            implementation_attempts: number;
+            /**
+             * Format: int64
+             * @description Tokens in + out of each request's first attempt (requests that are not rework).
+             */
+            implementation_tokens: number;
+            /** @description (verification + rework) ÷ implementation. */
+            ratio: components["schemas"]["Ratio"];
+            /** Format: int64 */
+            rework_attempts: number;
+            /**
+             * Format: int64
+             * @description Tokens of later attempts plus every attempt of a request whose
+             *     `metadata.rework_of` names another request.
+             */
+            rework_tokens: number;
+            /** Format: int64 */
+            verification_packs: number;
+            /**
+             * Format: int64
+             * @description Packs whose content is missing or does not carry token usage.
+             */
+            verification_packs_unmeasured: number;
+            /**
+             * Format: int64
+             * @description Tokens in + out of every readable MRP's `usage`.
+             */
+            verification_tokens: number;
         };
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {
@@ -6292,6 +6431,50 @@ export interface operations {
                 };
             };
             /** @description Bad API key, filter, or rate limit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    factory_metrics: {
+        parameters: {
+            query?: {
+                /** @description Start of the window (RFC 3339); absent means all time. */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Factory metrics measured from the project's rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactoryMetrics"];
+                };
+            };
+            /** @description `since` is not RFC 3339 */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -3217,6 +3217,68 @@
         }
       }
     },
+    "/api/projects/{id}/metrics/factory": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "GET /api/projects/:id/metrics/factory",
+        "operationId": "factory_metrics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Start of the window (RFC 3339); absent means all time.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Factory metrics measured from the project's rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactoryMetrics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`since` is not RFC 3339",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/boards": {
       "get": {
         "tags": [
@@ -8004,6 +8066,66 @@
           }
         }
       },
+      "FactoryMetrics": {
+        "type": "object",
+        "required": [
+          "attempts",
+          "decisions",
+          "escalation_rate",
+          "human_minutes_per_decision",
+          "human_minutes_per_mrp",
+          "verification_tax",
+          "mrp_produced",
+          "mrp_unreviewed",
+          "mrp_acceptance_rate",
+          "outcomes"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "decisions": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "escalation_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "decisions ÷ attempts."
+          },
+          "human_minutes_per_decision": {
+            "$ref": "#/components/schemas/HumanMinutes"
+          },
+          "human_minutes_per_mrp": {
+            "$ref": "#/components/schemas/HumanMinutes"
+          },
+          "mrp_acceptance_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "accepted ÷ reviewed."
+          },
+          "mrp_produced": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packs produced in the window and not yet reviewed."
+          },
+          "mrp_unreviewed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outcomes": {
+            "$ref": "#/components/schemas/Outcomes"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verification_tax": {
+            "$ref": "#/components/schemas/VerificationTax"
+          }
+        }
+      },
       "FleetListResponse": {
         "type": "object",
         "required": [
@@ -8130,6 +8252,54 @@
         },
         "propertyNames": {
           "type": "string"
+        }
+      },
+      "HumanMinutes": {
+        "type": "object",
+        "description": "Median and p90 of a human wait, in minutes. The start of each wait is\n`viewed_at` when a human opened it, else `created_at`; the counts say which.",
+        "required": [
+          "measured",
+          "start_viewed_at",
+          "start_created_at"
+        ],
+        "properties": {
+          "measured": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resolved rows measured."
+          },
+          "median_minutes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "null_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`not_measured` when no row was resolved in the window."
+          },
+          "p90_minutes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Nearest-rank 90th percentile."
+          },
+          "start_created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Of those, waits that start at `created_at` (never viewed)."
+          },
+          "start_viewed_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Of those, waits that start at `viewed_at`."
+          }
         }
       },
       "Item": {
@@ -8586,6 +8756,45 @@
           "reject"
         ]
       },
+      "Outcomes": {
+        "type": "object",
+        "required": [
+          "opened",
+          "merged",
+          "closed",
+          "reverted",
+          "pqc",
+          "pqc_rate"
+        ],
+        "properties": {
+          "closed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merged": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "opened": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pull requests opened in the window, and what each is now."
+          },
+          "pqc": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged and not reverted."
+          },
+          "pqc_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "`pqc` ÷ `opened`."
+          },
+          "reverted": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "PaginatedItems": {
         "type": "object",
         "description": "Pagination envelope for the item-list endpoint. `total` is the\nunpaginated match count so clients can render \"N of M\".",
@@ -8816,6 +9025,39 @@
           "event",
           "custom"
         ]
+      },
+      "Ratio": {
+        "type": "object",
+        "description": "A ratio with the counts it came from.",
+        "required": [
+          "numerator",
+          "denominator"
+        ],
+        "properties": {
+          "denominator": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "null_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`denominator_zero` or `not_measured`; absent when `value` is present."
+          },
+          "numerator": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`null` when `null_reason` is set."
+          }
+        }
       },
       "RecoveryConfirmation": {
         "type": "object",
@@ -9749,6 +9991,63 @@
           }
         }
       },
+      "VerificationTax": {
+        "type": "object",
+        "required": [
+          "ratio",
+          "implementation_tokens",
+          "implementation_attempts",
+          "rework_tokens",
+          "rework_attempts",
+          "verification_tokens",
+          "verification_packs",
+          "verification_packs_unmeasured",
+          "attempts_unmeasured"
+        ],
+        "properties": {
+          "attempts_unmeasured": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attempts counted above whose usage carries no token value."
+          },
+          "implementation_attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "implementation_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tokens in + out of each request's first attempt (requests that are not rework)."
+          },
+          "ratio": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "(verification + rework) ÷ implementation."
+          },
+          "rework_attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rework_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tokens of later attempts plus every attempt of a request whose\n`metadata.rework_of` names another request."
+          },
+          "verification_packs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verification_packs_unmeasured": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packs whose content is missing or does not carry token usage."
+          },
+          "verification_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tokens in + out of every readable MRP's `usage`."
+          }
+        }
+      },
       "WorkflowConfig": {
         "type": "object",
         "description": "Full workflow configuration for a project.",
@@ -9853,6 +10152,10 @@
     {
       "name": "mrp",
       "description": "An attempt's Merge-Readiness Pack and the human verdict on it."
+    },
+    {
+      "name": "metrics",
+      "description": "Factory metrics measured from a project's rows."
     },
     {
       "name": "briefs",

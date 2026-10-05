@@ -7,6 +7,7 @@ pub mod dependencies;
 pub mod execution;
 pub mod github_links;
 pub mod items;
+pub mod metrics;
 pub mod projects;
 pub mod pull_requests;
 pub mod roles;
