@@ -6418,7 +6418,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "`done_on_success` or `done_on_mrp_accepted`; any other id is rejected\nwith `invalid_request`. Omitted leaves the item's status untouched."
           },
           "timeout_seconds": {
             "type": "integer",

@@ -13,12 +13,11 @@
 //! behind `require_token` — proven in `tests/runner_protocol/decisions.rs`'s
 //! `self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing`.
 //!
-//! **No item-status mapping.** `execution_requests.status_map_policy_id`
-//! (migration 044) is threaded through every layer but read back nowhere —
-//! nothing defines what a policy id resolves to. No function in this file
-//! writes `items.status`, directly or indirectly: `resolve` never touches
-//! the `items` table. Wiring a real mapping needs a policy schema decision
-//! from whoever owns that column's contract first.
+//! **Item status.** `execution_requests.status_map_policy_id` resolves to a
+//! [`tack_core::workflow::StatusMapPolicy`], and `submit_completion` in
+//! `handlers/runner_protocol.rs` is what acts on it. No function in this file
+//! writes `items.status`, directly or indirectly: `resolve` never touches the
+//! `items` table.
 
 use axum::{
     Json, Router,

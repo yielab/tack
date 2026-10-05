@@ -196,6 +196,7 @@ impl Fixture {
             RUNNER_ID,
             "profile-c2",
             key,
+            None,
         )
         .await
     }
@@ -466,6 +467,7 @@ async fn enqueue_request(
     runner_id: &str,
     agent_profile_id: &str,
     key: &str,
+    status_map_policy_id: Option<&str>,
 ) -> String {
     let request_id = format!("exec_{}", Uuid::new_v4());
     let created_at = clock.now();
@@ -487,7 +489,7 @@ async fn enqueue_request(
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
         "budgets": {"tokens": 1000},
-        "status_map_policy_id": Value::Null,
+        "status_map_policy_id": status_map_policy_id,
         "environment": {},
         "metadata": {},
     });
@@ -512,7 +514,7 @@ async fn enqueue_request(
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
             budgets: &field_str("budgets"),
-            status_map_policy_id: None,
+            status_map_policy_id,
             environment: &field_str("environment"),
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
@@ -947,6 +949,78 @@ async fn completion_is_idempotent_and_restores_capacity_once() {
         fx.available_capacity().await,
         2,
         "capacity is restored exactly once"
+    );
+}
+
+/// The item's status after a succeeded completion under `policy`, with the
+/// attempt otherwise driven exactly like `completion_is_idempotent_...`.
+async fn item_status_after_success(policy: Option<&str>) -> String {
+    let fx = Fixture::new().await;
+    enqueue_request(
+        &fx.repo,
+        &fx.clock,
+        &fx.item_id,
+        RUNNER_ID,
+        "profile-c2",
+        "policy-key",
+        policy,
+    )
+    .await;
+    let claimed = fx.claim("claim-policy").await;
+    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
+    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+    fx.accept(&attempt_id, fencing_token).await;
+    fx.start(&attempt_id, fencing_token, "pid-1").await;
+    let (status, completed) = fx
+        .complete_default(&attempt_id, fencing_token, "complete-policy")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{completed}");
+    sqlx::query_scalar("SELECT status FROM items WHERE id=?")
+        .bind(&fx.item_id)
+        .fetch_one(fx.repo.pool())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn done_on_success_moves_the_item_to_the_first_done_status_and_null_leaves_it() {
+    assert_eq!(
+        item_status_after_success(Some("done_on_success")).await,
+        "Done"
+    );
+    assert_eq!(item_status_after_success(None).await, "To Do");
+}
+
+#[tokio::test]
+async fn create_execution_rejects_an_unknown_status_map_policy_id() {
+    let fx = Fixture::new().await;
+    let state = tack_api::handlers::executions::OperatorExecutionState::with_clock(
+        fx.repo.clone(),
+        Arc::new(fx.clock.clone()),
+    );
+    let app = tack_api::handlers::executions::routes(state);
+    let body = json!({
+        "item_id": fx.item_id, "idempotency_key": "bad-policy", "selector_kind": "exact_runner",
+        "selector_id": RUNNER_ID, "agent_profile_id": "profile-c2", "requested_harness_kind": "codex",
+        "agent_profile_snapshot": {"name": "P", "instructions": "work", "tool_policy": {}, "timeout_seconds": 60, "budgets": {}},
+        "repository_snapshot": {"kind": "git", "remote": "https://example.test/c2.git", "base_revision": "abc123def456abc123def456abc123def456abc", "subdirectory": null},
+        "permission_policy": {"tools": [], "network": false},
+        "timeout_seconds": 60, "budgets": {}, "environment": {}, "metadata": {},
+        "status_map_policy_id": "anything_else",
+    });
+    let (status, resp) = send(
+        &app,
+        "POST",
+        "/executions",
+        body.to_string(),
+        &[("x-tack-principal", "operator:local")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
+    assert_eq!(resp["error"]["code"], "invalid_request", "{resp}");
+    assert_eq!(
+        resp["error"]["details"]["field"], "status_map_policy_id",
+        "{resp}"
     );
 }
 

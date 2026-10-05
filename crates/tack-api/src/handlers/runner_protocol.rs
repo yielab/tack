@@ -2023,6 +2023,10 @@ pub async fn submit_completion(
         .await
         .map_err(|_| internal_error("Could not record completion"))?;
 
+    if matches!(result, CompletionResult::Committed(_)) && terminal_state == "succeeded" {
+        apply_status_map_policy(&state.repo, &attempt_id).await;
+    }
+
     match result {
         CompletionResult::Committed(resp) => Ok(Json(json!({
             "protocol_version": 1,
@@ -2060,6 +2064,71 @@ pub async fn submit_completion(
             json!({"attempt_id": attempt_id}),
         )),
         CompletionResult::Stale => Err(stale_lease(&attempt_id)),
+    }
+}
+
+/// Best-effort: moves the attempt's item per the request snapshot's
+/// `status_map_policy_id`. A refused transition or any lookup failure is
+/// logged at `warn` and never fails the completion.
+async fn apply_status_map_policy(repo: &tack_db::Repository, attempt_id: &str) {
+    use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
+    let row: Result<Option<(String, String)>, sqlx::Error> = sqlx::query_as(
+        "SELECT r.item_id, json_extract(r.request_snapshot, '$.status_map_policy_id') \
+         FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
+         WHERE a.id = ? AND json_type(r.request_snapshot, '$.status_map_policy_id') = 'text'",
+    )
+    .bind(attempt_id)
+    .fetch_optional(repo.pool())
+    .await;
+    let (item_id, policy_id) = match row {
+        Ok(Some(found)) => found,
+        Ok(None) => return,
+        Err(err) => {
+            tracing::warn!(attempt_id, error = %err, "status map: could not read the request snapshot");
+            return;
+        }
+    };
+    let Ok(policy) = policy_id.parse::<StatusMapPolicy>() else {
+        tracing::warn!(
+            attempt_id,
+            policy_id,
+            "status map: unknown policy id, item untouched"
+        );
+        return;
+    };
+    let Ok(item_uuid) = item_id.parse::<uuid::Uuid>() else {
+        return;
+    };
+    let item = match repo.get_item(item_uuid).await {
+        Ok(Some(item)) => item,
+        _ => return,
+    };
+    let project = match repo.get_project(item.project_id).await {
+        Ok(Some(project)) => project,
+        _ => return,
+    };
+    let Some(target) = policy.target_status(&project.workflow, StatusMapEvent::AttemptSucceeded)
+    else {
+        return;
+    };
+    if item.status == target {
+        return;
+    }
+    let update = tack_core::models::UpdateItem {
+        status: Some(target.clone()),
+        ..Default::default()
+    };
+    match repo
+        .update_item_atomically(item_uuid, update, &project.workflow, None)
+        .await
+    {
+        Ok(tack_db::repo::items::AtomicItemUpdateOutcome::Updated { .. }) => {}
+        Ok(outcome) => {
+            tracing::warn!(attempt_id, %item_uuid, target, ?outcome, "status map: transition refused, item untouched");
+        }
+        Err(err) => {
+            tracing::warn!(attempt_id, %item_uuid, target, error = %err, "status map: item update failed");
+        }
     }
 }
 
