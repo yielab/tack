@@ -66,7 +66,7 @@ e2e: frontend/node_modules ## Run E2E tests (starts API + Vite automatically, al
 e2e-ui: frontend/node_modules ## Run E2E tests in the interactive Playwright UI
 	npm --prefix frontend run test:e2e:ui
 
-screenshots: frontend/node_modules ## Capture README screenshots → docs/screenshots/ (starts API + Vite automatically)
+screenshots: frontend/node_modules ## Capture the README and book screenshots → docs/screenshots/ (starts API + Vite; no model is called)
 	cd frontend && npx playwright test e2e/screenshots.spec.ts --config playwright.capture.config.ts --project=chromium --workers=1
 
 # hero.gif / agents-flow.gif are real, live, billed recordings against a
