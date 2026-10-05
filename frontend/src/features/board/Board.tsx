@@ -407,7 +407,7 @@ const Board: Component = () => {
         </Show>
         <span style={{ display: 'inline-flex', gap: '4px', 'font-size': '13px', color: 'var(--color-text-secondary)' }}>
           <span style={{ color: 'var(--color-text-tertiary)' }}>·</span>
-          <span>{itemCount()} items</span>
+          <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
         <Show when={assignees().length > 0}>
