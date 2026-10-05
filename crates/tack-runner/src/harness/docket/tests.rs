@@ -178,6 +178,33 @@ fn capability_lines_follow_what_was_negotiated() {
     assert!(reason(&negotiated.usage).contains("--max-tokens"));
     assert!(policy.contains("--policy"));
     assert!(policy.contains("negotiated contract 1.1 against docket 9.9.9"));
+    // Only a docket that speaks 1.1 reports its process groups.
+    assert_eq!(unprobed.cancel.support, CapabilitySupport::Advisory);
+    assert_eq!(negotiated.cancel.support, CapabilitySupport::Supported);
+}
+
+/// The captured cancelled run names one group, started then gone; no other
+/// line of it, result line included, means anything to the core.
+#[test]
+fn process_lines_become_group_signals() {
+    let state = scratch("docket-signal");
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: None,
+        scratch: state.path(),
+    };
+    let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/cancelled-process.ndjson")
+        .lines()
+        .filter_map(|line| DocketGrammar.signal(&run, line))
+        .collect();
+    assert_eq!(
+        signals,
+        [
+            StreamSignal::ProcessStarted { pgid: 2_169_014 },
+            StreamSignal::ProcessExited { pgid: 2_169_014 },
+        ]
+    );
 }
 
 #[test]

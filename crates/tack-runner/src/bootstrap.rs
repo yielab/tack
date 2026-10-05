@@ -19,7 +19,7 @@ use crate::{
         AttemptDataProtocol, HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy,
         RunnerEngine, WorkspaceManager, workspace::git::GitWorktreeProvisioner,
     },
-    harness::{AdapterRegistry, PROCESS_GROUP_CANCEL_CEILING, process::ProcessLimits},
+    harness::{AdapterRegistry, process::ProcessLimits},
 };
 
 /// The concrete runtime this crate ships: the real HTTP protocol, every
@@ -175,9 +175,10 @@ pub async fn probe(
 /// capability claim is load-bearing: the scheduler and the operator UI
 /// both offer only what a runner says it can do.
 ///
-/// - `cancel` reports [`PROCESS_GROUP_CANCEL_CEILING`] (advisory): a
-///   process-group signal cannot reliably reach a descendant a harness
-///   spawns into a new OS session.
+/// - `cancel` reports advisory: a process-group signal cannot reliably
+///   reach a descendant a harness spawns into a new OS session. A harness
+///   that announces its own process groups says so in its own `cancel`
+///   capability, which is what the scheduler reads.
 /// - `artifacts` reports advisory: `RunnerEngine::submit_terminal_evidence`
 ///   uploads a staged artifact, but only when an adapter stages one and
 ///   only best-effort (a transport failure is logged, never retried).
@@ -213,8 +214,10 @@ async fn report_capabilities<C: Clock>(
         harnesses,
         features: FeatureCapabilities {
             cancel: feature(
-                PROCESS_GROUP_CANCEL_CEILING,
-                Some("process-group signal cannot reach a detached descendant"),
+                tack_orch::execution::CapabilitySupport::Advisory,
+                Some(
+                    "a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability",
+                ),
             ),
             resume: feature(
                 tack_orch::execution::CapabilitySupport::Unsupported,

@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
 
+use crate::client::engine::StreamSignal;
 use crate::harness::{
     HarnessError,
     local_process::{
@@ -39,6 +40,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                       under that fixed name via `credential_env`.",
     credential_env: Some("DOCKET_LLM_API_KEY"),
     observes_served_model: true,
+    reports_process_groups: true,
 };
 
 /// The variable docket's own `run` command refuses to start without, unless
@@ -102,6 +104,25 @@ struct ResultModel {
 struct ResultUsage {
     input_tokens: u64,
     output_tokens: u64,
+}
+
+/// One progress line, as far as the process lifecycle is concerned: a 1.1
+/// docket reports a `bash` call's process group when it starts and when it
+/// is gone (`fixtures/docket/contract-1.1/cancelled-process.ndjson`).
+#[derive(serde::Deserialize)]
+struct ProgressLine {
+    event: Option<ProgressEvent>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProgressEvent {
+    event_type: String,
+    payload: ProgressPayload,
+}
+
+#[derive(serde::Deserialize)]
+struct ProgressPayload {
+    pgid: Option<u32>,
 }
 
 fn last_non_empty_line(text: &str) -> Option<&str> {
@@ -234,6 +255,21 @@ impl HarnessGrammar for DocketGrammar {
         }
     }
 
+    fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
+        // The result line and every other event name no group; only a line
+        // that mentions one is worth parsing.
+        if !line.contains("\"process_") {
+            return None;
+        }
+        let event = serde_json::from_str::<ProgressLine>(line).ok()?.event?;
+        let pgid = event.payload.pgid?;
+        match event.event_type.as_str() {
+            "process_started" => Some(StreamSignal::ProcessStarted { pgid }),
+            "process_exited" => Some(StreamSignal::ProcessExited { pgid }),
+            _ => None,
+        }
+    }
+
     fn capabilities(&self) -> FeatureCapabilities {
         capabilities(features())
     }
@@ -261,12 +297,23 @@ fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
         )
     };
     FeatureCapabilities {
-        cancel: capability(
-            CapabilitySupport::Advisory,
-            "docket stops cooperatively on SIGTERM and reports a cancelled result, but does \
-             not emit an event per child process group its own tools start, so a tool's \
-             process group that outlives the grace period cannot be confirmed stopped",
-        ),
+        cancel: if features.contract == Contract::V1_1 {
+            capability(
+                CapabilitySupport::Supported,
+                &format!(
+                    "docket stops cooperatively on SIGTERM and reports a cancelled result; this \
+                     docket also reports each process group its bash calls start and end, so a \
+                     cancellation stops the groups still live and says whether they went{negotiated}"
+                ),
+            )
+        } else {
+            capability(
+                CapabilitySupport::Advisory,
+                "docket stops cooperatively on SIGTERM and reports a cancelled result, but this \
+                 docket does not report the process groups its tools start, so a tool's process \
+                 group that outlives the grace period cannot be confirmed stopped",
+            )
+        },
         resume: capability(
             CapabilitySupport::Unsupported,
             "harness mode is one synchronous run to completion; no reattachment interface \

@@ -45,6 +45,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                       through the execution request's own `environment`.",
     credential_env: None,
     observes_served_model: false,
+    reports_process_groups: false,
 };
 
 /// Provider families the `claude` binary knows on its own, confirmed by

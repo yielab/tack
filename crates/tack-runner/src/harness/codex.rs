@@ -46,6 +46,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     // the only model-shaped line is a `type:"error"` item echoing the
     // `--model` flag back.
     observes_served_model: false,
+    reports_process_groups: false,
 };
 
 /// The key an injected provider endpoint is named under in Codex's

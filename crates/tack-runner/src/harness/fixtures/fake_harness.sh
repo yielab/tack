@@ -37,6 +37,14 @@
 #                  process-group cancellation tests: the caller's spawned
 #                  process is this script; the script's own child is the
 #                  grandchild relative to the caller.
+#   spawn_detached Starts `sleep TACK_FAKE_HARNESS_SLEEP_SECONDS` in its own
+#                  session (`setsid`), so neither the caller's process group
+#                  nor a group-wide signal reaches it, prints
+#                  `process_started <pgid>` to stdout (omitted when
+#                  TACK_FAKE_HARNESS_ANNOUNCE=0) and only then writes the
+#                  sleeper's pid to TACK_FAKE_HARNESS_PIDFILE, then waits on
+#                  it. For tests of a harness that announces a process group of
+#                  its own, and of one that does not.
 #   high_volume    Writes exactly TACK_FAKE_HARNESS_VOLUME_BYTES (default
 #                  50000000) bytes of repeated non-secret 'x' characters to
 #                  stdout as fast as possible, then exits 0. For
@@ -124,6 +132,18 @@ case "$mode" in
   spawn_child)
     sleep "${TACK_FAKE_HARNESS_SLEEP_SECONDS:-3600}" &
     child_pid=$!
+    if [ -n "$TACK_FAKE_HARNESS_PIDFILE" ]; then
+      echo "$child_pid" > "$TACK_FAKE_HARNESS_PIDFILE"
+    fi
+    wait "$child_pid"
+    ;;
+
+  spawn_detached)
+    setsid sleep "${TACK_FAKE_HARNESS_SLEEP_SECONDS:-3600}" &
+    child_pid=$!
+    if [ "${TACK_FAKE_HARNESS_ANNOUNCE:-1}" = 1 ]; then
+      echo "process_started $child_pid"
+    fi
     if [ -n "$TACK_FAKE_HARNESS_PIDFILE" ]; then
       echo "$child_pid" > "$TACK_FAKE_HARNESS_PIDFILE"
     fi
