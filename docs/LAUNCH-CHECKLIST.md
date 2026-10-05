@@ -33,16 +33,21 @@ automatically — every step under "Publish list" is a human action.
    ```
    `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
    and refuses the tag outright if it doesn't match `Cargo.toml`.
-2. **Open the seven `good first issue` GitHub issues** from the drafts in
+
+2. **Write the release notes on GitHub.** The desktop app installers — `.AppImage`/`.deb`
+   (Linux), `.dmg` (macOS), `.msi` (Windows) — are the first links in the release
+   description, since the desktop app is the primary way to use Tack. The binary
+   installers (`install.sh`, `install.ps1`) and Homebrew/Scoop links follow.
+3. **Open the seven `good first issue` GitHub issues** from the drafts in
    `docs/launch/good-first-issues/`, applying the existing `good first issue` label
    (already on the repo — `gh label list --repo yielab/tack --search "good first issue"`).
-3. **Post the four drafts** in `docs/launch/posts/` to their venues, in any order —
+4. **Post the four drafts** in `docs/launch/posts/` to their venues, in any order —
    nothing about them is time-sensitive relative to each other, but all four assume
    the tag above is already live and link to it.
-4. **Post the two Discussions topics** in `docs/launch/discussions-seed.md`, into the
+5. **Post the two Discussions topics** in `docs/launch/discussions-seed.md`, into the
    `Q&A` and `Ideas` categories (both already exist on the repo — no category needs
    creating).
-5. **Re-point the packaging recipes at the new release**, once its artifacts exist —
+6. **Re-point the packaging recipes at the new release**, once its artifacts exist —
    `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing
    else updates them:
    ```bash
