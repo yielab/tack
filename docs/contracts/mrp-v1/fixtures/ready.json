@@ -1,0 +1,119 @@
+{
+  "v": "1",
+  "attempt_id": "0192f5a0-7c1e-7d3a-9b2e-5f6a7b8c9d0e",
+  "evidence_sha256": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "brief_sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  "criteria": [
+    {
+      "id": "cmd_build",
+      "kind": "command",
+      "status": "passed",
+      "evidence_ref": "criteria/cmd_build.txt",
+      "note": "Build completed successfully"
+    },
+    {
+      "id": "test_unit",
+      "kind": "test",
+      "status": "passed",
+      "evidence_ref": "criteria/test_unit.txt",
+      "note": "All unit tests passed"
+    },
+    {
+      "id": "metric_coverage",
+      "kind": "metric",
+      "status": "passed",
+      "evidence_ref": "criteria/metric_coverage.txt",
+      "note": "Coverage above 80%"
+    },
+    {
+      "id": "file_readme",
+      "kind": "file",
+      "status": "passed",
+      "evidence_ref": null,
+      "note": "README.md exists"
+    },
+    {
+      "id": "absent_todo",
+      "kind": "absent",
+      "status": "passed",
+      "evidence_ref": null,
+      "note": "No TODO.md found"
+    },
+    {
+      "id": "manual_review",
+      "kind": "manual",
+      "status": "passed",
+      "evidence_ref": null,
+      "note": "Reviewed and approved"
+    }
+  ],
+  "verify": {
+    "command": "assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json",
+    "exit_code": 0,
+    "output_tail": "All criteria passed\n",
+    "duration_s": 2.5
+  },
+  "mutation": {
+    "scope": "changed_lines",
+    "score": 95.0,
+    "killed": 19,
+    "survived": 1
+  },
+  "static_analysis": {
+    "sarif_sha256": "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+    "counts": {
+      "error": 0,
+      "warning": 1,
+      "note": 3
+    }
+  },
+  "judge": {
+    "model_family": "claude-3-5-sonnet",
+    "blind": true,
+    "rubric": [
+      {
+        "criterion_id": "cmd_build",
+        "verdict": "pass",
+        "reason": "Build succeeds cleanly"
+      },
+      {
+        "criterion_id": "test_unit",
+        "verdict": "pass",
+        "reason": "All tests green"
+      },
+      {
+        "criterion_id": "metric_coverage",
+        "verdict": "pass",
+        "reason": "Coverage exceeds threshold"
+      },
+      {
+        "criterion_id": "file_readme",
+        "verdict": "pass",
+        "reason": "Documentation complete"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "low",
+    "reasons": [
+      "All acceptance criteria passed",
+      "Good test coverage",
+      "No static analysis errors"
+    ]
+  },
+  "recommendation": {
+    "decision": "merge",
+    "rationale": "All criteria passed, risk is low, ready for merge"
+  },
+  "usage": {
+    "tokens_in": 1500,
+    "tokens_out": 800
+  },
+  "signature": {
+    "kind": "none"
+  },
+  "produced_by": {
+    "program": "assay",
+    "version": "0.1.0"
+  }
+}
