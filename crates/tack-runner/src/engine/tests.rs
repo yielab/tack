@@ -2851,6 +2851,10 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
 #[derive(Clone)]
 struct SeededGitWorktree {
     seed: PathBuf,
+    /// The bare repository the checkout's `origin` names, when the attempt
+    /// may push; `break_origin` deletes it just before the push.
+    origin: Option<PathBuf>,
+    break_origin: bool,
 }
 
 #[async_trait]
@@ -2885,6 +2889,17 @@ impl WorktreeProvisioner for SeededGitWorktree {
                 return Err(WorkspaceError::Git);
             }
         }
+        if let Some(origin) = &self.origin {
+            let status = std::process::Command::new("git")
+                .current_dir(&workspace.path)
+                .args(["remote", "add", "origin"])
+                .arg(origin)
+                .status()
+                .map_err(|_| WorkspaceError::GitUnavailable)?;
+            if !status.success() {
+                return Err(WorkspaceError::Git);
+            }
+        }
         Ok(())
     }
 
@@ -2895,6 +2910,21 @@ impl WorktreeProvisioner for SeededGitWorktree {
     ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
         crate::client::workspace::git::GitWorktreeProvisioner::default()
             .capture_evidence(workspace, exclude)
+            .await
+    }
+
+    async fn publish_branch(
+        &self,
+        workspace: &Workspace,
+        branch: &str,
+        author: &str,
+        message: &str,
+    ) -> Result<Option<crate::evidence::PublishedBranch>, WorkspaceError> {
+        if let (true, Some(origin)) = (self.break_origin, &self.origin) {
+            std::fs::remove_dir_all(origin).expect("remove origin");
+        }
+        crate::client::workspace::git::GitWorktreeProvisioner::default()
+            .publish_branch(workspace, branch, author, message)
             .await
     }
 }
@@ -2937,6 +2967,28 @@ async fn run_evidence_attempt(
     change: fn(&Path),
     verify: Option<crate::config::VerifyConfig>,
 ) -> (FakeDataProtocol, bool) {
+    let run = run_evidence_attempt_with(label, cancelled, change, verify, None, false).await;
+    (run.data_protocol, run.survived)
+}
+
+/// What one evidence attempt left behind; `root_dir` keeps `origin` alive.
+struct EvidenceRun {
+    data_protocol: FakeDataProtocol,
+    survived: bool,
+    completions: Vec<CompletionReport>,
+    origin: PathBuf,
+    item_id: String,
+    _root_dir: tempfile::TempDir,
+}
+
+async fn run_evidence_attempt_with(
+    label: &str,
+    cancelled: bool,
+    change: fn(&Path),
+    verify: Option<crate::config::VerifyConfig>,
+    git_config: Option<crate::config::GitConfig>,
+    break_origin: bool,
+) -> EvidenceRun {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
     let seed = root.join("seed");
@@ -2958,21 +3010,44 @@ async fn run_evidence_attempt(
     git(&["commit", "--quiet", "-m", "base"]);
     let base = git(&["rev-parse", "HEAD"]);
 
+    let origin = root.join("origin.git");
+    std::fs::create_dir_all(&origin).expect("origin");
+    let output = std::process::Command::new("git")
+        .current_dir(&origin)
+        .args(["init", "--bare", "--quiet"])
+        .output()
+        .expect("git runs");
+    assert!(output.status.success(), "bare origin");
+
     let mut claimed = work();
     claimed.request.repository.base_revision = base.clone();
     claimed.attempt.base_revision = base;
+    let item_id = claimed.request.item_id.as_str().to_owned();
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
+    let fake_protocol = protocol(claimed, cancelled, false);
+    let reported = fake_protocol.reported_completions.clone();
     let engine = RunnerEngine::new(
-        protocol(claimed, cancelled, false),
+        fake_protocol,
         ChangingAdapter {
             inner: adapter(journal.journal_path(&AttemptId::new("attempt"))),
             change,
         },
         journal,
-        WorkspaceManager::new(root.join("workspaces"), SeededGitWorktree { seed }),
+        WorkspaceManager::new(
+            root.join("workspaces"),
+            SeededGitWorktree {
+                seed,
+                origin: git_config.is_some().then(|| origin.clone()),
+                break_origin,
+            },
+        ),
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
+    let engine = match git_config {
+        Some(config) => engine.with_git(config),
+        None => engine,
+    };
     let engine = match verify {
         Some(config) => engine.with_verify(
             config,
@@ -2991,7 +3066,15 @@ async fn run_evidence_attempt(
     let survived = std::fs::read_dir(root.join("workspaces"))
         .map(|mut entries| entries.next().is_some())
         .unwrap_or(false);
-    (data_protocol, survived)
+    let completions = reported.lock().expect("lock").clone();
+    EvidenceRun {
+        data_protocol,
+        survived,
+        completions,
+        origin,
+        item_id,
+        _root_dir: root_dir,
+    }
 }
 
 fn uploaded(state: &FakeDataProtocolState, name: &str) -> Vec<u8> {
@@ -3133,4 +3216,115 @@ async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() 
         .collect();
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0].payload["exit_code"], 1);
+}
+
+fn origin_branches(origin: &Path) -> String {
+    let output = std::process::Command::new("git")
+        .current_dir(origin)
+        .args([
+            "for-each-ref",
+            "--format=%(refname:short) %(objectname)",
+            "refs/heads",
+        ])
+        .output()
+        .expect("git runs");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+fn push_events(state: &FakeDataProtocolState) -> usize {
+    state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.push_failed")
+        .count()
+}
+
+#[tokio::test]
+async fn a_pushed_branch_lands_on_origin_and_is_reported_and_recorded() {
+    let config = crate::config::GitConfig {
+        push_branches: true,
+        ..Default::default()
+    };
+    let run = run_evidence_attempt_with(
+        "push-ok",
+        false,
+        write_one_delete_one,
+        None,
+        Some(config),
+        false,
+    )
+    .await;
+    let short = run.item_id.split('-').next().expect("segment").to_owned();
+    let reported = run.completions[0].actual_execution.additional["git"].clone();
+    assert_eq!(reported["branch"], format!("tack/{short}-a1"));
+    assert_eq!(reported["pushed"], true);
+    assert_eq!(
+        origin_branches(&run.origin),
+        format!(
+            "tack/{short}-a1 {}",
+            reported["head_commit"].as_str().expect("head commit")
+        )
+    );
+    let state = run.data_protocol.state.lock().expect("lock");
+    let bytes = uploaded(&state, "evidence.json");
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&bytes).expect("evidence");
+    assert_eq!(evidence.branch, Some(reported));
+    let item = state
+        .manifests
+        .iter()
+        .flat_map(|report| report.artifacts.iter())
+        .find(|item| item.name == "evidence.json")
+        .expect("manifest entry");
+    assert_eq!(item.size_bytes, bytes.len() as u64);
+    assert_eq!(item.sha256, crate::harness::sha256::sha256_hex(&bytes));
+    assert_eq!(push_events(&state), 0);
+}
+
+#[tokio::test]
+async fn the_default_config_pushes_nothing_and_records_no_branch() {
+    let run =
+        run_evidence_attempt_with("push-off", false, write_one_delete_one, None, None, false).await;
+    assert_eq!(origin_branches(&run.origin), "");
+    assert!(
+        !run.completions[0]
+            .actual_execution
+            .additional
+            .contains_key("git")
+    );
+    let state = run.data_protocol.state.lock().expect("lock");
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert_eq!(evidence.branch, None);
+}
+
+#[tokio::test]
+async fn a_failed_push_is_one_event_and_the_attempt_still_succeeds() {
+    let config = crate::config::GitConfig {
+        push_branches: true,
+        ..Default::default()
+    };
+    let run = run_evidence_attempt_with(
+        "push-fails",
+        false,
+        write_one_delete_one,
+        None,
+        Some(config),
+        true,
+    )
+    .await;
+    assert_eq!(run.completions.len(), 1);
+    assert_eq!(run.completions[0].terminal_state, AttemptState::Succeeded);
+    assert!(
+        !run.completions[0]
+            .actual_execution
+            .additional
+            .contains_key("git")
+    );
+    let state = run.data_protocol.state.lock().expect("lock");
+    assert_eq!(push_events(&state), 1);
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert_eq!(evidence.branch, None);
 }

@@ -58,6 +58,15 @@ pub struct GitEvidence {
     pub truncated: bool,
 }
 
+/// The branch the runner published for an attempt: the value of
+/// `evidence.json.branch` and of the completion report's `git` entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublishedBranch {
+    pub branch: String,
+    pub head_commit: String,
+    pub pushed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PatchManifest {
     pub sha256: String,
@@ -66,7 +75,7 @@ pub struct PatchManifest {
 }
 
 /// `evidence.json`. `brief` is the request's brief, or `null` when the item had
-/// none; `branch` is written by a later task and is `null` here.
+/// none; `branch` is `null` unless the runner pushed a branch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptEvidence {
     pub v: String,
