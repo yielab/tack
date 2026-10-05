@@ -1,0 +1,81 @@
+{
+  "v": "1",
+  "attempt_id": "0192f5a3-ae4f-af6d-ce5f-8a9b0c1d2e3f",
+  "evidence_sha256": "456789abc123def0456789abc123def0456789abc123def0456789abc123def0",
+  "brief_sha256": null,
+  "criteria": [
+    {
+      "id": "cmd_build",
+      "kind": "command",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    },
+    {
+      "id": "test_unit",
+      "kind": "test",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    },
+    {
+      "id": "metric_coverage",
+      "kind": "metric",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    },
+    {
+      "id": "file_readme",
+      "kind": "file",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    },
+    {
+      "id": "absent_todo",
+      "kind": "absent",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    },
+    {
+      "id": "manual_review",
+      "kind": "manual",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Verifier failed before evaluation"
+    }
+  ],
+  "verify": {
+    "command": "assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json",
+    "exit_code": 127,
+    "output_tail": "Error: workspace not found\nCannot proceed with verification\n",
+    "duration_s": 0.3
+  },
+  "mutation": null,
+  "static_analysis": null,
+  "judge": null,
+  "risk": {
+    "tier": "high",
+    "reasons": [
+      "Verifier failed to run",
+      "Cannot evaluate criteria"
+    ]
+  },
+  "recommendation": {
+    "decision": "reject",
+    "rationale": "Verifier failed: workspace not found. Cannot assess merge readiness"
+  },
+  "usage": {
+    "tokens_in": 0,
+    "tokens_out": 0
+  },
+  "signature": {
+    "kind": "none"
+  },
+  "produced_by": {
+    "program": "assay",
+    "version": "0.1.0"
+  }
+}
