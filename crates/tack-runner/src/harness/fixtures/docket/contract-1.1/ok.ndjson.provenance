@@ -1,0 +1,12 @@
+captured
+docket 0.2.0b3 (scratch install, rack-cli develop 25fe5252, which contains P35-2 7b42f860)
+
+Real `docket harness run --contract 1.1 --workspace <dir> --task-file <file> --model
+gw/anthropic/claude-x --agent-id capture-attempt-1 --timeout 30` transcript, against a
+throwaway loopback HTTP server standing in for the model endpoint
+(DOCKET_LLM_BASE_URL=http://127.0.0.1:<port>/v1, DOCKET_LLM_API_KEY an obviously fake key).
+The server answered one `write` tool call, then a final assistant message. Installed from
+`git archive HEAD` of ../rack-cli into a venv under /var/tmp with DOCKET_HOME in a scratch
+directory; the scratch directory is rewritten to `/capture` and nothing else changed.
+The 1.1 result line adds `files`, `run_state`, `limits`, `approvals`, `question` and
+`usage.cached_tokens`/`turns`; the adapter still reads only the fields it read on 1.0.

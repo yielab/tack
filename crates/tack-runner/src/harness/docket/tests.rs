@@ -11,7 +11,7 @@ use crate::harness::local_process::LocalProcessHarness;
 use crate::harness::process::ProcessLimits;
 use crate::harness::test_support::{finished, gateway, scratch, secret_store, set_env, spec};
 use crate::secrets::SecretStore;
-use tack_orch::execution::{RequestedModelId, RequestedModelProvider};
+use tack_orch::execution::{CapabilityValue, RequestedModelId, RequestedModelProvider};
 
 fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
     let secrets = secret_store(state);
@@ -35,7 +35,7 @@ fn a_request_becomes_a_harness_run_command() {
         endpoint: Some(&endpoint),
         scratch: scratch_dir.path(),
     };
-    let invocation = DocketGrammar.invocation(&run).expect("invocation");
+    let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
     assert_eq!(
         invocation.args,
         [
@@ -66,7 +66,7 @@ fn a_request_becomes_a_harness_run_command() {
         endpoint: None,
         scratch: scratch_dir.path(),
     };
-    let invocation = DocketGrammar.invocation(&run).expect("invocation");
+    let invocation = super::invocation(&DocketFeatures::default(), &run).expect("invocation");
     assert!(!invocation.env.contains_key(BASE_URL_ENV));
     assert!(invocation.env.contains_key("DOCKET_HOME"));
 }
@@ -80,10 +80,137 @@ fn a_request_with_no_model_endpoint_is_refused() {
         endpoint: None,
         scratch: state.path(),
     };
-    let error = DocketGrammar
-        .invocation(&run)
+    let error = invocation(&DocketFeatures::default(), &run)
         .expect_err("no endpoint and no request-level base url");
     assert!(matches!(&error, HarnessError::Rejected { reason } if reason.contains(BASE_URL_ENV)));
+}
+
+#[test]
+fn contract_1_1_passes_the_task_as_a_file() {
+    let state = scratch("docket-invocation-1-1");
+    let scratch_dir = scratch("docket-invocation-1-1-scratch");
+    let endpoint = endpoint(state.path());
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let features = DocketFeatures {
+        contract: Contract::V1_1,
+        ..DocketFeatures::default()
+    };
+    let task_file = scratch_dir.path().join("task.md");
+    let invocation = invocation(&features, &run).expect("invocation");
+    assert_eq!(
+        invocation.args,
+        [
+            "harness",
+            "run",
+            "--workspace",
+            &state.path().display().to_string(),
+            "--task-file",
+            &task_file.display().to_string(),
+            "--model",
+            "openai/opaque/model-alpha",
+            "--agent-id",
+            "attempt",
+            "--timeout",
+            "30",
+            "--contract",
+            "1.1",
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(task_file).expect("task file"),
+        request.work.request.resolved_agent_profile.instructions
+    );
+}
+
+#[test]
+fn capability_lines_follow_what_was_negotiated() {
+    let policy_line = |features: &FeatureCapabilities| {
+        features.additional["permission_policy"]["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let unprobed = capabilities(&DocketFeatures::default());
+    let lines = [
+        (
+            &unprobed.resume.reason.clone().unwrap_or_default(),
+            "harness mode is one synchronous run to completion; no reattachment interface is documented or observed",
+        ),
+        (
+            &unprobed.decisions.reason.clone().unwrap_or_default(),
+            "harness mode's approval posture is fixed to non-interactive refusal: a tool call that would otherwise wait for a human is denied immediately as `blocked` rather than pausing the run to ask one",
+        ),
+        (
+            &unprobed.artifacts.reason.clone().unwrap_or_default(),
+            "only the captured stdout/stderr is staged as a log artifact; the result line's `blocked` detail is kept in the terminal reason, but no per-file artifact discovery is implemented",
+        ),
+        (
+            &unprobed.usage.reason.clone().unwrap_or_default(),
+            "the result line's usage.input_tokens/output_tokens are real measurements, but cost_usd is always null on the installed version, so cost is never reported",
+        ),
+        (
+            &policy_line(&unprobed),
+            "docket applies its own per-tool policy engine; the request's tool list, network flag and budgets are not passed to it",
+        ),
+    ];
+    for (line, expected) in lines {
+        assert_eq!(line, expected);
+    }
+
+    let negotiated = capabilities(&DocketFeatures {
+        contract: Contract::V1_1,
+        answers: true,
+        max_tokens: true,
+        policy: true,
+        version: "9.9.9".to_owned(),
+        ..DocketFeatures::default()
+    });
+    let reason = |line: &CapabilityValue| line.reason.clone().unwrap_or_default();
+    let policy = policy_line(&negotiated);
+    assert!(reason(&negotiated.decisions).contains("--answers"));
+    assert!(reason(&negotiated.decisions).contains("negotiated contract 1.1 against docket 9.9.9"));
+    assert!(reason(&negotiated.artifacts).contains("1.1 result"));
+    assert!(reason(&negotiated.usage).contains("--max-tokens"));
+    assert!(policy.contains("--policy"));
+    assert!(policy.contains("negotiated contract 1.1 against docket 9.9.9"));
+}
+
+#[test]
+fn a_contract_1_1_result_line_is_finished() {
+    let report = read(include_str!("../fixtures/docket/contract-1.1/ok.ndjson"));
+    assert!(report.succeeded);
+    assert_eq!(report.observed_model.as_deref(), Some("anthropic/claude-x"));
+    assert_eq!((report.tokens_in, report.tokens_out), (Some(22), Some(10)));
+}
+
+#[test]
+fn the_real_docket_is_negotiated_not_assumed() {
+    let Ok(program) = crate::harness::locate::locate_installed(DESCRIPTOR.program) else {
+        eprintln!("skipping: `docket` not found on PATH");
+        return;
+    };
+    let found = DocketFeatures::probe(&program);
+    assert!(!found.version.is_empty(), "docket --version was not read");
+    let state = scratch("docket-negotiated");
+    let scratch_dir = scratch("docket-negotiated-scratch");
+    let endpoint = endpoint(state.path());
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let args = invocation(&found, &run).expect("invocation").args;
+    assert_eq!(
+        args.ends_with(&["--contract".to_owned(), "1.1".to_owned()]),
+        found.contract == Contract::V1_1,
+        "{found:?} {args:?}"
+    );
 }
 
 fn read(stdout: &str) -> RunReport {
