@@ -845,6 +845,30 @@ Token usage, when the harness reports it, is `measured`. When it doesn't, it is
 
 ---
 
+## Factory metrics
+
+The Factory metrics page shows one card per metric from an aggregated summary of all
+attempts, decisions, and verification activity for a project. Each card displays the
+computed ratio or value (when it can be measured), or "Not measured" with its reason when
+measurement is not possible.
+
+| Metric | Definition | Source |
+|---|---|---|
+| Escalation rate | Decisions ÷ Attempts | `execution_decisions` ÷ `execution_attempts` in the selected time window |
+| Human minutes per decision | Median and p90 of the time a decision waits for an answer | From when someone first opened the decision (or from when it was raised, if nobody opened it first) to its resolution; `execution_decisions` in the window |
+| Human minutes per pack review | Median and p90 of the time a merge-readiness pack waits for its verdict | From when someone first opened the pack (or from when it was uploaded, if nobody opened it before the verdict) to the review; `mrp_reviews` in the window |
+| Verification tax (tokens) | (Verification + Rework) ÷ Implementation | Implementation = tokens from each request's first attempt; Rework = tokens from later attempts plus requests marked as rework; Verification = the tokens each verifier reported spending in its pack |
+| Pack acceptance rate | Accepted ÷ Reviewed | Counts from `mrp_reviews`; also shows unreviewed and produced packs |
+| Outcomes | Pull requests opened, merged, closed, reverted | Data from `pull_requests`; also shows PQC (pull request quality: merged and not reverted) |
+
+When a metric has nothing to count, the card says "Not measured" and why, never 0. No
+card shows money: token counts only. When timing data has no resolved samples in the window, it shows "Not
+measured" rather than zero minutes. The source column for each metric shows which table
+it reads and, for time-based metrics, whether resolution time started from `viewed_at`
+(human first opened it) or `created_at` (never viewed before resolution).
+
+---
+
 ## Known gaps
 
 These are documented rather than papered over, per this project's
