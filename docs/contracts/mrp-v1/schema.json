@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mrp-v1/schema.json",
+  "title": "Merge Readiness Pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "attempt_id",
+    "evidence_sha256",
+    "criteria",
+    "risk",
+    "recommendation",
+    "usage",
+    "signature",
+    "produced_by"
+  ],
+  "properties": {
+    "v": {
+      "type": "string",
+      "const": "1",
+      "description": "Pack version"
+    },
+    "attempt_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The attempt this pack certifies"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA256 hash of the evidence directory"
+    },
+    "brief_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA256 hash of the brief, null if no brief"
+    },
+    "criteria": {
+      "type": "array",
+      "description": "Status of each brief criterion",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Criterion id from the brief"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["command", "test", "metric", "file", "absent", "manual"],
+            "description": "Criterion kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "manual", "skipped"],
+            "description": "Criterion status"
+          },
+          "evidence_ref": {
+            "type": ["string", "null"],
+            "description": "Path to evidence file if applicable"
+          },
+          "note": {
+            "type": ["string", "null"],
+            "description": "Human-readable note about this criterion"
+          }
+        }
+      }
+    },
+    "verify": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["command", "exit_code"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Verification command that was run"
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tail": {
+          "type": ["string", "null"],
+          "description": "Last N lines of verifier output"
+        },
+        "duration_s": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Seconds elapsed during verification"
+        }
+      },
+      "description": "Verification run details, null if verify was not run"
+    },
+    "mutation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["scope", "score", "killed", "survived"],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "const": "changed_lines",
+          "description": "What was mutated"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Mutation score (percent)"
+        },
+        "killed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of mutations killed"
+        },
+        "survived": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of mutations that survived"
+        }
+      },
+      "description": "Mutation testing results, null if mutation test was not run"
+    },
+    "static_analysis": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["counts"],
+      "properties": {
+        "sarif_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA256 of the SARIF results file"
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["error", "warning", "note"],
+          "properties": {
+            "error": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warning": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "note": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "description": "Static analysis results, null if not run"
+    },
+    "judge": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["model_family", "blind", "rubric"],
+      "properties": {
+        "model_family": {
+          "type": "string",
+          "description": "Model family used for judgment (e.g., 'claude-3-5-sonnet')"
+        },
+        "blind": {
+          "type": "boolean",
+          "const": true,
+          "description": "Whether the judge was blind to the code"
+        },
+        "rubric": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["criterion_id", "verdict"],
+            "properties": {
+              "criterion_id": {
+                "type": "string",
+                "description": "Brief criterion id"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": ["pass", "fail"],
+                "description": "Judge's verdict for this criterion"
+              },
+              "reason": {
+                "type": ["string", "null"],
+                "description": "Explanation for the verdict"
+              }
+            }
+          }
+        }
+      },
+      "description": "Judge verdict, null if judge was not run"
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "reasons"],
+      "properties": {
+        "tier": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Risk tier assessment"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Reasons for the risk tier"
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "rationale"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["merge", "review", "reject"],
+          "description": "Recommended decision"
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Explanation for the recommendation"
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens_in", "tokens_out"],
+      "properties": {
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Input tokens used by verifier"
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output tokens used by verifier"
+        }
+      },
+      "description": "Token usage of the verifier itself"
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {"const": "none"}
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": {"const": "in-toto"},
+            "statement_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA256 of the in-toto statement"
+            }
+          },
+          "required": ["kind", "statement_sha256"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "produced_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["program", "version"],
+      "properties": {
+        "program": {
+          "type": "string",
+          "description": "Name of the program that produced this pack"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the producing program"
+        }
+      }
+    }
+  }
+}
