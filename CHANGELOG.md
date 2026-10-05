@@ -9,6 +9,69 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
+## [0.1.0-beta.10] - 2026-10-05
+
+Phase 66: an agent run now closes the loop up to the merge. An item carries a brief that
+says what "done" means and travels to the agent; every attempt keeps its evidence; a
+verifier you run yourself can judge the work and Tack shows its merge-readiness pack for
+you to accept or reject; the branch can be pushed and its pull request followed; and a
+Factory metrics page per project measures the loop. Upgrading applies migrations 078–081
+on first start — new tables and columns only.
+
+### Added
+
+- **frontend:** HarborCoral palette, sail mark, and the Organic design language
+- **install:** Windows installer, Scoop manifest, and a Windows verify job
+- **runner:** Capture attempt evidence before the workspace is deleted
+- **db:** Add the factory loop's tables in migrations 078–081
+- **executions:** Resolve status_map_policy_id; done_on_success moves the item on completion
+- **core:** The item brief type, its validation and its Markdown
+- **runner:** Negotiate docket's harness contract at boot instead of assuming 1.0
+- **core:** Draft the mrp-v1 contract Tack reads from a verifier
+- **decisions:** A decision can carry options' risks and a recommendation, and records when it was first seen
+- **briefs:** Store an item's brief, serve it at /api/items/{id}/brief, carry it in exports
+- **run-with-agent:** Lay the dialog out as the whole flow; show what is not ready yet
+- **runner:** Run the operator's verifier after a succeeded attempt and stage its pack
+- **item-detail:** A Brief tab to write what "done" means for an item
+- **mrp:** Serve an attempt's merge-readiness pack and record the human verdict on it
+- **decisions:** The runner sends a decision's options and recommendation; the inbox shows them
+- **executions:** The agent receives the item and its brief; the evidence keeps the brief
+- **attempt:** A merge-readiness panel to read the verifier's pack and record a verdict
+- **runner:** Push a succeeded attempt's work as a branch, off by default
+- **run-with-agent:** Verification and branch push are live choices when the runner offers them
+- **github:** Open a pull request for a pushed attempt and follow it to merged, closed or reverted
+- **attempt:** Show an attempt's pull request and its state
+- **metrics:** Measure the factory loop per project at /api/projects/{id}/metrics/factory
+- **runner:** Stop every process group docket announces on cancel; cancel is Supported on contract 1.1
+- **metrics:** A Factory metrics page per project
+- **runner:** Docket can ask before acting when it supports answers
+- **runner:** Pass the caller's limits and policy to docket and read back the files it wrote
+- **runner:** Run a docket recipe from the agent profile; the guide's docket rows match the code
+
+### Fixed
+
+- **run-with-agent:** Restore the modal's props type; the production build compiles again
+- **runner-protocol:** A run that moves its item tells the board, like an edit does
+- **ui:** A Select shows its value, not its first option
+- **run-with-agent:** The harness sent is the harness shown
+- **mrp:** A pack names its attempt the way the evidence does
+- **metrics:** One decision, one pack — counts read as words
+- **attempt:** A pack's evidence paths wrap inside the drawer
+- **item-detail:** A brief criterion's kind is readable in full
+- **agents:** An agent profile's instructions get a multi-line field
+- **board:** One item reads "1 item"
+- **deps:** Brace-expansion 2.1.7 clears the npm audit
+- **deps:** The npm lockfile follows the dependency bump's package.json
+
+### Documentation
+
+- **readme:** Lead with the pitch, and re-capture the screenshots
+- **book:** Walk install to a finished agent run, every step photographed
+- **readme:** Lead with the desktop app; say what the server form is for
+
+[0.1.0-beta.10]: https://github.com/yielab/tack/compare/v0.1.0-beta.9...v0.1.0-beta.10
+
+---
 ## [0.1.0-beta.9] - 2026-09-21
 
 The first tag since `v0.1.0-beta.7`. The version had moved to `0.1.0-beta.8` on

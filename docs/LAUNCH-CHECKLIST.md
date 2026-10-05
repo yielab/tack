@@ -14,7 +14,7 @@ automatically — every step under "Publish list" is a human action.
 | 4 | `install.sh` picks the `tack-*` archive, never the `tack-runner-*` one (both match the same platform suffix), and verifies what it downloaded | `./scripts/verify-install-urls.sh` — runs the installer for real against the published release, asserts a working `tack` lands, asserts the `SHA256SUMS` check ran, and asserts `packaging/` carries the published digests |
 | 5 | The workspace version is the version you're about to tag — `release.yml` refuses a tag that doesn't match `Cargo.toml` | `grep '^version' Cargo.toml` |
 | 6 | The local gate and the end-to-end smoke are green | `.githooks/pre-push && cargo nextest run --workspace && ./scripts/smoke.sh` (fake mode: shim harness binaries, no model call) |
-| 7 | The live GitHub repository description matches the current harness list (four: Claude Code, Codex, docket, opencode) | `gh repo view yielab/tack --json description --jq .description` — currently still names only two; update it before or alongside tagging |
+| 7 | The live GitHub repository description matches the current harness list (four: Claude Code, Codex, docket, opencode) | `gh repo view yielab/tack --json description --jq .description` |
 | 8 | The recovery demo asset is a valid, playable file | `file docs/screenshots/recovery-demo.gif` |
 | 9 | Docs site is reachable | `curl -sI https://yielab.github.io/tack/` (expect `HTTP/2 200`) |
 

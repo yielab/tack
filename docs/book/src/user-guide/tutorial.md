@@ -27,7 +27,7 @@ Verify it's up:
 
 ```sh
 curl http://localhost:3210/api/health
-# {"migrations_applied":81,"status":"ok","version":"0.1.0-beta.9"}
+# {"migrations_applied":81,"status":"ok","version":"0.1.0-beta.10"}
 ```
 
 `migrations_applied` is how many migrations this build actually ran — trust that
