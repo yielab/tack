@@ -231,7 +231,7 @@ opencode
   ...
 
 Runner-wide capabilities (apply identically to every harness above):
-  cancel     advisory    — process-group signal cannot reach a detached descendant
+  cancel     advisory    — a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability
   resume     unsupported — no resumable session contract
   decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
   artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
@@ -248,7 +248,13 @@ Provider endpoint (vercel_ai_gateway):
 Provider endpoint (anthropic):
   reaches: claude-code
   status:  not configured
+
+verify: disabled
 ```
+
+The last line reports the runner's verifier: `disabled`, or `enabled` with the program, whether
+it was found on `PATH`, its arguments and its timeout. See
+[After a succeeded attempt](#after-a-succeeded-attempt).
 
 A harness absent from your machine prints `status: absent` and names every directory it
 searched, instead of the fields above — see
@@ -283,10 +289,32 @@ because every field it sends is visible on the command line; see
 
 | Entry point | Where | Notes |
 |---|---|---|
-| The **"Run with agent"** modal | Item detail drawer, web UI (`RunWithAgentModal.tsx`) | Auto-selects the runner when exactly one is active, offers the target's own declared models plus "Project default", and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
+| The **"Run with agent"** modal | Item detail drawer, web UI | Lays the run out top to bottom (see below), auto-selects the runner when exactly one is active, offers the target's own declared models plus "Project default", and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
 | `tack execution create` | CLI | Scriptable; every field the API accepts is a flag. Used for the worked example below. |
 | `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](../../../API-REFERENCE.md#worked-examples) for a worked request/response pair. |
 | MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](../../../MCP.md). |
+
+### The Run with agent dialog
+
+The dialog reads as the whole flow, top to bottom, in four groups:
+
+- **Who runs it** — the machine or group, the agent profile, the harness and the model.
+- **What it gets** — the item, and its [brief](items.md#brief-tab) when it has one (an item without
+  one says so and the agent gets its title and description), plus the repository to check out.
+- **How far it may go** — approvals (Automatic or Ask me), the allowed tools, and the timeout.
+  Claude Code's tools are offered as a checklist beside the free-text field; for codex, opencode
+  and docket the field is free text, because none of them exposes a list of its tools.
+- **What happens after** — **Verify the result**, **Push the branch** and **Open a pull request**.
+
+A step that something is missing for shows a link to the page that fixes it (the Agents page for
+a runner, a harness or a model) and **Run** stays disabled until it is fixed. A step that is not
+available is never hidden: it is shown disabled with the reason beside it. "Ask me" is disabled
+for a harness that cannot pause to ask. **Verify the result** and **Push the branch** become
+checkboxes when the selected runner has a verifier or branch push turned on (see
+[After a succeeded attempt](#after-a-succeeded-attempt)); otherwise they are disabled and say
+which section of its TOML config turns them on. Unticking one declines it for this run only. **Open a
+pull request** is always disabled in the dialog: a pull request is opened for you once a pushed
+branch's item is linked to a GitHub issue, not chosen per run.
 
 The rest of this section is one complete run through the CLI path, executed against a
 real `tack serve --with-runner` with a stand-in `claude` binary standing in for a real,
@@ -551,8 +579,8 @@ Verified: `tack runner enroll` against a live server returns a `runner_id`,
 `token_id`, and one-time `enrollment_token`, and a subsequent
 `GET /api/runners` shows the runner in `pending_enrollment` state (there is no
 `tack runner list` CLI subcommand today — only `enroll`/`revoke`/`revoke-token`; use
-`curl` or the UI's Fleet view to list runners) — reproduced by hand for this page and
-pinned by `crates/tack-api/tests/wave2_gate.rs` and the runner-lifecycle handler tests
+`curl` or the Agents page to list runners) — reproduced by hand for this page and
+pinned by `crates/tack-api/tests/handlers/production_router.rs` and the runner-lifecycle handler tests
 in `crates/tack-api/src/handlers/runner_admin.rs`.
 
 ### Redeeming the token (the runner side)
@@ -846,6 +874,51 @@ the server would otherwise apply.
 
 ---
 
+## After a succeeded attempt
+
+What a runner does once an attempt has succeeded, and before its workspace is deleted. Every
+step below is the runner's, on its machine; the board never runs a program or pushes a branch.
+None of them can change the attempt's outcome: if one fails, the attempt is still `succeeded` and
+the failure is recorded as an event on its timeline.
+
+**Evidence.** For every harness, and also for a cancelled attempt, the runner records what the
+attempt changed against the revision it started from. Three artifacts are uploaded:
+`changes.patch` (the full diff, cut at 8 MiB with a flag in the manifest when it is longer),
+`files.json` (each path and whether it was added, modified, deleted or renamed) and
+`evidence.json` (the manifest: the base and head commits, the patch's checksum and size, the
+files, the terminal reason and the usage). When the request carried a brief, `brief.json` is
+kept beside them. If git cannot read the workspace, only `evidence.json` is written and it says
+why. The shape is `docs/contracts/evidence-v1/`.
+
+**Verification.** A runner with a `[verify]` section enabled in its TOML config runs a program
+of yours over that evidence and uploads the merge-readiness pack it writes as one more artifact.
+It is off by default. A failing, missing or timed-out verifier records `attempt.verify_failed`
+and nothing more. The pack is what you read under
+[Reviewing a merge-readiness pack](#reviewing-a-merge-readiness-pack). The section is described in
+`docs/CONFIG.md`; `tack runner doctor` reports whether it is on and whether the program is found.
+
+**Branch push.** A runner with `push_branches = true` under `[git]` commits what the harness left
+uncommitted onto a branch named `<prefix><item short id>-a<attempt number>` and pushes it to the
+remote the repository was fetched from, using your own git credentials. It is off by default. A
+failed push records `attempt.push_failed`. Turn it on only for agents you would trust with those
+credentials; `docs/CONFIG.md` says what the push does and does not guard against.
+
+**Pull request.** When the attempt pushed a branch, its item is linked to a GitHub issue and a
+GitHub token is configured, the server opens a pull request from that branch, with the
+merge-readiness pack as its body. The attempt then shows a **PR #n** link and a badge: open,
+merged, closed or reverted. The state follows GitHub on the sync poll; see
+[GitHub sync](../../../GITHUB-SYNC.md). An item with no link, or no token, gets no pull request
+and nothing else changes.
+
+**Moving the item.** A request can carry a status policy: `done_on_success` moves the item to
+its workflow's first Done status when the attempt succeeds, and `done_on_mrp_accepted` moves it
+when you accept the attempt's merge-readiness pack. Without one the item's status is never
+touched. Set it with `tack execution create --status-map-policy` or `status_map_policy_id` in the
+API and MCP; the Run with agent dialog does not offer it. The move goes through the workflow's
+ordinary rules and open boards are told, like any edit.
+
+---
+
 ## Reviewing a merge-readiness pack
 
 When a verifier checks an attempt, it leaves a merge-readiness pack. Open the attempt's
@@ -885,14 +958,16 @@ Token usage, when the harness reports it, is `measured`. When it doesn't, it is
 
 ## Factory metrics
 
-The Factory metrics page shows one card per metric from an aggregated summary of all
-attempts, decisions, and verification activity for a project. Each card displays the
+The Factory metrics page (**Factory metrics** in the project's sidebar, at
+`/projects/<id>/factory`; `GET /api/projects/{id}/metrics/factory` for the same numbers) shows one card per metric from an aggregated summary of all
+attempts, decisions, and verification activity for a project. The page covers all time; the endpoint takes an optional `since`
+(RFC 3339) to start the window later. Each card displays the
 computed ratio or value (when it can be measured), or "Not measured" with its reason when
 measurement is not possible.
 
 | Metric | Definition | Source |
 |---|---|---|
-| Escalation rate | Decisions ÷ Attempts | `execution_decisions` ÷ `execution_attempts` in the selected time window |
+| Escalation rate | Decisions ÷ Attempts | `execution_decisions` ÷ `execution_attempts` in the window |
 | Human minutes per decision | Median and p90 of the time a decision waits for an answer | From when someone first opened the decision (or from when it was raised, if nobody opened it first) to its resolution; `execution_decisions` in the window |
 | Human minutes per pack review | Median and p90 of the time a merge-readiness pack waits for its verdict | From when someone first opened the pack (or from when it was uploaded, if nobody opened it before the verdict) to the review; `mrp_reviews` in the window |
 | Verification tax (tokens) | (Verification + Rework) ÷ Implementation | Implementation = tokens from each request's first attempt; Rework = tokens from later attempts plus requests marked as rework; Verification = the tokens each verifier reported spending in its pack |
@@ -914,6 +989,13 @@ These are documented rather than papered over, per this project's
 
 - **`execution_requests` has no real `priority` column.** A `metadata`-convention
   stopgap exists, documented as non-binding.
+- **A docket run that times out is not cancelled.** Cancelling stops every process group docket
+  announced; a timeout stops only docket's main process group, so a command docket started in its
+  own group can outlive the attempt.
+- **`tack runner doctor` does not print each harness's `artifacts` and `permission_policy`
+  support** in its readable output; for docket those are decided when the runner starts.
+- **The branch push runs git in the attempt's workspace**, which the agent could have
+  reconfigured while it worked. Hooks are disabled; see `docs/CONFIG.md`.
 
 ---
 
@@ -927,7 +1009,7 @@ card-local test scaffolding): creating an execution request, scheduling it to an
 runner or a fleet, the full runner-v1 protocol surface (enroll → claim → heartbeat →
 accept → start → events → decisions → artifacts → completion), cancellation and
 recovery-observation handling, the decision-resolve and artifact-download routes, and
-the retention/expiry sweeps — see `crates/tack-api/tests/wave2_gate.rs`,
+the retention/expiry sweeps — see `crates/tack-api/tests/handlers/production_router.rs`,
 `crates/tack-orch/tests/runner_contract.rs` (byte-pins all 46 frozen fixtures), and the
 integrator test files referenced throughout this page.
 
