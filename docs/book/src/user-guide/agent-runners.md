@@ -156,6 +156,13 @@ separate from the ordinary API token. A question nobody answers before the attem
 deadline is answered with its own deny option. It is never left open and never defaults
 to allow.
 
+Each question shows its kind, so a tool permission reads differently from a choice the
+agent wants you to make. An option can carry a short description, the risks of choosing it
+and a rough token cost. When the agent has a preferred answer, that option is preselected
+and marked **Recommended**, with the reason and any evidence beneath it; nothing is applied
+until you press **Resolve**, and you can pick any option. The first time someone opens a
+pending question, the board records that it was seen.
+
 ### Checking a machine
 
 Run `tack runner doctor` on the machine that will actually run the harness before
