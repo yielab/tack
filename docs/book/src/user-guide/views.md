@@ -2,8 +2,8 @@
 
 Tack has six **work tabs** — Board, List, Table, Calendar, Timeline, Sprint — all showing the
 same item set. Switching between tabs never re-fetches data; an item created on the Board
-appears immediately in every other view. A seventh screen, **Overview (Dashboard)**, is
-accessible from the sidebar and shows project statistics.
+appears immediately in every other view. Two more screens, **Overview (Dashboard)** and
+**Factory metrics**, are accessible from the sidebar and show project statistics.
 
 Every view shares the same shell: a sidebar to switch project and view, a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
@@ -96,3 +96,14 @@ Read-only project statistics — accessible from the sidebar.
 - Status breakdown: item counts per workflow column with colour-coded category bars.
 - Priority breakdown: counts by priority level.
 - All statistics are computed live from the item set — no aggregation job.
+
+---
+
+## Factory metrics
+
+Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
+going on this project: how often a run needed a person, how long the person took, what verification
+cost in tokens, how often a merge-readiness pack was accepted, and how many pull requests agents
+opened, merged, closed or had reverted. A card whose input does not exist yet says **Not measured**
+and why, never `0`; no card shows money. Every number, its definition and the counts behind it are in
+[Factory metrics](agent-runners.md#factory-metrics) in the Agent Runners chapter.

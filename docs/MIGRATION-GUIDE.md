@@ -64,7 +64,7 @@ ten neutral runner-v1 execution tables; later ones refined execution replay, rec
 and attempt-start facts; 063 dropped the unused `model_profiles` table; 064–073 drop
 the legacy Docket control-plane bridge (below). Everything from 039 through 062 is
 additive, and so are 075–077 (the columns GitHub sync keeps: a link's last sync time, a
-comment's GitHub id, a project's token reference); 063, 064–073 and 074 (an unused column
+comment's GitHub id, a project's token reference) and 078–081 (item briefs, a decision's recommendation and when it was first seen, merge-readiness pack reviews, pull requests — new tables and columns only); 063, 064–073 and 074 (an unused column
 of `project_templates`) are the only migrations in this history that remove data.
 
 This upgrade drops the legacy Docket control-plane bridge: `control_planes` and the

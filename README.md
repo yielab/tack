@@ -52,8 +52,20 @@ ChatGPT plan) and Tack never sees the credential. Or give the runner an API key 
 endpoint — Anthropic's API directly, or a gateway such as Vercel AI Gateway. The model
 list comes live from that endpoint, not from a hand-kept file.
 
-**It can ask first.** With approvals set to *Ask me*, Claude Code, Codex and opencode
-pause before acting and wait in the item's decision inbox.
+**It can ask first.** With approvals set to *Ask me*, Claude Code, Codex, opencode and
+docket (when its install accepts answers) pause before acting and wait in the item's
+decision inbox, where each question shows its options, their risks and the agent's
+recommendation.
+
+**Say what "done" means.** An item can carry a brief: acceptance criteria, constraints
+and a definition of done. The agent receives it with the item, and the run keeps a copy.
+
+**Review before you merge.** Whatever an agent changed is kept as a patch and a file
+list. A runner can also run your own verifier over it, which writes a merge-readiness
+pack you accept or reject on the attempt, and push the work as a branch. For an item
+linked to a GitHub issue, Tack opens the pull request and shows its state on the attempt.
+Each project has a Factory metrics page: how often agents needed you, how long you took,
+and how much of what they opened was merged.
 
 **The Agents page gets you started.** From installed binary to a finished test run on
 one page: turn execution on, see which agents this machine has, check their login, pick

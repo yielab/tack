@@ -17,7 +17,7 @@ This chapter walks through each of the six Rust crates in the main workspace in 
 
 **Lives in:** `crates/tack-core/src/`
 
-**Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum.
+**Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, and the two contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness) and the merge-readiness pack (`mrp.rs`: the `mrp-v1` types and their pull-request rendering).
 
 **Does not own:** anything that performs I/O. No `sqlx`, no `reqwest`, no file operations, no `tokio`. This is enforced by the `Cargo.toml` — the crate has no async runtime dependency at all.
 
@@ -70,7 +70,7 @@ If `transitions` is `None`, any move between two known statuses is allowed. This
 
 `workflow_for_type(project_type)` maps each `ProjectType` to the right preset. Adding a new project type means adding a variant to the `ProjectType` enum, a preset function, and a match arm here.
 
-The test suite in this file (29 tests) covers initial status selection, transition validation for open and constrained workflows, WIP limit edge cases, done-status detection, and parent-completion logic — all without any database or async runtime.
+The test suite in this file covers initial status selection, transition validation for open and constrained workflows, WIP limit edge cases, done-status detection, and parent-completion logic — all without any database or async runtime.
 
 ---
 
@@ -161,6 +161,9 @@ Migrations are idempotent — running them on an existing database is safe. Nota
   requests, attempts, events, decisions and artifacts; agent profiles; runner fleets
   and their members; model profiles). `049`+ refine execution replay, recovery and
   attempt-start facts.
+- `078`–`081` — item briefs, the decision pack columns (options' details and risks,
+  the recommendation, when a decision was first seen), merge-readiness pack reviews and
+  pull requests.
 
 Each ordinary migration runs in its own transaction with the `_migrations` record
 inserted at commit; a failing statement rolls the whole migration back. Applied
@@ -193,7 +196,7 @@ impl Repository {
 
 This design gives callers a single `repo` value to pass around while keeping each entity's SQL in its own file.
 
-**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`):
+**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution.rs`):
 
 - Functions take `&SqlitePool` (or `&self` for the struct-based submodules) and return `Result<T, sqlx::Error>` or `Result<T, DependencyError>`.
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.
@@ -353,7 +356,9 @@ pub struct AppState {
 
 ### `handlers/`
 
-One file per entity group. A typical handler follows this shape:
+One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`) and `runner_protocol/` (the runner's own surface).
+
+ A typical handler follows this shape:
 
 ```rust
 pub async fn update_item(
@@ -410,7 +415,7 @@ The response body is always `{ "error": { "status": <code>, "message": "<text>" 
 
 **Owns:** its own binary (`tack-runner`, entirely separate from `tack`) — local
 enrollment/credential handling, the isolated per-attempt workspace, the owner-only
-attempt journal, and the harness adapter layer. **Does not own** anything the API
+attempt journal, the harness adapter layer, and the steps that follow a succeeded attempt (`evidence.rs`, `verify.rs` and the branch push in `git.rs`). **Does not own** anything the API
 must not touch: vendor credentials, workspace contents, and the harness subprocess
 never leave this crate. See [Agent Runners & Fleet Execution](../user-guide/agent-runners.md)
 for the operator-facing view of everything below.
@@ -437,13 +442,22 @@ tests inject a fake so unit tests never touch a real checkout.
 
 Defines the trait the runner's runtime loop drives: `enroll`, `refresh`, `claim`,
 `heartbeat`, and per-attempt `accept`/`start`/`events`/`decisions`/`artifacts`/
-`completion`/`cancellation`/`recovery-observation`. **The only implementation of this
-trait in the tree today is `UnavailableProtocolClient`**, which fails immediately with
-a typed `RunnerError::ProtocolUnavailable` — there is no HTTP-backed implementation
-wired into `main.rs` yet, and the crate does not depend on `reqwest`. This is a
-genuine, tested gap (`runtime::tests::unavailable_protocol_is_a_typed_failure_not_success`
-pins the failure as deliberate), not an oversight papered over with a fake success —
-see [What actually runs today](../user-guide/agent-runners.md#what-actually-runs-today).
+`completion`/`cancellation`/`recovery-observation`. The HTTP-backed implementation is
+`transport::HttpPullProtocol`, which `bootstrap::build_runtime` wires for both the
+standalone binary and the embedded runner. `UnavailableProtocolClient` remains only as
+the typed `RunnerError::ProtocolUnavailable` fallback for a runtime built without a
+client — see
+[What actually runs today](../user-guide/agent-runners.md#what-actually-runs-today).
+
+### `evidence.rs`, `verify.rs` and the push in `git.rs`
+
+What the engine does between a terminal outcome and deleting the workspace. `evidence.rs`
+reads the attempt's change out of the workspace for every harness (`changes.patch`,
+`files.json`, `evidence.json`, plus `brief.json` when the request carried one; the shape is
+`docs/contracts/evidence-v1/`). `verify.rs` runs the operator's `[verify]` program over that
+evidence and stages the merge-readiness pack it writes. `git.rs` also holds the branch push
+(`[git] push_branches`). None of the three can change the attempt's outcome: a failure is an
+event (`attempt.verify_failed`, `attempt.push_failed`) and the attempt still completes.
 
 ### `harness/`
 
@@ -453,16 +467,17 @@ cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
 binary, the version probe, the request policy, environment and secrets, provider
 injection, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
 `HarnessDescriptor` (data) and a four-method `HarnessGrammar` (its command line, how its
-output is read, what it supports): `codex.rs`, `claude_code.rs`. Adding one is a module
+output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. docket's contract and flags are probed when the runner starts, never assumed from its version. Adding one is a module
 plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness
 vocabulary itself stays open (`HarnessKind::Other(String)`). Two engine-facing
 traits:
 `HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
 `reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`
 implements `HarnessAdapter` by dispatching on harness kind and **refuses to register
-any probe claiming `cancel: supported`** — every harness's own shell tool spawns its
-subprocess in a new session outside the runner's process group, confirmed against the
-real binaries with `ps`. Live harness
+any probe claiming `cancel: supported`** unless its harness announces the process groups
+its tools start (only docket on contract 1.1 does) — every other harness's own shell tool
+spawns its subprocess in a new session outside the runner's process group, confirmed
+against the real binaries with `ps`. Live harness
 tests are `#[ignore]`d and never required in CI; `harness/fixtures/fake_harness.sh`,
 driven by `TACK_FAKE_HARNESS_MODE`, is the always-runnable path every required test
 uses instead.
