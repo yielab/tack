@@ -1,5 +1,5 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
-import { Button, EmptyState, Field, Skeleton } from '../../../shared/ui';
+import { type Component, For, Show, createResource, createSignal, createUniqueId } from 'solid-js';
+import { Button, EmptyState, Field, FieldShell, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
 import { agentProfilesApi, type AgentProfileSummary } from '../../../shared/execution';
@@ -19,6 +19,7 @@ const AgentProfilesPanel: Component = () => {
   const [showForm, setShowForm] = createSignal(false);
   const [name, setName] = createSignal('');
   const [instructions, setInstructions] = createSignal('');
+  const instructionsId = createUniqueId();
   const [toolPolicyRaw, setToolPolicyRaw] = createSignal('');
   const [limitsRaw, setLimitsRaw] = createSignal('');
   const [saving, setSaving] = createSignal(false);
@@ -137,13 +138,23 @@ const AgentProfilesPanel: Component = () => {
       >
         <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-[28px] bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="reviewer" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
-          <Field
-            label="Instructions"
-            required
-            placeholder="Review the diff for correctness and style."
-            value={instructions()}
-            onInput={(e) => setInstructions(e.currentTarget.value)}
-          />
+          <FieldShell label="Instructions" required for={instructionsId}>
+            <textarea
+              id={instructionsId}
+              required
+              rows={4}
+              placeholder="Review the diff for correctness and style."
+              value={instructions()}
+              onInput={(e) => setInstructions(e.currentTarget.value)}
+              class="w-full rounded-[20px] border px-3.5 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              style={{
+                'background-color': 'var(--color-bg-base)',
+                color: 'var(--color-text-primary)',
+                'border-color': 'var(--color-border-medium)',
+                '--tw-ring-color': 'var(--color-focus-ring)',
+              }}
+            />
+          </FieldShell>
           <Field
             label="Tool policy (JSON object, optional)"
             placeholder="{}"
