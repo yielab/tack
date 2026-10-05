@@ -140,7 +140,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                             <td class="py-1 pr-3 align-top">
                               <Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{c.status}</Badge>
                             </td>
-                            <td class="py-1 pr-3 align-top" style={mono}>{c.evidence_ref ?? 'none'}</td>
+                            <td class="py-1 pr-3 align-top break-all" style={mono}>{c.evidence_ref ?? 'none'}</td>
                           </tr>
                         )}
                       </For>
