@@ -1,6 +1,8 @@
 # Plan: Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
 
-**Status: open 2026-10-03.** The maintainer decided Wave 0 that day (table below): ADR 0069,
+**Status: closed 2026-10-05.** Every task is in `develop` and ships as `v0.1.0-beta.10`; R2 was
+moved out of this plan the same day — the landing page is the studio site's own work, not Tack's.
+The maintainer decided Wave 0 on 2026-10-03 (table below): ADR 0069,
 0070 and 0071 accepted, ADR 0072 accepted with the interface as a priority, ADR 0073 withdrawn
 as an ADR and kept as two tasks. Nothing is dispatched yet; Wave 1 has no gate left. Written against `develop` at
 `7718420`; every locator below was read on that commit and re-checked on 2026-10-02 (same
@@ -165,7 +167,7 @@ four is two rounds; within a wave the task on the longest remaining chain is dis
 
 | Wave | Tasks, in parallel (longest chain first) | Starts after | Model |
 |---|---|---|---|
-| **1** | **B1** evidence before deletion · **P0** measure each harness's tool list · **S0** the four migrations · **I1** `status_map_policy_id` resolves · **E1** `mrp-v1` contract · **C1a** brief types and contract · **R1** README pitch · **R2** landing page | now | B1, I1, P0, R2 Sonnet · S0, E1, C1a, R1 Haiku |
+| **1** | **B1** evidence before deletion · **P0** measure each harness's tool list · **S0** the four migrations · **I1** `status_map_policy_id` resolves · **E1** `mrp-v1` contract · **C1a** brief types and contract · **R1** README pitch · ~~**R2** landing page~~ (moved out) | now | B1, I1, P0 Sonnet · S0, E1, C1a, R1 Haiku |
 | **2** | **P1** the whole flow in the dialog, deferred controls disabled · **C1b** brief persistence, routes, export · **D1** CRP contract and board · **F1** verifier step | P1: P0 · C1b: C1a, S0 · D1: S0 · F1: B1, E1 | Sonnet |
 | **3** | **C3** brief travels · **E2** MRP review record · **D2** CRP in the runner and inbox · **C2** brief editor | C3: B1, C1b, D1, P1 · E2: E1, I1, S0 · D2: B1, D1 · C2: C1b | Sonnet |
 | **4** | **H1** runner pushes the branch · **E3** MRP panel | H1: F1 · E3: E2 | Sonnet |
@@ -193,7 +195,7 @@ B1 ──┬──► F1
      └──► A3
 docket P35-2 ✓ ──► A1 ──► A3 ──► A2 ──► A4 ──► A5
                         (P35-3 ✓) (P35-5) (P35-6) (P35-9)
-P0 ──► P1 ──┬──► C3          R1, R2: now, alone
+P0 ──► P1 ──┬──► C3          R1: now, alone
             └──► P2 (also after F1, H1)
 ```
 
@@ -1010,6 +1012,10 @@ number is re-measured or removed; the docs job of pre-push passes.
 
 ### R2 — Tack gets its own landing page, at `yielab.com/tack`
 
+**Moved out of this plan 2026-10-05**, by the maintainer: the page is a task of the studio
+site's repository (`../newPortaflio`, branch `tack-landing`), tracked there. The text below is
+kept as the brief it was written as.
+
 **Gate:** none. Another repository: `../newPortaflio` (the studio site, live at yielab.com),
 a branch from its `main`, its own checks (`npm run verify`), never Tack's gate. Decided
 2026-10-03: `yielab.com/docket` is docket's landing; Tack has none, only a product entry, and
@@ -1075,5 +1081,5 @@ All six were answered on 2026-10-03; the answers are the Wave 0 table. None is o
 | Wave 0 | decided 2026-10-03 |
 | Waves 1–7 | in `develop` 2026-10-05: B1, P0, S0, I1, E1, C1a, R1 · P1, C1b, D1, F1 · C3, E2, D2, C2 · H1, E3 · H2a, P2 · G1a, H2b · G1b |
 | Chain A | A1 → A3 → A2 → A4 → A5 in `develop` 2026-10-05, against scratch installs of docket's `develop` (P35-3, -5, -6, -9 merged there) |
-| R2 | held: `../newPortaflio` already has uncommitted landing-page work on branch `tack-landing` (2026-10-03); the maintainer decides whether an agent finishes it |
+| R2 | moved out 2026-10-05: the landing page is `../newPortaflio`'s task (branch `tack-landing`), not this plan's |
 | Left open by the work | a recipe run takes no token budget (docket refuses `--max-tokens` with `--recipe`) and a recipe with an Implementer step fails for want of a verify command; a docket run that times out (not cancelled) stops only its main process group; the branch push runs git in a workspace the agent could reconfigure (`docs/CONFIG.md` says so); on a policy-capable docket a request must name docket's own tools, since Tack's tool names (`shell`, `filesystem`) have no mapping and are refused; `tack runner doctor` does not print the per-harness `artifacts` and `permission_policy` lines |
