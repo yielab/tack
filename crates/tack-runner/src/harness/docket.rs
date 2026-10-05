@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
 
 use crate::client::engine::{Question, StreamSignal};
 use crate::harness::{
@@ -93,6 +93,24 @@ struct ResultLine {
     blocked: Option<serde_json::Value>,
     model: ResultModel,
     usage: ResultUsage,
+    #[serde(default)]
+    files: Vec<ResultFile>,
+    limits: Option<ResultLimits>,
+}
+
+/// A path docket reports a run wrote (`op` is `write`, `edit`, `delete` or
+/// `unknown`); only present on a 1.1 line.
+#[derive(serde::Deserialize, serde::Serialize)]
+struct ResultFile {
+    path: String,
+    op: String,
+}
+
+/// The ceilings docket echoes back; only present on a 1.1 line.
+#[derive(serde::Deserialize)]
+struct ResultLimits {
+    #[serde(rename = "maxTokens")]
+    max_tokens: Option<u64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -143,9 +161,73 @@ fn malformed(result: &ProcessResult) -> RunReport {
     )
 }
 
-/// `permission_policy` and `budgets` are not applied: `capabilities`
-/// declares that rather than guessing a mapping onto docket's own
-/// per-tool policy engine.
+/// docket's own tool names, the only ones a `tool:` predicate can match
+/// (`core/tools.py`); the request's tool list names tools of this harness.
+const DOCKET_TOOLS: &[&str] = &[
+    "read", "write", "edit", "glob", "grep", "bash", "fetch", "skill", "consult",
+];
+
+/// The `kind: policy` document (`docs/contracts/config-v1/policy.schema.json`
+/// in docket) that blocks every docket tool the request does not allow:
+/// the tools its list leaves out, and `fetch` when `network` is false.
+/// `Ok(None)` when nothing needs blocking. A request this shape cannot
+/// express is refused naming the field, never narrowed.
+fn policy_document(policy: &PermissionPolicy) -> Result<Option<String>, HarnessError> {
+    if let Some(field) = policy.additional.keys().next() {
+        return Err(rejected(format!(
+            "permission_policy.{field} cannot be expressed as a docket policy document"
+        )));
+    }
+    let allowed: Vec<String> = policy
+        .tools
+        .iter()
+        .map(|tool| tool.to_ascii_lowercase())
+        .collect();
+    if let Some(unknown) = policy
+        .tools
+        .iter()
+        .find(|tool| !DOCKET_TOOLS.contains(&tool.to_ascii_lowercase().as_str()))
+    {
+        return Err(rejected(format!(
+            "permission_policy.tools names {unknown:?}, which is not a docket tool \
+             ({}); a docket policy document can only name those",
+            DOCKET_TOOLS.join(", ")
+        )));
+    }
+    if !policy.network && allowed.iter().any(|tool| tool == "fetch") {
+        return Err(rejected(
+            "permission_policy.network is false but permission_policy.tools allows docket's \
+             network tool `fetch`, a self-contradictory request"
+                .to_owned(),
+        ));
+    }
+    let denied: Vec<&str> = DOCKET_TOOLS
+        .iter()
+        .copied()
+        .filter(|tool| !allowed.iter().any(|name| name == tool))
+        .collect();
+    if denied.is_empty() {
+        return Ok(None);
+    }
+    let predicates: String = denied
+        .iter()
+        .map(|tool| format!("    - tool: {tool}\n"))
+        .collect();
+    Ok(Some(format!(
+        "kind: policy\n\
+         name: tack-permission-policy\n\
+         description: The tools this Tack request does not allow.\n\
+         appliesTo:\n  - \"*\"\n\
+         on: toolCall\n\
+         when:\n  anyOf:\n{predicates}\
+         then: block\n\
+         message: this tool is not allowed by the Tack request's permission_policy\n"
+    )))
+}
+
+/// `permission_policy.tools` and `.network` become a `--policy` file, and
+/// `budgets.tokens` a `--max-tokens`, each only when its probe is true; a
+/// docket without the probe is passed nothing and `capabilities` says so.
 fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
     let request = &run.spec.work.request;
     if run.endpoint.is_none() && !request.environment.contains_key(BASE_URL_ENV) {
@@ -198,6 +280,31 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         Vec::new()
     };
 
+    let mut limit_args = Vec::new();
+    if features.token_file {
+        limit_args.push("--token-file".to_owned());
+        limit_args.push(run.scratch.join("token.json").display().to_string());
+    }
+    if features.max_tokens
+        && let Some(tokens) = request
+            .budgets
+            .get("tokens")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|tokens| *tokens > 0)
+    {
+        limit_args.push("--max-tokens".to_owned());
+        limit_args.push(tokens.to_string());
+    }
+    if features.policy
+        && let Some(document) = policy_document(&request.permission_policy)?
+    {
+        let path = run.scratch.join("policy.yaml");
+        std::fs::write(&path, document)
+            .map_err(|_| rejected("the policy file could not be written".to_owned()))?;
+        limit_args.push("--policy".to_owned());
+        limit_args.push(path.display().to_string());
+    }
+
     Ok(Invocation {
         args: [
             "harness",
@@ -217,6 +324,7 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         .into_iter()
         .chain(contract_args)
         .chain(answer_args)
+        .chain(limit_args)
         .collect(),
         env,
         stdin_stays_open: ask,
@@ -228,9 +336,7 @@ impl HarnessGrammar for DocketGrammar {
         &DESCRIPTOR
     }
 
-    /// `permission_policy` and `budgets` are not applied: `capabilities`
-    /// declares that rather than guessing a mapping onto docket's own
-    /// per-tool policy engine.
+    /// See the free `invocation`: limits and policy only where probed.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         invocation(features(), run)
     }
@@ -257,6 +363,12 @@ impl HarnessGrammar for DocketGrammar {
                 "stop_reason": parsed.stop_reason,
                 "blocked": parsed.blocked,
                 "token": parsed.token,
+                "files": parsed
+                    .files
+                    .iter()
+                    .filter(|file| !file.path.starts_with(".tack-runner/"))
+                    .collect::<Vec<_>>(),
+                "max_tokens": parsed.limits.and_then(|limits| limits.max_tokens),
             }),
             harness_version: None,
             observed_model: (!parsed.model.served.is_empty()).then_some(parsed.model.served),
@@ -408,7 +520,7 @@ fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
             capability(
                 CapabilitySupport::Supported,
                 &format!(
-                    "this docket accepts --answers, so a tool call its policy gates pauses the                      run on an approval_requested event and waits for one answer line on stdin                      (accept or decline), as measured in \
+                    "this docket accepts --answers, so a tool call its policy gates pauses the run on an approval_requested event and waits for one answer line on stdin (accept or decline), as measured in \
                      fixtures/docket/contract-1.1/asked-answered.ndjson{negotiated}"
                 ),
             )
@@ -422,38 +534,51 @@ fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
                 ),
             )
         },
-        artifacts: capability(
-            CapabilitySupport::Advisory,
-            &derived(
-                "only the captured stdout/stderr is staged as a log artifact; the result line's \
-                 `blocked` detail is kept in the terminal reason, but no per-file artifact \
-                 discovery is implemented",
-                features.contract == Contract::V1_1,
-                "this docket's 1.1 result lists the files a run touched, which the adapter \
-                 does not read",
-            ),
-        ),
+        // The result's `files` is populated by the same docket card that
+        // adds `--token-file`, so that flag's probe is the one that says so.
+        artifacts: if features.token_file {
+            capability(
+                CapabilitySupport::Supported,
+                &format!(
+                    "this docket's 1.1 result lists the files a run wrote, kept in the terminal \
+                     reason (paths under .tack-runner/ are dropped), beside the staged \
+                     stdout/stderr log{negotiated}"
+                ),
+            )
+        } else {
+            capability(
+                CapabilitySupport::Unsupported,
+                "this docket does not report the files a run wrote, so only the captured \
+                 stdout/stderr is staged as a log",
+            )
+        },
         usage: capability(
             CapabilitySupport::Advisory,
             &derived(
                 "the result line's usage.input_tokens/output_tokens are real measurements, but \
                  cost_usd is always null on the installed version, so cost is never reported",
                 features.max_tokens,
-                "this docket accepts --max-tokens, but the adapter passes no budget",
+                "this docket accepts --max-tokens, which the adapter passes from budgets.tokens",
             ),
         ),
-        additional: policy_capability(
-            CapabilitySupport::Unsupported,
-            &format!(
-                "{}{negotiated}",
-                derived(
-                    "docket applies its own per-tool policy engine; the request's tool list, \
-                     network flag and budgets are not passed to it",
-                    features.policy,
-                    "this docket accepts --policy, but the adapter passes none",
-                )
-            ),
-        ),
+        additional: if features.policy {
+            policy_capability(
+                CapabilitySupport::Supported,
+                &format!(
+                    "this docket accepts --policy: the request's tool list and network flag are \
+                     passed as one kind: policy document blocking every docket tool they do not \
+                     allow, and a request that document cannot express is refused before spawn{negotiated}"
+                ),
+            )
+        } else {
+            policy_capability(
+                CapabilitySupport::Unsupported,
+                &format!(
+                    "this docket does not accept --policy, so the request's tool list and \
+                     network flag are not passed to it{negotiated}"
+                ),
+            )
+        },
     }
 }
 

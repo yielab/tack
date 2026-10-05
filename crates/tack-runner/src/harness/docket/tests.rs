@@ -148,7 +148,7 @@ fn capability_lines_follow_what_was_negotiated() {
         ),
         (
             &unprobed.artifacts.reason.clone().unwrap_or_default(),
-            "only the captured stdout/stderr is staged as a log artifact; the result line's `blocked` detail is kept in the terminal reason, but no per-file artifact discovery is implemented",
+            "this docket does not report the files a run wrote, so only the captured stdout/stderr is staged as a log",
         ),
         (
             &unprobed.usage.reason.clone().unwrap_or_default(),
@@ -156,7 +156,7 @@ fn capability_lines_follow_what_was_negotiated() {
         ),
         (
             &policy_line(&unprobed),
-            "docket applies its own per-tool policy engine; the request's tool list, network flag and budgets are not passed to it",
+            "this docket does not accept --policy, so the request's tool list and network flag are not passed to it",
         ),
     ];
     for (line, expected) in lines {
@@ -166,6 +166,7 @@ fn capability_lines_follow_what_was_negotiated() {
     let negotiated = capabilities(&DocketFeatures {
         contract: Contract::V1_1,
         answers: true,
+        token_file: true,
         max_tokens: true,
         policy: true,
         version: "9.9.9".to_owned(),
@@ -177,9 +178,25 @@ fn capability_lines_follow_what_was_negotiated() {
     assert_eq!(unprobed.decisions.support, CapabilitySupport::Unsupported);
     assert!(reason(&negotiated.decisions).contains("--answers"));
     assert!(reason(&negotiated.decisions).contains("negotiated contract 1.1 against docket 9.9.9"));
+    assert_eq!(negotiated.artifacts.support, CapabilitySupport::Supported);
+    assert_eq!(unprobed.artifacts.support, CapabilitySupport::Unsupported);
+    // A docket that speaks 1.1 but predates the files it reports.
+    let early = capabilities(&DocketFeatures {
+        contract: Contract::V1_1,
+        ..DocketFeatures::default()
+    });
+    assert_eq!(early.artifacts.support, CapabilitySupport::Unsupported);
     assert!(reason(&negotiated.artifacts).contains("1.1 result"));
     assert!(reason(&negotiated.usage).contains("--max-tokens"));
     assert!(policy.contains("--policy"));
+    assert_eq!(
+        negotiated.additional["permission_policy"]["support"],
+        "supported"
+    );
+    assert_eq!(
+        unprobed.additional["permission_policy"]["support"],
+        "unsupported"
+    );
     assert!(policy.contains("negotiated contract 1.1 against docket 9.9.9"));
     // Only a docket that speaks 1.1 reports its process groups.
     assert_eq!(unprobed.cancel.support, CapabilitySupport::Advisory);
@@ -318,6 +335,139 @@ fn a_contract_1_1_result_line_is_finished() {
     assert!(report.succeeded);
     assert_eq!(report.observed_model.as_deref(), Some("anthropic/claude-x"));
     assert_eq!((report.tokens_in, report.tokens_out), (Some(22), Some(10)));
+
+    // The captured `ok-files` run wrote `greeting.txt` and
+    // `.tack-runner/state.json`; only the first is the request's own.
+    let files = read(include_str!(
+        "../fixtures/docket/contract-1.1/ok-files.ndjson"
+    ));
+    assert_eq!(
+        files.terminal_reason["files"],
+        serde_json::json!([{"path": "greeting.txt", "op": "write"}])
+    );
+    assert_eq!(files.terminal_reason["max_tokens"], 5000);
+    assert_eq!(
+        report.terminal_reason["max_tokens"],
+        serde_json::Value::Null
+    );
+}
+
+/// One request, `network: false` and two tools, under every probe outcome:
+/// the flags are passed only where their probe is true, the policy document
+/// is exact, and a request the document cannot express never reaches docket.
+#[test]
+fn limits_and_policy_are_passed_only_where_probed() {
+    let state = scratch("docket-invocation-limits");
+    let scratch_dir = scratch("docket-invocation-limits-scratch");
+    let endpoint = endpoint(state.path());
+    let mut request = spec(DESCRIPTOR.kind, state.path());
+    request.work.request.permission_policy.tools = vec!["read".to_owned(), "BASH".to_owned()];
+    request.work.request.permission_policy.network = false;
+    request.work.request.budgets = serde_json::json!({"tokens": 200_000});
+    let token = scratch_dir.path().join("token.json").display().to_string();
+    let policy = scratch_dir.path().join("policy.yaml").display().to_string();
+    let everything = DocketFeatures {
+        contract: Contract::V1_1,
+        token_file: true,
+        max_tokens: true,
+        policy: true,
+        ..DocketFeatures::default()
+    };
+    let without_policy = DocketFeatures {
+        policy: false,
+        ..everything.clone()
+    };
+    let flags = |args: Vec<String>| args[12..].to_vec();
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let args = |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
+    assert_eq!(
+        args(&everything),
+        [
+            "--contract",
+            "1.1",
+            "--token-file",
+            &token,
+            "--max-tokens",
+            "200000",
+            "--policy",
+            &policy
+        ]
+    );
+    assert_eq!(
+        args(&without_policy),
+        [
+            "--contract",
+            "1.1",
+            "--token-file",
+            &token,
+            "--max-tokens",
+            "200000"
+        ]
+    );
+    assert!(args(&DocketFeatures::default()).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(&policy).expect("policy file"),
+        "kind: policy\n\
+         name: tack-permission-policy\n\
+         description: The tools this Tack request does not allow.\n\
+         appliesTo:\n  - \"*\"\n\
+         on: toolCall\n\
+         when:\n  anyOf:\n    - tool: write\n    - tool: edit\n    - tool: glob\n    \
+         - tool: grep\n    - tool: fetch\n    - tool: skill\n    - tool: consult\n\
+         then: block\n\
+         message: this tool is not allowed by the Tack request's permission_policy\n"
+    );
+
+    // A budget that is not a positive integer passes no `--max-tokens`.
+    for budgets in [serde_json::json!({}), serde_json::json!({"tokens": 0})] {
+        request.work.request.budgets = budgets;
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let args = invocation(&everything, &run).expect("args").args;
+        assert!(!args.contains(&"--max-tokens".to_owned()), "{args:?}");
+    }
+
+    // Refused before spawn, naming the field.
+    let refusals = [
+        (vec!["shell"], false, "permission_policy.tools"),
+        (vec!["read", "fetch"], false, "permission_policy.network"),
+    ];
+    for (tools, network, field) in refusals {
+        request.work.request.permission_policy.tools =
+            tools.into_iter().map(str::to_owned).collect();
+        request.work.request.permission_policy.network = network;
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let error = invocation(&everything, &run).expect_err("refused");
+        assert!(
+            matches!(&error, HarnessError::Rejected { reason } if reason.contains(field)),
+            "{error:?}"
+        );
+        // The same request on a docket with no `--policy` is not refused.
+        invocation(&without_policy, &run).expect("nothing is passed");
+    }
+    request.work.request.permission_policy.tools = Vec::new();
+    request.work.request.permission_policy.additional =
+        [("sandbox".to_owned(), serde_json::json!(true))].into();
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let error = invocation(&everything, &run).expect_err("refused");
+    assert!(
+        matches!(&error, HarnessError::Rejected { reason } if reason.contains("permission_policy.sandbox"))
+    );
 }
 
 #[test]
@@ -331,7 +481,7 @@ fn the_real_docket_is_negotiated_not_assumed() {
     let state = scratch("docket-negotiated");
     let scratch_dir = scratch("docket-negotiated-scratch");
     let endpoint = endpoint(state.path());
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = live_request(state.path());
     let run = RunContext {
         spec: &request,
         endpoint: Some(&endpoint),
@@ -339,10 +489,50 @@ fn the_real_docket_is_negotiated_not_assumed() {
     };
     let args = invocation(&found, &run).expect("invocation").args;
     assert_eq!(
-        args.ends_with(&["--contract".to_owned(), "1.1".to_owned()]),
+        args.iter().any(|arg| arg == "--contract"),
         found.contract == Contract::V1_1,
         "{found:?} {args:?}"
     );
+
+    // The generated policy is one docket itself accepts: it validates every
+    // `--policy` file before any run exists and refuses the call on an
+    // invalid one, so a refusal naming the policy is the failure. The
+    // endpoint is a closed loopback port, so a valid file ends the run
+    // there, with no spend.
+    if !found.policy {
+        return;
+    }
+    let policy_path = scratch_dir.path().join("policy.yaml");
+    assert!(policy_path.exists(), "{args:?}");
+    let invalid = scratch_dir.path().join("invalid.yaml");
+    std::fs::write(&invalid, "kind: policy\nthen: block\n").expect("write");
+    let refusal = |policy: &std::path::Path| {
+        let output = std::process::Command::new(&program)
+            .args([
+                "harness",
+                "run",
+                "--workspace",
+                ".",
+                "--task",
+                "x",
+                "--model",
+                "a/b",
+                "--contract",
+                "1.1",
+                "--policy",
+            ])
+            .arg(policy)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("DOCKET_HOME", scratch_dir.path().join("docket-home"))
+            .env("DOCKET_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+            .env("DOCKET_LLM_API_KEY", "not-a-key")
+            .output()
+            .expect("run docket");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    assert!(refusal(&invalid).contains("invalid --policy"));
+    assert!(!refusal(&policy_path).contains("invalid --policy"));
 }
 
 fn read(stdout: &str) -> RunReport {
@@ -461,6 +651,9 @@ fn live_request(workspace: &std::path::Path) -> crate::harness::ExecutionSpec {
     request.work.request.requested_model_id = Some(RequestedModelId::new("anthropic/claude-x"));
     request.work.request.resolved_agent_profile.instructions =
         "Write a short greeting to greeting.txt".to_owned();
+    // docket's own tool names: the policy document can only name those.
+    request.work.request.permission_policy.tools =
+        ["read", "write", "edit", "bash"].map(str::to_owned).into();
     request
 }
 
