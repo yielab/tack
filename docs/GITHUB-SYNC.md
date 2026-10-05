@@ -21,6 +21,13 @@ comment, and in from GitHub on a poll.
   reopened one to the first Todo-category status. A comment typed on a linked item is
   posted onto its issue; a comment posted on the issue is mirrored in as a Tack
   comment on the poll. No label/title mirroring yet.
+- **Pull requests.** When an agent attempt for a linked item succeeds and its runner
+  pushed a branch, Tack opens a pull request from that branch to the repository's
+  default branch. The title carries only the attempt and issue numbers; the body is the
+  attempt's merge-readiness pack. The pull request's number, link and state show on the
+  attempt. On the poll, the same issues response also lists pull requests: Tack records
+  when one is merged or closed, and marks a merged one reverted when a later pull
+  request titled `Revert…` cites its number (`#<n>`) in its body. A 304 writes nothing.
 - **Best-effort.** The push is fire-and-forget (like outbound webhooks): failures are
   logged, never block or fail the item update or the comment creation. The poll logs
   and skips a repo that errors rather than failing the whole poll.

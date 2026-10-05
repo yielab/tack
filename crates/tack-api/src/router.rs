@@ -154,7 +154,8 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
-        .with_artifact_storage_root(format!("{}/execution-artifacts", state.config.storage_dir));
+        .with_artifact_storage_root(format!("{}/execution-artifacts", state.config.storage_dir))
+        .with_app_state(state.clone());
     runner_protocol::routes(runner_state, state.config.max_body_size_bytes)
         .with_state::<AppState>(())
         .fallback(api_not_found)

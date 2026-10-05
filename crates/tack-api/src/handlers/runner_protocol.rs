@@ -89,6 +89,9 @@ pub struct RunnerProtocolState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
     pub artifact_storage: Arc<ArtifactStorage>,
+    /// The shared API state, when production wires it in: a succeeded
+    /// completion that pushed a branch uses it to open the pull request.
+    pub app: Option<crate::router::AppState>,
 }
 
 impl RunnerProtocolState {
@@ -97,7 +100,14 @@ impl RunnerProtocolState {
             repo,
             clock,
             artifact_storage: Arc::new(ArtifactStorage::new(DEFAULT_ARTIFACT_STORAGE_ROOT)),
+            app: None,
         }
+    }
+
+    /// Hands the shared API state to the completion handler.
+    pub fn with_app_state(mut self, app: crate::router::AppState) -> Self {
+        self.app = Some(app);
+        self
     }
 
     /// Builder that points artifact content storage at a caller-chosen
@@ -2131,6 +2141,15 @@ pub async fn submit_completion(
 
     if matches!(result, CompletionResult::Committed(_)) && terminal_state == "succeeded" {
         apply_status_map_policy(&state.repo, &attempt_id).await;
+        if let Some(app) = state.app.clone()
+            && let Some(git) = actual_execution.additional.get("git").cloned()
+        {
+            let storage = state.artifact_storage.clone();
+            let attempt_id = attempt_id.clone();
+            tokio::spawn(async move {
+                open_pull_request_for_attempt(app, storage, &attempt_id, &git).await;
+            });
+        }
     }
 
     match result {
@@ -2234,6 +2253,139 @@ async fn apply_status_map_policy(repo: &tack_db::Repository, attempt_id: &str) {
         }
         Err(err) => {
             tracing::warn!(attempt_id, %item_uuid, target, error = %err, "status map: item update failed");
+        }
+    }
+}
+
+/// Best-effort: when a succeeded attempt pushed its branch and its item is
+/// linked to a GitHub issue, opens a pull request from that branch to the
+/// repository's default branch and records it. The body is the attempt's
+/// merge-readiness pack rendered as Markdown, else a plain note; the title
+/// carries only numbers, never item or agent text. Every refusal is logged and
+/// never fails the completion.
+async fn open_pull_request_for_attempt(
+    app: crate::router::AppState,
+    storage: Arc<ArtifactStorage>,
+    attempt_id: &str,
+    git: &Value,
+) {
+    const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
+    if git.get("pushed").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+    let Some(branch) = git.get("branch").and_then(Value::as_str) else {
+        return;
+    };
+    let pool = app.repo.pool();
+    let row: Result<Option<(String, i64)>, sqlx::Error> = sqlx::query_as(
+        "SELECT r.item_id, a.attempt_number FROM execution_attempts a \
+         JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?",
+    )
+    .bind(attempt_id)
+    .fetch_optional(pool)
+    .await;
+    let Ok(Some((item_id, attempt_number))) = row else {
+        tracing::warn!(
+            attempt_id,
+            "pull request: could not read the attempt's item"
+        );
+        return;
+    };
+    let Ok(item_uuid) = item_id.parse::<uuid::Uuid>() else {
+        return;
+    };
+    let link = match app.repo.get_github_link(item_uuid).await {
+        Ok(Some(link)) => link,
+        Ok(None) => {
+            tracing::debug!(
+                attempt_id,
+                "pull request: the item has no GitHub link, none opened"
+            );
+            return;
+        }
+        Err(error) => {
+            tracing::warn!(attempt_id, %error, "pull request: could not read the GitHub link");
+            return;
+        }
+    };
+    let (repo_name, issue_number) = link;
+    let Ok(Some(item)) = app.repo.get_item(item_uuid).await else {
+        return;
+    };
+    let Some(token) = crate::github_sync::github_token_for_project(&app, item.project_id).await
+    else {
+        tracing::debug!(attempt_id, "pull request: no GitHub token, none opened");
+        return;
+    };
+    if let Ok(Some(_)) = tack_db::repo::pull_requests::get_for_attempt(pool, attempt_id).await {
+        return;
+    }
+
+    let reference: Option<String> = sqlx::query_scalar(
+        "SELECT content_reference FROM execution_artifacts \
+         WHERE attempt_id = ? AND media_type = ? AND content_reference IS NOT NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(attempt_id)
+    .bind(MRP_MEDIA_TYPE)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let mut pack_body = None;
+    if let Some(reference) = reference
+        && let Ok(mut file) = storage.open_for_read(&reference).await
+    {
+        let mut bytes = Vec::new();
+        if tokio::io::AsyncReadExt::read_to_end(&mut file, &mut bytes)
+            .await
+            .is_ok()
+            && let Ok(pack) = serde_json::from_slice::<tack_core::mrp::MergeReadinessPack>(&bytes)
+        {
+            pack_body = Some(tack_core::mrp::render_markdown(&pack));
+        }
+    }
+    let body = pack_body.unwrap_or_else(|| {
+        format!(
+            "No merge-readiness pack was reported for this attempt.\n\nBranch `{branch}` at `{}`.",
+            git.get("head_commit")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        )
+    });
+
+    let api_base = app.config.github_api_base.as_str();
+    let base_branch = match crate::github_sync::default_branch(api_base, &token, &repo_name).await {
+        Ok(branch) => branch,
+        Err(error) => {
+            tracing::warn!(attempt_id, %error, "pull request: could not read the default branch");
+            return;
+        }
+    };
+    let title = format!("Tack: attempt {attempt_number} for #{issue_number}");
+    match crate::github_sync::open_pull_request(
+        api_base,
+        &token,
+        &repo_name,
+        branch,
+        &base_branch,
+        &title,
+        &body,
+    )
+    .await
+    {
+        Ok((number, url)) => {
+            let opened_at = Utc::now().to_rfc3339();
+            if let Err(error) = tack_db::repo::pull_requests::insert(
+                pool, attempt_id, &repo_name, number, &url, &opened_at,
+            )
+            .await
+            {
+                tracing::warn!(attempt_id, %error, "pull request: opened but not recorded");
+            }
+        }
+        Err(error) => {
+            tracing::warn!(attempt_id, %error, "pull request: GitHub refused it");
         }
     }
 }
