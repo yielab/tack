@@ -48,7 +48,7 @@ reverse.
 
 ## Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
 
-**Status:** open 2026-10-03; every task in the table below is built and merged into `develop`, not yet in a release. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
+**Status:** closed 2026-10-05; every task in the table below is built and merged, and ships as `v0.1.0-beta.10`. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
 **ADRs:** 0069 (the brief is an entity on the item and travels), 0070 (docket contract 1.1,
 negotiated at boot; cancel becomes per-harness evidence), 0071 (evidence before deletion, the
 verifier boundary, the pushed branch and its pull request), 0072 (the "Run with agent" flow).
@@ -73,7 +73,7 @@ merges the card it needs, not when docket cuts a release.
 | Wave | What lands | Who |
 |---|---|---|
 | 0 | Decided 2026-10-03. | the maintainer |
-| 1 | Evidence captured before the workspace is deleted; the phase's four migrations; `status_map_policy_id` moves the item; the `mrp-v1` and `brief-v1` contracts; each harness's tool list, measured; the README and the landing page lead with the desktop app. | Sonnet and Haiku agents |
+| 1 | Evidence captured before the workspace is deleted; the phase's four migrations; `status_map_policy_id` moves the item; the `mrp-v1` and `brief-v1` contracts; each harness's tool list, measured; the README leads with the desktop app. | Sonnet and Haiku agents |
 | 2 | The whole flow in the dialog, deferred steps disabled; the brief's routes and export; the consultation pack; the verifier step behind `[verify]`. | Sonnet agents |
 | 3 | The brief travels to the harness and the evidence; the brief editor; the merge-readiness review record; the pack in the runner and the inbox. | Sonnet agents |
 | 4–5 | The merge-readiness panel; the runner pushes the branch behind `[git]`; the pull request and its fate from the poll that already runs; verification and push become live controls in the dialog. | Sonnet agents |
