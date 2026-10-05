@@ -53,11 +53,16 @@ pub struct Question {
 /// grammar drives its own protocol's handshake (initialize, open a session,
 /// send the prompt) from the replies it reads, before any question arrives:
 /// write these bytes to the child's stdin as one line and keep listening.
+/// `ProcessStarted` and `ProcessExited` tell the core that the harness
+/// started, or finished with, a process group of its own (a tool call's),
+/// so a cancellation can reach a group the main one does not contain.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamSignal {
     Question(Question),
     Reply(Vec<u8>),
     Finished,
+    ProcessStarted { pgid: u32 },
+    ProcessExited { pgid: u32 },
 }
 
 /// How often [`RunnerEngine::wait_with_lease_renewal`] re-heartbeats a

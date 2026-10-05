@@ -57,6 +57,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     // (`served_model.ndjson`) nor `opencode export` (`served_model_export.json`)
     // ever names it — both only ever name the requested model.
     observes_served_model: false,
+    reports_process_groups: false,
 };
 
 pub struct OpencodeGrammar;

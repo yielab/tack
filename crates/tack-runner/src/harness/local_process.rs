@@ -39,7 +39,7 @@ use crate::{
         HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
         ModelObservationSource, Question, RecoveryObservation, StreamSignal,
         process::{
-            CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec,
+            CancelOutcome, ProcessExit, ProcessGroups, ProcessLimits, ProcessResult, ProcessSpec,
             SupervisedProcess,
         },
         redact::SecretMaterial,
@@ -100,6 +100,11 @@ pub struct HarnessDescriptor {
     /// the gateway downgrade in [`LocalProcessHarness::outcome`] exists
     /// for a CLI that only ever echoes its own request.
     pub observes_served_model: bool,
+    /// Whether this CLI announces each process group its own tools start
+    /// (`StreamSignal::ProcessStarted`/`ProcessExited`), so a cancellation
+    /// can stop a group the main one does not contain and say whether it
+    /// did. Only a grammar that does may declare `cancel: Supported`.
+    pub reports_process_groups: bool,
 }
 
 /// What the grammar is given to build a command line.
@@ -1011,16 +1016,31 @@ where
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         let running = self.take_running(&handle.process_id).await?;
         let pid = running.process.pid();
-        let (observation, process_outcome) = match running
+        let run_context = RunContext {
+            spec: &running.record.spec,
+            endpoint: running.record.endpoint.as_ref(),
+            scratch: &running.record.scratch,
+        };
+        let (observation, process_outcome, groups) = match running
             .process
-            .cancel(running.record.limits.termination_grace)
+            .cancel(running.record.limits.termination_grace, |line| {
+                self.grammar.signal(&run_context, line)
+            })
             .await
         {
-            Ok(CancelOutcome::Stopped) => (CancelObservation::ProcessStopped, "stopped"),
-            Ok(CancelOutcome::Killed) => (CancelObservation::ProcessStopped, "killed"),
+            Ok((CancelOutcome::Stopped, groups)) => {
+                (CancelObservation::ProcessStopped, "stopped", groups)
+            }
+            Ok((CancelOutcome::Killed, groups)) => {
+                (CancelObservation::ProcessStopped, "killed", groups)
+            }
             Err(error) => {
                 tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
-                (CancelObservation::Ambiguous, "signal_failed")
+                (
+                    CancelObservation::Ambiguous,
+                    "signal_failed",
+                    ProcessGroups::default(),
+                )
             }
         };
         self.remove_scratch(
@@ -1035,6 +1055,14 @@ where
                 (
                     "process_outcome".to_owned(),
                     serde_json::json!(process_outcome),
+                ),
+                (
+                    "groups".to_owned(),
+                    serde_json::json!({
+                        "tracked": groups.tracked,
+                        "killed": groups.killed,
+                        "survived": groups.survived,
+                    }),
                 ),
             ]),
         })

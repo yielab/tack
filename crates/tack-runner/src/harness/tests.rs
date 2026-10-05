@@ -421,13 +421,20 @@ async fn registering_a_probe_overclaiming_cancel_support_is_rejected() {
         error,
         HarnessRegistrationError::OverclaimedCancelSupport {
             support: CapabilitySupport::Supported,
-            ceiling: CapabilitySupport::Advisory,
             ..
         }
     ));
 
     // Never inserted: dispatch/capability reporting never sees it.
     assert!(registry.capabilities().await.is_empty());
+
+    // A descriptor that reports process groups may claim it.
+    let honest = FakeProbe {
+        kind: "docket",
+        installed: true,
+        cancel_support: CapabilitySupport::Supported,
+    };
+    assert!(registry.register_probe(Box::new(honest)).is_ok());
 }
 
 #[test]
