@@ -10,7 +10,7 @@ docket or opencode — and keep the run on the item's record.**
 A desktop app on your machine, or the same binary as a server. One SQLite file, no account.
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and a banner offering to let this board run its items with an agent" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Leased and Succeeded" />
 </p>
 
 ## Why Tack
@@ -52,8 +52,25 @@ ChatGPT plan) and Tack never sees the credential. Or give the runner an API key 
 endpoint — Anthropic's API directly, or a gateway such as Vercel AI Gateway. The model
 list comes live from that endpoint, not from a hand-kept file.
 
-**It can ask first.** With approvals set to *Ask me*, Claude Code, Codex and opencode
-pause before acting and wait in the item's decision inbox.
+**It can ask first.** With approvals set to *Ask me*, Claude Code, Codex, opencode and
+docket (when its install accepts answers) pause before acting and wait in the item's
+decision inbox, where each question shows its options, their risks and the agent's
+recommendation.
+
+**Say what "done" means.** An item can carry a brief: acceptance criteria, constraints
+and a definition of done. The agent receives it with the item, and the run keeps a copy.
+
+**Review before you merge.** Whatever an agent changed is kept as a patch and a file
+list. A runner can also run your own verifier over it, which writes a merge-readiness
+pack you accept or reject on the attempt, and push the work as a branch. For an item
+linked to a GitHub issue, Tack opens the pull request and shows its state on the attempt.
+Each project has a Factory metrics page: how often agents needed you, how long you took,
+and how much of what they opened was merged.
+
+<p align="center">
+  <img src="docs/screenshots/decision-inbox.png" width="40%" alt="An agent's question waiting on the item: three chart libraries, each with a description, its risk and an estimate in tokens, with uPlot marked Recommended and the agent's reasoning below" />
+  <img src="docs/screenshots/merge-readiness.png" width="40%" alt="A merge-readiness pack on a succeeded attempt: recommendation merge, risk low, every criterion passed with its evidence, the verifier's command and exit code, and Accept and Reject behind a required reason" />
+</p>
 
 **The Agents page gets you started.** From installed binary to a finished test run on
 one page: turn execution on, see which agents this machine has, check their login, pick

@@ -261,8 +261,14 @@ Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf92801
   created: 2026-09-03T19:00:16.697646760+00:00
 ```
 
+`tack execution create` also takes `--status-map-policy done_on_success|done_on_mrp_accepted`
+to move the item to its workflow's first Done status when the attempt succeeds, or when its
+merge-readiness pack is accepted; without it the item's status is never touched (see
+[After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt)).
+
 `tack execution cancel <ID>` only records the request — the runner observes it and
-reports the actual outcome (cancellation is `advisory`, never `supported`; see the
+reports the actual outcome (cancellation is `advisory` for every harness but docket on its
+newer contract, which can be held to stopping what it started; see the
 [capability matrix](agent-runners.md#capability-matrix)). `tack execution reconcile <ID>
 --recovery-key <KEY> --reason "..."` requeues a `needs_operator` request after an
 audited decision; see the [Recovery Runbook](recovery-runbook.md).
@@ -303,14 +309,20 @@ claude-code
   model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model; the CLI validates it at run time (an invalid model returns is_error:true), so operator-specified opaque models are accepted without the probe claiming any model list
 
 Runner-wide capabilities (apply identically to every harness above):
-  cancel     advisory    — process-group signal cannot reach a detached descendant
+  cancel     advisory    — a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability
   resume     unsupported — no resumable session contract
-  decisions  unsupported — no harness adapter in this tree ever opens a decision
+  decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
   artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
   usage      advisory    — usage is reported only when a harness emits it
 
 Tack does not proxy model providers. Each harness above authenticates itself using its own login/credential mechanism; Tack never reads, stores, or forwards what it finds. See docs/adr/0050-runner-control-plane.md and docs/adr/0058-standalone-single-binary-runner.md.
+
+verify: disabled
 ```
+
+The last line is the runner's `[verify]` table as this machine would read it: `disabled`, or
+`enabled` with the program, its arguments and timeout, and whether the program was found on
+`PATH` (see [Runner verifier](../../../CONFIG.md#runner-verifier-verify)).
 
 `tack runner start` runs the runner role in the current process, speaking runner-v1
 over HTTP against a Tack server — the same composition root the standalone

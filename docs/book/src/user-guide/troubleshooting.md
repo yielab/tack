@@ -164,6 +164,12 @@ If `ENABLE_FTS5` is not listed, use a SQLite build (or a Tack binary) with FTS5 
 
 **Fix.** Refresh the page (a hard refresh if needed). Theme and palette will reload from `localStorage`; vocabulary labels will reload from the server. If a theme looks wrong only in one browser, clearing that browser's site data resets it to defaults. See [Appearance](appearance.md) and [Vocabulary](vocabulary.md).
 
+### An agent attempt succeeded, but there is no pull request, pack or branch
+
+**Cause.** Everything after a succeeded attempt is opt-in and best-effort, and none of it changes the attempt's outcome. Look at the attempt's event timeline: `attempt.verify_skipped`, `attempt.verify_failed`, `attempt.push_skipped` and `attempt.push_failed` each say why a step did not happen. The usual reasons are that the runner has no `[verify]` section enabled or no `[git] push_branches = true`, the verifier program is not on the runner's `PATH`, git has no credentials for the remote, or the item is not linked to a GitHub issue or no GitHub token is configured (a pull request needs both).
+
+**Fix.** Run `tack runner doctor` on the runner's machine: its last lines report whether the verifier is enabled and found. Set the sections as described in [`docs/CONFIG.md`](../../../CONFIG.md), link the item to its issue and set `TACK_GITHUB_TOKEN`, then run the item again. See [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt).
+
 ---
 
 ## FAQ
@@ -209,4 +215,4 @@ See [Administration & Security](administration.md) for step-by-step setup.
 
 ### Does Tack integrate with GitHub or Linear?
 
-Yes. You can import issues from GitHub and from Linear into a project. GitHub integration also supports pushing status changes back to linked issues when a GitHub token is configured. See [Import and Export](import-export.md) for setup, filters, and token requirements.
+Yes. You can import issues from GitHub and from Linear into a project. GitHub integration also keeps linked issues and items in sync in both directions when a GitHub token is configured, and opens a pull request for an agent's pushed branch. See [Import and Export](import-export.md) for setup, filters, and token requirements.

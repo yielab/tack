@@ -23,7 +23,9 @@ comment, and in from GitHub on a poll.
   comment on the poll. No label/title mirroring yet.
 - **Pull requests.** When an agent attempt for a linked item succeeds and its runner
   pushed a branch, Tack opens a pull request from that branch to the repository's
-  default branch. The title carries only the attempt and issue numbers; the body is the
+  default branch, with the same token as the push (`TACK_GITHUB_TOKEN` or the project's
+  own). An item with no GitHub link, or no token, gets no pull request and the attempt
+  still completes. The title carries only the attempt and issue numbers; the body is the
   attempt's merge-readiness pack. The pull request's number, link and state show on the
   attempt. On the poll, the same issues response also lists pull requests: Tack records
   when one is merged or closed, and marks a merged one reverted when a later pull

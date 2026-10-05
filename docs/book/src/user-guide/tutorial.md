@@ -107,7 +107,11 @@ instructions travel with the request), the model radio sits on **Project default
 and the dialog states why this combination is allowed — the runner reports the
 harness forwards the chosen model verbatim. Choose the harness, point **Repository**
 at the repo the agent should work in (here a local demo repo), and the **Run**
-button is ready:
+button is ready. The dialog reads top to bottom as the whole flow: **Who runs it**,
+**What it gets** (the item, plus its brief if you wrote one on the item's **Brief** tab),
+**How far it may go** (approvals, allowed tools, timeout) and **What happens after**
+(verifying the result and pushing a branch, shown disabled with the reason when this runner
+has neither set up):
 
 <img src="../screenshots/tutorial/09-run-with-agent.png" width="98%" alt="The 'Run with agent' dialog for 'Draft the launch announcement': profile Announcement writer, harness Claude Code, model radio on 'Project default — anthropic / claude-sonnet-4-5', a git repository with remote and base revision filled, and the permissions and timeout fields below.">
 
@@ -135,8 +139,9 @@ saying so:
 <img src="../screenshots/tutorial/12-execution-succeeded.png" width="98%" alt="The finished attempt: request Succeeded, Attempt #1 Succeeded, 'Matched request — ran on anthropic / claude-sonnet-4-5, as requested', model/token cost $0.04 measured, runner time 19s, runner time cost Not measured, and a 'Show events, decisions & artifacts' link.">
 
 **Show events, decisions & artifacts** expands the attempt's full record. The
-Artifacts section holds what the run produced — here the harness's own run log,
-one click from download:
+Artifacts section holds what the run produced — the harness's own run log and, for
+a run in a git checkout, the change it made (`changes.patch`, `files.json` and an
+`evidence.json` manifest), each one click from download. The screenshot below shows the log:
 
 <img src="../screenshots/tutorial/13-artifacts.png" width="98%" alt="The Artifacts section of the finished attempt: one artifact named claude-code-run.log, tagged log, 12.4 KB, with a Download button.">
 

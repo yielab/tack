@@ -70,11 +70,13 @@ Tack/
 │   │       ├── workflow.rs     # Workflow engine (transitions, WIP, parent-auto-complete)
 │   │       ├── vocabulary.rs   # Term customization system
 │   │       ├── dependency.rs   # Dependency graph (DAG with cycle detection)
+│   │       ├── brief.rs        # Item brief: types, validation, Markdown (brief-v1)
+│   │       ├── mrp.rs          # Merge-readiness pack types and rendering (mrp-v1)
 │   │       └── error.rs        # Domain error types
 │   ├── tack-db/              # Database layer
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Pool initialization, WAL mode
-│   │   │   ├── migrations.rs   # 74 schema migrations (auto-run on startup; live count is
+│   │   │   ├── migrations.rs   # 81 schema migrations (auto-run on startup; live count is
 │   │   │   │                  #   GET /api/health's migrations_applied)
 │   │   │   ├── repo.rs         # Repository struct
 │   │   │   └── repo/           # One file per entity
@@ -87,6 +89,11 @@ Tack/
 │   │   │       ├── attachments.rs
 │   │   │       ├── boards.rs
 │   │   │       ├── custom_fields.rs
+│   │   │       ├── briefs.rs
+│   │   │       ├── github_links.rs
+│   │   │       ├── pull_requests.rs
+│   │   │       ├── metrics.rs      # Factory metrics aggregates
+│   │   │       ├── execution.rs
 │   │   │       └── templates.rs
 │   │   └── tests/
 │   │       ├── repository/         # CRUD, retention, concurrency
@@ -117,6 +124,7 @@ Tack/
 │   │   │       ├── attachments.rs
 │   │   │       ├── backup.rs           # GET /api/backup, POST /api/restore
 │   │   │       ├── boards_multi.rs     # Multiple boards per project
+│   │   │       ├── briefs.rs           # /api/items/{id}/brief
 │   │   │       ├── comments.rs
 │   │   │       ├── custom_fields.rs
 │   │   │       ├── dependencies.rs
@@ -124,26 +132,26 @@ Tack/
 │   │   │       ├── import_github.rs    # GitHub Issues import
 │   │   │       ├── import_linear.rs    # Linear import
 │   │   │       ├── items.rs
+│   │   │       ├── metrics.rs          # /api/projects/{id}/metrics/factory
+│   │   │       ├── mrp.rs              # an attempt's merge-readiness pack and its review
 │   │   │       ├── projects.rs
 │   │   │       ├── roles.rs
 │   │   │       ├── spa.rs              # SPA fallback (--features embed-spa)
 │   │   │       ├── sprints.rs
 │   │   │       ├── templates.rs
 │   │   │       ├── websocket.rs
-│   │   │       ├── orch.rs, decisions.rs, executions.rs, runner_admin.rs,
-│   │   │       │   provisioning.rs, economics.rs, settings.rs, attempt_lists.rs,
-│   │   │       │   local_runner.rs   # operator execution/fleet/orchestration surface
+│   │   │       ├── decisions.rs, executions.rs, runner_admin.rs, settings.rs,
+│   │   │       │   attempt_lists.rs, local_runner.rs   # operator execution/fleet surface
 │   │   │       └── runner_protocol.rs + runner_protocol/  # /api/runner/v1, its own
 │   │   │                              # per-handler hashed-credential auth (runner_auth.rs)
 │   │   └── tests/
 │   │       ├── common/mod.rs       # test_app(), test_app_with_config()
-│   │       ├── handlers/           # CRUD, routes, economics, provisioning (one file per area)
-│   │       ├── orchestration/      # dispatch, approvals, reconciler, fleet
+│   │       ├── handlers/           # CRUD, routes, executions (one file per area)
 │   │       ├── runner_protocol/    # lifecycle, decisions, artifact events
+│   │       ├── runner_vertical_slice/  # the production-repository crash matrix
 │   │       ├── security/           # auth surfaces, CORS, write races
 │   │       ├── wiring/             # proofs that a seam is load-bearing
 │   │       ├── openapi_contract.rs # spec-drift gate — regenerates and diffs docs/openapi.json
-│   │       └── wave2_gate.rs       # named CI gate, kept its own binary
 │   ├── tack-runner/          # Pull-based execution runner — its OWN binary, separate
 │   │   │                     # from `tack`. Owns local credentials, workspace, journal,
 │   │   │                     # and the harness subprocess `tack-api` must never touch.
@@ -153,6 +161,9 @@ Tack/
 │   │       ├── client.rs        # Polls /api/runner/v1: enroll, claim, heartbeat, …
 │   │       ├── journal.rs       # Owner-only TOML journal written before spawn
 │   │       ├── workspace.rs     # Isolated per-attempt workspace/worktree
+│   │       ├── git.rs           # The git provisioner, evidence capture, branch push
+│   │       ├── evidence.rs      # What an attempt changed, kept before the workspace is deleted
+│   │       ├── verify.rs        # The operator's verifier over that evidence ([verify])
 │   │       ├── secrets.rs       # Local vendor credential storage
 │   │       └── harness/         # local_process.rs (the shared lifecycle), process.rs, redact.rs,
 │   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs,
@@ -170,10 +181,11 @@ Tack/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/                # Root App/Layout components and routes.tsx
-│   │   ├── features/           # One directory per feature: board, list, sprints, fleet,
-│   │   │                       # agents, provisioning, economics, settings, …
+│   │   ├── features/           # One directory per feature: board, list, sprints, agents,
+│   │   │                       # item-detail, dashboard (incl. Factory metrics), settings, …
 │   │   ├── shared/              # Cross-feature: api/ (generated client + schema.gen.ts),
-│   │   │                       # realtime/, orch/, execution/, ui/, state/, vocab/
+│   │   │                       # realtime/, agents/, execution/, runWithAgent/ (the run dialog,
+│   │   │                       # attempt list, decision inbox, merge-readiness panel), ui/, state/, vocab/
 │   │   └── test/               # Vitest setup
 │   ├── e2e/                    # Playwright specs
 │   └── dist/                   # Built SPA (gitignored; embedded via --features embed-spa)
