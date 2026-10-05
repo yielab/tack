@@ -97,7 +97,7 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // supported, not merely "unverified." The target declares exactly one
   // combination (`helpers.ts#enrollRunner`'s fixed capability shape), so it
   // is always index "0".
-  await modal.getByLabel('Choose…').check();
+  await modal.getByText('Choose…').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 

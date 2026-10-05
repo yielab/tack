@@ -103,7 +103,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // expected operator-facing state, not an error. Toasts render via a
     // `<Portal>` to `document.body`, outside the dialog subtree — asserted
     // page-wide, not `drawer3`-scoped.
-    await drawer3.getByRole('radio', { name: 'Allow once' }).check();
+    await drawer3.getByText('Allow once', { exact: true }).click();
     await drawer3.getByRole('button', { name: 'Resolve' }).click();
     await expect(
       page.getByText(/not configured decision resolution|token entered above is wrong/),
@@ -156,7 +156,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
 
     // Resolve the REAL decision from its listed row — a genuine POST to the
     // real, mounted resolve route.
-    await drawer.getByRole('radio', { name: 'Allow once' }).check();
+    await drawer.getByText('Allow once', { exact: true }).click();
     await drawer.getByRole('button', { name: 'Resolve' }).click();
     // Toast — Portal-rendered outside the dialog subtree, page-wide assert.
     await expect(page.getByText('Decision resolved.')).toBeVisible();
@@ -237,7 +237,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // continuously-mounted `DecisionInbox` keeps it.
     const tokenField = drawer.getByLabel('Your decision token');
     await tokenField.fill('typed-not-saved-token');
-    await drawer.getByRole('radio', { name: 'Allow once' }).check();
+    await drawer.getByText('Allow once', { exact: true }).click();
 
     const resolveButton = drawer.getByRole('button', { name: 'Resolve' });
     const resolveHandle = await resolveButton.elementHandle();

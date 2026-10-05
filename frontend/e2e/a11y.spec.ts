@@ -273,7 +273,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   // refuses to submit an unresolved "Auto" request — it would queue
   // forever. The target declares exactly one combination (`enrollRunner`'s
   // fixed capability shape), so it is always index "0".
-  await modal.getByLabel('Choose…').check();
+  await modal.getByText('Choose…').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await modal.getByRole('button', { name: 'Run' }).click();
   await expect(modal).toBeHidden();
