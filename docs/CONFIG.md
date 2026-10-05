@@ -202,6 +202,35 @@ attempt's outcome: the attempt still completes `succeeded` and records an
 output. With `enabled = false`, nothing is started. A program that is not on `PATH` is
 logged as a warning when the runner starts.
 
+## Pushing the attempt's branch (`[git]`)
+
+A runner can push the work of each succeeded attempt to the remote it fetched the repository
+from, so the result is a branch you can open, review and merge. The runner pushes it, on your
+machine, with your git credentials (your credential helper or SSH agent): Tack stores no git
+credential, and the board never pushes.
+
+```toml
+[git]
+push_branches = false    # off by default; there is no environment variable for it
+branch_prefix = "tack/"
+author = "Tack Runner <tack-runner@localhost>"
+```
+
+When `push_branches = true` and an attempt succeeded with a non-empty change, the runner creates
+the branch `<branch_prefix><item short id>-a<attempt number>`, commits what the harness left
+uncommitted (with `author` as the commit author; the message names the attempt and the item,
+never the item's description) and runs `git push origin <branch>`. Git hooks in the workspace
+do not run. The branch, its head commit and whether it was pushed are recorded in the attempt's
+evidence and its completion report. A push that fails (no credentials, a rejected branch, an
+unreachable remote) never changes the attempt's outcome: the attempt still completes
+`succeeded` and records an `attempt.push_failed` event. With `push_branches = false`, nothing
+is committed or pushed.
+
+Turn it on only for agents you would trust with your git credentials. The push runs git in the
+attempt's workspace, which the agent could write to while it worked: hooks are disabled, but the
+repository's own git configuration there (an SSH command or a URL rewrite, for example) is
+whatever the agent left.
+
 ## Debugging
 
 ```bash

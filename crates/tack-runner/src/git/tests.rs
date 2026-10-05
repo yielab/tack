@@ -688,3 +688,70 @@ fn only_a_full_commit_id_is_treated_as_one() {
         "z123456789abcdef0123456789abcdef01234567"
     ));
 }
+
+#[tokio::test]
+async fn a_dirty_workspace_is_committed_and_pushed_to_origin() {
+    let source = SourceRepository::create();
+    let origin_dir = temp_dir("origin");
+    let origin = origin_dir.path().join("origin.git");
+    run_git(
+        origin_dir.path(),
+        &[
+            "clone",
+            "--bare",
+            "--quiet",
+            source.path().to_str().expect("utf-8 path"),
+            origin.to_str().expect("utf-8 path"),
+        ],
+    );
+    let root_dir = temp_dir("root");
+    let workspace = attempt_workspace(root_dir.path(), "attempt-push", &source.second_commit);
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    let repository = RepositorySpec {
+        remote: origin.display().to_string(),
+        base_revision: source.second_commit.clone(),
+    };
+    provisioner
+        .provision(&workspace, &repository)
+        .await
+        .expect("checkout from the bare origin");
+    fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
+    provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("evidence stages the work");
+
+    let published = provisioner
+        .publish_branch(
+            &workspace,
+            "tack/abc12345-a1",
+            "Tack Runner <tack-runner@localhost>",
+            "Add work (attempt attempt-push)",
+        )
+        .await
+        .expect("the branch is published")
+        .expect("a git provisioner publishes");
+
+    assert!(published.pushed);
+    assert_eq!(published.branch, "tack/abc12345-a1");
+    assert_ne!(published.head_commit, source.second_commit);
+    assert_eq!(
+        run_git(&origin, &["rev-parse", "refs/heads/tack/abc12345-a1"]),
+        published.head_commit,
+        "origin holds the branch at the commit the result names"
+    );
+    assert_eq!(
+        run_git(
+            &origin,
+            &["log", "-1", "--format=%an <%ae>|%s", &published.head_commit]
+        ),
+        "Tack Runner <tack-runner@localhost>|Add work (attempt attempt-push)"
+    );
+    assert_eq!(
+        run_git(
+            &origin,
+            &["show", &format!("{}:work.txt", published.head_commit)]
+        ),
+        "the harness wrote this"
+    );
+}

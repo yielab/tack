@@ -360,6 +360,8 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
         crate::config::VerifyConfig,
         crate::harness::process::ProcessLimits,
     )>,
+    /// The `[git]` table; a disabled table pushes nothing.
+    git: crate::config::GitConfig,
 }
 
 impl<P, A, W> RunnerEngine<P, A, W, crate::SystemClock>
@@ -402,6 +404,7 @@ where
             clock,
             data_protocol: None,
             verify: None,
+            git: crate::config::GitConfig::default(),
         }
     }
 
@@ -423,6 +426,13 @@ where
         limits: crate::harness::process::ProcessLimits,
     ) -> Self {
         self.verify = Some((config, limits));
+        self
+    }
+
+    /// Attaches the `[git]` table: when `push_branches` is on, a succeeded
+    /// attempt's captured work is pushed to the remote it was fetched from.
+    pub fn with_git(mut self, config: crate::config::GitConfig) -> Self {
+        self.git = config;
         self
     }
 
@@ -692,6 +702,15 @@ where
                 if outcome.terminal_state == AttemptState::Succeeded {
                     self.verify_attempt(session, &mut record, &spec, &scratch, &mut staged)
                         .await;
+                    if let Some(published) = self
+                        .publish_attempt(session, &mut record, &spec, &scratch, &mut staged)
+                        .await
+                    {
+                        outcome.actual_execution.additional.insert(
+                            "git".to_owned(),
+                            serde_json::to_value(&published).unwrap_or_default(),
+                        );
+                    }
                 }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
@@ -1093,6 +1112,105 @@ where
                     .await;
             }
         }
+    }
+
+    /// Pushes the branch of a succeeded attempt whose captured patch is
+    /// non-empty, and records it in `evidence.json`. A failed push submits one
+    /// `attempt.push_failed` event and logs a warning; it never changes the
+    /// terminal state.
+    async fn publish_attempt(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        spec: &ExecutionSpec,
+        scratch: &std::path::Path,
+        staged: &mut [serde_json::Value],
+    ) -> Option<crate::evidence::PublishedBranch> {
+        if !self.git.push_branches {
+            return None;
+        }
+        let evidence_path = scratch.join("src/evidence.json");
+        let mut evidence = std::fs::read(&evidence_path)
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
+            })
+            .filter(|evidence| {
+                evidence.captured && evidence.patch.as_ref().is_some_and(|p| p.size_bytes > 0)
+            })?;
+        let item = spec.work.request.item_id.as_str();
+        let branch = format!(
+            "{}{}-a{}",
+            self.git.branch_prefix,
+            item.split('-').next().unwrap_or(item),
+            spec.work.lease.attempt_number
+        );
+        let message = format!(
+            "Tack attempt {} on item {}",
+            record.attempt_id.as_str(),
+            item
+        );
+        // A push to a slow remote can outlast the lease; renew it meanwhile,
+        // exactly as while the verifier runs.
+        let publishing =
+            self.workspaces
+                .publish_branch(&spec.workspace, &branch, &self.git.author, &message);
+        tokio::pin!(publishing);
+        let mut renewal = tokio::time::interval_at(
+            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
+            LEASE_RENEWAL_INTERVAL,
+        );
+        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let result = loop {
+            tokio::select! {
+                biased;
+                result = &mut publishing => break result,
+                _ = renewal.tick() => {
+                    let request = self.heartbeat_request(session, record);
+                    if let Err(error) = self.protocol.heartbeat(session, request).await {
+                        tracing::warn!(
+                            %error,
+                            attempt_id = record.attempt_id.as_str(),
+                            "lease-renewal heartbeat failed while the branch is being pushed"
+                        );
+                    }
+                }
+            }
+        };
+        let published = match result {
+            Ok(Some(published)) => published,
+            Ok(None) => return None,
+            Err(error) => {
+                tracing::warn!(
+                    attempt_id = record.attempt_id.as_str(),
+                    failure = %error,
+                    "the attempt's branch could not be pushed"
+                );
+                let payload = serde_json::json!({"branch": branch, "reason": error.to_string()});
+                self.submit_event(session, record, "attempt.push_failed", payload)
+                    .await;
+                return None;
+            }
+        };
+        // `evidence.json` was staged before the push; stage it again with the
+        // branch, keeping the manifest entry's size and digest true to the file.
+        evidence.branch = serde_json::to_value(&published).ok();
+        let bytes = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
+        let _ = std::fs::write(&evidence_path, &bytes);
+        if let Some(entry) = staged
+            .iter_mut()
+            .find(|entry| entry.get("name").and_then(|name| name.as_str()) == Some("evidence.json"))
+        {
+            let written = entry
+                .get("staged_path")
+                .and_then(|path| path.as_str())
+                .is_some_and(|path| std::fs::write(path, &bytes).is_ok());
+            if written {
+                entry["size_bytes"] = bytes.len().into();
+                entry["sha256"] = crate::harness::sha256::sha256_hex(&bytes).into();
+            }
+        }
+        Some(published)
     }
 
     /// Stages the evidence of one attempt, or nothing when no transport is
