@@ -873,6 +873,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::mrp::get_mrp,
         handlers::mrp::mark_viewed,
         handlers::mrp::review_mrp,
+        // ── Factory metrics ───────────────────────────────────────────────
+        handlers::metrics::factory_metrics,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
         handlers::comments::list_comments,
@@ -954,6 +956,11 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        handlers::metrics::FactoryMetrics,
+        handlers::metrics::Ratio,
+        handlers::metrics::HumanMinutes,
+        handlers::metrics::VerificationTax,
+        handlers::metrics::Outcomes,
         handlers::mrp::MrpResponse,
         handlers::mrp::MrpVerdict,
         handlers::mrp::MrpReviewRequest,
@@ -1079,6 +1086,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "sprints", description = "Sprints / iterations within a project."),
         (name = "roles", description = "Roles / specialties and their assignment to items."),
         (name = "mrp", description = "An attempt's Merge-Readiness Pack and the human verdict on it."),
+        (name = "metrics", description = "Factory metrics measured from a project's rows."),
         (name = "briefs", description = "An item's brief: acceptance criteria, constraints, definition of done."),
         (name = "comments", description = "Comments on items."),
         (name = "dependencies", description = "Directed dependency edges between items."),
