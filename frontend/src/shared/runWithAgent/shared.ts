@@ -88,6 +88,9 @@ export interface RunWithAgentFormValues {
   approvals: 'auto' | 'ask';
   repository: { kind: string; remote: string; baseRevision: string; subdirectory: string | null };
   idempotencyKey: string;
+  /** Sent only as `false`: a request can decline what the runner has, never enable it. */
+  verify?: boolean;
+  pushBranch?: boolean;
 }
 
 /**
@@ -151,6 +154,8 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     metadata: {},
     timeout_seconds: values.timeoutSeconds,
     status_map_policy_id: null,
+    ...(values.verify === false ? { verify: false } : {}),
+    ...(values.pushBranch === false ? { push_branch: false } : {}),
   };
 }
 

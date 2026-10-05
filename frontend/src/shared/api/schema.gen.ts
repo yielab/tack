@@ -3023,6 +3023,11 @@ export interface components {
              */
             permission_policy: unknown;
             /**
+             * @description `false` declines the runner's branch push for this run. The runner's own
+             *     configuration decides whether a push exists; `true` never enables one.
+             */
+            push_branch?: boolean | null;
+            /**
              * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
              *     base_revision, subdirectory}`).
              */
@@ -3039,6 +3044,11 @@ export interface components {
             status_map_policy_id?: string | null;
             /** Format: int64 */
             timeout_seconds: number;
+            /**
+             * @description `false` declines the runner's verifier for this run. The runner's own
+             *     configuration decides whether a verifier exists; `true` never enables one.
+             */
+            verify?: boolean | null;
         };
         /**
          * @description Response body for `POST /api/executions` — a newly created request or an

@@ -66,6 +66,16 @@ pub async fn build_runtime(
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     crate::provider::attach_catalog(&mut capabilities, &config.providers, &secrets, &SystemClock)
         .await;
+    // Whether this runner has a verifier and a branch push at all; a request
+    // may decline either, never enable one that is off here.
+    capabilities.additional.insert(
+        "verify_configured".to_owned(),
+        serde_json::json!(config.verify.enabled),
+    );
+    capabilities.additional.insert(
+        "push_configured".to_owned(),
+        serde_json::json!(config.git.push_branches),
+    );
     if config.verify.enabled && !crate::verify::program_found(&config.verify.program) {
         tracing::warn!(
             program = config.verify.program.as_str(),

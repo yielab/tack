@@ -511,8 +511,9 @@ describe('RunWithAgentModal', () => {
     await flush();
     const rows = [...document.querySelectorAll('[data-prerequisite="deferred"]')];
     const reasons = [
-      'Available when a runner reports a verifier.',
-      'Available when a runner reports branch push.',
+      'This runner has no verifier set up',
+      'This runner does not push branches',
+      'Needs a pushed branch',
     ];
     expect(rows.length).toBe(3);
     for (const row of rows) {
@@ -520,6 +521,28 @@ describe('RunWithAgentModal', () => {
       expect(control.disabled).toBe(true);
       expect(reasons.some((r) => row.textContent?.includes(r))).toBe(true);
     }
+  });
+
+  it('the verify checkbox is live only with the flag reported, and unticking it posts verify: false', async () => {
+    const verifying = runnerRow('runner-3', 'Verifier box', runnerCapabilitySnapshot({ verify_configured: true, push_configured: false }));
+    mount({}, { runners: [verifying], fleets: [] });
+    await flush();
+    const row = (label: string) => [...document.querySelectorAll('[data-prerequisite]')].find((r) => r.textContent?.includes(label))!;
+    const box = (label: string) => row(label).querySelector('input') as HTMLInputElement;
+    expect(row('Verify the result').getAttribute('data-prerequisite')).toBe('ok');
+    expect(box('Verify the result').disabled).toBe(false);
+    expect(row('Push the branch').getAttribute('data-prerequisite')).toBe('deferred');
+    expect(box('Push the branch').disabled).toBe(true);
+    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
+    expandRepository();
+    setField(field('Remote'), 'git@example.com:org/repo.git');
+    box('Verify the result').click();
+    await flush();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ verify: false });
+    expect(lastCreateBody).not.toHaveProperty('push_branch');
   });
 
   it('every missing row links to the page that fixes it', async () => {

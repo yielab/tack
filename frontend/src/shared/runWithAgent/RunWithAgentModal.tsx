@@ -23,6 +23,7 @@ const initialForm = () => ({
   customModelId: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
   repoExpanded: false, repoKind: 'git', repoRemote: '', repoBaseRevision: 'main', repoSubdirectory: '',
   idempotencyKey: generateIdempotencyKey(),
+  verify: true, pushBranch: true,
 });
 export type RunForm = ReturnType<typeof initialForm>;
 
@@ -138,6 +139,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const passthroughAttested = createMemo(() => isModelPassthroughAttested(targetHarnessCapability()));
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
 
+  const verifyConfigured = createMemo(() => capabilities().some((c) => c.verify_configured === true));
+  const pushConfigured = createMemo(() => capabilities().some((c) => c.push_configured === true));
+
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
   const modelPart = (key: 'provider' | 'id'): string | null => {
@@ -210,6 +214,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
         subdirectory: form.repoSubdirectory.trim() || null,
       },
       idempotencyKey: form.idempotencyKey,
+      verify: verifyConfigured() ? form.verify : undefined,
+      pushBranch: pushConfigured() ? form.pushBranch : undefined,
     };
   };
 
@@ -287,6 +293,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             gate={combinationGate}
             repoSummary={repoSummary}
             decisionsAttested={decisionsAttested}
+            verifyConfigured={verifyConfigured}
+            pushConfigured={pushConfigured}
             errors={structuralErrors}
             submitting={submitting}
             canSubmit={canSubmit}

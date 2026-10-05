@@ -94,6 +94,10 @@ export interface CreateExecutionInput {
   selector_id: string;
   agent_profile_id: string;
   requested_harness_kind: string;
+  /** `false` declines the runner's verifier for this run; never enables one. */
+  verify?: boolean;
+  /** `false` declines the runner's branch push for this run; never enables one. */
+  push_branch?: boolean;
   requested_model_provider?: string | null;
   requested_model_id?: string | null;
   agent_profile_snapshot: unknown;
