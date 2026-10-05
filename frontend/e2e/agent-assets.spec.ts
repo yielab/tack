@@ -186,7 +186,7 @@ test.beforeAll(async () => {
   await apiFetch(`/projects/${projectId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-sonnet-4-5' } }),
+    body: JSON.stringify({ default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-sonnet-5-5' } }),
   });
 
   const profile = (await apiFetch('/agent-profiles', {
@@ -415,7 +415,7 @@ test('attempt screenshot', async ({ page }) => {
       agent_profile_id: agentProfileId,
       requested_harness_kind: 'claude-code',
       requested_model_provider: 'anthropic',
-      requested_model_id: 'claude-sonnet-4-5',
+      requested_model_id: 'claude-sonnet-5-5',
       agent_profile_snapshot: {
         name: PROFILE_NAME,
         instructions: PROFILE_INSTRUCTIONS,
@@ -452,7 +452,7 @@ test('attempt screenshot', async ({ page }) => {
   // of an otherwise-expanded screenshot (Timeline/Decisions/Artifacts all
   // live under the same `<Show>` in AttemptList.tsx, so no partial expand is
   // possible). Requested-vs-actual model ("Matched request — Ran on
-  // anthropic / claude-sonnet-4-5, as requested") and usage marked measured
+  // anthropic / claude-sonnet-5-5, as requested") and usage marked measured
   // (`Model/token cost $0.04 (measured)`, `Runner time cost — Not
   // measured`) are both already visible in this collapsed summary; the
   // artifact list and the raw event log are not, which is the trade this
