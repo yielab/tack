@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { type Component, For, Show, createResource, createSignal, onMount } from 'solid-js';
 import { Badge, Button, EmptyState, Field } from '../ui';
 import { toast } from '../ui/toast';
 import {
@@ -70,8 +70,13 @@ const DecisionRow: Component<{
   attemptId: string;
   decision: DecisionRecord;
   onResolved?: (result: ResolveDecisionResult) => void;
+  onView: (decisionId: string) => void;
 }> = (props) => {
-  const [optionId, setOptionId] = createSignal('');
+  const recommendedId = () => {
+    const id = props.decision.recommendation?.option_id;
+    return id && props.decision.options.some((o) => o.option_id === id) ? id : '';
+  };
+  const [optionId, setOptionId] = createSignal(recommendedId());
   const [text, setText] = createSignal('');
   const [busy, setBusy] = createSignal(false);
 
@@ -79,6 +84,10 @@ const DecisionRow: Component<{
   const isExpired = () => props.decision.state === 'expired';
   const isResolved = () => props.decision.state === 'resolved';
   const hasOptions = () => props.decision.options.length > 0;
+
+  onMount(() => {
+    if (isPending() && !props.decision.viewed_at) props.onView(props.decision.decision_id);
+  });
 
   const submit = async (e: Event) => {
     e.preventDefault();
@@ -110,6 +119,7 @@ const DecisionRow: Component<{
         {/* Pending / expired / resolved are visually AND semantically
             distinct — three different tones, three different labels, never
             merged into one generic "decision" badge. */}
+        <Badge tone="neutral">{props.decision.kind}</Badge>
         <Show when={isPending()}>
           <Badge tone="warning">Pending</Badge>
         </Show>
@@ -173,11 +183,44 @@ const DecisionRow: Component<{
                     checked={optionId() === opt.option_id}
                     onChange={() => setOptionId(opt.option_id)}
                   >
-                    {opt.label}
+                    <span class="font-semibold">{opt.label}</span>
+                    <Show when={opt.option_id === recommendedId()}>
+                      <span class="ml-2 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
+                        Recommended
+                      </span>
+                    </Show>
+                    <Show when={opt.description}>
+                      <span class="block text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {opt.description}
+                      </span>
+                    </Show>
+                    <Show when={opt.risks && opt.risks.length > 0}>
+                      <span class="block text-xs" style={{ color: 'var(--color-danger-600)' }}>
+                        Risks: {opt.risks!.join('; ')}
+                      </span>
+                    </Show>
+                    <Show when={opt.estimated_tokens != null}>
+                      <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        About {opt.estimated_tokens!.toLocaleString('en-US')} tokens
+                      </span>
+                    </Show>
                   </RadioRow>
                 )}
               </For>
             </fieldset>
+            <Show when={recommendedId()}>
+              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                Recommended: <span style={{ 'font-family': 'var(--font-mono)' }}>{recommendedId()}</span>
+                <Show when={props.decision.recommendation?.rationale}>
+                  {' — '}
+                  {props.decision.recommendation?.rationale}
+                </Show>
+                <Show when={(props.decision.recommendation?.evidence_refs ?? []).length > 0}>
+                  {' '}
+                  (evidence: {props.decision.recommendation?.evidence_refs?.join(', ')})
+                </Show>
+              </p>
+            </Show>
           </Show>
           <Field
             label="Details (optional)"
@@ -218,6 +261,18 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
     () => `${props.requestId}:${props.attemptNumber}`,
     () => decisionsApi.list(props.requestId, props.attemptNumber),
   );
+
+  // One `viewed` call per decision id for as long as the inbox is mounted:
+  // a refetch hands every row a new object and remounts it, and must not
+  // call again.
+  const viewed = new Set<string>();
+  const markViewed = (decisionId: string) => {
+    if (viewed.has(decisionId)) return;
+    viewed.add(decisionId);
+    decisionsApi.markViewed(props.attemptId, decisionId).catch(() => {
+      /* best effort: the badge it feeds is not worth a toast */
+    });
+  };
 
   const saveToken = () => {
     decisionTokenStore.set(tokenInput().trim() || null);
@@ -267,7 +322,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         <ul class="space-y-2">
           <For each={decisions()}>
             {(decision) => (
-              <DecisionRow attemptId={props.attemptId} decision={decision} onResolved={handleResolved} />
+              <DecisionRow attemptId={props.attemptId} decision={decision} onResolved={handleResolved} onView={markViewed} />
             )}
           </For>
         </ul>

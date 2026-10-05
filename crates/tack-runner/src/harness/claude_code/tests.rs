@@ -144,6 +144,11 @@ fn a_permission_request_line_becomes_a_question() {
             .collect::<Vec<_>>(),
         ["allow_once", "deny"]
     );
+    assert_eq!(
+        question.options[0].description.as_deref(),
+        Some("list files")
+    );
+    assert_eq!(question.options[1].description, None);
 
     let result_line = include_str!("../fixtures/claude_code/2.1.273/ask-result.jsonl");
     assert_eq!(
@@ -170,13 +175,20 @@ fn an_answer_becomes_a_control_response() {
             DecisionOption {
                 option_id: "allow_once".to_owned(),
                 label: "Allow once".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
             DecisionOption {
                 option_id: "deny".to_owned(),
                 label: "Deny".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
         ],
         metadata: serde_json::Map::new(),
+        recommendation: None,
     };
 
     let allow = DecisionAnswer {

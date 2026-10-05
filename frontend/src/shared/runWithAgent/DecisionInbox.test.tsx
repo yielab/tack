@@ -70,7 +70,7 @@ function mockFetch(list: DecisionRecord[], resolve: () => Response) {
     if (!init || init.method === undefined || init.method === 'GET') {
       return Promise.resolve(jsonOk({ protocol_version: 1, data: list }));
     }
-    void url;
+    if (url.endsWith('/viewed')) return Promise.resolve(jsonOk({ viewed_at: '2026-08-06T12:01:00Z' }));
     return Promise.resolve(resolve());
   });
 }
@@ -316,5 +316,58 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
 
     expect(onResolved).toHaveBeenCalledTimes(1);
     expect(onResolved.mock.calls[0][0].decision_id).toBe('dec_pending');
+  });
+});
+
+describe('DecisionInbox — the consultation pack', () => {
+  const WITH_PACK: DecisionRecord = {
+    ...PENDING_WITH_OPTIONS,
+    decision_id: 'dec_pack',
+    options: [
+      {
+        option_id: 'allow_once',
+        label: 'Allow once',
+        description: 'Runs the test command one time.',
+        risks: ['Executes a command on the runner host'],
+        estimated_tokens: 1200,
+      },
+      { option_id: 'deny', label: 'Deny' },
+    ],
+    recommendation: {
+      option_id: 'allow_once',
+      rationale: 'The command is scoped to one crate.',
+      evidence_refs: ['art_1'],
+    },
+  };
+
+  it('shows the kind, each option\'s description, risks and tokens, and preselects the recommended option with its rationale', async () => {
+    mockFetch([WITH_PACK], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.textContent).toContain('permission');
+    expect(c.textContent).toContain('Runs the test command one time.');
+    expect(c.textContent).toContain('Executes a command on the runner host');
+    expect(c.textContent).toContain('1,200');
+    expect(c.textContent).toContain('The command is scoped to one crate.');
+    expect(c.textContent).toContain('art_1');
+    const radios = [...c.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(radios.find((r) => r.checked)?.value).toBe('allow_once');
+  });
+
+  it('calls viewed exactly once per decision id, however often the list is refetched', async () => {
+    const fetchMock = mockFetch([WITH_PACK], () => jsonOk({}));
+    const c = mount();
+    await flush();
+    await flush();
+    // A resolve refetches the list and hands the row a new object.
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    resolveBtn.click();
+    await flush();
+    await flush();
+
+    const viewedCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/viewed'));
+    expect(viewedCalls.map((call) => String(call[0]))).toEqual(['/api/attempts/att_1/decisions/dec_pack/viewed']);
   });
 });

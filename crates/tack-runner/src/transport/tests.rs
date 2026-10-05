@@ -525,6 +525,8 @@ async fn run_events_decisions_and_artifacts_exchange(
                 prompt: "Allow the harness to run the focused database test?".into(),
                 options: serde_json::from_value(frozen_decision["options"].clone())
                     .expect("frozen options"),
+                recommendation: serde_json::from_value(frozen_decision["recommendation"].clone())
+                    .expect("frozen recommendation"),
                 expires_at: Timestamp::new("2026-08-06T12:30:00Z"),
                 metadata: frozen_decision["metadata"]
                     .as_object()
@@ -613,6 +615,13 @@ async fn events_decisions_and_artifacts_use_their_routes_and_shapes() {
         ]
     );
     assert_eq!(recorded[0].body, frozen_events);
+    let frozen_decision: Value =
+        serde_json::from_str(&fixture("decision.create.request.json")).expect("frozen decision");
+    assert_eq!(recorded[1].body["options"], frozen_decision["options"]);
+    assert_eq!(
+        recorded[1].body["recommendation"],
+        frozen_decision["recommendation"]
+    );
     assert_eq!(recorded[3].body, frozen_manifest);
 }
 

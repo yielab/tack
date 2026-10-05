@@ -60,6 +60,7 @@ export { attemptsApi } from './attempts';
 
 export type {
   DecisionOption,
+  DecisionRecommendation,
   DecisionState,
   DecisionAnswer,
   DecisionResolvedBy,

@@ -110,7 +110,11 @@ case "$mode" in
 
   ask)
     read -r _prompt
-    echo "ASK:do-thing"
+    if [ -n "$TACK_FAKE_HARNESS_ASK_JSON" ]; then
+      echo "ASK:$TACK_FAKE_HARNESS_ASK_JSON"
+    else
+      echo "ASK:do-thing"
+    fi
     read -r reply
     echo "fake_harness: got reply $reply" >&2
     echo "fake-harness-answered:$reply"

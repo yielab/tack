@@ -2681,13 +2681,20 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
             DecisionOption {
                 option_id: "allow_once".to_owned(),
                 label: "Allow once".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
             DecisionOption {
                 option_id: "deny".to_owned(),
                 label: "Deny".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
         ],
         metadata: serde_json::Map::new(),
+        recommendation: None,
     };
 
     let rows: [(&str, bool, Option<&str>, u64, &str); 3] = [
