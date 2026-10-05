@@ -1073,4 +1073,8 @@ All six were answered on 2026-10-03; the answers are the Wave 0 table. None is o
 | Task | State |
 |---|---|
 | Wave 0 | decided 2026-10-03 |
-| all tasks | not dispatched. Wave 1 (B1, P0, S0, I1, E1, C1a, R1, R2) and A1 have no gate left |
+| Waves 1–7 | in `develop` 2026-10-05: B1, P0, S0, I1, E1, C1a, R1 · P1, C1b, D1, F1 · C3, E2, D2, C2 · H1, E3 · H2a, P2 · G1a, H2b · G1b |
+| A1, A3 | in `develop` 2026-10-05 |
+| A2 | running; docket P35-5, P35-6 and P35-9 are merged in its `develop`, so A4 and A5 follow in order |
+| R2 | held: `../newPortaflio` already has uncommitted landing-page work on branch `tack-landing` (2026-10-03); the maintainer decides whether an agent finishes it |
+| Left open by the work | a docket run that times out (not cancelled) stops only its main process group; the branch push runs git in a workspace the agent could reconfigure (`docs/CONFIG.md` says so) |
