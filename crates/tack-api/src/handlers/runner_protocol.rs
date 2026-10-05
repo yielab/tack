@@ -1301,6 +1301,93 @@ pub async fn submit_events(
 // Decision create + poll.
 // ---------------------------------------------------------------------
 
+/// Optional per-option fields: `description` (string), `risks` (strings),
+/// `estimated_tokens` (non-negative integer). Text is bounded by
+/// `decision_prompt_bytes_max`, list length by `decision_options_max`.
+fn validate_decision_option_extras(option: &Value) -> runner_auth::ProtocolResult<()> {
+    bounded_optional_text(option, "description")?;
+    bounded_string_list(option, "risks")?;
+    match option.get("estimated_tokens") {
+        None | Some(Value::Null) => {}
+        Some(value) if value.is_u64() => {}
+        Some(_) => {
+            return Err(invalid_request(
+                "estimated_tokens",
+                "estimated_tokens must be a non-negative integer",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `recommendation.option_id` must name one of the request's `options`.
+fn validate_decision_recommendation(
+    recommendation: &Value,
+    options: &[Value],
+) -> runner_auth::ProtocolResult<()> {
+    if !recommendation.is_object() {
+        return Err(invalid_request(
+            "recommendation",
+            "recommendation must be an object",
+        ));
+    }
+    let option_id = as_str(recommendation, "option_id")?;
+    if !options
+        .iter()
+        .any(|option| option.get("option_id").and_then(Value::as_str) == Some(option_id))
+    {
+        return Err(invalid_request(
+            "recommendation.option_id",
+            "recommendation.option_id must name one of options",
+        ));
+    }
+    bounded_optional_text(recommendation, "rationale")?;
+    bounded_string_list(recommendation, "evidence_refs")
+}
+
+fn bounded_optional_text(object: &Value, field: &str) -> runner_auth::ProtocolResult<()> {
+    match object.get(field) {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(text)) => {
+            if text.len() as u64 > LIMITS.decision_prompt_bytes_max {
+                return Err(payload_too_large(
+                    "decision_prompt_bytes_max",
+                    LIMITS.decision_prompt_bytes_max,
+                ));
+            }
+            Ok(())
+        }
+        Some(_) => Err(invalid_request(field, "must be a string")),
+    }
+}
+
+fn bounded_string_list(object: &Value, field: &str) -> runner_auth::ProtocolResult<()> {
+    match object.get(field) {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::Array(items)) => {
+            if items.len() as u64 > LIMITS.decision_options_max {
+                return Err(payload_too_large(
+                    "decision_options_max",
+                    LIMITS.decision_options_max,
+                ));
+            }
+            for item in items {
+                let Some(text) = item.as_str() else {
+                    return Err(invalid_request(field, "must be an array of strings"));
+                };
+                if text.len() as u64 > LIMITS.decision_prompt_bytes_max {
+                    return Err(payload_too_large(
+                        "decision_prompt_bytes_max",
+                        LIMITS.decision_prompt_bytes_max,
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Some(_) => Err(invalid_request(field, "must be an array of strings")),
+    }
+}
+
 pub async fn create_decision(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
@@ -1328,7 +1415,20 @@ pub async fn create_decision(
     for option in &options {
         as_str(option, "option_id")?;
         as_str(option, "label")?;
+        validate_decision_option_extras(option)?;
     }
+    let recommendation = match value.get("recommendation") {
+        None | Some(Value::Null) => None,
+        Some(recommendation) => {
+            validate_decision_recommendation(recommendation, &options)?;
+            Some(recommendation.clone())
+        }
+    };
+    let recommendation_json = recommendation
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| internal_error("Could not encode recommendation"))?;
     let metadata = value.get("metadata").cloned().unwrap_or_else(|| json!({}));
     if !metadata.is_object() {
         return Err(invalid_request("metadata", "metadata must be an object"));
@@ -1394,6 +1494,7 @@ pub async fn create_decision(
                 options: &options_json,
                 metadata: &metadata_json,
                 expires_at,
+                recommendation: recommendation_json.as_deref(),
             },
             state.clock.as_ref(),
         )
@@ -1410,7 +1511,7 @@ pub async fn create_decision(
     // `idempotency_conflict` — an exact replay (fresh insert or identical
     // resubmission) returns the row's own `created_at`/`state`.
     let stored = sqlx::query(
-        "SELECT state, kind, prompt, options, metadata, expires_at, created_at FROM execution_decisions WHERE attempt_id=? AND decision_id=?",
+        "SELECT state, kind, prompt, options, metadata, expires_at, recommendation, created_at FROM execution_decisions WHERE attempt_id=? AND decision_id=?",
     )
     .bind(&attempt_id)
     .bind(&decision_id)
@@ -1423,6 +1524,10 @@ pub async fn create_decision(
     let stored_options: String = stored.get("options");
     let stored_metadata: String = stored.get("metadata");
     let stored_expires_at: Option<String> = stored.get("expires_at");
+    let stored_recommendation: Option<String> = stored.get("recommendation");
+    let stored_recommendation_value: Option<Value> = stored_recommendation
+        .as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok());
     let stored_created_at: String = stored.get("created_at");
     let stored_options_value: Value = serde_json::from_str(&stored_options).unwrap_or(Value::Null);
     let stored_metadata_value: Value =
@@ -1432,6 +1537,7 @@ pub async fn create_decision(
         || stored_prompt != prompt
         || stored_options_value != Value::Array(options)
         || stored_metadata_value != metadata
+        || stored_recommendation_value != recommendation
         || stored_expires_at != requested_expires_at
     {
         return Err(protocol_error(

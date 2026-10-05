@@ -902,6 +902,32 @@ async fn decision_poll_returns_pending_then_resolved() {
     assert_ne!(second_poll["next_after"].as_str().unwrap(), next_after);
 }
 
+#[tokio::test]
+async fn decision_recommendation_must_name_an_option_and_poll_is_unchanged() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("recommend-key", "claim-recommend").await;
+    let body = |decision_id: &str, option_id: &str| {
+        json!({
+            "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+            "decision_id": decision_id, "kind": "tool_permission", "prompt": "Allow?",
+            "options": [{"option_id":"allow_once","label":"Allow once","description":"d","risks":["r"],"estimated_tokens":5},{"option_id":"deny","label":"Deny"}],
+            "recommendation": {"option_id": option_id, "rationale": "why", "evidence_refs": ["art-1"]},
+            "expires_at": Value::Null, "metadata": {},
+        })
+        .to_string()
+    };
+    let uri = format!("/attempts/{attempt_id}/decisions");
+    let (status, rejected) = fx.post(&uri, body("dec-bad", "nope")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{rejected}");
+    let (status, accepted) = fx.post(&uri, body("dec-ok", "allow_once")).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+
+    let before = (fx.clock.now() - Duration::hours(1)).to_rfc3339();
+    let (_, poll) = fx.poll(&attempt_id, fencing_token, &before).await;
+    assert_eq!(poll["decisions"].as_array().unwrap().len(), 1);
+    assert!(poll["decisions"][0].get("recommendation").is_none());
+}
+
 // ---------------------------------------------------------------------
 // 8. Artifact manifest is accepted and names a PUT upload target.
 // ---------------------------------------------------------------------

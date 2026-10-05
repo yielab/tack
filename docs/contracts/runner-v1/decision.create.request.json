@@ -7,9 +7,20 @@
   "kind": "tool_permission",
   "prompt": "Allow the harness to run the focused database test?",
   "options": [
-    {"option_id": "allow_once", "label": "Allow once"},
+    {
+      "option_id": "allow_once",
+      "label": "Allow once",
+      "description": "Runs the test command one time and asks again next time.",
+      "risks": ["Executes a command on the runner host"],
+      "estimated_tokens": 1200
+    },
     {"option_id": "deny", "label": "Deny"}
   ],
+  "recommendation": {
+    "option_id": "allow_once",
+    "rationale": "The command is scoped to one crate and writes only to the build directory.",
+    "evidence_refs": ["art_01J00000000000000000000001"]
+  },
   "expires_at": "2026-08-06T12:30:00Z",
   "metadata": {"tool": "cargo test", "scope": "focused"}
 }
