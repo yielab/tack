@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "brief-v1/schema.json",
+  "title": "Item brief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["item_id", "acceptance", "constraints", "created_at", "updated_at"],
+  "properties": {
+    "item_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The item this brief describes"
+    },
+    "acceptance": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "Acceptance criteria for the item (max 50)",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "run", "expect_exit"],
+            "properties": {
+              "kind": {"const": "command"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "run": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "expect_exit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "cwd": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "name"],
+            "properties": {
+              "kind": {"const": "test"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "name": {"type": "string"},
+              "runner": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "name", "op", "threshold"],
+            "properties": {
+              "kind": {"const": "metric"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "name": {"type": "string"},
+              "op": {
+                "enum": ["lte", "gte", "eq"]
+              },
+              "threshold": {"type": "number"},
+              "unit": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "path"],
+            "properties": {
+              "kind": {"const": "file"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "path": {"type": "string"}
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "path"],
+            "properties": {
+              "kind": {"const": "absent"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "path": {"type": "string"}
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id", "title", "text"],
+            "properties": {
+              "kind": {"const": "manual"},
+              "id": {"type": "string"},
+              "title": {"type": "string"},
+              "text": {"type": "string"}
+            }
+          }
+        ]
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "maxItems": 100,
+      "description": "Constraints for the item (max 100)",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "glob"],
+            "properties": {
+              "kind": {"const": "forbidden_path"},
+              "glob": {"type": "string"}
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "name"],
+            "properties": {
+              "kind": {"const": "allowed_dependency"},
+              "name": {"type": "string"}
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "n"],
+            "properties": {
+              "kind": {"const": "max_changed_files"},
+              "n": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "text"],
+            "properties": {
+              "kind": {"const": "note"},
+              "text": {"type": "string"}
+            }
+          }
+        ]
+      }
+    },
+    "definition_of_done": {
+      "type": ["string", "null"],
+      "description": "Optional definition of done for this item"
+    },
+    "risk": {
+      "type": ["string", "null"],
+      "enum": ["low", "medium", "high", null],
+      "description": "Risk level assessment"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
