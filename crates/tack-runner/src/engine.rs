@@ -1066,8 +1066,17 @@ where
     ) {
         let Some((config, limits)) = self.verify.as_ref().filter(|(config, _)| config.enabled)
         else {
+            if spec.work.request.verify == Some(true) {
+                let payload =
+                    serde_json::json!({"reason": "this runner has no verifier configured"});
+                self.submit_event(session, record, "attempt.verify_skipped", payload)
+                    .await;
+            }
             return;
         };
+        if spec.work.request.verify == Some(false) {
+            return;
+        }
         let captured = std::fs::read(scratch.join("src/evidence.json"))
             .ok()
             .and_then(|bytes| {
@@ -1127,6 +1136,14 @@ where
         staged: &mut [serde_json::Value],
     ) -> Option<crate::evidence::PublishedBranch> {
         if !self.git.push_branches {
+            if spec.work.request.push_branch == Some(true) {
+                let payload = serde_json::json!({"reason": "this runner does not push branches"});
+                self.submit_event(session, record, "attempt.push_skipped", payload)
+                    .await;
+            }
+            return None;
+        }
+        if spec.work.request.push_branch == Some(false) {
             return None;
         }
         let evidence_path = scratch.join("src/evidence.json");

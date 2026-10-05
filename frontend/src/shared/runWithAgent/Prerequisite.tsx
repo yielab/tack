@@ -13,6 +13,9 @@ export interface PrerequisiteProps {
   fixLabel?: string;
   /** `deferred`: one line saying why, and what enables it. */
   reason?: string;
+  /** `ok` with `onToggle`: a live checkbox the operator can untick to decline this step. */
+  checked?: boolean;
+  onToggle?: (on: boolean) => void;
 }
 
 /**
@@ -30,10 +33,26 @@ const Prerequisite: Component<PrerequisiteProps> = (props) => (
       when={props.state === 'deferred'}
       fallback={
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="flex items-center gap-2">
-            <Badge tone={props.state === 'ok' ? 'success' : 'danger'}>{props.state === 'ok' ? 'Ready' : 'Missing'}</Badge>
-            {props.label}
-          </span>
+          <Show
+            when={props.state === 'ok' && props.onToggle}
+            fallback={
+              <span class="flex items-center gap-2">
+                <Badge tone={props.state === 'ok' ? 'success' : 'danger'}>{props.state === 'ok' ? 'Ready' : 'Missing'}</Badge>
+                {props.label}
+              </span>
+            }
+          >
+            <label class="flex cursor-pointer items-center gap-2.5">
+              <input
+                type="checkbox"
+                class="h-4 w-4"
+                style={{ 'accent-color': 'var(--color-primary-600)' }}
+                checked={props.checked ?? true}
+                onChange={(e) => props.onToggle?.(e.currentTarget.checked)}
+              />
+              {props.label}
+            </label>
+          </Show>
           <Show when={props.state === 'missing' && props.href}>
             <A
               href={props.href!}

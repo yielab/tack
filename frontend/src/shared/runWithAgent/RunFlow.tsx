@@ -49,6 +49,9 @@ export interface RunFlowProps {
   gate: Accessor<ReturnType<typeof gateHarnessModelSelection>>;
   repoSummary: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
+  /** The selected runner's own config has a verifier / pushes branches. */
+  verifyConfigured: Accessor<boolean>;
+  pushConfigured: Accessor<boolean>;
   errors: Accessor<string[]>;
   submitting: Accessor<boolean>;
   canSubmit: Accessor<boolean>;
@@ -253,9 +256,25 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       {/* ── What happens after ──────────────────────────────────────── */}
       <fieldset class="space-y-3">
         <legend class={LEGEND_CLASS} style={legendStyle}>What happens after</legend>
-        <Prerequisite state="deferred" label="Verify the result" reason="Available when a runner reports a verifier." />
-        <Prerequisite state="deferred" label="Push the branch" reason="Available when a runner reports branch push." />
-        <Prerequisite state="deferred" label="Open a pull request" reason="Available when a runner reports branch push." />
+        <Prerequisite
+          state={props.verifyConfigured() ? 'ok' : 'deferred'}
+          label="Verify the result"
+          checked={props.form.verify}
+          onToggle={(on) => props.setForm('verify', on)}
+          reason="This runner has no verifier set up. Add a [verify] section to its config to turn it on."
+        />
+        <Prerequisite
+          state={props.pushConfigured() ? 'ok' : 'deferred'}
+          label="Push the branch"
+          checked={props.form.pushBranch}
+          onToggle={(on) => props.setForm('pushBranch', on)}
+          reason="This runner does not push branches. Set push_branches in its [git] config to turn it on."
+        />
+        <Prerequisite
+          state="deferred"
+          label="Open a pull request"
+          reason={props.pushConfigured() ? 'Opening a pull request from here is not available yet; open the pushed branch on your git host.' : 'Needs a pushed branch, and this runner does not push branches.'}
+        />
       </fieldset>
 
       <Show when={props.errors().length > 0}>
