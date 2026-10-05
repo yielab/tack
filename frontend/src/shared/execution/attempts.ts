@@ -46,6 +46,19 @@ export type ModelProvenance =
       actual_model_id: string;
     };
 
+// ─── Pull request (`executions.rs::AttemptPullRequest`) ────────────────────
+
+/**
+ * A pull request opened by the run, when one was created. `null` when no PR
+ * was opened (verification declined, branch push declined, or the runner
+ * doesn't support GitHub integration).
+ */
+export interface AttemptPullRequest {
+  number: number;
+  state: string;
+  url: string;
+}
+
 // ─── Usage economics (`usage_provenance.rs::UsageEconomics`) ───────────────
 
 /**
@@ -110,6 +123,8 @@ export interface AttemptSummary {
   /** `null` while the attempt has not yet reported `actual_execution`. */
   model_provenance: ModelProvenance | null;
   usage_economics: UsageEconomics;
+  /** `null` when no pull request was opened by the run. */
+  pull_request: AttemptPullRequest | null;
 }
 
 export interface AttemptListResult {
