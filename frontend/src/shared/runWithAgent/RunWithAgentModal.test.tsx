@@ -511,11 +511,10 @@ describe('RunWithAgentModal', () => {
     await flush();
     const rows = [...document.querySelectorAll('[data-prerequisite="deferred"]')];
     const reasons = [
-      'Available when the brief editor lands.',
       'Available when a runner reports a verifier.',
       'Available when a runner reports branch push.',
     ];
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(3);
     for (const row of rows) {
       const control = row.querySelector('input') as HTMLInputElement;
       expect(control.disabled).toBe(true);
@@ -553,7 +552,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(0);
-    expect(document.querySelectorAll('[data-prerequisite="deferred"]').length).toBe(4);
+    expect(document.querySelectorAll('[data-prerequisite="deferred"]').length).toBe(3);
     expect(submitButton().disabled).toBe(false);
   });
 

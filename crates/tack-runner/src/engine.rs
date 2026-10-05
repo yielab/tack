@@ -1115,6 +1115,7 @@ where
                 harness_kind,
                 terminal_reason,
                 usage,
+                spec.work.request.brief.as_ref(),
             )
             .await,
         )

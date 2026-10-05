@@ -876,3 +876,80 @@ async fn list_executions_item_ids_rejects_a_malformed_id() {
     assert_eq!(body["error"]["details"]["field"], "item_ids");
     assert_eq!(body["error"]["details"]["value"], "not-a-uuid");
 }
+
+/// The stored request snapshot of the one execution `setup` created.
+async fn stored_snapshot(repo: &Repository, request_id: &str) -> serde_json::Value {
+    let raw: String =
+        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id=?")
+            .bind(request_id)
+            .fetch_one(repo.pool())
+            .await
+            .expect("snapshot");
+    serde_json::from_str(&raw).expect("json")
+}
+
+#[tokio::test]
+async fn an_execution_for_an_item_with_a_brief_snapshots_it_and_its_instructions_end_with_the_criteria()
+ {
+    let (app, repo, item_id) = setup().await;
+    let item_uuid: Uuid = item_id.parse().unwrap();
+    let brief = repo
+        .upsert_item_brief(
+            item_uuid,
+            tack_core::models::UpsertItemBrief {
+                acceptance: vec![tack_core::models::AcceptanceCriterion::Manual {
+                    id: "m1".into(),
+                    title: "Reviewed".into(),
+                    text: "A maintainer reviews it".into(),
+                }],
+                constraints: vec![],
+                definition_of_done: Some("Shipped".into()),
+                risk: None,
+            },
+        )
+        .await
+        .expect("brief");
+    let item = repo.get_item(item_uuid).await.unwrap().unwrap();
+    let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["brief"], serde_json::to_value(&brief).unwrap());
+    let instructions = snapshot["resolved_agent_profile"]["instructions"]
+        .as_str()
+        .unwrap();
+    assert!(instructions.starts_with("work safely"));
+    let rendered = tack_core::brief::render_markdown(&item, &brief);
+    let (title_line, body) = rendered.split_once('\n').unwrap();
+    assert!(instructions.ends_with(&format!("## The brief\n{body}")));
+    assert_eq!(
+        instructions
+            .matches(title_line.trim_start_matches("# "))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_description_in_the_instructions()
+ {
+    let (app, repo, item_id) = setup().await;
+    sqlx::query("UPDATE items SET description = 'Make the build green' WHERE id = ?")
+        .bind(&item_id)
+        .execute(repo.pool())
+        .await
+        .expect("description");
+    let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert!(snapshot.get("brief").is_none());
+    let instructions = snapshot["resolved_agent_profile"]["instructions"]
+        .as_str()
+        .unwrap();
+    assert!(instructions.starts_with("work safely"));
+    assert!(instructions.contains("Title: I\n"), "{instructions}");
+    assert!(
+        instructions.contains("Make the build green"),
+        "{instructions}"
+    );
+    assert!(instructions.contains("source: "), "{instructions}");
+}

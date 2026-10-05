@@ -36,7 +36,7 @@
         "truncated": {"type": "boolean", "description": "The diff exceeded 8 MiB and was cut."}
       }
     },
-    "brief": {"description": "Filled by the brief task; null until then."},
+    "brief": {"description": "The item brief the request carried (brief-v1), also staged as brief.json; null when the item had none."},
     "branch": {"description": "Filled by the branch-push task; null until then."},
     "terminal_reason": {},
     "usage": {}

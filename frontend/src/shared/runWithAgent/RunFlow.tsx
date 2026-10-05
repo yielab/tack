@@ -30,6 +30,7 @@ export interface RunFlowProps {
   form: RunForm;
   setForm: SetStoreFunction<RunForm>;
   itemTitle: string;
+  hasBrief: Accessor<boolean>;
   projectId: string;
   hideTargetPicker: Accessor<boolean>;
   runnersLoading: Accessor<boolean>;
@@ -162,7 +163,16 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           <span class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Item: </span>
           {props.itemTitle}
         </p>
-        <Prerequisite state="deferred" label="Include the item's brief" reason="Available when the brief editor lands." />
+        <Show
+          when={props.hasBrief()}
+          fallback={
+            <p class="rounded-[20px] px-4 py-2.5 text-xs" style={{ ...PILL, color: 'var(--color-text-secondary)' }}>
+              This item has no brief. The agent gets its title and description.
+            </p>
+          }
+        >
+          <Prerequisite state="ok" label="The item's brief goes with the title and description" />
+        </Show>
         <Show
           when={props.form.repoExpanded}
           fallback={
