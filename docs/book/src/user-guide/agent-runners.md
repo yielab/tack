@@ -183,6 +183,12 @@ With docket, choosing "Ask me" pauses the agent before each gated call and waits
 in Tack. Allow lets the call run; Deny refuses it, and the agent is told it was refused and
 carries on. This works the same whether docket is running a single task or a recipe.
 
+A question waits on the item's Execution tab. Each option can carry a description, its risks and
+an estimate in tokens; the option the agent recommends is marked, with its reasoning and the files
+it looked at.
+
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
+
 The question appears in the attempt's decision inbox, in the same item view as the run's
 timeline and artifacts. Answering it needs `TACK_EXECUTION_DECISION_TOKEN`, a secret
 separate from the ordinary API token. A question nobody answers before the attempt's
@@ -297,6 +303,8 @@ because every field it sends is visible on the command line; see
 ### The Run with agent dialog
 
 The dialog reads as the whole flow, top to bottom, in four groups:
+
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog in four groups. Who runs it: a runner connected, the Implementer profile, Claude Code, the project default model, each with a Ready badge. What it gets: the item and its brief. How far it may go: Automatic approvals, Claude Code's tools as a checklist, network access and a timeout. What happens after: Verify the result and Push the branch ticked, Open a pull request disabled with its reason. Run stays disabled until a repository remote is entered.">
 
 - **Who runs it** — the machine or group, the agent profile, the harness and the model.
 - **What it gets** — the item, and its [brief](items.md#brief-tab) when it has one (an item without
@@ -923,6 +931,8 @@ ordinary rules and open boards are told, like any edit.
 
 When a verifier checks an attempt, it leaves a merge-readiness pack. Open the attempt's
 details on the Execution tab and the pack appears under "Merge-readiness pack".
+
+<img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a succeeded attempt: Recommendation merge, Risk low, three reasons, a criteria table with every criterion passed and its evidence file, the verify command with exit code 0, mutation score, static analysis counts, a blind judge's verdicts, and Your review with a required reason before Accept or Reject.">
 
 From top to bottom it shows the verifier's recommendation and the risk level with its
 reasons, then one row per criterion from the brief (id, kind, status, evidence), the

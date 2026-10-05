@@ -107,3 +107,5 @@ cost in tokens, how often a merge-readiness pack was accepted, and how many pull
 opened, merged, closed or had reverted. A card whose input does not exist yet says **Not measured**
 and why, never `0`; no card shows money. Every number, its definition and the counts behind it are in
 [Factory metrics](agent-runners.md#factory-metrics) in the Agent Runners chapter.
+
+<img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, and pull-request outcomes.">
