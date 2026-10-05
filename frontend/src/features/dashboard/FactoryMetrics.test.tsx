@@ -171,6 +171,22 @@ describe('FactoryMetrics', () => {
     expect(container.textContent).toContain('attempts');
   });
 
+  it('counts read as words: one decision, one pack', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      decisions: 1,
+      attempts: 2,
+      verification_tax: { ...FACTORY_METRICS_FIXTURE.verification_tax, verification_packs: 1 },
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain('1 decision / 2 attempts');
+    expect(container.textContent).toContain('/ 1 pack');
+    expect(container.textContent).not.toContain('1 packs');
+  });
+
   it('renders measured human minutes with both median and p90', async () => {
     setupFetchMock(FACTORY_METRICS_FIXTURE);
     const { container } = mount();

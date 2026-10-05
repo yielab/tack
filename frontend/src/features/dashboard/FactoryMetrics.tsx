@@ -11,6 +11,11 @@ type HumanMinutes = components['schemas']['HumanMinutes'];
 type VerificationTax = components['schemas']['VerificationTax'];
 type Outcomes = components['schemas']['Outcomes'];
 
+/** "1 pack", "2 packs". */
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 export default function FactoryMetrics() {
   const params = useParams();
   const projectId = params.id!;
@@ -40,7 +45,7 @@ export default function FactoryMetrics() {
       <Show when={!metrics.loading && metrics()}>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           <MetricCard title="Escalation rate" data={metrics()!}>
-            {(m) => <RatioCard ratio={m.escalation_rate} details={`${m.decisions} decisions / ${m.attempts} attempts`} />}
+            {(m) => <RatioCard ratio={m.escalation_rate} details={`${count(m.decisions, 'decision')} / ${count(m.attempts, 'attempt')}`} />}
           </MetricCard>
 
           <MetricCard title="Human minutes per decision" data={metrics()!}>
@@ -164,9 +169,9 @@ function VerificationTaxCard(props: { verificationTax: VerificationTax }) {
         <div>
           <p class="text-2xl font-heading text-content">{(vt().ratio.value! * 100).toFixed(1)}%</p>
           <div class="text-xs text-content-subtle mt-2 space-y-1">
-            <p>Implementation: {vt().implementation_tokens} tokens / {vt().implementation_attempts} attempts</p>
-            <p>Rework: {vt().rework_tokens} tokens / {vt().rework_attempts} attempts</p>
-            <p>Verification: {vt().verification_tokens} tokens / {vt().verification_packs} packs</p>
+            <p>Implementation: {count(vt().implementation_tokens, 'token')} / {count(vt().implementation_attempts, 'attempt')}</p>
+            <p>Rework: {count(vt().rework_tokens, 'token')} / {count(vt().rework_attempts, 'attempt')}</p>
+            <p>Verification: {count(vt().verification_tokens, 'token')} / {count(vt().verification_packs, 'pack')}</p>
           </div>
         </div>
       </Show>
