@@ -194,6 +194,9 @@ export interface RunnerCapabilities {
   harnesses: HarnessCapability[];
   features: FeatureCapabilities;
   limits: CapabilityLimits;
+  /** The runner's own configuration: whether it has a verifier / pushes branches at all. */
+  verify_configured?: boolean;
+  push_configured?: boolean;
 }
 
 // ─── Usage provenance (III.1.3; crates/tack-orch/src/execution/types.rs

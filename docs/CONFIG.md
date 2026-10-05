@@ -199,7 +199,10 @@ and starts the program with an environment of `PATH` only. A program that exits 
 times out, is not on `PATH`, or writes a pack that does not parse never changes the
 attempt's outcome: the attempt still completes `succeeded` and records an
 `attempt.verify_failed` event carrying the exit code and the start of the program's error
-output. With `enabled = false`, nothing is started. A program that is not on `PATH` is
+output. With `enabled = false`, nothing is started. A run request can decline the verifier for
+one run (the run dialog's "Verify the result" box); it can never turn on a verifier the runner has
+off. A request that asks for one from a runner without it changes nothing, and the attempt records
+an `attempt.verify_skipped` event saying why. A program that is not on `PATH` is
 logged as a warning when the runner starts.
 
 ## Pushing the attempt's branch (`[git]`)
@@ -230,6 +233,10 @@ Turn it on only for agents you would trust with your git credentials. The push r
 attempt's workspace, which the agent could write to while it worked: hooks are disabled, but the
 repository's own git configuration there (an SSH command or a URL rewrite, for example) is
 whatever the agent left.
+
+As with the verifier, a run request can decline the push for one run but never enable it; asking
+for a push from a runner with `push_branches = false` changes nothing and the attempt records an
+`attempt.push_skipped` event.
 
 ## Debugging
 

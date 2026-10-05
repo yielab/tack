@@ -2989,6 +2989,28 @@ async fn run_evidence_attempt_with(
     git_config: Option<crate::config::GitConfig>,
     break_origin: bool,
 ) -> EvidenceRun {
+    run_evidence_attempt_requesting(
+        label,
+        cancelled,
+        change,
+        verify,
+        git_config,
+        break_origin,
+        (None, None),
+    )
+    .await
+}
+
+/// `requested` is the request's `(verify, push_branch)`.
+async fn run_evidence_attempt_requesting(
+    label: &str,
+    cancelled: bool,
+    change: fn(&Path),
+    verify: Option<crate::config::VerifyConfig>,
+    git_config: Option<crate::config::GitConfig>,
+    break_origin: bool,
+    requested: (Option<bool>, Option<bool>),
+) -> EvidenceRun {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
     let seed = root.join("seed");
@@ -3022,6 +3044,8 @@ async fn run_evidence_attempt_with(
     let mut claimed = work();
     claimed.request.repository.base_revision = base.clone();
     claimed.attempt.base_revision = base;
+    claimed.request.verify = requested.0;
+    claimed.request.push_branch = requested.1;
     let item_id = claimed.request.item_id.as_str().to_owned();
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
@@ -3216,6 +3240,63 @@ async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() 
         .collect();
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0].payload["exit_code"], 1);
+}
+
+#[tokio::test]
+async fn a_request_may_decline_the_verifier_but_never_enable_one() {
+    let script = crate::harness::fixtures::fake_harness_path().with_file_name("fake_verifier.sh");
+    let verifier = || crate::config::VerifyConfig {
+        enabled: true,
+        program: "env".to_owned(),
+        args: vec![
+            "TACK_FAKE_VERIFIER_FIXTURE=ready".to_owned(),
+            "sh".to_owned(),
+            script.display().to_string(),
+        ],
+        timeout_seconds: 60,
+    };
+    let event_kinds = |run: &EvidenceRun| -> (bool, Vec<String>) {
+        let state = run.data_protocol.state.lock().expect("lock");
+        let has_mrp = state
+            .manifests
+            .iter()
+            .flat_map(|r| r.artifacts.iter())
+            .any(|item| item.kind == "mrp");
+        let kinds = state
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .map(|event| event.kind.clone())
+            .collect();
+        (has_mrp, kinds)
+    };
+    let declined = run_evidence_attempt_requesting(
+        "verify-declined",
+        false,
+        write_one_delete_one,
+        Some(verifier()),
+        None,
+        false,
+        (Some(false), None),
+    )
+    .await;
+    assert!(
+        !event_kinds(&declined).0,
+        "a declined verifier spawns nothing"
+    );
+    let unavailable = run_evidence_attempt_requesting(
+        "verify-unavailable",
+        false,
+        write_one_delete_one,
+        None,
+        None,
+        false,
+        (Some(true), None),
+    )
+    .await;
+    let (has_mrp, kinds) = event_kinds(&unavailable);
+    assert!(!has_mrp);
+    assert!(kinds.iter().any(|kind| kind == "attempt.verify_skipped"));
 }
 
 fn origin_branches(origin: &Path) -> String {

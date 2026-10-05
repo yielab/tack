@@ -287,6 +287,14 @@ pub struct CreateExecution {
     /// with `invalid_request`. Omitted leaves the item's status untouched.
     #[serde(default)]
     pub status_map_policy_id: Option<String>,
+    /// `false` declines the runner's verifier for this run. The runner's own
+    /// configuration decides whether a verifier exists; `true` never enables one.
+    #[serde(default)]
+    pub verify: Option<bool>,
+    /// `false` declines the runner's branch push for this run. The runner's own
+    /// configuration decides whether a push exists; `true` never enables one.
+    #[serde(default)]
+    pub push_branch: Option<bool>,
 }
 
 /// Response body for `POST /api/executions` — a newly created request or an
@@ -821,6 +829,12 @@ pub async fn create_execution(
     });
     if let Some(brief) = brief {
         snapshot_value["brief"] = brief;
+    }
+    if let Some(verify) = input.verify {
+        snapshot_value["verify"] = json!(verify);
+    }
+    if let Some(push_branch) = input.push_branch {
+        snapshot_value["push_branch"] = json!(push_branch);
     }
     let typed_snapshot: ExecutionRequestSnapshot =
         serde_json::from_value(snapshot_value).map_err(|err| {

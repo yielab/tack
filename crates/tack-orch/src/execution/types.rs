@@ -363,6 +363,14 @@ pub struct ExecutionRequestSnapshot {
     /// request was created; absent when the item had none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brief: Option<serde_json::Value>,
+    /// `Some(false)` declines the runner's verifier for this run; it never
+    /// enables one the runner does not have.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify: Option<bool>,
+    /// `Some(false)` declines the runner's branch push for this run; it never
+    /// enables one the runner does not have.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_branch: Option<bool>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
