@@ -22,8 +22,8 @@ use crate::handlers::local_runner::LocalRunnerControl;
 use crate::handlers::spa;
 use crate::handlers::{
     attachments, attempt_lists, backup, boards_multi, briefs, comments, custom_fields, decisions,
-    dependencies, executions, export, import_github, import_linear, items, local_runner, projects,
-    roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
+    dependencies, executions, export, import_github, import_linear, items, local_runner, mrp,
+    projects, roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
 use crate::webhook::WebhookClient;
@@ -297,6 +297,18 @@ pub fn build_router(state: AppState) -> Router {
             get(briefs::get_brief)
                 .put(briefs::put_brief)
                 .delete(briefs::delete_brief),
+        )
+        .route(
+            "/executions/{request_id}/attempts/{attempt_number}/mrp",
+            get(mrp::get_mrp),
+        )
+        .route(
+            "/executions/{request_id}/attempts/{attempt_number}/mrp/viewed",
+            post(mrp::mark_viewed),
+        )
+        .route(
+            "/executions/{request_id}/attempts/{attempt_number}/mrp/review",
+            post(mrp::review_mrp),
         )
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
