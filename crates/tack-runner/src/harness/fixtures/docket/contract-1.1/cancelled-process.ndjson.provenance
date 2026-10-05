@@ -1,0 +1,13 @@
+captured
+docket 0.2.0b3 (scratch install, rack-cli develop e7dc0983 = P35-3)
+
+Real `docket harness run --contract 1.1 --workspace <dir> --task-file <file> --model
+gw/anthropic/claude-x --agent-id capture-proc-1 --timeout 60` transcript, against a throwaway
+loopback HTTP server standing in for the model endpoint (DOCKET_HOME in a scratch directory,
+DOCKET_LLM_API_KEY an obviously fake key). The server answered one `bash` tool call
+(`python3 -c "import time; time.sleep(30)"`; `sleep` itself is not on docket's allowlist), then
+never answered again. docket was sent SIGTERM as soon as `process_started` appeared; it exited 1
+with `status: "cancelled"`. The tool's process group is reported once started
+(`process_started {pgid, tool}`) and once gone (`process_exited {pgid, signal: "SIGKILL"}`):
+docket itself killed the group it tracked. The scratch directory is rewritten to `/capture` and
+nothing else changed.

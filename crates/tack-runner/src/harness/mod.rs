@@ -142,18 +142,11 @@ pub trait HarnessProbe: Send + Sync {
     /// could diverge.
     ///
     /// [`AdapterRegistry::register_probe`] calls this once, at registration,
-    /// and refuses a probe whose declared `cancel` support exceeds
-    /// [`PROCESS_GROUP_CANCEL_CEILING`] — a lying capability is caught here,
-    /// before any attempt starts.
+    /// and refuses a probe that declares `cancel: Supported` without a
+    /// descriptor whose `reports_process_groups` is true — a lying
+    /// capability is caught here, before any attempt starts.
     fn declared_capabilities(&self) -> FeatureCapabilities;
 }
-
-/// The cancellation support ceiling for any [`HarnessProbe`] built on
-/// `SupervisedProcess::cancel` (a process-group SIGTERM/SIGKILL, which
-/// cannot reliably reach a descendant that starts its own session) — see
-/// [`HarnessProbe::declared_capabilities`]. Not a blanket rule: an adapter
-/// with a genuinely different mechanism could justify a higher one.
-pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::Advisory;
 
 /// A probe rejected at registration, before it can back a claimed attempt.
 /// Kept distinct from [`HarnessError`] (a per-attempt error) since this is
@@ -161,15 +154,14 @@ pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::A
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HarnessRegistrationError {
     #[error(
-        "probe for harness kind {kind:?} declares cancel support {support:?}, which exceeds \
-         what the shared process-group cancellation primitive can honestly promise \
-         ({ceiling:?}): a descendant that starts its own session or process group is not \
-         reachable by a group-wide signal"
+        "probe for harness kind {kind:?} declares cancel support {support:?}, but its \
+         descriptor does not report process groups: a descendant that starts its own \
+         session or process group is not reachable by a group-wide signal, and nothing \
+         tells this runner where it is"
     )]
     OverclaimedCancelSupport {
         kind: String,
         support: CapabilitySupport,
-        ceiling: CapabilitySupport,
     },
 }
 
@@ -293,20 +285,19 @@ impl AdapterRegistry {
         probe: &dyn HarnessProbe,
     ) -> Result<(), HarnessRegistrationError> {
         let declared = probe.declared_capabilities();
-        if declared.cancel.support == CapabilitySupport::Supported
-            && PROCESS_GROUP_CANCEL_CEILING != CapabilitySupport::Supported
-        {
+        let kind = probe.harness_kind();
+        let reports_groups = descriptor(kind.as_str()).is_some_and(|d| d.reports_process_groups);
+        if declared.cancel.support == CapabilitySupport::Supported && !reports_groups {
             return Err(HarnessRegistrationError::OverclaimedCancelSupport {
-                kind: probe.harness_kind().as_str().to_owned(),
+                kind: kind.as_str().to_owned(),
                 support: declared.cancel.support,
-                ceiling: PROCESS_GROUP_CANCEL_CEILING,
             });
         }
         Ok(())
     }
 
-    /// Registers a probe, first checking its declared capabilities against
-    /// [`PROCESS_GROUP_CANCEL_CEILING`]. An overclaiming probe is rejected
+    /// Registers a probe, first checking its declared `cancel` support
+    /// against its descriptor. An overclaiming probe is rejected
     /// here and never inserted, rather than discovered wrong only once a
     /// real cancellation fails to reach a detached descendant.
     pub fn register_probe(

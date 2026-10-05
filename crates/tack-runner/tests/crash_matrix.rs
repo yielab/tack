@@ -817,3 +817,178 @@ async fn reoffered_quarantined_attempt_rejected_before_second_spawn() {
     );
     assert_quarantine_recorded(root, &journal);
 }
+
+// ---- cancelling a harness that starts process groups of its own ------------
+
+/// The shared fake harness in its `spawn_detached` mode, behind a grammar that
+/// reads the `process_started <pgid>` line the way docket's grammar reads its
+/// own event. `announces` is whether the fake prints the line at all.
+struct DetachingGrammar {
+    announces: bool,
+    pidfile: std::path::PathBuf,
+}
+
+static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
+    tack_runner::harness::local_process::HarnessDescriptor {
+        kind: "detaching-fake",
+        program: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/harness/fixtures/fake_harness.sh"
+        ),
+        wire: tack_runner::provider::Wire::OpenAiResponses,
+        model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
+        native_provider: "native",
+        inherited_env: &["PATH"],
+        model_passthrough: "forwarded verbatim",
+        probe_notes: &[],
+        credential_note: "",
+        credential_env: None,
+        observes_served_model: false,
+        reports_process_groups: true,
+    };
+
+impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
+    fn descriptor(&self) -> &'static tack_runner::harness::local_process::HarnessDescriptor {
+        &DETACHING
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        unreachable!("the capability table is not read by this test")
+    }
+
+    fn invocation(
+        &self,
+        _run: &tack_runner::harness::local_process::RunContext<'_>,
+    ) -> Result<tack_runner::harness::local_process::Invocation, HarnessError> {
+        Ok(tack_runner::harness::local_process::Invocation {
+            env: [
+                ("TACK_FAKE_HARNESS_MODE", "spawn_detached".to_owned()),
+                (
+                    "TACK_FAKE_HARNESS_ANNOUNCE",
+                    if self.announces { "1" } else { "0" }.to_owned(),
+                ),
+                (
+                    "TACK_FAKE_HARNESS_PIDFILE",
+                    self.pidfile.display().to_string(),
+                ),
+            ]
+            .map(|(name, value)| (name.to_owned(), value))
+            .into(),
+            ..Default::default()
+        })
+    }
+
+    fn report(
+        &self,
+        _run: &tack_runner::harness::local_process::RunContext<'_>,
+        _result: &tack_runner::harness::process::ProcessResult,
+    ) -> tack_runner::harness::local_process::RunReport {
+        unreachable!("the attempt is cancelled, never waited on")
+    }
+
+    fn signal(
+        &self,
+        _run: &tack_runner::harness::local_process::RunContext<'_>,
+        line: &str,
+    ) -> Option<tack_runner::client::engine::StreamSignal> {
+        let pgid = line.strip_prefix("process_started ")?.parse().ok()?;
+        Some(tack_runner::client::engine::StreamSignal::ProcessStarted { pgid })
+    }
+}
+
+/// Starts the attempt, waits until its detached grandchild exists, cancels,
+/// and returns the evidence and the grandchild's pid. The caller reaps the
+/// grandchild if the cancellation left it.
+async fn cancel_with_a_detached_grandchild(announces: bool) -> (CancellationEvidence, u32) {
+    use tack_runner::client::engine::ExecutionSpec;
+    use tack_runner::harness::local_process::LocalProcessHarness;
+    use tack_runner::harness::process::ProcessLimits;
+
+    let dir = root("detached");
+    let pidfile = dir.path().join("grandchild.pid");
+    let harness = LocalProcessHarness::discover(
+        DetachingGrammar {
+            announces,
+            pidfile: pidfile.clone(),
+        },
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        dir.path().join("staging"),
+        tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+    )
+    .expect("the fake harness script is locatable");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let mut work = work();
+    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(DETACHING.kind);
+    let spec = ExecutionSpec {
+        work,
+        workspace: Workspace {
+            attempt_id: AttemptId::new("attempt-crash"),
+            id: WorkspaceId::new("ws_detached"),
+            path: workspace,
+            base_revision: "0123456789abcdef".into(),
+        },
+    };
+
+    let handle = harness.start(&spec).await.expect("start");
+    let grandchild = {
+        let mut found = None;
+        for _ in 0..200 {
+            if let Some(pid) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|text| text.trim().parse::<u32>().ok())
+            {
+                found = Some(pid);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        found.expect("the fake harness started its detached grandchild")
+    };
+    assert!(tack_runner::harness::process::process_alive(grandchild));
+    let evidence = harness.cancel(&handle).await.expect("cancel");
+    (evidence, grandchild)
+}
+
+async fn gone_within(pid: u32, within: Duration) -> bool {
+    let deadline = std::time::Instant::now() + within;
+    while std::time::Instant::now() < deadline {
+        if !tack_runner::harness::process::process_alive(pid) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn cancel_reaches_a_detached_group_the_harness_announced() {
+    let (evidence, grandchild) = cancel_with_a_detached_grandchild(true).await;
+    assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
+    assert!(
+        gone_within(grandchild, Duration::from_secs(10)).await,
+        "the announced group must be dead after the cancellation"
+    );
+    assert_eq!(
+        evidence.details["groups"],
+        serde_json::json!({"tracked": 1, "killed": 1, "survived": 0})
+    );
+}
+
+/// The honest `Advisory` case: nothing announced the group, so nothing
+/// reaches it and the evidence claims nothing about it.
+#[tokio::test]
+async fn cancel_cannot_reach_a_detached_group_nobody_announced() {
+    let (evidence, grandchild) = cancel_with_a_detached_grandchild(false).await;
+    assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
+    let survived = tack_runner::harness::process::process_alive(grandchild);
+    // Reap it before asserting: this test started it.
+    let _ = std::process::Command::new("kill")
+        .arg(grandchild.to_string())
+        .status();
+    assert!(survived, "a group nobody announced is not reached");
+    assert_eq!(
+        evidence.details["groups"],
+        serde_json::json!({"tracked": 0, "killed": 0, "survived": 0})
+    );
+}

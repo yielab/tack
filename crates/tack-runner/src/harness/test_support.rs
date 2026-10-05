@@ -151,6 +151,7 @@ pub fn finished(exit: ProcessExit, stdout: &str) -> ProcessResult {
             ..CapturedOutput::default()
         },
         stderr: CapturedOutput::default(),
+        groups: crate::harness::process::ProcessGroups::default(),
     }
 }
 

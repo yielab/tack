@@ -137,10 +137,20 @@ observes and reports the actual outcome via
 `POST /api/runner/v1/attempts/{id}/cancellation-observation`. This mirrors the
 recovery split deliberately: Tack cannot itself kill a process running on a runner's
 host, so it never pretends to. See the [capability matrix](agent-runners.md#capability-matrix)
-for why `cancel` is `advisory`, never `supported`, on every in-tree harness adapter —
-none of the three can guarantee the underlying process actually stops, because each
-harness's own shell tool spawns its subprocess in a new session outside the runner's
-process group.
+for which harnesses can promise that a cancelled run's processes actually stop. Most
+cannot: a harness's own shell tool starts its subprocess in a new session outside the
+runner's process group, and the runner has no way to find it. A harness that reports each
+process group its tools start (docket does) is the exception, and its cancellation
+stops those groups too.
+
+The cancellation observation carries what happened, in `details`. `details.process_outcome`
+says how the harness's own process stopped (`stopped`, `killed`, or `signal_failed` when the
+stop signal could not be delivered, which leaves the observation ambiguous). `details.groups`
+counts the process groups the harness reported and had not reported finished: `tracked` were
+running when the cancellation began, `killed` are gone afterwards, and `survived` are still
+running and need stopping by hand on the runner's host. A harness that reports no process
+groups always shows `tracked: 0`. That means nothing was reported, not that nothing was left
+behind.
 
 A cancellation observation on an attempt that already reached a terminal state returns
 `409 invalid_transition` with the actual terminal state named, not a false success.

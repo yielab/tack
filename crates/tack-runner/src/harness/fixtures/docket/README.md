@@ -64,9 +64,11 @@ fixtures here are `captured` — every status this adapter's tests exercise (`ok
 
 ## Unverified — documented guesses, not facts
 
-1. `cancel: Advisory`, never `Supported`: docket's own result line for a cancelled run gives
-   no evidence about what happened to a tool subprocess's own process group, so whether a
-   `SIGTERM` reaches everything the run started is unconfirmed.
+1. `cancel` is `Supported` only on contract 1.1, where docket announces each tool's process
+   group (`process_started`/`process_exited`, `contract-1.1/cancelled-process.ndjson`) and the
+   runner stops every announced group that is still live; on 1.0 it stays `Advisory`. Not
+   covered: a run that hits its timeout rather than a cancel is stopped by its main group
+   only, because the non-interactive wait does not read the announcements as they arrive.
 2. `resume`/`decisions: Unsupported`: no reattachment interface and no ask-the-operator event
    were observed; harness mode's own `--help` text (`docket harness run --help`) documents
    the fixed non-interactive-refusal posture directly, so this is read from the vendor's own

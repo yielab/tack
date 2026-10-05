@@ -27,8 +27,9 @@
 //! is a documented limitation, not a silent gap.
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -137,11 +138,26 @@ pub enum ProcessExit {
     TimedOut,
 }
 
+/// What became of the process groups a harness announced beyond the main
+/// one (`StreamSignal::ProcessStarted`) and had not announced finished:
+/// `tracked` were live when the stop began, `killed` are gone after it,
+/// `survived` are still there. A group the harness never announced is in
+/// none of the three, which is why a harness that does not announce them
+/// reports `tracked: 0` rather than "none survived".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProcessGroups {
+    pub tracked: usize,
+    pub killed: usize,
+    pub survived: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessResult {
     pub exit: ProcessExit,
     pub stdout: CapturedOutput,
     pub stderr: CapturedOutput,
+    /// Non-zero only when a timeout killed announced groups.
+    pub groups: ProcessGroups,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +185,8 @@ pub enum ProcessError {
 pub struct SupervisedProcess {
     child: Child,
     pid: u32,
+    /// The live process groups the harness announced, beyond the main one.
+    groups: Arc<Mutex<BTreeSet<u32>>>,
 }
 
 impl ProcessSpec {
@@ -233,7 +251,11 @@ impl ProcessSpec {
             }
         }
 
-        Ok(SupervisedProcess { child, pid })
+        Ok(SupervisedProcess {
+            child,
+            pid,
+            groups: Arc::default(),
+        })
     }
 }
 
@@ -278,6 +300,7 @@ impl SupervisedProcess {
             exit,
             stdout: finalize_capture(stdout_raw, secrets),
             stderr: finalize_capture(stderr_raw, secrets),
+            groups: ProcessGroups::default(),
         })
     }
 
@@ -311,6 +334,7 @@ impl SupervisedProcess {
             tokio::spawn(async move { capture_bounded(&mut stderr_pipe, stderr_cap).await });
 
         let stdout_cap = limits.max_stdout_bytes;
+        let groups = Arc::clone(&self.groups);
         let read_and_drive = async move {
             use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             let mut accumulator = BoundedAccumulator::new(stdout_cap);
@@ -373,6 +397,12 @@ impl SupervisedProcess {
                     // exit; its remaining output is still drained to EOF so
                     // it can never block on a full pipe.
                     Some(StreamSignal::Finished) => stdin = None,
+                    Some(
+                        announced @ (StreamSignal::ProcessStarted { .. }
+                        | StreamSignal::ProcessExited { .. }),
+                    ) => {
+                        track_group(&groups, &announced);
+                    }
                     None => {}
                 }
             }
@@ -402,8 +432,10 @@ impl SupervisedProcess {
                 }
             }
         };
+        let mut groups = ProcessGroups::default();
         if exit == ProcessExit::TimedOut {
             kill_tree(self.pid, &mut self.child, limits.termination_grace).await?;
+            groups = kill_groups(self.live_groups(), limits.termination_grace).await;
         }
         if stdout_raw.is_none() {
             stdout_raw = Some((&mut read_and_drive).await);
@@ -421,6 +453,7 @@ impl SupervisedProcess {
                 secrets,
             ),
             stderr: finalize_capture(stderr_raw, secrets),
+            groups,
         })
     }
 
@@ -430,8 +463,117 @@ impl SupervisedProcess {
     /// docs. Consumes `self` because a cancelled process must never be
     /// waited on again by the caller; [`Self::wait_with_capture`] already
     /// reaps it as part of killing the tree.
-    pub async fn cancel(mut self, grace: Duration) -> Result<CancelOutcome, ProcessError> {
-        kill_tree(self.pid, &mut self.child, grace).await
+    ///
+    /// A harness that announces its own process groups is then given the
+    /// same stop for each group still live. Nothing has read the run's
+    /// stdout when a run is cancelled before it is waited on, so the lines
+    /// already written (the pipe outlives its writer) are read here, through
+    /// `signal`, before the groups are signalled.
+    pub async fn cancel(
+        mut self,
+        grace: Duration,
+        mut signal: impl FnMut(&str) -> Option<StreamSignal> + Send,
+    ) -> Result<(CancelOutcome, ProcessGroups), ProcessError> {
+        let outcome = kill_tree(self.pid, &mut self.child, grace).await?;
+        if let Some(stdout) = self.child.stdout.take() {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut reader = BufReader::new(stdout);
+            let mut line = Vec::new();
+            let deadline = time::Instant::now() + Duration::from_secs(1);
+            // What is already in the pipe arrives at once; a read that has to
+            // wait means the writer is gone (or a descendant still holds the
+            // pipe open and says nothing), and the deadline bounds a chatty one.
+            while time::Instant::now() < deadline {
+                line.clear();
+                let read = time::timeout(
+                    Duration::from_millis(100),
+                    reader.read_until(b'\n', &mut line),
+                );
+                let Ok(Ok(count)) = read.await else { break };
+                if count == 0 {
+                    break;
+                }
+                let text = String::from_utf8_lossy(&line);
+                if let Some(announced) = signal(text.trim_end_matches(['\n', '\r'])) {
+                    track_group(&self.groups, &announced);
+                }
+            }
+        }
+        let groups = kill_groups(self.live_groups(), grace).await;
+        Ok((outcome, groups))
+    }
+
+    /// The announced groups still live, never the main one.
+    fn live_groups(&self) -> BTreeSet<u32> {
+        let mut groups = self
+            .groups
+            .lock()
+            .map(|set| set.clone())
+            .unwrap_or_default();
+        groups.remove(&self.pid);
+        groups
+    }
+}
+
+/// Keeps the set of live announced groups. A pgid that no group could have
+/// (`0` and `1` are the caller's own group and init, and a value past
+/// `i32::MAX` wraps negative in `kill(2)`) is never kept: signalling it would
+/// reach something the harness never started.
+fn track_group(groups: &Mutex<BTreeSet<u32>>, signal: &StreamSignal) {
+    let Ok(mut groups) = groups.lock() else {
+        return;
+    };
+    match *signal {
+        StreamSignal::ProcessStarted { pgid } if (2..=i32::MAX as u32).contains(&pgid) => {
+            groups.insert(pgid);
+        }
+        StreamSignal::ProcessExited { pgid } => {
+            groups.remove(&pgid);
+        }
+        _ => {}
+    }
+}
+
+/// SIGTERM to each group, SIGKILL after `grace` to whichever is still
+/// there, then a last short wait for the kernel to finish with them.
+async fn kill_groups(groups: BTreeSet<u32>, grace: Duration) -> ProcessGroups {
+    let tracked = groups.len();
+    #[cfg(unix)]
+    {
+        if groups.is_empty() {
+            return ProcessGroups::default();
+        }
+        for pgid in &groups {
+            let _ = unix::signal_group(*pgid, unix::SIGTERM);
+        }
+        let mut alive = wait_until_gone(groups, grace).await;
+        for pgid in &alive {
+            let _ = unix::signal_group(*pgid, unix::SIGKILL);
+        }
+        alive = wait_until_gone(alive, Duration::from_secs(5)).await;
+        ProcessGroups {
+            tracked,
+            killed: tracked - alive.len(),
+            survived: alive.len(),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (groups, grace);
+        ProcessGroups::default()
+    }
+}
+
+/// The groups of `groups` still alive once none is or `within` has passed.
+#[cfg(unix)]
+async fn wait_until_gone(mut groups: BTreeSet<u32>, within: Duration) -> BTreeSet<u32> {
+    let deadline = time::Instant::now() + within;
+    loop {
+        groups.retain(|pgid| unix::group_alive(*pgid));
+        if groups.is_empty() || time::Instant::now() >= deadline {
+            return groups;
+        }
+        time::sleep(Duration::from_millis(20)).await;
     }
 }
 
@@ -648,6 +790,11 @@ mod unix {
 
     pub fn process_alive(pid: u32) -> bool {
         unsafe { kill(pid as i32, 0) == 0 }
+    }
+
+    /// Whether any process is left in the group `pgid`.
+    pub fn group_alive(pgid: u32) -> bool {
+        unsafe { kill(-(pgid as i32), 0) == 0 }
     }
 }
 
