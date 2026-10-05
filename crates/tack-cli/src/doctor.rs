@@ -31,7 +31,7 @@ const PROCESS_LIMITS: ProcessLimits =
 /// whatever a real enrollment or refresh sent a server.
 pub fn run(as_json: bool) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
-    let report = runtime.block_on(probe());
+    let (report, verify) = runtime.block_on(probe());
 
     if as_json {
         println!("{}", serde_json::to_string_pretty(&report.capabilities)?);
@@ -39,10 +39,11 @@ pub fn run(as_json: bool) -> anyhow::Result<()> {
     }
 
     render(&report);
+    render_verify(&verify);
     Ok(())
 }
 
-async fn probe() -> bootstrap::DiscoveryReport {
+async fn probe() -> (bootstrap::DiscoveryReport, tack_runner::VerifyConfig) {
     // A doctor run never claims or executes an attempt, so the only thing
     // this path feeds — `wait()`'s artifact-staging directory — is never
     // reached; nothing is created or written under it.
@@ -60,7 +61,29 @@ async fn probe() -> bootstrap::DiscoveryReport {
     })
     .unwrap_or_else(|_| RunnerConfig::defaults());
     let secrets = SecretStore::open(&config.secret_store_path());
-    bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.providers).await
+    let report =
+        bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.providers).await;
+    (report, config.verify)
+}
+
+/// The `[verify]` table as this runner would read it. The board never runs
+/// the verifier; this machine's runner does, after a succeeded attempt.
+fn render_verify(verify: &tack_runner::VerifyConfig) {
+    if !verify.enabled {
+        println!();
+        println!("verify: disabled");
+        return;
+    }
+    let found = if tack_runner::verify::program_found(&verify.program) {
+        "found"
+    } else {
+        "NOT FOUND on PATH; every succeeded attempt will report verify_failed"
+    };
+    println!();
+    println!("verify: enabled");
+    println!("  program: {} ({found})", verify.program);
+    println!("  args:    {}", verify.args.join(" "));
+    println!("  timeout: {}s", verify.timeout_seconds);
 }
 
 /// What this machine's probe found for one harness kind.

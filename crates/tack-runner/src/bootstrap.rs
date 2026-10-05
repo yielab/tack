@@ -66,6 +66,12 @@ pub async fn build_runtime(
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     crate::provider::attach_catalog(&mut capabilities, &config.providers, &secrets, &SystemClock)
         .await;
+    if config.verify.enabled && !crate::verify::program_found(&config.verify.program) {
+        tracing::warn!(
+            program = config.verify.program.as_str(),
+            "the verifier is enabled but its program is not on PATH; every succeeded attempt will record a verify failure"
+        );
+    }
     let protocol = Arc::new(HttpPullProtocol::new(
         &config.api_base_url,
         limits.protocol_request_timeout,
@@ -84,7 +90,8 @@ pub async fn build_runtime(
     )
     // Without attaching this, `engine.rs`'s events/artifacts call sites
     // would never run in the production binary even though it compiles.
-    .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>);
+    .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>)
+    .with_verify(config.verify.clone(), limits.harness_process.clone());
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
     Ok(RunnerRuntime::new(

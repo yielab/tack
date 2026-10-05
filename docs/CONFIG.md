@@ -179,6 +179,29 @@ enroll` call, no token to copy anywhere.
   visible either way, since `tack_api` is already in the default filter — only the
   *runner's own* log lines were missing.
 
+## Runner verifier (`[verify]`)
+
+A runner can run a program of your choosing over each attempt that succeeded, after the
+attempt's changes are captured and before its workspace is deleted. The program reads the
+captured evidence and writes a merge-readiness pack; the runner uploads that pack as one
+more artifact on the attempt. The runner runs it, on your machine: the board never runs it.
+
+```toml
+[verify]
+enabled = false          # off by default; there is no environment variable for it
+program = "assay"        # looked up on PATH
+args = ["verify"]        # placed before the flags the runner adds
+timeout_seconds = 1800
+```
+
+The runner appends `--evidence <dir> --workspace <dir> --output <dir>/mrp.json` to `args`
+and starts the program with an environment of `PATH` only. A program that exits non-zero,
+times out, is not on `PATH`, or writes a pack that does not parse never changes the
+attempt's outcome: the attempt still completes `succeeded` and records an
+`attempt.verify_failed` event carrying the exit code and the start of the program's error
+output. With `enabled = false`, nothing is started. A program that is not on `PATH` is
+logged as a warning when the runner starts.
+
 ## Debugging
 
 ```bash
