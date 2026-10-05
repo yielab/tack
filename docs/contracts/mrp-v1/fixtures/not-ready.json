@@ -1,0 +1,105 @@
+{
+  "v": "1",
+  "attempt_id": "0192f5a1-8c2f-8e4b-ac3f-6a7b8c9d0e1f",
+  "evidence_sha256": "2345678901bcdef02345678901bcdef02345678901bcdef02345678901bcdef0",
+  "brief_sha256": "bcdef01234567890bcdef01234567890bcdef01234567890bcdef01234567890a",
+  "criteria": [
+    {
+      "id": "cmd_build",
+      "kind": "command",
+      "status": "failed",
+      "evidence_ref": "criteria/cmd_build.txt",
+      "note": "Build failed with compilation error"
+    },
+    {
+      "id": "test_unit",
+      "kind": "test",
+      "status": "failed",
+      "evidence_ref": "criteria/test_unit.txt",
+      "note": "2 tests failed"
+    },
+    {
+      "id": "metric_coverage",
+      "kind": "metric",
+      "status": "failed",
+      "evidence_ref": "criteria/metric_coverage.txt",
+      "note": "Coverage below 80%"
+    },
+    {
+      "id": "file_readme",
+      "kind": "file",
+      "status": "passed",
+      "evidence_ref": null,
+      "note": "README.md exists"
+    },
+    {
+      "id": "absent_todo",
+      "kind": "absent",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Not checked due to earlier failures"
+    },
+    {
+      "id": "manual_review",
+      "kind": "manual",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Not reviewed due to technical failures"
+    }
+  ],
+  "verify": {
+    "command": "assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json",
+    "exit_code": 1,
+    "output_tail": "FAILED: Build failed\nFAILED: Tests failed\n",
+    "duration_s": 5.2
+  },
+  "mutation": null,
+  "static_analysis": {
+    "sarif_sha256": "cdefab1098765432cdefab1098765432cdefab1098765432cdefab1098765432",
+    "counts": {
+      "error": 3,
+      "warning": 5,
+      "note": 2
+    }
+  },
+  "judge": {
+    "model_family": "claude-3-5-sonnet",
+    "blind": true,
+    "rubric": [
+      {
+        "criterion_id": "cmd_build",
+        "verdict": "fail",
+        "reason": "Build does not compile"
+      },
+      {
+        "criterion_id": "test_unit",
+        "verdict": "fail",
+        "reason": "Multiple test failures"
+      }
+    ]
+  },
+  "risk": {
+    "tier": "high",
+    "reasons": [
+      "Build failure",
+      "Test failures",
+      "Multiple static analysis errors",
+      "Code coverage below threshold"
+    ]
+  },
+  "recommendation": {
+    "decision": "reject",
+    "rationale": "Critical failures: build error, test failures. Requires fixes before review"
+  },
+  "usage": {
+    "tokens_in": 1200,
+    "tokens_out": 600
+  },
+  "signature": {
+    "kind": "none"
+  },
+  "produced_by": {
+    "program": "assay",
+    "version": "0.1.0"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "v": "1",
+  "attempt_id": "0192f5a2-9d3e-9f5c-bd4e-7a8b9c0d1e2f",
+  "evidence_sha256": "3456789012cdef103456789012cdef103456789012cdef103456789012cdef10",
+  "brief_sha256": "cdef12345678901cdef12345678901cdef12345678901cdef12345678901cdef1",
+  "criteria": [
+    {
+      "id": "cmd_build",
+      "kind": "command",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Skipped per user request"
+    },
+    {
+      "id": "test_unit",
+      "kind": "test",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Skipped per user request"
+    },
+    {
+      "id": "metric_coverage",
+      "kind": "metric",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Skipped per user request"
+    },
+    {
+      "id": "file_readme",
+      "kind": "file",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Skipped per user request"
+    },
+    {
+      "id": "absent_todo",
+      "kind": "absent",
+      "status": "skipped",
+      "evidence_ref": null,
+      "note": "Skipped per user request"
+    },
+    {
+      "id": "manual_review",
+      "kind": "manual",
+      "status": "manual",
+      "evidence_ref": null,
+      "note": "Awaiting human review"
+    }
+  ],
+  "verify": null,
+  "mutation": null,
+  "static_analysis": null,
+  "judge": null,
+  "risk": {
+    "tier": "medium",
+    "reasons": [
+      "All automated checks skipped",
+      "Awaiting human review"
+    ]
+  },
+  "recommendation": {
+    "decision": "review",
+    "rationale": "All automated checks were skipped. Manual review required"
+  },
+  "usage": {
+    "tokens_in": 0,
+    "tokens_out": 0
+  },
+  "signature": {
+    "kind": "none"
+  },
+  "produced_by": {
+    "program": "assay",
+    "version": "0.1.0"
+  }
+}
