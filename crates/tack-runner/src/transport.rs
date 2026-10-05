@@ -710,6 +710,22 @@ pub struct EventBatchResponse {
 pub struct DecisionOption {
     pub option_id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risks: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_tokens: Option<u64>,
+}
+
+/// The option a harness would pick, as in `decision.create.request.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recommendation {
+    pub option_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_refs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -720,6 +736,7 @@ pub struct DecisionCreateReport {
     pub kind: String,
     pub prompt: String,
     pub options: Vec<DecisionOption>,
+    pub recommendation: Option<Recommendation>,
     pub expires_at: Timestamp,
     pub metadata: Map<String, Value>,
 }
@@ -836,7 +853,7 @@ impl AttemptDataProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: DecisionCreateReport,
     ) -> Result<DecisionCreateResponse, ProtocolClientError> {
-        let body = json!({
+        let mut body = json!({
             "protocol_version": 1,
             "runner_id": session.runner_id,
             "attempt_id": report.attempt_id,
@@ -848,6 +865,9 @@ impl AttemptDataProtocol for HttpPullProtocol {
             "expires_at": report.expires_at,
             "metadata": report.metadata,
         });
+        if let Some(recommendation) = &report.recommendation {
+            body["recommendation"] = json!(recommendation);
+        }
         let path = format!("/attempts/{}/decisions", report.attempt_id);
         let value = self
             .send_json(

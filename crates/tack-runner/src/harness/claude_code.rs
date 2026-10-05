@@ -377,13 +377,20 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                         DecisionOption {
                             option_id: "allow_once".to_owned(),
                             label: "Allow once".to_owned(),
+                            description: description.map(str::to_owned),
+                            risks: None,
+                            estimated_tokens: None,
                         },
                         DecisionOption {
                             option_id: "deny".to_owned(),
                             label: "Deny".to_owned(),
+                            description: None,
+                            risks: None,
+                            estimated_tokens: None,
                         },
                     ],
                     metadata,
+                    recommendation: None,
                 }))
             }
             Some("result") => Some(StreamSignal::Finished),

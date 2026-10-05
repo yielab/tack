@@ -22,8 +22,8 @@ use super::{
     ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport, CompletionResponse,
     DecisionAnswer, DecisionCreateReport, DecisionOption, DecisionPollReport, EnrollmentRequest,
     EnrollmentResponse, EventBatchReport, HeartbeatRequest, PendingTerminalReport,
-    PendingTerminalReportKind, ProtocolClientError, ProtocolEvent, PullProtocol, RefreshRequest,
-    RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
+    PendingTerminalReportKind, ProtocolClientError, ProtocolEvent, PullProtocol, Recommendation,
+    RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -42,6 +42,7 @@ pub struct Question {
     pub kind: String,
     pub prompt: String,
     pub options: Vec<DecisionOption>,
+    pub recommendation: Option<Recommendation>,
     pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -900,6 +901,14 @@ where
                 kind: question.kind.clone(),
                 prompt: scrub_with_prompt(&question.prompt, prompt),
                 options: question.options.clone(),
+                recommendation: question.recommendation.clone().map(|recommendation| {
+                    Recommendation {
+                        rationale: recommendation
+                            .rationale
+                            .map(|text| scrub_with_prompt(&text, prompt)),
+                        ..recommendation
+                    }
+                }),
                 expires_at: Timestamp::new(
                     state
                         .expires_at

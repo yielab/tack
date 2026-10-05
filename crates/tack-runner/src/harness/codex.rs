@@ -399,13 +399,20 @@ impl HarnessGrammar for CodexGrammar {
                     DecisionOption {
                         option_id: "accept".to_owned(),
                         label: "Allow once".to_owned(),
+                        description: None,
+                        risks: None,
+                        estimated_tokens: None,
                     },
                     DecisionOption {
                         option_id: "decline".to_owned(),
                         label: "Deny".to_owned(),
+                        description: None,
+                        risks: None,
+                        estimated_tokens: None,
                     },
                 ],
                 metadata,
+                recommendation: None,
             }));
         }
         if method == Some("turn/completed") {
