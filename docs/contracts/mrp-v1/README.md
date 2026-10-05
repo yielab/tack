@@ -23,7 +23,7 @@ at one it does not.
 The pack is defined by `schema.json` (JSON Schema 2020-12) and contains:
 
 - **v**: Schema version (always "1")
-- **attempt_id**: UUID of the attempt being certified
+- **attempt_id**: the attempt being certified, copied from the evidence's `attempt_id` (`att_…`)
 - **evidence_sha256**: Hash of the evidence directory
 - **brief_sha256**: Hash of the brief (null if no brief)
 - **criteria**: Array of criterion evaluations (each mapped to passed|failed|manual|skipped)

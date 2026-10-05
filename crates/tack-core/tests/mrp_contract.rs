@@ -9,25 +9,25 @@ const FIXTURES: [(&str, &str, u64, &str); 4] = [
     (
         "ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/ready.json"),
-        0x370d_4506_5b4c_7466,
+        0x99c7_e26e_3263_2dfe,
         "Ready to merge (low risk)",
     ),
     (
         "not-ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/not-ready.json"),
-        0xc963_83ec_d5ed_6138,
+        0x516a_3523_3e5e_da30,
         "Not ready (high risk)",
     ),
     (
         "manual-only",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/manual-only.json"),
-        0x573d_077f_b77c_46a4,
+        0xad4d_4323_c513_84ac,
         "Needs review (medium risk)",
     ),
     (
         "verifier-failed",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json"),
-        0xc5c5_9686_9c6e_8a42,
+        0x19d3_92e3_00d9_48da,
         "Not ready (high risk)",
     ),
 ];
