@@ -9,7 +9,7 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::evidence::GitEvidence;
+use crate::evidence::{GitEvidence, PublishedBranch};
 
 use super::{AttemptId, AttemptLease, RepositorySpec, WorkspaceId, journal::WorkspaceJournal};
 
@@ -89,6 +89,19 @@ pub trait WorktreeProvisioner: Send + Sync {
         _workspace: &Workspace,
         _exclude: &[&str],
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        Ok(None)
+    }
+
+    /// Puts what the attempt left in `workspace` on `branch`, commits it when
+    /// the index holds staged work, and pushes it to the remote the checkout
+    /// was fetched from. `Ok(None)` is a provisioner with no repository.
+    async fn publish_branch(
+        &self,
+        _workspace: &Workspace,
+        _branch: &str,
+        _author: &str,
+        _message: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         Ok(None)
     }
 }
@@ -193,6 +206,18 @@ where
         exclude: &[&str],
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
         self.provisioner.capture_evidence(workspace, exclude).await
+    }
+
+    pub async fn publish_branch(
+        &self,
+        workspace: &Workspace,
+        branch: &str,
+        author: &str,
+        message: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
+        self.provisioner
+            .publish_branch(workspace, branch, author, message)
+            .await
     }
 
     /// Deletes only a resolved child of this dedicated root. The root itself,
