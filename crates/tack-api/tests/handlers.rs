@@ -30,6 +30,8 @@ mod fleet_membership;
 mod item_concurrency;
 #[path = "handlers/local_runner.rs"]
 mod local_runner;
+#[path = "handlers/mrp.rs"]
+mod mrp;
 #[path = "handlers/operator_read_routes.rs"]
 mod operator_read_routes;
 #[path = "handlers/production_router.rs"]

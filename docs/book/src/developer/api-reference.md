@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (80 paths, 115 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](../../../openapi.json) (83 paths, 118 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -350,6 +350,58 @@ Roles / specialties and their assignment to items.
 |---|---|---|
 | 200 | Deleted | — |
 | 404 | Role not found | `ErrorEnvelope` |
+
+---
+
+## Mrp
+
+An attempt's Merge-Readiness Pack and the human verdict on it.
+
+#### `GET /api/executions/{request_id}/attempts/{attempt_number}/mrp`
+
+GET /api/executions/:request_id/attempts/:attempt_number/mrp
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `request_id` | path | `string` | yes | Execution request ID |
+| `attempt_number` | path | `integer` | yes | 1-based attempt number |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The parsed pack and its review record | `MrpResponse` |
+| 404 | No pack for this attempt | `ErrorEnvelope` |
+
+#### `POST /api/executions/{request_id}/attempts/{attempt_number}/mrp/review`
+
+POST /api/executions/:request_id/attempts/:attempt_number/mrp/review
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `request_id` | path | `string` | yes | Execution request ID |
+| `attempt_number` | path | `integer` | yes | 1-based attempt number |
+
+**Request body:** `MrpReviewRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The recorded review | `object` |
+| 400 | Blank reason | `ErrorEnvelope` |
+| 404 | No pack for this attempt | `ErrorEnvelope` |
+| 409 | The pack was already reviewed | `ErrorEnvelope` |
+
+#### `POST /api/executions/{request_id}/attempts/{attempt_number}/mrp/viewed`
+
+POST /api/executions/:request_id/attempts/:attempt_number/mrp/viewed
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `request_id` | path | `string` | yes | Execution request ID |
+| `attempt_number` | path | `integer` | yes | 1-based attempt number |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The review record, with viewed_at stamped once | `object` |
+| 404 | No pack for this attempt | `ErrorEnvelope` |
 
 ---
 

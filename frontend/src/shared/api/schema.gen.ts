@@ -520,6 +520,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/executions/:request_id/attempts/:attempt_number/mrp */
+        get: operations["get_mrp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/executions/:request_id/attempts/:attempt_number/mrp/review */
+        post: operations["review_mrp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/viewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/executions/:request_id/attempts/:attempt_number/mrp/viewed */
+        post: operations["mark_viewed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/executions/{request_id}/cancel": {
         parameters: {
             query?: never;
@@ -3498,6 +3549,19 @@ export interface components {
             requested_model_id: string;
             requested_provider: string;
         };
+        MrpResponse: {
+            /** @description The parsed Merge-Readiness Pack (`docs/contracts/mrp-v1/`). */
+            pack: Record<string, never>;
+            /** @description The review record; absent until the pack is viewed or reviewed. */
+            review?: Record<string, never> | null;
+        };
+        MrpReviewRequest: {
+            /** @description Required; a blank reason is a 400. */
+            reason: string;
+            verdict: components["schemas"]["MrpVerdict"];
+        };
+        /** @enum {string} */
+        MrpVerdict: "accept" | "reject";
         /**
          * @description Pagination envelope for the item-list endpoint. `total` is the
          *     unpaginated match count so clients can render "N of M".
@@ -4737,6 +4801,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_mrp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The parsed pack and its review record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MrpResponse"];
+                };
+            };
+            /** @description No pack for this attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    review_mrp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MrpReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The recorded review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Blank reason */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No pack for this attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The pack was already reviewed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    mark_viewed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The review record, with viewed_at stamped once */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description No pack for this attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

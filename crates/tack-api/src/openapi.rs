@@ -869,6 +869,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::briefs::get_brief,
         handlers::briefs::put_brief,
         handlers::briefs::delete_brief,
+        // ── MRP review ────────────────────────────────────────────────────
+        handlers::mrp::get_mrp,
+        handlers::mrp::mark_viewed,
+        handlers::mrp::review_mrp,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
         handlers::comments::list_comments,
@@ -950,6 +954,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        handlers::mrp::MrpResponse,
+        handlers::mrp::MrpVerdict,
+        handlers::mrp::MrpReviewRequest,
         handlers::executions::RunnerV1ErrorEnvelope,
         handlers::executions::RunnerV1Error,
         PaginatedItems,
@@ -1071,6 +1078,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "items", description = "Items: the universal work unit (epics, tasks, bugs, …)."),
         (name = "sprints", description = "Sprints / iterations within a project."),
         (name = "roles", description = "Roles / specialties and their assignment to items."),
+        (name = "mrp", description = "An attempt's Merge-Readiness Pack and the human verdict on it."),
         (name = "briefs", description = "An item's brief: acceptance criteria, constraints, definition of done."),
         (name = "comments", description = "Comments on items."),
         (name = "dependencies", description = "Directed dependency edges between items."),
