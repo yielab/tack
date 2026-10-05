@@ -353,6 +353,12 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     /// compiling unchanged. When absent, the engine behaves exactly as
     /// before: no event/artifact submission is attempted.
     data_protocol: Option<Arc<dyn AttemptDataProtocol>>,
+    /// The `[verify]` table and the process limits it runs under; `None`
+    /// (and a disabled table) spawn nothing.
+    verify: Option<(
+        crate::config::VerifyConfig,
+        crate::harness::process::ProcessLimits,
+    )>,
 }
 
 impl<P, A, W> RunnerEngine<P, A, W, crate::SystemClock>
@@ -394,6 +400,7 @@ where
             workspaces,
             clock,
             data_protocol: None,
+            verify: None,
         }
     }
 
@@ -404,6 +411,17 @@ where
     /// calls it today.
     pub fn with_data_protocol(mut self, data_protocol: Arc<dyn AttemptDataProtocol>) -> Self {
         self.data_protocol = Some(data_protocol);
+        self
+    }
+
+    /// Attaches the verifier run after a succeeded attempt's evidence is
+    /// captured. Nothing is spawned unless `config.enabled`.
+    pub fn with_verify(
+        mut self,
+        config: crate::config::VerifyConfig,
+        limits: crate::harness::process::ProcessLimits,
+    ) -> Self {
+        self.verify = Some((config, limits));
         self
     }
 
@@ -669,7 +687,11 @@ where
             )
             .await
         {
-            Some((scratch, staged)) => {
+            Some((scratch, mut staged)) => {
+                if outcome.terminal_state == AttemptState::Succeeded {
+                    self.verify_attempt(session, &mut record, &spec, &scratch, &mut staged)
+                        .await;
+                }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
                 }
@@ -1000,6 +1022,67 @@ where
             .flatten();
         for artifact in single.into_iter().chain(listed) {
             self.submit_staged_artifact(session, record, artifact).await;
+        }
+    }
+
+    /// Runs the configured verifier over a succeeded attempt whose evidence
+    /// was captured and stages its pack. A failure submits one
+    /// `attempt.verify_failed` event; it never changes the terminal state.
+    async fn verify_attempt(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        spec: &ExecutionSpec,
+        scratch: &std::path::Path,
+        staged: &mut Vec<serde_json::Value>,
+    ) {
+        let Some((config, limits)) = self.verify.as_ref().filter(|(config, _)| config.enabled)
+        else {
+            return;
+        };
+        let captured = std::fs::read(scratch.join("src/evidence.json"))
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
+            })
+            .is_some_and(|evidence| evidence.captured);
+        if !captured {
+            return;
+        }
+        // The verifier may run for its whole `timeout_seconds`; the lease is
+        // renewed meanwhile on the same interval as during the harness run,
+        // or the completion would be rejected as a stale lease.
+        let verification = crate::verify::run(config, limits, &spec.workspace, scratch);
+        tokio::pin!(verification);
+        let mut renewal = tokio::time::interval_at(
+            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
+            LEASE_RENEWAL_INTERVAL,
+        );
+        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let result = loop {
+            tokio::select! {
+                biased;
+                result = &mut verification => break result,
+                _ = renewal.tick() => {
+                    let request = self.heartbeat_request(session, record);
+                    if let Err(error) = self.protocol.heartbeat(session, request).await {
+                        tracing::warn!(
+                            %error,
+                            attempt_id = record.attempt_id.as_str(),
+                            "lease-renewal heartbeat failed while the verifier is running"
+                        );
+                    }
+                }
+            }
+        };
+        match result {
+            Ok(artifact) => staged.push(artifact),
+            Err(error) => {
+                let payload =
+                    serde_json::json!({"exit_code": error.exit_code, "reason": error.reason});
+                self.submit_event(session, record, "attempt.verify_failed", payload)
+                    .await;
+            }
         }
     }
 

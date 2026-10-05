@@ -23,6 +23,7 @@ reqwest = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 tack-orch = { path = "../tack-orch" }
+tack-core = { path = "../tack-core" }
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
