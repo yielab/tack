@@ -609,7 +609,7 @@ fn tool_specs() -> Value {
                     "budgets": { "type": "object", "description": "Default: {}" },
                     "environment": { "type": "object", "description": "Default: {}" },
                     "metadata": { "type": "object", "description": "Default: {}" },
-                    "status_map_policy_id": { "type": "string" },
+                    "status_map_policy_id": { "type": "string", "enum": ["done_on_success", "done_on_mrp_accepted"], "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched" },
                     "idempotency_key": { "type": "string", "description": "Defaults to a fresh key each call; pass a stable value to safely retry the exact same request" }
                 },
                 "required": [

@@ -2898,6 +2898,10 @@ export interface components {
             requested_model_provider?: string | null;
             selector_id: string;
             selector_kind: string;
+            /**
+             * @description `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
+             *     with `invalid_request`. Omitted leaves the item's status untouched.
+             */
             status_map_policy_id?: string | null;
             /** Format: int64 */
             timeout_seconds: number;

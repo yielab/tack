@@ -589,7 +589,7 @@ struct ExecutionCreateArgs {
     /// Execution timeout, in seconds
     #[arg(long)]
     timeout_seconds: u64,
-    /// Optional status-map policy ID
+    /// Status-map policy ID: done_on_success or done_on_mrp_accepted
     #[arg(long)]
     status_map_policy: Option<String>,
     /// Output raw JSON
