@@ -1,5 +1,6 @@
 import {
   splitProps,
+  createEffect,
   createUniqueId,
   For,
   type Component,
@@ -43,8 +44,18 @@ const Select: Component<SelectProps> = (props) => {
     'children',
     'class',
     'id',
+    'value',
+    'ref',
   ]);
   const id = local.id ?? createUniqueId();
+  let el: HTMLSelectElement | undefined;
+  // A <select> takes a value only once the matching <option> exists, and the
+  // value is set before <For> inserts the options; set it again after they render.
+  createEffect(() => {
+    const value = local.value;
+    void local.options;
+    if (el && value !== undefined) el.value = String(value);
+  });
   return (
     <FieldShell
       label={local.label}
@@ -56,6 +67,11 @@ const Select: Component<SelectProps> = (props) => {
     >
       <select
         {...rest}
+        ref={(node) => {
+          el = node;
+          if (typeof local.ref === 'function') (local.ref as (n: HTMLSelectElement) => void)(node);
+        }}
+        value={local.value}
         id={id}
         required={local.required}
         aria-invalid={local.error ? 'true' : undefined}
