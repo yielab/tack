@@ -350,6 +350,24 @@ fn a_contract_1_1_result_line_is_finished() {
         report.terminal_reason["max_tokens"],
         serde_json::Value::Null
     );
+
+    // A recipe run includes a task block with recipe status and output.
+    let recipe = read(include_str!(
+        "../fixtures/docket/contract-1.1/recipe-ok.ndjson"
+    ));
+    assert!(recipe.succeeded);
+    // A recipe has no single turn, so docket reports no served model.
+    assert_eq!(recipe.observed_model, None);
+    assert_eq!((recipe.tokens_in, recipe.tokens_out), (Some(250), Some(50)));
+    let task = &recipe.terminal_reason["task"];
+    assert_eq!(task["status"], "done");
+    let roles = task["hops"]
+        .as_array()
+        .expect("hops")
+        .iter()
+        .map(|hop| hop["role"].as_str().expect("role"))
+        .collect::<Vec<_>>();
+    assert_eq!(roles, ["lead", "researcher", "analyst", "writer", "critic"]);
 }
 
 /// One request, `network: false` and two tools, under every probe outcome:
@@ -468,6 +486,88 @@ fn limits_and_policy_are_passed_only_where_probed() {
     assert!(
         matches!(&error, HarnessError::Rejected { reason } if reason.contains("permission_policy.sandbox"))
     );
+}
+
+#[test]
+fn recipe_is_passed_only_when_probed_and_specified() {
+    let state = scratch("docket-invocation-recipe");
+    let scratch_dir = scratch("docket-invocation-recipe-scratch");
+    let endpoint = endpoint(state.path());
+    let with_recipe = DocketFeatures {
+        contract: Contract::V1_1,
+        recipe: true,
+        ..DocketFeatures::default()
+    };
+    let without_recipe = DocketFeatures {
+        contract: Contract::V1_1,
+        recipe: false,
+        ..DocketFeatures::default()
+    };
+    let flags = |args: Vec<String>| args[12..].to_vec();
+
+    // Recipe is passed when probed and specified.
+    {
+        let mut request = spec(DESCRIPTOR.kind, state.path());
+        request.work.request.resolved_agent_profile.tool_policy =
+            serde_json::json!({"docket": {"recipe": "my-recipe"}});
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let all = |features: &DocketFeatures| invocation(features, &run).expect("args").args;
+        // docket refuses `--recipe` with `--agent-id` or `--max-tokens`, so a
+        // recipe run carries neither, even with a token budget on the request.
+        let recipe_args = all(&with_recipe);
+        assert!(!recipe_args.contains(&"--agent-id".to_owned()));
+        assert!(!recipe_args.contains(&"--max-tokens".to_owned()));
+        assert_eq!(
+            recipe_args[8..],
+            [
+                "--timeout",
+                "30",
+                "--contract",
+                "1.1",
+                "--recipe",
+                "my-recipe"
+            ]
+        );
+        assert_eq!(flags(all(&without_recipe)), ["--contract", "1.1"]);
+        let budgeted = DocketFeatures {
+            max_tokens: true,
+            ..with_recipe.clone()
+        };
+        assert!(!all(&budgeted).contains(&"--max-tokens".to_owned()));
+    }
+
+    // Recipe is not passed when empty.
+    {
+        let mut request = spec(DESCRIPTOR.kind, state.path());
+        request.work.request.resolved_agent_profile.tool_policy =
+            serde_json::json!({"docket": {"recipe": ""}});
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let args =
+            |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
+        assert!(!args(&with_recipe).contains(&"--recipe".to_owned()));
+    }
+
+    // Recipe is not passed when absent.
+    {
+        let mut request = spec(DESCRIPTOR.kind, state.path());
+        request.work.request.resolved_agent_profile.tool_policy = serde_json::json!({"docket": {}});
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let args =
+            |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
+        assert!(!args(&with_recipe).contains(&"--recipe".to_owned()));
+    }
 }
 
 #[test]
