@@ -25,6 +25,16 @@ import { apiOrigin, ApiError, request } from '../api/client';
 export interface DecisionOption {
   option_id: string;
   label: string;
+  description?: string | null;
+  risks?: string[] | null;
+  estimated_tokens?: number | null;
+}
+
+/** The option the runner would pick, with why. */
+export interface DecisionRecommendation {
+  option_id: string;
+  rationale?: string | null;
+  evidence_refs?: string[] | null;
 }
 
 /** `execution_decisions.state` — `pending`/`resolved`/`expired` are the only
@@ -58,6 +68,9 @@ export interface DecisionRecord {
   answer: DecisionAnswer | null;
   resolved_at: string | null;
   resolved_by: DecisionResolvedBy | null;
+  recommendation?: DecisionRecommendation | null;
+  /** When an operator first opened this decision. */
+  viewed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +186,13 @@ export const decisionsApi = {
     );
     return res.data;
   },
+  /** `POST /attempts/{attempt_id}/decisions/{decision_id}/viewed` — records
+   *  the first time an operator opened a decision. Idempotent. */
+  markViewed: (attemptId: string, decisionId: string) =>
+    request<{ viewed_at: string }>(
+      `/attempts/${encodeURIComponent(attemptId)}/decisions/${encodeURIComponent(decisionId)}/viewed`,
+      { method: 'POST' },
+    ),
   resolve: (attemptId: string, decisionId: string, answer: DecisionAnswer) => {
     const headers = new Headers();
     const token = decisionTokenStore.get();

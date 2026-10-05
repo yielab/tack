@@ -213,13 +213,20 @@ fn permission_question(value: &Value) -> StreamSignal {
             DecisionOption {
                 option_id: "once".to_owned(),
                 label: "Allow once".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
             DecisionOption {
                 option_id: "reject".to_owned(),
                 label: "Deny".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
         ],
         metadata,
+        recommendation: None,
     })
 }
 
