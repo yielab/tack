@@ -21,7 +21,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("claim.response.json", 0x88b9_4f59_2b86_98a7),
     ("completion.request.json", 0x2a0f_8adc_77a0_b06f),
     ("completion.response.json", 0x99b7_7e8d_6afc_1354),
-    ("decision.create.request.json", 0x23af_3ef2_1d81_3a7b),
+    ("decision.create.request.json", 0xce7f_2568_b0b1_1bdb),
     ("decision.create.response.json", 0xb160_e2d3_f16e_3318),
     ("decision.poll.request.json", 0x7b88_373b_f26d_5a4e),
     ("decision.poll.response.json", 0x2067_05f2_dbb7_7239),

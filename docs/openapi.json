@@ -6992,11 +6992,34 @@
           "label"
         ],
         "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "estimated_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
           "label": {
             "type": "string"
           },
           "option_id": {
             "type": "string"
+          },
+          "risks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -7061,6 +7084,9 @@
           "prompt": {
             "type": "string"
           },
+          "recommendation": {
+            "description": "The runner's recommended option: `{option_id, rationale, evidence_refs}`."
+          },
           "resolved_at": {
             "type": [
               "string",
@@ -7073,6 +7099,13 @@
           },
           "updated_at": {
             "type": "string"
+          },
+          "viewed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When an operator first opened this decision."
           }
         }
       },

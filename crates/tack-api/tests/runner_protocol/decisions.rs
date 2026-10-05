@@ -254,6 +254,7 @@ async fn seed_decision(
                 options: &options_json,
                 metadata: "{}",
                 expires_at,
+                recommendation: None,
             },
             clock,
         )
@@ -931,6 +932,27 @@ async fn correct_decision_token_with_valid_principal_resolves() {
     assert_eq!(row.state, "resolved");
     assert!(row.resolved_by.is_some());
     assert!(row.answer.is_some());
+}
+
+#[tokio::test]
+async fn viewing_twice_keeps_the_first_timestamp() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "viewed").await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    let app = app(&repo, &clock);
+    let uri = format!("/attempts/{attempt_id}/decisions/dec-1/viewed");
+
+    // No decision token: only the principal is required.
+    let principal_only = [("x-tack-principal", "operator:local")];
+    let (status, first) = common::send_post_strict(&app, &uri, json!({}), &principal_only).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    clock.advance(Duration::minutes(5));
+    let (status, second) = common::send_post_strict(&app, &uri, json!({}), &principal_only).await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    assert_eq!(first["viewed_at"], second["viewed_at"]);
+
+    let (status, _) = common::send_post_strict(&app, &uri, json!({}), &[]).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 // ---------------------------------------------------------------------

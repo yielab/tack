@@ -168,6 +168,12 @@ pub fn artifact_routes(state: OperatorExecutionState) -> Router {
 pub struct DecisionOptionSummary {
     pub option_id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risks: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_tokens: Option<u64>,
 }
 
 /// One `execution_decisions` row as an operator sees it — every column the
@@ -189,6 +195,10 @@ pub struct DecisionSummary {
     pub answer: Option<Value>,
     pub resolved_at: Option<String>,
     pub resolved_by: Option<Value>,
+    /// The runner's recommended option: `{option_id, rationale, evidence_refs}`.
+    pub recommendation: Option<Value>,
+    /// When an operator first opened this decision.
+    pub viewed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -267,6 +277,10 @@ pub async fn list_execution_attempt_decisions(
             resolved_by: decision
                 .resolved_by
                 .and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+            recommendation: decision
+                .recommendation
+                .and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+            viewed_at: decision.viewed_at,
             created_at: decision.created_at,
             updated_at: decision.updated_at,
         })
