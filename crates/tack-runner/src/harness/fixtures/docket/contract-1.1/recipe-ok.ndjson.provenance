@@ -1,0 +1,16 @@
+captured
+docket 0.2.0b3 (scratch install, rack-cli develop 82c01aea, contains P35-9 09308aaf)
+
+Real `docket harness run --contract 1.1 --workspace <dir> --task-file <file> --model
+gw/anthropic/claude-x --timeout 60 --token-file <file> --recipe research-review` transcript,
+against a throwaway loopback HTTP server standing in for the model endpoint (DOCKET_HOME in a
+scratch directory, DOCKET_LLM_API_KEY an obviously fake key, run under `env -i`). The workspace
+was a fresh git repository. The server answered each of the recipe's five hops (lead,
+researcher, analyst, writer, critic) with one plain message, the last being `APPROVE`; the
+task finished `done`. `research-review` was chosen because it has no Implementer hop: a
+recipe run always requires a verify command on an Implementer, and the adapter passes none.
+Docket refuses `--recipe` together with `--agent-id` or `--max-tokens` (`--agent-id does not
+apply to --recipe runs`), so neither is on this command line, and the adapter omits both when
+it passes a recipe. The result line's `task` block is `{status, hops, evidence, brief}` with
+`status` `done`; `model.served` is `""` (a recipe has no single turn to read it from) and
+`files` is `[]`. The scratch directory is rewritten to `/capture` and nothing else changed.
