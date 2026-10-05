@@ -33,6 +33,7 @@ function attempt(overrides: Partial<AttemptSummary> = {}): AttemptSummary {
       model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
       runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
     },
+    pull_request: null,
     ...overrides,
   };
 }
@@ -125,5 +126,53 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('No events reported yet');
     expect(c.textContent).toContain('Decisions');
     expect(c.textContent).toContain('Artifacts');
+  });
+
+  describe('pull request rendering', () => {
+    it('renders nothing when pull_request is null', () => {
+      const c = mount([attempt({ pull_request: null })]);
+      expect(c.textContent).not.toContain('PR #');
+      expect(c.textContent).not.toContain('Open');
+      expect(c.textContent).not.toContain('Merged');
+      expect(c.textContent).not.toContain('Closed');
+      expect(c.textContent).not.toContain('Reverted');
+    });
+
+    it('a_pull_request_renders_its_link_and_state', () => {
+      const testCases = [
+        { state: 'open', label: 'Open' },
+        { state: 'merged', label: 'Merged' },
+        { state: 'closed', label: 'Closed' },
+        { state: 'reverted', label: 'Reverted' },
+      ];
+
+      testCases.forEach(({ state, label }) => {
+        const c = mount([
+          attempt({
+            pull_request: {
+              number: 42,
+              state,
+              url: `https://github.com/owner/repo/pull/42`,
+            },
+          }),
+        ]);
+
+        // Check for the PR number link text
+        expect(c.textContent).toContain('PR #42');
+
+        // Check for the state badge
+        expect(c.textContent).toContain(label);
+
+        // Check for the link href
+        const link = c.querySelector('a[href="https://github.com/owner/repo/pull/42"]');
+        expect(link).toBeTruthy();
+        expect(link?.getAttribute('target')).toBe('_blank');
+        expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+
+        // Clean up for next iteration
+        while (disposers.length) disposers.pop()!();
+        document.body.innerHTML = '';
+      });
+    });
   });
 });

@@ -6,7 +6,7 @@ import ArtifactDownloadPanel from './ArtifactDownloadPanel';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
-import { describeExecutionState, relativeTimeFromIso } from './shared';
+import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
   requestId: string;
@@ -49,6 +49,24 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             (unrecognised state)
           </span>
+        </Show>
+        <Show when={props.attempt.pull_request}>
+          {(pr) => {
+            const prState = () => describePullRequestState(pr().state);
+            return (
+              <a
+                href={pr().url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-2"
+              >
+                <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
+                  PR #{pr().number}
+                </span>
+                <Badge tone={prState().tone}>{prState().label}</Badge>
+              </a>
+            );
+          }}
         </Show>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           leased {relativeTimeFromIso(props.attempt.lease_issued_at)}
