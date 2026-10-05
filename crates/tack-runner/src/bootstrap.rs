@@ -91,7 +91,8 @@ pub async fn build_runtime(
     // Without attaching this, `engine.rs`'s events/artifacts call sites
     // would never run in the production binary even though it compiles.
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>)
-    .with_verify(config.verify.clone(), limits.harness_process.clone());
+    .with_verify(config.verify.clone(), limits.harness_process.clone())
+    .with_git(config.git.clone());
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
     Ok(RunnerRuntime::new(

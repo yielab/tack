@@ -130,6 +130,27 @@ pub struct RunnerConfig {
     pub providers: BTreeMap<String, ProviderConfig>,
     /// The `[verify]` table: a program run after a succeeded attempt.
     pub verify: VerifyConfig,
+    /// The `[git]` table: whether a succeeded attempt's branch is pushed.
+    pub git: GitConfig,
+}
+
+/// The `[git]` table. Off by default; no environment variable sets it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GitConfig {
+    pub push_branches: bool,
+    pub branch_prefix: String,
+    pub author: String,
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self {
+            push_branches: false,
+            branch_prefix: "tack/".to_owned(),
+            author: "Tack Runner <tack-runner@localhost>".to_owned(),
+        }
+    }
 }
 
 /// The `[verify]` table. Off by default; no environment variable sets it.
@@ -167,6 +188,7 @@ struct FileConfig {
     /// [`ProviderFileConfig`].
     provider: Option<BTreeMap<String, ProviderFileConfig>>,
     verify: Option<VerifyConfig>,
+    git: Option<GitConfig>,
 }
 
 #[derive(Default, Deserialize)]
@@ -200,6 +222,7 @@ impl RunnerConfig {
             enrollment_credential: None,
             providers,
             verify: VerifyConfig::default(),
+            git: GitConfig::default(),
         }
     }
 
@@ -213,6 +236,9 @@ impl RunnerConfig {
             let file: FileConfig = toml::from_str(contents).map_err(|_| ConfigError::Invalid)?;
             if let Some(verify) = file.verify {
                 config.verify = verify;
+            }
+            if let Some(git) = file.git {
+                config.git = git;
             }
             let providers = file
                 .provider

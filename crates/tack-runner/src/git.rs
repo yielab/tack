@@ -35,7 +35,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use super::{Workspace, WorkspaceError, WorktreeProvisioner};
-use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES};
+use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES, PublishedBranch};
 use crate::{
     client::RepositorySpec,
     harness::redact::{SecretMaterial, redact_query},
@@ -487,6 +487,77 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             files: parse_name_status(listing.stdout.as_bytes()),
             patch,
             truncated,
+        }))
+    }
+
+    async fn publish_branch(
+        &self,
+        workspace: &Workspace,
+        branch: &str,
+        author: &str,
+        message: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
+        let path = workspace.path.as_path();
+        // The remote may embed credentials and git echoes it in its errors.
+        let remote = self
+            .git_ok(
+                path,
+                &["remote", "get-url", "origin"],
+                &SecretMaterial::new(),
+            )
+            .await?
+            .stdout;
+        let secrets = remote_secrets(&remote);
+        let (name, email) = match author.split_once('<') {
+            Some((name, rest)) => (name.trim(), rest.trim_end_matches('>').trim()),
+            None => (author.trim(), ""),
+        };
+        let (user_name, user_email) = (format!("user.name={name}"), format!("user.email={email}"));
+        // The harness wrote into this repository, so nothing it left in
+        // `.git/hooks` may run on the operator's side of the push.
+        let hooks = "core.hooksPath=/dev/null";
+
+        self.git_ok(path, &["checkout", "-b", branch], &secrets)
+            .await?;
+        let staged = self
+            .git(path, &["diff", "--cached", "--quiet", "HEAD"], &secrets)
+            .await?;
+        if !staged.success {
+            self.git_ok(
+                path,
+                &[
+                    "-c",
+                    &user_name,
+                    "-c",
+                    &user_email,
+                    "-c",
+                    hooks,
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "--no-verify",
+                    "-m",
+                    message,
+                ],
+                &secrets,
+            )
+            .await?;
+        }
+        let head_commit = self
+            .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
+            .await?
+            .stdout;
+        self.git_ok(
+            path,
+            &["-c", hooks, "push", "--no-verify", "origin", branch],
+            &secrets,
+        )
+        .await?;
+        Ok(Some(PublishedBranch {
+            branch: branch.to_owned(),
+            head_commit,
+            pushed: true,
         }))
     }
 }
