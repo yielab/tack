@@ -1228,6 +1228,192 @@
         }
       }
     },
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp": {
+      "get": {
+        "tags": [
+          "mrp"
+        ],
+        "summary": "GET /api/executions/:request_id/attempts/:attempt_number/mrp",
+        "operationId": "get_mrp",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The parsed pack and its review record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MrpResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pack for this attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/review": {
+      "post": {
+        "tags": [
+          "mrp"
+        ],
+        "summary": "POST /api/executions/:request_id/attempts/:attempt_number/mrp/review",
+        "operationId": "review_mrp",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MrpReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The recorded review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Blank reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pack for this attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The pack was already reviewed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts/{attempt_number}/mrp/viewed": {
+      "post": {
+        "tags": [
+          "mrp"
+        ],
+        "summary": "POST /api/executions/:request_id/attempts/:attempt_number/mrp/viewed",
+        "operationId": "mark_viewed",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The review record, with viewed_at stamped once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pack for this attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/executions/{request_id}/cancel": {
       "post": {
         "tags": [
@@ -8312,6 +8498,48 @@
         ],
         "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (the frontend's rendering) can show both sides of a mismatch."
       },
+      "MrpResponse": {
+        "type": "object",
+        "required": [
+          "pack"
+        ],
+        "properties": {
+          "pack": {
+            "type": "object",
+            "description": "The parsed Merge-Readiness Pack (`docs/contracts/mrp-v1/`)."
+          },
+          "review": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The review record; absent until the pack is viewed or reviewed."
+          }
+        }
+      },
+      "MrpReviewRequest": {
+        "type": "object",
+        "required": [
+          "verdict",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Required; a blank reason is a 400."
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/MrpVerdict"
+          }
+        }
+      },
+      "MrpVerdict": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "reject"
+        ]
+      },
       "PaginatedItems": {
         "type": "object",
         "description": "Pagination envelope for the item-list endpoint. `total` is the\nunpaginated match count so clients can render \"N of M\".",
@@ -9575,6 +9803,10 @@
     {
       "name": "roles",
       "description": "Roles / specialties and their assignment to items."
+    },
+    {
+      "name": "mrp",
+      "description": "An attempt's Merge-Readiness Pack and the human verdict on it."
     },
     {
       "name": "briefs",
