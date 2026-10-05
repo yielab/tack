@@ -13,6 +13,7 @@ pub mod import_github;
 pub mod import_linear;
 pub mod items;
 pub mod local_runner;
+pub mod metrics;
 pub mod mrp;
 pub mod projects;
 pub mod roles;
