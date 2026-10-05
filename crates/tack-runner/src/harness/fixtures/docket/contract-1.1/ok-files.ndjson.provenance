@@ -1,0 +1,14 @@
+captured
+docket 0.2.0b3 (scratch install, rack-cli develop c982046f, contains P35-6 83d82b22)
+
+Real `docket harness run --contract 1.1 --workspace <dir> --task-file <file> --model
+gw/anthropic/claude-x --agent-id capture-files-1 --timeout 30 --token-file <file> --max-tokens 5000
+--policy <file>` transcript, against a throwaway loopback HTTP server standing in for the model
+endpoint (DOCKET_HOME in a scratch directory, DOCKET_LLM_API_KEY an obviously fake key). The
+workspace was a fresh git repository. The server answered two `write` tool calls
+(`greeting.txt`, then `.tack-runner/state.json`), then a final message; both paths are in
+`files`, the second being the shape the adapter drops. `limits.maxTokens` echoes the 5000. The
+`--policy` file was a `kind: policy` document blocking `fetch`, which docket accepted only with
+`appliesTo` present (the published schema lists it as optional; docket's own validator refuses a
+document without it: `missing fields: {'applies_to'}`). The scratch directory is rewritten to
+`/capture` and nothing else changed.
