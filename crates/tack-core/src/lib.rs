@@ -1,3 +1,4 @@
+pub mod brief;
 pub mod dependency;
 pub mod error;
 pub mod models;
