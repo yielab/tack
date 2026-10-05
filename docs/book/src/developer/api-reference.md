@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (83 paths, 118 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](../../../openapi.json) (84 paths, 119 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -402,6 +402,27 @@ POST /api/executions/:request_id/attempts/:attempt_number/mrp/viewed
 |---|---|---|
 | 200 | The review record, with viewed_at stamped once | `object` |
 | 404 | No pack for this attempt | `ErrorEnvelope` |
+
+---
+
+## Metrics
+
+Factory metrics measured from a project's rows.
+
+#### `GET /api/projects/{id}/metrics/factory`
+
+GET /api/projects/:id/metrics/factory
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `since` | query | `string` | no | Start of the window (RFC 3339); absent means all time. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Factory metrics measured from the project's rows | `FactoryMetrics` |
+| 400 | `since` is not RFC 3339 | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
 
 ---
 
