@@ -977,6 +977,107 @@ pub struct UpdateBoard {
     pub is_default: Option<bool>,
 }
 
+// ─── Item Brief ──────────────────────────────────────────────
+
+/// What "done" means for an item, typed so a verifier can check it.
+/// `docs/contracts/brief-v1/` is its wire shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ItemBrief {
+    pub item_id: Uuid,
+    pub acceptance: Vec<AcceptanceCriterion>,
+    pub constraints: Vec<Constraint>,
+    pub definition_of_done: Option<String>,
+    pub risk: Option<Risk>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// One check on the result. `id` is client-chosen and unique within the brief.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum AcceptanceCriterion {
+    Command {
+        id: String,
+        title: String,
+        run: String,
+        expect_exit: u8,
+        cwd: Option<String>,
+    },
+    Test {
+        id: String,
+        title: String,
+        name: String,
+        runner: Option<String>,
+    },
+    Metric {
+        id: String,
+        title: String,
+        name: String,
+        op: MetricOp,
+        threshold: f64,
+        unit: Option<String>,
+    },
+    File {
+        id: String,
+        title: String,
+        path: String,
+    },
+    Absent {
+        id: String,
+        title: String,
+        path: String,
+    },
+    Manual {
+        id: String,
+        title: String,
+        text: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum MetricOp {
+    Lte,
+    Gte,
+    Eq,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum Constraint {
+    ForbiddenPath { glob: String },
+    AllowedDependency { name: String },
+    MaxChangedFiles { n: u32 },
+    Note { text: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum Risk {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpsertItemBrief {
+    #[validate(
+        length(max = 50, message = "at most 50 acceptance criteria"),
+        custom(function = "crate::brief::validate")
+    )]
+    pub acceptance: Vec<AcceptanceCriterion>,
+    #[validate(length(max = 100, message = "at most 100 constraints"))]
+    pub constraints: Vec<Constraint>,
+    pub definition_of_done: Option<String>,
+    pub risk: Option<Risk>,
+}
+
 #[cfg(test)]
 #[path = "models/tests.rs"]
 mod tests;
