@@ -77,12 +77,19 @@ fixture here is `captured`, the 1.0 ones (`ok`, `refused`, `blocked`, `cancelled
    sample shows; the event line's top-level `token` is the run's. With answers on stdin the
    task must come from a real `--task-file`, never `/dev/stdin`. Without `--answers`,
    harness mode keeps its non-interactive refusal and `decisions` stays `Unsupported`.
-3. `artifacts: Advisory`: only the staged stdout/stderr log is claimed; nothing in a result
-   line names a file docket's own tools wrote, so no per-file artifact discovery is
-   implemented.
-4. Whether a network-denying `permission_policy` or a budget could be mapped onto any of
-   docket's own flags is unmeasured; none is passed, and `capabilities()` declares
-   `permission_policy: unsupported` for that reason.
+3. `artifacts` is `Supported` only when the probe found `--token-file`, the flag that came
+   with the 1.1 result's `files` list (`contract-1.1/ok-files.ndjson`); the paths go into the
+   terminal reason with `.tack-runner/` entries dropped. `files` lists only paths the run
+   changed, not ones already dirty before it. A 1.1 docket without that flag stays
+   `Unsupported`: only the staged stdout/stderr log.
+4. `permission_policy` is `Supported` only when the probe found `--policy`. The request's tool
+   list and network flag go to docket as one `kind: policy` document that blocks every docket
+   tool they do not allow (an empty list blocks all of them). Only docket's own tool names
+   can be expressed (`read`, `write`, `edit`, `glob`, `grep`, `bash`, `fetch`, `skill`,
+   `consult`); a request naming any other tool, or asking for `fetch` with network off, is
+   refused before spawn with the field named, never narrowed. docket's published
+   `policy.schema.json` marks `appliesTo` optional, but its validator refuses a document
+   without it, so the document always carries `appliesTo: ["*"]`.
 
 ## Contract 1.1 and the boot probe
 
@@ -116,6 +123,7 @@ directory:
   an editable install of the `../rack-cli` working tree, so its `--version` metadata is stale
   while its code is current. The version string says nothing about what the binary does,
   which is why no version is ever compared.
-- **1.1 result line.** `contract-1.1/ok.ndjson`: same fields as 1.0 plus `files`, `run_state`,
-  `limits`, `approvals`, `question`, `usage.cached_tokens`/`turns`. `--task-file` accepts a real
+- **1.1 result line.** `contract-1.1/ok.ndjson`: same fields as 1.0 plus `files` (read when
+  the docket supports it, item 3 above), `run_state`, `limits` (`maxTokens` is echoed into the
+  terminal reason), `approvals`, `question`, `usage.cached_tokens`/`turns`. `--task-file` accepts a real
   file (the adapter writes `<scratch>/task.md`); `/dev/stdin` stays the 1.0 shape.
