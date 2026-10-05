@@ -5,6 +5,7 @@ import Button from './Button';
 import Badge from './Badge';
 import EmptyState from './EmptyState';
 import Field from './Field';
+import Select from './Select';
 import Modal from './Modal';
 import Drawer from './Drawer';
 import Tabs from './Tabs';
@@ -153,5 +154,28 @@ describe('icons', () => {
     const svgs = c.querySelectorAll('svg');
     expect(svgs).toHaveLength(2);
     svgs.forEach((svg) => expect(svg.querySelector('path')).not.toBeNull());
+  });
+});
+
+describe('Select', () => {
+  const OPTIONS = [
+    { value: 'critical', label: 'Critical' },
+    { value: 'high', label: 'High' },
+    { value: 'low', label: 'Low' },
+  ];
+
+  it('shows its value, not the first option, when the options come from the options prop', async () => {
+    const c = mount(() => <Select label="Priority" value="high" options={OPTIONS} />);
+    await flush();
+    expect(c.querySelector('select')!.value).toBe('high');
+  });
+
+  it('follows the value when it changes', async () => {
+    const [value, setValue] = createSignal('high');
+    const c = mount(() => <Select label="Priority" value={value()} options={OPTIONS} />);
+    await flush();
+    setValue('low');
+    await flush();
+    expect(c.querySelector('select')!.value).toBe('low');
   });
 });
