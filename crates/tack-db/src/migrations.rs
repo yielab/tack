@@ -139,6 +139,10 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("075_github_links_synced_at", &MIGRATION_075[..]),
         ordinary("076_comments_github_comment_id", &MIGRATION_076[..]),
         ordinary("077_projects_github_token_ref", &MIGRATION_077[..]),
+        ordinary("078_item_briefs", &MIGRATION_078[..]),
+        ordinary("079_execution_decisions_pack", &MIGRATION_079[..]),
+        ordinary("080_mrp_reviews", &MIGRATION_080[..]),
+        ordinary("081_pull_requests", &MIGRATION_081[..]),
     ]
 }
 
@@ -1689,3 +1693,52 @@ const MIGRATION_076: [&str; 1] = ["ALTER TABLE comments ADD COLUMN github_commen
 // `remote_backup::scrub_snapshot_secrets` before any backup bundle leaves
 // the process.
 const MIGRATION_077: [&str; 1] = ["ALTER TABLE projects ADD COLUMN github_token_ref TEXT"];
+
+// Migrations 078–081 land together, ahead of their readers (C1b, D1, E2, H2a),
+// so those tasks never race for the next number. A reader that needs a
+// different shape adds a new migration; it never edits these.
+//
+// 078: an item's brief — acceptance criteria and constraints as JSON arrays,
+// plus definition of done and risk. One row per item.
+const MIGRATION_078: [&str; 1] = ["CREATE TABLE item_briefs (
+        item_id TEXT PRIMARY KEY NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        acceptance TEXT NOT NULL DEFAULT '[]',
+        constraints TEXT NOT NULL DEFAULT '[]',
+        definition_of_done TEXT,
+        risk TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )"];
+
+// 079: a decision pack's recommended option, and when a human first opened it.
+const MIGRATION_079: [&str; 2] = [
+    "ALTER TABLE execution_decisions ADD COLUMN recommendation TEXT",
+    "ALTER TABLE execution_decisions ADD COLUMN viewed_at TEXT",
+];
+
+// 080: the human verdict on an attempt's Merge-Readiness Pack (the artifact
+// named by artifact_id). One review per attempt.
+const MIGRATION_080: [&str; 1] = ["CREATE TABLE mrp_reviews (
+        attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        artifact_id TEXT NOT NULL,
+        verdict TEXT,
+        reason TEXT,
+        viewed_at TEXT,
+        reviewed_at TEXT,
+        reviewed_by TEXT
+    )"];
+
+// 081: the pull request an attempt opened, and its later state. A repo's PR
+// number maps to at most one attempt.
+const MIGRATION_081: [&str; 1] = ["CREATE TABLE pull_requests (
+        attempt_id TEXT PRIMARY KEY NOT NULL,
+        repo TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        state TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        merged_at TEXT,
+        closed_at TEXT,
+        reverted_by_number INTEGER,
+        UNIQUE(repo, number)
+    )"];
