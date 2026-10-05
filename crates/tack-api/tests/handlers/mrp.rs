@@ -22,7 +22,12 @@ const READY: &str = include_str!("../../../../docs/contracts/mrp-v1/fixtures/rea
 async fn setup(
     storage_root: &std::path::Path,
     github_base: Option<&str>,
-) -> (axum::Router, Repository, String) {
+) -> (
+    axum::Router,
+    Repository,
+    String,
+    tokio::sync::broadcast::Receiver<tack_api::handlers::websocket::BoardEvent>,
+) {
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
     let workspace_id = Uuid::new_v4();
@@ -34,7 +39,7 @@ async fn setup(
     .await
     .expect("workspace");
     let repo = Repository::new(pool);
-    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let (tx, events) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
         config: AppConfig {
@@ -84,7 +89,7 @@ async fn setup(
         )
         .await
         .expect("item");
-    (app, repo, item.id.to_string())
+    (app, repo, item.id.to_string(), events)
 }
 
 fn operator_headers() -> Vec<(&'static str, &'static str)> {
@@ -369,7 +374,7 @@ async fn with_pack(
     storage_root: &std::path::Path,
     policy: Option<&str>,
 ) -> (axum::Router, Repository, String, String) {
-    let (app, repo, item_id) = setup(storage_root, None).await;
+    let (app, repo, item_id, _events) = setup(storage_root, None).await;
     let attempt = request_and_claim(&app, &item_id, "e2", policy).await;
     accept_and_start(&app, &attempt).await;
     upload_pack(&app, &attempt).await;
@@ -548,7 +553,7 @@ async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pac
         .await;
 
     let root = tempfile::tempdir().unwrap();
-    let (app, repo, item_id) = setup(root.path(), Some(&gh.uri())).await;
+    let (app, repo, item_id, _events) = setup(root.path(), Some(&gh.uri())).await;
     repo.set_github_link(item_id.parse().unwrap(), "acme/widgets", 3)
         .await
         .unwrap();
@@ -593,4 +598,33 @@ async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pac
         attempts["data"][0]["pull_request"],
         json!({"number": 7, "url": "https://github.com/acme/widgets/pull/7", "state": "open"})
     );
+}
+
+#[tokio::test]
+async fn a_succeeded_run_that_moves_its_item_tells_the_board() {
+    let root = tempfile::tempdir().unwrap();
+    let (app, _repo, item_id, mut events) = setup(root.path(), None).await;
+    let attempt = request_and_claim(&app, &item_id, "refresh", Some("done_on_success")).await;
+    accept_and_start(&app, &attempt).await;
+    let (status, body, _) = common::send_with_raw(
+        &app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{}/completion", attempt.attempt_id),
+        completion_with_pushed_branch(&attempt),
+        &headers_ref(&attempt.auth),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let moved = loop {
+        match events.try_recv() {
+            Ok(tack_api::handlers::websocket::BoardEvent::ItemUpdated {
+                item_id: id,
+                new_status,
+                ..
+            }) if id.to_string() == item_id => break new_status,
+            Ok(_) => {}
+            Err(error) => panic!("no ItemUpdated for the item: {error:?}"),
+        }
+    };
+    assert_eq!(moved, "Done");
 }
