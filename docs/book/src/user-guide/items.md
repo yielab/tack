@@ -39,6 +39,8 @@ Core metadata — **assignee, priority, estimate, sprint, due date, and labels (
 
 The Brief says what "done" means for an item, in a form a person or a program can check. It has four parts, and **Save brief** writes them all at once.
 
+<img src="../screenshots/brief.png" width="50%" alt="The Brief tab of an item: acceptance criteria, each with a kind — Manual (marked as costing a person's time), Test and Command — a title, and the fields its kind needs.">
+
 **Acceptance criteria** are the checks that must pass. Each has a title and one of six kinds:
 
 - **Command** — a shell command and the exit code it must return (0 by default), with an optional working directory.
