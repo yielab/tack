@@ -11,7 +11,7 @@ use crate::harness::local_process::LocalProcessHarness;
 use crate::harness::process::ProcessLimits;
 use crate::harness::test_support::{finished, gateway, scratch, secret_store, set_env, spec};
 use crate::secrets::SecretStore;
-use tack_orch::execution::{CapabilityValue, RequestedModelId, RequestedModelProvider};
+use tack_orch::execution::{Approvals, CapabilityValue, RequestedModelId, RequestedModelProvider};
 
 fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
     let secrets = secret_store(state);
@@ -102,6 +102,7 @@ fn contract_1_1_passes_the_task_as_a_file() {
     };
     let task_file = scratch_dir.path().join("task.md");
     let invocation = invocation(&features, &run).expect("invocation");
+    assert!(!invocation.stdin_stays_open);
     assert_eq!(
         invocation.args,
         [
@@ -172,6 +173,8 @@ fn capability_lines_follow_what_was_negotiated() {
     });
     let reason = |line: &CapabilityValue| line.reason.clone().unwrap_or_default();
     let policy = policy_line(&negotiated);
+    assert_eq!(negotiated.decisions.support, CapabilitySupport::Supported);
+    assert_eq!(unprobed.decisions.support, CapabilitySupport::Unsupported);
     assert!(reason(&negotiated.decisions).contains("--answers"));
     assert!(reason(&negotiated.decisions).contains("negotiated contract 1.1 against docket 9.9.9"));
     assert!(reason(&negotiated.artifacts).contains("1.1 result"));
@@ -183,8 +186,8 @@ fn capability_lines_follow_what_was_negotiated() {
     assert_eq!(negotiated.cancel.support, CapabilitySupport::Supported);
 }
 
-/// The captured cancelled run names one group, started then gone; no other
-/// line of it, result line included, means anything to the core.
+/// The captured cancelled run names one group, started then gone, and ends
+/// on its result line; no other line of it means anything to the core.
 #[test]
 fn process_lines_become_group_signals() {
     let state = scratch("docket-signal");
@@ -203,8 +206,110 @@ fn process_lines_become_group_signals() {
         [
             StreamSignal::ProcessStarted { pgid: 2_169_014 },
             StreamSignal::ProcessExited { pgid: 2_169_014 },
+            StreamSignal::Finished,
         ]
     );
+}
+
+/// `ask` on a docket that offers `--answers` keeps stdin open for the answer
+/// lines; without the flag, or for any other posture, the refusal posture
+/// is untouched.
+#[test]
+fn ask_drives_the_answer_channel_only_where_docket_offers_it() {
+    let state = scratch("docket-invocation-ask");
+    let scratch_dir = scratch("docket-invocation-ask-scratch");
+    let endpoint = endpoint(state.path());
+    let mut request = spec(DESCRIPTOR.kind, state.path());
+    let offered = DocketFeatures {
+        contract: Contract::V1_1,
+        answers: true,
+        ..DocketFeatures::default()
+    };
+    let rows = [
+        (Some(Approvals::Ask), &offered, true),
+        (Some(Approvals::Ask), &DocketFeatures::default(), false),
+        (None, &offered, false),
+    ];
+    for (approvals, features, asks) in rows {
+        request.work.request.permission_policy.approvals = approvals;
+        let run = RunContext {
+            spec: &request,
+            endpoint: Some(&endpoint),
+            scratch: scratch_dir.path(),
+        };
+        let invocation = invocation(features, &run).expect("invocation");
+        assert_eq!(invocation.stdin_stays_open, asks, "{approvals:?}");
+        assert_eq!(
+            invocation
+                .args
+                .ends_with(&["--answers".to_owned(), "stdin".to_owned()]),
+            asks,
+            "{approvals:?}"
+        );
+    }
+}
+
+/// The captured asked-and-answered run names one gated call: its
+/// `approval_requested` event is the only question, the result line the only
+/// end, and an answer is one exact `AnswerLine`.
+#[test]
+fn an_approval_request_becomes_a_question_and_its_answer_is_one_line() {
+    let state = scratch("docket-ask-signal");
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: None,
+        scratch: state.path(),
+    };
+    let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/asked-answered.ndjson")
+        .lines()
+        .filter_map(|line| DocketGrammar.signal(&run, line))
+        .collect();
+    let [
+        StreamSignal::Question(question),
+        StreamSignal::ProcessStarted { .. },
+        StreamSignal::ProcessExited { .. },
+        StreamSignal::Finished,
+    ] = signals.as_slice()
+    else {
+        panic!("{signals:?}");
+    };
+    assert_eq!(
+        question.vendor_id,
+        "apr-957ee731-4440-4419-b4e0-da5b18fabf67"
+    );
+    assert_eq!(question.kind, "tool_permission");
+    assert_eq!(question.prompt, "Allow bash (call call-1)?");
+    assert_eq!(
+        question
+            .options
+            .iter()
+            .map(|o| o.option_id.as_str())
+            .collect::<Vec<_>>(),
+        ["accept", "decline"]
+    );
+    assert_eq!(
+        question.metadata["token"],
+        "run-721a5ebd-30b1-4634-b1b2-197989d99934"
+    );
+    assert_eq!(question.metadata["tool"], "bash");
+    assert_eq!(question.metadata["callId"], "call-1");
+
+    let answer_for = |option: Option<&str>| {
+        let answer = DecisionAnswer {
+            option_id: option.map(str::to_owned),
+            text: None,
+        };
+        String::from_utf8(DocketGrammar.answer(question, &answer)).expect("utf-8")
+    };
+    let line = |action: &str| {
+        format!(
+            "{{\"answer\":{{\"action\":\"{action}\",\"approvalToken\":\"apr-957ee731-4440-4419-b4e0-da5b18fabf67\",\"content\":null}},\"token\":\"run-721a5ebd-30b1-4634-b1b2-197989d99934\",\"v\":\"1.1.0\"}}"
+        )
+    };
+    assert_eq!(answer_for(Some("accept")), line("accept"));
+    assert_eq!(answer_for(Some("decline")), line("decline"));
+    assert_eq!(answer_for(None), line("decline"));
 }
 
 #[test]
@@ -458,4 +563,76 @@ async fn the_real_docket_edits_a_file_against_a_fake_model_server() {
 
     assert_live_outcome(&outcome, workspace.path());
     assert_key_handling(&server, &outcome).await;
+}
+
+/// Gates one `bash` call (`git push origin production` is a `prod-deploy`
+/// action class for docket) on a real docket that offers `--answers` and
+/// accepts it. Run by hand: `cargo nextest run ... --run-ignored only`.
+#[tokio::test]
+#[ignore = "needs a docket with --answers on PATH"]
+async fn the_real_docket_asks_and_a_gated_bash_call_is_accepted() {
+    let state = scratch("docket-live-ask");
+    let workspace = scratch("docket-live-ask-workspace");
+    let secrets = secret_store(state.path());
+    secrets.set("key", FAKE_KEY).expect("seed store");
+
+    let calls = std::sync::atomic::AtomicUsize::new(0);
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/chat/completions"))
+        .respond_with(move |_: &wiremock::Request| {
+            let first = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+            let message = if first {
+                serde_json::json!({
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "bash",
+                            "arguments": serde_json::json!({"command": "git push origin production"}).to_string(),
+                        },
+                    }],
+                })
+            } else {
+                serde_json::json!({"role": "assistant", "content": "Done."})
+            };
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-live",
+                "model": SERVED_MODEL,
+                "choices": [{"index": 0, "message": message,
+                    "finish_reason": if first { "tool_calls" } else { "stop" }}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16},
+            }))
+        })
+        .mount(&server)
+        .await;
+    let _base_url_override = BaseUrlOverride::set(&server.uri());
+
+    let harness = live_harness(state.path().join("staging"), secrets);
+    let mut request = live_request(workspace.path());
+    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+    let handle = harness.start(&request).await.expect("start");
+    let (mut questions, answers) = harness
+        .decision_channels(&handle)
+        .await
+        .expect("an ask request exposes decision channels");
+    let drive = async {
+        let question = questions.recv().await.expect("a gated call asks");
+        assert!(question.prompt.contains("bash"), "{question:?}");
+        let accept = DecisionAnswer {
+            option_id: Some("accept".to_owned()),
+            text: None,
+        };
+        let _ = answers.send(accept).await;
+    };
+    let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
+    let outcome = outcome.expect("wait");
+    assert_eq!(
+        outcome.terminal_state,
+        crate::client::AttemptState::Succeeded,
+        "{:?}",
+        outcome.terminal_reason
+    );
 }
