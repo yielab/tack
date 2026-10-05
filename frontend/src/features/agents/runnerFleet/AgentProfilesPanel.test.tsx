@@ -78,8 +78,8 @@ describe('AgentProfilesPanel', () => {
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!;
     nameInput.value = 'builder';
     nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const instructionsInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Review the diff for correctness and style."]',
+    const instructionsInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="Review the diff for correctness and style."]',
     )!;
     instructionsInput.value = 'Build the feature.';
     instructionsInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -113,8 +113,8 @@ describe('AgentProfilesPanel', () => {
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!;
     nameInput.value = 'builder';
     nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const instructionsInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Review the diff for correctness and style."]',
+    const instructionsInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="Review the diff for correctness and style."]',
     )!;
     instructionsInput.value = 'do it';
     instructionsInput.dispatchEvent(new Event('input', { bubbles: true }));
