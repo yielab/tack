@@ -6340,6 +6340,27 @@
           }
         }
       },
+      "AttemptPullRequest": {
+        "type": "object",
+        "description": "The pull request an attempt opened: `state` is `open`, `merged`, `closed` or\n`reverted`.",
+        "required": [
+          "number",
+          "url",
+          "state"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "AttemptSummary": {
         "type": "object",
         "description": "One attempt as reported by `GET /api/executions/{id}/attempts` — every\ncolumn `execution_attempts` carries (migration 045).",
@@ -6418,6 +6439,17 @@
               {
                 "$ref": "#/components/schemas/ModelProvenanceSchema",
                 "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value` (the real\ntype lives in `tack-orch`, which does not depend on `utoipa`);\n`#[schema(...)]` below points the *generated OpenAPI document* at\n`ModelProvenanceSchema`, this file's hand-verified mirror, instead of\nthe untyped-`Value` default — an untyped default would generate an\nempty `{}` schema, the same spec-drift problem this API avoids\nelsewhere."
+              }
+            ]
+          },
+          "pull_request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttemptPullRequest",
+                "description": "The pull request this attempt opened on GitHub, or `null`."
               }
             ]
           },
