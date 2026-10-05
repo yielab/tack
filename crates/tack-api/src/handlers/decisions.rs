@@ -187,6 +187,10 @@ pub fn routes(state: DecisionOperatorState) -> Router {
             "/attempts/{attempt_id}/decisions/{decision_id}/resolve",
             post(resolve_decision),
         )
+        .route(
+            "/attempts/{attempt_id}/decisions/{decision_id}/viewed",
+            post(mark_decision_viewed),
+        )
         .with_state(state)
 }
 
@@ -467,6 +471,32 @@ fn validate_answer(value: &Value) -> Result<Value, (StatusCode, Json<Value>)> {
         ));
     }
     Ok(answer)
+}
+
+/// `POST /attempts/{attempt_id}/decisions/{decision_id}/viewed` — records
+/// the first time an operator opened a decision. Idempotent: the first
+/// timestamp wins. Needs a principal but no decision token: it resolves
+/// nothing.
+pub async fn mark_decision_viewed(
+    State(state): State<DecisionOperatorState>,
+    headers: HeaderMap,
+    Path((attempt_id, decision_id)): Path<(String, String)>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    principal(&headers)?;
+    let viewed_at = state
+        .repo
+        .mark_execution_decision_viewed(&attempt_id, &decision_id, state.clock.as_ref())
+        .await
+        .map_err(|_| internal_error())?;
+    match viewed_at {
+        Some(viewed_at) => Ok(Json(json!({"viewed_at": viewed_at}))),
+        None => Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "The requested resource does not exist",
+            json!({"resource": "decision"}),
+        )),
+    }
 }
 
 /// `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve` —

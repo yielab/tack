@@ -527,6 +527,7 @@ async fn create_decision(
                 options: "[]",
                 metadata: "{}",
                 expires_at: Some(expires_at),
+                recommendation: None,
             },
             &SystemExecutionClock,
         )

@@ -636,6 +636,7 @@ pub fn new_decision<'a>(row_id: &'a str, decision_id: &'a str) -> NewDecision<'a
         options: "[]",
         metadata: "{}",
         expires_at: None,
+        recommendation: None,
     }
 }
 
