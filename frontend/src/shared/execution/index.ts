@@ -51,6 +51,7 @@ export type {
   ModelProvenance,
   RunnerTimeCost,
   UsageEconomics,
+  AttemptPullRequest,
   AttemptSummary,
   AttemptListResult,
   EventSummary,

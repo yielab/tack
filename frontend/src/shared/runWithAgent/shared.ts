@@ -440,6 +440,31 @@ export function isTerminalStateString(state: string): boolean {
   return TERMINAL_STATES.has(state);
 }
 
+const PR_STATE_LABEL: Record<string, string> = {
+  open: 'Open',
+  merged: 'Merged',
+  closed: 'Closed',
+  reverted: 'Reverted',
+};
+
+const PR_STATE_TONE: Record<string, StateTone> = {
+  open: 'primary',
+  merged: 'success',
+  closed: 'neutral',
+  reverted: 'warning',
+};
+
+/**
+ * Pull request state display — mirrors the execution state pattern.
+ * Like `describeExecutionState`, this handles defensively against
+ * unrecognised values, rendering them with a neutral tone.
+ */
+export function describePullRequestState(state: string): { label: string; tone: StateTone } {
+  const label = PR_STATE_LABEL[state];
+  if (label) return { label, tone: PR_STATE_TONE[state] };
+  return { label: state, tone: 'neutral' };
+}
+
 /**
  * A small, self-contained relative-time formatter, local to the execution
  * UI rather than shared, since it is ~12 lines and this is its only caller.
