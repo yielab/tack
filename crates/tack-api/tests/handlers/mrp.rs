@@ -19,7 +19,10 @@ const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 const READY: &str = include_str!("../../../../docs/contracts/mrp-v1/fixtures/ready.json");
 
-async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, String) {
+async fn setup(
+    storage_root: &std::path::Path,
+    github_base: Option<&str>,
+) -> (axum::Router, Repository, String) {
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
     let workspace_id = Uuid::new_v4();
@@ -38,6 +41,9 @@ async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, Str
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".into(),
             storage_dir: storage_root.to_string_lossy().into_owned(),
+            github_token: github_base.map(|_| "gh-tok".into()),
+            github_api_base: github_base
+                .map_or_else(|| AppConfig::default().github_api_base, Into::into),
             ..AppConfig::default()
         },
         workspace_id,
@@ -363,7 +369,7 @@ async fn with_pack(
     storage_root: &std::path::Path,
     policy: Option<&str>,
 ) -> (axum::Router, Repository, String, String) {
-    let (app, repo, item_id) = setup(storage_root).await;
+    let (app, repo, item_id) = setup(storage_root, None).await;
     let attempt = request_and_claim(&app, &item_id, "e2", policy).await;
     accept_and_start(&app, &attempt).await;
     upload_pack(&app, &attempt).await;
@@ -471,4 +477,120 @@ async fn accept_without_the_policy_does_not_move_the_item() {
     let (status, body) = review(&app, &base, "accept", "looks right").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(item_status(&repo, &item_id).await, "To Do");
+}
+
+fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
+    json!({
+        "protocol_version": 1,
+        "runner_id": attempt.runner_id,
+        "attempt_id": attempt.attempt_id,
+        "fencing_token": attempt.fencing_token,
+        "completion_id": "h2a-completion",
+        "terminal_state": "succeeded",
+        "terminal_reason": {"code": "completed", "message": "done"},
+        "actual_execution": {
+            "harness_kind": "codex",
+            "harness_version": "1.0.0",
+            "model_provider": "openai",
+            "model_id": "opaque/model-e2",
+            "model_observation_source": "harness_reported",
+            "capability_snapshot": {
+                "cancel": {"support": "supported", "reason": null},
+                "resume": {"support": "unsupported", "reason": "no resumable session contract"},
+                "decisions": {"support": "supported", "reason": null},
+                "artifacts": {"support": "supported", "reason": null},
+                "usage": {"support": "advisory", "reason": "usage may be absent"},
+            },
+            "workspace_id": "ws-1",
+            "base_revision": BASE_REVISION,
+            "started_at": "2026-08-08T11:55:00Z",
+            "ended_at": "2026-08-08T12:00:00Z",
+            "git": {"branch": "tack/attempt-1", "head_commit": BASE_REVISION, "pushed": true},
+        },
+        "usage": {
+            "tokens_in": {"value": 1, "source": "measured"},
+            "tokens_out": {"value": 1, "source": "measured"},
+            "duration_ms": {"value": 1, "source": "measured"},
+            "cost_usd": {"value": null, "source": "not_measured"},
+        },
+    })
+}
+
+/// A succeeded completion that pushed its branch, for an item linked to a
+/// GitHub issue, opens one pull request whose body is the rendered pack, and
+/// the attempt list then carries it.
+#[tokio::test]
+async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pack() {
+    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    let pack: tack_core::mrp::MergeReadinessPack = serde_json::from_str(READY).unwrap();
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch": "trunk"})))
+        .mount(&gh)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/repos/acme/widgets/pulls"))
+        .and(header("authorization", "Bearer gh-tok"))
+        .and(body_json(json!({
+            "title": "Tack: attempt 1 for #3",
+            "head": "tack/attempt-1",
+            "base": "trunk",
+            "body": tack_core::mrp::render_markdown(&pack),
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(
+            json!({"number": 7, "html_url": "https://github.com/acme/widgets/pull/7"}),
+        ))
+        .expect(1)
+        .mount(&gh)
+        .await;
+
+    let root = tempfile::tempdir().unwrap();
+    let (app, repo, item_id) = setup(root.path(), Some(&gh.uri())).await;
+    repo.set_github_link(item_id.parse().unwrap(), "acme/widgets", 3)
+        .await
+        .unwrap();
+    let attempt = request_and_claim(&app, &item_id, "h2a", None).await;
+    accept_and_start(&app, &attempt).await;
+    upload_pack(&app, &attempt).await;
+
+    let (status, body, _) = common::send_with_raw(
+        &app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{}/completion", attempt.attempt_id),
+        completion_with_pushed_branch(&attempt),
+        &headers_ref(&attempt.auth),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The open runs in a spawned task: wait for its record.
+    let mut stored = None;
+    for _ in 0..100 {
+        stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
+            .await
+            .unwrap();
+        if stored.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let stored = stored.expect("the pull request was recorded");
+    assert_eq!((stored.number, stored.state.as_str()), (7, "open"));
+
+    let (status, attempts) = common::send(
+        &app,
+        "GET",
+        &format!("/api/executions/{}/attempts", attempt.request_id),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{attempts}");
+    assert_eq!(
+        attempts["data"][0]["pull_request"],
+        json!({"number": 7, "url": "https://github.com/acme/widgets/pull/7", "state": "open"})
+    );
 }

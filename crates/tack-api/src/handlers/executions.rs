@@ -469,6 +469,17 @@ pub struct AttemptSummary {
     /// fix as `model_provenance` above.
     #[schema(value_type = UsageEconomicsSchema)]
     pub usage_economics: Value,
+    /// The pull request this attempt opened on GitHub, or `null`.
+    pub pull_request: Option<AttemptPullRequest>,
+}
+
+/// The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
+/// `reverted`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub state: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1112,6 +1123,21 @@ pub async fn list_execution_attempts(
                 json!({}),
             )
         })?;
+    let mut pull_requests = std::collections::HashMap::new();
+    for attempt in &attempts {
+        if let Ok(Some(pr)) =
+            tack_db::repo::pull_requests::get_for_attempt(state.repo.pool(), &attempt.id).await
+        {
+            pull_requests.insert(
+                attempt.id.clone(),
+                AttemptPullRequest {
+                    number: pr.number,
+                    url: pr.url,
+                    state: pr.state,
+                },
+            );
+        }
+    }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
         .map(|attempt| {
@@ -1132,6 +1158,7 @@ pub async fn list_execution_attempts(
                 None,
             );
             AttemptSummary {
+                pull_request: pull_requests.remove(&attempt.id),
                 attempt_id: attempt.id,
                 request_id: attempt.request_id,
                 attempt_number: attempt.attempt_number,

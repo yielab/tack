@@ -2825,6 +2825,16 @@ export interface components {
             protocol_version: number;
         };
         /**
+         * @description The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
+         *     `reverted`.
+         */
+        AttemptPullRequest: {
+            /** Format: int64 */
+            number: number;
+            state: string;
+            url: string;
+        };
+        /**
          * @description One attempt as reported by `GET /api/executions/{id}/attempts` — every
          *     column `execution_attempts` carries (migration 045).
          */
@@ -2848,6 +2858,7 @@ export interface components {
             lease_expires_at: string;
             lease_issued_at: string;
             model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
+            pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
             runner_id: string;
             started_at?: string | null;
