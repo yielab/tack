@@ -610,6 +610,16 @@ describe('RunWithAgentModal', () => {
     expect(field('Allowed tools')).toBeTruthy();
   });
 
+  it('with only claude-code reported, the harness is claude-code — what the select shows is what is sent', async () => {
+    const claudeOnly = runnerRow('runner-6', 'Claude only', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
+    }));
+    mount({}, { runners: [claudeOnly], fleets: [] });
+    await flush();
+    expect(select('Harness').value).toBe('claude-code');
+    expect(document.body.textContent).not.toContain('Codex exposes no list');
+  });
+
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();

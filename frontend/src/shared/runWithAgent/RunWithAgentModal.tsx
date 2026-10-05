@@ -102,6 +102,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const filtered = HARNESS_KINDS.filter((h) => reported.includes(h.value));
     return filtered.length > 0 ? filtered : HARNESS_KINDS;
   });
+  // The select can only show a listed harness; keep the form on one, so what is shown is what is sent.
+  createEffect(() => {
+    const options = harnessOptions();
+    if (!options.some((h) => h.value === form.harnessKind)) setForm('harnessKind', options[0].value);
+  });
 
   const selectedAgentProfile = createMemo(() => agentProfilesData().find((p) => p.agent_profile_id === form.agentProfileId));
 
