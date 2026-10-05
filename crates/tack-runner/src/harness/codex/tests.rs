@@ -355,10 +355,16 @@ fn an_ask_request_becomes_an_app_server_conversation() {
                     DecisionOption {
                         option_id: "accept".to_owned(),
                         label: "Allow once".to_owned(),
+                        description: None,
+                        risks: None,
+                        estimated_tokens: None,
                     },
                     DecisionOption {
                         option_id: "decline".to_owned(),
                         label: "Deny".to_owned(),
+                        description: None,
+                        risks: None,
+                        estimated_tokens: None,
                     },
                 ]
             );
@@ -400,13 +406,20 @@ fn an_answer_becomes_a_decision() {
             DecisionOption {
                 option_id: "accept".to_owned(),
                 label: "Allow once".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
             DecisionOption {
                 option_id: "decline".to_owned(),
                 label: "Deny".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
         ],
         metadata: serde_json::Map::new(),
+        recommendation: None,
     };
     let rows = [
         (Some("accept"), "accept"),

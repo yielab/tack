@@ -121,6 +121,11 @@ impl HarnessGrammar for TestGrammar {
             return Some(StreamSignal::Reply(b"reply-from-grammar".to_vec()));
         }
         let prompt = line.strip_prefix("ASK:")?;
+        // A JSON object after `ASK:` is a consultation pack: its
+        // `recommendation` rides on the question.
+        let recommendation = serde_json::from_str::<serde_json::Value>(prompt)
+            .ok()
+            .and_then(|pack| serde_json::from_value(pack.get("recommendation")?.clone()).ok());
         Some(StreamSignal::Question(Question {
             vendor_id: "q1".to_owned(),
             kind: "test".to_owned(),
@@ -129,13 +134,20 @@ impl HarnessGrammar for TestGrammar {
                 DecisionOption {
                     option_id: "allow".to_owned(),
                     label: "Allow".to_owned(),
+                    description: None,
+                    risks: None,
+                    estimated_tokens: None,
                 },
                 DecisionOption {
                     option_id: "deny".to_owned(),
                     label: "Deny".to_owned(),
+                    description: None,
+                    risks: None,
+                    estimated_tokens: None,
                 },
             ],
             metadata: serde_json::Map::new(),
+            recommendation,
         }))
     }
 
@@ -460,12 +472,14 @@ async fn the_scratch_directory_is_gone_after_the_run() {
 /// deny option by the run itself, same as an explicit deny.
 #[tokio::test]
 async fn a_question_is_answered_and_the_run_continues() {
-    let rows: [(Option<&str>, &str); 3] = [
-        (Some("allow"), "fake-harness-answered:allow"),
-        (Some("deny"), "fake-harness-answered:deny"),
-        (None, "fake-harness-answered:deny"),
+    let pack = r#"{"recommendation":{"option_id":"allow","rationale":"scoped","evidence_refs":["art_1"]}}"#;
+    let rows: [(Option<&str>, &str, Option<&str>); 4] = [
+        (Some("allow"), "fake-harness-answered:allow", None),
+        (Some("deny"), "fake-harness-answered:deny", None),
+        (None, "fake-harness-answered:deny", None),
+        (Some("allow"), "fake-harness-answered:allow", Some(pack)),
     ];
-    for (sent, expected) in rows {
+    for (sent, expected, ask_json) in rows {
         let state = scratch("ask");
         let grammar = TestGrammar {
             descriptor: &PLAIN,
@@ -475,6 +489,9 @@ async fn a_question_is_answered_and_the_run_continues() {
         let harness = harness_with(grammar, fake_harness(), state.path());
         let mut request = spec(KIND, state.path());
         set_env(&mut request, &[("TACK_FAKE_HARNESS_MODE", "ask")]);
+        if let Some(pack) = ask_json {
+            set_env(&mut request, &[("TACK_FAKE_HARNESS_ASK_JSON", pack)]);
+        }
 
         let handle = harness.start(&request).await.expect("start");
         let (mut questions_rx, answers_tx) = harness
@@ -484,7 +501,17 @@ async fn a_question_is_answered_and_the_run_continues() {
 
         let drive = async {
             let question = questions_rx.recv().await.expect("question");
-            assert_eq!(question.prompt, "do-thing");
+            if ask_json.is_none() {
+                assert_eq!(question.prompt, "do-thing");
+            }
+            assert_eq!(
+                question.recommendation,
+                ask_json.map(|_| crate::client::Recommendation {
+                    option_id: "allow".to_owned(),
+                    rationale: Some("scoped".to_owned()),
+                    evidence_refs: Some(vec!["art_1".to_owned()]),
+                })
+            );
             match sent {
                 Some(option_id) => {
                     let answer = DecisionAnswer {

@@ -421,13 +421,20 @@ fn an_answer_becomes_a_permission_outcome() {
             DecisionOption {
                 option_id: "once".to_owned(),
                 label: "Allow once".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
             DecisionOption {
                 option_id: "reject".to_owned(),
                 label: "Deny".to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
             },
         ],
         metadata: serde_json::Map::new(),
+        recommendation: None,
     };
 
     let fixture = include_str!("../fixtures/opencode/1.18.30/asking_acp.txt");
