@@ -333,6 +333,7 @@ const BriefTab: Component<BriefTabProps> = (props) => {
             >
               <div class="flex items-center gap-2">
                 <Select
+                  class="min-w-[15rem]"
                   aria-label="Kind"
                   value={c.kind}
                   onChange={(e) => {
@@ -343,15 +344,8 @@ const BriefTab: Component<BriefTabProps> = (props) => {
                 >
                   <For each={CRITERION_KINDS}>{(k) => <option value={k.value}>{k.label}</option>}</For>
                 </Select>
-                <Show when={c.kind === 'manual'}>
-                  <span
-                    class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium"
-                    style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-text-primary)' }}
-                  >
-                    Costs a person's time
-                  </span>
-                </Show>
                 <Button
+                  class="ml-auto"
                   variant="ghost"
                   size="sm"
                   type="button"
@@ -361,6 +355,14 @@ const BriefTab: Component<BriefTabProps> = (props) => {
                   Remove
                 </Button>
               </div>
+              <Show when={c.kind === 'manual'}>
+                <span
+                  class="inline-block rounded-full px-2.5 py-1 text-xs font-medium"
+                  style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-text-primary)' }}
+                >
+                  Costs a person's time
+                </span>
+              </Show>
               {text('Title', c.title, (v) => patchCriterion(i(), { title: v }))}
               {kindFields(c, i())}
             </div>
