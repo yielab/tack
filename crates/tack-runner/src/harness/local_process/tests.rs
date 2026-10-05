@@ -23,6 +23,7 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     credential_note: "",
     credential_env: None,
     observes_served_model: false,
+    reports_process_groups: false,
 };
 
 static PLAIN: HarnessDescriptor = BASE;

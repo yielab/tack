@@ -277,14 +277,15 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
         "grandchild must be observed running before cancellation"
     );
 
-    let outcome = process
-        .cancel(Duration::from_secs(2))
+    let (outcome, groups) = process
+        .cancel(Duration::from_secs(2), |_| None)
         .await
         .expect("cancel");
     assert!(matches!(
         outcome,
         CancelOutcome::Stopped | CancelOutcome::Killed
     ));
+    assert_eq!(groups, ProcessGroups::default());
 
     // Poll instead of a single fixed sleep so reaping is not a hidden
     // pacing dependency.
