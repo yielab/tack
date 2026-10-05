@@ -23,8 +23,8 @@
     },
     "attempt_id": {
       "type": "string",
-      "format": "uuid",
-      "description": "The attempt this pack certifies"
+      "minLength": 1,
+      "description": "The attempt this pack certifies, as the evidence's attempt_id names it"
     },
     "evidence_sha256": {
       "type": "string",

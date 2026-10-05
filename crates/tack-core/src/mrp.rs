@@ -6,7 +6,6 @@
 //! its fixtures.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Criterion evaluation in the pack.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -214,8 +213,8 @@ pub struct ProducedBySection {
 pub struct MergeReadinessPack {
     /// Schema version
     pub v: String,
-    /// The attempt this pack certifies
-    pub attempt_id: Uuid,
+    /// The attempt this pack certifies, as the evidence names it (`att_…`)
+    pub attempt_id: String,
     /// SHA256 hash of the evidence directory
     pub evidence_sha256: String,
     /// SHA256 hash of the brief (null if no brief)
