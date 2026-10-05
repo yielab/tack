@@ -96,6 +96,8 @@ struct ResultLine {
     #[serde(default)]
     files: Vec<ResultFile>,
     limits: Option<ResultLimits>,
+    #[serde(default)]
+    task: Option<serde_json::Value>,
 }
 
 /// A path docket reports a run wrote (`op` is `write`, `edit`, `delete` or
@@ -280,12 +282,28 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         Vec::new()
     };
 
+    // docket refuses `--recipe` together with `--agent-id` or `--max-tokens`
+    // (a recipe's turns are dispatched by its pod), so a recipe run drops both.
+    let recipe = features
+        .recipe
+        .then(|| {
+            request
+                .resolved_agent_profile
+                .tool_policy
+                .get("docket")
+                .and_then(|v| v.get("recipe"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|recipe| !recipe.is_empty())
+        })
+        .flatten();
+
     let mut limit_args = Vec::new();
     if features.token_file {
         limit_args.push("--token-file".to_owned());
         limit_args.push(run.scratch.join("token.json").display().to_string());
     }
     if features.max_tokens
+        && recipe.is_none()
         && let Some(tokens) = request
             .budgets
             .get("tokens")
@@ -304,7 +322,15 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         limit_args.push("--policy".to_owned());
         limit_args.push(path.display().to_string());
     }
+    if let Some(recipe) = recipe {
+        limit_args.push("--recipe".to_owned());
+        limit_args.push(recipe.to_owned());
+    }
 
+    let agent_id = [
+        "--agent-id".to_owned(),
+        run.spec.work.lease.attempt_id.as_str().to_owned(),
+    ];
     Ok(Invocation {
         args: [
             "harness",
@@ -315,13 +341,15 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
             &task_file,
             "--model",
             &format!("{provider}/{model_id}"),
-            "--agent-id",
-            run.spec.work.lease.attempt_id.as_str(),
-            "--timeout",
-            &request.timeout_seconds.to_string(),
         ]
         .map(str::to_owned)
         .into_iter()
+        .chain(if recipe.is_some() {
+            Vec::new()
+        } else {
+            agent_id.to_vec()
+        })
+        .chain(["--timeout".to_owned(), request.timeout_seconds.to_string()])
         .chain(contract_args)
         .chain(answer_args)
         .chain(limit_args)
@@ -369,6 +397,7 @@ impl HarnessGrammar for DocketGrammar {
                     .filter(|file| !file.path.starts_with(".tack-runner/"))
                     .collect::<Vec<_>>(),
                 "max_tokens": parsed.limits.and_then(|limits| limits.max_tokens),
+                "task": parsed.task,
             }),
             harness_version: None,
             observed_model: (!parsed.model.served.is_empty()).then_some(parsed.model.served),
