@@ -636,6 +636,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/{item_id}/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/items/:item_id/brief */
+        get: operations["get_brief"];
+        /** PUT /api/items/:item_id/brief */
+        put: operations["put_brief"];
+        post?: never;
+        /** DELETE /api/items/:item_id/brief */
+        delete: operations["delete_brief"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{item_id}/comments": {
         parameters: {
             query?: never;
@@ -2644,6 +2663,52 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One check on the result. `id` is client-chosen and unique within the brief. */
+        AcceptanceCriterion: {
+            cwd?: string | null;
+            /** Format: int32 */
+            expect_exit: number;
+            id: string;
+            /** @enum {string} */
+            kind: "command";
+            run: string;
+            title: string;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "test";
+            name: string;
+            runner?: string | null;
+            title: string;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "metric";
+            name: string;
+            op: components["schemas"]["MetricOp"];
+            /** Format: double */
+            threshold: number;
+            title: string;
+            unit?: string | null;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "file";
+            path: string;
+            title: string;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "absent";
+            path: string;
+            title: string;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "manual";
+            text: string;
+            title: string;
+        };
         /**
          * @description Request body for `POST /api/runner-fleets/{fleet_id}/members`.
          *     `agent_fleet_members` (migration 041) is a live scheduling *read* input
@@ -2839,6 +2904,24 @@ export interface components {
         };
         /** @enum {string} */
         CommentType: "comment" | "status_change" | "edit" | "system";
+        Constraint: {
+            glob: string;
+            /** @enum {string} */
+            kind: "forbidden_path";
+        } | {
+            /** @enum {string} */
+            kind: "allowed_dependency";
+            name: string;
+        } | {
+            /** @enum {string} */
+            kind: "max_changed_files";
+            /** Format: int32 */
+            n: number;
+        } | {
+            /** @enum {string} */
+            kind: "note";
+            text: string;
+        };
         CreateBoard: {
             description?: string | null;
             filters?: unknown;
@@ -3312,6 +3395,22 @@ export interface components {
             updated_at: string;
         };
         /**
+         * @description What "done" means for an item, typed so a verifier can check it.
+         *     `docs/contracts/brief-v1/` is its wire shape.
+         */
+        ItemBrief: {
+            acceptance: components["schemas"]["AcceptanceCriterion"][];
+            constraints: components["schemas"]["Constraint"][];
+            /** Format: date-time */
+            created_at: string;
+            definition_of_done?: string | null;
+            /** Format: uuid */
+            item_id: string;
+            risk?: null | components["schemas"]["Risk"];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
          *     and dependency edges.
          */
@@ -3372,6 +3471,8 @@ export interface components {
          * @enum {string}
          */
         MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
+        /** @enum {string} */
+        MetricOp: "lte" | "gte" | "eq";
         /**
          * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
          *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
@@ -3539,6 +3640,8 @@ export interface components {
             /** @example revoked */
             state: string;
         };
+        /** @enum {string} */
+        Risk: "low" | "medium" | "high";
         Role: {
             color: string;
             /** Format: date-time */
@@ -3782,6 +3885,12 @@ export interface components {
         };
         UpdateSprintStatus: {
             status: components["schemas"]["SprintStatus"];
+        };
+        UpsertItemBrief: {
+            acceptance: components["schemas"]["AcceptanceCriterion"][];
+            constraints: components["schemas"]["Constraint"][];
+            definition_of_done?: string | null;
+            risk?: null | components["schemas"]["Risk"];
         };
         /**
          * @description Documents `tack_orch::usage_provenance::UsageEconomics` —
@@ -5027,6 +5136,113 @@ export interface operations {
                 };
             };
             /** @description Item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_brief: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item's brief */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemBrief"];
+                };
+            };
+            /** @description Item not found, or it has no brief */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    put_brief: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertItemBrief"];
+            };
+        };
+        responses: {
+            /** @description The brief as stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemBrief"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_brief: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Brief deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Item not found, or it has no brief */
             404: {
                 headers: {
                     [name: string]: unknown;
