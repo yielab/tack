@@ -18,6 +18,7 @@ import { roles } from './roles';
 import { briefs } from './briefs';
 import { data } from './data';
 import { system } from './system';
+import { metrics } from './metrics';
 
 export const api = {
   projects,
@@ -34,6 +35,7 @@ export const api = {
   briefs,
   data,
   system,
+  metrics,
 };
 
 export { ApiError, tokenStore, request, requestBlob, requestForm, apiUrl } from './client';
