@@ -15,6 +15,7 @@ import { comments } from './comments';
 import { dependencies } from './dependencies';
 import { attachments } from './attachments';
 import { roles } from './roles';
+import { briefs } from './briefs';
 import { data } from './data';
 import { system } from './system';
 
@@ -30,6 +31,7 @@ export const api = {
   dependencies,
   attachments,
   roles,
+  briefs,
   data,
   system,
 };

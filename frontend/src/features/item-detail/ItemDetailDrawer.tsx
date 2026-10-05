@@ -15,9 +15,11 @@ import ActivityTab from './tabs/ActivityTab';
 import DependenciesTab from './tabs/DependenciesTab';
 import FilesTab from './tabs/FilesTab';
 import FieldsTab from './tabs/FieldsTab';
+import BriefTab from './tabs/BriefTab';
 
 const BASE_TABS: TabItem[] = [
   { id: 'details', label: 'Details' },
+  { id: 'brief', label: 'Brief' },
   { id: 'activity', label: 'Activity' },
   // "Execution" — the neutral execution domain (`ExecutionRequest`/
   // `ExecutionAttempt` via `tack-runner`). Always present — an item with
@@ -150,6 +152,9 @@ const ItemDetailDrawer: Component = () => {
               </Show>
               <Show when={activeTab() === 'files'}>
                 <FilesTab itemId={it().id} />
+              </Show>
+              <Show when={activeTab() === 'brief'}>
+                <BriefTab itemId={it().id} />
               </Show>
               <Show when={activeTab() === 'fields'}>
                 <FieldsTab item={it()} />
