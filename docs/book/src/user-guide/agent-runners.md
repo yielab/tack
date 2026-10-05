@@ -808,6 +808,26 @@ the server would otherwise apply.
 
 ---
 
+## Reviewing a merge-readiness pack
+
+When a verifier checks an attempt, it leaves a merge-readiness pack. Open the attempt's
+details on the Execution tab and the pack appears under "Merge-readiness pack".
+
+From top to bottom it shows the verifier's recommendation and the risk level with its
+reasons, then one row per criterion from the brief (id, kind, status, evidence), the
+verify command with its exit code and output, mutation results, static-analysis counts and
+the judge's verdict on each criterion.
+
+A section the verifier did not run says **Not run**. That is not a pass: nothing was
+checked.
+
+To record your verdict, write a reason, then choose **Accept** or **Reject**. Both stay
+disabled until the reason has text. The first review is final; a second one is refused.
+If the run was created with the `done_on_mrp_accepted` status policy, accepting also moves
+the item to its workflow's first Done status.
+
+---
+
 ## Usage economics and "Not measured"
 
 `usage_economics.runner_time_cost.cost_usd_estimated` is **always**

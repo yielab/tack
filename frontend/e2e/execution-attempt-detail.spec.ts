@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import {
   API,
@@ -257,5 +259,70 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     expect(await resolveHandle!.isVisible()).toBe(true);
     await expect(tokenField).toHaveValue('typed-not-saved-token');
     await expect(drawer.getByRole('radio', { name: 'Allow once' })).toBeChecked();
+  });
+
+  test('a merge-readiness pack shows one row per criterion, and accepting it with a reason shows the review', async ({
+    page,
+    request,
+  }) => {
+    const projectId = await getOrCreateProject(request);
+    const itemId = await createFreshItem(request, projectId, `E3 pack ${Date.now()}`);
+    const profileId = await createAgentProfile(request, `E3 Profile ${Date.now()}`);
+    const modelId = 'opaque/model-alpha';
+
+    const { runnerId, credential } = await enrollRunner(request, `E3 Runner ${Date.now()}`, modelId);
+    const requestId = await createExecution(request, itemId, runnerId, profileId, modelId);
+    const lease = await claimOnceWithLease(request, runnerId, credential, `e3-claim-${Date.now()}`);
+    expect(lease?.requestId).toBe(requestId);
+    const { attemptId, fencingToken } = lease!;
+    await acceptAndStartAttempt(request, runnerId, credential, attemptId, fencingToken);
+
+    // Upload the `ready` fixture as the attempt's pack artifact.
+    const raw = readFileSync(new URL('../../docs/contracts/mrp-v1/fixtures/ready.json', import.meta.url));
+    const pack = JSON.parse(raw.toString('utf-8'));
+    const mediaType = 'application/vnd.tack.mrp+json';
+    const artifactId = `mrp-${Date.now()}`;
+    const manifest = await request.post(`${API}/runner/v1/attempts/${attemptId}/artifacts`, {
+      headers: { authorization: `Bearer ${credential}` },
+      data: {
+        protocol_version: 1,
+        runner_id: runnerId,
+        attempt_id: attemptId,
+        fencing_token: fencingToken,
+        artifacts: [
+          {
+            artifact_id: artifactId,
+            kind: 'mrp',
+            name: 'mrp.json',
+            media_type: mediaType,
+            size_bytes: raw.length,
+            sha256: createHash('sha256').update(raw).digest('hex'),
+            content_disposition: 'inline_upload',
+          },
+        ],
+      },
+    });
+    expect(manifest.ok(), `submit_artifacts failed: ${manifest.status()}`).toBeTruthy();
+    const upload = await request.put(`${API}/runner/v1/attempts/${attemptId}/artifacts/${artifactId}/content`, {
+      headers: {
+        authorization: `Bearer ${credential}`,
+        'x-tack-fencing-token': String(fencingToken),
+        'content-type': mediaType,
+      },
+      data: raw,
+    });
+    expect(upload.ok(), `pack upload failed: ${upload.status()}`).toBeTruthy();
+
+    await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+    await waitForApp(page);
+    const drawer = page.getByRole('dialog');
+    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+
+    await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
+    await drawer.getByLabel('Reason').fill('Every criterion passed.');
+    await drawer.getByRole('button', { name: 'Accept' }).click();
+    await expect(drawer.getByTestId('mrp-review')).toContainText('Accepted');
+    await expect(drawer.getByTestId('mrp-review')).toContainText('Every criterion passed.');
   });
 });
