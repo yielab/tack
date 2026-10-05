@@ -1,0 +1,15 @@
+captured
+docket 0.2.0b3 (scratch install, rack-cli develop c982046f, contains P35-5 75b7e3fc)
+
+Real `docket harness run --contract 1.1 --answers stdin --workspace <dir> --task-file <file>
+--model gw/local/qwen3-35b --agent-id capture-ask-1 --timeout 60` transcript, against a
+throwaway loopback HTTP server standing in for the model endpoint (DOCKET_HOME in a scratch
+directory, DOCKET_LLM_API_KEY an obviously fake key). The server answered one `bash` tool call
+(`git push origin production`, which docket's own `prod-deploy` action class gates), then a final
+message. docket paused on the call and printed `approval_requested`; the one answer line
+`{"v":"1.1.0","token":<the run's token>,"answer":{"approvalToken":<payload.token>,"action":
+"accept","content":null}}` was written to its stdin, and the run finished `ok` with the approval
+listed as `accepted`. A second run answering `decline` finished `ok` with `declined` and a
+`tool_result` of `decision: deny, executed: false`. The approval's own token is `payload.token`
+(the answer line names it `approvalToken`); `payload.options` offers approve_once, approve_task
+and deny. The scratch directory is rewritten to `/capture` and nothing else changed.

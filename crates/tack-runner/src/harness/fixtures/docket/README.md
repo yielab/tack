@@ -16,9 +16,9 @@ in the user guide.
 Each `<version>/*.ndjson` fixture has a sibling `*.ndjson.provenance` text file: its first
 line is `captured` (from a real invocation, with the scratch directory it ran in rewritten to
 `/capture` and nothing else changed) or `constructed` (built by hand
-because no real invocation produces this shape); everything after is why and how. All four
-fixtures here are `captured` — every status this adapter's tests exercise (`ok`, `refused`,
-`blocked`, `cancelled`) was reproduced against the real binary, so none needed constructing.
+because no real invocation produces this shape); everything after is why and how. Every
+fixture here is `captured`, the 1.0 ones (`ok`, `refused`, `blocked`, `cancelled`) and the
+`contract-1.1/` ones alike, so none needed constructing.
 
 ## Measured
 
@@ -69,10 +69,14 @@ fixtures here are `captured` — every status this adapter's tests exercise (`ok
    runner stops every announced group that is still live; on 1.0 it stays `Advisory`. Not
    covered: a run that hits its timeout rather than a cancel is stopped by its main group
    only, because the non-interactive wait does not read the announcements as they arrive.
-2. `resume`/`decisions: Unsupported`: no reattachment interface and no ask-the-operator event
-   were observed; harness mode's own `--help` text (`docket harness run --help`) documents
-   the fixed non-interactive-refusal posture directly, so this is read from the vendor's own
-   words rather than inferred.
+2. `resume: Unsupported`: no reattachment interface was observed. `decisions` is
+   `Supported` only when the boot probe found `--answers` on contract 1.1: with `--answers
+   stdin` docket prints an `approval_requested` event for each call its policy gates and
+   waits for one answer line (`contract-1.1/asked-answered.ndjson`). The approval's token is
+   the event's `payload.token`, not `payload.approvalToken` as docket's own hand-written
+   sample shows; the event line's top-level `token` is the run's. With answers on stdin the
+   task must come from a real `--task-file`, never `/dev/stdin`. Without `--answers`,
+   harness mode keeps its non-interactive refusal and `decisions` stays `Unsupported`.
 3. `artifacts: Advisory`: only the staged stdout/stderr log is claimed; nothing in a result
    line names a file docket's own tools wrote, so no per-file artifact discovery is
    implemented.
