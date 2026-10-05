@@ -16,6 +16,8 @@ mod attempt_lists;
 mod attempt_scoping;
 #[path = "handlers/boards_multi.rs"]
 mod boards_multi;
+#[path = "handlers/briefs.rs"]
+mod briefs;
 #[path = "handlers/crud.rs"]
 mod crud;
 #[path = "handlers/custom_fields.rs"]

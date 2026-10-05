@@ -865,6 +865,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::roles::delete_role,
         handlers::roles::assign_role,
         handlers::roles::remove_role,
+        // ── Briefs ────────────────────────────────────────────────────────
+        handlers::briefs::get_brief,
+        handlers::briefs::put_brief,
+        handlers::briefs::delete_brief,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
         handlers::comments::list_comments,
@@ -1067,6 +1071,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "items", description = "Items: the universal work unit (epics, tasks, bugs, …)."),
         (name = "sprints", description = "Sprints / iterations within a project."),
         (name = "roles", description = "Roles / specialties and their assignment to items."),
+        (name = "briefs", description = "An item's brief: acceptance criteria, constraints, definition of done."),
         (name = "comments", description = "Comments on items."),
         (name = "dependencies", description = "Directed dependency edges between items."),
         (name = "attachments", description = "File attachments on items."),

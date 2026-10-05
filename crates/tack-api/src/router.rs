@@ -21,7 +21,7 @@ use crate::handlers::local_runner::LocalRunnerControl;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    attachments, attempt_lists, backup, boards_multi, comments, custom_fields, decisions,
+    attachments, attempt_lists, backup, boards_multi, briefs, comments, custom_fields, decisions,
     dependencies, executions, export, import_github, import_linear, items, local_runner, projects,
     roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
@@ -291,6 +291,12 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/items/{item_id}/roles/{role_id}",
             delete(roles::remove_role),
+        )
+        .route(
+            "/items/{item_id}/brief",
+            get(briefs::get_brief)
+                .put(briefs::put_brief)
+                .delete(briefs::delete_brief),
         )
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))

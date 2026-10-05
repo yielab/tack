@@ -2,6 +2,7 @@ pub mod attachments;
 pub mod attempt_lists;
 pub mod backup;
 pub mod boards_multi;
+pub mod briefs;
 pub mod comments;
 pub mod custom_fields;
 pub mod decisions;

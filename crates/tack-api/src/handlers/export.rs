@@ -8,10 +8,11 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use tracing::{info, instrument};
 use uuid::Uuid;
+use validator::Validate;
 
 use tack_core::models::{
-    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemSource, ItemType, Priority,
-    Project, Sprint, UpdateProject,
+    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemBrief, ItemSource, ItemType,
+    Priority, Project, Sprint, UpdateProject, UpsertItemBrief,
 };
 
 use crate::error::ApiError;
@@ -63,6 +64,7 @@ pub async fn export_project(
         .await?;
     let sprints = state.repo.list_sprints(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
+    let briefs = state.repo.list_item_briefs_for_project(project_id).await?;
 
     // Shared snapshot used by the structured (JSON / YAML) formats. Keys serialize
     // in a stable order, so YAML/JSON exports produce clean, git-diffable text.
@@ -71,6 +73,7 @@ pub async fn export_project(
         "items": items,
         "sprints": sprints,
         "dependencies": dependencies,
+        "briefs": briefs,
         "metadata": {
             "exported_at": chrono::Utc::now().to_rfc3339(),
             "version": env!("CARGO_PKG_VERSION"),
@@ -165,6 +168,8 @@ struct ImportPayload {
     sprints: Vec<Sprint>,
     #[serde(default)]
     dependencies: Vec<Dependency>,
+    #[serde(default)]
+    briefs: Vec<ItemBrief>,
 }
 
 /// POST /api/projects/import
@@ -363,10 +368,34 @@ async fn run_import(
         }
     }
 
+    // ── Briefs ───────────────────────────────────────────────────────────────
+    let mut briefs_imported = 0usize;
+    for brief in &data.briefs {
+        if let Some(&new_item) = item_id_map.get(&brief.item_id) {
+            let upsert = UpsertItemBrief {
+                acceptance: brief.acceptance.clone(),
+                constraints: brief.constraints.clone(),
+                definition_of_done: brief.definition_of_done.clone(),
+                risk: brief.risk.clone(),
+            };
+            // An export is a file anyone can edit; the same rules as PUT apply.
+            upsert
+                .validate()
+                .map_err(|e| anyhow::anyhow!("brief of item {}: {e}", brief.item_id))?;
+            state
+                .repo
+                .upsert_item_brief(new_item, upsert)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+            briefs_imported += 1;
+        }
+    }
+
     Ok(serde_json::json!({
         "sprints_imported": data.sprints.len(),
         "items_imported": data.items.len(),
         "dependencies_imported": deps_imported,
+        "briefs_imported": briefs_imported,
     }))
 }
 

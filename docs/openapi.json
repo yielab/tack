@@ -1763,6 +1763,144 @@
         }
       }
     },
+    "/api/items/{item_id}/brief": {
+      "get": {
+        "tags": [
+          "briefs"
+        ],
+        "summary": "GET /api/items/:item_id/brief",
+        "operationId": "get_brief",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item's brief",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemBrief"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found, or it has no brief",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "briefs"
+        ],
+        "summary": "PUT /api/items/:item_id/brief",
+        "operationId": "put_brief",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertItemBrief"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The brief as stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemBrief"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "briefs"
+        ],
+        "summary": "DELETE /api/items/:item_id/brief",
+        "operationId": "delete_brief",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Brief deleted"
+          },
+          "404": {
+            "description": "Item not found, or it has no brief",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{item_id}/comments": {
       "get": {
         "tags": [
@@ -5648,6 +5786,200 @@
   },
   "components": {
     "schemas": {
+      "AcceptanceCriterion": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "run",
+              "expect_exit",
+              "kind"
+            ],
+            "properties": {
+              "cwd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expect_exit": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "command"
+                ]
+              },
+              "run": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "test"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "runner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "name",
+              "op",
+              "threshold",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "metric"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "op": {
+                "$ref": "#/components/schemas/MetricOp"
+              },
+              "threshold": {
+                "type": "number",
+                "format": "double"
+              },
+              "title": {
+                "type": "string"
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "absent"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "text",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "manual"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "One check on the result. `id` is client-chosen and unique within the brief."
+      },
       "AddFleetMember": {
         "type": "object",
         "description": "Request body for `POST /api/runner-fleets/{fleet_id}/members`.\n`agent_fleet_members` (migration 041) is a live scheduling *read* input\n(`fetch_runner_scheduling_snapshot`, `fetch_fleet_concurrency`, the\nfleet-selector claim query); this endpoint is the write path that\npopulates a fleet's roster, since an execution request can select\neither an exact runner or a fleet.",
@@ -6246,6 +6578,84 @@
           "status_change",
           "edit",
           "system"
+        ]
+      },
+      "Constraint": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "glob",
+              "kind"
+            ],
+            "properties": {
+              "glob": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "forbidden_path"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "allowed_dependency"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "n",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "max_changed_files"
+                ]
+              },
+              "n": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "note"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
         ]
       },
       "CreateBoard": {
@@ -7574,6 +7984,59 @@
           }
         }
       },
+      "ItemBrief": {
+        "type": "object",
+        "description": "What \"done\" means for an item, typed so a verifier can check it.\n`docs/contracts/brief-v1/` is its wire shape.",
+        "required": [
+          "item_id",
+          "acceptance",
+          "constraints",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceCriterion"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Constraint"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "risk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Risk"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ItemDetail": {
         "type": "object",
         "description": "Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles\nand dependency edges.",
@@ -7724,6 +8187,14 @@
           "measured",
           "estimated",
           "not_measured"
+        ]
+      },
+      "MetricOp": {
+        "type": "string",
+        "enum": [
+          "lte",
+          "gte",
+          "eq"
         ]
       },
       "ModelProvenanceSchema": {
@@ -8202,6 +8673,14 @@
             "example": "revoked"
           }
         }
+      },
+      "Risk": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
       },
       "Role": {
         "type": "object",
@@ -8891,6 +9370,43 @@
           }
         }
       },
+      "UpsertItemBrief": {
+        "type": "object",
+        "required": [
+          "acceptance",
+          "constraints"
+        ],
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceCriterion"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Constraint"
+            }
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "risk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Risk"
+              }
+            ]
+          }
+        }
+      },
       "UsageEconomicsSchema": {
         "type": "object",
         "description": "Documents `tack_orch::usage_provenance::UsageEconomics` —\n`AttemptSummary.usage_economics`'s real shape. Always present (never\n`null`), unlike `ModelProvenanceSchema` below: two\nindependently-provenanced dollar dimensions, deliberately never summed\ninto one figure.",
@@ -9026,6 +9542,10 @@
     {
       "name": "roles",
       "description": "Roles / specialties and their assignment to items."
+    },
+    {
+      "name": "briefs",
+      "description": "An item's brief: acceptance criteria, constraints, definition of done."
     },
     {
       "name": "comments",
