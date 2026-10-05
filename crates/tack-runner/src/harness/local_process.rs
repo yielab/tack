@@ -112,8 +112,8 @@ pub struct RunContext<'a> {
     /// A directory this attempt owns, outside the workspace, for whatever
     /// state the CLI itself needs between spawn and exit (a home directory,
     /// a cache). The core computes the path and removes it once `wait` or
-    /// `cancel` has finished with it; it never creates it, so a grammar
-    /// naming a path under here relies on the CLI to create it.
+    /// `cancel` has finished with it. It exists before the grammar runs, so
+    /// a grammar may write a file here.
     pub scratch: &'a Path,
 }
 
@@ -506,6 +506,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
 
         let endpoint = self.resolve_endpoint(spec)?;
         let scratch = self.scratch_dir(spec);
+        std::fs::create_dir_all(&scratch).map_err(|_| HarnessError::Process)?;
         let invocation = self.grammar.invocation(&RunContext {
             spec,
             endpoint: endpoint.as_ref(),
@@ -936,13 +937,21 @@ where
     /// Builds the whole spawn and discards it, so anything `start` would
     /// refuse is refused here, before the attempt is announced.
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
-        self.prepare(spec).map(|_| ())
+        let prepared = self.prepare(spec).map(|_| ());
+        // `prepare` creates the scratch directory and nothing will ever run
+        // in this one; `start` prepares its own.
+        let _ = std::fs::remove_dir_all(self.scratch_dir(spec));
+        prepared
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
-        let (process_spec, secrets, endpoint, scratch, stdin_stays_open) = self.prepare(spec)?;
+        let (process_spec, secrets, endpoint, scratch, stdin_stays_open) =
+            self.prepare(spec).inspect_err(|_| {
+                let _ = std::fs::remove_dir_all(self.scratch_dir(spec));
+            })?;
         let process = process_spec.spawn().await.map_err(|error| {
             tracing::warn!(?error, harness = self.kind(), "spawn failed");
+            let _ = std::fs::remove_dir_all(&scratch);
             HarnessError::Process
         })?;
         // The sequence keeps two handles apart if the OS reuses a pid while
