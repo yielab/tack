@@ -200,12 +200,17 @@ function expandRepository(): void {
   btn!.click();
 }
 
+function teardown() {
+  while (disposers.length) disposers.pop()!();
+  document.body.innerHTML = '';
+}
+
 function modelModeRadio(index: number): HTMLInputElement {
   return [...document.querySelectorAll('input[type="radio"][name="model-mode"]')][index] as HTMLInputElement;
 }
 
 afterEach(() => {
-  while (disposers.length) disposers.pop()!();
+  teardown();
   document.body.innerHTML = '';
   vi.restoreAllMocks();
   lastCreateBody = undefined;
@@ -217,9 +222,9 @@ describe('RunWithAgentModal', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Run with agent: Fix login bug');
-    expect(dialog.textContent).toContain('Agent');
-    expect(dialog.textContent).toContain('Repository');
-    expect(dialog.textContent).toContain('Permissions & budget');
+    for (const section of ['Who runs it', 'What it gets', 'How far it may go', 'What happens after']) {
+      expect(dialog.textContent).toContain(section);
+    }
   });
 
   it('"agent execution is off" renders instead of the form when zero runners have ever enrolled', async () => {
@@ -235,7 +240,7 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).not.toContain('Where it runs');
+    expect(dialog.textContent).not.toContain('Machine or group');
     setSelect(select('Agent profile'), PROFILE.agent_profile_id);
     expandRepository();
     setField(field('Remote'), 'git@example.com:org/repo.git');
@@ -251,7 +256,7 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('Where it runs');
+    expect(dialog.textContent).toContain('Who runs it');
     const picker = select('Machine or group');
     const labels = [...picker.options].map((o) => o.textContent);
     expect(labels).toContain(FLEET.name);
@@ -499,6 +504,88 @@ describe('RunWithAgentModal', () => {
     expect(typeof (lastCreateBody as Record<string, unknown>).idempotency_key).toBe('string');
     expect(onCreated).toHaveBeenCalledWith('req-9');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('a_deferred_capability_is_shown_disabled_with_its_reason', async () => {
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
+    const rows = [...document.querySelectorAll('[data-prerequisite="deferred"]')];
+    const reasons = [
+      'Available when the brief editor lands.',
+      'Available when a runner reports a verifier.',
+      'Available when a runner reports branch push.',
+    ];
+    expect(rows.length).toBe(4);
+    for (const row of rows) {
+      const control = row.querySelector('input') as HTMLInputElement;
+      expect(control.disabled).toBe(true);
+      expect(reasons.some((r) => row.textContent?.includes(r))).toBe(true);
+    }
+  });
+
+  it('every missing row links to the page that fixes it', async () => {
+    const noHarness = runnerRow('runner-2', 'Bare', runnerCapabilitySnapshot({ harnesses: [] }));
+    const cases: Array<[Parameters<typeof mockFetch>[0], string, string]> = [
+      [{ runners: [RUNNER], fleets: [], agentProfiles: [] }, 'An agent profile exists', '/agents'],
+      [{ runners: [noHarness], fleets: [] }, 'The harness is installed and signed in', '/agents'],
+      [{ runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] }, 'A model is set for this run', '/projects/project-1/settings?tab=agents'],
+    ];
+    for (const [fetchOpts, label, href] of cases) {
+      mount({}, fetchOpts);
+      await flush();
+      const row = [...document.querySelectorAll('[data-prerequisite="missing"]')].find((r) => r.textContent?.includes(label));
+      expect(row, label).toBeTruthy();
+      expect(row!.querySelector('a')!.getAttribute('href')).toBe(href);
+      teardown();
+    }
+  });
+
+  it('Run is disabled with one missing row and enabled with only deferred ones', async () => {
+    const project = { id: 'project-1', name: 'P', default_model: { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' } };
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [], project });
+    await flush();
+    expandRepository();
+    setField(field('Remote'), 'git@example.com:org/repo.git');
+    await flush();
+    expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(1);
+    expect(submitButton().disabled).toBe(true);
+    [...document.querySelectorAll('button')].find((b) => b.textContent === 'Create default profile')!.click();
+    await flush();
+    await flush();
+    expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(0);
+    expect(document.querySelectorAll('[data-prerequisite="deferred"]').length).toBe(4);
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it('"Ask me" stays gated by decisionsAttested()', async () => {
+    const askRadio = () => [...document.querySelectorAll('input[name="approvals"]')][1] as HTMLInputElement;
+    const harness = (decisions: string) => ({
+      ...runnerCapabilitySnapshot().harnesses[0],
+      decisions: { support: decisions, reason: null },
+    });
+    const off = runnerRow('runner-3', 'No ask', runnerCapabilitySnapshot({ harnesses: [harness('unsupported')] }));
+    const on = runnerRow('runner-5', 'Can ask', runnerCapabilitySnapshot({ harnesses: [harness('supported')] }));
+    mount({}, { runners: [off], fleets: [] });
+    await flush();
+    expect(askRadio().disabled).toBe(true);
+    teardown();
+    mount({}, { runners: [on], fleets: [] });
+    await flush();
+    expect(askRadio().disabled).toBe(false);
+  });
+
+  it('allowed tools: a checklist for claude-code, free text with "exposes no list" for codex', async () => {
+    const both = runnerRow('runner-4', 'Both', runnerCapabilitySnapshot({
+      harnesses: [...runnerCapabilitySnapshot().harnesses, { ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
+    }));
+    mount({}, { runners: [both], fleets: [] });
+    await flush();
+    expect(document.querySelector('[aria-label="Suggested tools"]')).toBeNull();
+    expect(document.body.textContent).toContain('Codex exposes no list');
+    setSelect(select('Harness'), 'claude-code');
+    await flush();
+    expect(document.querySelectorAll('[aria-label="Suggested tools"] input').length).toBe(8);
+    expect(field('Allowed tools')).toBeTruthy();
   });
 
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {

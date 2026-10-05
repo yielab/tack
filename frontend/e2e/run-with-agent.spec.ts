@@ -10,6 +10,7 @@ import {
   createSprintWithItem,
   createFleet,
   createAgentProfile,
+  setProjectDefaultModel,
   enrollRunner,
   waitForApp,
 } from './helpers';
@@ -61,6 +62,10 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   // auto-selecting (this test wants "Select where this runs." visible).
   await createFleet(request, `RWA board fleet ${Date.now()}`);
   await enrollRunner(request, `RWA board runner ${Date.now()}`, 'opaque/model-alpha');
+  // Two profiles, so none is auto-selected (exactly one would be, and the
+  // "Select an agent profile." reason would never show).
+  await createAgentProfile(request, `RWA board profile A ${Date.now()}`);
+  await createAgentProfile(request, `RWA board profile B ${Date.now()}`);
 
   await page.goto(`/projects/${projectId}/board`);
   await waitForApp(page);
@@ -134,7 +139,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   // reports exactly one, so it is always index "0") ties the assertion to
   // this test's own runner, the same way every project-touching test in
   // `scheduler-e2e.spec.ts` already does.
-  await modal.getByLabel('Choose…').check();
+  await modal.getByText('Choose…').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
@@ -250,4 +255,43 @@ test('Sprint: the per-item "Run with agent" trigger is present and opens the sam
 
   void sprintId;
   void itemId;
+});
+
+test('run flow: with nothing configured the model row is missing, its link leads to the fix, and coming back it is ok', async ({
+  page,
+  request,
+  executionToggleLock,
+}) => {
+  void executionToggleLock;
+  // A dedicated project: its model default is written below, which the shared project must never get.
+  const projectId = await createFreshProject(request, `RWA flow project ${Date.now()}`);
+  const itemId = await createFreshItem(request, projectId, `RWA flow item ${Date.now()}`);
+  const profileId = await createAgentProfile(request, `RWA flow profile ${Date.now()}`);
+  const runnerName = `RWA flow runner ${Date.now()}`;
+  await enrollRunner(request, runnerName, 'opaque/model-alpha');
+
+  const openModal = async () => {
+    await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+    await waitForApp(page);
+    await page.getByRole('dialog').getByRole('button', { name: 'Run with agent' }).click();
+    const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+    await expect(modal).toBeVisible();
+    await selectTargetIfPickerShows(modal, runnerName);
+    await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
+    return modal;
+  };
+
+  let modal = await openModal();
+  const row = (m: Locator) => m.locator('[data-prerequisite]').filter({ hasText: 'A model is set for this run' });
+  await expect(row(modal)).toHaveAttribute('data-prerequisite', 'missing');
+  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeDisabled();
+
+  await row(modal).getByRole('link').click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=agents`));
+
+  // The fix itself is the settings panel's own save; the API write is the same one it makes.
+  await setProjectDefaultModel(request, projectId, 'openai', 'opaque/model-alpha');
+  await page.goBack();
+  modal = await openModal();
+  await expect(row(modal)).toHaveAttribute('data-prerequisite', 'ok');
 });
