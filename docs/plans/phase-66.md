@@ -1076,6 +1076,7 @@ All six were answered on 2026-10-03; the answers are the Wave 0 table. None is o
 | Waves 1–7 | in `develop` 2026-10-05: B1, P0, S0, I1, E1, C1a, R1 · P1, C1b, D1, F1 · C3, E2, D2, C2 · H1, E3 · H2a, P2 · G1a, H2b · G1b |
 | A1, A3 | in `develop` 2026-10-05 |
 | A2 | in `develop` 2026-10-05 |
-| A4 | running; then A5 (docket P35-6 and P35-9 are merged in its `develop`) |
+| A4 | in `develop` 2026-10-05 |
+| A5 | running (docket P35-9 is merged in its `develop`) |
 | R2 | held: `../newPortaflio` already has uncommitted landing-page work on branch `tack-landing` (2026-10-03); the maintainer decides whether an agent finishes it |
-| Left open by the work | a docket run that times out (not cancelled) stops only its main process group; the branch push runs git in a workspace the agent could reconfigure (`docs/CONFIG.md` says so) |
+| Left open by the work | a docket run that times out (not cancelled) stops only its main process group; the branch push runs git in a workspace the agent could reconfigure (`docs/CONFIG.md` says so); on a policy-capable docket a request must name docket's own tools, since Tack's tool names (`shell`, `filesystem`) have no mapping and are refused; `tack runner doctor` does not print the per-harness `artifacts` and `permission_policy` lines |
