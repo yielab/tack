@@ -7,15 +7,16 @@ import { fileURLToPath } from 'url';
 import { waitForApp } from './helpers';
 
 // Captures the step-by-step tutorial screenshots (docs/screenshots/tutorial/)
-// that docs/book/src/user-guide/tutorial.md embeds: first open, project
-// creation, adding items, turning agent execution on, saving a default
-// model, the "Run with agent" dialog, and one REAL execution tracked from
-// the board chip through the Execution tab to its artifacts.
+// that docs/book/src/user-guide/tutorial.md embeds, every step done through
+// the UI: first open, project creation, adding tasks, a task's brief, turning
+// agent execution on (the harnesses it finds), a default model, an agent
+// profile, the "Run with agent" dialog, and one REAL Claude Code execution
+// tracked from the board chip through the Execution tab to its artifacts.
 //
-// Run against an ALREADY-RUNNING release build of `tack serve --with-runner`
-// (built with `--features embed-spa`), started with a FRESH database so the
-// first screenshot really is a first open, with a real `claude` binary on
-// PATH — see playwright.tutorial-assets.config.ts for the exact recipe.
+// Run against an ALREADY-RUNNING release build of `tack serve` (built with
+// `--features embed-spa`), started with a FRESH database so the first
+// screenshot really is a first open, with a real, signed-in `claude` on PATH
+// — see playwright.tutorial-assets.config.ts for the exact recipe.
 // The one execution this file creates is a real, live, billed model call.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,8 @@ const OTHER_ITEMS = [
   'Refresh the screenshots in the docs',
 ];
 const PROFILE_NAME = 'Announcement writer';
+const MODEL_PROVIDER = 'anthropic';
+const MODEL_ID = 'claude-sonnet-5-5';
 const PROFILE_INSTRUCTIONS =
   'Write the launch announcement for the relaunched marketing site as a blog post of about 400 words: ' +
   'a headline, an intro paragraph, three feature sections of two sentences each, and a closing call to action. ' +
@@ -135,7 +138,7 @@ let runItemId: string;
 // Re-resolve ids from the server when a rerun starts past the test that set
 // them (e.g. `--grep` on one failed step), so each test stays runnable alone
 // against the same live server.
-async function ensureIds(): Promise<void> {
+async function ensureProject(): Promise<void> {
   if (!projectId) {
     const projects = (await apiFetch('/projects')) as Array<{
       id: string;
@@ -147,6 +150,10 @@ async function ensureIds(): Promise<void> {
         `project "${PROJECT_NAME}" not found — run the earlier tests first`,
       );
   }
+}
+
+async function ensureIds(): Promise<void> {
+  await ensureProject();
   if (!runItemId) {
     const items = (await apiFetch(`/projects/${projectId}/items`)) as {
       data: Array<{ id: string; title: string }>;
@@ -182,24 +189,6 @@ test.beforeAll(async () => {
   );
   repoRev = execSync('git rev-parse HEAD', { cwd: repoDir }).toString().trim();
 
-  // Exactly one agent profile, so the "Run with agent" dialog selects it on
-  // its own and the dialog screenshot needs no profile-picking detour.
-  // Idempotent so a `--grep` rerun against the same live server never 409s.
-  const profiles = (await apiFetch('/agent-profiles')) as
-    { data?: Array<{ name: string }> } | Array<{ name: string }>;
-  const profileList = Array.isArray(profiles)
-    ? profiles
-    : (profiles.data ?? []);
-  if (!profileList.some((p) => p.name === PROFILE_NAME)) {
-    await apiFetch('/agent-profiles', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        name: PROFILE_NAME,
-        instructions: PROFILE_INSTRUCTIONS,
-      }),
-    });
-  }
 });
 
 test.afterAll(() => {
@@ -248,7 +237,8 @@ test.describe.serial('tutorial screenshots', () => {
     await page.screenshot({ path: path.join(OUT_DIR, '03-board-empty.png') });
   });
 
-  test('04–05: add items on the board', async ({ page }) => {
+  test('04–05: add tasks on the board', async ({ page }) => {
+    await ensureProject();
     await page.goto(`${BASE}/projects/${projectId}/board`);
     await waitForApp(page);
     await expect(page.getByText('Backlog').first()).toBeVisible();
@@ -268,7 +258,7 @@ test.describe.serial('tutorial screenshots', () => {
         // an <input> — no placeholder attribute to target, so type into it.
         await page.locator('[contenteditable="true"]').first().click();
         await page.keyboard.type(
-          'One headline plus four bullets, ready to paste into the blog.',
+          'About 400 words for the blog: a headline, an intro, three feature sections and a call to action.',
         );
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(OUT_DIR, '04-new-item.png') });
@@ -286,19 +276,38 @@ test.describe.serial('tutorial screenshots', () => {
     // transient overlays.
     await page.waitForTimeout(4_500);
     await page.screenshot({ path: path.join(OUT_DIR, '05-board-tasks.png') });
-
-    const items = (await apiFetch(`/projects/${projectId}/items`)) as {
-      data: Array<{ id: string; title: string }>;
-    };
-    const runItem = items.data.find((it) => it.title === RUN_ITEM_TITLE);
-    if (!runItem)
-      throw new Error(
-        'the run item did not come back from GET /projects/:id/items',
-      );
-    runItemId = runItem.id;
   });
 
-  test('06–07: turn agent execution on', async ({ page }) => {
+  test('06: write the task a brief', async ({ page }) => {
+    await ensureIds();
+    await page.setViewportSize({ width: 1440, height: 1300 });
+    await page.goto(`${BASE}/projects/${projectId}/board?item=${runItemId}`);
+    await waitForApp(page);
+    const drawer = page.getByRole('dialog');
+    await drawer.getByRole('tab', { name: 'Brief' }).click();
+    const panel = drawer.getByRole('tabpanel');
+
+    const criteria: Array<[string, string]> = [
+      ['About 400 words', 'Count the words of the post; between 350 and 450 is fine.'],
+      ['Ends with a call to action', 'The last paragraph tells the reader what to do next.'],
+    ];
+    for (const [i, [title, check]] of criteria.entries()) {
+      await panel.getByRole('button', { name: 'Add criterion' }).click();
+      await panel.getByRole('combobox', { name: 'Kind' }).nth(i).selectOption({ label: 'Manual (a person checks)' });
+      await panel.getByRole('textbox', { name: 'Title', exact: true }).nth(i).fill(title);
+      await panel.getByLabel('What a person must check').nth(i).fill(check);
+    }
+    await panel
+      .getByLabel('Definition of done')
+      .fill('A post the team can publish on launch day without rewriting it.');
+    await panel.getByRole('button', { name: 'Save brief' }).click();
+    await page.waitForTimeout(4_500);
+    await drawer.getByRole('tablist').evaluate((t) => t.scrollIntoView({ block: 'start' }));
+    await page.waitForTimeout(300);
+    await drawer.screenshot({ path: path.join(OUT_DIR, '06-brief.png') });
+  });
+
+  test('07–08: turn agent execution on; the harnesses it finds', async ({ page }) => {
     await page.goto(`${BASE}/agents`);
     await waitForApp(page);
     await expect(
@@ -306,7 +315,7 @@ test.describe.serial('tutorial screenshots', () => {
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Turn on' })).toBeVisible();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(OUT_DIR, '06-agents-off.png') });
+    await page.screenshot({ path: path.join(OUT_DIR, '07-agents-off.png') });
 
     await page.getByRole('button', { name: 'Turn on' }).click();
     await expect(
@@ -315,10 +324,10 @@ test.describe.serial('tutorial screenshots', () => {
     // Give the harness-detection section time to probe the installed
     // binaries and their vendor logins before capturing it.
     await page.waitForTimeout(4_000);
-    await screenshotFullContent(page, path.join(OUT_DIR, '07-agents-on.png'));
+    await screenshotFullContent(page, path.join(OUT_DIR, '08-agents-on.png'));
   });
 
-  test('08: save a default model for the project', async ({ page }) => {
+  test('09: save a default model for the project', async ({ page }) => {
     await ensureIds();
     await page.goto(`${BASE}/agents`);
     await waitForApp(page);
@@ -335,26 +344,41 @@ test.describe.serial('tutorial screenshots', () => {
     await page.waitForTimeout(300);
     await modelDefault.getByRole('radio', { name: 'Type a model id' }).check();
     await page.waitForTimeout(300);
-    await modelDefault
-      .getByLabel('Provider', { exact: true })
-      .fill('anthropic');
-    await modelDefault
-      .getByLabel('Model ID', { exact: true })
-      .fill('claude-sonnet-4-5');
+    await modelDefault.getByLabel('Provider', { exact: true }).fill(MODEL_PROVIDER);
+    await modelDefault.getByLabel('Model ID', { exact: true }).fill(MODEL_ID);
     await page.waitForTimeout(300);
     await modelDefault.getByRole('button', { name: 'Save' }).click();
     await page.waitForTimeout(800);
     await modelDefault.scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     await modelDefault.screenshot({
-      path: path.join(OUT_DIR, '08-default-model.png'),
+      path: path.join(OUT_DIR, '09-default-model.png'),
     });
   });
 
-  test('09–13: run the item with an agent, track it, see the result', async ({
+  test('10: create the agent profile', async ({ page }) => {
+    await page.goto(`${BASE}/agents`);
+    await waitForApp(page);
+    await page.getByRole('button', { name: /^Advanced/ }).click();
+    await page.getByRole('tab', { name: 'Agent profiles' }).click();
+    await page.getByRole('button', { name: '+ Create agent profile' }).click();
+    const form = page.locator('form').filter({ has: page.getByLabel('Instructions') });
+    await form.getByLabel('Name').fill(PROFILE_NAME);
+    await form.getByLabel('Instructions').fill(PROFILE_INSTRUCTIONS);
+    const advanced = page.locator('section#advanced');
+    await advanced.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await advanced.screenshot({ path: path.join(OUT_DIR, '10-agent-profile.png') });
+    await form.getByRole('button', { name: 'Create' }).click();
+    await expect(page.getByText(PROFILE_NAME).first()).toBeVisible();
+  });
+
+  test('11–15: run the task with Claude Code, track it, see the result', async ({
     page,
   }) => {
     await ensureIds();
+    // Tall enough that the dialog (max 90vh) shows the whole flow unscrolled.
+    await page.setViewportSize({ width: 1440, height: 2000 });
     await page.goto(`${BASE}/projects/${projectId}/board`);
     await waitForApp(page);
     await expect(page.getByText(RUN_ITEM_TITLE).first()).toBeVisible();
@@ -363,24 +387,28 @@ test.describe.serial('tutorial screenshots', () => {
     await page
       .getByRole('button', { name: `Run with agent: ${RUN_ITEM_TITLE}` })
       .click();
+    const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+    await expect(dialog).toBeVisible();
     await page.waitForTimeout(600);
-    await page.getByLabel('Harness').selectOption('claude-code');
+    await dialog.getByLabel('Harness').selectOption('claude-code');
     await page.waitForTimeout(400);
-    await page.getByRole('button', { name: 'Change for this run' }).click();
+    await dialog.getByRole('button', { name: 'Change for this run' }).click();
     await page.waitForTimeout(300);
-    await page.getByLabel('Remote').fill(repoDir);
-    await page.getByLabel('Base revision').fill(repoRev);
+    await dialog.getByLabel('Remote').fill(repoDir);
+    await dialog.getByLabel('Base revision').fill(repoRev);
     await page.waitForTimeout(500);
-    await page.screenshot({
-      path: path.join(OUT_DIR, '09-run-with-agent.png'),
+    await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
+    await dialog.screenshot({
+      path: path.join(OUT_DIR, '11-run-with-agent.png'),
     });
 
     // ── Submit — from here on everything is a real, billed attempt ────────
-    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
     await page.waitForTimeout(1200);
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     const listed = (await apiFetch(`/executions?item_id=${runItemId}`)) as {
-      data: Array<{ request_id: string }>;
+      data: Array<{ request_id: string; requested_harness_kind?: string }>;
     };
     const requestId = listed.data[0]?.request_id;
     if (!requestId)
@@ -388,10 +416,22 @@ test.describe.serial('tutorial screenshots', () => {
         'no execution request found for this item after clicking Run',
       );
 
-    // ── Track it up close: the Execution tab while the attempt runs ───────
-    // Go straight to the tab and grab the in-flight state the moment its
-    // badge shows; if the run beats us to Succeeded anyway, the capture
-    // honestly shows that instead.
+    // ── Track it from the board: the card's own execution chip ────────────
+    await page.goto(`${BASE}/projects/${projectId}/board`);
+    await waitForApp(page);
+    await expect(
+      page.getByRole('button', {
+        name: `Open the Execution tab for ${RUN_ITEM_TITLE}`,
+      }),
+    ).toBeVisible();
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(OUT_DIR, '12-board-tracking.png'),
+    });
+
+    // ── Up close: the Execution tab while the attempt runs ────────────────
+    // Grab the in-flight state the moment its badge shows; if the run beats
+    // us to Succeeded anyway, the capture honestly shows that instead.
     await page.goto(
       `${BASE}/projects/${projectId}/board?item=${runItemId}&tab=execution`,
     );
@@ -404,24 +444,12 @@ test.describe.serial('tutorial screenshots', () => {
     ).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(400);
     await page.screenshot({
-      path: path.join(OUT_DIR, '11-execution-running.png'),
-    });
-
-    // ── Track it from the board: the card's own execution chip ────────────
-    await page.goto(`${BASE}/projects/${projectId}/board`);
-    await waitForApp(page);
-    await expect(
-      page.getByRole('button', {
-        name: `Open the Execution tab for ${RUN_ITEM_TITLE}`,
-      }),
-    ).toBeVisible();
-    await page.waitForTimeout(600);
-    await page.screenshot({
-      path: path.join(OUT_DIR, '10-board-tracking.png'),
+      path: path.join(OUT_DIR, '13-execution-running.png'),
     });
 
     // ── The finished attempt, whole card in frame ──────────────────────────
-    await waitForRequestState(requestId, ['succeeded', 'failed']);
+    const finalState = await waitForRequestState(requestId, ['succeeded', 'failed']);
+    expect(finalState, 'the tutorial shows a run that succeeded').toBe('succeeded');
     await page.goto(
       `${BASE}/projects/${projectId}/board?item=${runItemId}&tab=execution`,
     );
@@ -437,7 +465,7 @@ test.describe.serial('tutorial screenshots', () => {
       .scrollIntoViewIfNeeded();
     await page.waitForTimeout(600);
     await page.screenshot({
-      path: path.join(OUT_DIR, '12-execution-succeeded.png'),
+      path: path.join(OUT_DIR, '14-execution-succeeded.png'),
     });
 
     // ── The result: the attempt's artifacts, cropped to that section ──────
@@ -460,7 +488,7 @@ test.describe.serial('tutorial screenshots', () => {
     await artifactsSection.scrollIntoViewIfNeeded();
     await page.waitForTimeout(400);
     await artifactsSection.screenshot({
-      path: path.join(OUT_DIR, '13-artifacts.png'),
+      path: path.join(OUT_DIR, '15-artifacts.png'),
     });
 
     console.log(
