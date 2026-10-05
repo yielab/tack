@@ -2452,7 +2452,7 @@ fn assert_single_artifact_uploaded(
         .manifests
         .iter()
         .flat_map(|report| report.artifacts.iter())
-        .filter(|item| item.kind != "evidence")
+        .filter(|item| item.kind != "evidence" && item.kind != "brief")
         .collect();
     assert_eq!(manifests.len(), 1, "exactly one harness artifact manifest");
     let manifest_item = manifests[0];
@@ -2512,6 +2512,57 @@ async fn run_once_submits_terminal_event_and_uploads_staged_artifact() {
     assert_single_terminal_event_submitted(&state, "completed");
     assert_single_artifact_uploaded(&state, &sha256, &content, "staged-artifact.log");
 
+    std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+/// The claim fixture's request carries a brief: the attempt stages it as
+/// `brief.json` and `evidence.json.brief` equals it.
+#[tokio::test]
+async fn run_once_stages_the_requests_brief_and_fills_evidence_brief() {
+    let root_dir = temporary_root("data-protocol-brief");
+    let root = root_dir.path();
+    std::fs::create_dir_all(root).expect("test root");
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let engine = runner_engine(
+        protocol(work(), false, false),
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        root,
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    assert!(matches!(
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle"),
+        RunCycle::Completed { .. }
+    ));
+
+    let claim: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../docs/contracts/runner-v1/claim.response.json"
+    ))
+    .expect("claim fixture");
+    let brief = &claim["request"]["brief"];
+    assert!(brief.is_object(), "the claim fixture carries a brief");
+
+    let state = data_protocol.state.lock().expect("fake data protocol lock");
+    let uploaded = |kind: &str| -> serde_json::Value {
+        let item = state
+            .manifests
+            .iter()
+            .flat_map(|report| report.artifacts.iter())
+            .find(|item| item.kind == kind)
+            .unwrap_or_else(|| panic!("{kind} was staged"));
+        let upload = state
+            .uploads
+            .iter()
+            .find(|upload| upload.0 == item.artifact_id)
+            .expect("uploaded");
+        serde_json::from_slice(&upload.1).expect("json")
+    };
+    assert_eq!(&uploaded("brief"), brief);
+    assert_eq!(&uploaded("evidence")["brief"], brief);
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
@@ -2977,7 +3028,7 @@ async fn a_changed_attempt_stages_patch_files_and_evidence_then_the_workspace_is
         .filter(|item| item.kind != "log")
         .map(|item| item.kind.as_str())
         .collect();
-    assert_eq!(kinds, ["patch", "files", "evidence"]);
+    assert_eq!(kinds, ["patch", "files", "brief", "evidence"]);
     let patch = String::from_utf8(uploaded(&state, "changes.patch")).expect("utf8");
     assert!(patch.contains("+new") && patch.contains("-gone"));
     let files: Vec<crate::evidence::FileChange> =
@@ -3050,7 +3101,7 @@ async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() 
             .filter(|item| item.kind != "log")
             .map(|item| item.kind.as_str())
             .collect();
-        assert_eq!(kinds, ["patch", "files", "evidence", "mrp"]);
+        assert_eq!(kinds, ["patch", "files", "brief", "evidence", "mrp"]);
         let fixture = std::fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../docs/contracts/mrp-v1/fixtures/ready.json"),

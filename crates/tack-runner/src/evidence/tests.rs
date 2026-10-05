@@ -54,6 +54,7 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
         "codex".to_owned(),
         serde_json::json!({"code": "completed"}),
         serde_json::Value::Null,
+        None,
     )
     .await;
 

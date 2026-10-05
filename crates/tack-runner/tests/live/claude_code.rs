@@ -115,6 +115,7 @@ fn spec_with(
         status_map_policy_id: None,
         environment,
         metadata: serde_json::json!({}),
+        brief: None,
         additional: Default::default(),
     };
     let attempt = AttemptSnapshot {

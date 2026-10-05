@@ -359,6 +359,10 @@ pub struct ExecutionRequestSnapshot {
     pub environment: BTreeMap<String, EnvironmentValue>,
     #[serde(default)]
     pub metadata: serde_json::Value,
+    /// The item's brief (`docs/contracts/brief-v1/`) as it was when the
+    /// request was created; absent when the item had none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<serde_json::Value>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
