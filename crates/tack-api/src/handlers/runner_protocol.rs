@@ -2140,7 +2140,7 @@ pub async fn submit_completion(
         .map_err(|_| internal_error("Could not record completion"))?;
 
     if matches!(result, CompletionResult::Committed(_)) && terminal_state == "succeeded" {
-        apply_status_map_policy(&state.repo, &attempt_id).await;
+        apply_status_map_policy(&state.repo, state.app.as_ref(), &attempt_id).await;
         if let Some(app) = state.app.clone()
             && let Some(git) = actual_execution.additional.get("git").cloned()
         {
@@ -2195,7 +2195,11 @@ pub async fn submit_completion(
 /// Best-effort: moves the attempt's item per the request snapshot's
 /// `status_map_policy_id`. A refused transition or any lookup failure is
 /// logged at `warn` and never fails the completion.
-async fn apply_status_map_policy(repo: &tack_db::Repository, attempt_id: &str) {
+async fn apply_status_map_policy(
+    repo: &tack_db::Repository,
+    app: Option<&crate::router::AppState>,
+    attempt_id: &str,
+) {
     use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
     let row: Result<Option<(String, String)>, sqlx::Error> = sqlx::query_as(
         "SELECT r.item_id, json_extract(r.request_snapshot, '$.status_map_policy_id') \
@@ -2247,7 +2251,22 @@ async fn apply_status_map_policy(repo: &tack_db::Repository, attempt_id: &str) {
         .update_item_atomically(item_uuid, update, &project.workflow, None)
         .await
     {
-        Ok(tack_db::repo::items::AtomicItemUpdateOutcome::Updated { .. }) => {}
+        Ok(tack_db::repo::items::AtomicItemUpdateOutcome::Updated {
+            item, old_status, ..
+        }) => {
+            // The board learns about the move the same way as from an edit.
+            if let Some(app) = app {
+                crate::handlers::websocket::broadcast_event(
+                    app,
+                    crate::handlers::websocket::BoardEvent::ItemUpdated {
+                        project_id: item.project_id,
+                        item_id: item.id,
+                        old_status: Some(old_status),
+                        new_status: item.status.clone(),
+                    },
+                );
+            }
+        }
         Ok(outcome) => {
             tracing::warn!(attempt_id, %item_uuid, target, ?outcome, "status map: transition refused, item untouched");
         }
