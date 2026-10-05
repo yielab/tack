@@ -13,8 +13,9 @@ service, and the codebase cleanup that retired the Docket control-plane bridge
 **Phase 64 closed on 2026-09-19.** Its plan and its chapter of this file are archived; what
 it left open is in Phase 65.
 
-**Phase 65 is the live phase**, and its plan is the only list of pending work of that phase; Phase 66, below, is open
-beside it with its own plan:
+**Phase 66 closed on 2026-10-05** and ships as `v0.1.0-beta.10`; what it left open and what
+it parked are in its plan, [`docs/plans/phase-66.md`](../../plans/phase-66.md). Phase 65's plan
+holds the rest of its Wave 0, the maintainer's:
 [`docs/plans/phase-65.md`](../../plans/phase-65.md). It folds together what the roadmap,
 the ADRs and the harness plan still owed — the release tag and `docs/LAUNCH-CHECKLIST.md`,
 inbound GitHub sync, `tack start`, and the harness upgrades — as one ordered sequence of

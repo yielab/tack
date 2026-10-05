@@ -22,7 +22,7 @@ Tack is a single self-contained binary — the web UI, REST API, and SQLite engi
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
 ```
 
-Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. Pin a version with `TACK_VERSION=v0.1.0-beta.9`; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
+Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. Pin a version with `TACK_VERSION=v0.1.0-beta.10`; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
 
 **Homebrew (macOS and Linux):**
 

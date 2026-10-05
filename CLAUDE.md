@@ -13,10 +13,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 ## What's next
 
 Phase 64 shipped 2026-09-19; the runner, harnesses, MCP and desktop app are the product
-surface. Phase 65's four agent waves landed 2026-09-21 (inbound GitHub sync, `tack start`,
-the harness upgrades) and `v0.1.0-beta.9` shipped the same day — the first release with
-the desktop bundles. `docs/plans/phase-65.md` is the only list of pending work; what is
-left is the rest of its Wave 0, the user's.
+surface. Phase 65 shipped as `v0.1.0-beta.9` (2026-09-21), the first release with the
+desktop bundles. Phase 66 (briefs, evidence, the verifier's merge-readiness pack, branch
+push and pull requests, factory metrics, docket contract 1.1) closed 2026-10-05 and ships
+as `v0.1.0-beta.10`. No phase is open: `docs/plans/phase-66.md` keeps what it left open
+and what is parked, and phase-65's Wave 0 publish list is the user's.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
