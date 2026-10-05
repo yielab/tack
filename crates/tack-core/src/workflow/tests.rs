@@ -309,3 +309,41 @@ fn should_complete_parent_true_when_all_siblings_done() {
 fn should_complete_parent_false_when_siblings_incomplete() {
     assert!(!WorkflowConfig::should_complete_parent(false));
 }
+
+// ── StatusMapPolicy ───────────────────────────────────────
+
+#[test]
+fn status_map_policy_parses_the_two_ids_and_rejects_the_rest() {
+    assert_eq!(
+        "done_on_success".parse::<StatusMapPolicy>(),
+        Ok(StatusMapPolicy::DoneOnSuccess)
+    );
+    assert_eq!(
+        "done_on_mrp_accepted".parse::<StatusMapPolicy>(),
+        Ok(StatusMapPolicy::DoneOnMrpAccepted)
+    );
+    assert!("anything_else".parse::<StatusMapPolicy>().is_err());
+}
+
+#[test]
+fn status_map_policy_target_status_only_acts_on_its_own_event() {
+    let wf = simple_workflow();
+    let done = Some("Done".to_owned());
+    let (succ, mrp) = (
+        StatusMapEvent::AttemptSucceeded,
+        StatusMapEvent::MrpAccepted,
+    );
+    assert_eq!(
+        StatusMapPolicy::DoneOnSuccess.target_status(&wf, succ),
+        done
+    );
+    assert_eq!(StatusMapPolicy::DoneOnSuccess.target_status(&wf, mrp), None);
+    assert_eq!(
+        StatusMapPolicy::DoneOnMrpAccepted.target_status(&wf, mrp),
+        done
+    );
+    assert_eq!(
+        StatusMapPolicy::DoneOnMrpAccepted.target_status(&wf, succ),
+        None
+    );
+}

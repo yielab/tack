@@ -100,6 +100,7 @@ pub struct CreateExecutionArgs<'a> {
     pub environment: Option<&'a str>,
     pub metadata: Option<&'a str>,
     pub timeout_seconds: u64,
+    /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
     pub status_map_policy_id: Option<&'a str>,
 }
 
@@ -124,6 +125,7 @@ pub struct CreateExecutionValues<'a> {
     pub environment: Value,
     pub metadata: Value,
     pub timeout_seconds: u64,
+    /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
     pub status_map_policy_id: Option<&'a str>,
 }
 

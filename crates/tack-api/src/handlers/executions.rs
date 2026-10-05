@@ -283,6 +283,8 @@ pub struct CreateExecution {
     pub environment: Value,
     pub metadata: Value,
     pub timeout_seconds: u64,
+    /// `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
+    /// with `invalid_request`. Omitted leaves the item's status untouched.
     #[serde(default)]
     pub status_map_policy_id: Option<String>,
 }
@@ -552,6 +554,16 @@ pub async fn create_execution(
     Json(input): Json<CreateExecution>,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let authenticated_principal = principal(&headers)?;
+    if let Some(id) = input.status_map_policy_id.as_deref()
+        && let Err(message) = id.parse::<tack_core::workflow::StatusMapPolicy>()
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "status_map_policy_id"}),
+        ));
+    }
     let idempotency_scope = format!("operator:{authenticated_principal}");
     let Some(item) = state.repo.get_item(input.item_id).await.map_err(|_| {
         error(

@@ -4,6 +4,56 @@ use tracing::{debug, warn};
 use crate::error::CoreError;
 use crate::models::ProjectType;
 
+/// What an execution's `status_map_policy_id` resolves to: the rule that moves
+/// the item's status when the execution reaches a given event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusMapPolicy {
+    /// The item moves to the first Done status when the attempt succeeds.
+    DoneOnSuccess,
+    /// The item moves to the first Done status when its MRP is accepted
+    /// (acted on by the MRP-accept path, not by completion).
+    DoneOnMrpAccepted,
+}
+
+/// The execution event a [`StatusMapPolicy`] is asked about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusMapEvent {
+    AttemptSucceeded,
+    MrpAccepted,
+}
+
+impl std::str::FromStr for StatusMapPolicy {
+    type Err = String;
+
+    fn from_str(id: &str) -> Result<Self, Self::Err> {
+        match id {
+            "done_on_success" => Ok(Self::DoneOnSuccess),
+            "done_on_mrp_accepted" => Ok(Self::DoneOnMrpAccepted),
+            other => Err(format!(
+                "unknown status_map_policy_id {other:?}; expected done_on_success or done_on_mrp_accepted"
+            )),
+        }
+    }
+}
+
+impl StatusMapPolicy {
+    /// The status the item should move to for `event`, or `None` when this
+    /// policy does not act on that event or the workflow has no Done status.
+    pub fn target_status(
+        &self,
+        workflow: &WorkflowConfig,
+        event: StatusMapEvent,
+    ) -> Option<String> {
+        match (self, event) {
+            (Self::DoneOnSuccess, StatusMapEvent::AttemptSucceeded)
+            | (Self::DoneOnMrpAccepted, StatusMapEvent::MrpAccepted) => {
+                workflow.find_first_done_status().map(str::to_owned)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Full workflow configuration for a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
