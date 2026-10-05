@@ -77,3 +77,39 @@ fixtures here are `captured` — every status this adapter's tests exercise (`ok
 4. Whether a network-denying `permission_policy` or a budget could be mapped onto any of
    docket's own flags is unmeasured; none is passed, and `capabilities()` declares
    `permission_policy: unsupported` for that reason.
+
+## Contract 1.1 and the boot probe
+
+`DocketFeatures::probe` (`docket/probe.rs`) runs the located binary at runner boot. Every
+probe is a `harness run` with `DOCKET_HOME` unset and `PATH` the only variable, so docket
+refuses before any network call: zero spend, nothing written. Measured on a scratch install
+of `../rack-cli` develop `25fe5252` (`docket --version` prints `docket 0.2.0b3`, contains
+P35-2 `7b42f860`), on a second scratch install of `7b42f860^` (contract 1.0 only; also
+prints `0.2.0b3`), and on the operator's `docket 0.2.0b1`. Command shape, `W` any existing
+directory:
+
+    env -i PATH=/usr/bin:/bin <docket> harness run --workspace W --task x --model a/b <extra>
+
+- **Contract.** `<extra>` = `--contract 1.1`. Exit 2 and one `refused` result line either way;
+  the line's `"v"` is `1.1.0` on a docket that speaks 1.1 and `1.0.0` on one that does not.
+  Measured: 1.1 on the scratch develop install and on the operator's, 1.0 on the `7b42f860^`
+  install. `--contract 9.9` on a 1.1 docket is also a refusal (`v` `1.0.0`, error `--contract
+  must be one of ['1.0', '1.1']`), so a refusal alone proves nothing; `v` does.
+- **Flags.** An unknown option is NOT a usage error: docket parses `harness run` by hand and
+  ignores what it does not know (the `7b42f860^` install ignores `--contract 1.1` and all five
+  flags below and reaches the `DOCKET_HOME` refusal). The reliable probe is the opposite one:
+  `<extra>` = `--contract 1.0 <flag> <value>`. A docket that knows the flag refuses it for
+  needing 1.1 and names it in `error` (`--answers and --answer-timeout need --contract 1.1`,
+  `--token-file, --max-tokens and --policy need --contract 1.1`, `--recipe needs --contract
+  1.1`); one that does not knows nothing of it and refuses for `DOCKET_HOME is not set`. The
+  adapter reads a flag as present when the refusal's `error` contains the flag's name.
+  Measured with `--answers stdin`, `--token-file /x`, `--max-tokens 1`, `--policy /x`,
+  `--recipe x`: all five present on the develop installs, all absent on `7b42f860^`. Flags
+  are only probed once the contract probe says 1.1.
+- **The operator's `0.2.0b1` speaks 1.1.** `~/.local/bin/docket` execs a venv whose package is
+  an editable install of the `../rack-cli` working tree, so its `--version` metadata is stale
+  while its code is current. The version string says nothing about what the binary does,
+  which is why no version is ever compared.
+- **1.1 result line.** `contract-1.1/ok.ndjson`: same fields as 1.0 plus `files`, `run_state`,
+  `limits`, `approvals`, `question`, `usage.cached_tokens`/`turns`. `--task-file` accepts a real
+  file (the adapter writes `<scratch>/task.md`); `/dev/stdin` stays the 1.0 shape.
