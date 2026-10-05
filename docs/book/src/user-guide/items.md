@@ -1,6 +1,6 @@
 # Working with Items
 
-Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and five tabs: Details, Activity, Dependencies, Files, and Fields.
+Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Brief, Activity, Dependencies, Files, and Fields.
 
 ---
 
@@ -32,6 +32,31 @@ The Details tab holds the item **description**, edited with the rich-text editor
 The description **autosaves** — edits are debounced and persisted automatically a short pause (about 0.6 seconds) after you stop typing. There is no save button.
 
 Core metadata — **assignee, priority, estimate, sprint, due date, and labels (tags)** — lives in the header above the tabs (see [Opening an item](#opening-an-item)), so it is always visible regardless of which tab is active.
+
+---
+
+## Brief tab
+
+The Brief says what "done" means for an item, in a form a person or a program can check. It has four parts, and **Save brief** writes them all at once.
+
+**Acceptance criteria** are the checks that must pass. Each has a title and one of six kinds:
+
+- **Command** — a shell command and the exit code it must return (0 by default), with an optional working directory.
+- **Test** — a named test, with an optional runner such as `pytest`.
+- **Metric** — a named measurement compared to a threshold: at most, at least, or exactly, with an optional unit.
+- **File exists** — a path that must be present.
+- **File is absent** — a path that must not be present.
+- **Manual** — something a person has to check by hand.
+
+Use **Manual** as a last resort. Every other kind can be checked without anyone's time, so a Manual criterion is marked as one that costs a person. Reach for it only when nothing else can express the check.
+
+**Constraints** limit how the work is done: a path that must not change, a dependency that is allowed, a maximum number of changed files, or a free-form note.
+
+**Definition of done** is a few plain sentences on when someone can stop and call the item finished. It covers what the criteria cannot, and it is the first thing a reviewer reads.
+
+**Risk** is low, medium or high. Leave it unset if you are not sure.
+
+A brief holds up to 50 criteria and 100 constraints, and each criterion needs an id that is unique within the brief (the editor chooses one for you). If the server rejects a save, the reason appears next to the part it concerns.
 
 ---
 
