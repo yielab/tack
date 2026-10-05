@@ -4,11 +4,11 @@
 //! The workspace is a throwaway clone, so nothing the harness did to it
 //! survives cleanup unless it is read out first. [`capture`] reads the diff
 //! against the base revision through [`WorktreeProvisioner::capture_evidence`]
-//! and stages three files from a scratch directory outside the workspace,
+//! and stages up to four files from a scratch directory outside the workspace,
 //! through [`ArtifactStager`], for the engine's ordinary manifest-then-content
-//! upload: `changes.patch` (kind `patch`), `files.json` (`files`) and
-//! `evidence.json` (`evidence`, the shape pinned by
-//! `docs/contracts/evidence-v1/`). A capture that cannot happen still yields
+//! upload: `changes.patch` (kind `patch`), `files.json` (`files`), `brief.json`
+//! (`brief`, only when the request carried one) and `evidence.json`
+//! (`evidence`, the shape pinned by `docs/contracts/evidence-v1/`). A capture that cannot happen still yields
 //! `evidence.json`, with `captured: false` and a reason, and never changes the
 //! attempt's outcome.
 
@@ -65,8 +65,8 @@ pub struct PatchManifest {
     pub truncated: bool,
 }
 
-/// `evidence.json`. `brief` and `branch` are written by later tasks and are
-/// `null` here.
+/// `evidence.json`. `brief` is the request's brief, or `null` when the item had
+/// none; `branch` is written by a later task and is `null` here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptEvidence {
     pub v: String,
@@ -95,6 +95,7 @@ pub async fn capture<P: WorktreeProvisioner>(
     harness_kind: String,
     terminal_reason: serde_json::Value,
     usage: serde_json::Value,
+    brief: Option<&serde_json::Value>,
 ) -> (PathBuf, Vec<serde_json::Value>) {
     let attempt_id = workspace.attempt_id.as_str();
     let (git, reason) = match workspaces.capture_evidence(workspace, &[RUNNER_DIR]).await {
@@ -120,7 +121,7 @@ pub async fn capture<P: WorktreeProvisioner>(
             size_bytes: git.patch.len() as u64,
             truncated: git.truncated,
         }),
-        brief: None,
+        brief: brief.cloned(),
         branch: None,
         terminal_reason,
         usage,
@@ -169,6 +170,10 @@ pub async fn capture<P: WorktreeProvisioner>(
         stage("changes.patch", "patch", "text/x-diff", &git.patch);
         let files = serde_json::to_vec(&git.files).unwrap_or_default();
         stage("files.json", "files", "application/json", &files);
+    }
+    if let Some(brief) = brief {
+        let bytes = serde_json::to_vec_pretty(brief).unwrap_or_default();
+        stage("brief.json", "brief", "application/json", &bytes);
     }
     let manifest = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
     stage("evidence.json", "evidence", "application/json", &manifest);
