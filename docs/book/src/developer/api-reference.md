@@ -1,10 +1,10 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](../../../openapi.json) (84 paths, 119 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (84 paths, 119 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
-This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
+This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
-Two authentication surfaces, the WebSocket endpoint (not in this spec), and worked examples are in [`docs/API-REFERENCE.md`](../../../API-REFERENCE.md).
+Two authentication surfaces, the WebSocket endpoint (not in this spec), and worked examples are in [`docs/API-REFERENCE.md`](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md).
 
 ---
 

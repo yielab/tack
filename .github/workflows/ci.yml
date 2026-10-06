@@ -391,10 +391,19 @@ jobs:
         run: cargo install mdbook --locked --version 0.4.40
       - name: Build docs
         run: mdbook build docs/book
+      # mdBook does not report broken links, so the built HTML is checked: a link
+      # that leaves docs/book/src renders on the site as a 404. Offline, so only
+      # in-book paths and anchors are checked; absolute links to the published
+      # book are mapped back onto the build.
       - name: Check for broken links
-        run: |
-          set -euo pipefail
-          mdbook build docs/book 2>&1 | grep -i "error\|broken" && exit 1 || true
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --offline --include-fragments --no-progress
+            --exclude-path docs/book/book/404.html
+            --remap 'https://yielab.github.io/tack/(.*) file://${{ github.workspace }}/docs/book/book/$1'
+            docs/book/book
+          jobSummary: false
 
   embed-spa:
     name: Embed SPA (single-binary packaging)

@@ -126,7 +126,7 @@ installations. This is **snapshot replication**, not a live shared database: sem
 are "one active writer at a time, last upload wins." It reuses the existing
 `VACUUM INTO` backup flow ([backup.rs](../../../crates/tack-api/src/handlers/backup.rs))
 and the existing staged-restore-on-startup mechanism
-([main.rs](../../../crates/tack-api/src/main.rs)).
+([main.rs](https://github.com/yielab/tack/blob/fdacf55cf4d8/crates/tack-api/src/main.rs)).
 
 **Design decisions (locked):**
 
@@ -216,7 +216,7 @@ when disabled). All subject to the existing Bearer-token middleware.
   (reject newer snapshots with `409` to prevent corruption), then stage (Task 6).
   Returns `{ "staged": true, "restart_required": true }`.
 
-#### Task 6 — Atomic staged restore (extend [main.rs](../../../crates/tack-api/src/main.rs))
+#### Task 6 — Atomic staged restore (extend [main.rs](https://github.com/yielab/tack/blob/fdacf55cf4d8/crates/tack-api/src/main.rs))
 
 The current code stages a `.restore` DB file applied on next startup. Extend it so the
 **DB and attachments swap together**:
@@ -536,7 +536,7 @@ lens to [Sidebar.tsx](../../../frontend/src/shared/ui/Sidebar.tsx). Pick one lab
 
 #### Task 26.5 — Alexa create path must validate
 
-`add_task` in [alexa.rs](../../../crates/tack-api/src/handlers/alexa.rs) builds
+`add_task` in [alexa.rs](https://github.com/yielab/tack/blob/v0.1.0-beta.7/crates/tack-api/src/handlers/alexa.rs) builds
 `CreateItem` and skips `.validate()` — the only mutation path that does. Add it.
 
 #### Task 26.6 — Cut the release
@@ -559,7 +559,7 @@ S3 bucket. Independent tasks; parallelize freely.
 > (`TACK_ALEXA_SHARED_SECRET`, constant-time compared, passed via the skill
 > endpoint URL) rather than full Amazon `SignatureCertChainUrl` X.509/RSA
 > verification — the pure-Rust cert stack was judged too heavy for the ~10 MB
-> binary budget. Documented in [docs/ALEXA.md](../../ALEXA.md). All other tasks
+> binary budget. Documented in [docs/ALEXA.md](https://github.com/yielab/tack/blob/v0.1.0-beta.7/docs/ALEXA.md). All other tasks
 > (exposed-bind warning, tar-slip rejection, sha256 + format_version restore
 > verification, secret-scrubbed bundles, Linear GraphQL escaping, validation
 > stragglers) shipped as specified.
@@ -569,7 +569,7 @@ S3 bucket. Independent tasks; parallelize freely.
 Implement Amazon's required `SignatureCertChainUrl` + `Signature` validation
 (cert-chain URL allow-list `https://s3.amazonaws.com/echo.api/…`, chain verification,
 SAN check for `echo.api`, body-hash compare) in
-[alexa.rs](../../../crates/tack-api/src/handlers/alexa.rs), keeping the existing
+[alexa.rs](https://github.com/yielab/tack/blob/v0.1.0-beta.7/crates/tack-api/src/handlers/alexa.rs), keeping the existing
 skill-ID + timestamp checks. If the cert dependency is deemed too heavy for the
 binary budget, the fallback is a mandatory shared-secret query param documented in
 `docs/ALEXA.md` — but say so explicitly; today's check is forgeable by anyone who
@@ -580,7 +580,7 @@ knows the (non-secret) skill ID.
 In [server.rs](../../../crates/tack-api/src/server.rs): if the bind host is
 non-loopback and `api_token` is `None`, log a prominent warning at startup (and
 consider requiring `TACK_INSECURE_NO_AUTH=1` to proceed). Also stop returning
-`database_url` from `/api/debug/info` ([debug.rs:40](../../../crates/tack-api/src/handlers/debug.rs)).
+`database_url` from `/api/debug/info` ([debug.rs:40](../../../crates/tack-api/src/debug.rs)).
 
 #### Task 27.3 — Sanitize tar extraction
 
@@ -853,12 +853,12 @@ Unit-test seeding and workflow transition rules.
 
 #### Task 31.2 — Templates in the New Project modal
 
-[CreateProjectModal.tsx](../../../frontend/src/shared/ui/CreateProjectModal.tsx)
+[CreateProjectModal.tsx](../../../frontend/src/features/projects/CreateProjectModal.tsx)
 currently offers a bare 11-way `<select>`; the richer Templates gallery is a
 disconnected page. Replace the type select with template cards (the
 `templateSummaryChips` preview component already exists) grouped by domain, with
 "start blank" fallback. Fix the Templates page type filter which is missing
-legal/research/event ([Templates.tsx:38-47](../../../frontend/src/pages/Templates.tsx)).
+legal/research/event ([Templates.tsx:38-47](../../../frontend/src/features/templates/Templates.tsx)).
 
 #### Task 31.3 — Preset preview
 
@@ -1083,7 +1083,7 @@ Both are tracked as a docket-side work package in `~/Sites/rack-cli/ROADMAP.md`
 
 ### Status of this cycle as of 2026-08-05
 
-Built by a multi-agent run tracked in [`TODO.md`](../../../TODO.md); every card's
+Built by a multi-agent run tracked in [`TODO.md`](https://github.com/yielab/tack/blob/v0.1.0-beta.7/TODO.md); every card's
 handoff note is in that file's §6.
 
 | Phase | Status | Notes |
@@ -1187,7 +1187,7 @@ schedulers, and **only** when `TACK_ORCH_ENABLE=true`. This task polls `/health`
 (roles + models), last activity, burn vs budget, gateway state. Sourced from
 `GET /api/control-planes` + `GET /api/fleet`. Empty state explains how to register a
 control plane. Tokens only, WCAG AA, axe-clean — the design-system rules in
-[frontend.md](developer/frontend.md) apply unchanged.
+[frontend.md](../../book/src/developer/frontend.md) apply unchanged.
 
 #### Task 33.8 — docket-side read endpoints
 
@@ -1472,7 +1472,7 @@ every dollar figure labelled an estimate and carrying its pricing-snapshot date.
 ### Multi-Agent Dispatch Plan (Phases 33–38)
 
 The full wave plan, per-agent task cards, file-ownership map, and rules of engagement
-live in **[TODO.md](../../../TODO.md)** at the repo root — written to be picked up cold
+live in **[TODO.md](https://github.com/yielab/tack/blob/v0.1.0-beta.7/TODO.md)** at the repo root — written to be picked up cold
 by parallel Sonnet agents.
 
 **Sequencing at a glance:** Task 33.1 + 33.2 are a blocking Wave 0 (they define the
@@ -1523,8 +1523,8 @@ trait?_ If not, the trait is contaminated. Today it is: of the thirteen methods 
 docket-shaped DTOs.
 
 The full plan, with per-item verification commands and the reasoning behind every
-decision, is **[docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md)**.
-Executable task cards for parallel agents are in [TODO.md](../../../TODO.md), Part II.
+decision, is **[docs/plans/agnostic-control-plane.md](../plans/agnostic-control-plane.md)**.
+Executable task cards for parallel agents are in [TODO.md](https://github.com/yielab/tack/blob/v0.1.0-beta.7/TODO.md), Part II.
 
 ### The load-bearing idea: capability negotiation
 
@@ -2192,8 +2192,8 @@ with no echo; and a rate-limited push retries and records a failure event.
 ### Multi-Agent Dispatch Plan (Phases 39–49)
 
 Per-agent task cards, the file-ownership map, and the rules of engagement live in
-**[TODO.md](../../../TODO.md)**, Part II. The full plan with per-item verification commands
-is [docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md).
+**[TODO.md](https://github.com/yielab/tack/blob/v0.1.0-beta.7/TODO.md)**, Part II. The full plan with per-item verification commands
+is [docs/plans/agnostic-control-plane.md](../plans/agnostic-control-plane.md).
 
 **Sequencing at a glance:** Phase 39 is blocking and must land before anything is touched —
 it is the only thing that makes the reshape safe rather than blind. Phases 40–42 are

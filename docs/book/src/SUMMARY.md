@@ -27,7 +27,7 @@
 
 # Developer Guide
 
-- [Architecture Overview](developer/README.md)
+- [Architecture Overview](developer/index.md)
 - [Crate Tour](developer/crate-tour.md)
 - [Frontend & Design System](developer/frontend.md)
 - [Adding Features](developer/adding-features.md)

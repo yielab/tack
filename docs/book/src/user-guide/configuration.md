@@ -5,7 +5,7 @@ override TOML values. Both are optional — all settings have built-in defaults.
 
 **The complete, authoritative table of every `TACK_*` variable — server, embedded
 runner, standalone runner, backup, orchestration, and the execution domain — is
-[`docs/CONFIG.md`](../../../CONFIG.md).** That file is updated the moment a variable is
+[`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md).** That file is updated the moment a variable is
 added; this page is not a second copy of it. What follows here is the loading order and
 one worked example.
 

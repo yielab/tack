@@ -70,7 +70,7 @@ Six terms recur throughout this documentation:
 
 - [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Claude Code, Codex, docket, or opencode
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
-- [Architecture Overview](developer/README.md) — the mental model behind the codebase
+- [Architecture Overview](developer/index.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit
 - [Rust Primer](developer/learning/rust-primer.md) — start here if Rust is new to you
 - [API Reference](developer/api-reference.md) — every REST endpoint (see `docs/openapi.json` for the exact, generated count)

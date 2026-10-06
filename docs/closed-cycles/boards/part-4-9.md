@@ -1522,7 +1522,7 @@ step: no orphan, no foreign server killed — rule 4).
 # Part VI — Agent Onboarding & Provider UX (Phase 60)
 
 Executable board for the cycle described in
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Agent Onboarding & Provider
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Agent Onboarding & Provider
 UX*, opened by the **agent-UX audit of 2026-09-03**. This Part has its own numbering
 namespace (`§VI.0` … `§VI.6`) so the archive's load-bearing numbers stay put.
 
@@ -1530,12 +1530,12 @@ Like Parts III–V, this board is written to be picked up cold by parallel agent
 worktrees. Every card is bounded, names every shared-file owner, and has an acceptance gate
 verifiable without trusting its author's handoff.
 
-**Dispatch plan:** [`docs/agent-handoffs/part-vi/README.md`](docs/agent-handoffs/part-vi/README.md)
+**Dispatch plan:** [`docs/agent-handoffs/part-vi/README.md`](../handoffs/part-6/README.md)
 — per card, the exact read list with measured sizes, what not to read, the gate, the stop
 conditions, and the dispatch prompt; per wave, the integrator's adversarial checklist. A
 card agent reads that file's header and its own block, then this board by anchor (§VI.0–§VI.3
 and its card, ~7k tokens), and nothing else without recording why. Handoffs are written
-from [`TEMPLATE.md`](docs/agent-handoffs/part-vi/TEMPLATE.md) there.
+from [`TEMPLATE.md`](../handoffs/part-6/TEMPLATE.md) there.
 
 **This Part adds product features.** Part V §V.5 deferred every product feature to "a
 post-adoption cycle"; this is that cycle, **for the agent surface only**. Notifications,
@@ -3998,7 +3998,7 @@ for the template. The three sections specific to this Part:
 # Part V — Adoption & First Public Release (Phase 59)
 
 Executable board for the cycle described in
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Adoption & First Public
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Adoption & First Public
 Release*, opened by the adoption audit of **2026-08-30**. This Part has its own numbering
 namespace (`§V.0` … `§V.6`) so the archive's load-bearing numbers stay put.
 
@@ -4650,8 +4650,8 @@ Use the §III.2 template verbatim, plus three sections specific to Part V:
 # Part IV — Standalone Single-Binary Operation (Phase 58)
 
 Executable board for the cycle described in
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Standalone Single-Binary
-Operation*, and decided in [`docs/adr/0058-standalone-single-binary-runner.md`](docs/adr/0058-standalone-single-binary-runner.md).
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Standalone Single-Binary
+Operation*, and decided in [`docs/adr/0058-standalone-single-binary-runner.md`](../../adr/0058-standalone-single-binary-runner.md).
 **Parts I, II and III remain historical context.** This Part has its own numbering
 namespace (`§IV.0` … `§IV.6`) so Part I's load-bearing section numbers stay put.
 

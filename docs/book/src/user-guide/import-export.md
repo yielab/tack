@@ -125,7 +125,7 @@ The feature is off by default and configured through environment variables. A pr
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | API root override for GitHub Enterprise or testing. |
 | `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Needs the token too. |
 
-For full details, see [GitHub Sync](../../../GITHUB-SYNC.md).
+For full details, see [GitHub Sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md).
 
 ---
 

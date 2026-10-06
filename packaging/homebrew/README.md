@@ -34,5 +34,5 @@ Every push and pull request here runs `brew audit --strict`, `brew style`,
   [main issue tracker](https://github.com/yielab/tack/issues). Open an issue here
   only for a problem with the formula.
 - Security reports follow [Tack's security policy](https://github.com/yielab/tack/security/policy);
-  see [SECURITY.md](SECURITY.md).
-- The formula and this repository are MIT licensed, like Tack ([LICENSE](LICENSE)).
+  see [SECURITY.md](https://github.com/yielab/tack/blob/main/SECURITY.md).
+- The formula and this repository are MIT licensed, like Tack ([LICENSE](https://github.com/yielab/tack/blob/main/LICENSE)).

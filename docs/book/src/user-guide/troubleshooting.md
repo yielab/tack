@@ -64,7 +64,7 @@ sqlite3 tack.db
 SELECT * FROM _migrations;
 ```
 
-If a migration is recorded as applied but the schema is clearly incomplete, the safest recovery is to restore a known-good backup rather than hand-editing the schema. See [Backup and Restore](backup-restore.md). For the full upgrade path — what runs automatically, when Tack takes its own pre-upgrade snapshot, and how to safely enable the Part III runner-fleet execution features — see [`docs/MIGRATION-GUIDE.md`](../../../MIGRATION-GUIDE.md).
+If a migration is recorded as applied but the schema is clearly incomplete, the safest recovery is to restore a known-good backup rather than hand-editing the schema. See [Backup and Restore](backup-restore.md). For the full upgrade path — what runs automatically, when Tack takes its own pre-upgrade snapshot, and how to safely enable the Part III runner-fleet execution features — see [`docs/MIGRATION-GUIDE.md`](https://github.com/yielab/tack/blob/develop/docs/MIGRATION-GUIDE.md).
 
 **How staged restore interacts with this.** A restore is *staged*, not applied live: Tack writes the uploaded database next to the live file as `<db>.restore` and tells you to restart. On the next startup, before opening the database, Tack swaps the files atomically:
 
@@ -168,7 +168,7 @@ If `ENABLE_FTS5` is not listed, use a SQLite build (or a Tack binary) with FTS5 
 
 **Cause.** Everything after a succeeded attempt is opt-in and best-effort, and none of it changes the attempt's outcome. Look at the attempt's event timeline: `attempt.verify_skipped`, `attempt.verify_failed`, `attempt.push_skipped` and `attempt.push_failed` each say why a step did not happen. The usual reasons are that the runner has no `[verify]` section enabled or no `[git] push_branches = true`, the verifier program is not on the runner's `PATH`, git has no credentials for the remote, or the item is not linked to a GitHub issue or no GitHub token is configured (a pull request needs both).
 
-**Fix.** Run `tack runner doctor` on the runner's machine: its last lines report whether the verifier is enabled and found. Set the sections as described in [`docs/CONFIG.md`](../../../CONFIG.md), link the item to its issue and set `TACK_GITHUB_TOKEN`, then run the item again. See [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt).
+**Fix.** Run `tack runner doctor` on the runner's machine: its last lines report whether the verifier is enabled and found. Set the sections as described in [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md), link the item to its issue and set `TACK_GITHUB_TOKEN`, then run the item again. See [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt).
 
 ---
 

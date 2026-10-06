@@ -159,7 +159,7 @@ function.
 > Shipped: [git.rs](../../../crates/tack-cli/src/git.rs) (`slugify`, `type_prefix`,
 > `branch_name`, 8 unit tests) + the `Branch` subcommand and `cmd_branch` in
 > `main.rs`. `--prefix` overrides the type-derived prefix (feature→feat, bug→fix,
-> …). Documented in the [CLI reference](user-guide/cli.md).
+> …). Documented in the [CLI reference](../../book/src/user-guide/cli.md).
 
 #### Task 2 — `tack open` / smart start
 

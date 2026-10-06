@@ -5,7 +5,7 @@ intentionally minimal: copy a binary, point it at a directory, run it.
 
 > This page is the book's rendering of the deployment guide — for the single-binary,
 > systemd, Docker, reverse-proxy, backup, and troubleshooting models, see
-> [`docs/DEPLOYMENT-GUIDE.md`](../../../DEPLOYMENT-GUIDE.md), included below. Edit that
+> [`docs/DEPLOYMENT-GUIDE.md`](https://github.com/yielab/tack/blob/develop/docs/DEPLOYMENT-GUIDE.md), included below. Edit that
 > file, not this one, except for the Local Development section, which is specific to
 > this workspace and has no home there. For tokens, CORS, webhooks, and cloud backup
 > configuration, see [Administration & Security](../user-guide/administration.md).

@@ -16,6 +16,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT / "docs" / "openapi.json"
 OUT_PATH = ROOT / "docs" / "book" / "src" / "developer" / "api-reference.md"
+# The page is published on its own, so links to files outside the book are absolute.
+REPO_BLOB = "https://github.com/yielab/tack/blob/develop"
 
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 
@@ -138,20 +140,20 @@ def main() -> int:
     out = [
         "# API Reference",
         "",
-        f"Generated from [`docs/openapi.json`](../../../openapi.json) "
+        f"Generated from [`docs/openapi.json`]({REPO_BLOB}/docs/openapi.json) "
         f"({len(paths)} paths, {op_count} operations) by "
         "`scripts/gen-api-reference.py` — do not hand-edit. Regenerate with "
         "`./scripts/regen-generated.sh` after the spec changes.",
         "",
         "This page lists every path, method, parameter and request/response "
         "schema name. It does not inline schema bodies — load "
-        "[`docs/openapi.json`](../../../openapi.json) into an OpenAPI viewer "
+        f"[`docs/openapi.json`]({REPO_BLOB}/docs/openapi.json) into an OpenAPI viewer "
         "(Redocly, Scalar, Swagger Editor) for the full definitions, or read "
         "them directly in the spec file.",
         "",
         "Two authentication surfaces, the WebSocket endpoint (not in this "
         "spec), and worked examples are in "
-        "[`docs/API-REFERENCE.md`](../../../API-REFERENCE.md).",
+        f"[`docs/API-REFERENCE.md`]({REPO_BLOB}/docs/API-REFERENCE.md).",
         "",
         "---",
         "",

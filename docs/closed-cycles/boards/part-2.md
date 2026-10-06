@@ -3,9 +3,9 @@
 # Part II — Agnostic Control Plane (Phases 39–49)
 
 Executable task board for the cycle described in
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Agnostic Control Plane*.
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Agnostic Control Plane*.
 The full plan, with a verification command per item and the reasoning behind every
-decision, is **[docs/plans/agnostic-control-plane.md](docs/plans/agnostic-control-plane.md)**.
+decision, is **[docs/plans/agnostic-control-plane.md](../plans/agnostic-control-plane.md)**.
 Read both before picking up a card.
 
 **Own numbering namespace.** Sections here are `II.0` … `II.6`. Part I's numbers are cited

@@ -16,6 +16,11 @@ on:
     branches: ["develop"]
     paths:
       - "docs/book/**"
+      # pulled into the book with {{#include}}
+      - "docs/CONFIG.md"
+      - "docs/TESTING.md"
+      - "docs/MCP.md"
+      - "docs/DEPLOYMENT-GUIDE.md"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

@@ -190,7 +190,7 @@ from here to a finished agent run, with a real screenshot at every step.
   knows what it started.
 
 Rust (Axum, SQLite) and SolidJS, as a modular monolith with the runner as its own
-binary. The [architecture overview](docs/book/src/developer/README.md) has the detail.
+binary. The [architecture overview](docs/book/src/developer/index.md) has the detail.
 
 ## Status
 
@@ -221,7 +221,7 @@ The full guide is at [yielab.github.io/tack](https://yielab.github.io/tack/)
 | [Agent Runners](docs/book/src/user-guide/agent-runners.md) | Harnesses, credentials, models, recovery |
 | [CLI](docs/book/src/user-guide/cli.md) · [API](docs/book/src/developer/api-reference.md) · [MCP](docs/MCP.md) | Reaching the board from outside the browser |
 | [Configuration](docs/book/src/user-guide/configuration.md) | Environment variables and `tack.toml` |
-| [Architecture](docs/book/src/developer/README.md) | Crates, boundaries and decisions |
+| [Architecture](docs/book/src/developer/index.md) | Crates, boundaries and decisions |
 | [Benchmarks](docs/BENCHMARKS.md) · [Testing](docs/TESTING.md) | How the numbers and the tests are produced |
 
 ## Contributing

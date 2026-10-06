@@ -2,7 +2,7 @@
 
 > **This file records intent, not status.** What shipped is in `CHANGELOG.md` and the commit
 > history; closed phases are archived under
-> [`docs/closed-cycles/boards/`](../../closed-cycles/boards/).
+> [`docs/closed-cycles/boards/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/boards).
 
 **Tack is delivered through Phase 64.** That covers the project-management core, the
 harness-agnostic runner fleet, the single-binary embedded runner, adoption and
@@ -14,9 +14,9 @@ service, and the codebase cleanup that retired the Docket control-plane bridge
 it left open is in Phase 65.
 
 **Phase 66 closed on 2026-10-05** and ships as `v0.1.0-beta.10`; what it left open and what
-it parked are in its plan, [`docs/plans/phase-66.md`](../../plans/phase-66.md). Phase 65's plan
+it parked are in its plan, [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md). Phase 65's plan
 holds the rest of its Wave 0, the maintainer's:
-[`docs/plans/phase-65.md`](../../plans/phase-65.md). It folds together what the roadmap,
+[`docs/plans/phase-65.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-65.md). It folds together what the roadmap,
 the ADRs and the harness plan still owed — the release tag and `docs/LAUNCH-CHECKLIST.md`,
 inbound GitHub sync, `tack start`, and the harness upgrades — as one ordered sequence of
 tasks in four waves, with a "Decided" table so no task re-opens a settled decision and a
@@ -49,7 +49,7 @@ reverse.
 
 ## Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
 
-**Status:** closed 2026-10-05; every task in the table below is built and merged, and ships as `v0.1.0-beta.10`. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](../../plans/phase-66.md).
+**Status:** closed 2026-10-05; every task in the table below is built and merged, and ships as `v0.1.0-beta.10`. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md).
 **ADRs:** 0069 (the brief is an entity on the item and travels), 0070 (docket contract 1.1,
 negotiated at boot; cancel becomes per-harness evidence), 0071 (evidence before deletion, the
 verifier boundary, the pushed branch and its pull request), 0072 (the "Run with agent" flow).
@@ -95,11 +95,11 @@ a pull request is opened for a pushed branch whose item is linked to a GitHub is
 
 ## Archived
 
-- [Phases 0–57](../../closed-cycles/boards/roadmap-phases-0-57.md) — the original
+- [Phases 0–57](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/boards/roadmap-phases-0-57.md) — the original
   engineering phases, the audit-driven cycle (26–32), the Agent-Factory Control Center
   (33–38), the Agnostic Control Plane (39–49), and the Harness-Agnostic Runner Fleet
   (50–57).
-- [Phases 58–63](../../closed-cycles/boards/roadmap-phases-58-63.md) — standalone
+- [Phases 58–63](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/boards/roadmap-phases-58-63.md) — standalone
   single-binary packaging, the first public release, agent onboarding & provider UX,
   the desktop app and background service, and human maintainability.
 
@@ -107,7 +107,7 @@ a pull request is opened for a pushed branch whose item is linked to a GitHub is
 
 ## Contributing
 
-See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for code style, PR process, and how to add new
+See [CONTRIBUTING.md](https://github.com/yielab/tack/blob/develop/CONTRIBUTING.md) for code style, PR process, and how to add new
 features. The [Adding Features](developer/adding-features.md) guide walks through the
 three most common extension patterns.
 
