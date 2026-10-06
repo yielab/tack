@@ -506,7 +506,7 @@ path can't silently recur, and it's now also the repository's default branch.
 
 - **Alexa endpoint hardened** — an optional mandatory shared secret
   (`TACK_ALEXA_SHARED_SECRET`, constant-time compared) gates the endpoint; the old
-  skill-ID-only check was forgeable. (Phase 27.1; see [docs/ALEXA.md](docs/ALEXA.md).)
+  skill-ID-only check was forgeable. (Phase 27.1; see [docs/ALEXA.md](https://github.com/yielab/tack/blob/v0.1.0-beta.7/docs/ALEXA.md), removed since.)
 - **Backup restore integrity** — bundles are rejected on tar path traversal, SHA-256
   mismatch, or unsupported format version before anything is staged; the S3 secret
   and install ID are scrubbed from every snapshot so they no longer ride inside

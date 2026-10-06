@@ -6,7 +6,7 @@ No card edits another card's handoff, and no card edits the Part IV board in `TO
 the wave integrator updates the board after independent verification.
 
 The board is `TODO.md` → **Part IV**, §IV.0–§IV.6. The decision of record is
-[`docs/adr/0058-standalone-single-binary-runner.md`](../../adr/0058-standalone-single-binary-runner.md).
+[`docs/adr/0058-standalone-single-binary-runner.md`](../../../adr/0058-standalone-single-binary-runner.md).
 
 ## Template
 

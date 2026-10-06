@@ -3,7 +3,7 @@
 # Part I — Agent-Factory Control Center (Phases 33–38)
 
 Executable task board for the cycle described in
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Agent-Factory Control
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Agent-Factory Control
 Center*. Read that section first: it holds the architecture, the schema table, and the
 four non-negotiable design rules. **This file holds the dispatch plan** — written to be
 picked up cold by parallel Sonnet agents.

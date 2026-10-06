@@ -427,7 +427,7 @@ make audit           # cargo audit (Rust) + npm audit --audit-level=high (fronte
 ```
 
 Runs in CI as the **security** job (`cargo-audit` via the RustSec advisory DB +
-`npm audit`). [Dependabot](../.github/dependabot.yml) opens grouped monthly update PRs
+`npm audit`). [Dependabot](https://github.com/yielab/tack/blob/develop/.github/dependabot.yml) opens grouped monthly update PRs
 for cargo, npm and GitHub Actions, and security updates as advisories appear.
 
 `npm audit` exits 1 both for a finding and when npm's advisory endpoint is down. CI tries
@@ -435,7 +435,7 @@ three times; a finding fails the job, an outage that outlasts the tries is a war
 run, because no commit can fix it.
 
 Known, justified Rust advisory exceptions live in
-[`.cargo/audit.toml`](../.cargo/audit.toml) with a documented reason each — the
+[`.cargo/audit.toml`](https://github.com/yielab/tack/blob/develop/.cargo/audit.toml) with a documented reason each — the
 gate still fails on any **new** advisory. Re-review that list on every dep bump.
 
 > **Known a11y debt:** none currently. The `KNOWN_ISSUES` list in
@@ -461,7 +461,7 @@ make load
 
 Ramps to 50 VUs on the read hot path + a write path, asserting p95 latency and
 error-rate thresholds. The write p95 threshold is where SQLite's single-writer
-model shows up first. See [`tests/load/README.md`](../tests/load/README.md).
+model shows up first. See [`tests/load/README.md`](https://github.com/yielab/tack/blob/develop/tests/load/README.md).
 
 ---
 

@@ -3,7 +3,7 @@
 # Part III — Harness-Agnostic Runner Fleet (Phases 50–57)
 
 Executable board for the active cycle described at the bottom of
-[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Harness-Agnostic Runner
+[docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Harness-Agnostic Runner
 Fleet*. **Everything in Parts I and II remains historical context. Do not delete, renumber,
 or implement a superseded Part II card.**
 

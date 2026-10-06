@@ -76,7 +76,7 @@ The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bu
 `tack serve --with-runner` (or `TACK_LOCAL_RUNNER_ENABLE=1`) runs the runner role as a
 task inside the same process as the server, speaking runner-v1 over loopback HTTP
 exactly like a remote runner would — see
-[`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
+[`docs/adr/0058-standalone-single-binary-runner.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0058-standalone-single-binary-runner.md)
 for why that HTTP hop is kept rather than shortcut. This is the fewest-steps way to see
 a real agent attempt run against your own board: no second binary, no `tack runner
 enroll` call, no token to copy anywhere.
@@ -123,7 +123,7 @@ enroll` call, no token to copy anywhere.
   copy in this file. The two harnesses with a login of their own, mirrored from a real `tack runner
   doctor` run on a machine with both installed — the harness vocabulary itself is open
   (a runner may report any kind string); `docket` and `opencode` always need a configured
-  endpoint and are described in the book's [Choosing a harness](book/src/user-guide/agent-runners.md#choosing-a-harness):
+  endpoint and are described in the book's [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness):
 
   | Harness | How it authenticates | Gateway-routed variant (`[provider.vercel_ai_gateway]`) |
   |---|---|---|
@@ -137,11 +137,11 @@ enroll` call, no token to copy anywhere.
   that restriction: it may hold a provider key in its own owner-only state directory, and
   a loopback-only, embedded-runner-only route hands one to that store without the key
   ever touching `tack.db`, a log line, or the operator API otherwise — see
-  [`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`](adr/0061-provider-credentials-at-the-runner-boundary.md)
+  [`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0061-provider-credentials-at-the-runner-boundary.md)
   for what a runner may hold, how a key reaches it, and how a gateway's model catalog is
-  fetched. See [`docs/adr/0050-runner-control-plane.md`](adr/0050-runner-control-plane.md)
+  fetched. See [`docs/adr/0050-runner-control-plane.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0050-runner-control-plane.md)
   ("the Tack API never starts a coding harness and never becomes a model proxy") and
-  [`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
+  [`docs/adr/0058-standalone-single-binary-runner.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0058-standalone-single-binary-runner.md)
   ("Vendor credentials remain outside Tack") for the decisions this one bounds.
 - **Model selection is a separate question from credentials, and it is answered.**
   Which `(provider, model_id)` reaches the harness for a given execution request is
@@ -149,7 +149,7 @@ enroll` call, no token to copy anywhere.
   agent-profile default → project default (`projects.default_model`, set from the
   Agents page or `PATCH /api/projects/{id}`) → fleet default →
   auto-select), live-verified end to end and fully documented in [Choosing a model and
-  a provider](book/src/user-guide/agent-runners.md#choosing-a-model-and-a-provider) —
+  a provider](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-model-and-a-provider) —
   including why an auto-select request accepts today but never schedules. No `TACK_*`
   variable is involved on either side of this: routing the choice and holding the
   credential are different operations, and this file's table above has no row for a

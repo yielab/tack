@@ -7,7 +7,7 @@ run `tack <command>` to use the CLI.
 The CLI is an alternative to the web UI — reach for it when you want to script
 Tack, wire it into automation or CI, or work without leaving the terminal. It is
 also how you create a git branch straight from an item (`tack branch`) and run the
-[MCP server](../../../MCP.md) for AI agents.
+[MCP server](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for AI agents.
 
 The CLI commands below talk to a running server over HTTP, so start the server
 first (`tack serve`) — all client commands require it to be reachable.
@@ -322,7 +322,7 @@ verify: disabled
 
 The last line is the runner's `[verify]` table as this machine would read it: `disabled`, or
 `enabled` with the program, its arguments and timeout, and whether the program was found on
-`PATH` (see [Runner verifier](../../../CONFIG.md#runner-verifier-verify)).
+`PATH` (see [Runner verifier](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md#runner-verifier-verify)).
 
 `tack runner start` runs the runner role in the current process, speaking runner-v1
 over HTTP against a Tack server — the same composition root the standalone
@@ -407,7 +407,7 @@ Removed the tack user service. The data root was left untouched.
 `uninstall` stops the service and removes its unit file; it never touches the data root,
 so a later `tack service install` picks the same database back up. For a shared,
 root-owned deployment instead of a per-user one, see the systemd unit in
-[the deployment guide](../../../DEPLOYMENT-GUIDE.md).
+[the deployment guide](https://github.com/yielab/tack/blob/develop/docs/DEPLOYMENT-GUIDE.md).
 
 ---
 
@@ -493,7 +493,7 @@ workflow rules still apply.
 tack mcp
 ```
 
-See the [MCP guide](../../../MCP.md) for the Claude Code `.mcp.json` snippet and the
+See the [MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for the Claude Code `.mcp.json` snippet and the
 full tool reference.
 
 ---

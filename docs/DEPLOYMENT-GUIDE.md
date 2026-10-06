@@ -2,7 +2,7 @@
 
 This guide covers deploying Tack to production.
 
-Tack is a **single, self-contained binary** (about 21 MiB — see [Benchmarks](BENCHMARKS.md)) with the SolidJS SPA
+Tack is a **single, self-contained binary** (about 21 MiB — see [Benchmarks](https://github.com/yielab/tack/blob/develop/docs/BENCHMARKS.md)) with the SolidJS SPA
 embedded. One process serves the REST API (`/api/*`), the WebSocket, and the web
 UI — same-origin, so there is no separate frontend service, no CORS to configure
 for the bundled UI, and no static host to run. All state lives in one SQLite
@@ -191,7 +191,7 @@ tack service status       # prints the unit's state and the health URL
 tack service uninstall    # stops and removes the unit; the data root is left untouched
 ```
 
-See [`tack service`](book/src/user-guide/cli.md#service) for real output from all three
+See [`tack service`](https://yielab.github.io/tack/user-guide/cli.html#service) for real output from all three
 commands. Prefer the system-level unit above for a shared or internet-facing deployment —
 this one runs as your own user and stops when your user session's systemd instance does
 (`loginctl enable-linger` keeps it running across logouts).
@@ -286,8 +286,8 @@ health-check the container from the host (`curl .../api/health`) or via a proxy.
 ## Environment configuration
 
 Tack reads config from `tack.toml` (if present) or environment variables. The
-full table lives in [CLAUDE.md](../CLAUDE.md) and the
-[API reference](./API-REFERENCE.md); the deployment-relevant ones:
+full table lives in the [configuration reference](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md) and the
+[API reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md); the deployment-relevant ones:
 
 ```bash
 # Server
@@ -549,5 +549,5 @@ If you use `journalctl` (no `TACK_LOG_FILE`), systemd already rotates the journa
 ## Support
 
 - [GitHub Issues](https://github.com/yielab/tack/issues)
-- [API Reference](./API-REFERENCE.md)
-- [Security Policy](../SECURITY.md)
+- [API Reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md)
+- [Security Policy](https://github.com/yielab/tack/blob/develop/SECURITY.md)

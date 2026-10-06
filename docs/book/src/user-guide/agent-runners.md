@@ -297,8 +297,8 @@ because every field it sends is visible on the command line; see
 |---|---|---|
 | The **"Run with agent"** modal | Item detail drawer, web UI | Lays the run out top to bottom (see below), auto-selects the runner when exactly one is active, offers the target's own declared models plus "Project default", and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
 | `tack execution create` | CLI | Scriptable; every field the API accepts is a flag. Used for the worked example below. |
-| `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](../../../API-REFERENCE.md#worked-examples) for a worked request/response pair. |
-| MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](../../../MCP.md). |
+| `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md#worked-examples) for a worked request/response pair. |
+| MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md). |
 
 ### The Run with agent dialog
 
@@ -915,7 +915,7 @@ credentials; `docs/CONFIG.md` says what the push does and does not guard against
 GitHub token is configured, the server opens a pull request from that branch, with the
 merge-readiness pack as its body. The attempt then shows a **PR #n** link and a badge: open,
 merged, closed or reverted. The state follows GitHub on the sync poll; see
-[GitHub sync](../../../GITHUB-SYNC.md). An item with no link, or no token, gets no pull request
+[GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md). An item with no link, or no token, gets no pull request
 and nothing else changes.
 
 **Moving the item.** A request can carry a status policy: `done_on_success` moves the item to

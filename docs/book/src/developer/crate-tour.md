@@ -8,7 +8,7 @@ This chapter walks through each of the six Rust crates in the main workspace in 
 >
 > This chapter is a per-file walkthrough, not a reference. For crate boundaries stated
 > as a condensed table, design patterns, the DB schema, the full API endpoint list, and
-> troubleshooting, see [`docs/ARCHITECTURE.md`](../../../ARCHITECTURE.md) — the
+> troubleshooting, see [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) — the
 > authority when the two disagree on a fact rather than depth.
 
 ---

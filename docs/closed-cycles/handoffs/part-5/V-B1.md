@@ -152,7 +152,7 @@ e.g. near that table or in a short paragraph before it):
 > permissions. `assignee` is a free-text label on an item, not an account. Every
 > request that authenticates at all authenticates as the same single operator, via
 > one shared bearer token. This is a deliberate v1 scope decision, not an
-> oversight — see [ADR 0059](docs/adr/0059-single-operator-identity-posture.md) for
+> oversight — see [ADR 0059](../../../adr/0059-single-operator-identity-posture.md) for
 > what was considered and rejected (full multi-user accounts, OIDC, per-user
 > tokens) and why. A non-loopback bind with no token now refuses to start rather
 > than silently exposing full read/write access to the network; an explicit,
