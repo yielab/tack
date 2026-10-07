@@ -185,11 +185,6 @@ agent, tracked live, and closed with a result you can check. From here:
 
 ---
 
-make the
-  board speak your domain's language.
-
----
-
 ## Regenerating these screenshots
 
 Every image on this page comes from `frontend/e2e/tutorial-assets.spec.ts`, driven
