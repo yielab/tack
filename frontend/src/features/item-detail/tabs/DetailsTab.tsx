@@ -8,7 +8,8 @@ import type {
   BriefRisk,
   ItemBrief,
 } from '../../../shared/api/briefs';
-import { Button, Field, FieldShell, Select } from '../../../shared/ui';
+import { Button, Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
+import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import type { Item } from '../../../shared/types';
 
@@ -383,9 +384,12 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
       </section>
 
       <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-        <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
-          Acceptance criteria
-        </h3>
+        <div class="flex items-center gap-2">
+          <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+            Acceptance criteria
+          </h3>
+          <HelpHint label="Acceptance criteria" help={HELP.acceptanceCriteria} />
+        </div>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           One line per thing a person checks before calling this done.
         </p>
@@ -439,6 +443,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
       <details class="rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <summary class="cursor-pointer text-lg" style={{ color: 'var(--color-text-primary)' }}>
           For the agent
+          <HelpHint label="For the agent" help={HELP.forTheAgent} />
           <Show when={agentSummary()}>
             <span class="ml-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {agentSummary()}
