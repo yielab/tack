@@ -137,7 +137,8 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     executions::routes(operator_state.clone())
         .merge(runner_admin::routes(operator_state.clone()))
         .merge(attempt_lists::artifact_routes(operator_state.clone()))
-        .merge(attempt_lists::decision_routes(operator_state))
+        .merge(attempt_lists::decision_routes(operator_state.clone()))
+        .merge(attempt_lists::review_routes(operator_state))
         .merge(decisions::routes(decision_state))
         .merge(runner_protocol::artifact_download::routes(
             artifact_download_state,

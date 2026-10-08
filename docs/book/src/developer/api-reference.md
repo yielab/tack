@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (90 paths, 126 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (91 paths, 127 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1287,6 +1287,22 @@ Download a verified artifact's raw content
 |---|---|---|
 | 200 | Every event this attempt has reported, oldest first (may be empty) | `EventListResponse` |
 | 404 | not_found (execution_request or execution_attempt) | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/executions/{request_id}/attempts/{attempt_number}/review`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `request_id` | path | `string` | yes | Execution request ID (opaque) |
+| `attempt_number` | path | `integer` | yes | 1-based attempt number |
+
+**Request body:** `ReviewAttemptRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The recorded verdict | `AttemptReview` |
+| 400 | invalid_request (verdict is not accepted or rejected) | `RunnerV1ErrorEnvelope` |
+| 404 | not_found (execution_request or execution_attempt) | `RunnerV1ErrorEnvelope` |
+| 409 | conflict (details.reason = already_reviewed) | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/executions/{request_id}/cancel`
 

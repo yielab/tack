@@ -940,6 +940,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::list_execution_attempt_events,
         handlers::attempt_lists::list_execution_attempt_artifacts,
         handlers::attempt_lists::list_execution_attempt_decisions,
+        handlers::attempt_lists::review_execution_attempt,
         handlers::executions::request_cancellation,
         handlers::executions::requeue_needs_operator,
         // ── Harness-agnostic runner fleet: operator fleet/runner/profile API ──
@@ -1003,6 +1004,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::attempt_lists::DecisionOptionSummary,
         handlers::attempt_lists::DecisionSummary,
         handlers::attempt_lists::DecisionListResponse,
+        handlers::attempt_lists::ReviewAttemptRequest,
+        handlers::executions::AttemptReview,
         handlers::executions::CancellationRequestedResponse,
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,

@@ -9,6 +9,31 @@ use tack_core::workflow::{StatusCategory, WorkflowConfig};
 
 use super::Repository;
 
+/// The `needs_review` column of an `items` row: the latest terminal attempt of
+/// the item's latest execution request left a non-empty patch or a kept
+/// workspace, and nobody has reviewed it yet.
+const NEEDS_REVIEW_SQL: &str = "EXISTS (
+    SELECT 1 FROM execution_attempts a
+    LEFT JOIN attempt_reviews rv ON rv.attempt_id = a.id
+    WHERE a.id = (
+        SELECT a2.id FROM execution_attempts a2
+        WHERE a2.request_id = (
+            SELECT r.id FROM execution_requests r
+            WHERE r.item_id = items.id ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1
+        ) AND a2.state IN ('succeeded','failed','cancelled')
+        ORDER BY a2.attempt_number DESC LIMIT 1
+    )
+    AND rv.attempt_id IS NULL
+    AND (
+        json_extract(a.terminal_reason, '$.workspace_kept_at') IS NOT NULL
+        OR EXISTS (
+            SELECT 1 FROM json_each(json_extract(a.terminal_reason, '$.artifacts')) art
+            WHERE json_extract(art.value, '$.kind') = 'patch'
+              AND json_extract(art.value, '$.size_bytes') > 0
+        )
+    )
+)";
+
 /// Result of one complete item PATCH.  Unlike the older helpers this owns the
 /// WIP decision, field update, timestamps, and version increment in one
 /// transaction, so callers cannot accidentally compose partial mutations.
@@ -137,6 +162,7 @@ impl Repository {
             completed_at: None,
             source,
             run_settings: None,
+            needs_review: false,
             created_at: now,
             updated_at: now,
         })
@@ -144,10 +170,10 @@ impl Repository {
 
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
-        let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
+        let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review
              FROM items WHERE id = ?"
-        )
+        )))
         .bind(id.to_string())
         .fetch_optional(self.pool())
         .await?;
@@ -175,9 +201,9 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
         let mut tx = self.pool().begin().await?;
-        let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
-        )
+        let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review FROM items WHERE id = ?"
+        )))
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
         .await?;
@@ -233,7 +259,7 @@ impl Repository {
     ) -> Result<Vec<Item>, sqlx::Error> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -690,9 +716,9 @@ impl Repository {
             });
         }
 
-        let item = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
-        )
+        let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review FROM items WHERE id = ?"
+        )))
         .bind(id.to_string())
         .fetch_one(&mut *tx)
         .await?
@@ -881,6 +907,8 @@ struct ItemRow {
     due_date: Option<String>,
     source: String,
     run_settings: Option<String>,
+    #[sqlx(default)]
+    needs_review: bool,
     started_at: Option<String>,
     completed_at: Option<String>,
     created_at: String,
@@ -916,6 +944,7 @@ impl ItemRow {
             run_settings: self
                 .run_settings
                 .and_then(|s| serde_json::from_str(&s).ok()),
+            needs_review: self.needs_review,
             started_at: self.started_at.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
                     .ok()

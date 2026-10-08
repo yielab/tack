@@ -2193,23 +2193,27 @@ pub async fn submit_completion(
 }
 
 /// Best-effort: moves the attempt's item per the request snapshot's
-/// `status_map_policy_id`. A refused transition or any lookup failure is
-/// logged at `warn` and never fails the completion.
+/// `status_map_policy_id`, else to the project's `on_finish_status` when the
+/// attempt left a patch or a kept workspace. A refused transition or any
+/// lookup failure is logged at `warn` and never fails the completion.
 async fn apply_status_map_policy(
     repo: &tack_db::Repository,
     app: Option<&crate::router::AppState>,
     attempt_id: &str,
 ) {
     use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
-    let row: Result<Option<(String, String)>, sqlx::Error> = sqlx::query_as(
-        "SELECT r.item_id, json_extract(r.request_snapshot, '$.status_map_policy_id') \
+    let row = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        "SELECT r.item_id, \
+                CASE WHEN json_type(r.request_snapshot, '$.status_map_policy_id') = 'text' \
+                     THEN json_extract(r.request_snapshot, '$.status_map_policy_id') END, \
+                a.terminal_reason \
          FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
-         WHERE a.id = ? AND json_type(r.request_snapshot, '$.status_map_policy_id') = 'text'",
+         WHERE a.id = ?",
     )
     .bind(attempt_id)
     .fetch_optional(repo.pool())
     .await;
-    let (item_id, policy_id) = match row {
+    let (item_id, policy_id, terminal_reason) = match row {
         Ok(Some(found)) => found,
         Ok(None) => return,
         Err(err) => {
@@ -2217,13 +2221,17 @@ async fn apply_status_map_policy(
             return;
         }
     };
-    let Ok(policy) = policy_id.parse::<StatusMapPolicy>() else {
-        tracing::warn!(
-            attempt_id,
-            policy_id,
-            "status map: unknown policy id, item untouched"
-        );
-        return;
+    let policy = match policy_id.as_deref().map(str::parse::<StatusMapPolicy>) {
+        Some(Ok(policy)) => Some(policy),
+        Some(Err(_)) => {
+            tracing::warn!(
+                attempt_id,
+                policy_id,
+                "status map: unknown policy id, item untouched"
+            );
+            return;
+        }
+        None => None,
     };
     let Ok(item_uuid) = item_id.parse::<uuid::Uuid>() else {
         return;
@@ -2236,7 +2244,34 @@ async fn apply_status_map_policy(
         Ok(Some(project)) => project,
         _ => return,
     };
-    let Some(target) = policy.target_status(&project.workflow, StatusMapEvent::AttemptSucceeded)
+    let left_evidence = terminal_reason
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .is_some_and(|reason| {
+            reason["workspace_kept_at"].is_string()
+                || reason["artifacts"].as_array().is_some_and(|artifacts| {
+                    artifacts.iter().any(|artifact| {
+                        artifact["kind"] == "patch" && artifact["size_bytes"].as_i64() > Some(0)
+                    })
+                })
+        });
+    let on_finish = project
+        .on_finish_status
+        .as_deref()
+        .filter(|_| left_evidence)
+        .and_then(|name| {
+            project
+                .workflow
+                .statuses
+                .iter()
+                .find(|status| status.name.eq_ignore_ascii_case(name))
+                .map(|status| status.name.clone())
+        });
+    let Some(target) = policy
+        .and_then(|policy| {
+            policy.target_status(&project.workflow, StatusMapEvent::AttemptSucceeded)
+        })
+        .or(on_finish)
     else {
         return;
     };

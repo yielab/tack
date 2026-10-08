@@ -15,7 +15,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -296,6 +296,114 @@ pub fn decision_routes(state: OperatorExecutionState) -> Router {
         .route(
             "/executions/{request_id}/attempts/{attempt_number}/decisions",
             get(list_execution_attempt_decisions),
+        )
+        .with_state(state)
+}
+
+// ─── Review ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ReviewAttemptRequest {
+    /// `accepted` or `rejected`.
+    pub verdict: String,
+    pub note: Option<String>,
+}
+
+/// `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
+/// records the operator's verdict on one attempt. One verdict per attempt: a
+/// second is `409` with `details.reason = "already_reviewed"`.
+#[utoipa::path(
+    post,
+    path = "/api/executions/{request_id}/attempts/{attempt_number}/review",
+    tag = "execution-operator",
+    params(
+        ("request_id" = String, Path, description = "Execution request ID (opaque)"),
+        ("attempt_number" = i64, Path, description = "1-based attempt number"),
+    ),
+    request_body = ReviewAttemptRequest,
+    responses(
+        (status = 200, description = "The recorded verdict", body = super::executions::AttemptReview),
+        (status = 400, description = "invalid_request (verdict is not accepted or rejected)", body = super::executions::RunnerV1ErrorEnvelope),
+        (status = 404, description = "not_found (execution_request or execution_attempt)", body = super::executions::RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict (details.reason = already_reviewed)", body = super::executions::RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn review_execution_attempt(
+    State(state): State<OperatorExecutionState>,
+    Path((request_id, attempt_number)): Path<(String, i64)>,
+    Json(input): Json<ReviewAttemptRequest>,
+) -> Result<Json<super::executions::AttemptReview>, (StatusCode, Json<Value>)> {
+    if !matches!(input.verdict.as_str(), "accepted" | "rejected") {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "verdict must be accepted or rejected",
+            json!({"field": "verdict"}),
+        ));
+    }
+    let internal = |_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not record the review",
+            json!({}),
+        )
+    };
+    if !execution_request_exists(&state, &request_id).await? {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Execution request does not exist",
+            json!({"resource": "execution_request"}),
+        ));
+    }
+    let attempt_id: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
+    )
+    .bind(&request_id)
+    .bind(attempt_number)
+    .fetch_optional(state.repo.pool())
+    .await
+    .map_err(internal)?;
+    let Some(attempt_id) = attempt_id else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Attempt does not exist",
+            json!({"resource": "execution_attempt"}),
+        ));
+    };
+    let reviewed_at = chrono::Utc::now().to_rfc3339();
+    let inserted = sqlx::query(
+        "INSERT OR IGNORE INTO attempt_reviews (attempt_id, verdict, note, reviewed_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&attempt_id)
+    .bind(&input.verdict)
+    .bind(&input.note)
+    .bind(&reviewed_at)
+    .execute(state.repo.pool())
+    .await
+    .map_err(internal)?;
+    if inserted.rows_affected() == 0 {
+        return Err(error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            "This attempt already has a verdict",
+            json!({"reason": "already_reviewed"}),
+        ));
+    }
+    Ok(Json(super::executions::AttemptReview {
+        verdict: input.verdict,
+        note: input.note,
+        reviewed_at,
+    }))
+}
+
+pub fn review_routes(state: OperatorExecutionState) -> Router {
+    Router::new()
+        .route(
+            "/executions/{request_id}/attempts/{attempt_number}/review",
+            post(review_execution_attempt),
         )
         .with_state(state)
 }
