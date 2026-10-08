@@ -16,8 +16,11 @@ Phase 64 shipped 2026-09-19; the runner, harnesses, MCP and desktop app are the 
 surface. Phase 65 shipped as `v0.1.0-beta.9` (2026-09-21), the first release with the
 desktop bundles. Phase 66 (briefs, evidence, the verifier's merge-readiness pack, branch
 push and pull requests, factory metrics, docket contract 1.1) closed 2026-10-05 and ships
-as `v0.1.0-beta.10`. No phase is open: `docs/plans/phase-66.md` keeps what it left open
-and what is parked, and phase-65's Wave 0 publish list is the user's.
+as `v0.1.0-beta.10`. Phase 67 (ADR 0074: a run a normal person can start — project
+Automation settings, the agent works on a branch of your repo or in your folder, the agent's
+default model, built-in profiles, acceptance criteria, Needs your review, Tack's words and
+help) executed 2026-10-07/08 and sits in `develop` unpushed; `docs/plans/phase-67.md` keeps
+its follow-ups and what is parked, and phase-65's Wave 0 publish list is the user's.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

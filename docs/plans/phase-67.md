@@ -908,8 +908,19 @@ None open on 2026-10-07. The two that may come up while building:
 
 Proposed 2026-10-07; the maintainer said "start the phase" the same day.
 
-- **Wave 0** (Z1–Z6b) merged 2026-10-07, gate green. **Wave 1** (M0 measured, M1–M3) merged
-  2026-10-08. **Wave 2**: S0, S1, S2, S3, S4 merged 2026-10-08; S5, S6, S7 in progress.
+- **Every wave merged into `develop` by 2026-10-08**: Wave 0 (Z1–Z6b) on 2026-10-07; Waves 1–5
+  (M0 measured, M1–M3, S0–S7, R1–R3, T1, T2a/b, T3a/b, T4a/b, T5, P1–P3, V1–V3) and the added
+  E1 on 2026-10-08. 88 commits from `0b20320` to `53c0bee`. Last checks on `develop`:
+  `.githooks/pre-push` green, `cargo nextest run --workspace` 1154 passed, `npx vitest run` 610
+  passed, Playwright default suite 55 passed (E1), `mdbook build` with every internal link and
+  anchor resolving. `develop` is **not pushed**; pushing, the beta.11 release and the tag are the
+  maintainer's.
+- Screenshots re-taken headless with the fake harnesses: `run-with-agent.png` (the dialog as it
+  opens, ready to run) and the new `automation.png`. `agents.png`, `hero.gif` and
+  `agents-flow.gif` are recorded against real agents by `agent-assets.spec.ts` (billed) and
+  still show the old Agents page: the maintainer's, like phase-65's Wave 0.
+- One defect found by the screenshot and fixed in `develop`: a project without a default profile
+  opened the dialog on "Choose a profile" with Run disabled; it now preselects the Implementer.
 - M1's finding: codex, opencode and docket declare `ModelSelection::Explicit`, so they report
   `required`; only claude-code reports `optional`. The fixture's codex entry says `required`.
 - M0's finding: codex 0.149.1 on a ChatGPT account refused every model id, including its own
