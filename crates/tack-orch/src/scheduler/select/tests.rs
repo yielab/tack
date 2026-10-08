@@ -37,6 +37,7 @@ fn harness(
         decisions: None,
         native_provider: String::new(),
         providers: Vec::new(),
+        model_selection: None,
         additional: BTreeMap::new(),
     }
 }
