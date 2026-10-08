@@ -90,6 +90,7 @@
  *  TEAL — light (base values + shared aliases; no data-palette) *
  * ============================================================= */
 :root {
+  color-scheme: light;
   /* — primitives — */
   --color-bg-app: #f3f6f5;
   --color-bg-base: #ffffff;
@@ -227,6 +228,7 @@
  *  TEAL — dark                   *
  * ============================== */
 .dark {
+  color-scheme: dark;
   --color-bg-app: #0a1311;
   --color-bg-base: #101e1a;
   --color-bg-elevated: #152822;
@@ -273,6 +275,7 @@
  *  CLAY — light                  *
  * ============================== */
 :root[data-palette="clay"] {
+  color-scheme: light;
   --color-bg-app: #faf6f1;
   --color-bg-base: #fffdfb;
   --color-bg-elevated: #ffffff;
@@ -314,6 +317,7 @@
  *  GRAPHITE — light              *
  * ============================== */
 :root[data-palette="graphite"] {
+  color-scheme: light;
   --color-bg-app: #f6f7f8;
   --color-bg-base: #ffffff;
   --color-bg-elevated: #ffffff;
@@ -357,6 +361,7 @@
  *  CLAY — dark                   *
  * ============================== */
 .dark[data-palette="clay"] {
+  color-scheme: dark;
   --color-bg-app: #140f0a;
   --color-bg-base: #1d160f;
   --color-bg-elevated: #241b12;
@@ -393,6 +398,7 @@
  *  GRAPHITE — dark               *
  * ============================== */
 .dark[data-palette="graphite"] {
+  color-scheme: dark;
   --color-bg-app: #0b0d10;
   --color-bg-base: #14171b;
   --color-bg-elevated: #1a1e23;
@@ -433,6 +439,7 @@
    success tokens below stay green: coral sits too close to danger to carry
    both meanings. Every text pairing clears WCAG AA 4.5:1. */
 :root[data-palette="harbor"] {
+  color-scheme: light;
   --color-bg-app: #eef0e8;
   --color-bg-base: #f6f7f2;
   --color-bg-elevated: #f6f7f2;
@@ -480,6 +487,7 @@
  *  HARBOR — dark                 *
  * ============================== */
 .dark[data-palette="harbor"] {
+  color-scheme: dark;
   --color-bg-app: #0f1a22;
   --color-bg-base: #142129;
   --color-bg-elevated: #1a2a34;
@@ -610,6 +618,7 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
+    color-scheme: dark;
     --color-bg-app: #0a1311;
     --color-bg-base: #101e1a;
     --color-bg-elevated: #152822;
@@ -641,6 +650,7 @@
     --shadow-xl: 0 26px 60px rgb(0 0 0 / 0.66);
   }
   :root[data-palette="clay"]:not(.light):not(.dark) {
+    color-scheme: dark;
     --color-bg-app: #140f0a;
     --color-bg-base: #1d160f;
     --color-bg-elevated: #241b12;
@@ -666,6 +676,7 @@
     --color-danger-100: rgb(248 113 113 / 0.13);
   }
   :root[data-palette="graphite"]:not(.light):not(.dark) {
+    color-scheme: dark;
     --color-bg-app: #0b0d10;
     --color-bg-base: #14171b;
     --color-bg-elevated: #1a1e23;
@@ -692,6 +703,7 @@
   }
   /* keep in sync with .dark[data-palette="harbor"] above */
   :root[data-palette="harbor"]:not(.light):not(.dark) {
+    color-scheme: dark;
     --color-bg-app: #0f1a22;
     --color-bg-base: #142129;
     --color-bg-elevated: #1a2a34;
