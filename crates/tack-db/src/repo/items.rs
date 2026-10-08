@@ -481,7 +481,7 @@ impl Repository {
             sqlx::query(
                 "UPDATE items SET run_settings = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
-            .bind(run_settings.map(|v| v.to_string()))
+            .bind(run_settings.and_then(|v| serde_json::to_string(&v).ok()))
             .bind(&now)
             .bind(id.to_string())
             .execute(self.pool())
@@ -676,9 +676,11 @@ impl Repository {
                     .push_bind_unseparated(assignee.as_deref());
             }
             if let Some(run_settings) = input.run_settings.as_ref() {
-                fields
-                    .push("run_settings = ")
-                    .push_bind_unseparated(run_settings.as_ref().map(|v| v.to_string()));
+                fields.push("run_settings = ").push_bind_unseparated(
+                    run_settings
+                        .as_ref()
+                        .and_then(|v| serde_json::to_string(v).ok()),
+                );
             }
             match status_category {
                 Some(StatusCategory::InProgress) => {

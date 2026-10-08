@@ -1,4 +1,5 @@
 use axum::Json;
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -10,7 +11,6 @@ use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
@@ -216,27 +216,14 @@ pub async fn update_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(input): Json<UpdateItem>,
+    input: Result<Json<UpdateItem>, JsonRejection>,
 ) -> ApiResult<Response> {
+    // A body that is not an `UpdateItem` (a `run_settings` that is not an
+    // object or null, say) is a 400, not axum's default 422.
+    let Json(input) = input.map_err(|e| ApiError::BadRequest(e.body_text()))?;
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    if let Some(Some(value)) = &input.run_settings
-        && !value.is_object()
-    {
-        let envelope = ProtocolErrorEnvelope::new(
-            StableErrorCode::InvalidRequest,
-            "run_settings must be a JSON object or null",
-            "req_operator_items",
-            serde_json::json!({"field": "run_settings"}),
-        );
-        return Ok((
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::to_value(envelope).expect("envelope serializes")),
-        )
-            .into_response());
-    }
-
     // This snapshot is the version the browser is allowed to mutate.  The
     // repository carries it into the same transaction as every field/WIP
     // change; no pre-claim can leave a rejected request with a bumped ETag.

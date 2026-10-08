@@ -3615,6 +3615,15 @@ export interface components {
             fleet_id: string;
             name: string;
         };
+        /** @description What the folder check found at a path. */
+        FolderCheck: {
+            branch?: string | null;
+            dirty_files: number;
+            exists: boolean;
+            is_dir: boolean;
+            is_git: boolean;
+            remote_url?: string | null;
+        };
         FolderPath: {
             path: string;
         };
@@ -3706,11 +3715,7 @@ export interface components {
             priority: components["schemas"]["Priority"];
             /** Format: uuid */
             project_id: string;
-            /**
-             * @description The run dialog's Advanced values this task overrides (a JSON object),
-             *     or `None` when it follows the project.
-             */
-            run_settings?: Record<string, never> | null;
+            run_settings?: null | components["schemas"]["RunSettings"];
             /** Format: int32 */
             sort_order: number;
             /**
@@ -4060,6 +4065,27 @@ export interface components {
             /** Format: uuid */
             project_id: string;
         };
+        /**
+         * @description The run dialog's Advanced values a task overrides. Every field is optional;
+         *     a key this version does not know survives a round trip in `extra`.
+         */
+        RunSettings: {
+            agent_profile_id?: string | null;
+            /** @description A string, not an enum: the dialog validates it. */
+            approvals?: string | null;
+            branch?: string | null;
+            harness?: string | null;
+            model_id?: string | null;
+            model_provider?: string | null;
+            network?: boolean | null;
+            push?: boolean | null;
+            /** Format: int64 */
+            timeout_seconds?: number | null;
+            tools?: string[] | null;
+            verify?: boolean | null;
+        } & {
+            [key: string]: unknown;
+        };
         RunnerListResponse: {
             data: components["schemas"]["RunnerSummary"][];
             /** Format: int32 */
@@ -4271,11 +4297,7 @@ export interface components {
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: null | components["schemas"]["ItemType"];
             priority?: null | components["schemas"]["Priority"];
-            /**
-             * @description Omitted leaves the run settings untouched; JSON `null` clears them.
-             *     The handler rejects anything but an object or `null`.
-             */
-            run_settings?: Record<string, never> | null;
+            run_settings?: null | components["schemas"]["RunSettings"];
             /** Format: int32 */
             sort_order?: number | null;
             /** Format: uuid */
@@ -6478,7 +6500,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["FolderCheck"];
                 };
             };
             /** @description The path is not absolute */

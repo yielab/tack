@@ -350,6 +350,17 @@ pub struct FolderPath {
     pub path: String,
 }
 
+/// What the folder check found at a path.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct FolderCheck {
+    pub exists: bool,
+    pub is_dir: bool,
+    pub is_git: bool,
+    pub branch: Option<String>,
+    pub remote_url: Option<String>,
+    pub dirty_files: usize,
+}
+
 type FolderError = (StatusCode, Json<Value>);
 
 fn folder_error(status: StatusCode, code: &str, message: &str, details: Value) -> FolderError {
@@ -413,7 +424,7 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> Option<String> {
     tag = "local-runner",
     request_body = FolderPath,
     responses(
-        (status = 200, description = "Whether the path exists, is a directory, and its git facts", body = serde_json::Value),
+        (status = 200, description = "Whether the path exists, is a directory, and its git facts", body = FolderCheck),
         (status = 400, description = "The path is not absolute"),
         (status = 409, description = "The embedded runner is not configured"),
     ),
@@ -421,7 +432,7 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> Option<String> {
 pub async fn check_local_runner_folder(
     State(state): State<AppState>,
     Json(input): Json<FolderPath>,
-) -> Result<Json<Value>, FolderError> {
+) -> Result<Json<FolderCheck>, FolderError> {
     let path = folder_path(&state, &input)?;
     let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
     let is_dir = exists && tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_dir());
@@ -437,14 +448,14 @@ pub async fn check_local_runner_folder(
             .await
             .map_or(0, |out| out.lines().count());
     }
-    Ok(Json(json!({
-        "exists": exists,
-        "is_dir": is_dir,
-        "is_git": is_git,
-        "branch": branch,
-        "remote_url": remote_url,
-        "dirty_files": dirty_files,
-    })))
+    Ok(Json(FolderCheck {
+        exists,
+        is_dir,
+        is_git,
+        branch,
+        remote_url,
+        dirty_files,
+    }))
 }
 
 /// POST /api/local-runner/init-folder — creates `path` and runs `git init`.

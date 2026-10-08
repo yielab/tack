@@ -993,6 +993,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,
         handlers::local_runner::UpdateLocalRunner,
+        handlers::local_runner::FolderCheck,
         handlers::local_runner::SetLocalRunnerSecret,
         // ── Harness-agnostic runner fleet: operator execution API DTOs ──────
         handlers::executions::CreateExecution,
@@ -1079,6 +1080,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         UpdateProject,
         CreateItem,
         UpdateItem,
+        tack_core::models::RunSettings,
         CreateSprint,
         CreateRole,
         CreateComment,
