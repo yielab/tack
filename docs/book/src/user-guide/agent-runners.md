@@ -501,7 +501,9 @@ belongs to a project.
   terminal needs nothing from Tack. If you would rather not rely on that login, you can paste a
   Vercel AI Gateway key; it lives in this computer's own secret store and never in the board's
   database (see [Local credential handling](#local-credential-handling)).
-- **Run test.** One button that checks that an installed agent starts and answers on this computer.
+- **Run test.** One button that checks that an installed agent starts and answers on this
+  computer. It names no model, so it uses an agent that runs with its own default (Claude Code
+  today); when every installed agent needs a model named, the button is disabled and says so.
 
 The default profile, the model, where the agent works and what happens after a run are
 project settings, in [Automation](#automation).

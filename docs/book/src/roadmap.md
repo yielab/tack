@@ -124,10 +124,15 @@ and a help button into this book.
 
 ## Phase 68 — what Phase 67 left on the table
 
-**Status:** opened 2026-10-08. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
+**Status:** opened and closed 2026-10-08; every round built and merged, to ship with Phase 67
+as the next beta. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
 
 Fourteen follow-ups, each found by the agent that built the task beside it, each finishing a
-decision ADR 0074 already takes. No new decision.
+decision ADR 0074 already takes. No new decision. The end-to-end test of the Agents page's
+test run found two bugs on the way (the test run picked an agent that needs a model, and the
+embedded runner reported its name instead of its id); both are fixed. What this phase left
+open is in its plan's Status section; the one that matters most is that a run no runner can
+claim waits in Queued without saying why.
 
 | Round | What lands | Who |
 |---|---|---|
