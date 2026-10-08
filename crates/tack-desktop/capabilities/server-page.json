@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../gen/schemas/desktop-schema.json",
+  "identifier": "server-page",
+  "description": "The board page, served by the embedded tack server on loopback: it may open a folder or a link with the system's own app, nothing else.",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*/*"
+    ]
+  },
+  "permissions": [
+    "shell:allow-open"
+  ]
+}
