@@ -6530,7 +6530,16 @@
           "state": {
             "type": "string"
           },
-          "terminal_reason": {},
+          "terminal_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TerminalReason"
+              }
+            ]
+          },
           "updated_at": {
             "type": "string"
           },
@@ -9571,6 +9580,46 @@
             ],
             "minimum": 0
           }
+        }
+      },
+      "TerminalReason": {
+        "type": "object",
+        "description": "Terminal reason from a runner attempt: `code`, `message`, and optional\n`artifact`/`artifacts` on success; `workspace_kept_at` after a completed\nrecovery. The wire shape is fully documented by runner contracts; this\nstruct mirrors that contract, with a flattened `additional` field for\nextensibility. All fields are optional; a fresh attempt carries no\n`terminal_reason` until it reports one.",
+        "properties": {
+          "artifact": {},
+          "artifacts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {},
+            "default": null
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "workspace_kept_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "additionalProperties": {
+          "description": "Additional fields not explicitly typed, preserved from the wire\n(extensibility for future runner protocol versions).",
+          "default": {}
         }
       },
       "Transition": {

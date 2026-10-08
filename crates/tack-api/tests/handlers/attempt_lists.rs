@@ -12,6 +12,7 @@ use crate::common;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::handlers::executions::TerminalReason;
 use tack_api::{AppState, router::build_router};
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
@@ -533,5 +534,46 @@ async fn artifact_and_decision_lists_404_for_a_foreign_execution() {
         let request_id = request_without_claiming(&app, &item_id, &caller_label).await;
 
         assert_404_for_foreign_execution(&app, &request_id, kind, &seeded_id).await;
+    }
+}
+
+#[test]
+fn terminal_reason_round_trips_typed() {
+    // Table of test cases: (description, input_json)
+    let cases = vec![
+        (
+            "harness_rejected (user's failed attempt)",
+            json!({"code":"harness_rejected","message":"requested model provider \"claude\" is not supported by claude-code; supported: anthropic, bedrock, vertex, foundry, vercel-ai-gateway, anthropic-direct"}),
+        ),
+        (
+            "completed with result",
+            json!({"code":"completed","message":"Harness exited successfully","result":"..."}),
+        ),
+        (
+            "completed with artifacts",
+            json!({"code":"completed","message":"Task complete","artifacts":[{"kind":"patch","size_bytes":123}]}),
+        ),
+        (
+            "workspace_kept_at after recovery",
+            json!({"code":"recovered","message":"Recovered from checkpoint","workspace_kept_at":"2026-10-07T10:30:00Z"}),
+        ),
+        ("empty terminal_reason", json!({})),
+    ];
+
+    for (description, input_json) in cases {
+        // Deserialize JSON → TerminalReason
+        let deserialized: TerminalReason = serde_json::from_value(input_json.clone())
+            .unwrap_or_else(|_| panic!("Failed to deserialize {}", description));
+
+        // Serialize TerminalReason → JSON
+        let serialized = serde_json::to_value(&deserialized)
+            .unwrap_or_else(|_| panic!("Failed to serialize {}", description));
+
+        // Verify round-trip preserves all values (input_json must be a subset of serialized due to flatten)
+        assert_eq!(
+            serialized, input_json,
+            "Round-trip mismatch for '{}': {:?} != {:?}",
+            description, serialized, input_json
+        );
     }
 }
