@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import {
   getOrCreateProject,
   createFreshProject,
+  createRunnableProject,
+  setProjectFolder,
   createFreshItem,
   createAgentProfile,
   enrollRunner,
@@ -37,8 +39,6 @@ import {
 // eligibility code (`tack_orch::scheduler::wiring::choose_request_for_runner`)
 // minus only the selector-kind branch itself.
 
-const BASE_REVISION = 'e2e-scheduler-base';
-
 /** Opens the shared "Run with agent" modal from the item-detail drawer,
  *  fills the common fields, and returns the modal locator plus the
  *  `Run` button — every scenario below customizes target/model from here. */
@@ -56,7 +56,7 @@ async function openRunModal(page: import('@playwright/test').Page, projectId: st
 async function fillExactRunnerTarget(
   modal: import('@playwright/test').Locator,
   runnerId: string,
-  agentProfileId: string,
+  agentProfileName: string,
 ) {
   // "Where it runs" is one combined picker over active runners/fleets
   // (`RunWithAgentModal.tsx`'s `targetOptions`) that disappears entirely,
@@ -69,27 +69,24 @@ async function fillExactRunnerTarget(
   if ((await picker.count()) > 0) {
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
-  await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(agentProfileId);
-  // The repository fieldset is a read-only summary until "Change for this
-  // run" is clicked — the free-text Remote/Base revision fields don't exist
-  // in the DOM before that.
-  await modal.getByRole('button', { name: 'Change for this run' }).click();
-  await modal.getByLabel('Remote').fill('git@example.com:org/e2e-scheduler.git');
-  await modal.getByLabel('Base revision').fill(BASE_REVISION);
+  // Profiles are pills; the project's default is preselected, so click this test's own.
+  await modal.getByRole('button', { name: agentProfileName, exact: true }).click();
 }
 
 test('healthy exact-runner selection is claimed, and the UI reflects it without a reload (realtime)', async ({
   page,
   request,
 }) => {
-  const projectId = await getOrCreateProject(request);
+  // The dialog has no repository fields: the project must name a folder to run in.
+  const projectId = await createRunnableProject(request, `Scheduler E2E healthy project ${Date.now()}`);
   const itemId = await createFreshItem(request, projectId, `Scheduler E2E healthy ${Date.now()}`);
-  const agentProfileId = await createAgentProfile(request, `E2E healthy profile ${Date.now()}`);
+  const agentProfileName = `E2E healthy profile ${Date.now()}`;
+  await createAgentProfile(request, agentProfileName);
   const modelId = `opaque/model-healthy-${Date.now()}`;
   const { runnerId, credential } = await enrollRunner(request, `healthy-runner-${Date.now()}`, modelId);
 
   const { drawer, modal } = await openRunModal(page, projectId, itemId);
-  await fillExactRunnerTarget(modal, runnerId, agentProfileId);
+  await fillExactRunnerTarget(modal, runnerId, agentProfileName);
 
   // A specific, real, matching model choice — the live-capability gate
   // (`RunWithAgentModal.tsx`'s "Specific model" list, built from the target's own
@@ -97,11 +94,12 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // supported, not merely "unverified." The target declares exactly one
   // combination (`helpers.ts#enrollRunner`'s fixed capability shape), so it
   // is always index "0".
+  await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
-  const runButton = modal.getByRole('button', { name: 'Run' });
+  const runButton = modal.getByRole('button', { name: 'Run', exact: true });
   await expect(runButton).toBeEnabled();
   await runButton.click();
   await expect(modal).toBeHidden();
@@ -141,24 +139,30 @@ test('an unsupported model is blocked client-side with a named reason, using the
   const projectId = await createFreshProject(request, `Scheduler E2E unsupported model project ${Date.now()}`);
   const declaredModelId = `opaque/model-declared-${Date.now()}`;
   const undeclaredModelId = `opaque/model-not-declared-${Date.now()}`;
-  const agentProfileId = await createAgentProfile(request, `E2E unsupported profile ${Date.now()}`);
+  const agentProfileName = `E2E unsupported profile ${Date.now()}`;
+  await createAgentProfile(request, agentProfileName);
   const { runnerId } = await enrollRunner(request, `unsupported-model-runner-${Date.now()}`, declaredModelId);
   await setProjectDefaultModel(request, projectId, 'openai', undeclaredModelId);
+  await setProjectFolder(request, projectId);
 
   const itemId = await createFreshItem(request, projectId, `Scheduler E2E unsupported model ${Date.now()}`);
   const { modal } = await openRunModal(page, projectId, itemId);
-  await fillExactRunnerTarget(modal, runnerId, agentProfileId);
+  await fillExactRunnerTarget(modal, runnerId, agentProfileName);
 
   // The project's default model is auto-selected ("Project default — …")
   // whenever one is configured, ahead of Auto — no explicit mode switch is
-  // needed here, only the target/profile/repository `fillExactRunnerTarget`
-  // already filled in.
-  await expect(modal.getByLabel(/^Project default —/)).toBeChecked();
+  // needed here, only the target/profile `fillExactRunnerTarget` already
+  // chose. The model rows sit under "Advanced for this run".
+  await modal.getByText('Advanced for this run').click();
+  await expect(modal.getByLabel("The agent's default (recommended)")).toBeChecked();
+  await expect(modal.getByText(/^Project default —/)).toBeVisible();
 
   // The live capability gate (real `GET /api/runners` data — the runner
   // enrolled above declared a *different* model) must name this
   // unsupported, not merely leave the control in an ambiguous "unverified"
   // state, and must disable submission entirely.
   await expect(modal.getByText('Unsupported', { exact: true })).toBeVisible();
-  await expect(modal.getByRole('button', { name: 'Run' })).toBeDisabled();
+  // Run itself is replaced by the one sentence saying what to do.
+  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: 'Choose a model for this run' })).toBeVisible();
 });

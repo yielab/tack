@@ -219,6 +219,15 @@ test('hero gif', async ({ page }) => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
+  // The dialog has no repository fields: the server fills the repository from
+  // the project, so name the disposable git fixture as the project's folder.
+  const patched = await fetch(`${API}/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code_origin: 'folder', repository: repoDir }),
+  });
+  expect(patched.ok, `set project folder: ${patched.status}`).toBeTruthy();
+
   await page.goto(`${BASE}/projects/${projectId}/board`);
   await waitForApp(page);
   await expect(page.getByText(ITEM_TITLE, { exact: false }).first()).toBeVisible();
@@ -228,13 +237,9 @@ test('hero gif', async ({ page }) => {
   await page.getByRole('button', { name: `Run with agent: ${ITEM_TITLE}` }).click();
   await page.waitForTimeout(700);
 
-  await page.getByLabel('Harness').selectOption('claude-code');
-  await page.waitForTimeout(500);
-  await page.getByRole('button', { name: 'Change for this run' }).click();
+  await page.getByText('Advanced for this run').click();
   await page.waitForTimeout(400);
-  await page.getByLabel('Remote').fill(repoDir);
-  await page.waitForTimeout(300);
-  await page.getByLabel('Base revision').fill(repoRev);
+  await page.getByLabel('Agent', { exact: true }).selectOption('claude-code');
   await page.waitForTimeout(900);
 
   // ── Scene: submit the real dialog ───────────────────────────────────────

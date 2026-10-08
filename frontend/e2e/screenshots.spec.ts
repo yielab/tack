@@ -353,10 +353,10 @@ test.describe.serial('README screenshots', () => {
     await page.goto(`/projects/${projectId}/board?item=${seeded.briefItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Brief' }).click();
-    const first = drawer.getByRole('tabpanel').getByRole('textbox', { name: 'Title', exact: true }).first();
-    await expect(first).toHaveValue('Sign-in works with Google and GitHub');
-    await drawer.getByRole('tablist').scrollIntoViewIfNeeded();
+    // No Brief tab any more: the criteria are a checklist under the description,
+    // with the machine checks in the collapsed "For the agent" block.
+    await expect(drawer.getByRole('heading', { name: 'Acceptance criteria' })).toBeVisible();
+    await drawer.getByRole('heading', { name: 'Acceptance criteria' }).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'brief.png') });
   });
@@ -369,6 +369,7 @@ test.describe.serial('README screenshots', () => {
     await page.getByRole('button', { name: `Run with agent: ${seeded.briefItemTitle}` }).click();
     const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(dialog).toBeVisible();
+    await dialog.getByText('Advanced for this run').click();
     await expect(dialog.getByText('Verify the result')).toBeVisible();
     await page.waitForTimeout(400);
     await dialog.screenshot({ path: path.join(OUT_DIR, 'run-with-agent.png') });
@@ -382,7 +383,7 @@ test.describe.serial('README screenshots', () => {
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await drawer.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
     await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-    await drawer.getByRole('heading', { name: 'Decisions' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
+    await drawer.getByRole('heading', { name: 'Questions from the agent' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'decision-inbox.png') });
   });
