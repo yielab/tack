@@ -3615,6 +3615,11 @@ export interface components {
             priority: components["schemas"]["Priority"];
             /** Format: uuid */
             project_id: string;
+            /**
+             * @description The run dialog's Advanced values this task overrides (a JSON object),
+             *     or `None` when it follows the project.
+             */
+            run_settings?: Record<string, never> | null;
             /** Format: int32 */
             sort_order: number;
             /**
@@ -4170,6 +4175,11 @@ export interface components {
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: null | components["schemas"]["ItemType"];
             priority?: null | components["schemas"]["Priority"];
+            /**
+             * @description Omitted leaves the run settings untouched; JSON `null` clears them.
+             *     The handler rejects anything but an object or `null`.
+             */
+            run_settings?: Record<string, never> | null;
             /** Format: int32 */
             sort_order?: number | null;
             /** Format: uuid */
