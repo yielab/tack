@@ -753,6 +753,29 @@ async fn probe_reports_the_native_provider() {
     assert!(off.probe().await.providers.is_empty());
 }
 
+#[tokio::test]
+async fn probe_reports_model_selection() {
+    let state = scratch("probe-model-selection");
+    let required = harness(state.path()).probe().await;
+    assert_eq!(
+        required.model_selection,
+        Some(ModelSelectionReport::Required)
+    );
+
+    let grammar = TestGrammar {
+        descriptor: &INHERITING,
+        observed_model: None,
+        ask: false,
+    };
+    let optional = harness_with(grammar, fake_harness(), state.path())
+        .probe()
+        .await;
+    assert_eq!(
+        optional.model_selection,
+        Some(ModelSelectionReport::Optional)
+    );
+}
+
 // ---- cancel and reconcile ---------------------------------------------------
 
 /// `spawn_child` keeps the shell itself alive, waiting on a child; `hang`

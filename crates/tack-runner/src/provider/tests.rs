@@ -260,6 +260,7 @@ fn empty_capabilities() -> RunnerCapabilities {
             decisions: None,
             native_provider: String::new(),
             providers: Vec::new(),
+            model_selection: None,
             additional: Default::default(),
         }],
         features: tack_orch::execution::FeatureCapabilities {

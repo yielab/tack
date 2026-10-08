@@ -35,6 +35,7 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
             decisions: None,
             native_provider: String::new(),
             providers: Vec::new(),
+            model_selection: None,
             additional: BTreeMap::new(),
         }],
     }
