@@ -1,5 +1,5 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
-import { Badge, Button } from '../ui';
+import { Badge, Button, Modal } from '../ui';
 import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
@@ -10,6 +10,7 @@ import {
   isTerminalAttemptState,
 } from './attemptFormat';
 import ArtifactDownloadPanel from './ArtifactDownloadPanel';
+import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
@@ -35,6 +36,97 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props)
         </h4>
         <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} />
       </section>
+    </Show>
+  );
+};
+
+/** The row of actions on a terminal attempt: see what it did. */
+const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary }> = (props) => {
+  const n = () => props.attempt.attempt_number;
+  const reason = () => (props.attempt.terminal_reason ?? {}) as { workspace_kept_at?: unknown; result?: unknown };
+  const [artifacts] = createResource(
+    () => `${props.requestId}:${n()}`,
+    () => artifactsApi.list(props.requestId, n()).catch(() => []),
+  );
+  const patch = () => (artifacts() ?? []).find((a) => a.kind === 'patch');
+  const log = () => (artifacts() ?? []).find((a) => a.kind === 'log' || a.name.endsWith('.log'));
+  const evidence = () => (artifacts() ?? []).find((a) => a.kind === 'evidence');
+  const [branch] = createResource(evidence, async (e) => {
+    try {
+      const parsed = JSON.parse(await (await artifactsApi.download(props.requestId, n(), e.artifact_id)).text()) as {
+        branch?: unknown;
+      };
+      const b = parsed.branch;
+      if (typeof b === 'string') return b;
+      const inner = (b as { branch?: unknown } | null)?.branch;
+      return typeof inner === 'string' ? inner : null;
+    } catch {
+      return null;
+    }
+  });
+  const folder = () => (typeof reason().workspace_kept_at === 'string' ? (reason().workspace_kept_at as string) : null);
+  const result = () => (typeof reason().result === 'string' ? (reason().result as string) : null);
+  const inTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const [diffOpen, setDiffOpen] = createSignal(false);
+  const [diffText] = createResource(
+    () => (diffOpen() ? patch() : undefined),
+    async (p) => (await artifactsApi.download(props.requestId, n(), p.artifact_id)).text(),
+  );
+  const [resultOpen, setResultOpen] = createSignal(false);
+  const [logOpen, setLogOpen] = createSignal(false);
+  const copy = (text: string) => void navigator.clipboard?.writeText(text);
+  const openFolder = async (path: string) => {
+    if (inTauri()) {
+      const { open } = await import('@tauri-apps/plugin-shell');
+      await open(path);
+    } else {
+      copy(path);
+    }
+  };
+  return (
+    <Show when={isTerminalAttemptState(props.attempt.state)}>
+      <div class="space-y-2">
+        <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
+          <Show when={patch()}>
+            <Button size="sm" variant="secondary" onClick={() => setDiffOpen(true)}>Open diff</Button>
+          </Show>
+          <Show when={patch() && folder()}>
+            {(path) => (
+              <Button size="sm" variant="secondary" onClick={() => void openFolder(path())}>
+                {inTauri() ? 'Open folder' : 'Copy path'}
+              </Button>
+            )}
+          </Show>
+          <Show when={branch()}>
+            {(b) => (
+              <Button size="sm" variant="secondary" onClick={() => copy(b())}>Copy branch</Button>
+            )}
+          </Show>
+          <Show when={result()}>
+            <Button size="sm" variant="secondary" aria-expanded={resultOpen()} onClick={() => setResultOpen((v) => !v)}>
+              Result
+            </Button>
+          </Show>
+          <Show when={log()}>
+            <Button size="sm" variant="secondary" aria-expanded={logOpen()} onClick={() => setLogOpen((v) => !v)}>
+              Log
+            </Button>
+          </Show>
+        </div>
+        <Show when={resultOpen() && result()}>
+          {(r) => (
+            <p class="text-sm whitespace-pre-wrap" style={{ color: 'var(--color-text-primary)' }}>{r()}</p>
+          )}
+        </Show>
+        <Show when={logOpen()}>
+          <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} />
+        </Show>
+        <Modal isOpen={diffOpen()} onClose={() => setDiffOpen(false)} title={`Attempt #${n()} changes`} size="xl">
+          <Show when={diffText()} fallback={<p class="text-sm">Loading the diff…</p>}>
+            {(t) => <DiffView patch={t()} />}
+          </Show>
+        </Modal>
+      </div>
     </Show>
   );
 };
@@ -182,6 +274,8 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
           </Show>
         </div>
       </Show>
+
+      <AttemptTools requestId={props.requestId} attempt={props.attempt} />
 
       {/* Model provenance — a distinct, honest tone per case, never a bare
           "matched" boolean. */}
