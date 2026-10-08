@@ -1,7 +1,8 @@
 import { type Accessor, type Component, For, Show, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
-import { Button, Field, Select, Badge } from '../ui';
+import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
+import { HELP } from '../help/texts';
 import type { AgentProfileSummary, AggregatedModelCombination } from '../execution';
 import type { Project } from '../types';
 import { gateHarnessModelSelection } from './shared';
@@ -141,6 +142,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           </div>
         }
       >
+        <FieldShell label="Profile" help={HELP.profile}>
         <div role="group" aria-label="Profile" class="flex flex-wrap gap-2">
           <For each={sortedProfiles()}>
             {(p) => (
@@ -159,6 +161,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             )}
           </For>
         </div>
+        </FieldShell>
       </Show>
       <Show when={props.rows.profile() === 'missing'}>
         <Prerequisite state="missing" label="An agent profile exists" href="/agents" fixLabel="Add an agent profile" />
@@ -168,7 +171,8 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
 
       <div class="space-y-2">
-        <label class="flex cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
+        <div class="flex items-center gap-2">
+        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
           <input
             type="checkbox"
             role="switch"
@@ -181,10 +185,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           />
           Ask before each action
         </label>
+        <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
+        </div>
         <Show when={!props.decisionsAttested()}>
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
-        <label class="flex cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
+        <div class="flex items-center gap-2">
+        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
           <input
             type="checkbox"
             role="switch"
@@ -195,6 +202,8 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           />
           Allow network access
         </label>
+        <HelpHint label="Allow network access" help={HELP.allowNetwork} />
+        </div>
       </div>
 
       <details open={advanced()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
@@ -220,6 +229,8 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             </RadioRow>
           </div>
           <Show when={props.form.modelMode === 'choose'}>
+            <div class="relative">
+            <span class="absolute top-0 left-11"><HelpHint label="Model" help={HELP.model} /></span>
             <Select
               label="Model"
               value={props.form.chooseIndex}
@@ -234,6 +245,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 { value: CUSTOM_MODEL_VALUE, label: 'Other…' },
               ]}
             />
+            </div>
             <Show when={props.form.chooseIndex === CUSTOM_MODEL_VALUE}>
               <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
               <Show when={props.throughOptions().length > 0}>

@@ -2,7 +2,8 @@ import { type Component, type JSX, createMemo, createResource, For, Show } from 
 import { api } from '../../../shared/api';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, Select } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
+import { HELP } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
 import type { UpdateProject } from '../../../shared/types';
@@ -139,6 +140,7 @@ const AutomationPanel: Component = () => {
           <Field
             label={hasFolder() ? 'Folder' : 'Repository URL'}
             aria-label={hasFolder() ? 'Folder' : 'Repository URL'}
+            help={hasFolder() ? HELP.folder : undefined}
             value={p()?.repository ?? ''}
             placeholder={hasFolder() ? '/home/you/code/project' : 'https://github.com/org/repo.git'}
             onChange={(e) => void saveFolder(e.currentTarget.value)}
@@ -156,7 +158,10 @@ const AutomationPanel: Component = () => {
       </div>
 
       <div class={SECTION}>
-        <Heading>How the agent works on it</Heading>
+        <div class="flex items-center gap-2">
+          <Heading>How the agent works on it</Heading>
+          <HelpHint label="How the agent works" help={HELP.howTheAgentWorks} />
+        </div>
         <Show
           when={origin() !== 'none'}
           fallback={
@@ -182,16 +187,19 @@ const AutomationPanel: Component = () => {
               </Radio>
             </details>
           </div>
-          <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={!!p()?.push_after_run}
-              disabled={pushDisabledReason() !== null}
-              onChange={(e) => void save({ push_after_run: e.currentTarget.checked })}
-            />
-            Push the branch when a run finishes
-          </label>
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={!!p()?.push_after_run}
+                disabled={pushDisabledReason() !== null}
+                onChange={(e) => void save({ push_after_run: e.currentTarget.checked })}
+              />
+              Push the branch when a run finishes
+            </label>
+            <HelpHint label="Push the branch" help={HELP.pushTheBranch} />
+          </div>
           <Show when={pushDisabledReason()}>
             <Note>{pushDisabledReason()}</Note>
           </Show>
@@ -221,7 +229,7 @@ const AutomationPanel: Component = () => {
             </For>
           </div>
         </FieldShell>
-        <FieldShell label="Model">
+        <FieldShell label="Model" help={HELP.model}>
           <div class="flex flex-col gap-1.5">
             <Radio name="model-mode" checked onChange={() => {}}>The agent's default (recommended)</Radio>
             <label class="flex items-center gap-2 text-sm opacity-60" style={{ color: 'var(--color-text-primary)' }}>
@@ -231,7 +239,7 @@ const AutomationPanel: Component = () => {
             <Note>Choosing a specific model here is not available yet.</Note>
           </div>
         </FieldShell>
-        <FieldShell label="Default profile">
+        <FieldShell label="Default profile" help={HELP.profile}>
           <div class="flex flex-wrap gap-2">
             <For each={profiles()} fallback={<Note>No agent profiles yet.</Note>}>
               {(pr) => (
