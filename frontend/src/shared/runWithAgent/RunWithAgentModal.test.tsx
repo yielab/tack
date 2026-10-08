@@ -95,6 +95,8 @@ function mockFetch(
     project?: unknown;
     agentContext?: string;
     runSettings?: Record<string, unknown> | null;
+    /** Holds the item back, so the runners land before the project's settings are applied. */
+    itemDelayMs?: number;
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -113,6 +115,7 @@ function mockFetch(
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
     if (url.endsWith('/items/item-1')) {
+      if (opts.itemDelayMs) await new Promise((r) => setTimeout(r, opts.itemDelayMs));
       if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
       return new Response(JSON.stringify({ item: { id: 'item-1', run_settings: opts.runSettings ?? null }, id: 'item-1', run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
     }
@@ -541,6 +544,42 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(lastCreateBody).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'claude-sonnet-5-5' });
+  });
+
+  it('the_project_default_harness_that_needs_no_model_is_not_left_on_specific_model', async () => {
+    // The form starts on codex (required) until the project's claude-code (optional) lands.
+    const harness = (harness_kind: string, model_selection: string) => ({
+      harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+      model_combinations: [], native_provider: harness_kind === 'codex' ? 'openai' : 'anthropic', model_selection,
+    });
+    const row = runnerRow('runner-4', 'Box', runnerCapabilitySnapshot({ harnesses: [harness('codex', 'required'), harness('claude-code', 'optional')] }));
+    mount({}, { runners: [row], fleets: [], project: { ...PROJECT, default_harness: 'claude-code' }, itemDelayMs: 10 });
+    await new Promise((r) => setTimeout(r, 30));
+    await flush();
+    expect(modelModeRadio(0).checked).toBe(true);
+    expect(document.querySelector('[data-testid="run-summary"]')?.textContent).toContain("the agent's default");
+    expect(document.body.textContent).not.toContain('Select a model, or use');
+    expect(submitButton().disabled).toBe(false);
+    // Choosing "Specific model" by hand stays there.
+    modelModeRadio(1).click();
+    await flush();
+    expect(modelModeRadio(1).checked).toBe(true);
+  });
+
+  it('a_harness_that_needs_a_model_says_so_where_run_was', async () => {
+    const codex = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
+      harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+      model_combinations: [], native_provider: 'openai', model_selection: 'required',
+    }] }));
+    mount({}, { runners: [codex], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-summary"]')?.textContent).toContain('no model chosen');
+    const fix = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Choose a model for this run');
+    expect(fix).toBeTruthy();
+    fix!.click();
+    await flush();
+    expect((document.querySelectorAll('details')[1] as HTMLDetailsElement).open).toBe(true);
   });
 
   it('the_provider_comes_from_the_harness', async () => {
