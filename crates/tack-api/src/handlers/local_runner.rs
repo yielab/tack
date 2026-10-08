@@ -521,3 +521,182 @@ pub async fn get_harness_verification(State(state): State<AppState>) -> ApiResul
         .collect();
     Ok(Json(json!({ "harnesses": harnesses })))
 }
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct TestRun {
+    pub harness_kind: String,
+}
+
+const TEST_PROJECT_NAME: &str = "Agent tests";
+
+/// POST /api/local-runner/test-run — runs the harness once on this machine
+/// from an empty scratch directory: no remote, no typed model. It files the
+/// run under an archived `Agent tests` project (created on first use, so it
+/// never shows in the project list) and answers the new request's id.
+#[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/local-runner/test-run",
+    tag = "local-runner",
+    request_body = TestRun,
+    responses(
+        (status = 200, description = "The execution request that was queued", body = serde_json::Value),
+        (status = 409, description = "The embedded runner is not configured, not running or not enrolled"),
+    ),
+)]
+pub async fn post_test_run(
+    State(state): State<AppState>,
+    Json(input): Json<TestRun>,
+) -> Result<Json<Value>, FolderError> {
+    let unavailable = |message: &str| {
+        folder_error(
+            StatusCode::CONFLICT,
+            "local_runner_unavailable",
+            message,
+            json!({}),
+        )
+    };
+    let internal = |message: &str| {
+        folder_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            message,
+            json!({}),
+        )
+    };
+    let Some(control) = state.local_runner.clone() else {
+        return Err(unavailable("The embedded runner is not configured"));
+    };
+    if control.status().await.state != RuntimeState::Running {
+        return Err(unavailable("The embedded runner is not running"));
+    }
+    let pool = state.pool();
+    let runner_id: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM agent_runners WHERE name LIKE 'local-%' AND state = 'active' \
+         AND revoked_at IS NULL ORDER BY COALESCE(last_heartbeat_at, created_at) DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| internal("Could not look up the local runner"))?;
+    let runner_id = runner_id.ok_or_else(|| unavailable("The embedded runner is not enrolled"))?;
+    let profile: Option<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT id, name, instructions, tool_policy, limits FROM agent_profiles \
+         WHERE kind = 'implementer'",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| internal("Could not look up the Implementer profile"))?;
+    let (profile_id, name, instructions, tool_policy, limits) = profile.ok_or_else(|| {
+        folder_error(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "The Implementer profile does not exist",
+            json!({}),
+        )
+    })?;
+
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT id FROM projects WHERE workspace_id = ? AND name = ?")
+            .bind(state.workspace_id.to_string())
+            .bind(TEST_PROJECT_NAME)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| internal("Could not look up the test project"))?;
+    let project = match existing.and_then(|id| id.parse::<uuid::Uuid>().ok()) {
+        Some(id) => state
+            .repo
+            .get_project(id)
+            .await
+            .map_err(|_| internal("Could not load the test project"))?
+            .ok_or_else(|| internal("Could not load the test project"))?,
+        None => {
+            let created = state
+                .repo
+                .create_project(
+                    state.workspace_id,
+                    tack_core::models::CreateProject {
+                        name: TEST_PROJECT_NAME.to_owned(),
+                        description: Some(
+                            "Runs started from Settings to check an agent".to_owned(),
+                        ),
+                        project_type: tack_core::models::ProjectType::Software,
+                        template: None,
+                    },
+                )
+                .await
+                .map_err(|_| internal("Could not create the test project"))?;
+            state
+                .repo
+                .update_project(
+                    created.id,
+                    tack_core::models::UpdateProject {
+                        archived: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|_| internal("Could not archive the test project"))?;
+            created
+        }
+    };
+    let initial_status = project
+        .workflow
+        .initial_status()
+        .map_err(|_| internal("The test project has no initial status"))?;
+    let now = Utc::now();
+    let item = state
+        .repo
+        .create_item(
+            project.id,
+            &initial_status,
+            tack_core::models::CreateItem {
+                title: format!("Agent test {}", now.format("%Y-%m-%d %H:%M:%S")),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|_| internal("Could not create the test item"))?;
+
+    let parse = |raw: &str| serde_json::from_str::<Value>(raw).unwrap_or_else(|_| json!({}));
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        "x-tack-principal",
+        axum::http::HeaderValue::from_static("local-runner-test"),
+    );
+    let create = crate::handlers::executions::CreateExecution {
+        item_id: item.id,
+        idempotency_key: uuid::Uuid::new_v4().to_string(),
+        selector_kind: "exact_runner".to_owned(),
+        selector_id: runner_id,
+        agent_profile_id: profile_id,
+        requested_harness_kind: input.harness_kind,
+        requested_model_provider: None,
+        requested_model_id: None,
+        agent_profile_snapshot: json!({
+            "name": name,
+            "instructions": instructions,
+            "tool_policy": parse(&tool_policy),
+            "timeout_seconds": 300,
+            "budgets": parse(&limits),
+        }),
+        repository_snapshot: json!({
+            "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
+        }),
+        permission_policy: json!({ "tools": [], "network": false }),
+        budgets: json!({}),
+        environment: json!({}),
+        metadata: json!({}),
+        timeout_seconds: 300,
+        status_map_policy_id: None,
+        verify: None,
+        push_branch: None,
+    };
+    let operator = crate::handlers::executions::OperatorExecutionState::with_clock(
+        state.repo.clone(),
+        Arc::new(tack_db::repo::execution::SystemExecutionClock),
+    );
+    let Json(created) =
+        crate::handlers::executions::create_execution(State(operator), headers, Json(create))
+            .await?;
+    Ok(Json(json!({ "request_id": created.request_id })))
+}

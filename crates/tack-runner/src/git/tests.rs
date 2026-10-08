@@ -786,3 +786,26 @@ async fn evidence_is_captured_when_the_base_is_a_branch_name() {
         assert_eq!(evidence.base_commit.len(), 40, "{label}");
     }
 }
+
+#[tokio::test]
+async fn a_scratch_workspace_captures_the_file_the_harness_wrote() {
+    let root_dir = temp_dir("root");
+    let workspace = attempt_workspace(root_dir.path(), "attempt-scratch", "HEAD");
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    provisioner
+        .provision_scratch(&workspace)
+        .await
+        .expect("an empty repository with one commit");
+    fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
+
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("captured")
+        .expect("a git provisioner reads the repository");
+
+    assert_eq!(evidence.files.len(), 1);
+    assert_eq!(evidence.files[0].op, FileOp::Added);
+    assert!(!evidence.patch.is_empty());
+    assert_eq!(evidence.base_commit.len(), 40);
+}
