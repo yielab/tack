@@ -833,6 +833,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-runner/check-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/local-runner/check-folder — what is at `path`; writes nothing. */
+        post: operations["check_local_runner_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-runner/harness-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GET /api/local-runner/harness-verification — per harness kind, when its
+         *     latest succeeded attempt ended. A kind with no succeeded attempt is absent.
+         */
+        get: operations["get_harness_verification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-runner/init-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * POST /api/local-runner/init-folder — creates `path` and runs `git init`.
+         *     An existing non-empty directory (or a file) is a 409.
+         */
+        post: operations["init_local_runner_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-runner/secrets": {
         parameters: {
             query?: never;
@@ -3427,6 +3484,9 @@ export interface components {
             fleet_id: string;
             name: string;
         };
+        FolderPath: {
+            path: string;
+        };
         GitHubImportRequest: {
             /** @description Include closed issues (default: false — only open issues are imported). */
             import_closed?: boolean;
@@ -5986,6 +6046,102 @@ export interface operations {
         responses: {
             /** @description Preference saved and the runtime reconciled to match */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    check_local_runner_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderPath"];
+            };
+        };
+        responses: {
+            /** @description Whether the path exists, is a directory, and its git facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description The path is not absolute */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The embedded runner is not configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_harness_verification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Harness kind to the ended_at of its latest succeeded attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    init_local_runner_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderPath"];
+            };
+        };
+        responses: {
+            /** @description Directory created and initialised as a git repository */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description The path is not absolute */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path exists and is not an empty directory, or the embedded runner is not configured */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

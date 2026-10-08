@@ -344,3 +344,180 @@ pub async fn delete_local_runner_secret(
     control.remove_secret(&name).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct FolderPath {
+    pub path: String,
+}
+
+type FolderError = (StatusCode, Json<Value>);
+
+fn folder_error(status: StatusCode, code: &str, message: &str, details: Value) -> FolderError {
+    (
+        status,
+        Json(json!({ "error": {
+            "status": status.as_u16(),
+            "code": code,
+            "message": message,
+            "details": details,
+        }})),
+    )
+}
+
+/// The folder routes run `git` in this process, so they only make sense when
+/// the embedded runner (same machine) is configured, and only for absolute paths.
+fn folder_path(state: &AppState, input: &FolderPath) -> Result<std::path::PathBuf, FolderError> {
+    if state.local_runner.is_none() {
+        return Err(folder_error(
+            StatusCode::CONFLICT,
+            "local_runner_unavailable",
+            "The embedded runner is not configured",
+            json!({}),
+        ));
+    }
+    let path = std::path::PathBuf::from(&input.path);
+    if !path.is_absolute() {
+        return Err(folder_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "path must be absolute",
+            json!({ "field": "path" }),
+        ));
+    }
+    Ok(path)
+}
+
+/// Runs `git` in `dir`; `Some(stdout)` only on a zero exit within the timeout.
+async fn run_git(dir: &std::path::Path, args: &[&str]) -> Option<String> {
+    let mut command = tokio::process::Command::new("git");
+    command
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// POST /api/local-runner/check-folder — what is at `path`; writes nothing.
+#[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/local-runner/check-folder",
+    tag = "local-runner",
+    request_body = FolderPath,
+    responses(
+        (status = 200, description = "Whether the path exists, is a directory, and its git facts", body = serde_json::Value),
+        (status = 400, description = "The path is not absolute"),
+        (status = 409, description = "The embedded runner is not configured"),
+    ),
+)]
+pub async fn check_local_runner_folder(
+    State(state): State<AppState>,
+    Json(input): Json<FolderPath>,
+) -> Result<Json<Value>, FolderError> {
+    let path = folder_path(&state, &input)?;
+    let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+    let is_dir = exists && tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_dir());
+    let is_git = is_dir
+        && run_git(&path, &["rev-parse", "--is-inside-work-tree"])
+            .await
+            .is_some_and(|out| out == "true");
+    let (mut branch, mut remote_url, mut dirty_files) = (None, None, 0);
+    if is_git {
+        branch = run_git(&path, &["rev-parse", "--abbrev-ref", "HEAD"]).await;
+        remote_url = run_git(&path, &["remote", "get-url", "origin"]).await;
+        dirty_files = run_git(&path, &["status", "--porcelain"])
+            .await
+            .map_or(0, |out| out.lines().count());
+    }
+    Ok(Json(json!({
+        "exists": exists,
+        "is_dir": is_dir,
+        "is_git": is_git,
+        "branch": branch,
+        "remote_url": remote_url,
+        "dirty_files": dirty_files,
+    })))
+}
+
+/// POST /api/local-runner/init-folder — creates `path` and runs `git init`.
+/// An existing non-empty directory (or a file) is a 409.
+#[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/local-runner/init-folder",
+    tag = "local-runner",
+    request_body = FolderPath,
+    responses(
+        (status = 200, description = "Directory created and initialised as a git repository", body = serde_json::Value),
+        (status = 400, description = "The path is not absolute"),
+        (status = 409, description = "The path exists and is not an empty directory, or the embedded runner is not configured"),
+    ),
+)]
+pub async fn init_local_runner_folder(
+    State(state): State<AppState>,
+    Json(input): Json<FolderPath>,
+) -> Result<Json<Value>, FolderError> {
+    let path = folder_path(&state, &input)?;
+    let internal = |message: &str| {
+        folder_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            message,
+            json!({}),
+        )
+    };
+    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+        let empty_dir = match tokio::fs::read_dir(&path).await {
+            Ok(mut entries) => entries.next_entry().await.is_ok_and(|e| e.is_none()),
+            Err(_) => false,
+        };
+        if !empty_dir {
+            return Err(folder_error(
+                StatusCode::CONFLICT,
+                "folder_not_empty",
+                "The path exists and is not an empty directory",
+                json!({ "field": "path" }),
+            ));
+        }
+    }
+    tokio::fs::create_dir_all(&path)
+        .await
+        .map_err(|_| internal("Could not create the directory"))?;
+    run_git(&path, &["init"])
+        .await
+        .ok_or_else(|| internal("git init failed"))?;
+    Ok(Json(json!({ "path": input.path })))
+}
+
+/// GET /api/local-runner/harness-verification — per harness kind, when its
+/// latest succeeded attempt ended. A kind with no succeeded attempt is absent.
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/local-runner/harness-verification",
+    tag = "local-runner",
+    responses((status = 200, description = "Harness kind to the ended_at of its latest succeeded attempt", body = serde_json::Value)),
+)]
+pub async fn get_harness_verification(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT json_extract(actual_execution, '$.harness_kind') AS kind, MAX(ended_at) AS ended_at \
+         FROM execution_attempts \
+         WHERE state = 'succeeded' AND actual_execution IS NOT NULL AND ended_at IS NOT NULL \
+         GROUP BY kind HAVING kind IS NOT NULL",
+    )
+    .fetch_all(state.pool())
+    .await?;
+    let harnesses: serde_json::Map<String, Value> = rows
+        .into_iter()
+        .map(|(k, t)| (k, Value::String(t)))
+        .collect();
+    Ok(Json(json!({ "harnesses": harnesses })))
+}
