@@ -1,5 +1,6 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button, Modal } from '../ui';
+import { api } from '../api';
 import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
@@ -68,7 +69,21 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
       return null;
     }
   });
-  const folder = () => (typeof reason().workspace_kept_at === 'string' ? (reason().workspace_kept_at as string) : null);
+  // A run in the user's own folder keeps no workspace; the project's folder is where the change is.
+  const [projectFolder] = createResource(
+    () => (patch() && typeof reason().workspace_kept_at !== 'string' ? props.itemId : undefined),
+    async (id) => {
+      try {
+        const project = await api.projects.get((await api.items.get(id)).project_id);
+        const own = project.workspace_mode === 'local_branch' || project.workspace_mode === 'in_place';
+        return own && project.repository ? project.repository : null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  const folder = () =>
+    typeof reason().workspace_kept_at === 'string' ? (reason().workspace_kept_at as string) : (projectFolder() ?? null);
   const result = () => (typeof reason().result === 'string' ? (reason().result as string) : null);
   const inTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   const [diffOpen, setDiffOpen] = createSignal(false);
