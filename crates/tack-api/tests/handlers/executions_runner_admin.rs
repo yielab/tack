@@ -1055,3 +1055,72 @@ async fn an_execution_snapshots_the_requests_choice_to_decline_verify_and_push()
     assert_eq!(snapshot["verify"], serde_json::json!(false));
     assert_eq!(snapshot["push_branch"], serde_json::json!(false));
 }
+
+#[tokio::test]
+async fn the_repository_comes_from_the_project_when_omitted() {
+    let (app, repo, item_id) = setup().await;
+    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    body.as_object_mut().unwrap().remove("repository_snapshot");
+    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    let set_project = |origin: &'static str,
+                       repository: Option<&'static str>,
+                       mode: &'static str| {
+        let (repo, project_id) = (repo.clone(), project_id.clone());
+        async move {
+            sqlx::query("UPDATE projects SET code_origin=?, repository=?, default_branch=NULL, workspace_mode=?, push_after_run=1 WHERE id=?")
+                .bind(origin).bind(repository).bind(mode).bind(project_id)
+                .execute(repo.pool()).await.unwrap();
+        }
+    };
+
+    // A project with no code: 400 project_has_no_code.
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["code"], "invalid_request");
+    assert_eq!(err["error"]["details"]["reason"], "project_has_no_code");
+
+    // A folder project: the snapshot is filled from the project.
+    set_project("folder", Some("/work/repo"), "in_place").await;
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let request_id = created["request_id"].as_str().unwrap();
+    let (status, _) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{request_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let snapshot = stored_snapshot(&repo, request_id).await;
+    assert_eq!(
+        snapshot["repository"],
+        serde_json::json!({"kind":"git","remote":"/work/repo","base_revision":"HEAD","subdirectory":null,
+            "workspace_mode":"in_place","repository_path":"/work/repo","push_after_run":true})
+    );
+
+    // A url project always clones and has no local path.
+    set_project("url", Some("https://example.test/p.git"), "in_place").await;
+    body["idempotency_key"] = serde_json::json!("url-key");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["repository"]["workspace_mode"], "clone");
+    assert_eq!(
+        snapshot["repository"]["repository_path"],
+        serde_json::Value::Null
+    );
+
+    // An explicit snapshot still wins.
+    body["idempotency_key"] = serde_json::json!("explicit-key");
+    body["repository_snapshot"] =
+        serde_json::json!({"kind":"scratch","remote":"","base_revision":"","subdirectory":null});
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["repository"]["kind"], "scratch");
+}

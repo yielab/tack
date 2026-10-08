@@ -679,9 +679,9 @@ pub async fn post_test_run(
             "timeout_seconds": 300,
             "budgets": parse(&limits),
         }),
-        repository_snapshot: json!({
+        repository_snapshot: Some(json!({
             "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
-        }),
+        })),
         permission_policy: json!({ "tools": [], "network": false }),
         budgets: json!({}),
         environment: json!({}),

@@ -3157,9 +3157,11 @@ export interface components {
             push_branch?: boolean | null;
             /**
              * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
-             *     base_revision, subdirectory}`).
+             *     base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
+             *     from the item's project; a project with no code is `invalid_request`
+             *     (`details.reason = "project_has_no_code"`).
              */
-            repository_snapshot: unknown;
+            repository_snapshot?: unknown;
             requested_harness_kind: string;
             requested_model_id?: string | null;
             requested_model_provider?: string | null;
