@@ -99,6 +99,11 @@ pub struct AttemptEvidence {
     pub usage: serde_json::Value,
 }
 
+/// Why `captured` is false when git could not read the workspace.
+pub const EVIDENCE_REASON_GIT_UNREADABLE: &str = "git could not read the workspace";
+/// Why `captured` is false when the provisioner has no repository to read.
+pub const EVIDENCE_REASON_NO_REPOSITORY: &str = "this worktree provisioner reads no repository";
+
 /// Captures and stages the evidence of one attempt. Returns the scratch
 /// directory holding the staged files (the caller removes it once they are
 /// uploaded) and one JSON object per staged artifact, in the shape
@@ -114,8 +119,8 @@ pub async fn capture<P: WorktreeProvisioner>(
     let attempt_id = workspace.attempt_id.as_str();
     let (git, reason) = match workspaces.capture_evidence(workspace, &[RUNNER_DIR]).await {
         Ok(Some(git)) => (Some(git), None),
-        Ok(None) => (None, Some("this worktree provisioner reads no repository")),
-        Err(_) => (None, Some("git could not read the workspace")),
+        Ok(None) => (None, Some(EVIDENCE_REASON_NO_REPOSITORY)),
+        Err(_) => (None, Some(EVIDENCE_REASON_GIT_UNREADABLE)),
     };
     let evidence = AttemptEvidence {
         v: "1".to_owned(),
