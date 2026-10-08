@@ -82,7 +82,7 @@ fn bounded_prefix(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
-/// The last line `docket harness run` prints, on success or failure. Every
+/// The last line `docket exec` prints, on success or failure. Every
 /// other stdout line is an NDJSON progress event this adapter does not read.
 #[derive(serde::Deserialize)]
 struct ResultLine {
@@ -343,8 +343,7 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
     ];
     Ok(Invocation {
         args: [
-            "harness",
-            "run",
+            "exec",
             "--workspace",
             &workspace_root.display().to_string(),
             "--task-file",
