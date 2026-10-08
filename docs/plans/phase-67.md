@@ -805,6 +805,7 @@ needed — literal strings). The table is the whole brief:
 | Execution request / attempt | Run / Attempt #n |
 | Brief | (gone; "Acceptance criteria", "For the agent") |
 | Model/token cost, Runner time | Cost, Time |
+| Run-state chip labels (`STATE_LABEL` in `shared.ts`, shown by `RunWithAgentButton.tsx`): Queued / Running / Waiting for decision / Succeeded / Failed | Queued · Running · Asking you · Finished · Failed (moved here from T4b, 2026-10-08) |
 
 **Done when:** `rg -n 'Harness|harness|Agent profile|Base revision|Remote|Approvals|Decision inbox|Terminal reason' frontend/src --glob '!*.test.*' --glob '!*.gen.ts'`
 matches only wire-name usages (`harness_kind`, `harnessKind`, code comments) and no JSX text;
