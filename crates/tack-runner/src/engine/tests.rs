@@ -3653,6 +3653,41 @@ async fn a_failed_evidence_capture_keeps_the_workspace() {
 }
 
 #[tokio::test]
+async fn a_workspace_that_cannot_be_moved_to_quarantine_is_left_in_place() {
+    let root_dir = temporary_root("evidence-failed-keep-fails");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let fake_protocol = protocol(work(), false, false);
+    let reported = fake_protocol.reported_completions.clone();
+    let key = "attempt"
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    // `keep` refuses to overwrite an existing quarantine destination.
+    std::fs::create_dir_all(root.join("quarantine").join(&key)).expect("occupied destination");
+    let engine = RunnerEngine::new(
+        fake_protocol,
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        WorkspaceManager::new(root.join("workspaces"), UnreadableWorktree),
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+
+    let workspace = root.join("workspaces").join(&key);
+    assert!(workspace.is_dir(), "the workspace stays where it is");
+    let completions = reported.lock().expect("lock").clone();
+    assert_eq!(
+        completions[0].terminal_reason["workspace_kept_at"],
+        workspace.display().to_string()
+    );
+}
+
+#[tokio::test]
 async fn a_local_branch_attempt_whose_evidence_failed_keeps_its_worktree() {
     let root_dir = temporary_root("evidence-failed-local");
     let root = root_dir.path();
