@@ -273,8 +273,11 @@ pub struct CreateExecution {
     /// enqueue time.
     pub agent_profile_snapshot: Value,
     /// `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
-    /// base_revision, subdirectory}`).
-    pub repository_snapshot: Value,
+    /// base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
+    /// from the item's project; a project with no code is `invalid_request`
+    /// (`details.reason = "project_has_no_code"`).
+    #[serde(default)]
+    pub repository_snapshot: Option<Value>,
     /// `tack_orch::execution::PermissionPolicy` (`{tools, network,
     /// approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
     /// `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
@@ -642,6 +645,68 @@ async fn with_item_context(
     Ok((profile, brief))
 }
 
+/// The request's explicit repository snapshot, or the one its project implies
+/// when it sent none (absent or `{}`).
+async fn resolve_repository(
+    repo: &tack_db::Repository,
+    project_id: Uuid,
+    explicit: Option<Value>,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    if let Some(explicit) = explicit.filter(|v| v.as_object().is_none_or(|o| !o.is_empty())) {
+        return Ok(explicit);
+    }
+    let project = repo
+        .get_project(project_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load project",
+                json!({}),
+            )
+        })?
+        .ok_or_else(|| {
+            error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Project does not exist",
+                json!({"resource": "project"}),
+            )
+        })?;
+    let project = &project;
+    use tack_core::models::{CodeOrigin, WorkspaceMode};
+    let local = matches!(
+        project.code_origin,
+        CodeOrigin::Folder | CodeOrigin::NewFolder
+    );
+    let (Some(repository), true) = (
+        project.repository.as_deref(),
+        project.code_origin != CodeOrigin::None,
+    ) else {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "The project has no code to run against; set its folder or repository, or send repository_snapshot",
+            json!({"field": "repository_snapshot", "reason": "project_has_no_code"}),
+        ));
+    };
+    let mode = if project.code_origin == CodeOrigin::Url {
+        WorkspaceMode::Clone
+    } else {
+        project.workspace_mode
+    };
+    Ok(json!({
+        "kind": "git",
+        "remote": repository,
+        "base_revision": project.default_branch.as_deref().unwrap_or("HEAD"),
+        "subdirectory": null,
+        "workspace_mode": mode.to_string(),
+        "repository_path": local.then_some(repository),
+        "push_after_run": project.push_after_run,
+    }))
+}
+
 #[utoipa::path(
     post,
     path = "/api/executions",
@@ -687,6 +752,12 @@ pub async fn create_execution(
             json!({"resource": "item"}),
         ));
     };
+    let repository_snapshot = resolve_repository(
+        &state.repo,
+        item.project_id,
+        input.repository_snapshot.clone(),
+    )
+    .await?;
     let existing_snapshot: Option<String> = sqlx::query_scalar(
         "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
     )
@@ -856,7 +927,7 @@ pub async fn create_execution(
         "requested_harness_kind": input.requested_harness_kind,
         "requested_model_provider": resolved_model_provider.clone(),
         "requested_model_id": resolved_model_id.clone(),
-        "repository": input.repository_snapshot,
+        "repository": repository_snapshot,
         "permission_policy": input.permission_policy,
         "timeout_seconds": input.timeout_seconds,
         "budgets": input.budgets,
