@@ -87,6 +87,21 @@ describe('Badge / EmptyState / Field', () => {
     expect(more.getAttribute('target')).toBe('_blank');
     expect(more.getAttribute('rel')).toBe('noreferrer');
   });
+
+  it('the_help_hint_closes_on_escape_and_on_an_outside_pointerdown', () => {
+    const c = mount(() => <Field label="Folder" value="" help={{ text: 'Where the code lives.' }} />);
+    const q = c.querySelector('button[aria-label="Help: Folder"]') as HTMLButtonElement;
+    q.click();
+    expect(c.querySelector('[role="note"]')).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(c.querySelector('[role="note"]')).toBeNull();
+    q.click();
+    expect(c.querySelector('[role="note"]')).not.toBeNull();
+    c.querySelector('[role="note"]')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(c.querySelector('[role="note"]')).not.toBeNull();
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(c.querySelector('[role="note"]')).toBeNull();
+  });
 });
 
 describe('Modal', () => {
@@ -113,6 +128,18 @@ describe('Modal', () => {
       </Modal>
     ));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('carries its own Help link when given a book page', async () => {
+    mount(() => (
+      <Modal isOpen onClose={() => {}} title="Edit" help="https://example.test/book/dialog.html">
+        <p>Body</p>
+      </Modal>
+    ));
+    await flush();
+    const link = document.querySelector('[role="dialog"] a[target="_blank"]') as HTMLAnchorElement | null;
+    expect(link?.textContent).toBe('Help');
+    expect(link?.href).toBe('https://example.test/book/dialog.html');
   });
 });
 
@@ -184,6 +211,11 @@ describe('Select', () => {
     const c = mount(() => <Select label="Priority" value="high" options={OPTIONS} />);
     await flush();
     expect(c.querySelector('select')!.value).toBe('high');
+  });
+
+  it('renders the (?) when given help', () => {
+    const c = mount(() => <Select label="Model" options={OPTIONS} help={{ text: 'Which model.' }} />);
+    expect(c.querySelector('button[aria-label="Help: Model"]')!.textContent).toBe('(?)');
   });
 
   it('follows the value when it changes', async () => {

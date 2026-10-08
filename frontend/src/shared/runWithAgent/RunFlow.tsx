@@ -231,10 +231,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             </RadioRow>
           </div>
           <Show when={props.form.modelMode === 'choose'}>
-            <div class="relative">
-            <span class="absolute top-0 left-11"><HelpHint label="Model" help={HELP.model} /></span>
             <Select
               label="Model"
+              help={HELP.model}
               value={props.form.chooseIndex}
               onInput={(e) => props.setForm('chooseIndex', e.currentTarget.value)}
               options={[
@@ -247,7 +246,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 { value: CUSTOM_MODEL_VALUE, label: 'Other…' },
               ]}
             />
-            </div>
             <Show when={props.form.chooseIndex === CUSTOM_MODEL_VALUE}>
               <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
               <Show when={props.throughOptions().length > 0}>

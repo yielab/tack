@@ -2,6 +2,8 @@ import {
   splitProps,
   createSignal,
   createUniqueId,
+  onCleanup,
+  createEffect,
   Show,
   type Component,
   type JSX,
@@ -31,8 +33,24 @@ export interface FieldHelp {
 /** The `(?)` next to a label: the text as a native title, and on click a small popover with a "More" link. */
 export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) => {
   const [open, setOpen] = createSignal(false);
+  let root: HTMLSpanElement | undefined;
+  createEffect(() => {
+    if (!open()) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (root && !root.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    onCleanup(() => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    });
+  });
   return (
-    <span class="relative inline-flex align-middle">
+    <span ref={root} class="relative inline-flex align-middle">
       <button
         type="button"
         aria-label={`Help: ${props.label ?? ''}`}
