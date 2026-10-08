@@ -1,35 +1,39 @@
 import { test, expect } from '@playwright/test';
 import { getOrCreateProject, createFreshItem, waitForApp } from './helpers';
 
-// One journey: write a two-criterion brief on an item, reload, both persist.
-test('a brief with two criteria survives a reload', async ({ page, request }) => {
+// One journey: a checklist line and a machine check on an item, reload, both persist.
+test('a checklist line and a check for the agent survive a reload', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
   const itemId = await createFreshItem(request, projectId, `Brief journey ${Date.now()}`);
 
   await page.goto(`/projects/${projectId}/board?item=${itemId}`);
   await waitForApp(page);
   const drawer = page.getByRole('dialog', { name: 'Item details' });
-  await drawer.getByRole('tab', { name: 'Brief' }).click();
 
+  // The manual line is saved on blur.
+  await drawer.getByRole('button', { name: 'Add check' }).click();
+  await drawer.getByLabel('Acceptance criterion').fill('The copy is clear');
+  const savedLine = page.waitForResponse(
+    (r) => r.url().endsWith(`/api/items/${itemId}/brief`) && r.request().method() === 'PUT' && r.ok(),
+  );
+  await drawer.getByLabel('Acceptance criterion').blur();
+  await savedLine;
+
+  // The machine check lives in the collapsed "For the agent" block.
+  await drawer.locator('summary').click();
   await drawer.getByRole('button', { name: 'Add criterion' }).click();
-  await drawer.getByLabel('Title').first().fill('Build passes');
+  await drawer.getByTestId('criterion').getByLabel('Title').fill('Build passes');
   await drawer.getByLabel('Command').fill('cargo build');
-
-  await drawer.getByRole('button', { name: 'Add criterion' }).click();
-  const second = drawer.getByTestId('criterion').nth(1);
-  await second.getByLabel('Kind').selectOption('manual');
-  await second.getByLabel('Title').fill('Reads well');
-  await second.getByLabel('What a person must check').fill('The copy is clear');
-
-  await drawer.getByRole('button', { name: 'Save brief' }).click();
-  await expect(page.getByText('Brief saved')).toBeVisible();
+  const savedAgent = page.waitForResponse(
+    (r) => r.url().endsWith(`/api/items/${itemId}/brief`) && r.request().method() === 'PUT' && r.ok(),
+  );
+  await drawer.getByRole('button', { name: 'Save for the agent' }).click();
+  await savedAgent;
 
   await page.reload();
   await waitForApp(page);
-  await drawer.getByRole('tab', { name: 'Brief' }).click();
-  await expect(drawer.getByTestId('criterion')).toHaveCount(2);
+  await expect(drawer.getByLabel('Acceptance criterion')).toHaveValue('The copy is clear');
+  await drawer.locator('summary').click();
+  await expect(drawer.getByTestId('criterion')).toHaveCount(1);
   await expect(drawer.getByLabel('Command')).toHaveValue('cargo build');
-  await expect(drawer.getByTestId('criterion').nth(1).getByLabel('What a person must check')).toHaveValue(
-    'The copy is clear',
-  );
 });
