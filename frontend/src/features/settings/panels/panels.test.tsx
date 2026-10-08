@@ -8,6 +8,7 @@ import GeneralPanel from './GeneralPanel';
 import RolesPanel from './RolesPanel';
 import DataPanel from './DataPanel';
 import AutomationPanel from './AutomationPanel';
+import { toast } from '../../../shared/ui/toast';
 
 const PROJECT = {
   id: 'p1',
@@ -47,7 +48,7 @@ beforeEach(() => {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith('/api/runners')) {
-      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code' }], push_configured: true };
+      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code', native_provider: 'anthropic' }], push_configured: true };
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
@@ -162,6 +163,7 @@ describe('Settings panels', () => {
   });
 
   it('automation_panel_saves_each_field_on_change', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
     const { container } = mount(() => <AutomationPanel />);
     await flush();
     await flush();
@@ -184,11 +186,46 @@ describe('Settings panels', () => {
       ['harness', () => byText('button', 'Codex').click(), { default_harness: 'codex' }],
       ['profile', () => byText('button', 'Implementer').click(), { default_profile_id: 'prof1' }],
     ];
-    for (const [name, act, expected] of rows) {
-      act();
-      await flush();
-      await flush();
-      expect(lastPatch(), name).toMatchObject(expected);
+    const dod = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Definition of done"]')!;
+    rows.push(
+      ['specific model', () => {
+        byText('label', 'Specific model').querySelector('input')!.click();
+        const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
+        model.value = 'claude-opus-5-5';
+        model.dispatchEvent(new Event('change', { bubbles: true }));
+      }, { default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-opus-5-5' } }],
+      ['auto model', () => byText('label', "The agent's default (recommended)").querySelector('input')!.click(), { default_model: { kind: 'auto' } }],
+      ['definition of done', () => { dod.value = 'Tests pass'; dod.dispatchEvent(new Event('blur')); }, { definition_of_done: 'Tests pass' }],
+    );
+    try {
+      for (const [name, act, expected] of rows) {
+        act();
+        await flush();
+        await flush();
+        expect(lastPatch(), name).toMatchObject(expected);
+      }
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
     }
+  });
+
+  it('automation_panel_shows_a_rejected_folder_under_the_field', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      (init as RequestInit)?.method === 'PATCH'
+        ? Promise.resolve(new Response(JSON.stringify({ error: { status: 400, message: 'That folder does not exist', details: { field: 'repository' } } }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+        : base(input, init),
+    );
+    const toastError = vi.spyOn(toast, 'error');
+    const { container } = mount(() => <AutomationPanel />);
+    await flush();
+    await flush();
+    const folder = container.querySelector<HTMLInputElement>('input[aria-label="Folder"]')!;
+    folder.value = '/nope';
+    folder.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await flush();
+    expect(container.textContent).toContain('That folder does not exist');
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

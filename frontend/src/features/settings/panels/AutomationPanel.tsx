@@ -1,5 +1,7 @@
-import { type Component, type JSX, createMemo, createResource, For, Show } from 'solid-js';
+import { type Component, type JSX, createMemo, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
+import { ApiError } from '../../../shared/api/client';
+import { ACCEPTED_MODELS } from '../../../shared/runWithAgent/models';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
 import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
@@ -68,13 +70,17 @@ const AutomationPanel: Component = () => {
   const mode = () => p()?.workspace_mode ?? 'local_branch';
   const hasFolder = () => origin() === 'folder' || origin() === 'new_folder';
 
+  const [folderError, setFolderError] = createSignal<string | undefined>();
+
   const save = async (patch: UpdateProject) => {
     const id = projectId();
     if (!id) return;
+    setFolderError(undefined);
     try {
       await api.projects.update(id, patch);
       await refetch();
     } catch (err) {
+      if (err instanceof ApiError && err.field === 'repository') return void setFolderError(err.message);
       toast.error(err instanceof Error ? err.message : 'Failed to save');
     }
   };
@@ -100,11 +106,21 @@ const AutomationPanel: Component = () => {
   const [runners] = createResource(() => runnersApi.list().then((r) => r.data.data).catch(() => []));
   const [profiles] = createResource(() => agentProfilesApi.list().then((r) => r.data.data).catch(() => []));
   const snapshots = createMemo(() =>
-    (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: { harness_kind: string }[]; push_configured?: boolean } | null),
+    (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: { harness_kind: string; native_provider?: string }[]; push_configured?: boolean } | null),
   );
   const harnesses = createMemo(() => [
     ...new Set(snapshots().flatMap((s) => (s?.harnesses ?? []).map((h) => h.harness_kind))),
   ]);
+  /** The measured ids for the default agent, and the provider that agent speaks natively. */
+  const modelIds = () => ACCEPTED_MODELS[p()?.default_harness ?? ''] ?? [];
+  const nativeProvider = () =>
+    snapshots().flatMap((s) => s?.harnesses ?? []).find((h) => h.harness_kind === p()?.default_harness)?.native_provider;
+  const explicit = () => {
+    const m = p()?.default_model;
+    return m?.kind === 'explicit' ? m : null;
+  };
+  const [wantsSpecific, setWantsSpecific] = createSignal(false);
+  const specific = () => !!p()?.default_harness && (wantsSpecific() || explicit() !== null);
   const pushConfigured = () => snapshots().some((s) => s?.push_configured === true);
   const pushDisabledReason = () =>
     mode() === 'in_place'
@@ -142,6 +158,7 @@ const AutomationPanel: Component = () => {
             aria-label={hasFolder() ? 'Folder' : 'Repository URL'}
             help={hasFolder() ? HELP.folder : undefined}
             value={p()?.repository ?? ''}
+            error={folderError()}
             placeholder={hasFolder() ? '/home/you/code/project' : 'https://github.com/org/repo.git'}
             onChange={(e) => void saveFolder(e.currentTarget.value)}
           />
@@ -214,6 +231,20 @@ const AutomationPanel: Component = () => {
           onChange={(e) => void save({ on_finish_status: e.currentTarget.value || null })}
           options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
         />
+        <FieldShell label="Definition of done" help={HELP.definitionOfDone}>
+          <textarea
+            aria-label="Definition of done"
+            rows={3}
+            value={p()?.definition_of_done ?? ''}
+            onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
+            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm"
+            style={{
+              'background-color': 'var(--color-bg-base)',
+              color: 'var(--color-text-primary)',
+              'border-color': 'var(--color-border-medium)',
+            }}
+          />
+        </FieldShell>
       </div>
 
       <div class={SECTION}>
@@ -231,12 +262,49 @@ const AutomationPanel: Component = () => {
         </FieldShell>
         <FieldShell label="Model" help={HELP.model}>
           <div class="flex flex-col gap-1.5">
-            <Radio name="model-mode" checked onChange={() => {}}>The agent's default (recommended)</Radio>
-            <label class="flex items-center gap-2 text-sm opacity-60" style={{ color: 'var(--color-text-primary)' }}>
-              <input type="radio" name="model-mode" disabled />
+            <Radio
+              name="model-mode"
+              checked={!specific()}
+              onChange={() => { setWantsSpecific(false); void save({ default_model: { kind: 'auto' } }); }}
+            >
+              The agent's default (recommended)
+            </Radio>
+            <label
+              class="flex items-center gap-2 text-sm"
+              classList={{ 'opacity-60': !p()?.default_harness }}
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              <input
+                type="radio"
+                name="model-mode"
+                checked={specific()}
+                disabled={!p()?.default_harness}
+                onChange={() => setWantsSpecific(true)}
+              />
               Specific model
             </label>
-            <Note>Choosing a specific model here is not available yet.</Note>
+            <Show when={!p()?.default_harness}>
+              <Note>Choose an agent first</Note>
+            </Show>
+            <Show when={specific()}>
+              <Select
+                aria-label="Model"
+                value={explicit()?.model_id ?? ''}
+                disabled={!nativeProvider()}
+                onChange={(e) => {
+                  const id = e.currentTarget.value;
+                  const provider = nativeProvider();
+                  if (id && provider) void save({ default_model: { kind: 'explicit', provider, model_id: id } });
+                }}
+                options={[{ value: '', label: 'Choose a model' }, ...modelIds().map((id) => ({ value: id, label: id }))]}
+              />
+              <Show when={!nativeProvider()}>
+                <Note>No runner on this computer reports a provider for this agent yet.</Note>
+              </Show>
+              <Show when={nativeProvider() && modelIds().length === 0}>
+                <Note>No model ids are measured for this agent yet; its default is used.</Note>
+              </Show>
+            </Show>
           </div>
         </FieldShell>
         <FieldShell label="Default profile" help={HELP.profile}>
