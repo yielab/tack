@@ -363,7 +363,7 @@ describe('RunWithAgentModal', () => {
     expect(dialog.textContent).toMatch(/no agent profile, project, or fleet default model is configured/i);
     const fixLink = [...dialog.querySelectorAll('a')].find((a) => a.textContent === 'Set a default model for this project');
     expect(fixLink).toBeTruthy();
-    expect(fixLink!.getAttribute('href')).toBe('/projects/project-1/settings?tab=agents');
+    expect(fixLink!.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
   });
 
   it('with the project pinned explicitly to Auto, the same request is blocked with a distinct, tier-naming reason', async () => {
@@ -633,7 +633,7 @@ describe('RunWithAgentModal', () => {
     const cases: Array<[Parameters<typeof mockFetch>[0], string, string]> = [
       [{ runners: [RUNNER], fleets: [], agentProfiles: [] }, 'An agent profile exists', '/agents'],
       [{ runners: [noHarness], fleets: [] }, 'The harness is installed and signed in', '/agents'],
-      [{ runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] }, 'A model is set for this run', '/projects/project-1/settings?tab=agents'],
+      [{ runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] }, 'A model is set for this run', '/projects/project-1/settings?tab=automation'],
     ];
     for (const [fetchOpts, label, href] of cases) {
       mount({}, fetchOpts);

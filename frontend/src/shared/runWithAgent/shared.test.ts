@@ -255,8 +255,8 @@ describe('gateHarnessModelSelection', () => {
   });
 
   it('unresolved Auto carries a fix pointing at project settings when a href is given', () => {
-    const gate = gateHarnessModelSelection([], 'codex', null, null, { outcome: 'unresolved' }, '/projects/p1/settings?tab=agents');
-    expect(gate.fix).toEqual({ label: 'Set a default model for this project', href: '/projects/p1/settings?tab=agents' });
+    const gate = gateHarnessModelSelection([], 'codex', null, null, { outcome: 'unresolved' }, '/projects/p1/settings?tab=automation');
+    expect(gate.fix).toEqual({ label: 'Set a default model for this project', href: '/projects/p1/settings?tab=automation' });
   });
 
   it('pinned_auto at the project tier also carries the fix (that IS the reachable setting)', () => {
@@ -266,7 +266,7 @@ describe('gateHarnessModelSelection', () => {
       null,
       null,
       { outcome: 'pinned_auto', source: 'project' },
-      '/projects/p1/settings?tab=agents',
+      '/projects/p1/settings?tab=automation',
     );
     expect(gate.fix).toBeDefined();
   });
@@ -278,7 +278,7 @@ describe('gateHarnessModelSelection', () => {
       null,
       null,
       { outcome: 'pinned_auto', source: 'agent_profile' },
-      '/projects/p1/settings?tab=agents',
+      '/projects/p1/settings?tab=automation',
     );
     expect(profileGate.fix).toBeUndefined();
     const fleetGate = gateHarnessModelSelection(
@@ -287,7 +287,7 @@ describe('gateHarnessModelSelection', () => {
       null,
       null,
       { outcome: 'pinned_auto', source: 'fleet' },
-      '/projects/p1/settings?tab=agents',
+      '/projects/p1/settings?tab=automation',
     );
     expect(fleetGate.fix).toBeUndefined();
   });

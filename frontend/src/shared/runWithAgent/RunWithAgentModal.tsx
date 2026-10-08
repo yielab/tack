@@ -195,7 +195,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   );
 
   const combinationGate = createMemo(() =>
-    gateHarnessModelSelection(capabilities(), form.harnessKind, modelProvider(), modelId(), autoModelResolution(), `/projects/${props.projectId}/settings?tab=agents`));
+    gateHarnessModelSelection(capabilities(), form.harnessKind, modelProvider(), modelId(), autoModelResolution(), `/projects/${props.projectId}/settings?tab=automation`));
 
   const structuralErrors = createMemo((): string[] => {
     const errors: string[] = [];

@@ -164,7 +164,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <Prerequisite
           state={props.rows.model()}
           label="A model is set for this run"
-          href={props.gate().fix?.href ?? `/projects/${props.projectId}/settings?tab=agents`}
+          href={props.gate().fix?.href ?? `/projects/${props.projectId}/settings?tab=automation`}
           fixLabel="Set the project's model"
         />
       </fieldset>
