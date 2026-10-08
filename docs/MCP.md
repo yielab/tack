@@ -99,6 +99,8 @@ operation.
 
 `status_map_policy_id` is `done_on_success` (the item moves to its first Done status when the attempt succeeds) or `done_on_mrp_accepted` (when its merge-readiness pack is accepted); omit it to leave the item's status untouched.
 
+`repository` is still required by this tool, but the underlying `POST /api/executions` no longer needs it: when the request omits `repository_snapshot`, the server fills it from the item's project (its folder, default branch and workspace mode, set under Settings → Automation). An explicit object still wins.
+
 Use the two `list_*` tools first to discover valid `fleet_id`/`agent_profile_id`
 values before calling `create_execution`. `get_execution`'s `state` can be
 `needs_operator` or `lost` — an ambiguous outcome, not just another in-progress

@@ -90,6 +90,10 @@ pub struct CreateExecutionArgs<'a> {
     /// this shape server-side, so defaulting to it would just move a
     /// guaranteed error one step later instead of catching it at the CLI.
     pub agent_profile_snapshot: &'a str,
+    /// JSON object matching `tack_orch::execution::RepositorySnapshot`. The
+    /// server fills it from the item's project when a request omits it
+    /// (phase 67, R3); the CLI keeps sending it explicitly, and an explicit
+    /// object always wins.
     pub repository_snapshot: &'a str,
     /// JSON object matching `tack_orch::execution::PermissionPolicy`:
     /// `{network: bool, tools: [string] (optional, default [])}`. Required
