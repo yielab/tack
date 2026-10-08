@@ -1,6 +1,7 @@
 # Plan: Phase 68 — what Phase 67 left on the table
 
-**Status: opened 2026-10-08 by the maintainer ("continue the roadmap"); dispatched the same day.**
+**Status: opened 2026-10-08 by the maintainer ("continue the roadmap"); every task merged and
+the phase closed the same day — see Status at the end.**
 Serves ADR 0074 (accepted, executed): every task here finishes a decision that ADR already
 takes. No new ADR: nothing below is a decision a reader could disagree with, only work the
 phase-67 agents found and did not have room for. Written against `develop` at `7470450`; every
@@ -275,9 +276,35 @@ with the gate on the merge. Pushing and the release are the maintainer's.
   no measured list, so the panel offers no specific model for them (the dialog's "Other…"
   stays per run). The disabled list says why.
 
+- **Rounds 2–4 merged 2026-10-08**: K3 (`48c50bc`), D2 (`62b5289`), K4 (`e080152`), D3
+  (`3849d2c`), D4 (`3115cf5`). Every task is in `develop`; the phase is **closed** the same
+  day it opened. `cargo nextest run --workspace` 1157 passed, `npx vitest run` 617 passed (624
+  after D4's unit test), `tsc` clean, gate green on every merge, Playwright default suite 55
+  passed — after one spec that predated this phase was brought up to date: the board dialog
+  spec still expected "Choose a profile." although `2908ded` (after E1) preselects the
+  Implementer, so it had been red since phase 67's last commit.
+- D3's finding, corrected at review: the top bar is a `sticky z-40` stacking context, so a
+  z-index on the help button inside it can never rise above the modal's `z-50` overlay. The
+  Run dialog carries its own **Help** link in its title row instead (`Modal.help`).
+- **D4 found two product bugs**, both fixed in `develop` before the spec could pass:
+  1. The test run picked the first installed agent (codex), which reports it *requires* a
+     model, while the test run names none; the scheduler refused it and the request sat
+     **Queued forever with nothing to say why**. The test run now picks an agent that reports
+     `model_selection: optional`, and when none does it is disabled with the reason
+     (`f90b519`).
+  2. K4 as merged returned `runner_config.runner_id`, the runner's configured name, not the
+     `runr_` id assigned at enrolment; `exact_runner` refused it as "unavailable or
+     revoked" and every test run failed to start. It now reads the persisted session's id
+     (`e54b3aa`, `4362a98`). K4's unit test passed because its fake returned a seeded id: a
+     fake that cannot be wrong proves nothing about the real implementation.
+  With both fixed, the fake shim's run finishes amber, "Finished — no changes recorded",
+  with its runner named, which is exactly what the card should say.
+
 Follow-ups found while executing, not yet scheduled:
 
 | Found by | Follow-up |
 |---|---|
 | D1 | A "Through the gateway" choice beside the native provider in Automation, when a gateway key is set. |
 | K2 | A stored `run_settings` that does not fit `RunSettings` reads back as `None` (the row conversion's `.ok()`); log it at warn so a typed-wrong value is not silent. |
+| D4 | **A request no runner can ever claim stays Queued forever, silently.** The scheduler's ineligibility reason (`AutoSelectNotVerified`, no capable runner, …) is computed on every claim and thrown away. Record the last reason on the request and show it on the card ("Waiting: codex needs a model named"), and let a request that has been ineligible for N minutes fail with that reason. This is the same class as ADR 0074's finding 11 and deserves a task of its own. |
+| D4 | `EmbeddedRunnerControl::runner_id` has no test against the real implementation; a test that enrols the embedded runner against a loopback API and reads the id back would have caught K4. |
