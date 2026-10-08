@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tack_orch::execution::{
@@ -195,6 +195,22 @@ impl fmt::Debug for RunnerSession {
 pub struct RepositorySpec {
     pub remote: String,
     pub base_revision: String,
+    pub workspace_mode: WorkspaceMode,
+    /// The user's own repository; read by `local_branch` only.
+    pub repository_path: Option<PathBuf>,
+}
+
+/// Where an attempt's files live, read from the repository snapshot's extra keys.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceMode {
+    /// A private clone of the remote, deleted with the attempt.
+    #[default]
+    Clone,
+    /// A git worktree of the user's repository; the branch outlives the attempt.
+    LocalBranch,
+    /// Parsed so the request is understood; not provisioned yet.
+    InPlace,
 }
 
 #[derive(Debug, Clone)]
@@ -284,9 +300,20 @@ impl ClaimedWork {
         if self.attempt.base_revision != self.request.repository.base_revision {
             return Err(ClaimedWorkError::RepositoryRevisionMismatch);
         }
+        let additional = &self.request.repository.additional;
+        let workspace_mode = additional
+            .get("workspace_mode")
+            .and_then(|mode| serde_json::from_value(mode.clone()).ok())
+            .unwrap_or_default();
+        let repository_path = additional
+            .get("repository_path")
+            .and_then(|path| path.as_str())
+            .map(PathBuf::from);
         Ok(RepositorySpec {
             remote: self.request.repository.remote.clone(),
             base_revision: self.request.repository.base_revision.clone(),
+            workspace_mode,
+            repository_path,
         })
     }
 }

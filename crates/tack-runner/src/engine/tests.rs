@@ -2874,6 +2874,11 @@ impl WorktreeProvisioner for SeededGitWorktree {
         workspace: &Workspace,
         repository: &super::super::RepositorySpec,
     ) -> Result<(), WorkspaceError> {
+        if repository.workspace_mode == super::super::WorkspaceMode::LocalBranch {
+            return crate::client::workspace::git::GitWorktreeProvisioner::default()
+                .provision(workspace, repository)
+                .await;
+        }
         let seed = self.seed.display().to_string();
         for args in [
             vec!["init", "--quiet"],
@@ -2929,12 +2934,13 @@ impl WorktreeProvisioner for SeededGitWorktree {
         branch: &str,
         author: &str,
         message: &str,
+        push: bool,
     ) -> Result<Option<crate::evidence::PublishedBranch>, WorkspaceError> {
         if let (true, Some(origin)) = (self.break_origin, &self.origin) {
             std::fs::remove_dir_all(origin).expect("remove origin");
         }
         crate::client::workspace::git::GitWorktreeProvisioner::default()
-            .publish_branch(workspace, branch, author, message)
+            .publish_branch(workspace, branch, author, message, push)
             .await
     }
 }
@@ -3006,12 +3012,13 @@ async fn run_evidence_attempt_with(
         verify,
         git_config,
         break_origin,
-        (None, None),
+        (None, None, false),
     )
     .await
 }
 
-/// `requested` is the request's `(verify, push_branch)`.
+/// `requested` is the request's `(verify, push_branch, local_branch)`; the last
+/// asks for a `local_branch` worktree of the seed with `push_after_run` set.
 async fn run_evidence_attempt_requesting(
     label: &str,
     cancelled: bool,
@@ -3019,7 +3026,7 @@ async fn run_evidence_attempt_requesting(
     verify: Option<crate::config::VerifyConfig>,
     git_config: Option<crate::config::GitConfig>,
     break_origin: bool,
-    requested: (Option<bool>, Option<bool>),
+    requested: (Option<bool>, Option<bool>, bool),
 ) -> EvidenceRun {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
@@ -3056,6 +3063,12 @@ async fn run_evidence_attempt_requesting(
     claimed.attempt.base_revision = base;
     claimed.request.verify = requested.0;
     claimed.request.push_branch = requested.1;
+    if requested.2 {
+        let additional = &mut claimed.request.repository.additional;
+        additional.insert("workspace_mode".into(), "local_branch".into());
+        additional.insert("repository_path".into(), seed.display().to_string().into());
+        additional.insert("push_after_run".into(), true.into());
+    }
     let item_id = claimed.request.item_id.as_str().to_owned();
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
@@ -3287,7 +3300,7 @@ async fn a_request_may_decline_the_verifier_but_never_enable_one() {
         Some(verifier()),
         None,
         false,
-        (Some(false), None),
+        (Some(false), None, false),
     )
     .await;
     assert!(
@@ -3301,7 +3314,7 @@ async fn a_request_may_decline_the_verifier_but_never_enable_one() {
         None,
         None,
         false,
-        (Some(true), None),
+        (Some(true), None, false),
     )
     .await;
     let (has_mrp, kinds) = event_kinds(&unavailable);
@@ -3420,6 +3433,60 @@ async fn a_failed_push_is_one_event_and_the_attempt_still_succeeds() {
     assert_eq!(evidence.branch, None);
 }
 
+#[tokio::test]
+async fn a_local_branch_attempt_keeps_its_branch_and_reports_the_skipped_push() {
+    let run = run_evidence_attempt_requesting(
+        "local-branch",
+        false,
+        write_one_delete_one,
+        None,
+        None,
+        false,
+        (None, None, true),
+    )
+    .await;
+    let seed = run._root_dir.path().join("seed");
+    let short = run.item_id.split('-').next().expect("segment").to_owned();
+    let branch = format!("tack/{short}-a1");
+    assert_eq!(run.completions[0].terminal_state, AttemptState::Succeeded);
+    let reported = run.completions[0].actual_execution.additional["git"].clone();
+    assert_eq!(reported["branch"], branch.as_str());
+    assert_eq!(reported["pushed"], false);
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(&seed)
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    assert_eq!(
+        git(&["rev-parse", &format!("refs/heads/{branch}")]),
+        reported["head_commit"]
+    );
+    assert_eq!(git(&["show", &format!("{branch}:new.txt")]), "new");
+    assert_eq!(
+        git(&["status", "--porcelain"]),
+        "",
+        "the user's checkout is untouched"
+    );
+    assert!(!run.survived, "the worktree directory is gone");
+    let state = run.data_protocol.state.lock().expect("lock");
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert!(evidence.captured);
+    assert_eq!(evidence.files.len(), 2);
+    assert_eq!(evidence.branch, Some(reported));
+    let skipped: Vec<_> = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.push_skipped")
+        .collect();
+    assert_eq!(skipped.len(), 1);
+}
+
 /// A provisioner whose evidence read fails the way a broken `.git` does.
 struct UnreadableWorktree;
 
@@ -3493,6 +3560,54 @@ async fn a_failed_evidence_capture_keeps_the_workspace() {
         failed[0].payload["reason"],
         "git could not read the workspace"
     );
+}
+
+#[tokio::test]
+async fn a_local_branch_attempt_whose_evidence_failed_keeps_its_worktree() {
+    let root_dir = temporary_root("evidence-failed-local");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let mut claimed = work();
+    claimed
+        .request
+        .repository
+        .additional
+        .insert("workspace_mode".into(), "local_branch".into());
+    let fake_protocol = protocol(claimed, false, false);
+    let reported = fake_protocol.reported_completions.clone();
+    let engine = RunnerEngine::new(
+        fake_protocol,
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        WorkspaceManager::new(root.join("workspaces"), UnreadableWorktree),
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+
+    let key = "attempt"
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let worktree = root.join("workspaces").join(&key);
+    assert!(worktree.is_dir(), "the worktree stays where it is");
+    assert!(!root.join("quarantine").join(&key).exists());
+    let completions = reported.lock().expect("lock").clone();
+    assert_eq!(
+        completions[0].terminal_reason["workspace_kept_at"],
+        worktree.display().to_string()
+    );
+    let state = data_protocol.state.lock().expect("fake data protocol lock");
+    let failed = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.evidence_failed")
+        .count();
+    assert_eq!(failed, 1);
 }
 
 #[tokio::test]

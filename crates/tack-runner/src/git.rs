@@ -35,6 +35,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use super::{Workspace, WorkspaceError, WorktreeProvisioner};
+use crate::client::WorkspaceMode;
 use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES, PublishedBranch};
 use crate::{
     client::RepositorySpec,
@@ -366,6 +367,48 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             return Err(WorkspaceError::AttemptMismatch);
         }
 
+        match repository.workspace_mode {
+            WorkspaceMode::Clone => {}
+            WorkspaceMode::InPlace => {
+                tracing::warn!("in_place is not supported by this runner yet");
+                return Err(WorkspaceError::WorktreeUnavailable);
+            }
+            WorkspaceMode::LocalBranch => {
+                // A worktree of the user's own repository, detached at the
+                // resolved base; `publish_branch` names the branch.
+                let secrets = SecretMaterial::new();
+                let repo = repository
+                    .repository_path
+                    .as_deref()
+                    .filter(|repo| repo.is_dir())
+                    .ok_or(WorkspaceError::RepositoryUnreachable)?;
+                if path.join(CHECKOUT_MARKER).exists() && path.join(".git").is_file() {
+                    return Ok(());
+                }
+                Self::purge_partial_checkout(path)?;
+                let resolved = self
+                    .resolve_revision(repo, &repository.base_revision, &secrets)
+                    .await?;
+                // `worktree add` refuses a non-empty directory, and the attempt
+                // marker is the one thing in it: set it aside, put it back.
+                let marker_path = path.join(ATTEMPT_MARKER);
+                let marker = fs::read(&marker_path).map_err(|_| WorkspaceError::Io)?;
+                fs::remove_file(&marker_path).map_err(|_| WorkspaceError::Io)?;
+                self.git_ok(repo, &["worktree", "prune"], &secrets).await?;
+                let target = path.to_string_lossy();
+                let added = self
+                    .git_ok(
+                        repo,
+                        &["worktree", "add", "--detach", &target, &resolved],
+                        &secrets,
+                    )
+                    .await;
+                fs::write(&marker_path, marker).map_err(|_| WorkspaceError::Io)?;
+                added?;
+                write_checkout_marker(&path.join(CHECKOUT_MARKER), &resolved)?;
+                return Ok(());
+            }
+        }
         let secrets = remote_secrets(&repository.remote);
         if self
             .already_provisioned(path, &repository.base_revision, &secrets)
@@ -501,7 +544,13 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         // `stdout` is lossy and trimmed, and a patch must reach the server
         // byte for byte, so git writes it to a file inside `.git` (never part
         // of the diff, deleted with the workspace) and it is read raw.
-        let patch_file = path.join(".git").join("tack-evidence.patch");
+        // In a worktree `.git` is a file, so the real git directory is asked for.
+        let git_dir = self
+            .git_ok(path, &["rev-parse", "--absolute-git-dir"], &secrets)
+            .await?
+            .stdout;
+        let patch_file = Path::new(&git_dir).join("tack-evidence.patch");
+        let output_arg = format!("--output={}", patch_file.display());
         self.git_ok(
             path,
             &[
@@ -510,7 +559,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                 "--binary",
                 "--no-color",
                 "--no-ext-diff",
-                "--output=.git/tack-evidence.patch",
+                &output_arg,
                 base,
             ],
             &secrets,
@@ -543,17 +592,22 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         branch: &str,
         author: &str,
         message: &str,
+        push: bool,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         let path = workspace.path.as_path();
+        let worktree = path.join(".git").is_file();
         // The remote may embed credentials and git echoes it in its errors.
-        let remote = self
-            .git_ok(
+        let remote = if push {
+            self.git_ok(
                 path,
                 &["remote", "get-url", "origin"],
                 &SecretMaterial::new(),
             )
             .await?
-            .stdout;
+            .stdout
+        } else {
+            String::new()
+        };
         let secrets = remote_secrets(&remote);
         let (name, email) = match author.split_once('<') {
             Some((name, rest)) => (name.trim(), rest.trim_end_matches('>').trim()),
@@ -595,16 +649,38 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
             .await?
             .stdout;
-        self.git_ok(
-            path,
-            &["-c", hooks, "push", "--no-verify", "origin", branch],
-            &secrets,
-        )
-        .await?;
+        if push {
+            self.git_ok(
+                path,
+                &["-c", hooks, "push", "--no-verify", "origin", branch],
+                &secrets,
+            )
+            .await?;
+        }
+        if worktree {
+            // The branch stays in the user's repository; only the worktree and
+            // its registration go. Run from the repository, not the directory
+            // being removed.
+            let common = self
+                .git_ok(
+                    path,
+                    &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    &secrets,
+                )
+                .await?
+                .stdout;
+            let target = path.to_string_lossy();
+            self.git_ok(
+                Path::new(&common),
+                &["worktree", "remove", "--force", &target],
+                &secrets,
+            )
+            .await?;
+        }
         Ok(Some(PublishedBranch {
             branch: branch.to_owned(),
             head_commit,
-            pushed: true,
+            pushed: push,
         }))
     }
 }

@@ -1,7 +1,7 @@
 use std::process::Command as SyncCommand;
 
 use super::*;
-use crate::client::{AttemptId, WorkspaceId};
+use crate::client::{AttemptId, WorkspaceId, WorkspaceMode};
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///
@@ -91,6 +91,8 @@ impl SourceRepository {
         RepositorySpec {
             remote: self.path().to_string_lossy().into_owned(),
             base_revision: revision.to_owned(),
+            workspace_mode: WorkspaceMode::Clone,
+            repository_path: None,
         }
     }
 }
@@ -424,6 +426,8 @@ async fn an_unreachable_repository_is_typed_as_unreachable() {
             .to_string_lossy()
             .into_owned(),
         base_revision: "main".into(),
+        workspace_mode: WorkspaceMode::Clone,
+        repository_path: None,
     };
 
     let error = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT)
@@ -495,6 +499,8 @@ async fn a_hanging_git_is_killed_and_reported_as_a_timeout() {
     let repository = RepositorySpec {
         remote: "https://example.invalid/repository.git".into(),
         base_revision: "main".into(),
+        workspace_mode: WorkspaceMode::Clone,
+        repository_path: None,
     };
 
     let started = std::time::Instant::now();
@@ -619,6 +625,8 @@ async fn a_credential_in_the_remote_url_never_reaches_a_log_line() {
     let repository = RepositorySpec {
         remote: remote.clone(),
         base_revision: "main".into(),
+        workspace_mode: WorkspaceMode::Clone,
+        repository_path: None,
     };
 
     crate::test_log_capture::install();
@@ -710,6 +718,8 @@ async fn a_dirty_workspace_is_committed_and_pushed_to_origin() {
     let repository = RepositorySpec {
         remote: origin.display().to_string(),
         base_revision: source.second_commit.clone(),
+        workspace_mode: WorkspaceMode::Clone,
+        repository_path: None,
     };
     provisioner
         .provision(&workspace, &repository)
@@ -727,6 +737,7 @@ async fn a_dirty_workspace_is_committed_and_pushed_to_origin() {
             "tack/abc12345-a1",
             "Tack Runner <tack-runner@localhost>",
             "Add work (attempt attempt-push)",
+            true,
         )
         .await
         .expect("the branch is published")
@@ -808,4 +819,73 @@ async fn a_scratch_workspace_captures_the_file_the_harness_wrote() {
     assert_eq!(evidence.files[0].op, FileOp::Added);
     assert!(!evidence.patch.is_empty());
     assert_eq!(evidence.base_commit.len(), 40);
+}
+
+#[tokio::test]
+async fn local_branch_leaves_the_branch_in_the_users_repo() {
+    let source = SourceRepository::create();
+    let root_dir = temp_dir("root");
+    let workspace = attempt_workspace(root_dir.path(), "attempt-local", &source.second_commit);
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    let repository = RepositorySpec {
+        remote: String::new(),
+        base_revision: source.second_commit.clone(),
+        workspace_mode: WorkspaceMode::LocalBranch,
+        repository_path: Some(source.path().to_path_buf()),
+    };
+    provisioner
+        .provision(&workspace, &repository)
+        .await
+        .expect("a worktree of the user's repository");
+    fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("evidence is read in the worktree")
+        .expect("a git provisioner captures");
+    assert_eq!(evidence.files.len(), 1);
+
+    let published = provisioner
+        .publish_branch(
+            &workspace,
+            "tack/abc12345-a1",
+            "Tack Runner <tack-runner@localhost>",
+            "Add work (attempt attempt-local)",
+            false,
+        )
+        .await
+        .expect("the branch is published")
+        .expect("a git provisioner publishes");
+
+    assert!(!published.pushed);
+    assert_eq!(published.branch, "tack/abc12345-a1");
+    assert_eq!(
+        run_git(source.path(), &["rev-parse", "refs/heads/tack/abc12345-a1"]),
+        published.head_commit,
+        "the branch stays in the user's repository"
+    );
+    assert_eq!(
+        run_git(
+            source.path(),
+            &["show", &format!("{}:work.txt", published.head_commit)]
+        ),
+        "the harness wrote this"
+    );
+    assert!(!workspace.path.exists(), "the worktree directory is gone");
+    assert_eq!(
+        run_git(source.path(), &["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        1,
+        "no registration of the removed worktree is left behind"
+    );
+    assert_eq!(
+        run_git(source.path(), &["status", "--porcelain"]),
+        "",
+        "the user's own checkout is untouched"
+    );
+    assert_eq!(
+        run_git(source.path(), &["rev-parse", "HEAD"]),
+        source.second_commit
+    );
 }

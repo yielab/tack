@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::client::{AttemptId, AttemptState, FencingToken, RunnerId, Timestamp};
+use crate::client::{AttemptId, AttemptState, FencingToken, RunnerId, Timestamp, WorkspaceMode};
 
 #[derive(Default)]
 struct FakeProvisioner;
@@ -40,6 +40,8 @@ fn repository() -> RepositorySpec {
     RepositorySpec {
         remote: "https://example.invalid/repository.git".into(),
         base_revision: "base".into(),
+        workspace_mode: WorkspaceMode::Clone,
+        repository_path: None,
     }
 }
 
