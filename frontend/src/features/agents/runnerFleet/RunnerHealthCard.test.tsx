@@ -238,7 +238,7 @@ describe('RunnerHealthCard — harness display', () => {
       labels: {},
       capabilities: null,
     });
-    expect(c.textContent).toContain('no harness capability data available');
+    expect(c.textContent).toContain('no agent capability data available');
   });
 });
 

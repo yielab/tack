@@ -63,7 +63,7 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Attempt #2');
     expect(c.textContent).toContain('runner_1');
     expect(c.textContent).toContain('runner_2');
-    expect(c.textContent).toContain('Succeeded');
+    expect(c.textContent).toContain('Finished');
     expect(c.textContent).toContain('Failed');
   });
 
@@ -164,7 +164,7 @@ describe('AttemptList', () => {
     await flush();
 
     expect(c.textContent).toContain('No events reported yet');
-    expect(c.textContent).toContain('Decisions');
+    expect(c.textContent).toContain('Questions from the agent');
     expect(c.textContent).toContain('Artifacts');
   });
 

@@ -7,7 +7,7 @@ import AgentProfilesPanel from './AgentProfilesPanel';
 const TABS = [
   { id: 'runners', label: 'Runners' },
   { id: 'fleets', label: 'Fleets' },
-  { id: 'agent-profiles', label: 'Agent profiles' },
+  { id: 'agent-profiles', label: 'Profiles' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];

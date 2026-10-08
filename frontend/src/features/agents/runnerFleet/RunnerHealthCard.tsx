@@ -59,7 +59,7 @@ const FEATURES: FeatureName[] = ['cancel', 'resume', 'decisions', 'artifacts', '
 const FEATURE_LABEL: Record<FeatureName, string> = {
   cancel: 'Cancel',
   resume: 'Resume',
-  decisions: 'Decisions',
+  decisions: 'Questions from the agent',
   artifacts: 'Artifacts',
   usage: 'Usage',
 };
@@ -142,13 +142,13 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
 
       <div class="flex flex-wrap items-center gap-1.5 text-xs">
         <p style={{ color: 'var(--color-text-tertiary)' }}>
-          Harnesses
+          Agents
         </p>
         <Show
           when={props.capabilities && props.capabilities.harnesses.length > 0}
           fallback={
             <p style={{ color: 'var(--color-text-tertiary)' }}>
-              no harness capability data available
+              no agent capability data available
             </p>
           }
         >

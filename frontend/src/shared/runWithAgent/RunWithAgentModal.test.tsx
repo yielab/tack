@@ -362,7 +362,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(dialog.textContent).not.toContain('No agent profile exists yet.');
-    const pill = [...dialog.querySelectorAll('[aria-label="Agent profile"] button')].find((b) => b.textContent === 'Default')!;
+    const pill = [...dialog.querySelectorAll('[aria-label="Profile"] button')].find((b) => b.textContent === 'Default')!;
     expect(pill.getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -663,7 +663,7 @@ describe('RunWithAgentModal', () => {
     const noHarness = runnerRow('runner-2', 'Bare', runnerCapabilitySnapshot({ harnesses: [] }));
     const cases: Array<[Parameters<typeof mockFetch>[0], string, string]> = [
       [{ runners: [RUNNER], fleets: [], agentProfiles: [] }, 'An agent profile exists', '/agents'],
-      [{ runners: [noHarness], fleets: [] }, 'The harness is installed and signed in', '/agents'],
+      [{ runners: [noHarness], fleets: [] }, 'The agent is installed and signed in', '/agents'],
     ];
     for (const [fetchOpts, label, href] of cases) {
       mount({}, fetchOpts);
@@ -715,7 +715,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     expect(document.querySelector('[aria-label="Suggested tools"]')).toBeNull();
     expect(document.body.textContent).toContain('Codex exposes no list');
-    setSelect(select('Harness'), 'claude-code');
+    setSelect(select('Agent'), 'claude-code');
     await flush();
     expect(document.querySelectorAll('[aria-label="Suggested tools"] input').length).toBe(8);
     expect(field('Allowed tools')).toBeTruthy();
@@ -727,7 +727,7 @@ describe('RunWithAgentModal', () => {
     }));
     mount({}, { runners: [claudeOnly], fleets: [] });
     await flush();
-    expect(select('Harness').value).toBe('claude-code');
+    expect(select('Agent').value).toBe('claude-code');
     expect(document.body.textContent).not.toContain('Codex exposes no list');
   });
 
