@@ -82,6 +82,25 @@ fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
 }
 
 #[test]
+fn no_mcp_server_loads_not_even_the_accounts_claude_ai_connectors() {
+    let invocation = invocation(&request(None, &["Read"], true)).expect("invocation");
+    assert!(
+        invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--strict-mcp-config")
+    );
+    assert!(!invocation.args.iter().any(|arg| arg == "--mcp-config"));
+    assert_eq!(
+        invocation
+            .env
+            .get("ENABLE_CLAUDEAI_MCP_SERVERS")
+            .map(String::as_str),
+        Some("false")
+    );
+}
+
+#[test]
 fn the_policy_model_and_budget_reach_the_command_line() {
     let mut spec = request(Some("anthropic"), &["Read", "Edit"], true);
     spec.work.request.budgets = serde_json::json!({"cost_usd": 1.5});
@@ -270,7 +289,11 @@ fn a_configured_endpoint_sets_the_base_url_and_nothing_secret() {
     let spec = request(Some(provider), &[], true);
 
     let direct = invocation(&spec).expect("direct").env;
-    assert!(direct.is_empty(), "{direct:?}");
+    assert_eq!(
+        direct.keys().collect::<Vec<_>>(),
+        ["ENABLE_CLAUDEAI_MCP_SERVERS"],
+        "only the connector opt-out, never an endpoint: {direct:?}"
+    );
     let routed = ClaudeCodeGrammar
         .invocation(&RunContext {
             spec: &spec,
