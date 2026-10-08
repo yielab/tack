@@ -19,7 +19,7 @@ import RunFlow, { CUSTOM_MODEL_VALUE } from './RunFlow';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
-  modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '', customProvider: '',
+  modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '', viaGateway: false,
   customModelId: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
   repoExpanded: false, repoKind: 'git', repoRemote: '', repoBaseRevision: 'main', repoSubdirectory: '',
   idempotencyKey: generateIdempotencyKey(),
@@ -149,10 +149,25 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
+  const nativeProvider = () => targetHarnessCapability()?.native_provider;
+  const gatewayProvider = () => targetHarnessCapability()?.providers?.find((p) => p !== nativeProvider());
+  /** The provider is the harness's own, or the gateway's when chosen; never typed. */
+  const derivedProvider = (): string | null =>
+    (form.viaGateway ? gatewayProvider() : undefined) ?? nativeProvider() ?? null;
+  const throughOptions = createMemo(() => {
+    const native = nativeProvider();
+    const gateway = gatewayProvider();
+    if (!native || !gateway) return [];
+    return [
+      { value: native, label: native.charAt(0).toUpperCase() + native.slice(1) },
+      { value: gateway, label: gateway === 'vercel-ai-gateway' ? 'Vercel AI Gateway' : gateway },
+    ];
+  });
+
   const modelPart = (key: 'provider' | 'id'): string | null => {
     if (form.modelMode === 'project') return projectDefaultModelPair(project()?.default_model ?? null)[key];
     if (form.modelMode !== 'choose') return null;
-    if (form.chooseIndex === CUSTOM_MODEL_VALUE) return (key === 'provider' ? form.customProvider : form.customModelId).trim() || null;
+    if (form.chooseIndex === CUSTOM_MODEL_VALUE) return key === 'provider' ? derivedProvider() : (form.customModelId.trim() || null);
     const combo = modelCombos()[Number(form.chooseIndex)];
     return (key === 'provider' ? combo?.model_provider : combo?.model_id) ?? null;
   };
@@ -294,6 +309,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             harnessOptions={harnessOptions}
             projectDefaultLabel={projectDefaultLabel}
             modelCombos={modelCombos}
+            throughOptions={throughOptions}
+            through={derivedProvider}
             passthroughAttested={passthroughAttested}
             gate={combinationGate}
             repoSummary={repoSummary}
