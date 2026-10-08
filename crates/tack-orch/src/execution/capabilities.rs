@@ -117,12 +117,14 @@ pub struct HarnessCapability {
     /// attested" and are treated like `Unsupported`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decisions: Option<CapabilityValue>,
-    /// The provider this harness uses when a request names none.
-    #[serde(default)]
+    /// The provider this harness uses when a request names none. Empty when
+    /// the runner did not say; an older snapshot without the key round-trips
+    /// without it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub native_provider: String,
     /// The configured providers whose wire this harness speaks, so a request
     /// naming one of them can reach it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
     /// Whether a request must name a provider and a model for this harness,
     /// or may leave the choice to it. `None` means the runner did not say.
