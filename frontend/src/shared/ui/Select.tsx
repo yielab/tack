@@ -6,7 +6,7 @@ import {
   type Component,
   type JSX,
 } from 'solid-js';
-import { FieldShell } from './Field';
+import { FieldShell, type FieldHelp } from './Field';
 
 export interface SelectOption {
   value: string;
@@ -18,6 +18,7 @@ export interface SelectProps
   label?: string;
   error?: string;
   hint?: string;
+  help?: FieldHelp;
   options?: SelectOption[];
 }
 
@@ -39,6 +40,7 @@ const Select: Component<SelectProps> = (props) => {
     'label',
     'error',
     'hint',
+    'help',
     'required',
     'options',
     'children',
@@ -62,6 +64,7 @@ const Select: Component<SelectProps> = (props) => {
       required={local.required}
       error={local.error}
       hint={local.hint}
+      help={local.help}
       for={id}
       class={local.class}
     >
