@@ -314,6 +314,11 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         } else {
             args.extend(["--permission-mode", "bypassPermissions"].map(str::to_owned));
         }
+        // No MCP server at all, the account's claude.ai connectors included:
+        // their tools load mid-run and, with no ToolSearch in a fixed tool
+        // list, every schema lands in the prompt — one run went from 41K to
+        // 255K tokens of context per call on 2.1.291.
+        args.push("--strict-mcp-config".to_owned());
         args.extend(["--effort", "high", "--setting-sources", "", "--tools"].map(str::to_owned));
         // `""` would turn every tool off; `default` is claude's word for all of them.
         if all_tools {
@@ -336,6 +341,9 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         }
 
         let mut env = BTreeMap::new();
+        // The same opt-out for claude.ai connectors, for a CLI that predates
+        // `--strict-mcp-config` covering them.
+        env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".to_owned(), "false".to_owned());
         if let Some(endpoint) = run.endpoint {
             env.insert("ANTHROPIC_BASE_URL".to_owned(), endpoint.base_url.clone());
             // Measured against 2.1.260: empty, unset and non-empty all sent
