@@ -6819,6 +6819,15 @@
           }
         }
       },
+      "CodeOrigin": {
+        "type": "string",
+        "enum": [
+          "folder",
+          "new_folder",
+          "url",
+          "none"
+        ]
+      },
       "Comment": {
         "type": "object",
         "required": [
@@ -8857,15 +8866,34 @@
           "workflow",
           "created_at",
           "updated_at",
-          "archived"
+          "archived",
+          "code_origin",
+          "workspace_mode",
+          "push_after_run"
         ],
         "properties": {
           "archived": {
             "type": "boolean"
           },
+          "code_origin": {
+            "$ref": "#/components/schemas/CodeOrigin",
+            "description": "Where the project's code comes from; `repository` is a URL for\n`url` and an absolute path for `folder`/`new_folder`."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_harness": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "default_model": {
             "oneOf": [
@@ -8875,6 +8903,18 @@
               {
                 "$ref": "#/components/schemas/ProjectModelDefault"
               }
+            ]
+          },
+          "default_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "description": {
@@ -8897,8 +8937,23 @@
           "name": {
             "type": "string"
           },
+          "on_finish_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
+          },
+          "push_after_run": {
+            "type": "boolean"
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updated_at": {
             "type": "string",
@@ -8913,6 +8968,9 @@
           "workspace_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "workspace_mode": {
+            "$ref": "#/components/schemas/WorkspaceMode"
           }
         }
       },
@@ -9874,6 +9932,28 @@
               "null"
             ]
           },
+          "code_origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeOrigin"
+              }
+            ]
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_harness": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "default_model": {
             "oneOf": [
               {
@@ -9882,6 +9962,18 @@
               {
                 "$ref": "#/components/schemas/ProjectModelDefault"
               }
+            ]
+          },
+          "default_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "description": {
@@ -9903,6 +9995,25 @@
               "null"
             ]
           },
+          "on_finish_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "push_after_run": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves the field untouched; JSON `null` clears it. Same for\nevery double-`Option` field below."
+          },
           "vocabulary": {
             "oneOf": [
               {
@@ -9920,6 +10031,16 @@
               },
               {
                 "$ref": "#/components/schemas/WorkflowConfig"
+              }
+            ]
+          },
+          "workspace_mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceMode"
               }
             ]
           }
@@ -10174,6 +10295,14 @@
             "format": "date-time"
           }
         }
+      },
+      "WorkspaceMode": {
+        "type": "string",
+        "enum": [
+          "local_branch",
+          "in_place",
+          "clone"
+        ]
       }
     }
   },

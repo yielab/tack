@@ -237,6 +237,7 @@ async fn update_project() {
                 default_model: None,
                 github_token_ref: None,
                 archived: None,
+                ..Default::default()
             },
         )
         .await

@@ -43,6 +43,59 @@ pub struct Project {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub archived: bool,
+    /// Where the project's code comes from; `repository` is a URL for
+    /// `url` and an absolute path for `folder`/`new_folder`.
+    pub code_origin: CodeOrigin,
+    pub repository: Option<String>,
+    pub default_branch: Option<String>,
+    pub workspace_mode: WorkspaceMode,
+    pub push_after_run: bool,
+    pub default_harness: Option<String>,
+    pub default_profile_id: Option<String>,
+    pub on_finish_status: Option<String>,
+    pub definition_of_done: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum CodeOrigin {
+    Folder,
+    NewFolder,
+    Url,
+    #[default]
+    None,
+}
+
+impl std::fmt::Display for CodeOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Folder => write!(f, "folder"),
+            Self::NewFolder => write!(f, "new_folder"),
+            Self::Url => write!(f, "url"),
+            Self::None => write!(f, "none"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum WorkspaceMode {
+    #[default]
+    LocalBranch,
+    InPlace,
+    Clone,
+}
+
+impl std::fmt::Display for WorkspaceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LocalBranch => write!(f, "local_branch"),
+            Self::InPlace => write!(f, "in_place"),
+            Self::Clone => write!(f, "clone"),
+        }
+    }
 }
 
 /// A project's own opinion on which model its executions should use — the
@@ -447,7 +500,7 @@ pub struct CreateProject {
     pub template: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Default, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateProject {
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
@@ -465,6 +518,23 @@ pub struct UpdateProject {
     /// `NULL` rather than as a literal empty string.
     pub github_token_ref: Option<String>,
     pub archived: Option<bool>,
+    pub code_origin: Option<CodeOrigin>,
+    /// Omitted leaves the field untouched; JSON `null` clears it. Same for
+    /// every double-`Option` field below.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub repository: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub default_branch: Option<Option<String>>,
+    pub workspace_mode: Option<WorkspaceMode>,
+    pub push_after_run: Option<bool>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub default_harness: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub default_profile_id: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub on_finish_status: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub definition_of_done: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

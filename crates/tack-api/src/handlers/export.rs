@@ -248,6 +248,7 @@ pub async fn import_project(
                         default_model: None,
                         github_token_ref: None,
                         archived: None,
+                        ..Default::default()
                     },
                 )
                 .await;
