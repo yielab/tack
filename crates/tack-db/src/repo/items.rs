@@ -136,6 +136,7 @@ impl Repository {
             started_at: None,
             completed_at: None,
             source,
+            run_settings: None,
             created_at: now,
             updated_at: now,
         })
@@ -144,7 +145,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
         let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE id = ?"
         )
         .bind(id.to_string())
@@ -175,7 +176,7 @@ impl Repository {
     pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
         let mut tx = self.pool().begin().await?;
         let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -232,7 +233,7 @@ impl Repository {
     ) -> Result<Vec<Item>, sqlx::Error> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -278,7 +279,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_items_for_sprint(&self, sprint_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE sprint_id = ? ORDER BY sort_order ASC"
         )
         .bind(sprint_id.to_string())
@@ -295,7 +296,7 @@ impl Repository {
         to: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items
              WHERE due_date IS NOT NULL
                AND due_date >= ?
@@ -450,6 +451,17 @@ impl Repository {
             .await?;
         }
 
+        if let Some(run_settings) = input.run_settings {
+            sqlx::query(
+                "UPDATE items SET run_settings = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(run_settings.map(|v| v.to_string()))
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
+        }
+
         // Maintain started_at / completed_at from the status category the handler
         // resolved for the target status. Only runs when the status is changing.
         if let Some(category) = input.status_category {
@@ -509,7 +521,7 @@ impl Repository {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
 
         let current = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -539,7 +551,8 @@ impl Repository {
             || input.due_date.is_some()
             || input.sprint_id.is_some()
             || input.sort_order.is_some()
-            || input.assignee.is_some();
+            || input.assignee.is_some()
+            || input.run_settings.is_some();
         // Match the pre-A2 no-op PATCH behavior: without an addressed field
         // there is no logical mutation and therefore no version to consume.
         if !addresses_a_field {
@@ -636,6 +649,11 @@ impl Repository {
                     .push("assignee = ")
                     .push_bind_unseparated(assignee.as_deref());
             }
+            if let Some(run_settings) = input.run_settings.as_ref() {
+                fields
+                    .push("run_settings = ")
+                    .push_bind_unseparated(run_settings.as_ref().map(|v| v.to_string()));
+            }
             match status_category {
                 Some(StatusCategory::InProgress) => {
                     fields
@@ -673,7 +691,7 @@ impl Repository {
         }
 
         let item = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_one(&mut *tx)
@@ -718,7 +736,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              WHERE i.project_id = ? AND items_fts MATCH ?
@@ -740,7 +758,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
@@ -759,7 +777,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
         )
         .bind(project_id.to_string())
@@ -805,7 +823,7 @@ impl Repository {
     ) -> Result<bool, sqlx::Error> {
         // Get all children of this parent
         let children = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE parent_id = ?"
         )
         .bind(parent_id.to_string())
@@ -862,6 +880,7 @@ struct ItemRow {
     assignee: Option<String>,
     due_date: Option<String>,
     source: String,
+    run_settings: Option<String>,
     started_at: Option<String>,
     completed_at: Option<String>,
     created_at: String,
@@ -894,6 +913,9 @@ impl ItemRow {
             // degrades to `Unknown`, i.e. untrusted) — see its own doc
             // comment for why that's the safe direction.
             source: self.source.parse().unwrap_or_default(),
+            run_settings: self
+                .run_settings
+                .and_then(|s| serde_json::from_str(&s).ok()),
             started_at: self.started_at.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
                     .ok()
