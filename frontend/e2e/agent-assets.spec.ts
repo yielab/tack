@@ -279,9 +279,9 @@ test('hero gif', async ({ page }) => {
   await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(1200);
 
-  await page.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
+  await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
   await page.waitForTimeout(1500);
-  await expect(page.getByText('Artifacts', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Files from this run', { exact: true }).first()).toBeVisible();
   await page.waitForTimeout(2500);
 
   // ── Flush the video, convert to GIF ─────────────────────────────────────
@@ -445,7 +445,7 @@ test('attempt screenshot', async ({ page }) => {
   await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(500);
 
-  // Deliberately NOT expanding "Show events, decisions & artifacts": the one
+  // Deliberately NOT expanding "Show timeline, questions & files": the one
   // event this attempt reports has no short `text`/`message` field, so
   // `EventTimeline`'s fallback renders its FULL raw JSON payload verbatim —
   // which includes the artifact's server-side `staged_path` (this machine's

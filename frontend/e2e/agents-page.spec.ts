@@ -62,7 +62,7 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   // recorded", with its runner named. The timeline below the button is the
   // shared store's own poll; no reload.
   await page.getByRole('button', { name: 'Run test' }).click();
-  const attempt = page.getByRole('listitem').filter({ hasText: /^Attempt #1/ });
+  const attempt = page.getByTestId('attempt').first();
   await expect(attempt).toContainText('Finished — no changes recorded', { timeout: 90_000 });
   await expect(attempt).toContainText(/runner runr_/);
   await expect(attempt.getByRole('button', { name: 'Log' })).toBeVisible();

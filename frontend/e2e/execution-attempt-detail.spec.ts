@@ -60,7 +60,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer2 = page.getByRole('dialog');
     await drawer2.getByRole('tab', { name: 'Execution' }).click();
-    await expect(drawer2.getByText('Attempt #1')).toBeVisible();
+    await expect(drawer2.getByRole('heading', { name: 'Run 1' })).toBeVisible();
     await expect(drawer2.getByText(runnerId)).toBeVisible();
     // Both the request's own state and the attempt's are "Leased" right
     // after a claim — two badges, hence `.first()`.
@@ -72,7 +72,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // completion has been reported.
     await expect(drawer2.getByText('Not measured').first()).toBeVisible();
 
-    await drawer2.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+    await drawer2.getByRole('button', { name: /Show timeline, questions & files/ }).click();
     await expect(drawer2.getByText('No events reported yet')).toBeVisible();
     // Discovered honestly through the real list routes — nothing raised
     // yet, never a fake empty state conflated with a typed id that simply
@@ -91,7 +91,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer3 = page.getByRole('dialog');
     await drawer3.getByRole('tab', { name: 'Execution' }).click();
-    await drawer3.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+    await drawer3.getByRole('button', { name: /Show timeline, questions & files/ }).click();
 
     // The real decision the runner just raised — found through the list,
     // no id typed anywhere.
@@ -140,8 +140,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await expect(drawer.getByText('Attempt #1')).toBeVisible();
-    await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+    await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
+    await drawer.getByRole('button', { name: /Show timeline, questions & files/ }).click();
 
     // Both discovered through their real list routes — no id typed
     // anywhere, never a manual-entry fallback.
@@ -197,7 +197,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const chunks: Buffer[] = [];
     for await (const chunk of stream!) chunks.push(chunk as Buffer);
     expect(Buffer.concat(chunks).toString('utf-8')).toBe(artifactContent);
-    await expect(drawer.getByText('Downloaded.')).toBeVisible();
+    await expect(drawer.getByText(/Sent to your browser's downloads as/)).toBeVisible();
   });
 
   test('a poll tick during a pending decision never unmounts the attempt panel — a typed-but-unsaved token and a chosen option both survive, and the Resolve control stays the same DOM node', async ({
@@ -227,8 +227,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await expect(drawer.getByText('Attempt #1')).toBeVisible();
-    await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+    await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
+    await drawer.getByRole('button', { name: /Show timeline, questions & files/ }).click();
     await expect(drawer.getByText('e2e: allow this action?')).toBeVisible();
 
     // Typed but never saved (no click on "Save") — this is the token
@@ -317,7 +317,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+    await drawer.getByRole('button', { name: /Show timeline, questions & files/ }).click();
 
     await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
     await drawer.getByLabel('Reason').fill('Every criterion passed.');

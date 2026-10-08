@@ -315,9 +315,9 @@ test('item detail Execution tab — expanded attempt detail (events/decisions/ar
   await waitForApp(page);
   const drawer = page.getByRole('dialog');
   await drawer.getByRole('tab', { name: 'Execution' }).click();
-  await expect(drawer.getByText('Attempt #1')).toBeVisible();
+  await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
 
-  await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+  await drawer.getByRole('button', { name: /Show timeline, questions & files/ }).click();
   await expect(drawer.getByText('No events reported yet')).toBeVisible();
 
   const violations = await scan(page);

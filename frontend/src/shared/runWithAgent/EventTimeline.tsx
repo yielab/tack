@@ -31,54 +31,55 @@ function describeEventPayload(payload: unknown): string {
   return String(payload);
 }
 
-/** `attempt.terminal`: the result text is the body, artifact names a list,
- *  every other key sits behind a "Raw" toggle. */
+/** Each runner event kind in words; an unknown kind shows as reported. */
+const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
+  'attempt.terminal': { label: 'The run ended' },
+  'attempt.cancelled': { label: 'Cancelled' },
+  'attempt.verify_skipped': { label: 'Verification skipped' },
+  'attempt.verify_failed': { label: 'Verification failed', failed: true },
+  'attempt.push_skipped': { label: 'Branch not pushed' },
+  'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
+  'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },
+  'attempt.plan_invalid': { label: 'The plan could not be read', failed: true },
+};
+
+/** `attempt.terminal`: the agent's message and files are on the card above, so this
+ *  says only how it ended; the whole payload sits behind "Raw". */
 const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) => {
   const [raw, setRaw] = createSignal(false);
-  const names = () =>
-    (Array.isArray(props.payload.artifacts) ? props.payload.artifacts : []).map((a) => {
-      const o = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>;
-      return String(o.name ?? o.path ?? o.kind ?? a);
-    });
-  const rest = () => {
-    const { result: _r, artifacts: _a, ...others } = props.payload;
-    return others;
+  const how = () => {
+    const p = props.payload;
+    const text = typeof p.message === 'string' ? p.message : typeof p.code === 'string' ? p.code : null;
+    return text ?? 'See what the agent did and said above.';
   };
   return (
     <div class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
-      <Show when={typeof props.payload.result === 'string'}>
-        <p>{props.payload.result as string}</p>
-      </Show>
-      <Show when={names().length > 0}>
-        <ul class="list-disc pl-4">
-          <For each={names()}>{(n) => <li>{n}</li>}</For>
-        </ul>
-      </Show>
-      <Show when={Object.keys(rest()).length > 0}>
-        <button type="button" class="underline" aria-expanded={raw()} onClick={() => setRaw((v) => !v)}>
-          Raw
-        </button>
-        <Show when={raw()}>
-          <pre class="whitespace-pre-wrap">{JSON.stringify(rest(), null, 2)}</pre>
-        </Show>
+      <p>{how()}</p>
+      <button type="button" class="underline" aria-expanded={raw()} onClick={() => setRaw((v) => !v)}>
+        Raw
+      </button>
+      <Show when={raw()}>
+        <pre class="max-h-64 overflow-auto whitespace-pre-wrap">{JSON.stringify(props.payload, null, 2)}</pre>
       </Show>
     </div>
   );
 };
 
-const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => (
+const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => {
+  const known = () => EVENT_LABELS[props.event.kind];
+  return (
   <li class="grid grid-cols-[14px_minmax(0,1fr)_auto] gap-3">
     {/* Rail: a dot per event, joined by a line to the next one. */}
     <div class="flex flex-col items-center" aria-hidden="true">
-      <span class="mt-1 h-3 w-3 flex-none rounded-full" style={{ 'background-color': 'var(--color-primary-600)' }} />
+      <span class="mt-1 h-3 w-3 flex-none rounded-full" style={{ 'background-color': known()?.failed ? 'var(--color-danger-600)' : 'var(--color-primary-600)' }} />
       <Show when={!props.last}>
         <span class="my-1 w-0.5 flex-1" style={{ 'background-color': 'var(--color-border-light)' }} />
       </Show>
     </div>
     <div class="min-w-0 pb-3.5">
       <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          {props.event.kind}
+        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }} title={props.event.kind}>
+          {known()?.label ?? props.event.kind}
         </span>
         <Badge tone="neutral">{props.event.source}</Badge>
       </div>
@@ -95,10 +96,10 @@ const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => (
     </div>
     <div class="flex flex-col items-end text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>
-      <span>#{props.event.sequence}</span>
     </div>
   </li>
-);
+  );
+};
 
 /**
  * The normalized event timeline for one attempt, reading

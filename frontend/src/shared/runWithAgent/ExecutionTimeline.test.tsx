@@ -141,7 +141,7 @@ describe('ExecutionTimeline', () => {
     for (let i = 0; i < 6; i++) await flush();
 
     const runningRow = requestRows(c).find((li) => li.textContent?.includes('req-running'))!;
-    expect(runningRow.textContent).toContain('Attempt #1');
+    expect(runningRow.textContent).toMatch(/Run \d/);
     expect(runningRow.textContent).toContain('runner-1');
 
     const opRow = requestRows(c).find((li) => li.textContent?.includes('req-needs-operator'))!;

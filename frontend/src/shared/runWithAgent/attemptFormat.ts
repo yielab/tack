@@ -199,7 +199,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     } else if (kept) {
       badge = { label: 'Finished — changes could not be read', tone: 'warning', detail: `Workspace kept at ${kept}` };
     } else if (patchBytes === 0) {
-      badge = { label: 'Finished — no changes recorded', tone: 'warning' };
+      badge = { label: 'Finished — no changes recorded', tone: 'warning', detail: 'The agent ended without changing any files. What it said is below.' };
     }
   }
   return { whyStopped, badge };
