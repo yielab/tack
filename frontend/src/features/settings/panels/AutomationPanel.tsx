@@ -245,6 +245,9 @@ const AutomationPanel: Component = () => {
               )}
             </For>
           </div>
+          <Note>
+            <a href="/agents#profiles" class="underline">Manage profiles</a>
+          </Note>
         </FieldShell>
       </div>
     </div>
