@@ -65,7 +65,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await createFleet(request, `RWA board fleet ${Date.now()}`);
   await enrollRunner(request, `RWA board runner ${Date.now()}`, 'opaque/model-alpha');
   // Two profiles and no project default, so none is preselected (exactly one
-  // would be, and the "Select an agent profile." reason would never show).
+  // would be, and the "Choose a profile." reason would never show).
   await createAgentProfile(request, `RWA board profile A ${Date.now()}`);
   await createAgentProfile(request, `RWA board profile B ${Date.now()}`);
 
@@ -85,7 +85,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('link', { name: "Choose where this project's code is →" })).toBeVisible();
   await expect(dialog.getByText('Select where this runs.')).toBeVisible();
-  await expect(dialog.getByText('Select an agent profile.')).toBeVisible();
+  await expect(dialog.getByText('Choose a profile.')).toBeVisible();
 
   // Escape closes it — the same keyboard path every other modal in this app
   // supports (`shared/ui/Modal.tsx`), proving the focus/keyboard path works
