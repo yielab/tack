@@ -341,7 +341,7 @@ const EnrollmentPanel: Component = () => {
           {(token) => (
             <div class="space-y-3">
               <div class="flex items-center gap-2">
-                <Badge tone="danger">Shown once</Badge>
+                <Badge tone="warning">Shown once</Badge>
                 <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                   This token will never be shown again. Copy it into the runner's configuration now.
                 </p>

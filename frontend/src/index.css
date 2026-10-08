@@ -467,6 +467,14 @@
 
   --color-primary-600: #2e5f7f;
 
+  /* info is not the coral accent here: coral reads as danger, and info marks
+     statuses and labels that are not errors. Violet, 6.7:1 ink on soft. */
+  --color-info-50: #efeafa;
+  --color-info-100: #efeafa;
+  --color-info-500: #5b3fa0;
+  --color-info-600: #5b3fa0;
+  --color-info-700: #5b3fa0;
+
   --color-success-600: #36602f;
   --color-success-100: #e6f0dc;
   --color-warning-600: #7a540e;
@@ -511,6 +519,13 @@
   --color-accent2-ink: #f2b5a2;
 
   --color-primary-600: #6fa6c9;
+
+  /* info in violet, not coral (see the light block). 5.9:1 or better on the panels. */
+  --color-info-50: rgb(196 181 253 / 0.14);
+  --color-info-100: rgb(196 181 253 / 0.14);
+  --color-info-500: #c4b5fd;
+  --color-info-600: #c4b5fd;
+  --color-info-700: #c4b5fd;
 
   --color-success-600: #7fc98a;
   --color-success-100: rgb(127 201 138 / 0.14);

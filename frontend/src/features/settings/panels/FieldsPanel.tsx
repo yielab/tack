@@ -147,7 +147,7 @@ export default function FieldsPanel() {
                     </h3>
                     <Badge>{typeInfo.label}</Badge>
                     <Show when={field.required}>
-                      <Badge tone="danger">Required</Badge>
+                      <Badge tone="neutral">Required</Badge>
                     </Show>
                   </div>
 
