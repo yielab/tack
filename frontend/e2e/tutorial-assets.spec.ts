@@ -33,8 +33,6 @@ const OTHER_ITEMS = [
   'Refresh the screenshots in the docs',
 ];
 const PROFILE_NAME = 'Announcement writer';
-const MODEL_PROVIDER = 'anthropic';
-const MODEL_ID = 'claude-sonnet-5-5';
 const PROFILE_INSTRUCTIONS =
   'Write the launch announcement for the relaunched marketing site as a blog post of about 400 words: ' +
   'a headline, an intro paragraph, three feature sections of two sentences each, and a closing call to action. ' +
@@ -166,7 +164,6 @@ async function ensureIds(): Promise<void> {
   }
 }
 let repoDir: string;
-let repoRev: string;
 let scratchRoot: string;
 
 test.beforeAll(async () => {
@@ -187,7 +184,6 @@ test.beforeAll(async () => {
     'git -c user.email=demo@invalid -c user.name=demo commit -q -m seed',
     { cwd: repoDir },
   );
-  repoRev = execSync('git rev-parse HEAD', { cwd: repoDir }).toString().trim();
 
 });
 
@@ -278,31 +274,29 @@ test.describe.serial('tutorial screenshots', () => {
     await page.screenshot({ path: path.join(OUT_DIR, '05-board-tasks.png') });
   });
 
-  test('06: write the task a brief', async ({ page }) => {
+  test('06: write the task a checklist', async ({ page }) => {
     await ensureIds();
     await page.setViewportSize({ width: 1440, height: 1300 });
     await page.goto(`${BASE}/projects/${projectId}/board?item=${runItemId}`);
     await waitForApp(page);
-    const drawer = page.getByRole('dialog');
-    await drawer.getByRole('tab', { name: 'Brief' }).click();
-    const panel = drawer.getByRole('tabpanel');
+    const drawer = page.getByRole('dialog', { name: 'Item details' });
 
-    const criteria: Array<[string, string]> = [
-      ['About 400 words', 'Count the words of the post; between 350 and 450 is fine.'],
-      ['Ends with a call to action', 'The last paragraph tells the reader what to do next.'],
+    // The Brief tab is gone: acceptance criteria are a checklist under the
+    // description, one line per thing a person checks, saved on blur.
+    const criteria = [
+      'About 400 words',
+      'Ends with a call to action',
+      'A post the team can publish on launch day without rewriting it',
     ];
-    for (const [i, [title, check]] of criteria.entries()) {
-      await panel.getByRole('button', { name: 'Add criterion' }).click();
-      await panel.getByRole('combobox', { name: 'Kind' }).nth(i).selectOption({ label: 'Manual (a person checks)' });
-      await panel.getByRole('textbox', { name: 'Title', exact: true }).nth(i).fill(title);
-      await panel.getByLabel('What a person must check').nth(i).fill(check);
+    for (const [i, text] of criteria.entries()) {
+      await drawer.getByRole('button', { name: 'Add check' }).click();
+      const line = drawer.getByLabel('Acceptance criterion').nth(i);
+      await line.fill(text);
+      await line.blur();
+      await page.waitForTimeout(500);
     }
-    await panel
-      .getByLabel('Definition of done')
-      .fill('A post the team can publish on launch day without rewriting it.');
-    await panel.getByRole('button', { name: 'Save brief' }).click();
     await page.waitForTimeout(4_500);
-    await drawer.getByRole('tablist').evaluate((t) => t.scrollIntoView({ block: 'start' }));
+    await drawer.getByRole('heading', { name: 'Acceptance criteria' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
     await page.waitForTimeout(300);
     await drawer.screenshot({ path: path.join(OUT_DIR, '06-brief.png') });
   });
@@ -327,31 +321,21 @@ test.describe.serial('tutorial screenshots', () => {
     await screenshotFullContent(page, path.join(OUT_DIR, '08-agents-on.png'));
   });
 
-  test('09: save a default model for the project', async ({ page }) => {
+  test('09: the project\'s agent settings', async ({ page }) => {
     await ensureIds();
-    await page.goto(`${BASE}/agents`);
+    // The project's agent settings live in its Automation tab. Choosing a
+    // specific default model there is not offered (the model row is disabled),
+    // so the run below uses the agent's own default model.
+    await page.goto(`${BASE}/projects/${projectId}/settings?tab=automation`);
     await waitForApp(page);
-    const modelDefault = stepSection(page, 'Default model');
-    await expect(modelDefault).toBeVisible();
-
-    // The project picker only renders once more than one project exists —
-    // on this tutorial's fresh database there is exactly one, so the section
-    // already targets it (same conditional e2e/agents-page.spec.ts uses).
-    const picker = modelDefault.getByLabel('Project', { exact: true });
-    if (await picker.isVisible().catch(() => false)) {
-      await picker.selectOption({ label: PROJECT_NAME });
-    }
+    const agentSettings = page.locator('div').filter({
+      has: page.getByRole('heading', { name: 'Agent', exact: true }),
+    }).last();
+    await expect(page.getByRole('heading', { name: 'Agent', exact: true })).toBeVisible();
+    await page.waitForTimeout(600);
+    await page.getByRole('heading', { name: 'Agent', exact: true }).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
-    await modelDefault.getByRole('radio', { name: 'Type a model id' }).check();
-    await page.waitForTimeout(300);
-    await modelDefault.getByLabel('Provider', { exact: true }).fill(MODEL_PROVIDER);
-    await modelDefault.getByLabel('Model ID', { exact: true }).fill(MODEL_ID);
-    await page.waitForTimeout(300);
-    await modelDefault.getByRole('button', { name: 'Save' }).click();
-    await page.waitForTimeout(800);
-    await modelDefault.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
-    await modelDefault.screenshot({
+    await agentSettings.screenshot({
       path: path.join(OUT_DIR, '09-default-model.png'),
     });
   });
@@ -360,7 +344,7 @@ test.describe.serial('tutorial screenshots', () => {
     await page.goto(`${BASE}/agents`);
     await waitForApp(page);
     await page.getByRole('button', { name: /^Advanced/ }).click();
-    await page.getByRole('tab', { name: 'Agent profiles' }).click();
+    await page.getByRole('tab', { name: 'Profiles', exact: true }).click();
     await page.getByRole('button', { name: '+ Create agent profile' }).click();
     const form = page.locator('form').filter({ has: page.getByLabel('Instructions') });
     await form.getByLabel('Name').fill(PROFILE_NAME);
@@ -377,6 +361,13 @@ test.describe.serial('tutorial screenshots', () => {
     page,
   }) => {
     await ensureIds();
+    // The dialog has no repository fields: the server fills the repository
+    // from the project, so name the disposable git fixture as its folder.
+    await apiFetch(`/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code_origin: 'folder', repository: repoDir }),
+    });
     // Tall enough that the dialog (max 90vh) shows the whole flow unscrolled.
     await page.setViewportSize({ width: 1440, height: 2000 });
     await page.goto(`${BASE}/projects/${projectId}/board`);
@@ -390,12 +381,10 @@ test.describe.serial('tutorial screenshots', () => {
     const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(dialog).toBeVisible();
     await page.waitForTimeout(600);
-    await dialog.getByLabel('Harness').selectOption('claude-code');
-    await page.waitForTimeout(400);
-    await dialog.getByRole('button', { name: 'Change for this run' }).click();
-    await page.waitForTimeout(300);
-    await dialog.getByLabel('Remote').fill(repoDir);
-    await dialog.getByLabel('Base revision').fill(repoRev);
+    // The profile is a pill; the agent is picked under "Advanced for this run".
+    await dialog.getByRole('button', { name: PROFILE_NAME, exact: true }).click();
+    await dialog.getByText('Advanced for this run').click();
+    await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
     await page.waitForTimeout(500);
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
     await dialog.screenshot({
@@ -431,7 +420,7 @@ test.describe.serial('tutorial screenshots', () => {
 
     // ── Up close: the Execution tab while the attempt runs ────────────────
     // Grab the in-flight state the moment its badge shows; if the run beats
-    // us to Succeeded anyway, the capture honestly shows that instead.
+    // us to Finished anyway, the capture honestly shows that instead.
     await page.goto(
       `${BASE}/projects/${projectId}/board?item=${runItemId}&tab=execution`,
     );
@@ -439,7 +428,7 @@ test.describe.serial('tutorial screenshots', () => {
     await expect(
       page
         .getByText('Running', { exact: true })
-        .or(page.getByText('Succeeded', { exact: true }))
+        .or(page.getByText('Finished', { exact: true }))
         .first(),
     ).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(400);

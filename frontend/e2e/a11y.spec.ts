@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {
   getOrCreateProject,
   getOrCreateItem,
+  createRunnableProject,
   createFreshItem,
   createItemWithAssignee,
   createAgentProfile,
@@ -182,7 +183,7 @@ test('agents page — enrolling a runner and viewing the one-time token modal ha
   expect(violationsAfterClose, JSON.stringify(violationsAfterClose.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-test('agents page — Fleets/Agent profiles tabs have no accessibility violations', async ({ page }) => {
+test('agents page — Fleets/Profiles tabs have no accessibility violations', async ({ page }) => {
   await page.goto('/agents');
   await waitForApp(page);
   await openAdvanced(page);
@@ -192,7 +193,7 @@ test('agents page — Fleets/Agent profiles tabs have no accessibility violation
   let violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 
-  await page.getByRole('tab', { name: 'Agent profiles' }).click();
+  await page.getByRole('tab', { name: 'Profiles', exact: true }).click();
   violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
@@ -222,23 +223,34 @@ test('agents page — creating a fleet via the form has no accessibility violati
 test('Board card "Run with agent" modal has no accessibility violations', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
   await getOrCreateItem(request, projectId, `A11y RWA board ${Date.now()}`);
+  // With no active runner the dialog shows only "Agent execution is off"; the form needs one.
+  await enrollRunner(request, `A11y RWA board runner ${Date.now()}`, 'opaque/model-alpha');
 
   await page.goto(`/projects/${projectId}/board`);
   await waitForApp(page);
   await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
-  await expect(page.getByRole('dialog', { name: /^Run with agent:/ })).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  await expect(dialog).toBeVisible();
 
-  const violations = await scan(page);
+  let violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+
+  // The folded-away part is where the fields are: scan it open too.
+  await dialog.getByText('Advanced for this run').click();
+  await expect(dialog.getByRole('combobox', { name: 'Agent' })).toBeVisible();
+  violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
 test('item detail Execution tab (with a real request) has no accessibility violations', async ({ page, request }) => {
-  const projectId = await getOrCreateProject(request);
+  // A project with a folder to run in: the dialog has no repository fields.
+  const projectId = await createRunnableProject(request, `A11y RWA project ${Date.now()}`);
   // A guaranteed-fresh item: `getOrCreateItem` reuses one shared item across
   // a whole spec file, which would accumulate execution requests across
   // repeated runs instead of giving this test its own clean state.
   const itemId = await createFreshItem(request, projectId, `A11y RWA detail ${Date.now()}`);
-  const profileId = await createAgentProfile(request, `A11y Profile ${Date.now()}`);
+  const profileName = `A11y Profile ${Date.now()}`;
+  await createAgentProfile(request, profileName);
   // An exact runner, not a fleet: naming the runner directly is the shortest
   // setup that leaves the Execution tab populated for the scan, without a
   // fleet and a membership write first. Same choice, same reason, as
@@ -261,21 +273,16 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   if ((await picker.count()) > 0) {
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
-  await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
-  // The repository fieldset is a read-only summary until "Change for this
-  // run" is clicked — the free-text Remote field doesn't exist in the DOM
-  // before that.
-  await modal.getByRole('button', { name: 'Change for this run' }).click();
-  await modal.getByLabel('Remote').fill('git@example.com:org/repo.git');
-  await modal.getByLabel('Base revision').fill('a11y-rwa-detail');
+  await modal.getByRole('button', { name: profileName, exact: true }).click();
   // A specific, matching model choice: with no default model configured
   // anywhere (agent profile / project / fleet), the live-capability gate
   // refuses to submit an unresolved "Auto" request — it would queue
   // forever. The target declares exactly one combination (`enrollRunner`'s
   // fixed capability shape), so it is always index "0".
+  await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
-  await modal.getByRole('button', { name: 'Run' }).click();
+  await modal.getByRole('button', { name: 'Run', exact: true }).click();
   await expect(modal).toBeHidden();
 
   await drawer.getByRole('tab', { name: 'Execution' }).click();

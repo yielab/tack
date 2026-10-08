@@ -2,6 +2,7 @@ import { test as base, type Page, type APIRequestContext, expect } from '@playwr
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 // Re-exported unchanged so a spec file that switches its `import { test,
 // expect } from '@playwright/test'` to `from './helpers'` (to pick up
@@ -142,6 +143,32 @@ export async function setProjectDefaultModel(
     data: { default_model: { kind: 'explicit', provider, model_id: modelId } },
   });
   expect(res.ok(), `set project default model failed: ${res.status()}`).toBeTruthy();
+}
+
+/**
+ * Gives a project somewhere to run: a freshly `git init`-ed temp folder set as
+ * its `repository` with `code_origin: "folder"`, through the same
+ * `PATCH /api/projects/:id` the project's Automation tab writes. The Run
+ * dialog has no repository fields any more (the server fills the repository
+ * from the project), so a spec that submits a run must call this first or the
+ * dialog shows "Choose where this project's code is →" in place of Run.
+ * Returns the folder's absolute path.
+ */
+export async function setProjectFolder(request: APIRequestContext, projectId: string): Promise<string> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tack-e2e-repo-'));
+  execFileSync('git', ['init', '--quiet', dir]);
+  const res = await request.patch(`${API}/projects/${projectId}`, {
+    data: { code_origin: 'folder', repository: dir },
+  });
+  expect(res.ok(), `set project folder failed: ${res.status()}`).toBeTruthy();
+  return dir;
+}
+
+/** A brand-new project that already has a folder to run in ({@link setProjectFolder}). */
+export async function createRunnableProject(request: APIRequestContext, name: string): Promise<string> {
+  const projectId = await createFreshProject(request, name);
+  await setProjectFolder(request, projectId);
+  return projectId;
 }
 
 /** Ensure the given project has at least one item and return its id. */
