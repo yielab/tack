@@ -1,6 +1,7 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button } from '../ui';
-import { artifactsApi, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
@@ -47,6 +48,42 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
       props.attempt.model_provenance,
       (props.attempt.actual_execution as { model_observation_source?: string | null } | null)?.model_observation_source,
     );
+  // The verdict as last read from the server: the prop's until a review is
+  // submitted here, then the refetched attempt's.
+  const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
+  const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
+  // The backend's `needs_review` condition: a terminal attempt that left a
+  // patch or a kept workspace.
+  const patchBytes = () => {
+    const arts = (props.attempt.terminal_reason as { artifacts?: unknown } | null)?.artifacts;
+    const patch = (Array.isArray(arts) ? arts : []).find((a) => a && (a as { kind?: unknown }).kind === 'patch') as
+      | { size_bytes?: unknown }
+      | undefined;
+    return typeof patch?.size_bytes === 'number' ? patch.size_bytes : 0;
+  };
+  const reviewable = () =>
+    isTerminalAttemptState(props.attempt.state) &&
+    (patchBytes() > 0 || !!(props.attempt.terminal_reason as { workspace_kept_at?: unknown } | null)?.workspace_kept_at);
+  const awaitingReview = () => reviewable() && !review();
+  const [note, setNote] = createSignal('');
+  const [reviewing, setReviewing] = createSignal(false);
+  const [reviewError, setReviewError] = createSignal<string | null>(null);
+  const submitReview = async (verdict: 'accepted' | 'rejected') => {
+    setReviewing(true);
+    setReviewError(null);
+    try {
+      const n = note().trim();
+      await attemptsApi.review(props.requestId, props.attempt.attempt_number, { verdict, ...(n ? { note: n } : {}) });
+      const list = await attemptsApi.list(props.requestId);
+      const mine = list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number);
+      setFresh(mine?.review ?? null);
+      window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
+    } catch (e) {
+      setReviewError(e instanceof Error ? e.message : 'The verdict could not be saved');
+    } finally {
+      setReviewing(false);
+    }
+  };
   const economics = () =>
     formatUsageEconomics(props.attempt.usage_economics, isTerminalAttemptState(props.attempt.state));
 
@@ -56,7 +93,19 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
         <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Attempt #{props.attempt.attempt_number}
         </span>
-        <Badge tone={outcome().badge?.tone ?? stateInfo().tone}>{outcome().badge?.label ?? stateInfo().label}</Badge>
+        <Show
+          when={reviewable()}
+          fallback={<Badge tone={outcome().badge?.tone ?? stateInfo().tone}>{outcome().badge?.label ?? stateInfo().label}</Badge>}
+        >
+          <Show
+            when={review()}
+            fallback={<Badge tone="warning">
+                {patchBytes() > 0 ? 'Finished — needs your review' : 'Finished — changes could not be read, needs your review'}
+              </Badge>}
+          >
+            {(r) => <Badge tone={r().verdict === 'accepted' ? 'success' : 'neutral'}>{r().verdict === 'accepted' ? 'Accepted' : 'Rejected'}</Badge>}
+          </Show>
+        </Show>
         <Show when={!stateInfo().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             (unrecognised state)
@@ -101,6 +150,37 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
             {detail()}
           </p>
         )}
+      </Show>
+
+      <Show when={review()}>
+        {(r) => (
+          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            {r().verdict === 'accepted' ? 'Accepted' : 'Rejected'} {relativeTimeFromIso(r().reviewed_at)}
+            {r().note ? ` — ${r().note}` : ''}
+          </p>
+        )}
+      </Show>
+      <Show when={awaitingReview()}>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            aria-label="Review note (optional)"
+            placeholder="Note (optional)"
+            value={note()}
+            onInput={(e) => setNote(e.currentTarget.value)}
+            class="min-w-[12rem] flex-1 rounded-full px-3 py-1.5 text-sm"
+            style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)', border: 'none' }}
+          />
+          <Button size="sm" disabled={reviewing()} onClick={() => void submitReview('accepted')}>
+            Accept
+          </Button>
+          <Button size="sm" variant="secondary" disabled={reviewing()} onClick={() => void submitReview('rejected')}>
+            Reject
+          </Button>
+          <Show when={reviewError()}>
+            <span class="text-xs" style={{ color: 'var(--color-danger-700)' }}>{reviewError()}</span>
+          </Show>
+        </div>
       </Show>
 
       {/* Model provenance — a distinct, honest tone per case, never a bare
