@@ -114,7 +114,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => {
     if (!props.isOpen || form.agentProfileId) return;
     const profiles = agentProfilesData();
-    const preferred = profiles.find((p) => p.agent_profile_id === project()?.default_profile_id);
+    // The project's default profile, else the built-in Implementer (ADR 0074
+    // decision 5), else the only profile there is.
+    const preferred =
+      profiles.find((p) => p.agent_profile_id === project()?.default_profile_id) ??
+      profiles.find((p) => p.kind === 'implementer');
     if (preferred) setForm('agentProfileId', preferred.agent_profile_id);
     else if (profiles.length === 1) setForm('agentProfileId', profiles[0].agent_profile_id);
   });
@@ -231,7 +235,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const structuralErrors = createMemo((): string[] => {
     const errors: string[] = [];
     if (!form.selectorId.trim()) errors.push('Select where this runs.');
-    if (!form.agentProfileId) errors.push('Select an agent profile.');
+    if (!form.agentProfileId) errors.push('Choose a profile.');
     if (!form.harnessKind) errors.push('Select an agent.');
     if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or use the agent\'s default.');
     if (form.modelMode === 'choose' && form.chooseIndex === CUSTOM_MODEL_VALUE && !form.customModelId.trim()) errors.push('Enter a model id, or pick one from the list.');

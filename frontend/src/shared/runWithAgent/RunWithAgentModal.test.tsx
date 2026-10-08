@@ -349,7 +349,7 @@ describe('RunWithAgentModal', () => {
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Choose a model for this run');
     expect(dialog.textContent).toContain('Select where this runs.');
-    expect(dialog.textContent).toContain('Select an agent profile.');
+    expect(dialog.textContent).toContain('Choose a profile.');
   });
 
   it('offers "Create default profile" inline when no agent profile exists yet, and selects the new one', async () => {

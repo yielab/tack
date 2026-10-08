@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
-import { API, acceptAndStartAttempt, claimOnceWithLease, setProjectDefaultModel, waitForApp } from './helpers';
+import { API, acceptAndStartAttempt, claimOnceWithLease, setProjectDefaultModel, setProjectFolder, waitForApp } from './helpers';
 
 // Screenshot capture for the README and the book. Run with `make screenshots`.
 // Outputs PNG files to docs/screenshots/ at repo root.
@@ -144,11 +144,15 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
   const brief = await request.put(`${API}/items/${seeded.briefItemId}/brief`, { data: BRIEF });
   expect(brief.ok(), `put brief: ${brief.status()}`).toBeTruthy();
 
-  const profile = await request.post(`${API}/agent-profiles`, {
-    data: { name: 'Implementer', instructions: 'Implement the item to its brief, then stop.', tool_policy: {} },
-  });
-  expect(profile.ok(), `create profile: ${profile.status()}`).toBeTruthy();
-  const profileId = (await profile.json()).agent_profile_id as string;
+  // The built-in Implementer is seeded on every database (phase 67, S6); a
+  // second "Implementer" would be a 409.
+  const profiles = await request.get(`${API}/agent-profiles`);
+  expect(profiles.ok(), `list profiles: ${profiles.status()}`).toBeTruthy();
+  const profilesBody = await profiles.json();
+  const profileRows = (profilesBody.data ?? profilesBody.agent_profiles ?? []) as Array<{ agent_profile_id?: string; id?: string; kind?: string }>;
+  const implementer = profileRows.find((p) => p.kind === 'implementer');
+  expect(implementer, 'the built-in Implementer profile exists').toBeTruthy();
+  const profileId = (implementer!.agent_profile_id ?? implementer!.id) as string;
   await setProjectDefaultModel(request, projectId, 'anthropic', RUNNER_MODEL);
 
   const runner = await enrollConfiguredRunner(request);
@@ -315,6 +319,9 @@ test.describe.serial('README screenshots', () => {
       }
     }
     await seedAgentWork(request, projectId);
+    // The Run dialog opens ready to run only for a project whose code is
+    // somewhere: a git folder, so the summary line names it.
+    await setProjectFolder(request, projectId);
   });
 
   test('board', async ({ page }) => {
@@ -369,10 +376,21 @@ test.describe.serial('README screenshots', () => {
     await page.getByRole('button', { name: `Run with agent: ${seeded.briefItemTitle}` }).click();
     const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(dialog).toBeVisible();
-    await dialog.getByText('Advanced for this run').click();
-    await expect(dialog.getByText('Verify the result')).toBeVisible();
+    // The book shows the dialog as it opens: the summary line, "What the
+    // agent will read", the two switches, and Advanced collapsed.
+    await expect(dialog.getByText('What the agent will read')).toBeVisible();
+    await expect(dialog.getByText('Advanced for this run')).toBeVisible();
     await page.waitForTimeout(400);
     await dialog.screenshot({ path: path.join(OUT_DIR, 'run-with-agent.png') });
+  });
+
+  test('automation', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/projects/${projectId}/settings?tab=automation`);
+    await waitForApp(page);
+    await expect(page.getByText('Where the code is')).toBeVisible();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(OUT_DIR, 'automation.png') });
   });
 
   test('decision-inbox', async ({ page }) => {
