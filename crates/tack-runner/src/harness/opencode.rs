@@ -163,6 +163,7 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
         tokens_out: Some(tokens_out),
         duration_ms: None,
         cost_usd: None,
+        usage_detail: Default::default(),
     }
 }
 
@@ -276,6 +277,7 @@ fn parse_output(result: &ProcessResult) -> RunReport {
                 tokens_out: res.pointer("/usage/outputTokens").and_then(Value::as_u64),
                 duration_ms: None,
                 cost_usd: None,
+                usage_detail: Default::default(),
             };
         }
     }

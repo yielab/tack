@@ -150,6 +150,41 @@ pub struct RunReport {
     /// `None` leaves the runner's own wall-clock measurement in place.
     pub duration_ms: Option<u64>,
     pub cost_usd: Option<f64>,
+    /// What the harness reports beyond the four contract figures.
+    pub usage_detail: UsageDetail,
+}
+
+/// The usage breakdown a harness reports beyond `tokens_in`/`tokens_out`,
+/// carried in `Usage.additional` under these field names. Every field is
+/// left empty when the harness does not report it, never guessed.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct UsageDetail {
+    /// Input tokens read from the prompt cache, already counted in `tokens_in`.
+    pub cache_read_tokens: Option<u64>,
+    /// Input tokens written to the prompt cache, already counted in `tokens_in`.
+    pub cache_write_tokens: Option<u64>,
+    /// How many requests the agent made to a model.
+    pub model_calls: Option<u64>,
+    /// Every model the run used, the main one first.
+    pub models: Vec<String>,
+}
+
+impl UsageDetail {
+    fn into_additional(self) -> BTreeMap<String, serde_json::Value> {
+        let mut out = BTreeMap::new();
+        let mut put = |key: &str, value: Option<u64>| {
+            if let Some(value) = value {
+                out.insert(key.to_owned(), value.into());
+            }
+        };
+        put("cache_read_tokens", self.cache_read_tokens);
+        put("cache_write_tokens", self.cache_write_tokens);
+        put("model_calls", self.model_calls);
+        if !self.models.is_empty() {
+            out.insert("models".to_owned(), self.models.into());
+        }
+        out
+    }
 }
 
 impl RunReport {
@@ -164,6 +199,7 @@ impl RunReport {
             tokens_out: None,
             duration_ms: None,
             cost_usd: None,
+            usage_detail: UsageDetail::default(),
         }
     }
 }
@@ -753,7 +789,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                 tokens_out: measurement(report.tokens_out),
                 duration_ms: measurement(Some(report.duration_ms.unwrap_or(elapsed_ms))),
                 cost_usd: measurement(report.cost_usd),
-                additional: BTreeMap::new(),
+                additional: report.usage_detail.into_additional(),
             },
         }
     }

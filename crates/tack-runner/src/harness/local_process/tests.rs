@@ -897,3 +897,19 @@ async fn reconcile_tells_this_harness_from_a_reused_pid() {
     let _ = rig.launcher.kill();
     let _ = rig.launcher.wait();
 }
+
+/// The breakdown travels in `Usage.additional`; what was not reported is left out, never zeroed.
+#[test]
+fn usage_detail_names_only_what_the_harness_reported() {
+    let detail = UsageDetail {
+        cache_read_tokens: Some(791_447),
+        cache_write_tokens: None,
+        model_calls: Some(6),
+        models: vec!["claude-sonnet-5-5".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(detail.into_additional()).expect("json"),
+        serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"]})
+    );
+    assert!(UsageDetail::default().into_additional().is_empty());
+}

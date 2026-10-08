@@ -71,8 +71,9 @@ provider's `env_key` were set to an obviously fake value.
   `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens` — every one of
   these captures (`exec-tool-call.jsonl` and the per-flag fixtures beside it).
   `CodexGrammar::report` reads `input_tokens`/`output_tokens` off that line into `tokens_in`/
-  `tokens_out`; the cached/cache-write/reasoning breakdown has no field in `RunReport`, so it
-  is not folded in. No `cost_usd` field appears anywhere, so cost is never reported. The
+  `tokens_out`, and `cached_input_tokens` (the part of `input_tokens` the cache served) into
+  `UsageDetail::cache_read_tokens`; the cache-write and reasoning counts are not read, since
+  whether `input_tokens` already includes them is not documented. No `cost_usd` field appears anywhere, so cost is never reported. The
   run's pass/fail verdict is still the exit status alone: this line is read for usage only,
   never to re-derive the verdict.
 - **The served model is not in the output.** Nothing in `exec --json` names which model

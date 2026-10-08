@@ -10,7 +10,7 @@ use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        RunContext, RunReport, capability, policy_capability,
+        RunContext, RunReport, UsageDetail, capability, policy_capability,
     },
     process::{CapturedOutput, ProcessExit, ProcessResult},
 };
@@ -81,14 +81,14 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
 }
 
 /// Scans every stdout line for the terminal `turn.completed` line and
-/// reads `usage.input_tokens`/`usage.output_tokens` off it — the only two
-/// fields `RunReport` has a place for (measured on codex-cli 0.149.1,
-/// 2026-09-20; `fixtures/codex/README.md`). The cached/cache-write/
-/// reasoning breakdown the same object carries has no field in
-/// `RunReport`, so it is not folded in or guessed at, and `cost_usd` stays
-/// `None`: no such field exists in the output. A stream with no
-/// `turn.completed` line leaves both `None`.
-fn usage_from_output(stdout: &str) -> (Option<u64>, Option<u64>) {
+/// reads `usage.input_tokens`/`usage.output_tokens` off it (measured on
+/// codex-cli 0.149.1, 2026-09-20; `fixtures/codex/README.md`), plus
+/// `cached_input_tokens`, the part of `input_tokens` the cache served. The
+/// cache-write and reasoning counts are not read: whether `input_tokens`
+/// already includes them is not documented. `cost_usd` stays `None`: no such
+/// field exists in the output. A stream with no `turn.completed` line leaves
+/// every figure `None`.
+fn usage_from_output(stdout: &str) -> (Option<u64>, Option<u64>, UsageDetail) {
     for line in stdout.lines() {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
@@ -96,15 +96,18 @@ fn usage_from_output(stdout: &str) -> (Option<u64>, Option<u64>) {
         if event.get("type").and_then(serde_json::Value::as_str) != Some("turn.completed") {
             continue;
         }
-        let tokens_in = event
-            .pointer("/usage/input_tokens")
-            .and_then(serde_json::Value::as_u64);
-        let tokens_out = event
-            .pointer("/usage/output_tokens")
-            .and_then(serde_json::Value::as_u64);
-        return (tokens_in, tokens_out);
+        let field = |key: &str| {
+            event
+                .pointer(&format!("/usage/{key}"))
+                .and_then(serde_json::Value::as_u64)
+        };
+        let detail = UsageDetail {
+            cache_read_tokens: field("cached_input_tokens"),
+            ..UsageDetail::default()
+        };
+        return (field("input_tokens"), field("output_tokens"), detail);
     }
-    (None, None)
+    (None, None, UsageDetail::default())
 }
 
 fn describe_capture(output: &CapturedOutput) -> serde_json::Value {
@@ -214,6 +217,7 @@ fn app_server_report(result: &ProcessResult) -> Option<RunReport> {
         tokens_out,
         duration_ms: None,
         cost_usd: None,
+        usage_detail: UsageDetail::default(),
     })
 }
 
@@ -475,7 +479,7 @@ impl HarnessGrammar for CodexGrammar {
                 "codex exceeded its configured timeout and was killed".to_owned(),
             ),
         };
-        let (tokens_in, tokens_out) = usage_from_output(&result.stdout.text);
+        let (tokens_in, tokens_out, usage_detail) = usage_from_output(&result.stdout.text);
         RunReport {
             succeeded,
             terminal_reason: serde_json::json!({
@@ -493,6 +497,7 @@ impl HarnessGrammar for CodexGrammar {
             tokens_out,
             duration_ms: None,
             cost_usd: None,
+            usage_detail,
         }
     }
 

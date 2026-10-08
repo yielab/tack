@@ -179,7 +179,7 @@ fn the_permission_policy_maps_onto_the_sandbox_flag() {
     }
 }
 
-/// `(transcript, succeeded, tokens_in, tokens_out)`. Numbers for the real
+/// `(transcript, succeeded, tokens_in, tokens_out, cached_input_tokens)`. Numbers for the real
 /// capture are re-measured straight off its own `turn.completed` line
 /// (`grep turn.completed exec-tool-call.jsonl`), not trusted from a brief.
 /// `no_turn_completed` is the same capture with that line stripped,
@@ -200,14 +200,18 @@ fn usage_is_read_from_the_turn_completed_line() {
         scratch: state.path(),
     };
     let rows = [
-        (exec_tool_call, true, Some(57), Some(10)),
-        (no_turn_completed.as_str(), true, None, None),
+        (exec_tool_call, true, Some(57), Some(10), Some(0)),
+        (no_turn_completed.as_str(), true, None, None, None),
     ];
-    for (transcript, succeeded, tokens_in, tokens_out) in rows {
+    for (transcript, succeeded, tokens_in, tokens_out, cached) in rows {
         let report = CodexGrammar.report(&run, &finished(ProcessExit::Exited(0), transcript));
         assert_eq!(report.succeeded, succeeded, "{transcript:?}");
         assert_eq!(report.tokens_in, tokens_in, "{transcript:?}");
         assert_eq!(report.tokens_out, tokens_out, "{transcript:?}");
+        assert_eq!(
+            report.usage_detail.cache_read_tokens, cached,
+            "{transcript:?}"
+        );
         assert_eq!(report.observed_model, None, "{transcript:?}");
         assert_eq!(report.cost_usd, None, "{transcript:?}");
     }
