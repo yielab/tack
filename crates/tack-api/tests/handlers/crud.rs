@@ -164,6 +164,70 @@ async fn update_project_vocabulary_persists() {
 }
 
 #[tokio::test]
+async fn automation_settings_round_trip_and_clear() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "Automation", "software").await;
+    let uri = format!("/api/projects/{pid}");
+
+    let (status, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["code_origin"], "none");
+    assert_eq!(body["workspace_mode"], "local_branch");
+    assert_eq!(body["push_after_run"], false);
+    assert!(body["repository"].is_null());
+
+    let patch = json!({
+        "repository": "/tmp/x", "code_origin": "folder", "workspace_mode": "in_place",
+        "default_branch": "main", "push_after_run": true, "default_harness": "codex",
+        "on_finish_status": "review", "definition_of_done": "tests pass",
+    });
+    let (status, _) = common::send(&app, "PATCH", &uri, patch, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(body["repository"], "/tmp/x");
+    assert_eq!(body["code_origin"], "folder");
+    assert_eq!(body["workspace_mode"], "in_place");
+    assert_eq!(body["default_branch"], "main");
+    assert_eq!(body["push_after_run"], true);
+    assert_eq!(body["default_harness"], "codex");
+    assert_eq!(body["on_finish_status"], "review");
+    assert_eq!(body["definition_of_done"], "tests pass");
+
+    // Absent leaves untouched; null clears.
+    let (status, _) = common::send(&app, "PATCH", &uri, json!({"default_branch": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["default_branch"].is_null());
+    assert_eq!(body["repository"], "/tmp/x");
+
+    // The combination is validated: a relative path for a folder, a non-URL for url.
+    for patch in [
+        json!({"repository": "relative/dir"}),
+        json!({"code_origin": "url", "repository": "/tmp/x"}),
+        json!({"code_origin": "new_folder", "repository": "x"}),
+    ] {
+        let (status, body) = common::send(&app, "PATCH", &uri, patch, &[]).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["details"]["field"], "repository");
+    }
+
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &uri,
+        json!({"code_origin": "url", "repository": "https://example.com/r.git"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = common::send(&app, "PATCH", &uri, json!({"repository": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["repository"].is_null());
+}
+
+#[tokio::test]
 async fn update_project_workflow_statuses_valid() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "Vocab Project", "software").await;

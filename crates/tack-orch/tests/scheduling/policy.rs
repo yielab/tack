@@ -227,6 +227,7 @@ async fn project_tier_reads_the_real_default_model_column() {
             }),
             github_token_ref: None,
             archived: None,
+            ..Default::default()
         },
     )
     .await

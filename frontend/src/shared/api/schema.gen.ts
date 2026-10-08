@@ -2968,6 +2968,8 @@ export interface components {
             /** @example cancellation_requested */
             state: string;
         };
+        /** @enum {string} */
+        CodeOrigin: "folder" | "new_folder" | "url" | "none";
         Comment: {
             author?: string | null;
             comment_type: components["schemas"]["CommentType"];
@@ -3689,9 +3691,18 @@ export interface components {
         Priority: "critical" | "high" | "medium" | "low" | "none";
         Project: {
             archived: boolean;
+            /**
+             * @description Where the project's code comes from; `repository` is a URL for
+             *     `url` and an absolute path for `folder`/`new_folder`.
+             */
+            code_origin: components["schemas"]["CodeOrigin"];
             /** Format: date-time */
             created_at: string;
+            default_branch?: string | null;
+            default_harness?: string | null;
             default_model?: null | components["schemas"]["ProjectModelDefault"];
+            default_profile_id?: string | null;
+            definition_of_done?: string | null;
             description?: string | null;
             /**
              * @description A `store:<name>` or `env:<VAR>` reference to a secret holding this
@@ -3705,13 +3716,17 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            on_finish_status?: string | null;
             project_type: components["schemas"]["ProjectType"];
+            push_after_run: boolean;
+            repository?: string | null;
             /** Format: date-time */
             updated_at: string;
             vocabulary: components["schemas"]["HashMap"];
             workflow: components["schemas"]["WorkflowConfig"];
             /** Format: uuid */
             workspace_id: string;
+            workspace_mode: components["schemas"]["WorkspaceMode"];
         };
         /**
          * @description A project's own opinion on which model its executions should use — the
@@ -4062,7 +4077,12 @@ export interface components {
         };
         UpdateProject: {
             archived?: boolean | null;
+            code_origin?: null | components["schemas"]["CodeOrigin"];
+            default_branch?: string | null;
+            default_harness?: string | null;
             default_model?: null | components["schemas"]["ProjectModelDefault"];
+            default_profile_id?: string | null;
+            definition_of_done?: string | null;
             description?: string | null;
             /**
              * @description A plain `Option<String>`, not a double-`Option`, like every other
@@ -4074,8 +4094,16 @@ export interface components {
              */
             github_token_ref?: string | null;
             name?: string | null;
+            on_finish_status?: string | null;
+            push_after_run?: boolean | null;
+            /**
+             * @description Omitted leaves the field untouched; JSON `null` clears it. Same for
+             *     every double-`Option` field below.
+             */
+            repository?: string | null;
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
+            workspace_mode?: null | components["schemas"]["WorkspaceMode"];
         };
         /**
          * @description A full replacement of a sprint's editable fields. Every field is written as
@@ -4180,6 +4208,8 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /** @enum {string} */
+        WorkspaceMode: "local_branch" | "in_place" | "clone";
     };
     responses: never;
     parameters: never;
