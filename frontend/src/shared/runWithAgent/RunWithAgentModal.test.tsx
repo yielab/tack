@@ -85,6 +85,7 @@ const PROJECT = {
 };
 
 let lastCreateBody: unknown;
+let lastItemPatch: unknown;
 
 function mockFetch(
   opts: {
@@ -93,6 +94,7 @@ function mockFetch(
     agentProfiles?: unknown[];
     project?: unknown;
     agentContext?: string;
+    runSettings?: Record<string, unknown> | null;
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -110,6 +112,10 @@ function mockFetch(
     }
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
+    if (url.endsWith('/items/item-1')) {
+      if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ item: { id: 'item-1', run_settings: opts.runSettings ?? null }, id: 'item-1', run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
+    }
     if (url.includes('/agent-context')) return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.' }), { status: 200 });
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
@@ -214,9 +220,28 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.restoreAllMocks();
   lastCreateBody = undefined;
+  lastItemPatch = undefined;
 });
 
 describe('RunWithAgentModal', () => {
+  it('advanced_values_are_remembered_on_the_task', async () => {
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    setField(field('Timeout'), '120');
+    submitButton().click();
+    await flush();
+    await flush();
+    // Only the key that differs from the defaults is stored; never the idempotency key.
+    expect(lastItemPatch).toEqual({ run_settings: { timeout_seconds: 120 } });
+    teardown();
+    // Re-opening the task shows what it remembered.
+    mount({}, { runners: [RUNNER], fleets: [], runSettings: { timeout_seconds: 120 } });
+    await flush();
+    await flush();
+    expect(field('Timeout').value).toBe('120');
+  });
+
   it('a_configured_project_opens_ready_to_run', async () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{
