@@ -13,8 +13,10 @@ export type { SkeletonProps } from './Skeleton';
 export { default as EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
-export { default as Field, FieldShell } from './Field';
-export type { FieldProps, FieldShellProps } from './Field';
+export { default as Field, FieldShell, HelpHint } from './Field';
+export type { FieldProps, FieldShellProps, FieldHelp } from './Field';
+
+export { default as HelpButton } from './HelpButton';
 
 export { default as Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';

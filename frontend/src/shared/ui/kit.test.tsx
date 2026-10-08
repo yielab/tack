@@ -71,6 +71,22 @@ describe('Badge / EmptyState / Field', () => {
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(c.textContent).toContain('Required');
   });
+
+  it('a_field_with_help_renders_the_hint', () => {
+    const c = mount(() => (
+      <Field label="Folder" value="" help={{ text: 'Where the code lives.', href: 'https://x.test/b.html#a' }} />
+    ));
+    const q = c.querySelector('button[aria-label="Help: Folder"]') as HTMLButtonElement;
+    expect(q.getAttribute('title')).toBe('Where the code lives.');
+    expect(q.textContent).toBe('(?)');
+    expect(c.querySelector('a')).toBeNull();
+    q.click();
+    const more = c.querySelector('a')!;
+    expect(c.textContent).toContain('Where the code lives.');
+    expect(more.getAttribute('href')).toBe('https://x.test/b.html#a');
+    expect(more.getAttribute('target')).toBe('_blank');
+    expect(more.getAttribute('rel')).toBe('noreferrer');
+  });
 });
 
 describe('Modal', () => {
