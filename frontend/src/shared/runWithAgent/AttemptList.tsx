@@ -297,9 +297,9 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
           measured" rendered as literal text, never $0.00. One tile per
           figure, never summed. */}
       <dl class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <CostTile label="Model/token cost" value={economics().modelTokenCostUsd} />
-        <CostTile label="Runner time" value={economics().runnerTime.wallClock} />
-        <CostTile label="Runner time cost" value={economics().runnerTime.costUsd} />
+        <CostTile label="Cost" value={economics().modelTokenCostUsd} />
+        <CostTile label="Time" value={economics().runnerTime.wallClock} />
+        <CostTile label="Time" value={economics().runnerTime.costUsd} />
       </dl>
 
       <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded()}>
@@ -317,7 +317,7 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
 
           <section>
             <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-              Decisions
+              Questions from the agent
             </h4>
             <DecisionInbox
               requestId={props.requestId}
