@@ -299,3 +299,216 @@ async fn secret_write_never_touches_the_enable_preference_row() {
         "the secret write above must not have touched the persisted enable preference"
     );
 }
+
+async fn post_json(
+    app: &axum::Router,
+    uri: &str,
+    body: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap_or_default())
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+#[tokio::test]
+async fn check_folder_reports_git_facts() {
+    let control: Arc<dyn LocalRunnerControl> = Arc::new(FakeControl::default());
+    let (app, _workspace_id) = test_app_with_local_runner(loopback_config(), Some(control)).await;
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-b", "trunk"]);
+    std::fs::write(repo.join("a.txt"), "a").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-m", "first"]);
+    git(
+        &repo,
+        &["remote", "add", "origin", "https://example.com/r.git"],
+    );
+    std::fs::write(repo.join("b.txt"), "b").unwrap();
+    let plain = tmp.path().join("plain");
+    std::fs::create_dir(&plain).unwrap();
+    let file = tmp.path().join("file.txt");
+    std::fs::write(&file, "x").unwrap();
+    let missing = tmp.path().join("missing");
+
+    let check = |p: &std::path::Path| {
+        post_json(
+            &app,
+            "/api/local-runner/check-folder",
+            serde_json::json!({ "path": p.to_str().unwrap() }),
+        )
+    };
+    let (status, body) = check(&repo).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        serde_json::json!({"exists": true, "is_dir": true, "is_git": true, "branch": "trunk",
+            "remote_url": "https://example.com/r.git", "dirty_files": 1})
+    );
+    let (_, body) = check(&plain).await;
+    assert_eq!(
+        body,
+        serde_json::json!({"exists": true, "is_dir": true, "is_git": false, "branch": null,
+            "remote_url": null, "dirty_files": 0})
+    );
+    let (_, body) = check(&file).await;
+    assert_eq!(body["exists"], true);
+    assert_eq!(body["is_dir"], false);
+    assert_eq!(body["is_git"], false);
+    let (_, body) = check(&missing).await;
+    assert_eq!(body["exists"], false);
+
+    let (status, body) = post_json(
+        &app,
+        "/api/local-runner/check-folder",
+        serde_json::json!({ "path": "relative/dir" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["details"]["field"], "path");
+}
+
+#[tokio::test]
+async fn init_folder_creates_a_repo_once() {
+    let control: Arc<dyn LocalRunnerControl> = Arc::new(FakeControl::default());
+    let (app, _workspace_id) = test_app_with_local_runner(loopback_config(), Some(control)).await;
+    let tmp = tempfile::tempdir().unwrap();
+    let target = tmp.path().join("new").join("project");
+    let body = serde_json::json!({ "path": target.to_str().unwrap() });
+
+    let (status, _) = post_json(&app, "/api/local-runner/init-folder", body.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(target.join(".git").is_dir());
+
+    let (status, _) = post_json(&app, "/api/local-runner/init-folder", body).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn harness_verification_reports_the_latest_succeeded_attempt() {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
+        .bind(workspace_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let pool = repo.pool().clone();
+    let app = tack_api::router::build_router(tack_api::AppState {
+        repo,
+        config: AppConfig {
+            host: "127.0.0.1".to_owned(),
+            database_url: "sqlite::memory:".to_owned(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: Some(Arc::new(FakeControl::default())),
+    });
+    let get = |app: axum::Router| async move {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/local-runner/harness-verification")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        serde_json::from_slice::<serde_json::Value>(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        get(app.clone()).await,
+        serde_json::json!({ "harnesses": {} })
+    );
+
+    let project = crate::common::create_project(&app, "P", "software").await;
+    let item = crate::common::create_item(&app, project, "I").await;
+    let t = "2026-09-01T00:00:00Z";
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'r', 'h', 1, ?, ?)",
+    )
+    .bind(t)
+    .bind(t)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+           request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+           repository_snapshot, permission_policy, metadata, created_at, updated_at)
+         VALUES ('R', ?, 's', 'k', 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}', ?, ?)",
+    )
+    .bind(item.to_string())
+    .bind(t)
+    .bind(t)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // (number, state, harness, ended_at): the later succeeded claude-code one
+    // wins; a failed attempt and another harness's attempt do not leak in.
+    for (n, state, harness, ended) in [
+        (1, "succeeded", "claude-code", "2026-09-02T00:00:00Z"),
+        (2, "succeeded", "claude-code", "2026-09-03T00:00:00Z"),
+        (3, "failed", "codex", "2026-09-04T00:00:00Z"),
+    ] {
+        sqlx::query(
+            "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+               state, lease_issued_at, lease_expires_at, actual_execution, ended_at, created_at, updated_at)
+             VALUES (?, 'R', ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(format!("A{n}"))
+        .bind(n)
+        .bind(n)
+        .bind(state)
+        .bind(t)
+        .bind(t)
+        .bind(serde_json::json!({ "harness_kind": harness }).to_string())
+        .bind(ended)
+        .bind(t)
+        .bind(t)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert_eq!(
+        get(app).await,
+        serde_json::json!({ "harnesses": { "claude-code": "2026-09-03T00:00:00Z" } })
+    );
+}

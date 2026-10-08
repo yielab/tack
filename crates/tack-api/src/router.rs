@@ -87,6 +87,18 @@ fn local_runner_routes() -> Router<AppState> {
             get(local_runner::list_local_runner_secrets),
         )
         .route(
+            "/local-runner/check-folder",
+            post(local_runner::check_local_runner_folder),
+        )
+        .route(
+            "/local-runner/init-folder",
+            post(local_runner::init_local_runner_folder),
+        )
+        .route(
+            "/local-runner/harness-verification",
+            get(local_runner::get_harness_verification),
+        )
+        .route(
             "/local-runner/secrets/{name}",
             put(local_runner::put_local_runner_secret)
                 .delete(local_runner::delete_local_runner_secret),
