@@ -3731,6 +3731,8 @@ export interface components {
              *     untrusted" rule migration 029 applies to pre-existing database rows.
              */
             source?: components["schemas"]["ItemSource"];
+            /** @description The plan artifact this item was created from (`source` is `plan`), else `None`. */
+            source_artifact_id?: string | null;
             /** Format: uuid */
             sprint_id?: string | null;
             /** Format: date-time */
@@ -3782,7 +3784,7 @@ export interface components {
          *     should independently decide whether a `source` counts as trusted.
          * @enum {string}
          */
-        ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown";
+        ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown" | "plan";
         ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
             custom: string;
         };

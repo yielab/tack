@@ -82,6 +82,7 @@ pub async fn make_item(
             tags: None,
             due_date: None,
             sprint_id: None,
+            source_artifact_id: None,
             assignee: None,
         },
     )
