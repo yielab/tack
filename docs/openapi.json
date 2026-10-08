@@ -1816,6 +1816,49 @@
         }
       }
     },
+    "/api/items/{id}/agent-context": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "summary": "`GET /api/items/{id}/agent-context` — what the agent will read for a given item:\nthe project's default profile's instructions, the item's title and description,\nthe item's brief when it has one, and the project's definition_of_done when set.",
+        "operationId": "get_item_agent_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The composed instructions for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContextResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{id}/github-link": {
       "get": {
         "tags": [
@@ -6460,6 +6503,18 @@
         ],
         "properties": {
           "runner_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentContextResponse": {
+        "type": "object",
+        "description": "Response body for `GET /api/items/{id}/agent-context`.",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
             "type": "string"
           }
         }

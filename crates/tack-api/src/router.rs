@@ -283,6 +283,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
         .route(
+            "/items/{id}/agent-context",
+            get(executions::get_item_agent_context),
+        )
+        .route(
             "/items/{id}/github-link",
             get(items::get_item_github_link)
                 .put(items::put_item_github_link)
