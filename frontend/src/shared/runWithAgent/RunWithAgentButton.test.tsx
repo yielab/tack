@@ -102,6 +102,17 @@ describe('RunWithAgentButton', () => {
     expect(c.textContent).toContain('Run with agent');
   });
 
+  it('labeled mode offers "Run again" once the item has a run', async () => {
+    const c = mount(
+      { compact: false },
+      { executions: [{ request_id: 'req-1', item_id: 'item-1', state: 'succeeded', cancellation_requested_at: null, created_at: '2026-01-01T00:00:00Z' }] },
+    );
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Run again');
+    expect(c.textContent).not.toContain('Run with agent');
+  });
+
   it('clicking the trigger opens the shared modal, titled with the item', async () => {
     const c = mount({ compact: true });
     (c.querySelector('button') as HTMLButtonElement).click();

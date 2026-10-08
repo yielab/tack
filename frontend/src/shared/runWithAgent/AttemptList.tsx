@@ -7,9 +7,15 @@ import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
+  describeAttemptStatus,
   describeModelProvenance,
-  formatUsageEconomics,
+  formatApproxCost,
+  formatTokenCount,
+  formatWallClock,
+  harnessName,
+  isReviewableAttempt,
   isTerminalAttemptState,
+  readAttemptUsage,
 } from './attemptFormat';
 import ArtifactDownloadPanel, { ArtifactView } from './ArtifactDownloadPanel';
 import { inDesktop, openPath } from './desktop';
@@ -26,6 +32,8 @@ export interface AttemptListProps {
   attempts: AttemptSummary[];
   /** The item the request belongs to; the plan panel creates subtasks under it. */
   itemId?: string;
+  /** Called once a review verdict is saved, so the host can refresh the run's status. */
+  onReviewed?: () => void;
 }
 
 /** What the agent did (its steps, from a claude-code log) and what it said at the end. */
@@ -204,32 +212,24 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
   );
 };
 
-const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId?: string; numbered: boolean }> = (props) => {
+const AttemptRow: Component<{
+  requestId: string;
+  attempt: AttemptSummary;
+  itemId?: string;
+  numbered: boolean;
+  onReviewed?: () => void;
+}> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const stateInfo = () => describeExecutionState(props.attempt.state);
   const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
-  const provenance = () =>
-    describeModelProvenance(
-      props.attempt.model_provenance,
-      (props.attempt.actual_execution as { model_observation_source?: string | null } | null)?.model_observation_source,
-    );
+  const harnessKind = () => (props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind ?? null;
   // The verdict as last read from the server: the prop's until a review is
   // submitted here, then the refetched attempt's.
   const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
   const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
-  // The backend's `needs_review` condition: a terminal attempt that left a
-  // patch or a kept workspace.
-  const patchBytes = () => {
-    const arts = (props.attempt.terminal_reason as { artifacts?: unknown } | null)?.artifacts;
-    const patch = (Array.isArray(arts) ? arts : []).find((a) => a && (a as { kind?: unknown }).kind === 'patch') as
-      | { size_bytes?: unknown }
-      | undefined;
-    return typeof patch?.size_bytes === 'number' ? patch.size_bytes : 0;
-  };
-  const reviewable = () =>
-    isTerminalAttemptState(props.attempt.state) &&
-    (patchBytes() > 0 || !!(props.attempt.terminal_reason as { workspace_kept_at?: unknown } | null)?.workspace_kept_at);
-  const awaitingReview = () => reviewable() && !review();
+  const status = () => describeAttemptStatus(props.attempt, review());
+  const awaitingReview = () => isReviewableAttempt(props.attempt) && !review();
+  const terminal = () => isTerminalAttemptState(props.attempt.state);
   const [note, setNote] = createSignal('');
   const [reviewing, setReviewing] = createSignal(false);
   const [reviewError, setReviewError] = createSignal<string | null>(null);
@@ -242,6 +242,7 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
       const list = await attemptsApi.list(props.requestId);
       const mine = list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number);
       setFresh(mine?.review ?? null);
+      props.onReviewed?.();
       window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
     } catch (e) {
       setReviewError(e instanceof Error ? e.message : 'The verdict could not be saved');
@@ -249,29 +250,16 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
       setReviewing(false);
     }
   };
-  const economics = () =>
-    formatUsageEconomics(props.attempt.usage_economics, isTerminalAttemptState(props.attempt.state));
 
   return (
     <li data-testid="attempt" class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
       <div class="flex flex-wrap items-center gap-2">
+        {/* A run with one attempt shows its status in the run's own heading. */}
         <Show when={props.numbered}>
           <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Attempt {props.attempt.attempt_number}
           </span>
-        </Show>
-        <Show
-          when={reviewable()}
-          fallback={<Badge tone={outcome().badge?.tone ?? stateInfo().tone}>{outcome().badge?.label ?? stateInfo().label}</Badge>}
-        >
-          <Show
-            when={review()}
-            fallback={<Badge tone="warning">
-                {patchBytes() > 0 ? 'Finished — needs your review' : 'Finished — changes could not be read, needs your review'}
-              </Badge>}
-          >
-            {(r) => <Badge tone={r().verdict === 'accepted' ? 'success' : 'neutral'}>{r().verdict === 'accepted' ? 'Accepted' : 'Rejected'}</Badge>}
-          </Show>
+          <Badge tone={status().tone}>{status().label}</Badge>
         </Show>
         <Show when={!stateInfo().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -297,10 +285,11 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
           }}
         </Show>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          leased {relativeTimeFromIso(props.attempt.lease_issued_at)}
+          <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
+          started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[11px]" title={props.attempt.runner_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          runner {props.attempt.runner_id}
+        <span class="ml-auto max-w-[14rem] truncate text-[11px]" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          {props.attempt.runner_id}
         </span>
       </div>
 
@@ -352,21 +341,18 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
 
       <AttemptTools requestId={props.requestId} attempt={props.attempt} itemId={props.itemId} />
 
-      {/* Model provenance — a distinct, honest tone per case, never a bare
-          "matched" boolean. */}
-      <div class="flex items-start gap-2 text-xs">
-        <Badge tone={provenance().tone}>{provenance().label}</Badge>
-        <span class="pt-0.5" style={{ color: 'var(--color-text-secondary)' }}>{provenance().detail}</span>
-      </div>
-
-      {/* Usage/economics — every dollar figure honestly labeled, "Not
-          measured" rendered as literal text, never $0.00. One tile per
-          figure, never summed. */}
-      <dl class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <CostTile label="Cost" value={economics().modelTokenCostUsd} />
-        <CostTile label="Time" value={economics().runnerTime.wallClock} />
-        <CostTile label="Time" value={economics().runnerTime.costUsd} />
-      </dl>
+      <Show
+        when={terminal()}
+        fallback={
+          <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            {props.attempt.state === 'waiting_decision'
+              ? 'The agent is waiting for your answer — see Questions from the agent below.'
+              : 'The agent is working. What it did, the tokens it used and its cost appear here when it finishes.'}
+          </p>
+        }
+      >
+        <UsagePanel attempt={props.attempt} />
+      </Show>
 
       <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded()}>
         {expanded() ? 'Hide details' : 'Show timeline, questions & files'}
@@ -406,28 +392,99 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId
   );
 };
 
-/** One cost/usage figure as a tile. An unmeasured figure keeps its literal
- *  "Not measured" text and is set apart (italic, dashed underline) so it can
- *  never be read as a real amount. */
-const CostTile: Component<{ label: string; value: string }> = (props) => {
-  const unmeasured = () => props.value === NOT_MEASURED_TEXT;
+/** An unmeasured figure keeps its literal "Not measured" text and is set
+ *  apart (italic, dashed underline) so it can never be read as a real amount. */
+const Unmeasured: Component = () => (
+  <span class="inline-block border-b border-dashed italic" style={{ color: 'var(--color-text-secondary)', 'border-color': 'var(--color-border-medium)' }}>
+    {NOT_MEASURED_TEXT}
+  </span>
+);
+
+/** What a finished attempt used, tokens first: they are what the harness
+ *  measured; the dollar figure is its estimate, shown as approximate. The
+ *  model provenance sits beside the model, and only when it says something
+ *  the model name doesn't. */
+const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
+  const usage = () => readAttemptUsage(props.attempt);
+  const harness = () => harnessName((props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind);
+  const provenance = () =>
+    describeModelProvenance(
+      props.attempt.model_provenance,
+      (props.attempt.actual_execution as { model_observation_source?: string | null } | null)?.model_observation_source,
+    );
+  // The runner's placeholder when the harness never named its model.
+  const modelUnknown = () => (props.attempt.actual_execution as { model_id?: string } | null)?.model_id === 'unknown';
+  const exact = (n: number | null) => (n === null ? '' : n.toLocaleString('en-US'));
+  const cacheLine = () => {
+    const u = usage();
+    if (u.cacheRead === null && u.cacheWrite === null) return null;
+    const parts: string[] = [];
+    if (u.cacheRead !== null) parts.push(`${formatTokenCount(u.cacheRead)} read from cache`);
+    if (u.cacheWrite !== null) parts.push(`${formatTokenCount(u.cacheWrite)} written to cache`);
+    if (u.tokensIn !== null) {
+      const fresh = u.tokensIn - (u.cacheRead ?? 0) - (u.cacheWrite ?? 0);
+      if (fresh >= 0) parts.push(`${formatTokenCount(fresh)} new`);
+    }
+    return `Of the input: ${parts.join(', ')}.`;
+  };
+  const facts = () => {
+    const u = usage();
+    const out: string[] = [];
+    if (u.modelCalls !== null) out.push(`${u.modelCalls} model ${u.modelCalls === 1 ? 'call' : 'calls'}`);
+    if (u.wallClockMs !== null) out.push(formatWallClock(u.wallClockMs, true));
+    return out;
+  };
+  const cost = () => formatApproxCost(usage().cost);
   return (
-    <div class="rounded-[20px] px-3.5 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-      <dt class="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-        {props.label}
-      </dt>
-      <dd class="mt-0.5 text-sm">
-        <span
-          class={unmeasured() ? 'inline-block border-b border-dashed italic' : 'font-semibold'}
-          style={{
-            color: unmeasured() ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-            'border-color': 'var(--color-border-medium)',
-          }}
+    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <Show
+          when={usage().tokensIn !== null || usage().tokensOut !== null}
+          fallback={<span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Tokens: <Unmeasured /></span>}
         >
-          {props.value}
-        </span>
-      </dd>
-    </div>
+          <span data-testid="usage-tokens" class="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <span title={`${exact(usage().tokensIn)} tokens in`}>{usage().tokensIn === null ? '?' : formatTokenCount(usage().tokensIn!)} tokens in</span>
+            {' · '}
+            <span title={`${exact(usage().tokensOut)} tokens out`}>{usage().tokensOut === null ? '?' : formatTokenCount(usage().tokensOut!)} out</span>
+          </span>
+        </Show>
+        <Show
+          when={cost() !== NOT_MEASURED_TEXT}
+          fallback={<span data-testid="usage-cost" class="text-sm" title={`${harness()} did not report a cost`} style={{ color: 'var(--color-text-secondary)' }}>Cost: <Unmeasured /></span>}
+        >
+          <span data-testid="usage-cost" class="text-sm font-semibold" title={`${harness()}'s own estimate at list price — your bill may differ`} style={{ color: 'var(--color-text-primary)' }}>
+            {cost()} (approx.)
+          </span>
+        </Show>
+      </div>
+      <Show when={cacheLine()}>
+        {(line) => <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
+      </Show>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <Show
+          when={provenance().tone !== 'warning' && usage().models.length > 0}
+          fallback={
+            <Show when={props.attempt.model_provenance && !modelUnknown()} fallback={<span>Model not reported</span>}>
+              <Show when={provenance().tone === 'warning'}>
+                <Badge tone="warning">{provenance().label}</Badge>
+              </Show>
+              <span>{provenance().detail}</span>
+            </Show>
+          }
+        >
+          <span data-testid="usage-models" style={{ 'font-family': 'var(--font-mono)' }}>{usage().models.join(', ')}</span>
+          <Show when={provenance().tone === 'info'}>
+            <span title={provenance().detail}><Badge tone="info">{provenance().label}</Badge></span>
+          </Show>
+        </Show>
+        <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
+      </div>
+      <Show when={cost() !== NOT_MEASURED_TEXT}>
+        <p class="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+          The cost is {harness()}'s own estimate at list price, not your bill.
+        </p>
+      </Show>
+    </section>
   );
 };
 
@@ -441,7 +498,15 @@ const CostTile: Component<{ label: string; value: string }> = (props) => {
 const AttemptList: Component<AttemptListProps> = (props) => (
   <ul class="space-y-2">
     <For each={props.attempts}>
-      {(attempt) => <AttemptRow requestId={props.requestId} attempt={attempt} itemId={props.itemId} numbered={props.attempts.length > 1} />}
+      {(attempt) => (
+        <AttemptRow
+          requestId={props.requestId}
+          attempt={attempt}
+          itemId={props.itemId}
+          numbered={props.attempts.length > 1}
+          onReviewed={props.onReviewed}
+        />
+      )}
     </For>
   </ul>
 );

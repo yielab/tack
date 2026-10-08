@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
+  describeAttemptStatus,
+  formatApproxCost,
+  formatTokenCount,
   describeModelProvenance,
   formatRunnerTimeCost,
   formatUsageEconomics,
@@ -174,5 +177,35 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     const kept = describeAttemptOutcome('succeeded', { workspace_kept_at: '/var/ws/1' }).badge;
     expect(kept?.label).toBe('Finished — changes could not be read');
     expect(kept?.detail).toContain('/var/ws/1');
+  });
+});
+
+describe('formatTokenCount / formatApproxCost', () => {
+  it('shortens token counts without losing what matters', () => {
+    expect([12, 999, 3_284, 12_500, 286_414, 1_077_873, 12_400_000].map(formatTokenCount)).toEqual([
+      '12', '999', '3.3K', '13K', '286K', '1.08M', '12.4M',
+    ]);
+    expect(formatTokenCount(2_000)).toBe('2K');
+  });
+
+  it('a harness dollar figure is always approximate, and unmeasured stays "Not measured"', () => {
+    expect(formatApproxCost({ value: 1.3368, source: 'measured' })).toBe('≈ $1.34');
+    expect(formatApproxCost({ value: 0.0042, source: 'estimated' })).toBe('≈ $0.0042');
+    expect(formatApproxCost({ value: null, source: 'not_measured' })).toBe(NOT_MEASURED_TEXT);
+  });
+});
+
+describe('describeAttemptStatus — one status per attempt', () => {
+  const patch = { artifacts: [{ kind: 'patch', size_bytes: 40 }] };
+  it('the review verdict wins, then the outcome, then the lifecycle state', () => {
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }).label).toBe('Finished — needs your review');
+    expect(
+      describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, { verdict: 'accepted', note: null, reviewed_at: 'x' }),
+    ).toEqual({ label: 'Accepted', tone: 'success' });
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: { artifacts: [{ kind: 'patch', size_bytes: 0 }] } }).label).toBe(
+      'Finished — no changes recorded',
+    );
+    expect(describeAttemptStatus({ state: 'running', terminal_reason: null })).toEqual({ label: 'Running', tone: 'primary' });
+    expect(describeAttemptStatus({ state: 'leased', terminal_reason: null }).label).toBe('Starting');
   });
 });

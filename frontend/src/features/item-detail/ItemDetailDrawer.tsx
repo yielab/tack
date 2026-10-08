@@ -9,6 +9,7 @@ import type { Item, UpdateItem } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
+import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
 import ItemHeader from './ItemHeader';
 import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
@@ -124,11 +125,14 @@ const ItemDetailDrawer: Component = () => {
                 (`ExecutionRequest`/`ExecutionAttempt` via `tack-runner`). A
                 successful run switches straight to the "Execution" tab so
                 the request that just appeared is immediately visible,
-                without a page navigation. */}
+                without a page navigation. Once the item has a run, its
+                latest one is summed up here, so coming back to the task
+                shows what the agent did. */}
             <div
-              class="flex flex-wrap items-center gap-3 rounded-[28px] px-5 py-4"
+              class="flex flex-wrap items-start gap-3 rounded-[28px] px-5 py-4"
               style={{ 'background-color': 'var(--color-bg-panel)' }}
             >
+              <LatestRunSummary itemId={it().id} onOpen={() => setActiveTab('execution')} />
               <RunWithAgentButton
                 itemId={it().id}
                 itemTitle={it().title}

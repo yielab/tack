@@ -286,7 +286,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   await expect(modal).toBeHidden();
 
   await drawer.getByRole('tab', { name: 'Execution' }).click();
-  await expect(drawer.getByText('Queued')).toBeVisible();
+  await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
 
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
