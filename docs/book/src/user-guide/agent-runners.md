@@ -8,9 +8,11 @@ surface: which harness to pick, running the `tack-runner` binary, enrolling and 
 runners, where credentials and workspaces live, what a runner can honestly promise (the
 capability matrix), and how version compatibility and network exposure work.
 
-The question every new user asks first — *which harness, which model, from which
-provider, and where do I put the key* — has a direct answer below, not a negation: see
-[Choosing a harness](#choosing-a-harness) and
+If you only want to press **Run with agent** on a project that has a folder, you do not
+need most of this page: see [Running an item with an agent](#running-an-item-with-an-agent)
+and [Where the agent works](#where-the-agent-works). The question every new user asks next —
+*which agent, which model, and where do I put the key* — has a direct answer below, not a
+negation: see [Choosing a harness](#choosing-a-harness) and
 [Choosing a model and a provider](#choosing-a-model-and-a-provider). The four ways to
 turn a board item into a completed attempt are in
 [Running an item with an agent](#running-an-item-with-an-agent), before the operational
@@ -285,44 +287,89 @@ field — is the single authority in `docs/CONFIG.md`, not restated here.
 
 There are four ways to turn a board item into an execution request. All four produce
 the identical `POST /api/executions` record underneath — none is more "real" than
-another. For a UI-only user the fastest path to a working setup is the **Agents**
-page (`/agents`) first — turn execution on, confirm a harness is detected, paste a
-provider key if you're using one, and choose a project default model — then the
-**"Run with agent"** modal on any item, which reads that configuration back and needs
-no hand-typed identifiers once it's done. The worked example below still uses the CLI,
-because every field it sends is visible on the command line; see
+another. For a UI-only user the path is short and has three parts. Turn agents on for this
+computer on the **Agents** page (`/agents`), see [Agents on this computer](#agents-on-this-computer).
+Tell the project where its code is, either when you create it ("Does this project have
+code?") or later under **Settings → Automation**, see [Automation](#automation). Then press
+**Run with agent** on a task. The dialog reads the project's settings back and needs no
+hand-typed identifiers. The worked example further down uses the CLI, because every field
+it sends is visible on the command line; see
 [Quick Start](quick-start.md#run-an-item-with-an-agent) for the UI-first walkthrough.
 
 | Entry point | Where | Notes |
 |---|---|---|
-| The **"Run with agent"** modal | Item detail drawer, web UI | Lays the run out top to bottom (see below), auto-selects the runner when exactly one is active, offers the target's own declared models plus "Project default", and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
+| The **"Run with agent"** dialog | Item detail drawer, web UI | One summary line and two switches (see below). It takes the computer, the profile, the agent's model and the place the agent works from the project's settings, and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
 | `tack execution create` | CLI | Scriptable; every field the API accepts is a flag. Used for the worked example below. |
 | `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md#worked-examples) for a worked request/response pair. |
 | MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md). |
 
 ### The Run with agent dialog
 
-The dialog reads as the whole flow, top to bottom, in four groups:
+The dialog is a pre-flight, not a form. Everything that belongs to the computer or the
+project is already decided and shown read-only, with a **Change** link to the page that owns
+it, so nothing is asked twice:
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog in four groups. Who runs it: a runner connected, the Implementer profile, Claude Code, the project default model, each with a Ready badge. What it gets: the item and its brief. How far it may go: Automatic approvals, Claude Code's tools as a checklist, network access and a timeout. What happens after: Verify the result and Push the branch ticked, Open a pull request disabled with its reason. Run stays disabled until a repository remote is entered.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Allow network access; and a collapsed Advanced section.">
 
-- **Who runs it** — the machine or group, the agent profile, the harness and the model.
-- **What it gets** — the item, and its [brief](items.md#brief-tab) when it has one (an item without
-  one says so and the agent gets its title and description), plus the repository to check out.
-- **How far it may go** — approvals (Automatic or Ask me), the allowed tools, and the timeout.
-  Claude Code's tools are offered as a checklist beside the free-text field; for codex, opencode
-  and docket the field is free text, because none of them exposes a list of its tools.
-- **What happens after** — **Verify the result**, **Push the branch** and **Open a pull request**.
+- **The summary line** — which agent runs it, as which profile, on which model, and where it
+  works ("on a new branch of your repo", "in the folder, directly"). Each part links to where
+  you change it.
+- **What the agent will read** — the real text it will be given: the profile's instructions,
+  the task's title and description, its acceptance criteria, the project's **Definition of
+  done**, and anything in the task's collapsed **For the agent** block.
+- **Ask before each action** — off by default. When on, the agent pauses before each action and
+  waits for your answer (see [Asking before acting](#asking-before-acting)). For an agent that
+  cannot pause, the switch is disabled and says why.
+- **Allow network access** — off by default.
+- **Advanced** — the computer, the agent, the model, the allowed tools, the timeout and the
+  after-run steps (verify, push). A step that is not available is never hidden: it is shown
+  disabled with the reason beside it, and **Verify the result** and **Push the branch** say
+  which section of the runner's TOML config turns them on (see
+  [After a succeeded attempt](#after-a-succeeded-attempt)). Opening a pull request is not chosen
+  per run: it is opened for you once a pushed branch's item is linked to a GitHub issue.
 
-A step that something is missing for shows a link to the page that fixes it (the Agents page for
-a runner, a harness or a model) and **Run** stays disabled until it is fixed. A step that is not
-available is never hidden: it is shown disabled with the reason beside it. "Ask me" is disabled
-for a harness that cannot pause to ask. **Verify the result** and **Push the branch** become
-checkboxes when the selected runner has a verifier or branch push turned on (see
-[After a succeeded attempt](#after-a-succeeded-attempt)); otherwise they are disabled and say
-which section of its TOML config turns them on. Unticking one declines it for this run only. **Open a
-pull request** is always disabled in the dialog: a pull request is opened for you once a pushed
-branch's item is linked to a GitHub issue, not chosen per run.
+Settings you change here for one task are saved on the task, and settings you change on the
+project stay on the project, so running the same task again does not make you retype them.
+A field that cannot work says so in a sentence with a link where you typed it (the folder
+does not exist, the branch is not in the repository, the model is not on the agent's list),
+rather than leaving **Run** disabled with no explanation.
+
+### Writing a task the agent can use
+
+The task form has the fields a person would put in any tracker. The **Description** is the
+story. **Acceptance criteria** is one sentence per line, and each line becomes a checklist
+item the review can tick off. What only the agent needs — automatic checks, limits, risk —
+sits in a collapsed **For the agent** block, which you can ignore. The project carries a
+**Definition of done** once (under **Settings → Automation**), and every run reads it.
+All of this is stored as the item's [brief](items.md#brief-tab); the dialog's **What the
+agent will read** shows exactly what it will be given.
+
+### What happens when a run finishes
+
+A run that left changes marks the task **Needs your review**. This is a flag on the task,
+separate from your board columns, and it clears when you press **Accept** or **Reject** on the
+attempt. If the project chose a column for finished runs (under **Settings → Automation**), the
+task also moves there.
+
+The attempt card leads with the outcome and the tools to check it:
+
+- **Open diff** — what changed.
+- **Open folder** (or Copy path) — where the work is on this computer.
+- **Copy branch** — the branch name, when the agent worked on a branch.
+- **Result** — what the agent said it did, and why it stopped.
+- **Log** — the full log.
+
+**Succeeded** is green only when the changes were captured. It is amber when the agent changed
+nothing, or when the changes could not be read. A failed run leads with why it failed.
+
+#### A Planner run
+
+A task run with the **Planner** profile changes no files. Its attempt shows **The Planner
+proposes N subtasks**, each with a checkbox and its title, description and acceptance criteria
+editable. Nothing is created until you press **Create selected**: no agent writes to your
+board.
+
+### The same run from the CLI
 
 The rest of this section is one complete run through the CLI path, executed against a
 real `tack serve --with-runner` with a stand-in `claude` binary standing in for a real,
@@ -439,9 +486,102 @@ of cost). And `terminal_reason.reason` came from an *inferred* exit code, not a
 structured result — a real harness's own structured output, when it produces one, is
 read instead; see [What actually runs today](#what-actually-runs-today).
 
+## Agents on this computer
+
+The **Agents** page (`/agents`) is about this computer only. It does not hold anything that
+belongs to a project.
+
+<img src="../screenshots/agents.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and when each last ran here, a paragraph about logins and the optional gateway key, and a Run test button.">
+
+- **Agents are on or off.** One switch for this computer. Turning it on starts the embedded
+  runner without a restart (see [Standalone mode](#standalone-mode-tack-serve---with-runner)).
+- **Which agents are installed**, and when each last ran here. Tack looks where a terminal
+  would (see [Where Tack looks for a harness binary](#where-tack-looks-for-a-harness-binary)).
+- **Logins and the optional gateway key.** An agent that you are already signed in to in your
+  terminal needs nothing from Tack. If you would rather not rely on that login, you can paste a
+  Vercel AI Gateway key; it lives in this computer's own secret store and never in the board's
+  database (see [Local credential handling](#local-credential-handling)).
+- **Run test.** One button that checks that an installed agent starts and answers on this computer.
+
+The default profile, the model, where the agent works and what happens after a run are
+project settings, in [Automation](#automation).
+
+---
+
+## Automation
+
+**Settings → Automation** is the project's tab for everything about running agents on it.
+A value lives at the highest layer that can own it: the computer (the Agents page), the
+project (this tab) or the task (the dialog). The dialog shows project values read-only, with
+**Change**.
+
+<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile, the column a finished run moves the task to, and the Definition of done.">
+
+- **Where the code is** — the answer to **Does this project have code?** from when you
+  created the project: an existing folder on this computer, a new folder Tack creates, or no
+  code yet. Under **Advanced** there is also a URL option, for a repository the agent should
+  clone.
+- **How the agent works on it** — see [Where the agent works](#where-the-agent-works). The
+  default is chosen from the folder.
+- **Push** — a switch, off by default. See [Where the agent works](#where-the-agent-works).
+- **Default profile** — which of the [profiles](#profiles) a new run uses. Implementer unless you
+  change it.
+- **When a run finishes** — optionally the column the task moves to, in addition to
+  **Needs your review**.
+- **Definition of done** — one text the agent reads on every run of this project.
+
+---
+
+## Where the agent works
+
+Where the agent works is a project setting with three modes. Tack picks the first two for
+you from your folder. You never type a repository address for code on this computer.
+
+| Mode | What it does | When it is the default |
+|---|---|---|
+| **On a new branch of your repo** | Makes a worktree of your repository on a branch named `tack/<task>-a<n>`. The branch stays in your repository after the run. Your own checkout, your files and your index are untouched. | A folder that is a git repository. |
+| **In the folder, directly** | The agent edits your folder itself, as if you had run it in a terminal. Nothing is ever deleted or moved, and your git index is untouched. | A folder without git. |
+| **In a fresh clone per run** | Clones the repository into a new workspace for each run. | Never the default. It is under **Advanced**, for a URL or for a runner on another computer. |
+
+For a git folder, the first mode is the default because it costs nothing (no network, shared
+objects), keeps the result in your repository, and does not build on top of whatever is
+half-done in your checkout. **In the folder, directly** is one click away. In a folder without
+git it is the only mode.
+
+**Push is off by default.** It is a switch per project. Turning it on pushes the run's branch
+to the repository's remote, using your own git credentials, and it needs push configured on the
+runner (see [After a succeeded attempt](#after-a-succeeded-attempt)). If the project has push on
+and the runner does not, the run records "push skipped" instead of failing. The work is not lost
+either way: in the first mode it is on the local branch.
+
+### Profiles
+
+A profile is what the agent is told to be and which tools it may use. Four are built in:
+
+| Profile | What it does |
+|---|---|
+| **Implementer** (default) | Reads, edits and runs commands. |
+| **Reviewer** | Reads and reports. Changes nothing. |
+| **Researcher** | Reads and searches, and writes a report. |
+| **Planner** | Plans and designs, and proposes subtasks you can accept. |
+
+You pick one with the pills on the task; each pill has a tooltip saying what it may do. You edit
+a profile in a form, never as JSON, and a profile you change is snapshotted into each request
+when it is created, so editing it later never changes the history of an earlier run.
+
+---
+
 ## Choosing a model and a provider
 
-Two rules sit next to each other, on purpose, because conflating them is what causes
+**You usually choose nothing.** The default is **the agent's default (recommended)**: the
+model the agent itself uses when you run it in a terminal. Tack passes no model and no provider
+and the agent decides. If you want a specific model, pick one from the short list the dialog
+offers for that agent. For `claude-code` the list is the model ids that were measured to work.
+`codex` and `opencode` offer **Other…** only, where you type the model id. You never type a
+provider: it is the agent's own, or the gateway when you have set a gateway key.
+
+The rest of this section is the precedence behind that, for anyone driving Tack from the CLI
+or the API. Two rules sit next to each other, on purpose, because conflating them is what causes
 confusion: **the board never holds a provider
 credential** — no `TACK_*` variable configures a vendor API key, and the API server
 itself never proxies a model call (ADR 0050, ADR 0058) — and **the runner can hold
@@ -467,7 +607,8 @@ specific first, stopping at the first tier that has a value:
 1. **Request override** — `requested_model_provider`/`requested_model_id` on the
    request itself (`--model-provider`/`--model-id` on the CLI, the `POST
    /api/executions` body fields of the same name). Set by an explicit CLI flag, a raw
-   API caller, or the modal's model picker when it isn't left on "Auto".
+   API caller, or the dialog's model picker when you pick a specific model instead of the
+   agent's default.
 2. **Agent-profile default** — a `{"default_model": {"provider": "...", "model_id":
    "..."}}` object inside the agent profile's own `limits` field (`POST
    /api/agent-profiles --limits '...'` or `tack agent-profile create --limits '...'`).
@@ -483,10 +624,8 @@ specific first, stopping at the first tier that has a value:
    resolved server-side from the profile, never supplied on the request.
 3. **Project default** — `projects.default_model` (migration 062), the same
    `{"default_model": {"provider": ..., "model_id": ...}}` (or literal `"auto"`)
-   convention as the other tiers, set from the **Agents** page's "Default model" step
-   or `PATCH /api/projects/{id}`. `resolve_request_model_policy` reads it as this
-   tier — the only one with a settings UI at all, which is why the "Run with agent"
-   modal's own submit gate points its "set a default model" fix link here
+   convention as the other tiers, set with `PATCH /api/projects/{id}`.
+   `resolve_request_model_policy` reads it as this tier
    (`crates/tack-orch/src/model_policy/wiring.rs`).
 4. **Fleet default** — the same `{"default_model": {...}}` convention, inside
    `agent_fleets.default_policy` (`tack fleet create --policy '...'`). Applies only to a
@@ -496,7 +635,7 @@ specific first, stopping at the first tier that has a value:
    `--policy '{"default_model":{"provider":"anthropic","model_id":"claude-opus-4-1"}}'`,
    a request targeting `--fleet <that fleet>` with an agent profile that has no default
    of its own, resolved to `actual_execution.model_provider: "anthropic"`.
-5. **Auto-select** — what happens when every tier above is empty. This is not a
+5. **The agent's default** — what happens when every tier above is empty. This is not a
    fallback that quietly picks something: see the next section.
 
 All four tiers are resolved once, server-side, at request-creation time
@@ -505,20 +644,16 @@ stored) — only when the caller supplied neither `requested_model_provider` nor
 `requested_model_id`; an explicit pair (even a deliberately wrong one) is never
 second-guessed by a lower tier.
 
-### Auto-select does not schedule today
+### When no model is named: the agent's default
 
-Leaving every tier empty is a real, acceptable-looking state to reach — the modal's
-model picker defaults to "Auto (let the runner decide)", and a request created that way
-is accepted and stored as `queued` with no error. But no runner-v1 capability field
-attests that a harness safely accepts an unspecified model, so the scheduler rejects
-every candidate for an auto-select request with `AutoSelectNotVerified`
-(`crates/tack-orch/src/scheduler/select.rs`) rather than guess. **Live-verified:** a
-request created with `requested_model_provider`/`requested_model_id` both `null` and no
-tier above resolving to a value stayed `queued`, with zero attempts, indefinitely — no
-`needs_operator`, no error surfaced anywhere an operator would see it. The only fix
-today is to supply an explicit model somewhere in the four tiers above; there is
-currently no operator-visible signal that distinguishes a genuinely queued request from
-one that can never be scheduled.
+A request created with no model in any tier above is valid for an agent that reports it needs
+no model. The scheduler asks the agent's own adapter, and when the adapter says its model is
+optional, the request goes to the runner without a model and the agent uses its own default.
+Today that is true for `claude-code`.
+
+`codex`, `opencode` and `docket` still need a model named. A request for one of them with no
+model in any tier stays `queued` rather than being guessed at, so give those agents a model in
+one of the tiers above (for `codex` and `opencode`, **Other…** in the dialog).
 
 ### What a runner will actually accept
 

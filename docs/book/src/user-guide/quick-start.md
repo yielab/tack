@@ -100,7 +100,10 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 
 ## First use
 
-1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later.
+1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later. Then answer **Does this project have code?**:
+   - **An existing folder on this computer** — pick the folder once. This is the choice if you want an agent to work on code you already have.
+   - **A new folder Tack creates** — Tack makes the folder and starts a git repository in it.
+   - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automation](agent-runners.md#automation)).
 
 2. **Add an item.** On the Board, click the **+** inside any column, or the **+ New** toolbar button. Give it a title and press Enter. An *item* is the basic unit of work — a task, bug, building, assignment, or whatever your vocabulary calls it.
 
@@ -125,34 +128,35 @@ to get one. The two paths below are alternatives, not sequential steps: pick the
 path if a server is already running (no restart needed), or the CLI path if you're
 starting fresh from a terminal.
 
-**The UI-first path.** Open the **Agents** page from the sidebar (`/agents`). Four
-steps, top to bottom, each one a switch or a form field — no terminal, no id to copy:
+**The UI-first path.** Three things, in order. None of them asks you for a provider, a
+model name or a repository address.
 
-1. **"Agent execution on this machine"** — click **Turn on**. This is the one switch
-   ADR 0061 decision 6 exists for: it starts an embedded runner in this same process,
-   on this loopback bind, with no restart and no second binary. (A remote runner on a
-   different machine still needs `tack-runner` started there — see
-   [Enrolling a runner](agent-runners.md#enrolling-a-runner) — but nothing on *this*
-   page requires that.)
-2. **"Agents on this machine"** — once execution is on, this section reports what it
-   found: `codex` and/or `claude-code`, present or not, and whether either one's own
-   vendor login (Claude Max, `codex login`, ...) already works. Nothing to configure
-   here if a harness is already installed and logged in.
-3. **"Vercel AI Gateway key"** — paste a gateway key here if you don't want to rely on
-   a harness's own subscription login. It is stored in the runner's own local secret
-   store (the platform keychain where one exists, an owner-only file otherwise) —
-   never in `tack.db`, never in a log, never echoed back by the API. Saving it
-   immediately re-checks the gateway's model catalog; a real key shows real models
-   below. If execution is already on, saving also restarts the embedded runner with
-   the key, so the next run uses it — no "Re-check" needed in between.
-4. **"Default model"** — pick a model from that catalog (or from whatever the target
-   harness itself declares) and save it as this project's default. This is what lets
-   the next step submit with zero hand-typed identifiers.
+1. **Turn agents on for this computer.** Open the **Agents** page from the sidebar
+   (`/agents`) and click **Turn on**. This starts an embedded runner in this same process,
+   on this loopback bind, with no restart and no second binary. The page then lists which
+   agents are installed here (`claude`, `codex`, `opencode`, `docket`) and when each last
+   ran on this computer. If an agent is installed and you are already signed in to it in
+   your terminal, there is nothing else to set. The page is about this computer only; see
+   [Agents on this computer](agent-runners.md#agents-on-this-computer). Everything about
+   *your project* lives in the project's settings instead.
+2. **Make sure the project knows where its code is.** If you answered **Does this project
+   have code?** when you created it, this is done. Otherwise open **Settings → Automation**
+   and pick the folder there. Tack chooses how the agent works on it: on a new branch of
+   your repository if the folder is a git repository, in the folder directly if it is not
+   (see [Where the agent works](agent-runners.md#where-the-agent-works)).
+3. **Open a task and click Run with agent.** The dialog is one summary line (who runs it,
+   in which profile, on which model, where), a section called **What the agent will read**,
+   two switches (**Ask before each action** and **Allow network access**) and **Advanced**.
+   The defaults are the recommended ones: the agent's default model and the **Implementer**
+   profile. Click **Run**.
 
-Now open any item and click **Run with agent**. With a runner active and a default
-model configured, the dialog's defaults are already correct — confirm and click **Run**.
-The item's own Execution tab shows the attempt's state, its requested-vs-actual model,
-and its usage economics as they land.
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
+
+When the run ends, the task's own Execution tab shows the attempt. If the agent changed
+anything, the task is marked **Needs your review** until you press **Accept** or
+**Reject** on the attempt. The attempt card has **Open diff**, **Open folder** (or Copy
+path), **Copy branch**, **Result** and **Log** so you can check the work before deciding.
+See [What happens when a run finishes](agent-runners.md#what-happens-when-a-run-finishes).
 
 **The CLI path** — scriptable, and what to reach for outside a browser. Every step
 below is a real command against a real server, copied from an actual run; the fewest
@@ -189,7 +193,8 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 
 Using the item id from [First use](#first-use) above, create the execution request
 (swap in your own harness — `codex` or `claude-code` — and whichever model
-it accepts; see [Choosing a model and a
+it accepts; `workspace_mode` says where the agent works — here a fresh clone, see
+[Where the agent works](agent-runners.md#where-the-agent-works); see [Choosing a model and a
 provider](agent-runners.md#choosing-a-model-and-a-provider) if unsure):
 
 ```sh
@@ -198,7 +203,7 @@ tack execution create <ITEM_ID> \
   --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
   --harness claude-code --model-provider anthropic --model-id claude-sonnet-4-5 \
   --agent-profile-snapshot '{"name":"release-notes","instructions":"Summarize the diff and write docs/CHANGELOG entries.","tool_policy":{},"timeout_seconds":600,"budgets":{}}' \
-  --repository '{"kind":"git","remote":"/path/to/your/repo","base_revision":"<COMMIT_SHA>","subdirectory":null}' \
+  --repository '{"kind":"git","remote":"/path/to/your/repo","base_revision":"<COMMIT_SHA>","subdirectory":null,"workspace_mode":"clone"}' \
   --permission-policy '{"tools":[],"network":false}' \
   --timeout-seconds 600
 ```
