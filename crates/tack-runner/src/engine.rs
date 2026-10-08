@@ -750,7 +750,12 @@ where
                     worktree_kept = spec.work.workspace_repository().is_ok_and(|repository| {
                         repository.workspace_mode == WorkspaceMode::LocalBranch
                     });
-                    let kept = if worktree_kept {
+                    // An `in_place` folder is the user's own: never moved, and
+                    // `cleanup` below only releases its lock.
+                    let in_place = spec.work.workspace_repository().is_ok_and(|repository| {
+                        repository.workspace_mode == WorkspaceMode::InPlace
+                    });
+                    let kept = if worktree_kept || in_place {
                         Ok(spec.workspace.path.clone())
                     } else {
                         self.workspaces.keep(&spec.workspace)
@@ -1193,6 +1198,14 @@ where
         scratch: &std::path::Path,
         staged: &mut [serde_json::Value],
     ) -> Option<crate::evidence::PublishedBranch> {
+        // `in_place` never commits or branches in the user's repository.
+        if spec
+            .work
+            .workspace_repository()
+            .is_ok_and(|repository| repository.workspace_mode == WorkspaceMode::InPlace)
+        {
+            return None;
+        }
         // A `local_branch` attempt always keeps its branch in the user's
         // repository; the push is a separate, doubly-opt-in step: the request
         // asks (`push_after_run`) and this runner's `[git] push_branches` is on.

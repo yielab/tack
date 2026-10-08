@@ -2874,7 +2874,7 @@ impl WorktreeProvisioner for SeededGitWorktree {
         workspace: &Workspace,
         repository: &super::super::RepositorySpec,
     ) -> Result<(), WorkspaceError> {
-        if repository.workspace_mode == super::super::WorkspaceMode::LocalBranch {
+        if repository.workspace_mode != super::super::WorkspaceMode::Clone {
             return crate::client::workspace::git::GitWorktreeProvisioner::default()
                 .provision(workspace, repository)
                 .await;
@@ -3485,6 +3485,96 @@ async fn a_local_branch_attempt_keeps_its_branch_and_reports_the_skipped_push() 
         .filter(|event| event.kind == "attempt.push_skipped")
         .collect();
     assert_eq!(skipped.len(), 1);
+}
+
+#[tokio::test]
+async fn an_in_place_attempt_runs_in_the_users_folder_and_moves_nothing() {
+    let root_dir = temporary_root("in-place");
+    let root = root_dir.path();
+    let folder = root.join("users-folder");
+    std::fs::create_dir_all(&folder).expect("folder");
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(&folder)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    std::fs::write(folder.join("keep.txt"), "keep\n").expect("keep");
+    git(&["init", "--quiet"]);
+    git(&["add", "-A"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    let base = git(&["rev-parse", "HEAD"]);
+    std::fs::write(folder.join("staged.txt"), "staged by the user\n").expect("staged");
+    git(&["add", "staged.txt"]);
+    let cached_before = git(&["diff", "--cached"]);
+
+    let mut claimed = work();
+    claimed.request.repository.base_revision = base.clone();
+    claimed.attempt.base_revision = base;
+    let additional = &mut claimed.request.repository.additional;
+    additional.insert("workspace_mode".into(), "in_place".into());
+    additional.insert(
+        "repository_path".into(),
+        folder.display().to_string().into(),
+    );
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let fake_protocol = protocol(claimed, false, false);
+    let reported = fake_protocol.reported_completions.clone();
+    let engine = RunnerEngine::new(
+        fake_protocol,
+        ChangingAdapter {
+            inner: adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            change: |workspace| {
+                std::fs::write(workspace.join("harness.txt"), "from the harness\n").expect("write");
+            },
+        },
+        journal,
+        WorkspaceManager::new(
+            root.join("workspaces"),
+            SeededGitWorktree {
+                seed: folder.clone(),
+                origin: None,
+                break_origin: false,
+            },
+        ),
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+
+    assert_eq!(
+        reported.lock().expect("lock")[0].terminal_state,
+        AttemptState::Succeeded
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join("harness.txt")).expect("in the folder"),
+        "from the harness\n"
+    );
+    assert_eq!(git(&["diff", "--cached"]), cached_before);
+    for name in ["workspaces", "quarantine"] {
+        assert!(
+            std::fs::read_dir(root.join(name)).map_or(true, |mut entries| entries.next().is_none()),
+            "{name} holds nothing"
+        );
+    }
+    assert_eq!(
+        std::fs::read_dir(root.join("locks")).map_or(0, |entries| entries.count()),
+        0,
+        "the lock is released"
+    );
+    assert_eq!(git(&["branch", "--list", "tack/*"]), "");
+    let state = data_protocol.state.lock().expect("lock");
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert!(evidence.captured);
+    assert!(evidence.files.iter().any(|file| file.path == "harness.txt"));
 }
 
 /// A provisioner whose evidence read fails the way a broken `.git` does.

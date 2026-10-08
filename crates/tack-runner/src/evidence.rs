@@ -58,6 +58,9 @@ pub struct GitEvidence {
     pub files: Vec<FileChange>,
     pub patch: Vec<u8>,
     pub truncated: bool,
+    /// `files.json` of a folder without git: the changed entries as
+    /// `{path, op, size, mtime, sha256}`. `Some` means there is no patch.
+    pub snapshot: Option<Vec<u8>>,
 }
 
 /// The branch the runner published for an attempt: the value of
@@ -133,17 +136,23 @@ pub async fn capture<P: WorktreeProvisioner>(
             |git| git.base_commit.clone(),
         ),
         base_revision_requested: workspace.base_revision.clone(),
-        head_commit: git.as_ref().map(|git| git.head_commit.clone()),
+        head_commit: git
+            .as_ref()
+            .filter(|git| git.snapshot.is_none())
+            .map(|git| git.head_commit.clone()),
         worktree_dirty: git.as_ref().map(|git| git.worktree_dirty),
         files: git
             .as_ref()
             .map(|git| git.files.clone())
             .unwrap_or_default(),
-        patch: git.as_ref().map(|git| PatchManifest {
-            sha256: sha256_hex(&git.patch),
-            size_bytes: git.patch.len() as u64,
-            truncated: git.truncated,
-        }),
+        patch: git
+            .as_ref()
+            .filter(|git| git.snapshot.is_none())
+            .map(|git| PatchManifest {
+                sha256: sha256_hex(&git.patch),
+                size_bytes: git.patch.len() as u64,
+                truncated: git.truncated,
+            }),
         brief: brief.cloned(),
         branch: None,
         terminal_reason,
@@ -190,9 +199,13 @@ pub async fn capture<P: WorktreeProvisioner>(
         }
     };
     if let Some(git) = &git {
-        stage("changes.patch", "patch", "text/x-diff", &git.patch);
-        let files = serde_json::to_vec(&git.files).unwrap_or_default();
-        stage("files.json", "files", "application/json", &files);
+        if let Some(snapshot) = &git.snapshot {
+            stage("files.json", "snapshot", "application/json", snapshot);
+        } else {
+            stage("changes.patch", "patch", "text/x-diff", &git.patch);
+            let files = serde_json::to_vec(&git.files).unwrap_or_default();
+            stage("files.json", "files", "application/json", &files);
+        }
     }
     if let Some(brief) = brief {
         let bytes = serde_json::to_vec_pretty(brief).unwrap_or_default();

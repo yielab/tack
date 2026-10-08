@@ -889,3 +889,119 @@ async fn local_branch_leaves_the_branch_in_the_users_repo() {
         source.second_commit
     );
 }
+
+fn in_place_workspace(folder: &Path, attempt_id: &str, revision: &str) -> Workspace {
+    Workspace {
+        attempt_id: AttemptId::new(attempt_id),
+        id: WorkspaceId::new(format!("ws_{attempt_id}")),
+        path: folder.to_path_buf(),
+        base_revision: revision.to_owned(),
+    }
+}
+
+fn in_place_spec(folder: &Path, revision: &str) -> RepositorySpec {
+    RepositorySpec {
+        remote: String::new(),
+        base_revision: revision.to_owned(),
+        workspace_mode: WorkspaceMode::InPlace,
+        repository_path: Some(folder.to_path_buf()),
+    }
+}
+
+#[tokio::test]
+async fn in_place_never_touches_the_users_index() {
+    let source = SourceRepository::create();
+    let folder = source.path();
+    // The user's own staged and unstaged work, before the attempt.
+    fs::write(folder.join("staged.txt"), "staged by the user\n").expect("write");
+    run_git(folder, &["add", "staged.txt"]);
+    fs::write(folder.join("README.md"), "edited, not staged\n").expect("write");
+    let index_before = fs::read(folder.join(".git/index")).expect("index");
+    let cached_before = run_git(folder, &["diff", "--cached"]);
+
+    let workspace = in_place_workspace(folder, "attempt-in-place", &source.second_commit);
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    provisioner
+        .provision(&workspace, &in_place_spec(folder, &source.second_commit))
+        .await
+        .expect("in place only validates the folder");
+    fs::write(folder.join("work.txt"), "the harness wrote this\n").expect("write");
+
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("captured")
+        .expect("a git provisioner reads the repository");
+
+    assert_eq!(
+        fs::read(folder.join(".git/index")).expect("index"),
+        index_before,
+        "the index file is byte-identical"
+    );
+    assert_eq!(run_git(folder, &["diff", "--cached"]), cached_before);
+    assert!(evidence.files.iter().any(|file| file.path == "work.txt"));
+    assert!(!evidence.patch.is_empty());
+    assert!(evidence.snapshot.is_none());
+    assert_eq!(
+        fs::read_to_string(folder.join("README.md")).expect("kept"),
+        "edited, not staged\n",
+        "nothing the user had was deleted or reverted"
+    );
+    assert!(folder.join("added.txt").is_file() && folder.join("staged.txt").is_file());
+    assert!(
+        !folder.join(".git/tack-evidence.patch").exists() && !folder.join(ATTEMPT_MARKER).exists(),
+        "the runner leaves no file of its own in the user's folder"
+    );
+}
+
+#[tokio::test]
+async fn in_place_without_git_yields_a_snapshot_diff() {
+    let folder_dir = temp_dir("plain");
+    let folder = folder_dir.path();
+    fs::write(folder.join("kept.txt"), "unchanged\n").expect("write");
+    fs::write(folder.join("edited.txt"), "before\n").expect("write");
+    fs::write(folder.join("gone.txt"), "removed by the harness\n").expect("write");
+    let workspace = in_place_workspace(folder, "attempt-plain", "HEAD");
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    provisioner
+        .provision(&workspace, &in_place_spec(folder, "HEAD"))
+        .await
+        .expect("a folder without git is accepted");
+    fs::write(folder.join("work.txt"), "the harness wrote this\n").expect("write");
+    fs::write(folder.join("edited.txt"), "after, longer\n").expect("write");
+    fs::remove_file(folder.join("gone.txt")).expect("remove");
+
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("captured")
+        .expect("a snapshot is evidence");
+
+    let ops: Vec<(&str, FileOp)> = evidence
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file.op))
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            ("edited.txt", FileOp::Modified),
+            ("gone.txt", FileOp::Deleted),
+            ("work.txt", FileOp::Added),
+        ]
+    );
+    assert!(
+        evidence.patch.is_empty(),
+        "no patch for a folder without git"
+    );
+    let listing: serde_json::Value =
+        serde_json::from_slice(&evidence.snapshot.expect("files.json listing")).expect("json");
+    let added = listing
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["path"] == "work.txt"))
+        .expect("the added file is listed");
+    assert_eq!(added["size"], 23);
+    assert_eq!(added["sha256"].as_str().map(str::len), Some(64));
+    assert!(added["mtime"].is_number());
+    assert!(folder.join("kept.txt").is_file(), "nothing was deleted");
+}

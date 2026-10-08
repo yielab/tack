@@ -11,7 +11,9 @@ use thiserror::Error;
 
 use crate::evidence::{GitEvidence, PublishedBranch};
 
-use super::{AttemptId, AttemptLease, RepositorySpec, WorkspaceId, journal::WorkspaceJournal};
+use super::{
+    AttemptId, AttemptLease, RepositorySpec, WorkspaceId, WorkspaceMode, journal::WorkspaceJournal,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
@@ -62,6 +64,10 @@ pub enum WorkspaceError {
     RepositoryUnreachable,
     #[error("the requested base revision does not exist in the attempt repository")]
     RevisionUnavailable,
+    /// Another attempt holds the lock on this `in_place` folder. A lock left
+    /// by a dead process is not detected: out of scope, remove the file.
+    #[error("another attempt is working in this folder")]
+    Busy,
     #[error("runner workspace operation failed")]
     Io,
 }
@@ -165,7 +171,17 @@ where
     ) -> Result<Workspace, WorkspaceError> {
         let root = self.ensure_safe_root()?;
         let key = encode_id(lease.attempt_id.as_str());
-        let path = root.join(&key);
+        // `in_place`: the workspace IS the user's folder, never under `root`.
+        let path = if repository.workspace_mode == WorkspaceMode::InPlace {
+            repository
+                .repository_path
+                .as_deref()
+                .and_then(|folder| folder.canonicalize().ok())
+                .filter(|folder| folder.is_dir())
+                .ok_or(WorkspaceError::UnsafePath)?
+        } else {
+            root.join(&key)
+        };
         Ok(Workspace {
             attempt_id: lease.attempt_id.clone(),
             id: WorkspaceId::new(format!("ws_{key}")),
@@ -182,9 +198,55 @@ where
         workspace: &Workspace,
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError> {
+        if repository.workspace_mode == WorkspaceMode::InPlace {
+            self.lock_folder(workspace)?;
+            let provisioned = self.provisioner.provision(workspace, repository).await;
+            if provisioned.is_err() {
+                self.unlock_folder(workspace);
+            }
+            return provisioned;
+        }
         self.reserve_directory(workspace)?;
         self.provisioner.provision(workspace, repository).await?;
         Ok(())
+    }
+
+    /// `<state dir>/locks/<sha256(folder)>`, holding the attempt id.
+    fn lock_path(&self, workspace: &Workspace) -> Result<PathBuf, WorkspaceError> {
+        let state = self.ensure_safe_root()?;
+        let state = state.parent().ok_or(WorkspaceError::UnsafeRoot)?;
+        Ok(state.join("locks").join(crate::harness::sha256::sha256_hex(
+            workspace.path.to_string_lossy().as_bytes(),
+        )))
+    }
+
+    fn lock_folder(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
+        let lock = self.lock_path(workspace)?;
+        fs::create_dir_all(lock.parent().ok_or(WorkspaceError::UnsafeRoot)?)
+            .map_err(|_| WorkspaceError::Io)?;
+        match OpenOptions::new().write(true).create_new(true).open(&lock) {
+            Ok(mut file) => file
+                .write_all(workspace.attempt_id.as_str().as_bytes())
+                .and_then(|()| file.sync_all())
+                .map_err(|_| WorkspaceError::Io),
+            // The same attempt restarting holds its own lock.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                match fs::read_to_string(&lock) {
+                    Ok(holder) if holder == workspace.attempt_id.as_str() => Ok(()),
+                    _ => Err(WorkspaceError::Busy),
+                }
+            }
+            Err(_) => Err(WorkspaceError::Io),
+        }
+    }
+
+    /// Removes the lock only when this attempt holds it.
+    fn unlock_folder(&self, workspace: &Workspace) {
+        if let Ok(lock) = self.lock_path(workspace)
+            && fs::read_to_string(&lock).is_ok_and(|holder| holder == workspace.attempt_id.as_str())
+        {
+            let _ = fs::remove_file(lock);
+        }
     }
 
     /// [`Self::provision`] for a request with no remote: the same directory
@@ -247,6 +309,12 @@ where
     /// Deletes only a resolved child of this dedicated root. The root itself,
     /// repository roots, symlinks and unknown paths are refused, never guessed.
     pub fn cleanup(&self, workspace: &Workspace) -> Result<CleanupResult, WorkspaceError> {
+        // A folder outside the root is an `in_place` folder (or foreign): it
+        // is never deleted, and the lock is all that is released.
+        if !workspace.path.starts_with(self.ensure_safe_root()?) {
+            self.unlock_folder(workspace);
+            return Ok(CleanupResult::Refused);
+        }
         let Some((_, candidate)) = self.owned_path(workspace)? else {
             return Ok(CleanupResult::Refused);
         };
