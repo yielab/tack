@@ -693,6 +693,7 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
         let mut outcome = outcome.normalize_workspace_facts(&spec.workspace);
+        let mut evidence_failure = None;
         // Read what the attempt changed before the workspace is deleted after
         // the report; the staged files ride `terminal_reason.artifacts`.
         let evidence_scratch = match self
@@ -720,6 +721,27 @@ where
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
                 }
+                // A manifest that says `captured: false` because git could not
+                // read the workspace means the files are unread; deleting the
+                // workspace would delete them too. A provisioner that reads no
+                // repository has nothing to lose.
+                let manifest: serde_json::Value = std::fs::read(scratch.join("src/evidence.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                    .unwrap_or_default();
+                if manifest["captured"] == serde_json::Value::Bool(false)
+                    && manifest["reason"] == crate::evidence::EVIDENCE_REASON_GIT_UNREADABLE
+                {
+                    evidence_failure = Some(manifest["reason"].clone());
+                    if let Ok(kept) = self.workspaces.keep(&spec.workspace)
+                        && let Some(reason) = outcome.terminal_reason.as_object_mut()
+                    {
+                        reason.insert(
+                            "workspace_kept_at".to_owned(),
+                            serde_json::Value::String(kept.display().to_string()),
+                        );
+                    }
+                }
                 Some(scratch)
             }
             None => None,
@@ -732,6 +754,15 @@ where
         // never a fabricated summary. Runs before the completion report so
         // an operator inspecting the timeline after `succeeded` sees the
         // event/artifact already there.
+        if let Some(reason) = evidence_failure {
+            self.submit_event(
+                session,
+                &mut record,
+                "attempt.evidence_failed",
+                serde_json::json!({ "reason": reason }),
+            )
+            .await;
+        }
         self.submit_terminal_evidence(session, &mut record, &outcome)
             .await;
         if let Some(scratch) = evidence_scratch {

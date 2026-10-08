@@ -223,6 +223,40 @@ where
     /// Deletes only a resolved child of this dedicated root. The root itself,
     /// repository roots, symlinks and unknown paths are refused, never guessed.
     pub fn cleanup(&self, workspace: &Workspace) -> Result<CleanupResult, WorkspaceError> {
+        let Some((_, candidate)) = self.owned_path(workspace)? else {
+            return Ok(CleanupResult::Refused);
+        };
+        fs::remove_dir_all(candidate).map_err(|_| WorkspaceError::Io)?;
+        Ok(CleanupResult::Deleted)
+    }
+
+    /// Moves a workspace whose evidence could not be read into `quarantine/`
+    /// next to the workspace root, under the same path validation `cleanup`
+    /// applies, so the files survive for an operator. Returns the new path.
+    pub fn keep(&self, workspace: &Workspace) -> Result<PathBuf, WorkspaceError> {
+        let Some((root, candidate)) = self.owned_path(workspace)? else {
+            return Err(WorkspaceError::UnsafePath);
+        };
+        let quarantine = root
+            .parent()
+            .ok_or(WorkspaceError::UnsafeRoot)?
+            .join("quarantine");
+        fs::create_dir_all(&quarantine).map_err(|_| WorkspaceError::Io)?;
+        let destination = quarantine.join(encode_id(workspace.attempt_id.as_str()));
+        if destination.exists() {
+            return Err(WorkspaceError::Io);
+        }
+        fs::rename(candidate, &destination).map_err(|_| WorkspaceError::Io)?;
+        Ok(destination)
+    }
+
+    /// The root and the resolved directory of a workspace this manager owns;
+    /// `None` for the root itself, symlinks, foreign paths and a mismatched
+    /// marker, never guessed.
+    fn owned_path(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<Option<(PathBuf, PathBuf)>, WorkspaceError> {
         let root = self.ensure_safe_root()?;
         // Inspect the requested path before resolving it. Inspecting only the
         // canonical target would make a symlink inside `root` look like an
@@ -232,25 +266,24 @@ where
             .file_type()
             .is_symlink()
         {
-            return Ok(CleanupResult::Refused);
+            return Ok(None);
         }
         let candidate = workspace
             .path
             .canonicalize()
             .map_err(|_| WorkspaceError::UnsafePath)?;
         if candidate == root || !candidate.starts_with(&root) {
-            return Ok(CleanupResult::Refused);
+            return Ok(None);
         }
         if candidate != root.join(encode_id(workspace.attempt_id.as_str())) {
-            return Ok(CleanupResult::Refused);
+            return Ok(None);
         }
         let marker = candidate.join(".tack-attempt");
         let stored = fs::read_to_string(marker).map_err(|_| WorkspaceError::UnsafePath)?;
         if stored != workspace.attempt_id.as_str() {
-            return Ok(CleanupResult::Refused);
+            return Ok(None);
         }
-        fs::remove_dir_all(candidate).map_err(|_| WorkspaceError::Io)?;
-        Ok(CleanupResult::Deleted)
+        Ok(Some((root, candidate)))
     }
 
     fn ensure_safe_root(&self) -> Result<PathBuf, WorkspaceError> {
