@@ -33,6 +33,8 @@ const TOOLS_HELP: Record<string, string> = {
 export interface RunFlowProps {
   form: RunForm;
   setForm: SetStoreFunction<RunForm>;
+  /** A click on a profile pill, as opposed to the dialog's own choice. */
+  onProfilePicked: () => void;
   projectId: string;
   hideTargetPicker: Accessor<boolean>;
   runnersLoading: Accessor<boolean>;
@@ -154,7 +156,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 style={props.form.agentProfileId === p.agent_profile_id
                   ? { 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }
                   : PILL}
-                onClick={() => props.setForm('agentProfileId', p.agent_profile_id)}
+                onClick={() => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(); }}
               >
                 {p.name}
               </button>
