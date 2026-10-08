@@ -19,8 +19,11 @@ push and pull requests, factory metrics, docket contract 1.1) closed 2026-10-05 
 as `v0.1.0-beta.10`. Phase 67 (ADR 0074: a run a normal person can start — project
 Automation settings, the agent works on a branch of your repo or in your folder, the agent's
 default model, built-in profiles, acceptance criteria, Needs your review, Tack's words and
-help) executed 2026-10-07/08 and sits in `develop` unpushed; `docs/plans/phase-67.md` keeps
-its follow-ups and what is parked, and phase-65's Wave 0 publish list is the user's.
+help) executed 2026-10-07/08 and sits in `develop` unpushed. Phase 68 (`docs/plans/phase-68.md`,
+opened 2026-10-08) finishes the fourteen follow-ups phase 67's agents found: named wire shapes,
+a workspace never deleted after a failed keep, the plan's provenance, the Automation panel's
+model and definition of done, the dialog and card, the kit. Phase-65's Wave 0 publish list is
+the user's.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
