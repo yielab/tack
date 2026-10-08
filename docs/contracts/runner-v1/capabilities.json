@@ -12,6 +12,7 @@
       "probed_at": "2026-08-06T11:59:55Z",
       "native_provider": "openai",
       "providers": ["openai"],
+      "model_selection": "required",
       "model_combinations": [
         {
           "model_provider": "openai",

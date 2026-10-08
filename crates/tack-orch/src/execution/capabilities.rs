@@ -124,8 +124,20 @@ pub struct HarnessCapability {
     /// naming one of them can reach it.
     #[serde(default)]
     pub providers: Vec<String>,
+    /// Whether a request must name a provider and a model for this harness,
+    /// or may leave the choice to it. `None` means the runner did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_selection: Option<ModelSelectionReport>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+/// Whether a harness needs the request to name its model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelSelectionReport {
+    Optional,
+    Required,
 }
 
 /// Maximum payload values the runner says it can handle.
