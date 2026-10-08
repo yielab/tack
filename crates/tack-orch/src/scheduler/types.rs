@@ -145,9 +145,10 @@ pub enum IneligibleReason {
         provider: String,
         model_id: String,
     },
-    /// No runner-v1 capability field records whether a harness safely
-    /// accepts an unspecified model, so auto-select is ineligible everywhere
-    /// rather than guessed safe.
+    /// The request asked for auto-select and this candidate's matched
+    /// harness does not report `model_selection: optional` — it reports
+    /// `required` or nothing at all, so an unspecified model is not guessed
+    /// safe.
     AutoSelectNotVerified {
         harness: HarnessKind,
     },

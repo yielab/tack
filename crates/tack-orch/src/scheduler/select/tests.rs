@@ -5,7 +5,7 @@ use chrono::TimeZone;
 use super::*;
 use crate::execution::{
     CapabilityValue, ExecutionRequestId, HarnessCapability, ModelCombination, ModelId,
-    ModelProvider, RequestedModelId, RequestedModelProvider,
+    ModelProvider, ModelSelectionReport, RequestedModelId, RequestedModelProvider,
 };
 use crate::scheduler::types::Priority;
 
@@ -481,26 +481,44 @@ fn ask_is_gated_on_the_matched_harness_own_decisions_capability() {
 }
 
 #[test]
-fn auto_select_is_rejected_with_a_named_reason_not_empty() {
-    let mut req = request();
-    req.requested_model = ModelSelector::AutoSelect;
-    let outcome = select_runner(
-        &req,
-        &[candidate("runner-a")],
-        now(),
-        &SchedulingPolicy::default(),
-    );
-    match outcome {
-        SelectionOutcome::NoEligibleRunner { reasons } => {
-            assert_eq!(reasons.len(), 1);
-            assert_eq!(
-                reasons[0].1,
-                IneligibleReason::AutoSelectNotVerified {
-                    harness: HarnessKind::new("claude_code"),
-                }
-            );
+fn auto_select_schedules_on_a_harness_that_declares_optional() {
+    let cases = [
+        (
+            "a harness reporting optional schedules",
+            Some(ModelSelectionReport::Optional),
+            true,
+        ),
+        (
+            "a harness reporting required is refused",
+            Some(ModelSelectionReport::Required),
+            false,
+        ),
+        ("a harness reporting nothing is refused", None, false),
+    ];
+    for (name, reported, selected) in cases {
+        let mut c = candidate("runner-a");
+        c.harnesses[0].model_selection = reported;
+        let mut req = request();
+        req.requested_model = ModelSelector::AutoSelect;
+        let outcome = select_runner(&req, &[c], now(), &SchedulingPolicy::default());
+        match outcome {
+            SelectionOutcome::Selected(selection) => {
+                assert!(selected, "{name}: expected refusal, was selected");
+                assert_eq!(selection.matched_harness, HarnessKind::new("claude_code"));
+            }
+            SelectionOutcome::NoEligibleRunner { reasons } => {
+                assert!(!selected, "{name}: expected selection, was refused");
+                assert_eq!(reasons.len(), 1, "{name}");
+                assert_eq!(
+                    reasons[0].1,
+                    IneligibleReason::AutoSelectNotVerified {
+                        harness: HarnessKind::new("claude_code"),
+                    },
+                    "{name}"
+                );
+            }
+            other => panic!("{name}: unexpected outcome {other:?}"),
         }
-        other => panic!("expected NoEligibleRunner, got {other:?}"),
     }
 }
 
