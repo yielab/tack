@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -e
 
+# rust-toolchain.toml only binds a `cargo` that is rustup's proxy. A distro or
+# Homebrew cargo earlier on PATH ignores the pin and runs whatever version it
+# is, and this gate then judges the tree with lints CI never sees — or misses
+# ones it does. Put rustup's proxies first, then check that the pin took.
+if command -v rustup >/dev/null 2>&1; then
+  PATH="$(dirname "$(command -v rustup)"):$PATH"
+  export PATH
+fi
+pinned=$(sed -n 's/^channel *= *"\(.*\)".*/\1/p' rust-toolchain.toml)
+if ! cargo --version | grep -q "^cargo $pinned "; then
+  echo "cargo on PATH is '$(cargo --version)', not the pinned $pinned from rust-toolchain.toml;" >&2
+  echo "install rustup (https://rustup.rs) so the pin applies, or put its ~/.cargo/bin first on PATH" >&2
+  exit 1
+fi
+
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
 # `--all` means the workspace, and tack-desktop is deliberately not in it, so this
