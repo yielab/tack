@@ -234,6 +234,7 @@ pub async fn import_github(
                 due_date: None,
                 sprint_id: None,
                 assignee: issue.assignee.as_ref().map(|u| u.login.clone()),
+                source_artifact_id: None,
             };
 
             // `ItemSource::Github` — this title/description came from a GitHub

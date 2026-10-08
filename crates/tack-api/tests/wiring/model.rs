@@ -73,6 +73,7 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await

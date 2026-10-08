@@ -254,6 +254,7 @@ fn item_source_only_manual_is_trusted() {
     assert!(!ItemSource::JsonImport.is_trusted());
     assert!(!ItemSource::CsvImport.is_trusted());
     assert!(!ItemSource::Unknown.is_trusted());
+    assert!(!ItemSource::Plan.is_trusted());
 }
 
 #[test]
@@ -276,6 +277,7 @@ fn item_source_display_and_fromstr_round_trip() {
         ItemSource::JsonImport,
         ItemSource::CsvImport,
         ItemSource::Unknown,
+        ItemSource::Plan,
     ] {
         let s = source.to_string();
         assert_eq!(ItemSource::from_str(&s).unwrap(), source);

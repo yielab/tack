@@ -62,6 +62,7 @@ async fn setup() -> (Repository, String) {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await

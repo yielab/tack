@@ -130,3 +130,17 @@ async fn migration_082_creates_automation_schema() {
         }
     }
 }
+
+#[tokio::test]
+async fn migration_083_adds_items_source_artifact_id() {
+    let repo = common::setup_test_db().await;
+    let items_columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('items')")
+            .fetch_all(repo.pool())
+            .await
+            .unwrap_or_else(|e| panic!("pragma_table_info(items): {e}"));
+    assert!(
+        items_columns.iter().any(|c| c == "source_artifact_id"),
+        "items is missing column source_artifact_id; has {items_columns:?}"
+    );
+}

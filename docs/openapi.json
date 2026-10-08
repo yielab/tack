@@ -9011,6 +9011,13 @@
             "$ref": "#/components/schemas/ItemSource",
             "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
           },
+          "source_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plan artifact this item was created from (`source` is `plan`), else `None`."
+          },
           "sprint_id": {
             "type": [
               "string",
@@ -9148,7 +9155,8 @@
           "linear",
           "json_import",
           "csv_import",
-          "unknown"
+          "unknown",
+          "plan"
         ]
       },
       "ItemType": {

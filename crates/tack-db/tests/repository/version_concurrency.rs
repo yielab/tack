@@ -59,6 +59,7 @@ fn item_titled(title: &str, item_type: ItemType, parent_id: Option<uuid::Uuid>) 
         due_date: None,
         sprint_id: None,
         assignee: None,
+        source_artifact_id: None,
     }
 }
 
