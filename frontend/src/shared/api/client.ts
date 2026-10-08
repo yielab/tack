@@ -95,12 +95,15 @@ export const tokenStore = {
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
+  /** The request field the server blames (`error.details.field`), when it names one. */
+  readonly field?: string;
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, field?: string) {
     super(message || `HTTP ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -133,6 +136,7 @@ async function toApiError(res: Response): Promise<ApiError> {
   // error bodies so users never see raw JSON in a toast.
   let message = raw;
   let code: string | undefined;
+  let field: string | undefined;
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
@@ -140,6 +144,7 @@ async function toApiError(res: Response): Promise<ApiError> {
       if (inner && typeof inner === 'object' && typeof inner.message === 'string') {
         message = inner.message;
         if (typeof inner.code === 'string') code = inner.code;
+        if (typeof inner.details?.field === 'string') field = inner.details.field;
       } else if (typeof inner === 'string') {
         message = inner;
       }
@@ -148,7 +153,7 @@ async function toApiError(res: Response): Promise<ApiError> {
     }
   }
 
-  return new ApiError(res.status, message || res.statusText, code);
+  return new ApiError(res.status, message || res.statusText, code, field);
 }
 
 /**

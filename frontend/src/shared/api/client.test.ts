@@ -108,6 +108,17 @@ describe('shared/api/client', () => {
     expect(err.code).toBe('orchestration_disabled');
   });
 
+  it('extracts error.details.field when it is a string', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { status: 400, message: 'bad', details: { field: 'repository' } } }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    const err = (await request('/projects/1', { method: 'PATCH' }).catch((e) => e)) as ApiError;
+    expect(err.field).toBe('repository');
+  });
+
   it('leaves code undefined when the envelope has none', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: { status: 404, message: 'not found' } }), {
