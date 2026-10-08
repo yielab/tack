@@ -24,7 +24,11 @@
 // OpenAPI mirrors, which this file matches byte-for-byte).
 
 import { requestWithHeaders } from '../api/client';
+import type { components } from '../api/schema.gen';
 import type { Measurement } from './types';
+
+/** `executions.rs`'s `TerminalReason`: the five named keys the UI reads, plus whatever else the runner sent. */
+export type TerminalReason = components['schemas']['TerminalReason'];
 
 // ─── Model provenance (`usage_provenance.rs::ModelProvenance`) ─────────────
 
@@ -92,12 +96,12 @@ export interface UsageEconomics {
 
 /**
  * One attempt, exactly as `executions.rs`'s `AttemptSummary` serializes it.
- * `actual_execution`/`terminal_reason`/`usage` stay `unknown` (untyped JSON)
- * here for the same reason the Rust struct types them as a bare `Value`: the
- * real types (`tack_orch::execution::{ActualExecution, Usage}`) live in a
- * crate this frontend has no generated bridge to yet — this file only needs
- * enough shape to drive `model_provenance`/`usage_economics` display, which
- * are already fully typed above.
+ * `actual_execution`/`usage` stay `unknown` (untyped JSON) here for the same
+ * reason the Rust struct types them as a bare `Value`: the real types
+ * (`tack_orch::execution::{ActualExecution, Usage}`) live in a crate this
+ * frontend has no generated bridge to yet — this file only needs enough shape
+ * to drive `model_provenance`/`usage_economics` display, which are already
+ * fully typed above. `terminal_reason` is typed from the generated schema.
  */
 export interface AttemptSummary {
   attempt_id: string;
@@ -114,7 +118,7 @@ export interface AttemptSummary {
   workspace_id: string | null;
   base_revision: string | null;
   actual_execution: unknown | null;
-  terminal_reason: unknown | null;
+  terminal_reason: TerminalReason | null;
   usage: unknown | null;
   started_at: string | null;
   ended_at: string | null;
