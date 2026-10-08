@@ -118,7 +118,7 @@ function runnerWith(harnesses: unknown[]) {
   };
 }
 
-const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', model_combinations: [] };
+const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', model_combinations: [], model_selection: 'optional' };
 
 describe('AgentsPage — this computer only', () => {
   it('the_test_run_needs_no_fields', async () => {
@@ -141,6 +141,19 @@ describe('AgentsPage — this computer only', () => {
     const post = fetchSpy.mock.calls.find(([u]) => String(u).endsWith('/api/local-runner/test-run'))!;
     expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ harness_kind: 'claude-code' });
     expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/api/executions/req_1'))).toBe(true);
+  });
+
+  it('the_test_run_is_refused_with_a_reason_when_every_installed_agent_needs_a_model', async () => {
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3', model_selection: 'required' }]),
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain('codex needs a model named for every run');
   });
 
   it('badges come from harness-verification: signed-in date, or "Not signed in" with the command', async () => {

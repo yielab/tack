@@ -22,11 +22,16 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
   const [requestId, setRequestId] = createSignal<string | null>(null);
   const [running, setRunning] = createSignal(false);
 
+  const installed = (kind: string) => {
+    const h = findHarness(harnessesOf(props.thisMachineRunner), kind);
+    return h && h.probe_error === null && !!h.installed_version ? h : undefined;
+  };
+  // The test run names no model, and the scheduler only accepts that from an
+  // agent that reports it can run without one; an agent that needs a model
+  // would leave the request queued forever with nothing to say why.
   const harnessKind = () =>
-    HARNESS_KINDS.map((k) => k.value).find((kind) => {
-      const h = findHarness(harnessesOf(props.thisMachineRunner), kind);
-      return h && h.probe_error === null && !!h.installed_version;
-    });
+    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind)?.model_selection === 'optional');
+  const needsModelKind = () => HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind));
   const itemId = createMemo(() => {
     const id = requestId();
     return id ? store.getRequest(id)?.summary?.item_id : undefined;
@@ -60,7 +65,12 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
       </Button>
       <Show when={!harnessKind()}>
         <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
-          No installed agent to test — turn on agent execution and install one above first.
+          <Show
+            when={needsModelKind()}
+            fallback="No installed agent to test — turn on agent execution and install one above first."
+          >
+            {(kind) => `${kind()} needs a model named for every run, and the test run names none. Run it from a task with a specific model instead.`}
+          </Show>
         </p>
       </Show>
       <Show when={itemId()}>{(id) => <ExecutionTimeline itemId={id()} />}</Show>
