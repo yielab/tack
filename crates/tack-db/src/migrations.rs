@@ -143,6 +143,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("079_execution_decisions_pack", &MIGRATION_079[..]),
         ordinary("080_mrp_reviews", &MIGRATION_080[..]),
         ordinary("081_pull_requests", &MIGRATION_081[..]),
+        ordinary("082_automation", &MIGRATION_082[..]),
     ]
 }
 
@@ -1742,3 +1743,30 @@ const MIGRATION_081: [&str; 1] = ["CREATE TABLE pull_requests (
         reverted_by_number INTEGER,
         UNIQUE(repo, number)
     )"];
+
+// 082: project automation configuration (code origin, repository, branches,
+// workspace mode, push behavior, default harness), per-project default agent
+// profile, post-run action, definition of done, per-item run settings, agent
+// profile role classification (kind), builtin flag, summary tooltip, and
+// attempt review verdicts.
+const MIGRATION_082: [&str; 14] = [
+    "ALTER TABLE projects ADD COLUMN code_origin TEXT NOT NULL DEFAULT 'none'",
+    "ALTER TABLE projects ADD COLUMN repository TEXT",
+    "ALTER TABLE projects ADD COLUMN default_branch TEXT",
+    "ALTER TABLE projects ADD COLUMN workspace_mode TEXT NOT NULL DEFAULT 'local_branch'",
+    "ALTER TABLE projects ADD COLUMN push_after_run INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN default_harness TEXT",
+    "ALTER TABLE projects ADD COLUMN default_profile_id TEXT REFERENCES agent_profiles(id)",
+    "ALTER TABLE projects ADD COLUMN on_finish_status TEXT",
+    "ALTER TABLE projects ADD COLUMN definition_of_done TEXT",
+    "ALTER TABLE items ADD COLUMN run_settings TEXT",
+    "ALTER TABLE agent_profiles ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom'",
+    "ALTER TABLE agent_profiles ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE agent_profiles ADD COLUMN summary TEXT",
+    "CREATE TABLE attempt_reviews (
+        attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES execution_attempts(id),
+        verdict TEXT NOT NULL,
+        note TEXT,
+        reviewed_at TEXT NOT NULL
+    )",
+];
