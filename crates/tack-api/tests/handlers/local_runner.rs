@@ -583,7 +583,11 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     assert_eq!(row.2, None);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&row.3).unwrap(),
-        serde_json::json!({ "tools": [], "network": false })
+        // The Implementer's own tools for this harness: none would leave the agent unable to act.
+        serde_json::json!({
+            "tools": ["Read", "Edit", "Write", "Bash", "Agent", "Grep", "Glob"],
+            "network": false
+        })
     );
     let implementer: String =
         sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")

@@ -52,6 +52,35 @@ fn a_request_is_refused_for_its_provider_or_its_policy() {
     }
 }
 
+/// `*` (every tool, as the built-in profiles write it) is claude's
+/// `default`, never `--tools "*"`; an empty list stays `""`, every tool off.
+#[test]
+fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
+    let args = |tools: &[&str], network: bool| {
+        invocation(&request(Some("anthropic"), tools, network))
+            .expect("invocation")
+            .args
+    };
+    let value_of = |args: &[String], flag: &str| {
+        args.iter()
+            .position(|arg| arg == flag)
+            .map(|at| args[at + 1].clone())
+    };
+
+    let networked = args(&["*"], true);
+    assert_eq!(value_of(&networked, "--tools").as_deref(), Some("default"));
+    assert_eq!(value_of(&networked, "--disallowedTools"), None);
+
+    let offline = args(&["*"], false);
+    assert_eq!(value_of(&offline, "--tools").as_deref(), Some("default"));
+    assert_eq!(
+        value_of(&offline, "--disallowedTools").as_deref(),
+        Some("WebFetch,WebSearch")
+    );
+
+    assert_eq!(value_of(&args(&[], true), "--tools").as_deref(), Some(""));
+}
+
 #[test]
 fn the_policy_model_and_budget_reach_the_command_line() {
     let mut spec = request(Some("anthropic"), &["Read", "Edit"], true);

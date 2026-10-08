@@ -684,6 +684,37 @@ describe('RunWithAgentModal', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it('a_blank_tools_field_sends_the_profiles_tools_for_the_agent', async () => {
+    const withTools = { ...PROFILE, tool_policy: { tools: { codex: ['*'], 'claude-code': ['Read', 'Edit'] } } };
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [withTools] });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="no-tools"]')).toBeNull();
+    expect(field('Allowed tools').placeholder).toBe('all tools');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ permission_policy: { tools: ['*'] } });
+    teardown();
+    // A typed list wins over the profile's.
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [withTools] });
+    await flush();
+    await flush();
+    setField(field('Allowed tools'), 'bash');
+    await flush();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ permission_policy: { tools: ['bash'] } });
+  });
+
+  it('a_profile_that_gives_the_agent_no_tools_says_so_before_the_run', async () => {
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="no-tools"]')?.textContent).toContain('gives Codex no tools');
+  });
+
   it('a_deferred_capability_is_shown_disabled_with_its_reason', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();

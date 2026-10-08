@@ -13,7 +13,7 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   shouldHideTargetPicker, isExecutionOff, describeProjectModelDefault, projectDefaultModelPair,
-  isDecisionsAttested, resolveAutoModelPolicy,
+  isDecisionsAttested, resolveAutoModelPolicy, profileToolsFor,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
@@ -113,6 +113,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   });
 
   const selectedAgentProfile = createMemo(() => agentProfilesData().find((p) => p.agent_profile_id === form.agentProfileId));
+  const typedTools = () => form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
+  const profileTools = createMemo(() => profileToolsFor(selectedAgentProfile()?.tool_policy, form.harnessKind));
+  // A blank field means the profile's tools; an empty list would leave the agent none.
+  const runTools = () => (typedTools().length > 0 ? typedTools() : profileTools());
 
   createEffect(() => {
     if (!props.isOpen || form.agentProfileId) return;
@@ -281,7 +285,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       timeoutSeconds: form.timeoutSeconds,
       allowNetwork: form.allowNetwork,
       approvals: form.approvals,
-      tools: form.toolsText.split(',').map((t) => t.trim()).filter(Boolean),
+      tools: runTools(),
       // The server fills the snapshot from the project; only a branch override sends one.
       repository: form.branch.trim()
         ? { kind: 'git', remote: project()?.repository ?? '', baseRevision: form.branch.trim(), subdirectory: null }
@@ -305,8 +309,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (branch && branch !== p?.default_branch) diff.branch = branch;
     if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
     if (form.timeoutSeconds !== d.timeoutSeconds) diff.timeout_seconds = form.timeoutSeconds;
-    const tools = form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
-    if (tools.length > 0) diff.tools = tools;
+    if (typedTools().length > 0) diff.tools = typedTools();
     if (form.allowNetwork !== d.allowNetwork) diff.network = form.allowNetwork;
     if (form.approvals !== d.approvals) diff.approvals = form.approvals;
     if (form.verify !== d.verify) diff.verify = form.verify;
@@ -397,6 +400,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             gate={combinationGate}
             project={project}
             agentContext={() => agentContext()}
+            profileTools={profileTools}
+            harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => modelId() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}
             verifyConfigured={verifyConfigured}

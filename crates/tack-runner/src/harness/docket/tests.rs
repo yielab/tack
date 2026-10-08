@@ -929,3 +929,20 @@ async fn the_real_docket_asks_and_a_gated_bash_call_is_accepted() {
         outcome.terminal_reason
     );
 }
+
+/// `*` blocks nothing, except `fetch` when the network is denied.
+#[test]
+fn every_tool_blocks_only_fetch_when_offline() {
+    let policy = |network: bool| PermissionPolicy {
+        tools: vec!["*".to_owned()],
+        network,
+        approvals: None,
+        additional: Default::default(),
+    };
+    assert_eq!(policy_document(&policy(true)).expect("document"), None);
+    let offline = policy_document(&policy(false))
+        .expect("document")
+        .expect("a document");
+    assert!(offline.contains("fetch"), "{offline}");
+    assert!(!offline.contains("bash"), "{offline}");
+}

@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
@@ -80,7 +80,9 @@ fn bounded_prefix(text: &str, max_chars: usize) -> String {
 /// Whether `tools` names `tool` (case-insensitively), the same convention
 /// `claude_code.rs` uses for its own network-tool check.
 fn grants(tools: &[String], tool: &str) -> bool {
-    tools.iter().any(|name| name.eq_ignore_ascii_case(tool))
+    tools
+        .iter()
+        .any(|name| name == PermissionPolicy::ALL_TOOLS || name.eq_ignore_ascii_case(tool))
 }
 
 /// No terminal `step_finish` event at all. A process opencode itself

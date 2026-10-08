@@ -25,10 +25,13 @@ const CLAUDE_CODE_TOOLS = [
 /** Help under the tools field, per harness (docs/plans/measurements/tools-<harness>.md). */
 const TOOLS_HELP: Record<string, string> = {
   'claude-code': 'Claude Code lists its tools; tick the ones to allow. The list can differ by version, so you can also type names, comma-separated.',
-  codex: 'Codex exposes no list of its tools. Type names, comma-separated. Leave blank for none.',
-  opencode: 'OpenCode exposes no list of its tools. Type names, comma-separated. Leave blank for none.',
-  docket: 'Docket exposes no list of its tools. Type names, comma-separated. Leave blank for none.',
+  codex: 'Codex exposes no list of its tools. Type names, comma-separated.',
+  opencode: 'OpenCode exposes no list of its tools. Type names, comma-separated.',
+  docket: 'Docket exposes no list of its tools. Type names, comma-separated.',
 };
+
+/** A tool list as a sentence: `*` is every tool. */
+const describeTools = (tools: string[]) => (tools.includes('*') ? 'all tools' : tools.join(', '));
 
 export interface RunFlowProps {
   form: RunForm;
@@ -58,6 +61,9 @@ export interface RunFlowProps {
   project: Accessor<Project | undefined>;
   /** What the agent will read, from `GET /items/{id}/agent-context`. */
   agentContext: Accessor<string | undefined>;
+  /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
+  profileTools: Accessor<string[]>;
+  harnessLabel: Accessor<string>;
   /** The model as the summary line names it. */
   modelLabel: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
@@ -127,6 +133,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
         </Show>
       </p>
+
+      <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
+        <p data-testid="no-tools" class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+          {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
+          <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
+        </p>
+      </Show>
 
       <details>
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
@@ -282,7 +295,10 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             label="Allowed tools"
             value={props.form.toolsText}
             onInput={(e) => props.setForm('toolsText', e.currentTarget.value)}
-            hint={TOOLS_HELP[props.form.harnessKind] ?? 'Comma-separated. Leave blank for none.'}
+            placeholder={props.profileTools().length > 0 ? describeTools(props.profileTools()) : undefined}
+            hint={`${TOOLS_HELP[props.form.harnessKind] ?? 'Comma-separated.'} ${props.profileTools().length > 0
+              ? `Leave blank to use the profile's: ${describeTools(props.profileTools())}.`
+              : 'The profile gives this agent none.'}`}
           />
           <Field
             label="Timeout (seconds)"

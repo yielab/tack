@@ -205,6 +205,7 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             )));
         }
         let policy = &request.permission_policy;
+        let all_tools = policy.allows_all_tools();
         let names_network_tool = policy
             .tools
             .iter()
@@ -253,7 +254,18 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             args.extend(["--permission-mode", "bypassPermissions"].map(str::to_owned));
         }
         args.extend(["--effort", "high", "--setting-sources", "", "--tools"].map(str::to_owned));
-        args.push(policy.tools.join(","));
+        // `""` would turn every tool off; `default` is claude's word for all of them.
+        if all_tools {
+            args.push("default".to_owned());
+            if !policy.network {
+                args.extend([
+                    "--disallowedTools".to_owned(),
+                    "WebFetch,WebSearch".to_owned(),
+                ]);
+            }
+        } else {
+            args.push(policy.tools.join(","));
+        }
         if let Some(model) = &request.requested_model_id {
             args.extend(["--model".to_owned(), model.as_str().to_owned()]);
         }

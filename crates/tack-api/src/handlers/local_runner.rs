@@ -668,6 +668,11 @@ pub async fn post_test_run(
         .map_err(|_| internal("Could not create the test item"))?;
 
     let parse = |raw: &str| serde_json::from_str::<Value>(raw).unwrap_or_else(|_| json!({}));
+    let tool_policy = parse(&tool_policy);
+    // The profile's tools for this harness, as the Run dialog sends them; none would leave
+    // the agent unable to act.
+    let tools = tool_policy["tools"][input.harness_kind.as_str()].clone();
+    let tools = if tools.is_array() { tools } else { json!([]) };
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         "x-tack-principal",
@@ -685,14 +690,14 @@ pub async fn post_test_run(
         agent_profile_snapshot: json!({
             "name": name,
             "instructions": instructions,
-            "tool_policy": parse(&tool_policy),
+            "tool_policy": tool_policy,
             "timeout_seconds": 300,
             "budgets": parse(&limits),
         }),
         repository_snapshot: Some(json!({
             "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
         })),
-        permission_policy: json!({ "tools": [], "network": false }),
+        permission_policy: json!({ "tools": tools, "network": false }),
         budgets: json!({}),
         environment: json!({}),
         metadata: json!({}),

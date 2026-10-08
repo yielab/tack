@@ -327,6 +327,17 @@ pub struct PermissionPolicy {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+impl PermissionPolicy {
+    /// The tool name that stands for every tool the harness has, as the
+    /// built-in agent profiles write it.
+    pub const ALL_TOOLS: &'static str = "*";
+
+    /// Whether `tools` holds [`Self::ALL_TOOLS`].
+    pub fn allows_all_tools(&self) -> bool {
+        self.tools.iter().any(|tool| tool == Self::ALL_TOOLS)
+    }
+}
+
 /// An environment value or a secret reference, never a raw runner credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvironmentValue {

@@ -580,6 +580,13 @@ export function isModelPassthroughAttested(harness: HarnessCapability | undefine
  * `crates/tack-orch/src/scheduler/select.rs`'s own treatment of this exact
  * field.
  */
+/** The tools a profile gives one harness (`tool_policy.tools[harness]`; `['*']` is every
+ *  tool), or `[]` when it names none. A run whose own tool list is blank uses these. */
+export function profileToolsFor(toolPolicy: unknown, harness: string): string[] {
+  const tools = (toolPolicy as { tools?: Record<string, unknown> } | null)?.tools?.[harness];
+  return Array.isArray(tools) ? tools.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : [];
+}
+
 export function isDecisionsAttested(harness: HarnessCapability | undefined): boolean {
   return harness?.decisions?.support === 'supported';
 }
