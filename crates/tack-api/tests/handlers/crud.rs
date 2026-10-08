@@ -1069,6 +1069,146 @@ async fn export_yaml_round_trips_through_import() {
     );
 }
 
+// ─── Subtasks from plan ────────────────────────────────────────────
+
+#[tokio::test]
+async fn subtasks_from_plan_create_children_with_criteria() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Parent Item").await;
+
+    // POST to create subtasks from a plan
+    let uri = format!("/api/items/{parent_id}/subtasks-from-plan");
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &uri,
+        json!({
+            "artifact_id": "plan-artifact-123",
+            "subtasks": [
+                {
+                    "title": "First subtask",
+                    "description": "Do this first",
+                    "acceptance": [
+                        "This criterion is met when the first condition is true",
+                        "And when the second condition is also true"
+                    ]
+                },
+                {
+                    "title": "Second subtask",
+                    "description": "Do this second",
+                    "acceptance": [
+                        "This criterion is met when the third condition is true"
+                    ]
+                }
+            ]
+        }),
+        &[],
+    )
+    .await;
+
+    // Verify the endpoint returns 200 with created item ids
+    assert_eq!(status, StatusCode::OK, "create subtasks should return 200");
+    assert!(body["created"].is_array());
+    let created = body["created"].as_array().unwrap();
+    assert_eq!(created.len(), 2, "should create two subtasks");
+
+    let subtask_1_id = Uuid::parse_str(created[0]["id"].as_str().unwrap()).unwrap();
+    let subtask_2_id = Uuid::parse_str(created[1]["id"].as_str().unwrap()).unwrap();
+
+    // Verify first subtask
+    let (status, item1) = common::send(
+        &app,
+        "GET",
+        &format!("/api/items/{subtask_1_id}"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(item1["item"]["parent_id"], parent_id.to_string());
+    assert_eq!(item1["item"]["title"], "First subtask");
+
+    // Verify first subtask's brief
+    let (status, brief1) = common::send(
+        &app,
+        "GET",
+        &format!("/api/items/{subtask_1_id}/brief"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let acceptance = brief1["acceptance"].as_array().unwrap();
+    assert_eq!(acceptance.len(), 2);
+    assert_eq!(acceptance[0]["kind"], "manual");
+    assert_eq!(
+        acceptance[0]["text"],
+        "This criterion is met when the first condition is true"
+    );
+    assert_eq!(acceptance[1]["kind"], "manual");
+    assert_eq!(
+        acceptance[1]["text"],
+        "And when the second condition is also true"
+    );
+
+    // Verify second subtask
+    let (status, item2) = common::send(
+        &app,
+        "GET",
+        &format!("/api/items/{subtask_2_id}"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(item2["item"]["parent_id"], parent_id.to_string());
+    assert_eq!(item2["item"]["title"], "Second subtask");
+
+    // Verify second subtask's brief
+    let (status, brief2) = common::send(
+        &app,
+        "GET",
+        &format!("/api/items/{subtask_2_id}/brief"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let acceptance = brief2["acceptance"].as_array().unwrap();
+    assert_eq!(acceptance.len(), 1);
+    assert_eq!(acceptance[0]["kind"], "manual");
+    assert_eq!(
+        acceptance[0]["text"],
+        "This criterion is met when the third condition is true"
+    );
+
+    // Verify parent's children list (using list_items to check they are present)
+    let (status, items_list) = common::send(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/items"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let all_items = items_list["data"].as_array().unwrap();
+
+    // Find both subtasks in the list and verify they have the parent_id set
+    let subtask_1 = all_items
+        .iter()
+        .find(|i| i["id"] == subtask_1_id.to_string())
+        .unwrap();
+    assert_eq!(subtask_1["parent_id"], parent_id.to_string());
+
+    let subtask_2 = all_items
+        .iter()
+        .find(|i| i["id"] == subtask_2_id.to_string())
+        .unwrap();
+    assert_eq!(subtask_2["parent_id"], parent_id.to_string());
+}
+
 // ─── Item provenance / trust boundary ────────────────────────────
 
 /// Mount a GitHub `GET /repos/acme/widgets/issues` mock returning one open issue.

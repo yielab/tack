@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (91 paths, 127 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (92 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -189,6 +189,20 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 | 204 | Linked | — |
 | 400 | Invalid repo or issue number | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
+
+#### `POST /api/items/{id}/subtasks-from-plan`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Parent Item ID |
+
+**Request body:** `CreateSubtasksFromPlanRequest`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Subtasks created | `CreateSubtasksFromPlanResponse` |
+| 400 | Validation error | `ErrorEnvelope` |
+| 404 | Parent item not found | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/items`
 
