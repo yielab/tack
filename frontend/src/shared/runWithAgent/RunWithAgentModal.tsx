@@ -232,7 +232,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const errors: string[] = [];
     if (!form.selectorId.trim()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Select an agent profile.');
-    if (!form.harnessKind) errors.push('Select a harness.');
+    if (!form.harnessKind) errors.push('Select an agent.');
     if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or use the agent\'s default.');
     if (form.modelMode === 'choose' && form.chooseIndex === CUSTOM_MODEL_VALUE && !form.customModelId.trim()) errors.push('Enter a model id, or pick one from the list.');
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
