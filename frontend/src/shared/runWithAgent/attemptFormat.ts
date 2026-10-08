@@ -57,8 +57,8 @@ export function formatUsdMeasurement(measurement: Measurement<number>): string {
  * {@link NOT_MEASURED_TEXT} so the two absence reasons are never visually
  * conflated.
  */
-export function formatWallClock(wallClockMs: number | null): string {
-  if (wallClockMs === null) return 'Unknown — attempt has not finished yet';
+export function formatWallClock(wallClockMs: number | null, terminal = false): string {
+  if (wallClockMs === null) return terminal ? 'Did not start' : 'Unknown — attempt has not finished yet';
   const totalSeconds = Math.round(wallClockMs / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -75,9 +75,9 @@ export interface RunnerTimeCostDisplay {
   costUsd: string;
 }
 
-export function formatRunnerTimeCost(cost: RunnerTimeCost): RunnerTimeCostDisplay {
+export function formatRunnerTimeCost(cost: RunnerTimeCost, terminal = false): RunnerTimeCostDisplay {
   return {
-    wallClock: formatWallClock(cost.wall_clock_ms),
+    wallClock: formatWallClock(cost.wall_clock_ms, terminal),
     costUsd: formatUsdMeasurement(cost.cost_usd_estimated),
   };
 }
@@ -91,10 +91,10 @@ export interface UsageEconomicsDisplay {
  *  comment: they are independently provenanced and must stay visibly
  *  separate line items, not folded into one "total cost" that would imply a
  *  precision neither figure actually has. */
-export function formatUsageEconomics(usage: UsageEconomics): UsageEconomicsDisplay {
+export function formatUsageEconomics(usage: UsageEconomics, terminal = false): UsageEconomicsDisplay {
   return {
     modelTokenCostUsd: formatUsdMeasurement(usage.model_token_cost_usd_estimated),
-    runnerTime: formatRunnerTimeCost(usage.runner_time_cost),
+    runnerTime: formatRunnerTimeCost(usage.runner_time_cost, terminal),
   };
 }
 
@@ -113,12 +113,22 @@ export interface ModelProvenanceDisplay {
  * same fact: this one may still resolve to a real value once the attempt
  * completes.
  */
-export function describeModelProvenance(provenance: ModelProvenance | null): ModelProvenanceDisplay {
+export function describeModelProvenance(
+  provenance: ModelProvenance | null,
+  observationSource?: string | null,
+): ModelProvenanceDisplay {
   if (provenance === null) {
     return { label: 'Not yet reported', detail: 'This attempt has not reported its actual execution yet.', tone: 'neutral' };
   }
   switch (provenance.kind) {
     case 'matched':
+      if (observationSource !== 'observed' && observationSource !== 'confirmed_from_output') {
+        return {
+          label: 'Requested, not confirmed',
+          detail: `Requested ${provenance.provider} / ${provenance.model_id} (not confirmed by the run)`,
+          tone: 'neutral',
+        };
+      }
       return {
         label: 'Matched request',
         detail: `Ran on ${provenance.provider} / ${provenance.model_id}, as requested.`,
@@ -145,4 +155,52 @@ export function describeModelProvenance(provenance: ModelProvenance | null): Mod
       return { label: 'Unrecognised provenance', detail: `Unknown kind: ${unknown.kind}`, tone: 'neutral' };
     }
   }
+}
+
+// ─── Outcome ────────────────────────────────────────────────────────────────
+
+const TERMINAL_ATTEMPT_STATES = new Set(['succeeded', 'failed', 'cancelled', 'lost']);
+
+/** Whether an attempt state is final (includes `lost`). */
+export function isTerminalAttemptState(state: string): boolean {
+  return TERMINAL_ATTEMPT_STATES.has(state);
+}
+
+export interface AttemptOutcome {
+  /** The "Why it stopped" line, for a failed/cancelled/lost attempt only. */
+  whyStopped: string | null;
+  /** An override for the `succeeded` badge, when the run's artifacts qualify it. */
+  badge: { label: string; tone: StateTone; detail?: string } | null;
+}
+
+/** `terminal_reason` is untyped on the wire; read it defensively. */
+export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {
+  const reason = (terminalReason && typeof terminalReason === 'object' ? terminalReason : {}) as {
+    code?: unknown;
+    message?: unknown;
+    artifacts?: unknown;
+    workspace_kept_at?: unknown;
+  };
+  const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
+  let whyStopped: string | null = null;
+  if (state === 'failed' || state === 'cancelled' || state === 'lost') {
+    const text = str(reason.message) ?? str(reason.code) ?? 'No reason was reported';
+    whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
+  }
+  let badge: AttemptOutcome['badge'] = null;
+  if (state === 'succeeded') {
+    const patch = (Array.isArray(reason.artifacts) ? reason.artifacts : []).find(
+      (a) => a && typeof a === 'object' && (a as { kind?: unknown }).kind === 'patch',
+    ) as { size_bytes?: unknown } | undefined;
+    const patchBytes = typeof patch?.size_bytes === 'number' ? patch.size_bytes : null;
+    const kept = str(reason.workspace_kept_at);
+    if (patchBytes !== null && patchBytes > 0) {
+      badge = { label: 'Succeeded', tone: 'success' };
+    } else if (kept) {
+      badge = { label: 'Finished — changes could not be read', tone: 'warning', detail: `Workspace kept at ${kept}` };
+    } else if (patchBytes === 0) {
+      badge = { label: 'Finished — no changes recorded', tone: 'warning' };
+    }
+  }
+  return { whyStopped, badge };
 }

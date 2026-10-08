@@ -1,7 +1,13 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button } from '../ui';
 import { artifactsApi, type AttemptSummary } from '../execution';
-import { NOT_MEASURED_TEXT, describeModelProvenance, formatUsageEconomics } from './attemptFormat';
+import {
+  NOT_MEASURED_TEXT,
+  describeAttemptOutcome,
+  describeModelProvenance,
+  formatUsageEconomics,
+  isTerminalAttemptState,
+} from './attemptFormat';
 import ArtifactDownloadPanel from './ArtifactDownloadPanel';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
@@ -35,8 +41,14 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props)
 const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const stateInfo = () => describeExecutionState(props.attempt.state);
-  const provenance = () => describeModelProvenance(props.attempt.model_provenance);
-  const economics = () => formatUsageEconomics(props.attempt.usage_economics);
+  const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
+  const provenance = () =>
+    describeModelProvenance(
+      props.attempt.model_provenance,
+      (props.attempt.actual_execution as { model_observation_source?: string | null } | null)?.model_observation_source,
+    );
+  const economics = () =>
+    formatUsageEconomics(props.attempt.usage_economics, isTerminalAttemptState(props.attempt.state));
 
   return (
     <li class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
@@ -44,7 +56,7 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
         <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Attempt #{props.attempt.attempt_number}
         </span>
-        <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
+        <Badge tone={outcome().badge?.tone ?? stateInfo().tone}>{outcome().badge?.label ?? stateInfo().label}</Badge>
         <Show when={!stateInfo().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             (unrecognised state)
@@ -75,6 +87,21 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
           runner {props.attempt.runner_id}
         </span>
       </div>
+
+      <Show when={outcome().whyStopped}>
+        {(why) => (
+          <p class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+            <strong>Why it stopped:</strong> {why()}
+          </p>
+        )}
+      </Show>
+      <Show when={outcome().badge?.detail}>
+        {(detail) => (
+          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            {detail()}
+          </p>
+        )}
+      </Show>
 
       {/* Model provenance — a distinct, honest tone per case, never a bare
           "matched" boolean. */}
