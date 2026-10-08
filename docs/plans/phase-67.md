@@ -136,6 +136,10 @@ Limits, imposed from outside the prompt (phase 65/66, unchanged, re-measured 202
   headed Playwright) while the user is at the machine.
 - **Secrets:** any process that opens the secret store runs with
   `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/tack-no-keychain`.
+- **The pinned toolchain, not Homebrew's.** On this workstation Homebrew's `cargo` shadows
+  rustup's and ignores `rust-toolchain.toml`, so clippy fails on lints CI never sees (seen on
+  Z1, 2026-10-07). Every cargo command and the gate run with `PATH=$HOME/.cargo/bin:$PATH`;
+  the brief says so and the agent confirms `rustc --version` prints the pinned version.
 - **Split at the layer boundary; the regenerated schema is the hand-off.** A task that finds
   itself editing the other layer stops: that is a finding.
 - **Docs are pasted, not merged.** One writer per wave for `agent-runners.md` and
