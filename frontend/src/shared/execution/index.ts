@@ -56,6 +56,7 @@ export type {
   AttemptListResult,
   EventSummary,
   EventListResult,
+  TerminalReason,
 } from './attempts';
 export { attemptsApi } from './attempts';
 

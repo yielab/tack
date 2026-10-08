@@ -1,5 +1,6 @@
 //! Operator execution handlers, mounted into the global router.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::{
@@ -408,6 +409,31 @@ impl ListExecutionsQuery {
     }
 }
 
+/// Terminal reason from a runner attempt: `code`, `message`, and optional
+/// `artifact`/`artifacts` on success; `workspace_kept_at` after a completed
+/// recovery. The wire shape is fully documented by runner contracts; this
+/// struct mirrors that contract, with a flattened `additional` field for
+/// extensibility. All fields are optional; a fresh attempt carries no
+/// `terminal_reason` until it reports one.
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct TerminalReason {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_kept_at: Option<String>,
+    /// Additional fields not explicitly typed, preserved from the wire
+    /// (extensibility for future runner protocol versions).
+    #[serde(flatten)]
+    pub additional: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ExecutionDetailResponse {
     pub protocol_version: u32,
@@ -438,7 +464,7 @@ pub struct AttemptSummary {
     /// `tack_orch::execution::ActualExecution` once the attempt has
     /// reported one, else `null`.
     pub actual_execution: Option<Value>,
-    pub terminal_reason: Option<Value>,
+    pub terminal_reason: Option<TerminalReason>,
     /// `tack_orch::execution::Usage` once reported, else `null` — never a
     /// fabricated zero.
     pub usage: Option<Value>,
@@ -1179,7 +1205,7 @@ pub async fn list_execution_attempts(
                 terminal_reason: attempt
                     .terminal_reason
                     .as_deref()
-                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+                    .and_then(|raw| serde_json::from_str::<TerminalReason>(raw).ok()),
                 usage: attempt
                     .usage
                     .as_deref()

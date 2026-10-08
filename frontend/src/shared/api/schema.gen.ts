@@ -2880,7 +2880,7 @@ export interface components {
             runner_id: string;
             started_at?: string | null;
             state: string;
-            terminal_reason?: unknown;
+            terminal_reason?: null | components["schemas"]["TerminalReason"];
             updated_at: string;
             /**
              * @description `tack_orch::execution::Usage` once reported, else `null` — never a
@@ -3974,6 +3974,27 @@ export interface components {
             /** Format: int32 */
             order: number;
             wip_limit?: number | null;
+        };
+        /**
+         * @description Terminal reason from a runner attempt: `code`, `message`, and optional
+         *     `artifact`/`artifacts` on success; `workspace_kept_at` after a completed
+         *     recovery. The wire shape is fully documented by runner contracts; this
+         *     struct mirrors that contract, with a flattened `additional` field for
+         *     extensibility. All fields are optional; a fresh attempt carries no
+         *     `terminal_reason` until it reports one.
+         */
+        TerminalReason: {
+            artifact?: unknown;
+            /** @default null */
+            artifacts: unknown[] | null;
+            /** @default null */
+            code: string | null;
+            /** @default null */
+            message: string | null;
+            /** @default null */
+            workspace_kept_at: string | null;
+        } & {
+            [key: string]: unknown;
         };
         Transition: {
             from: string;
