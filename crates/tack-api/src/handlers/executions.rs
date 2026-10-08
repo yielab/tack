@@ -26,6 +26,8 @@ use tack_orch::usage_provenance::derive_attempt_facts;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::AppState;
+
 /// Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
 /// (`docs/contracts/runner-v1/errors/*.json`) for every operator
 /// execution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,
@@ -592,6 +594,7 @@ fn compose_instructions(
     profile_instructions: &str,
     item: &tack_core::models::Item,
     brief: Option<&tack_core::models::ItemBrief>,
+    definition_of_done: Option<&str>,
 ) -> String {
     let mut out = profile_instructions.trim_end().to_owned();
     out.push_str(&format!(
@@ -608,6 +611,9 @@ fn compose_instructions(
         out.push_str("\n## The brief\n");
         out.push_str(body);
     }
+    if let Some(dod) = definition_of_done.filter(|d| !d.trim().is_empty()) {
+        out.push_str(&format!("\n\n## Definition of done\n{dod}"));
+    }
     out
 }
 
@@ -617,6 +623,7 @@ async fn with_item_context(
     repo: &tack_db::Repository,
     item: &tack_core::models::Item,
     mut profile: Value,
+    definition_of_done: Option<&str>,
 ) -> Result<(Value, Option<Value>), (StatusCode, Json<Value>)> {
     let fail = |message: &str| {
         error(
@@ -635,7 +642,7 @@ async fn with_item_context(
             .get("instructions")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let composed = compose_instructions(base, item, brief.as_ref());
+        let composed = compose_instructions(base, item, brief.as_ref(), definition_of_done);
         object.insert("instructions".to_owned(), Value::String(composed));
     }
     let brief = brief
@@ -913,8 +920,33 @@ pub async fn create_execution(
         "fleet" => json!({"kind":"fleet","fleet_id":input.selector_id}),
         _ => unreachable!("selector kind was validated"),
     };
-    let (agent_profile_snapshot, brief) =
-        with_item_context(&state.repo, &item, input.agent_profile_snapshot).await?;
+    let project = state
+        .repo
+        .get_project(item.project_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load project",
+                json!({}),
+            )
+        })?
+        .ok_or_else(|| {
+            error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Project does not exist",
+                json!({"resource": "project"}),
+            )
+        })?;
+    let (agent_profile_snapshot, brief) = with_item_context(
+        &state.repo,
+        &item,
+        input.agent_profile_snapshot,
+        project.definition_of_done.as_deref(),
+    )
+    .await?;
     let mut snapshot_value = json!({
         "request_id": request_id,
         "item_id": item_id,
@@ -1530,4 +1562,162 @@ pub async fn requeue_needs_operator(
             ))
         }
     }
+}
+
+/// Response body for `GET /api/items/{id}/agent-context`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentContextResponse {
+    pub text: String,
+}
+
+/// `GET /api/items/{id}/agent-context` — what the agent will read for a given item:
+/// the project's default profile's instructions, the item's title and description,
+/// the item's brief when it has one, and the project's definition_of_done when set.
+#[utoipa::path(
+    get,
+    path = "/api/items/{id}/agent-context",
+    tag = "items",
+    params(("id" = Uuid, Path, description = "Item ID")),
+    responses(
+        (status = 200, description = "The composed instructions for the agent", body = AgentContextResponse),
+        (status = 404, description = "Item or project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn get_item_agent_context(
+    State(state): State<AppState>,
+    Path(item_id): Path<Uuid>,
+) -> Result<Json<AgentContextResponse>, (StatusCode, Json<Value>)> {
+    let item = state
+        .repo
+        .get_item(item_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load item",
+                json!({}),
+            )
+        })?
+        .ok_or_else(|| {
+            error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Item does not exist",
+                json!({"resource": "item"}),
+            )
+        })?;
+
+    let project = state
+        .repo
+        .get_project(item.project_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load project",
+                json!({}),
+            )
+        })?
+        .ok_or_else(|| {
+            error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Project does not exist",
+                json!({"resource": "project"}),
+            )
+        })?;
+
+    // Load the profile: use the project's default_profile_id if set and found,
+    // otherwise use the implementer profile
+    let profile = if let Some(default_profile_id) = project.default_profile_id.as_deref() {
+        let profile: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE id = ?",
+        )
+        .bind(default_profile_id)
+        .fetch_optional(state.repo.pool())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load agent profile",
+                json!({}),
+            )
+        })?;
+
+        if let Some((id, name, instructions, tool_policy)) = profile {
+            serde_json::json!({
+                "agent_profile_id": id,
+                "name": name,
+                "instructions": instructions,
+                "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
+            })
+        } else {
+            // Profile ID specified but not found, return empty
+            serde_json::json!({
+                "agent_profile_id": "",
+                "name": "Default",
+                "instructions": "",
+                "tool_policy": serde_json::json!({}),
+            })
+        }
+    } else {
+        // Look up the implementer profile by kind
+        let implementer: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE kind = 'implementer'",
+        )
+        .fetch_optional(state.repo.pool())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not look up implementer profile",
+                json!({}),
+            )
+        })?;
+
+        if let Some((id, name, instructions, tool_policy)) = implementer {
+            serde_json::json!({
+                "agent_profile_id": id,
+                "name": name,
+                "instructions": instructions,
+                "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
+            })
+        } else {
+            serde_json::json!({
+                "agent_profile_id": "",
+                "name": "Default",
+                "instructions": "",
+                "tool_policy": serde_json::json!({}),
+            })
+        }
+    };
+
+    let profile_instructions = profile
+        .get("instructions")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    // Load the brief
+    let brief = state.repo.get_item_brief(item_id).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not load item brief",
+            json!({}),
+        )
+    })?;
+
+    // Compose the instructions with the definition_of_done
+    let composed = compose_instructions(
+        profile_instructions,
+        &item,
+        brief.as_ref(),
+        project.definition_of_done.as_deref(),
+    );
+
+    Ok(Json(AgentContextResponse { text: composed }))
 }
