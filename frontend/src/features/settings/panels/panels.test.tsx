@@ -7,6 +7,7 @@ import type { Project } from '../../../shared/types';
 import GeneralPanel from './GeneralPanel';
 import RolesPanel from './RolesPanel';
 import DataPanel from './DataPanel';
+import AutomationPanel from './AutomationPanel';
 
 const PROJECT = {
   id: 'p1',
@@ -14,8 +15,16 @@ const PROJECT = {
   description: 'desc',
   project_type: 'software',
   vocabulary: {},
-  workflow: { workflow_type: 'kanban', statuses: [] },
+  workflow: { workflow_type: 'kanban', statuses: [{ name: 'To Do', order: 0, category: 'todo' }, { name: 'Done', order: 1, category: 'done' }] },
   archived: false,
+  code_origin: 'folder',
+  repository: '/tmp/repo',
+  default_branch: 'main',
+  workspace_mode: 'local_branch',
+  push_after_run: false,
+  default_harness: null,
+  default_profile_id: null,
+  on_finish_status: null,
 } as unknown as Project;
 
 const ctx: ProjectContextValue = {
@@ -37,6 +46,16 @@ afterEach(() => {
 beforeEach(() => {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
+    if (url.endsWith('/api/runners')) {
+      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code' }], push_configured: true };
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (url.endsWith('/api/agent-profiles')) {
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (url.endsWith('/api/local-runner/check-folder')) {
+      return Promise.resolve(new Response(JSON.stringify({ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
     if (url.includes('/export')) return Promise.resolve(new Response('x', { status: 200 }));
     if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response('[]', { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
@@ -140,5 +159,36 @@ describe('Settings panels', () => {
       ),
     ).toBe(true);
     dispose();
+  });
+
+  it('automation_panel_saves_each_field_on_change', async () => {
+    const { container } = mount(() => <AutomationPanel />);
+    await flush();
+    await flush();
+    const byText = (sel: string, text: string) =>
+      Array.from(container.querySelectorAll<HTMLElement>(sel)).find((e) => e.textContent?.trim() === text)!;
+    const lastPatch = () => {
+      const calls = fetchMock.mock.calls.filter(
+        (c) => (c[1] as RequestInit)?.method === 'PATCH' && String(c[0]).endsWith('/api/projects/p1'),
+      );
+      return JSON.parse((calls[calls.length - 1][1] as RequestInit).body as string);
+    };
+    const folder = container.querySelector<HTMLInputElement>('input[aria-label="Folder"]')!;
+    const select = container.querySelector<HTMLSelectElement>('select')!;
+    const push = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const rows: [string, () => void, object][] = [
+      ['folder', () => { folder.value = '/tmp/other'; folder.dispatchEvent(new Event('change', { bubbles: true })); }, { repository: '/tmp/other', default_branch: 'main' }],
+      ['mode', () => byText('label', 'In the folder, directly').querySelector('input')!.click(), { workspace_mode: 'in_place' }],
+      ['push', () => push.click(), { push_after_run: true }],
+      ['finish', () => { select.value = 'Done'; select.dispatchEvent(new Event('change', { bubbles: true })); }, { on_finish_status: 'Done' }],
+      ['harness', () => byText('button', 'Codex').click(), { default_harness: 'codex' }],
+      ['profile', () => byText('button', 'Implementer').click(), { default_profile_id: 'prof1' }],
+    ];
+    for (const [name, act, expected] of rows) {
+      act();
+      await flush();
+      await flush();
+      expect(lastPatch(), name).toMatchObject(expected);
+    }
   });
 });
