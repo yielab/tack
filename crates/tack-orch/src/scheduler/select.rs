@@ -14,7 +14,9 @@ use super::types::{
     IneligibleReason, ModelSelector, RunnerCandidate, RunnerState, SchedulingRequest, Selection,
     SelectionOutcome,
 };
-use crate::execution::{Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
+use crate::execution::{
+    Approvals, CapabilitySupport, HarnessKind, ModelSelectionReport, RunnerId, RunnerSelector,
+};
 
 /// A request-level defect that disqualifies every candidate identically, so
 /// it is reported once rather than as N copies of the same
@@ -149,14 +151,19 @@ fn evaluate_candidate(
     }
 
     match &request.requested_model {
-        // No runner-v1 v1 capability field attests that a harness accepts
-        // an unspecified model — see IneligibleReason::AutoSelectNotVerified's
-        // doc comment. Every candidate is rejected identically rather than
-        // the scheduler guessing which harness is safe.
+        // Auto is eligible only when the matched harness reports it picks
+        // its own model (`model_selection: optional`); a harness reporting
+        // `required` or nothing is rejected rather than guessed safe — see
+        // IneligibleReason::AutoSelectNotVerified's doc comment.
         ModelSelector::AutoSelect => {
-            return Err(IneligibleReason::AutoSelectNotVerified {
-                harness: request.requested_harness_kind.clone(),
-            });
+            if !matches!(
+                harness.model_selection,
+                Some(ModelSelectionReport::Optional)
+            ) {
+                return Err(IneligibleReason::AutoSelectNotVerified {
+                    harness: request.requested_harness_kind.clone(),
+                });
+            }
         }
         ModelSelector::Explicit { provider, model_id } => {
             let declared = harness.model_combinations.iter().any(|combo| {
