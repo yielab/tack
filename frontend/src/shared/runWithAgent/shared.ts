@@ -86,7 +86,8 @@ export interface RunWithAgentFormValues {
    *  this module never sends a fabricated `"auto"` literal — see
    *  {@link buildCreateExecutionInput}. */
   approvals: 'auto' | 'ask';
-  repository: { kind: string; remote: string; baseRevision: string; subdirectory: string | null };
+  /** Absent: the server fills the snapshot from the item's project. */
+  repository?: { kind: string; remote: string; baseRevision: string; subdirectory: string | null };
   idempotencyKey: string;
   /** Sent only as `false`: a request can decline what the runner has, never enable it. */
   verify?: boolean;
@@ -138,7 +139,7 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
       timeout_seconds: values.timeoutSeconds,
       budgets: {},
     },
-    repository_snapshot: {
+    repository_snapshot: values.repository && {
       kind: values.repository.kind,
       remote: values.repository.remote,
       base_revision: values.repository.baseRevision,

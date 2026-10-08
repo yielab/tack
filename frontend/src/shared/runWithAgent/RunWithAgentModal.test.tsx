@@ -78,6 +78,12 @@ function runnerRow(id: string, name: string, snapshot: Record<string, unknown>, 
 
 const RUNNER = runnerRow('runner-1', 'Dev laptop', runnerCapabilitySnapshot());
 
+/** A project that has a folder: the dialog needs nothing from the operator. */
+const PROJECT = {
+  id: 'project-1', name: 'P', default_model: null, code_origin: 'folder', repository: '/home/ox/Sites/app',
+  default_branch: 'main', workspace_mode: 'local_branch', default_profile_id: 'profile-1',
+};
+
 let lastCreateBody: unknown;
 
 function mockFetch(
@@ -86,12 +92,13 @@ function mockFetch(
     fleets?: unknown[];
     agentProfiles?: unknown[];
     project?: unknown;
+    agentContext?: string;
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
   const fleets = opts.fleets ?? [FLEET];
   const agentProfiles: unknown[] = [...(opts.agentProfiles ?? [PROFILE])];
-  const project = opts.project ?? { id: 'project-1', name: 'P', default_model: null };
+  const project = opts.project ?? PROJECT;
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/runner-fleets')) return new Response(JSON.stringify({ protocol_version: 1, data: fleets }), { status: 200 });
@@ -103,6 +110,7 @@ function mockFetch(
     }
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
+    if (url.includes('/agent-context')) return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.' }), { status: 200 });
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
       lastCreateBody = JSON.parse(String(init.body));
@@ -192,14 +200,6 @@ function submitButton(): HTMLButtonElement {
   return [...document.querySelectorAll('button')].find((b) => b.textContent === 'Run') as HTMLButtonElement;
 }
 
-/** Repository is a read-only summary by default (no free-text field
- *  visible) — every test that needs to type a remote must expand it
- *  first, exactly as an operator would click "Change for this run". */
-function expandRepository(): void {
-  const btn = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Change for this run');
-  btn!.click();
-}
-
 function teardown() {
   while (disposers.length) disposers.pop()!();
   document.body.innerHTML = '';
@@ -217,12 +217,47 @@ afterEach(() => {
 });
 
 describe('RunWithAgentModal', () => {
+  it('a_configured_project_opens_ready_to_run', async () => {
+    const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+      harnesses: [{
+        harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+        model_combinations: [], native_provider: 'anthropic', providers: ['anthropic'], model_selection: 'optional',
+      }],
+    }));
+    mount({}, { runners: [claude], fleets: [], agentContext: 'Fix login bug\n\nThe brief.' });
+    await flush();
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    // Nothing to fill: Run is enabled as it opens.
+    expect(submitButton().disabled).toBe(false);
+    const summary = dialog.querySelector('[data-testid="run-summary"]')!;
+    expect(summary.textContent).toContain('Reviewer');
+    expect(summary.textContent).toContain("the agent's default");
+    expect(summary.textContent).toContain('on a new branch of ~/Sites/app');
+    for (const a of summary.querySelectorAll('a')) expect(a.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
+    expect(dialog.textContent).toContain('What the agent will read');
+    expect(dialog.textContent).toContain('The brief.');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).not.toHaveProperty('repository_snapshot');
+  });
+
+  it('a project with no code is blocked by one sentence and a link, and has no Run', async () => {
+    mount({}, { project: { ...PROJECT, code_origin: 'none', repository: null } });
+    await flush();
+    await flush();
+    expect(submitButton()).toBeUndefined();
+    const link = [...document.querySelectorAll('a')].find((a) => a.textContent === "Choose where this project's code is →")!;
+    expect(link.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
+  });
+
   it('renders with the item name in the title, and every always-present section labeled', async () => {
     mount();
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Run with agent: Fix login bug');
-    for (const section of ['Who runs it', 'What it gets', 'How far it may go', 'What happens after']) {
+    for (const section of ['What the agent will read', 'Ask before each action', 'Allow network access', 'Advanced for this run']) {
       expect(dialog.textContent).toContain(section);
     }
   });
@@ -241,9 +276,6 @@ describe('RunWithAgentModal', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).not.toContain('Machine or group');
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(submitButton().disabled).toBe(false);
     submitButton().click();
@@ -256,7 +288,6 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('Who runs it');
     const picker = select('Machine or group');
     const labels = [...picker.options].map((o) => o.textContent);
     expect(labels).toContain(FLEET.name);
@@ -277,9 +308,6 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();
     setSelect(select('Machine or group'), `exact_runner:${RUNNER.runner_id}`);
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(submitButton().disabled).toBe(false);
     submitButton().click();
@@ -289,13 +317,14 @@ describe('RunWithAgentModal', () => {
   });
 
   it('submit is disabled with every missing-field reason listed when the form is empty', async () => {
-    mount({}, { runners: [RUNNER], fleets: [FLEET], agentProfiles: [PROFILE, PROFILE_2] });
+    mount({}, { runners: [RUNNER], fleets: [FLEET], agentProfiles: [PROFILE, PROFILE_2], project: { ...PROJECT, default_profile_id: null } });
     await flush();
-    expect(submitButton().disabled).toBe(true);
+    // With no target chosen no model can be vouched for, so the model sentence stands in for Run.
+    expect(submitButton()).toBeUndefined();
     const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('Choose a model for this run');
     expect(dialog.textContent).toContain('Select where this runs.');
     expect(dialog.textContent).toContain('Select an agent profile.');
-    expect(dialog.textContent).toContain('Enter a repository remote.');
   });
 
   it('offers "Create default profile" inline when no agent profile exists yet, and selects the new one', async () => {
@@ -308,19 +337,23 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(dialog.textContent).not.toContain('No agent profile exists yet.');
-    expect(select('Agent profile').value).toBe('profile-new');
+    const pill = [...dialog.querySelectorAll('[aria-label="Agent profile"] button')].find((b) => b.textContent === 'Default')!;
+    expect(pill.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('the Repository fieldset shows a read-only summary — no free-text field visible by default — until "Change for this run"', async () => {
+  it('the repository is not asked for; only a branch override sends a snapshot, built from the project', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('No repository configured for this run yet.');
     expect(dialog.querySelector('input[placeholder="git@github.com:org/repo.git"]')).toBeNull();
-    const changeBtn = [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Change for this run')!;
-    changeBtn.click();
+    setField(field('Branch'), 'dev');
     await flush();
-    expect(dialog.querySelector('input[placeholder="git@github.com:org/repo.git"]')).not.toBeNull();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({
+      repository_snapshot: { kind: 'git', remote: '/home/ox/Sites/app', base_revision: 'dev', subdirectory: null },
+    });
   });
 
   it('with a project model default configured, "Project default — …" is offered and selected automatically', async () => {
@@ -329,9 +362,6 @@ describe('RunWithAgentModal', () => {
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Project default — openai / opaque/model-alpha');
     expect(modelModeRadio(0).checked).toBe(true);
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     submitButton().click();
     await flush();
@@ -353,11 +383,9 @@ describe('RunWithAgentModal', () => {
     // scheduler's AutoSelectNotVerified rejects unconditionally.
     mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] });
     await flush();
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(modelModeRadio(0).checked).toBe(true); // the agent's default, with no project opinion
-    expect(submitButton().disabled).toBe(true);
+    expect(submitButton()).toBeUndefined();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Unsupported');
     expect(dialog.textContent).toMatch(/no agent profile, project, or fleet default model is configured/i);
@@ -377,12 +405,11 @@ describe('RunWithAgentModal', () => {
       },
     );
     await flush();
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
-    expect(submitButton().disabled).toBe(true);
+    expect(submitButton()).toBeUndefined();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toMatch(/project is explicitly set to auto/i);
+    expect([...dialog.querySelectorAll('button')].some((b) => b.textContent === 'Choose a model for this run')).toBe(true);
   });
 
   it('"Choose…" lists the target\'s own reported model combinations, and picking one is real, gate-supported data', async () => {
@@ -393,9 +420,6 @@ describe('RunWithAgentModal', () => {
     const modelSelect = select('Model');
     const labels = [...modelSelect.options].map((o) => o.textContent);
     expect(labels.some((l) => l?.includes('openai / opaque/model-alpha'))).toBe(true);
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     setSelect(modelSelect, '0');
     await flush();
     // The "Choose…" list is built from the same live runner data the gate
@@ -448,9 +472,6 @@ describe('RunWithAgentModal', () => {
     // optional: opens on the agent's default, Run is enabled with no model chosen, and null/null is sent.
     mount({}, { runners: [claude('optional')], fleets: [] });
     await flush();
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(modelModeRadio(0).checked).toBe(true);
     expect(document.body.textContent).toContain("Uses the agent's own model");
@@ -467,9 +488,6 @@ describe('RunWithAgentModal', () => {
     const options = [...select('Model').options].map((o) => o.textContent);
     expect(options).toContain('claude-sonnet-5-5');
     expect(options).toContain('Other…');
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     setSelect(select('Model'), 'static:claude-sonnet-5-5');
     await flush();
     submitButton().click();
@@ -493,9 +511,6 @@ describe('RunWithAgentModal', () => {
       const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot({ harnesses: [harness(providers)] }));
       mount({}, { runners: [row], fleets: [] });
       await flush();
-      setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-      expandRepository();
-      setField(field('Remote'), 'git@example.com:org/repo.git');
       modelModeRadio(1).click();
       await flush();
       setSelect(select('Model'), '__custom__');
@@ -549,9 +564,6 @@ describe('RunWithAgentModal', () => {
     ];
     mount({ capabilities: () => caps }, { runners: [RUNNER], fleets: [] });
     await flush();
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     modelModeRadio(1).click();
     await flush();
     setSelect(select('Model'), '0');
@@ -564,9 +576,6 @@ describe('RunWithAgentModal', () => {
     const onCreated = vi.fn();
     mount({ onCreated }, { runners: [RUNNER], fleets: [] });
     await flush();
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(submitButton().disabled).toBe(false);
     submitButton().click();
@@ -581,9 +590,9 @@ describe('RunWithAgentModal', () => {
       requested_harness_kind: 'codex',
       requested_model_provider: null,
       requested_model_id: null,
-      repository_snapshot: { kind: 'git', remote: 'git@example.com:org/repo.git', base_revision: 'main', subdirectory: null },
       permission_policy: { tools: [], network: false },
     });
+    expect(lastCreateBody).not.toHaveProperty('repository_snapshot');
     expect(typeof (lastCreateBody as Record<string, unknown>).idempotency_key).toBe('string');
     expect(onCreated).toHaveBeenCalledWith('req-9');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -616,9 +625,6 @@ describe('RunWithAgentModal', () => {
     expect(box('Verify the result').disabled).toBe(false);
     expect(row('Push the branch').getAttribute('data-prerequisite')).toBe('deferred');
     expect(box('Push the branch').disabled).toBe(true);
-    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     box('Verify the result').click();
     await flush();
     submitButton().click();
@@ -633,7 +639,6 @@ describe('RunWithAgentModal', () => {
     const cases: Array<[Parameters<typeof mockFetch>[0], string, string]> = [
       [{ runners: [RUNNER], fleets: [], agentProfiles: [] }, 'An agent profile exists', '/agents'],
       [{ runners: [noHarness], fleets: [] }, 'The harness is installed and signed in', '/agents'],
-      [{ runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] }, 'A model is set for this run', '/projects/project-1/settings?tab=automation'],
     ];
     for (const [fetchOpts, label, href] of cases) {
       mount({}, fetchOpts);
@@ -649,8 +654,6 @@ describe('RunWithAgentModal', () => {
     const project = { id: 'project-1', name: 'P', default_model: { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' } };
     mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [], project });
     await flush();
-    expandRepository();
-    setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
     expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(1);
     expect(submitButton().disabled).toBe(true);
@@ -663,7 +666,7 @@ describe('RunWithAgentModal', () => {
   });
 
   it('"Ask me" stays gated by decisionsAttested()', async () => {
-    const askRadio = () => [...document.querySelectorAll('input[name="approvals"]')][1] as HTMLInputElement;
+    const askRadio = () => document.querySelector('input[name="approvals"]') as HTMLInputElement;
     const harness = (decisions: string) => ({
       ...runnerCapabilitySnapshot().harnesses[0],
       decisions: { support: decisions, reason: null },
