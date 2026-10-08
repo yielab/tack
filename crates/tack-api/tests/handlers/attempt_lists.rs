@@ -577,3 +577,68 @@ fn terminal_reason_round_trips_typed() {
         );
     }
 }
+
+/// T4a: a succeeded attempt that left a patch makes its item "need review";
+/// a verdict clears it, shows on the attempt, and a second verdict is a 409.
+#[tokio::test]
+async fn a_reviewed_attempt_clears_needs_review() {
+    let (app, repo, item_id) = setup().await;
+    let (request_id, attempt_id) = request_and_claim(&app, &item_id, "review").await;
+    sqlx::query(
+        "UPDATE execution_attempts SET state = 'succeeded', terminal_reason = ? WHERE id = ?",
+    )
+    .bind(json!({"artifacts": [{"kind": "patch", "size_bytes": 12}]}).to_string())
+    .bind(&attempt_id)
+    .execute(repo.pool())
+    .await
+    .expect("terminal attempt fixture");
+
+    let item_path = format!("/api/items/{item_id}");
+    let review_path = format!("/api/executions/{request_id}/attempts/1/review");
+    let needs_review = |app: axum::Router, path: String| async move {
+        let (status, body, _) =
+            common::send_with_raw(&app, "GET", &path, Value::Null, &operator_headers()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["item"]["needs_review"]
+            .as_bool()
+            .expect("needs_review bool")
+    };
+    assert!(needs_review(app.clone(), item_path.clone()).await);
+
+    for (verdict, expected) in [
+        ("maybe", StatusCode::BAD_REQUEST),
+        ("accepted", StatusCode::OK),
+        ("rejected", StatusCode::CONFLICT),
+    ] {
+        let (status, body, _) = common::send_with_raw(
+            &app,
+            "POST",
+            &review_path,
+            json!({"verdict": verdict, "note": "looks right"}),
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, expected, "{verdict}: {body}");
+        if expected == StatusCode::CONFLICT {
+            assert_eq!(body["error"]["code"], "conflict", "{body}");
+            assert_eq!(
+                body["error"]["details"]["reason"], "already_reviewed",
+                "{body}"
+            );
+        }
+    }
+    assert!(!needs_review(app.clone(), item_path).await);
+
+    let (_, listed, _) = common::send_with_raw(
+        &app,
+        "GET",
+        &format!("/api/executions/{request_id}/attempts"),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    let review = &listed["data"][0]["review"];
+    assert_eq!(review["verdict"], "accepted", "{listed}");
+    assert_eq!(review["note"], "looks right", "{listed}");
+    assert!(review["reviewed_at"].is_string(), "{listed}");
+}

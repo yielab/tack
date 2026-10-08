@@ -587,6 +587,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/executions/{request_id}/attempts/{attempt_number}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
+         *     records the operator's verdict on one attempt. One verdict per attempt: a
+         *     second is `409` with `details.reason = "already_reviewed"`.
+         */
+        post: operations["review_execution_attempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/executions/{request_id}/cancel": {
         parameters: {
             query?: never;
@@ -2974,6 +2995,12 @@ export interface components {
             state: string;
             url: string;
         };
+        /** @description An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`. */
+        AttemptReview: {
+            note?: string | null;
+            reviewed_at: string;
+            verdict: string;
+        };
         /**
          * @description One attempt as reported by `GET /api/executions/{id}/attempts` — every
          *     column `execution_attempts` carries (migration 045).
@@ -3000,6 +3027,7 @@ export interface components {
             model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
+            review?: null | components["schemas"]["AttemptReview"];
             runner_id: string;
             started_at?: string | null;
             state: string;
@@ -3635,6 +3663,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             item_type: components["schemas"]["ItemType"];
+            /**
+             * @description True when the latest finished attempt left a patch or a kept
+             *     workspace that nobody has reviewed yet.
+             */
+            needs_review?: boolean;
             /** Format: uuid */
             parent_id?: string | null;
             priority: components["schemas"]["Priority"];
@@ -3960,6 +3993,11 @@ export interface components {
             force?: boolean;
             /** @description Object key to restore. Defaults to the latest backup when omitted. */
             key?: string | null;
+        };
+        ReviewAttemptRequest: {
+            note?: string | null;
+            /** @description `accepted` or `rejected`. */
+            verdict: string;
         };
         RevokeEnrollmentTokenResponse: {
             /** Format: int32 */
@@ -5368,6 +5406,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    review_execution_attempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description The recorded verdict */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptReview"];
+                };
+            };
+            /** @description invalid_request (verdict is not accepted or rejected) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description not_found (execution_request or execution_attempt) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict (details.reason = already_reviewed) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
         };
