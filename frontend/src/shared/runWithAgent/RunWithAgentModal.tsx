@@ -22,7 +22,7 @@ const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
   modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '', viaGateway: false,
   customModelId: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
-  repoExpanded: false, repoKind: 'git', repoRemote: '', repoBaseRevision: 'main', repoSubdirectory: '',
+  branch: '',
   idempotencyKey: generateIdempotencyKey(),
   verify: true, pushBranch: true,
 });
@@ -45,11 +45,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const open = () => (props.isOpen ? 'open' : undefined);
   const [project] = createResource(() => (props.isOpen ? props.projectId : undefined), (id) => api.projects.get(id));
-  // 404 is "no brief yet", not a failure; the server composes what the agent
-  // receives, so this only tells the operator whether a brief will ride along.
-  const [brief] = createResource(
+  const [agentContext] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
-    (id) => api.briefs.get(id).then(() => true, () => false),
+    (id) => api.briefs.agentContext(id).then((r) => r.text, () => undefined),
   );
   const [fleets] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
   const [agentProfiles, { refetch: refetchAgentProfiles }] = createResource(open, () => agentProfilesApi.list().then((r) => r.data.data));
@@ -114,7 +112,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => {
     if (!props.isOpen || form.agentProfileId) return;
     const profiles = agentProfilesData();
-    if (profiles.length === 1) setForm('agentProfileId', profiles[0].agent_profile_id);
+    const preferred = profiles.find((p) => p.agent_profile_id === project()?.default_profile_id);
+    if (preferred) setForm('agentProfileId', preferred.agent_profile_id);
+    else if (profiles.length === 1) setForm('agentProfileId', profiles[0].agent_profile_id);
   });
 
   const createDefaultProfile = async () => {
@@ -204,8 +204,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!form.harnessKind) errors.push('Select a harness.');
     if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or use the agent\'s default.');
     if (form.modelMode === 'choose' && form.chooseIndex === CUSTOM_MODEL_VALUE && !form.customModelId.trim()) errors.push('Enter a model id, or pick one from the list.');
-    if (!form.repoRemote.trim()) errors.push('Enter a repository remote.');
-    if (!form.repoBaseRevision.trim()) errors.push('Enter a base revision.');
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
     return errors;
   });
@@ -222,7 +220,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
   const missingRow = () => Object.values(rows).some((r) => r() === 'missing');
 
-  const canSubmit = createMemo(() => structuralErrors().length === 0 && combinationGate().allowed && !missingRow() && !submitting());
+  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && structuralErrors().length === 0 && combinationGate().allowed && !missingRow() && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
     const profile = selectedAgentProfile();
@@ -239,12 +237,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       allowNetwork: form.allowNetwork,
       approvals: form.approvals,
       tools: form.toolsText.split(',').map((t) => t.trim()).filter(Boolean),
-      repository: {
-        kind: form.repoKind,
-        remote: form.repoRemote.trim(),
-        baseRevision: form.repoBaseRevision.trim(),
-        subdirectory: form.repoSubdirectory.trim() || null,
-      },
+      // The server fills the snapshot from the project; only a branch override sends one.
+      repository: form.branch.trim()
+        ? { kind: 'git', remote: project()?.repository ?? '', baseRevision: form.branch.trim(), subdirectory: null }
+        : undefined,
       idempotencyKey: form.idempotencyKey,
       verify: verifyConfigured() ? form.verify : undefined,
       pushBranch: pushConfigured() ? form.pushBranch : undefined,
@@ -267,11 +263,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       setSubmitting(false);
     }
   };
-
-  const repoSummary = () =>
-    form.repoRemote.trim()
-      ? `${form.repoKind} — ${form.repoRemote} @ ${form.repoBaseRevision}${form.repoSubdirectory ? ` / ${form.repoSubdirectory}` : ''}`
-      : 'No repository configured for this run yet.';
 
   return (
     <Modal isOpen={props.isOpen} onClose={props.onClose} title={`Run with agent: ${props.itemTitle}`} size="lg">
@@ -300,8 +291,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           <RunFlow
             form={form}
             setForm={setForm}
-            itemTitle={props.itemTitle}
-            hasBrief={() => brief() === true}
             projectId={props.projectId}
             hideTargetPicker={() => shouldHideTargetPicker(activeRunners().length, fleetsData().length)}
             runnersLoading={() => liveRunners.loading}
@@ -325,7 +314,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             through={derivedProvider}
             staticModels={staticModels}
             gate={combinationGate}
-            repoSummary={repoSummary}
+            project={project}
+            agentContext={() => agentContext()}
+            modelLabel={() => modelId() ?? "the agent's default"}
             decisionsAttested={decisionsAttested}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}
