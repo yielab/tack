@@ -2865,6 +2865,38 @@
         }
       }
     },
+    "/api/local-runner/test-run": {
+      "post": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "POST /api/local-runner/test-run — runs the harness once on this machine\nfrom an empty scratch directory: no remote, no typed model. It files the\nrun under an archived `Agent tests` project (created on first use, so it\nnever shows in the project list) and answers the new request's id.",
+        "operationId": "post_test_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestRun"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The execution request that was queued",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "The embedded runner is not configured, not running or not enrolled"
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -9895,6 +9927,17 @@
         "additionalProperties": {
           "description": "Additional fields not explicitly typed, preserved from the wire\n(extensibility for future runner protocol versions).",
           "default": {}
+        }
+      },
+      "TestRun": {
+        "type": "object",
+        "required": [
+          "harness_kind"
+        ],
+        "properties": {
+          "harness_kind": {
+            "type": "string"
+          }
         }
       },
       "Transition": {

@@ -944,6 +944,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-runner/test-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * POST /api/local-runner/test-run — runs the harness once on this machine
+         *     from an empty scratch directory: no remote, no typed model. It files the
+         *     run under an archived `Agent tests` project (created on first use, so it
+         *     never shows in the project list) and answers the new request's id.
+         */
+        post: operations["post_test_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -4090,6 +4112,9 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        TestRun: {
+            harness_kind: string;
+        };
         Transition: {
             from: string;
             to: string;
@@ -6342,6 +6367,37 @@ export interface operations {
         responses: {
             /** @description Removed (or already absent) */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_test_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestRun"];
+            };
+        };
+        responses: {
+            /** @description The execution request that was queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description The embedded runner is not configured, not running or not enrolled */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

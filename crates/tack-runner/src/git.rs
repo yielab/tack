@@ -418,6 +418,47 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         Ok(())
     }
 
+    async fn provision_scratch(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
+        let path = workspace.path.as_path();
+        let metadata = fs::symlink_metadata(path).map_err(|_| WorkspaceError::UnsafePath)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER))
+            .map_err(|_| WorkspaceError::UnsafePath)?;
+        if marker != workspace.attempt_id.as_str() {
+            return Err(WorkspaceError::AttemptMismatch);
+        }
+        let secrets = SecretMaterial::new();
+        if path.join(CHECKOUT_MARKER).exists() && path.join(".git").exists() {
+            return Ok(());
+        }
+        Self::purge_partial_checkout(path)?;
+        self.git_ok(path, &["init", "--quiet"], &secrets).await?;
+        self.git_ok(
+            path,
+            &[
+                "-c",
+                "user.name=tack",
+                "-c",
+                "user.email=tack@localhost",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "--no-gpg-sign",
+                "-m",
+                "scratch",
+            ],
+            &secrets,
+        )
+        .await?;
+        let head = self
+            .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
+            .await?
+            .stdout;
+        write_checkout_marker(&path.join(CHECKOUT_MARKER), &head)
+    }
+
     async fn capture_evidence(
         &self,
         workspace: &Workspace,
