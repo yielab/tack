@@ -105,6 +105,9 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
     return null;
   });
 
+  // Once the item has a run, the labelled trigger offers another one.
+  const hasRun = () => store.requestsForItem(props.itemId).length > 0;
+
   const openExecutionTab = (e: MouseEvent) => {
     e.stopPropagation();
     setSearchParams({ item: props.itemId, tab: 'execution' });
@@ -167,7 +170,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             setOpen(true);
           }}
         >
-          Run with agent
+          {hasRun() ? 'Run again' : 'Run with agent'}
         </Button>
       )}
       <RunWithAgentModal

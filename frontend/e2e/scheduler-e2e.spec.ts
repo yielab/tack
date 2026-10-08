@@ -106,7 +106,7 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
 
   const executionTab = drawer.getByRole('tab', { name: 'Execution' });
   await executionTab.click();
-  await expect(drawer.getByText('Queued')).toBeVisible();
+  await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
 
   // The runner claims it over the real runner-v1 wire — a background HTTP
   // call, not a UI action; the page is never reloaded or re-navigated
@@ -117,10 +117,8 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // The store's bounded poll (default 4s, `shared/execution/realtime.ts`)
   // must pick up the state change on its own — no reload, no manual
   // refetch trigger from this test. The real attempts endpoint feeds this
-  // same tab, so the request's own state badge AND the now-visible attempt
-  // row's state badge both read "Leased" — `.first()` targets the
-  // request-level one this test's own name is about.
-  await expect(drawer.getByText('Leased', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  // same tab; the run's one status badge is its claimed attempt's, Starting.
+  await expect(drawer.getByText('Starting', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 });
 
 test('an unsupported model is blocked client-side with a named reason, using the same live capability data the scheduler enforces', async ({

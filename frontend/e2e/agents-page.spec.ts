@@ -63,8 +63,10 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   // shared store's own poll; no reload.
   await page.getByRole('button', { name: 'Run test' }).click();
   const attempt = page.getByTestId('attempt').first();
-  await expect(attempt).toContainText('Finished — no changes recorded', { timeout: 90_000 });
-  await expect(attempt).toContainText(/runner runr_/);
+  // The run's one status sits in its heading, above the attempt card.
+  const run = page.locator('li', { has: attempt }).first();
+  await expect(run).toContainText('Finished — no changes recorded', { timeout: 90_000 });
+  await expect(attempt).toContainText(/runr_/);
   await expect(attempt.getByRole('button', { name: 'Log' })).toBeVisible();
 
   // Leave the machine as this test found it, for every other spec in this

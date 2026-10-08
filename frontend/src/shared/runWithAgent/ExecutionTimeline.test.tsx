@@ -19,6 +19,7 @@ const ROWS = [
   { request_id: 'req-running', item_id: 'item-1', state: 'running', cancellation_requested_at: null, created_at: '2025-01-01T00:00:00Z' },
   { request_id: 'req-needs-operator', item_id: 'item-1', state: 'needs_operator', cancellation_requested_at: null, created_at: '2025-01-02T00:00:00Z' },
   { request_id: 'req-mystery', item_id: 'item-1', state: 'some_future_state', cancellation_requested_at: null, created_at: '2025-01-03T00:00:00Z' },
+  { request_id: 'req-leased', item_id: 'item-1', state: 'leased', cancellation_requested_at: null, created_at: '2025-01-01T12:00:00Z' },
   { request_id: 'req-other-item', item_id: 'item-OTHER', state: 'queued', cancellation_requested_at: null, created_at: '2025-01-01T00:00:00Z' },
 ];
 
@@ -66,6 +67,9 @@ function mockFetch(): typeof fetch {
         JSON.stringify({ protocol_version: 1, request_id: 'req-needs-operator', state: 'queued', recovered_from: 'needs_operator', replayed: false }),
         { status: 200 },
       );
+    }
+    if (url.includes('/attempts') && url.includes('req-leased')) {
+      return new Response(JSON.stringify({ protocol_version: 1, data: [{ ...ATTEMPT_ROW, request_id: 'req-leased' }] }), { status: 200 });
     }
     if (url.includes('/attempts') && url.includes('req-running')) {
       return new Response(JSON.stringify({ protocol_version: 1, data: [ATTEMPT_ROW] }), { status: 200 });
@@ -126,6 +130,19 @@ describe('ExecutionTimeline', () => {
     expect(ids[ids.length - 1]).toContain('req-running');
     expect(c.textContent).toContain('Running');
     expect(c.textContent).toContain('Needs operator');
+  });
+
+  it('a run shows one status, its attempt\'s: a leased request whose attempt runs reads Running', async () => {
+    const c = mount('item-1');
+    await flush();
+    await flush();
+    await flush();
+    const row = requestRows(c).find((li) => li.textContent?.includes('req-leased'))!;
+    const badges = [...row.querySelectorAll('span')].map((s) => s.textContent);
+    expect(badges).toContain('Running');
+    expect(row.textContent).not.toContain('Starting');
+    expect(row.textContent).not.toContain('Leased');
+    expect(row.querySelector('[data-testid="attempt-working"]')).not.toBeNull();
   });
 
   it('an unrecognised lifecycle state renders its raw value with a visible caveat, never throwing', async () => {

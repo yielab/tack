@@ -16,9 +16,9 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
-import type { ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
+import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
-import type { StateTone } from './shared';
+import { HARNESS_KINDS, describeExecutionState, type StateTone } from './shared';
 
 /** The exact literal every unmeasured usage figure must render. Never
  *  interpolated or abbreviated differently at a second call site — every
@@ -98,6 +98,84 @@ export function formatUsageEconomics(usage: UsageEconomics, terminal = false): U
   };
 }
 
+// ─── What a run used ────────────────────────────────────────────────────────
+
+/** One attempt's usage, read from `attempt.usage` (the runner's report) and
+ *  `usage_economics`. Every figure is `null` when the harness didn't report it. */
+export interface AttemptUsage {
+  /** Every input token the model read, cache reads and writes included. */
+  tokensIn: number | null;
+  tokensOut: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+  modelCalls: number | null;
+  /** The models the run used, the main one first. */
+  models: string[];
+  cost: Measurement<number>;
+  wallClockMs: number | null;
+}
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {});
+
+export function readAttemptUsage(attempt: AttemptSummary): AttemptUsage {
+  const usage = obj(attempt.usage);
+  const value = (key: string) => num(obj(usage[key]).value);
+  let tokensIn = value('tokens_in');
+  let cacheRead = num(usage.cache_read_tokens);
+  let cacheWrite = num(usage.cache_write_tokens);
+  let modelCalls = num(usage.model_calls);
+  let models = Array.isArray(usage.models) ? usage.models.filter((m): m is string => typeof m === 'string') : [];
+
+  // A claude-code run recorded before the runner read the cache: its
+  // `tokens_in` counts only uncached input, and the full figures are still in
+  // the result line it kept as its terminal reason.
+  const reason = obj(attempt.terminal_reason);
+  if (reason.type === 'result' && !('cache_read_tokens' in usage) && !('model_calls' in usage)) {
+    const vendor = obj(reason.usage);
+    cacheRead = num(vendor.cache_read_input_tokens);
+    cacheWrite = num(vendor.cache_creation_input_tokens);
+    if (tokensIn !== null) tokensIn += (cacheRead ?? 0) + (cacheWrite ?? 0);
+    modelCalls = num(reason.num_turns);
+    models = Object.keys(obj(reason.modelUsage));
+  }
+  if (models.length === 0) {
+    const observed = obj(attempt.actual_execution).model_id;
+    if (typeof observed === 'string' && observed !== '' && observed !== 'unknown') models = [observed];
+  }
+  return {
+    tokensIn,
+    tokensOut: value('tokens_out'),
+    cacheRead,
+    cacheWrite,
+    modelCalls,
+    models,
+    cost: attempt.usage_economics.model_token_cost_usd_estimated,
+    wallClockMs: attempt.usage_economics.runner_time_cost.wall_clock_ms,
+  };
+}
+
+/** `12`, `3.3K`, `286K`, `1.08M`. */
+export function formatTokenCount(n: number): string {
+  const trim = (s: string) => s.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${trim((n / 1000).toFixed(n < 10_000 ? 1 : 0))}K`;
+  return `${trim((n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1))}M`;
+}
+
+/** A harness's own dollar figure is its estimate (claude-code prices tokens at
+ *  list price), never a bill — so it is always shown as approximate. */
+export function formatApproxCost(cost: Measurement<number>): string {
+  if (cost.source === 'not_measured' || cost.value === null) return NOT_MEASURED_TEXT;
+  const decimals = Math.abs(cost.value) > 0 && Math.abs(cost.value) < 0.01 ? 4 : 2;
+  return `≈ $${cost.value.toFixed(decimals)}`;
+}
+
+export function harnessName(kind: string | null | undefined): string {
+  if (!kind) return 'the agent';
+  return HARNESS_KINDS.find((h) => h.value === kind)?.label ?? kind;
+}
+
 // ─── Model provenance ───────────────────────────────────────────────────────
 
 export interface ModelProvenanceDisplay {
@@ -158,6 +236,41 @@ export function describeModelProvenance(
 }
 
 // ─── Outcome ────────────────────────────────────────────────────────────────
+
+/** The size of the patch an attempt left, or 0 when it left none. */
+export function attemptPatchBytes(terminalReason: unknown): number {
+  const arts = obj(terminalReason).artifacts;
+  const patch = (Array.isArray(arts) ? arts : []).find((a) => obj(a).kind === 'patch');
+  return num(obj(patch).size_bytes) ?? 0;
+}
+
+/** Whether a person still has to accept or reject the attempt: a terminal
+ *  attempt that left a patch or a kept workspace (the backend's `needs_review`). */
+export function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'terminal_reason'>): boolean {
+  return (
+    isTerminalAttemptState(attempt.state) &&
+    (attemptPatchBytes(attempt.terminal_reason) > 0 || typeof obj(attempt.terminal_reason).workspace_kept_at === 'string')
+  );
+}
+
+/** The one status an attempt shows: its review verdict, then what its outcome
+ *  says, then its lifecycle state. The run's heading shows its latest
+ *  attempt's, so a run never shows two states at once. */
+export function describeAttemptStatus(
+  attempt: Pick<AttemptSummary, 'state' | 'terminal_reason'>,
+  review: AttemptSummary['review'] | undefined = null,
+): { label: string; tone: StateTone } {
+  if (isReviewableAttempt(attempt)) {
+    if (review) return review.verdict === 'accepted' ? { label: 'Accepted', tone: 'success' } : { label: 'Rejected', tone: 'neutral' };
+    return attemptPatchBytes(attempt.terminal_reason) > 0
+      ? { label: 'Finished — needs your review', tone: 'warning' }
+      : { label: 'Finished — changes could not be read, needs your review', tone: 'warning' };
+  }
+  const badge = describeAttemptOutcome(attempt.state, attempt.terminal_reason).badge;
+  if (badge) return { label: badge.label, tone: badge.tone };
+  const state = describeExecutionState(attempt.state);
+  return { label: state.label, tone: state.tone };
+}
 
 const TERMINAL_ATTEMPT_STATES = new Set(['succeeded', 'failed', 'cancelled', 'lost']);
 

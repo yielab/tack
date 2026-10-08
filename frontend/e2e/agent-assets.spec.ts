@@ -456,10 +456,9 @@ test('attempt screenshot', async ({ page }) => {
   // the fix, not blurring or cropping the payload text out from the middle
   // of an otherwise-expanded screenshot (Timeline/Decisions/Artifacts all
   // live under the same `<Show>` in AttemptList.tsx, so no partial expand is
-  // possible). Requested-vs-actual model ("Matched request — Ran on
-  // anthropic / claude-sonnet-5-5, as requested") and usage marked measured
-  // (`Model/token cost $0.04 (measured)`, `Runner time cost — Not
-  // measured`) are both already visible in this collapsed summary; the
+  // possible). The model and the usage (tokens in and out, model calls,
+  // the cost marked approximate) are both already visible in this
+  // collapsed summary; the
   // artifact list and the raw event log are not, which is the trade this
   // screenshot makes: a clean, on-topic frame over full disclosure of every
   // expanded panel.

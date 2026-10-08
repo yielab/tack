@@ -43,7 +43,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await expect(drawer.getByText('Queued')).toBeVisible();
+    await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
     // Nothing has claimed it yet — an honest "no attempts", never a fake
     // empty timeline conflated with "still loading".
     await expect(drawer.getByText('No attempts yet.')).toBeVisible();
@@ -62,15 +62,14 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await drawer2.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer2.getByRole('heading', { name: 'Run 1' })).toBeVisible();
     await expect(drawer2.getByText(runnerId)).toBeVisible();
-    // Both the request's own state and the attempt's are "Leased" right
-    // after a claim — two badges, hence `.first()`.
-    await expect(drawer2.getByText('Leased').first()).toBeVisible();
-    // model_provenance is null until the attempt reports actual_execution —
-    // "Not yet reported", never a fabricated match.
-    await expect(drawer2.getByText('Not yet reported')).toBeVisible();
-    // usage_economics is honestly "Not measured" — never $0.00 — before any
-    // completion has been reported.
-    await expect(drawer2.getByText('Not measured').first()).toBeVisible();
+    // Right after a claim the run shows one status, its attempt's: Starting.
+    // (The task's own last-run summary, above the tabs, says it too.)
+    await expect(drawer2.getByRole('tabpanel').getByText('Starting', { exact: true })).toHaveCount(1);
+    await expect(drawer2.getByTestId('latest-run')).toContainText('Starting');
+    // Until it finishes, the card says the agent is working instead of
+    // showing a row of empty figures — never $0.00, never a fabricated model.
+    await expect(drawer2.getByTestId('attempt-working')).toBeVisible();
+    await expect(drawer2.getByText('$0.00')).toHaveCount(0);
 
     await drawer2.getByRole('button', { name: /Show timeline, questions & files/ }).click();
     await expect(drawer2.getByText('No events reported yet')).toBeVisible();

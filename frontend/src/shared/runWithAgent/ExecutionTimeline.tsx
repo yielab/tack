@@ -3,6 +3,7 @@ import { Badge, Button, EmptyState, Field, Icons } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
+import { describeAttemptStatus } from './attemptFormat';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { ExecutionRequestRecord } from '../execution';
 
@@ -134,6 +135,18 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
 
   const attempts = createMemo(() => store.attemptsFor(summary()?.request_id ?? ''));
 
+  // One status per run: its latest attempt's, which knows more (Running,
+  // needs your review, Accepted) than the request's own state, which stays
+  // "leased" for as long as an attempt is out.
+  const status = createMemo(() => {
+    const a = attempts();
+    const latest = a.status === 'ready'
+      ? a.data.reduce<(typeof a.data)[number] | undefined>((max, x) => (!max || x.attempt_number > max.attempt_number ? x : max), undefined)
+      : undefined;
+    if (latest) return { ...describeAttemptStatus(latest, latest.review), known: true };
+    return stateInfo();
+  });
+
   // Lazy first load: fetch attempts once per request the moment its row is
   // rendered, never repeatedly — a subsequent render with the same `idle`
   // state (there isn't one, since `loadAttempts` always transitions past
@@ -149,8 +162,8 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
     <li class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
-        <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
-        <Show when={!stateInfo().known}>
+        <Badge tone={status().tone}>{status().label}</Badge>
+        <Show when={!status().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             (unrecognised state — showing raw value)
           </span>
@@ -199,7 +212,15 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
           const a = attempts();
           if (a.status !== 'ready') return null;
           return a.data.length > 0 ? (
-            <AttemptList requestId={summary()?.request_id ?? ''} attempts={a.data} itemId={props.itemId} />
+            <AttemptList
+              requestId={summary()?.request_id ?? ''}
+              attempts={a.data}
+              itemId={props.itemId}
+              onReviewed={() => {
+                const id = summary()?.request_id;
+                if (id) void store.loadAttempts(id).catch(() => undefined);
+              }}
+            />
           ) : (
             <p class="rounded-[20px] border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
               No attempts yet.

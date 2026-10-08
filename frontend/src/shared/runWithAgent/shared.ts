@@ -398,7 +398,7 @@ export type StateTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
 
 const STATE_LABEL: Record<string, string> = {
   queued: 'Queued',
-  leased: 'Leased',
+  leased: 'Starting',
   preparing: 'Preparing',
   running: 'Running',
   waiting_decision: 'Asking you',

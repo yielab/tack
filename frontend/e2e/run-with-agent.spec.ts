@@ -156,7 +156,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
 
   const executionTab = drawer.getByRole('tab', { name: 'Execution' });
   await executionTab.click();
-  await expect(drawer.getByText('Queued')).toBeVisible();
+  await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
   // The real attempts endpoint is wired here, not a typed "not available
   // yet" placeholder — a freshly-created, unclaimed request honestly shows
   // zero attempts.

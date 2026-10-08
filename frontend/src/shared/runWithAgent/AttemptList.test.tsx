@@ -74,7 +74,8 @@ describe('AttemptList', () => {
 
   it('a terminal attempt with a kept workspace and no patch shows Accept and Reject', () => {
     const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]);
-    expect(c.textContent).toContain('Finished — changes could not be read, needs your review');
+    // A single attempt's status is the run's heading (`ExecutionTimeline`), not repeated here.
+    expect(c.textContent).not.toContain('needs your review');
     expect(Array.from(c.querySelectorAll('button')).map((b) => b.textContent)).toEqual(
       expect.arrayContaining(['Accept', 'Reject']),
     );
@@ -101,14 +102,69 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('Matched request');
   });
 
-  it('a matched attempt whose actual_execution observed the model renders "Matched request"', () => {
+  it('a matched attempt whose actual_execution observed the model says it ran on it', () => {
     const c = mount([
       attempt({
         model_provenance: { kind: 'matched', provider: 'anthropic', model_id: 'm1' },
         actual_execution: { model_observation_source: 'observed' },
       }),
     ]);
-    expect(c.textContent).toContain('Matched request');
+    expect(c.textContent).toContain('Ran on anthropic / m1, as requested.');
+  });
+
+  it('leads the usage with tokens, counts the cache, names the models and calls the cost approximate', () => {
+    const c = mount([
+      attempt({
+        actual_execution: { harness_kind: 'claude-code', model_id: 'claude-sonnet-5-5', model_observation_source: 'observed' },
+        model_provenance: { kind: 'auto_select_observed', actual_provider: 'anthropic', actual_model_id: 'claude-sonnet-5-5' },
+        usage: {
+          tokens_in: { value: 1_077_873, source: 'measured' },
+          tokens_out: { value: 3_284, source: 'measured' },
+          cache_read_tokens: 791_447,
+          cache_write_tokens: 286_414,
+          model_calls: 6,
+          models: ['claude-sonnet-5-5'],
+        },
+        usage_economics: {
+          model_token_cost_usd_estimated: { value: 1.3368, source: 'measured' },
+          runner_time_cost: { wall_clock_ms: 113_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
+        },
+      }),
+    ]);
+    const usage = c.querySelector('[data-testid="attempt-usage"]')!;
+    expect(usage.querySelector('[data-testid="usage-tokens"]')!.textContent).toBe('1.08M tokens in · 3.3K out');
+    expect(usage.textContent).toContain('Of the input: 791K read from cache, 286K written to cache, 12 new.');
+    expect(usage.textContent).toContain('6 model calls');
+    expect(usage.textContent).toContain('1m 53s');
+    expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
+    expect(usage.querySelector('[data-testid="usage-cost"]')!.textContent).toContain('≈ $1.34 (approx.)');
+    expect(usage.textContent).toContain("Claude Code's own estimate at list price, not your bill");
+    // One time figure: the runner-time dollar tile, never measured, is gone.
+    expect(usage.textContent!.match(/Not measured/g)).toBeNull();
+  });
+
+  it('reads the cache and calls from the result line of a claude-code run recorded before the runner did', () => {
+    const c = mount([
+      attempt({
+        usage: { tokens_in: { value: 12, source: 'measured' }, tokens_out: { value: 3_284, source: 'measured' } },
+        terminal_reason: {
+          type: 'result',
+          num_turns: 6,
+          usage: { input_tokens: 12, cache_read_input_tokens: 791_447, cache_creation_input_tokens: 286_414 },
+          modelUsage: { 'claude-sonnet-5-5': {} },
+        },
+      }),
+    ]);
+    expect(c.querySelector('[data-testid="usage-tokens"]')!.textContent).toBe('1.08M tokens in · 3.3K out');
+    expect(c.textContent).toContain('6 model calls');
+    expect(c.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
+  });
+
+  it('a running attempt says the agent is working instead of showing empty figures', () => {
+    const c = mount([attempt({ state: 'running', ended_at: null })]);
+    expect(c.querySelector('[data-testid="attempt-working"]')!.textContent).toContain('The agent is working');
+    expect(c.querySelector('[data-testid="attempt-usage"]')).toBeNull();
+    expect(c.textContent).not.toContain('Not yet reported');
   });
 
   it('renders "Not measured" (exact) for the real-world every-response-today usage_economics shape — never $0.00', () => {
@@ -126,16 +182,14 @@ describe('AttemptList', () => {
         },
       }),
     ]);
-    expect(c.textContent).toContain('$0.42 (measured)');
-    // The runner-time dollar figure is STILL "Not measured" in this fixture
-    // — the two dimensions never share one figure.
-    expect(c.textContent).toContain('Not measured');
+    expect(c.textContent).toContain('≈ $0.42 (approx.)');
+    expect(c.textContent).not.toContain('$0.42 (measured)');
     expect(c.textContent).toContain('4m 55s');
   });
 
-  it('renders model provenance honestly: null is "Not yet reported", not a fabricated match', () => {
+  it('renders model provenance honestly: null is "Model not reported", not a fabricated match', () => {
     const c = mount([attempt({ model_provenance: null })]);
-    expect(c.textContent).toContain('Not yet reported');
+    expect(c.textContent).toContain('Model not reported');
   });
 
   it('renders a mismatched provenance with both requested and actual values visible', () => {
