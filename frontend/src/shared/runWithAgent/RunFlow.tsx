@@ -45,6 +45,9 @@ export interface RunFlowProps {
   harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   projectDefaultLabel: Accessor<string | null | undefined>;
   modelCombos: Accessor<AggregatedModelCombination[]>;
+  /** Native provider and gateway, when the harness lists both; empty otherwise. */
+  throughOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
+  through: Accessor<string | null>;
   passthroughAttested: Accessor<boolean>;
   gate: Accessor<ReturnType<typeof gateHarnessModelSelection>>;
   repoSummary: Accessor<string>;
@@ -144,10 +147,15 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             ]}
           />
           <Show when={props.form.chooseIndex === CUSTOM_MODEL_VALUE}>
-            <div class="grid grid-cols-2 gap-3">
-              <Field label="Provider" value={props.form.customProvider} onInput={(e) => props.setForm('customProvider', e.currentTarget.value)} />
-              <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
-            </div>
+            <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
+            <Show when={props.throughOptions().length > 0}>
+              <Select
+                label="Through"
+                value={props.through() ?? ''}
+                onInput={(e) => props.setForm('viaGateway', e.currentTarget.value !== props.throughOptions()[0].value)}
+                options={props.throughOptions().map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </Show>
           </Show>
         </Show>
         <CombinationGateNote gate={props.gate()} />
