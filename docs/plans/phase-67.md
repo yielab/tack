@@ -130,6 +130,9 @@ Limits, imposed from outside the prompt (phase 65/66, unchanged, re-measured 202
   replaced fresh with a shorter brief, never resumed with a large context.
 - **One gate, once.** `.githooks/pre-push` at the end. While working, only the binary being
   changed: `cargo nextest run --workspace -E 'binary(<name>)'`; `npx vitest run <file>`.
+  The gate's "generated files are current" step is `git diff --quiet` on the generated
+  files, so a regenerated `schema.gen.ts` that is not yet staged always reads as stale (Z3,
+  2026-10-07): a task that regenerates stages the result (`git add`) before the gate.
 - **At most two agents building at once**, `--build-jobs 4`, `--test-threads 4`;
   `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<task>`, removed when the branch merges.
   `renice` from the launcher's loop, never the prompt. No agent opens a GUI (no Tauri, no
