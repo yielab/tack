@@ -6,7 +6,7 @@ import { Button, Field, FieldShell, Modal } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
 import GeneralPanel from './panels/GeneralPanel';
-import AgentsPanel from './panels/AgentsPanel';
+import AutomationPanel from './panels/AutomationPanel';
 import WorkflowPanel from './panels/WorkflowPanel';
 import VocabularyPanel from './panels/VocabularyPanel';
 import FieldsPanel from './panels/FieldsPanel';
@@ -15,7 +15,7 @@ import DataPanel from './panels/DataPanel';
 
 const TABS: TabItem[] = [
   { id: 'general', label: 'General' },
-  { id: 'agents', label: 'Agents' },
+  { id: 'automation', label: 'Automation' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'vocabulary', label: 'Vocabulary' },
   { id: 'fields', label: 'Fields' },
@@ -87,8 +87,8 @@ const ProjectSettings: Component = () => {
           <Match when={active() === 'general'}>
             <GeneralPanel />
           </Match>
-          <Match when={active() === 'agents'}>
-            <AgentsPanel />
+          <Match when={active() === 'automation'}>
+            <AutomationPanel />
           </Match>
           <Match when={active() === 'workflow'}>
             <WorkflowPanel />
