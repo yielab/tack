@@ -905,3 +905,5 @@ Follow-ups found while executing, not yet scheduled (small, one task each when a
 | S3 | `schema.gen.ts` types the check-folder response as `unknown` and `AgentProfileSummary` has no `summary`: the S2/S6 handlers need `ToSchema` response types. |
 | Z2 | When `WorkspaceManager::keep` itself fails, the workspace is still deleted by the later cleanup; log it at warn. |
 | S4 | The agents-page e2e asserts only that "Run test" is enabled; the click flow is asserted once S5's route exists. |
+| T1 | The brief's `definition_of_done` lost its only editor when `BriefTab` went; ADR 0074 moves it to the project. The Automation panel needs a "Definition of done" textarea writing `projects.definition_of_done` (T2a appends it to what the agent reads). |
+| S5 | "This machine's runner" is found as the newest active `local-%` runner; a runner-id accessor on `LocalRunnerControl` would make it exact. |
