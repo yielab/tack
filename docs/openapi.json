@@ -2618,6 +2618,95 @@
         }
       }
     },
+    "/api/local-runner/check-folder": {
+      "post": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "POST /api/local-runner/check-folder — what is at `path`; writes nothing.",
+        "operationId": "check_local_runner_folder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderPath"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Whether the path exists, is a directory, and its git facts",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The path is not absolute"
+          },
+          "409": {
+            "description": "The embedded runner is not configured"
+          }
+        }
+      }
+    },
+    "/api/local-runner/harness-verification": {
+      "get": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "GET /api/local-runner/harness-verification — per harness kind, when its\nlatest succeeded attempt ended. A kind with no succeeded attempt is absent.",
+        "operationId": "get_harness_verification",
+        "responses": {
+          "200": {
+            "description": "Harness kind to the ended_at of its latest succeeded attempt",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-runner/init-folder": {
+      "post": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "POST /api/local-runner/init-folder — creates `path` and runs `git init`.\nAn existing non-empty directory (or a file) is a 409.",
+        "operationId": "init_local_runner_folder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderPath"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Directory created and initialised as a git repository",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The path is not absolute"
+          },
+          "409": {
+            "description": "The path exists and is not an empty directory, or the embedded runner is not configured"
+          }
+        }
+      }
+    },
     "/api/local-runner/secrets": {
       "get": {
         "tags": [
@@ -8202,6 +8291,17 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderPath": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
             "type": "string"
           }
         }
