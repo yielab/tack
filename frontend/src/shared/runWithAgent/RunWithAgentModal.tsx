@@ -45,6 +45,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const open = () => (props.isOpen ? 'open' : undefined);
   const [project] = createResource(() => (props.isOpen ? props.projectId : undefined), (id) => api.projects.get(id));
+  const [item] = createResource(() => (props.isOpen ? props.itemId : undefined), (id) => api.items.get(id));
   const [agentContext] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.agentContext(id).then((r) => r.text, () => undefined),
@@ -71,7 +72,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
-  createEffect(() => { if (props.isOpen) setForm(initialForm()); });
+  let settingsApplied = false;
+  createEffect(() => { if (props.isOpen) { settingsApplied = false; setForm(initialForm()); } });
 
   createEffect(() => {
     if (!props.isOpen || form.selectorId) return;
@@ -151,6 +153,35 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => {
     if (targetHarnessCapability()?.model_selection === 'required' && !projectDefaultLabel()) setForm('modelMode', 'choose');
   });
+  // Start from the project's values, then overlay what this task remembered.
+  createEffect(() => {
+    if (!props.isOpen || settingsApplied || project.loading || item.loading || liveRunners.loading || agentProfiles.loading) return;
+    settingsApplied = true;
+    const p = project();
+    const saved = (item.error === undefined ? item()?.run_settings : null) as Record<string, unknown> | null | undefined;
+    if (p?.default_harness) setForm('harnessKind', p.default_harness);
+    if (typeof p?.push_after_run === 'boolean') setForm('pushBranch', p.push_after_run);
+    if (!saved) return;
+    if (typeof saved.harness === 'string') setForm('harnessKind', saved.harness);
+    if (typeof saved.agent_profile_id === 'string') setForm('agentProfileId', saved.agent_profile_id);
+    if (typeof saved.branch === 'string') setForm('branch', saved.branch);
+    if (typeof saved.push === 'boolean') setForm('pushBranch', saved.push);
+    if (typeof saved.timeout_seconds === 'number') setForm('timeoutSeconds', saved.timeout_seconds);
+    if (Array.isArray(saved.tools)) setForm('toolsText', saved.tools.join(', '));
+    if (typeof saved.network === 'boolean') setForm('allowNetwork', saved.network);
+    if (saved.approvals === 'auto' || saved.approvals === 'ask') setForm('approvals', saved.approvals);
+    if (typeof saved.verify === 'boolean') setForm('verify', saved.verify);
+    if (typeof saved.model_id === 'string') {
+      const id = saved.model_id;
+      const comboIndex = modelCombos().findIndex((c) => c.model_id === id && c.model_provider === saved.model_provider);
+      setForm('modelModeInitialized', true);
+      setForm('modelMode', 'choose');
+      if (comboIndex >= 0) setForm('chooseIndex', String(comboIndex));
+      else if (staticModels().includes(id)) setForm('chooseIndex', STATIC_MODEL_PREFIX + id);
+      else { setForm('chooseIndex', CUSTOM_MODEL_VALUE); setForm('customModelId', id); }
+    }
+  });
+
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
 
   const verifyConfigured = createMemo(() => capabilities().some((c) => c.verify_configured === true));
@@ -247,6 +278,39 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     };
   };
 
+  /** The keys that differ from the project's value (or the form's own default). */
+  const settingsDiff = (): Record<string, unknown> => {
+    const p = project();
+    const d = initialForm();
+    const diff: Record<string, unknown> = {};
+    if (form.harnessKind !== (p?.default_harness || d.harnessKind)) diff.harness = form.harnessKind;
+    if (form.agentProfileId !== (p?.default_profile_id ?? '')) diff.agent_profile_id = form.agentProfileId;
+    if (form.modelMode === 'choose' && modelProvider() && modelId()) { diff.model_provider = modelProvider(); diff.model_id = modelId(); }
+    const branch = form.branch.trim();
+    if (branch && branch !== p?.default_branch) diff.branch = branch;
+    if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
+    if (form.timeoutSeconds !== d.timeoutSeconds) diff.timeout_seconds = form.timeoutSeconds;
+    const tools = form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
+    if (tools.length > 0) diff.tools = tools;
+    if (form.allowNetwork !== d.allowNetwork) diff.network = form.allowNetwork;
+    if (form.approvals !== d.approvals) diff.approvals = form.approvals;
+    if (form.verify !== d.verify) diff.verify = form.verify;
+    return diff;
+  };
+
+  // The run already started: failing to remember must not fail it.
+  const rememberSettings = async () => {
+    const diff = settingsDiff();
+    const had = item.error === undefined && !!item()?.run_settings;
+    if (Object.keys(diff).length === 0 && !had) return;
+    try {
+      const run_settings = (Object.keys(diff).length === 0 ? null : diff) as Record<string, never> | null;
+      await api.items.update(props.itemId, { run_settings });
+    } catch {
+      toast.error('The run started, but its settings could not be saved on the task.');
+    }
+  };
+
   const submit = async (e: Event) => {
     e.preventDefault();
     if (!canSubmit()) return;
@@ -255,6 +319,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       const input = buildCreateExecutionInput(buildValues());
       const result = await store.create(input);
       toast.success(result.replayed ? 'Reused an existing run for this item.' : 'Run started.');
+      await rememberSettings();
       props.onCreated?.(result.request_id);
       props.onClose();
     } catch (err) {
