@@ -210,9 +210,9 @@ const AutomationPanel: Component = () => {
 
       <div class={SECTION}>
         <Heading>Agent</Heading>
-        <FieldShell label="Harness">
+        <FieldShell label="Agent">
           <div class="flex flex-wrap gap-2">
-            <For each={harnesses()} fallback={<Note>No runner reports a harness yet.</Note>}>
+            <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
               {(h) => (
                 <Pill active={p()?.default_harness === h} onClick={() => void save({ default_harness: p()?.default_harness === h ? null : h })}>
                   {h === 'claude-code' ? 'Claude Code' : h === 'codex' ? 'Codex' : h}

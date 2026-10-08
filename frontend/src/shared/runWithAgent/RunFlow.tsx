@@ -141,7 +141,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           </div>
         }
       >
-        <div role="group" aria-label="Agent profile" class="flex flex-wrap gap-2">
+        <div role="group" aria-label="Profile" class="flex flex-wrap gap-2">
           <For each={sortedProfiles()}>
             {(p) => (
               <button
@@ -164,7 +164,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <Prerequisite state="missing" label="An agent profile exists" href="/agents" fixLabel="Add an agent profile" />
       </Show>
       <Show when={props.rows.harness() === 'missing'}>
-        <Prerequisite state="missing" label="The harness is installed and signed in" href="/agents" fixLabel="Check the harness" />
+        <Prerequisite state="missing" label="The agent is installed and signed in" href="/agents" fixLabel="Check the agent" />
       </Show>
 
       <div class="space-y-2">
@@ -182,7 +182,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           Ask before each action
         </label>
         <Show when={!props.decisionsAttested()}>
-          <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This harness can't pause to ask — it always decides on its own.</p>
+          <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
         <label class="flex cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
           <input
@@ -201,7 +201,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>Advanced for this run</summary>
         <div class="mt-3 space-y-3">
           <Select
-            label="Harness"
+            label="Agent"
             value={props.form.harnessKind}
             onInput={(e) => props.setForm('harnessKind', e.currentTarget.value)}
             options={props.harnessOptions().map((h) => ({ value: h.value, label: h.label }))}
