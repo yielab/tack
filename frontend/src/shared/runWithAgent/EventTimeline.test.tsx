@@ -48,7 +48,7 @@ describe('EventTimeline', () => {
     expect(c.textContent).toContain('progress');
   });
 
-  it('attempt.terminal shows the result and artifact names, and hides the rest until "Raw"', async () => {
+  it('attempt.terminal is named in words, leaves the result to the card, and shows the payload under "Raw"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -67,8 +67,9 @@ describe('EventTimeline', () => {
     const c = mount();
     await flush();
     await flush();
-    expect(c.textContent).toContain('Added the retry wrapper.');
-    expect(c.textContent).toContain('changes.patch');
+    // The card shows the agent's message and files; the timeline names the event in words.
+    expect(c.textContent).toContain('The run ended');
+    expect(c.textContent).not.toContain('Added the retry wrapper.');
     expect(c.textContent).not.toContain('modelUsage');
     Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Raw')!.click();
     expect(c.textContent).toContain('modelUsage');

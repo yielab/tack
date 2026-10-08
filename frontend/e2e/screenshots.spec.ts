@@ -399,7 +399,7 @@ test.describe.serial('README screenshots', () => {
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
+    await drawer.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
     await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByRole('heading', { name: 'Questions from the agent' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
@@ -412,7 +412,7 @@ test.describe.serial('README screenshots', () => {
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: 'Show events, decisions & artifacts' }).first().click();
+    await drawer.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
     await expect(drawer.getByText(/^Recommendation:/).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByText('Merge-readiness pack', { exact: true }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);

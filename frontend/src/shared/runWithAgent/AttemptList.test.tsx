@@ -59,12 +59,17 @@ afterEach(() => {
 describe('AttemptList', () => {
   it('renders every attempt with its number, state badge and runner id', () => {
     const c = mount([attempt(), attempt({ attempt_id: 'att_2', attempt_number: 2, state: 'failed', runner_id: 'runner_2' })]);
-    expect(c.textContent).toContain('Attempt #1');
-    expect(c.textContent).toContain('Attempt #2');
+    expect(c.textContent).toContain('Attempt 1');
+    expect(c.textContent).toContain('Attempt 2');
     expect(c.textContent).toContain('runner_1');
     expect(c.textContent).toContain('runner_2');
     expect(c.textContent).toContain('Finished');
     expect(c.textContent).toContain('Failed');
+  });
+
+  it('a single attempt carries no number: the run is numbered instead', () => {
+    const c = mount([attempt()]);
+    expect(c.textContent).not.toContain('Attempt');
   });
 
   it('a terminal attempt with a kept workspace and no patch shows Accept and Reject', () => {
@@ -158,14 +163,14 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('Loading events');
     expect(c.textContent).not.toContain('No events reported yet');
 
-    const toggle = [...c.querySelectorAll('button')].find((b) => b.textContent?.includes('Show events'))!;
+    const toggle = [...c.querySelectorAll('button')].find((b) => b.textContent?.includes('Show timeline'))!;
     toggle.click();
     await flush();
     await flush();
 
     expect(c.textContent).toContain('No events reported yet');
     expect(c.textContent).toContain('Questions from the agent');
-    expect(c.textContent).toContain('Artifacts');
+    expect(c.textContent).toContain('Files from this run');
   });
 
   describe('pull request rendering', () => {
@@ -237,7 +242,9 @@ describe('AttemptList', () => {
       const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.' } })]);
       await flush();
       await flush();
-      expect(labels(c)).toEqual(['Open diff', 'Copy path', 'Result', 'Log']);
+      expect(labels(c)).toEqual(['Open diff', 'Copy path', 'Log']);
+      // What the agent said is on the card, not behind a button.
+      expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
       (c.querySelector('[data-testid="attempt-tools"] button') as HTMLButtonElement).click();
       await flush();
       await flush();
@@ -271,12 +278,39 @@ describe('AttemptList', () => {
       expect(writeText).toHaveBeenCalledWith('/home/ox/app');
     });
 
-    it('without a patch only Result and Log show', async () => {
+    it('without a patch only Log shows, and what the agent said is on the card', async () => {
       mockApi([art('a2', 'log', 'run.log')]);
       const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
       await flush();
       await flush();
-      expect(labels(c)).toEqual(['Result', 'Log']);
+      expect(labels(c)).toEqual(['Log']);
+      expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
+    });
+
+    it('an empty patch offers no diff', async () => {
+      mockApi([{ ...art('a1', 'patch', 'changes.patch'), size_bytes: 0 }]);
+      const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]);
+      await flush();
+      await flush();
+      expect(labels(c)).toEqual(['Copy path']);
+    });
+
+    it('the log names the agent steps, and says when it had no tools', async () => {
+      const log = [
+        JSON.stringify({ type: 'system', subtype: 'init', tools: [] }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/repo/test.md' } }] } }),
+      ].join('\n');
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/content')) return Promise.resolve(new Response(log));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [art('a2', 'log', 'claude-code-run.log')] })));
+      });
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      await flush();
+      await flush();
+      await flush();
+      expect(c.querySelector('[data-testid="agent-steps"]')?.textContent).toContain('Wrote /repo/test.md');
+      expect(c.textContent).toContain('The agent had no tools in this run');
     });
   });
 });

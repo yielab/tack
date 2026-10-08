@@ -169,6 +169,7 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     expect(describeAttemptOutcome('succeeded', art(0)).badge).toEqual({
       label: 'Finished — no changes recorded',
       tone: 'warning',
+      detail: 'The agent ended without changing any files. What it said is below.',
     });
     const kept = describeAttemptOutcome('succeeded', { workspace_kept_at: '/var/ws/1' }).badge;
     expect(kept?.label).toBe('Finished — changes could not be read');

@@ -67,14 +67,17 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
         }
       >
         <ul class="space-y-3">
-          <For each={requests()}>{(record) => <RequestRow record={record} />}</For>
+          {/* Newest first, so the first row is the latest run. */}
+          <For each={requests()}>
+            {(record, i) => <RequestRow record={record} itemId={props.itemId} number={requests().length - i()} />}
+          </For>
         </ul>
       </Show>
     </div>
   );
 };
 
-const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
+const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; number: number }> = (props) => {
   const store = useExecutionStore();
   const [reconcileOpen, setReconcileOpen] = createSignal(false);
   const [recoveryKey, setRecoveryKey] = createSignal('');
@@ -145,6 +148,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
   return (
     <li class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
+        <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
         <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
         <Show when={!stateInfo().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -154,7 +158,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
         </span>
-        <span class="ml-auto text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto max-w-[14rem] truncate text-[11px]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {summary()?.request_id ?? '—'}
         </span>
         <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>

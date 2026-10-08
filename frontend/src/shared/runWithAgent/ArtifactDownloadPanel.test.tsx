@@ -61,6 +61,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const downloadButton = (c: HTMLElement) =>
+  [...c.querySelectorAll('button')].find((b) => b.textContent === 'Download') as HTMLButtonElement;
+
 describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', () => {
   it('renders every listed artifact as a real row with a Download button, no id field anywhere', async () => {
     mockFetch([VERIFIED, UNVERIFIED], () => new Response('bytes'));
@@ -71,7 +74,7 @@ describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', 
     expect(c.querySelector('input')).toBeNull();
     expect(c.textContent).toContain('patch.diff');
     expect(c.textContent).toContain('log.txt');
-    expect(c.querySelectorAll('button')).toHaveLength(2);
+    expect([...c.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['View', 'Download', 'View', 'Download']);
   });
 
   it('an unverified artifact is visibly marked distinct from a verified one', async () => {
@@ -99,19 +102,31 @@ describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', 
 });
 
 describe('ArtifactDownloadPanel — every download outcome is a distinct, visible state (artifact failure stays visible)', () => {
-  it('clicking Download calls GET .../artifacts/{artifact_id}/content for that exact row and shows "Downloaded." on success', async () => {
+  it('clicking Download calls GET .../artifacts/{artifact_id}/content for that exact row and says where it went', async () => {
     const fetchMock = mockFetch([VERIFIED], () => new Response('artifact bytes', { status: 200 }));
     const c = mount();
     await flush();
     await flush();
 
-    (c.querySelector('button') as HTMLButtonElement).click();
+    downloadButton(c).click();
     await flush();
     await flush();
 
     const downloadCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/content'));
     expect(String(downloadCall?.[0])).toBe('/api/executions/exec_1/attempts/2/artifacts/art_1/content');
-    expect(c.textContent).toContain('Downloaded.');
+    expect(c.textContent).toContain("Sent to your browser's downloads as patch.diff.");
+  });
+
+  it('View shows the content in place, without downloading', async () => {
+    mockFetch([VERIFIED], () => new Response('diff --git a/x b/x', { status: 200 }));
+    const c = mount();
+    await flush();
+    await flush();
+    [...c.querySelectorAll('button')].find((b) => b.textContent === 'View')!.click();
+    await flush();
+    await flush();
+    expect(document.body.textContent).toContain('patch.diff');
+    expect(c.textContent).not.toContain('downloads as');
   });
 
   it('a 404 shows "No artifact with that id exists" — distinct from the 409 message', async () => {
@@ -120,7 +135,7 @@ describe('ArtifactDownloadPanel — every download outcome is a distinct, visibl
     await flush();
     await flush();
 
-    (c.querySelector('button') as HTMLButtonElement).click();
+    downloadButton(c).click();
     await flush();
     await flush();
 
@@ -134,7 +149,7 @@ describe('ArtifactDownloadPanel — every download outcome is a distinct, visibl
     await flush();
     await flush();
 
-    (c.querySelector('button') as HTMLButtonElement).click();
+    downloadButton(c).click();
     await flush();
     await flush();
 
@@ -148,7 +163,7 @@ describe('ArtifactDownloadPanel — every download outcome is a distinct, visibl
     await flush();
     await flush();
 
-    (c.querySelector('button') as HTMLButtonElement).click();
+    downloadButton(c).click();
     await flush();
     await flush();
 

@@ -1,6 +1,8 @@
 import { type Component, For, Show, createResource, createSignal } from 'solid-js';
-import { Badge, Button, EmptyState } from '../ui';
+import { Badge, Button, EmptyState, Modal } from '../ui';
 import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type ArtifactRecord } from '../execution';
+import DiffView from './DiffView';
+import { inDesktop } from './desktop';
 
 export interface ArtifactDownloadPanelProps {
   requestId: string;
@@ -8,6 +10,41 @@ export interface ArtifactDownloadPanelProps {
 }
 
 type DownloadStatusKind = 'idle' | 'downloading' | 'done' | 'not_found' | 'not_verified' | 'error';
+
+/** An artifact's content, read in place: a patch as a diff, JSON indented, anything else as text. */
+export const ArtifactView: Component<{
+  requestId: string; attemptNumber: number; artifact: ArtifactRecord | undefined; onClose: () => void;
+}> = (props) => {
+  const [text] = createResource(
+    () => props.artifact,
+    async (a) => (await artifactsApi.download(props.requestId, props.attemptNumber, a.artifact_id)).text(),
+  );
+  const shown = () => {
+    const t = text() ?? '';
+    const a = props.artifact;
+    if (a && (a.media_type?.includes('json') || a.name.endsWith('.json'))) {
+      try { return JSON.stringify(JSON.parse(t), null, 2); } catch { return t; }
+    }
+    return t;
+  };
+  const isPatch = () => props.artifact?.kind === 'patch';
+  return (
+    <Modal isOpen={!!props.artifact} onClose={props.onClose} title={props.artifact?.name ?? ''} size="xl">
+      <Show when={!text.loading} fallback={<p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>Loading…</p>}>
+        <Show when={!text.error} fallback={<p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>Couldn't read this artifact.</p>}>
+          <Show when={shown() !== ''} fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>This file is empty.</p>}>
+            <Show when={isPatch()} fallback={
+              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-[20px] px-4 py-3 text-xs"
+                style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>{shown()}</pre>
+            }>
+              <DiffView patch={shown()} />
+            </Show>
+          </Show>
+        </Show>
+      </Show>
+    </Modal>
+  );
+};
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -37,6 +74,8 @@ function formatSize(bytes: number): string {
 const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifact: ArtifactRecord }> = (props) => {
   const [status, setStatus] = createSignal<DownloadStatusKind>('idle');
   const [errorMessage, setErrorMessage] = createSignal<string | undefined>(undefined);
+  const [viewing, setViewing] = createSignal(false);
+  const fileName = () => props.artifact.name || props.artifact.artifact_id;
 
   const download = async () => {
     setStatus('downloading');
@@ -46,7 +85,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = props.artifact.name || props.artifact.artifact_id;
+      link.download = fileName();
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -77,17 +116,21 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
         <span class="text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {formatSize(props.artifact.size_bytes)}
         </span>
-        <Button
-          class="ml-auto" size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
-          Download
-        </Button>
+        <div class="ml-auto flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setViewing(true)}>View</Button>
+          <Button size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
+            Download
+          </Button>
+        </div>
       </div>
+      <ArtifactView requestId={props.requestId} attemptNumber={props.attemptNumber}
+        artifact={viewing() ? props.artifact : undefined} onClose={() => setViewing(false)} />
 
       {/* Every outcome — success and each distinct failure — is a visible,
           named state: artifact failure stays visible. */}
       <Show when={status() === 'done'}>
         <p class="text-xs" style={{ color: 'var(--color-success-700)' }}>
-          Downloaded.
+          {inDesktop() ? `Saved to your Downloads folder as ${fileName()}.` : `Sent to your browser's downloads as ${fileName()}.`}
         </p>
       </Show>
       <Show when={status() === 'not_found'}>
