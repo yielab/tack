@@ -907,3 +907,5 @@ Follow-ups found while executing, not yet scheduled (small, one task each when a
 | S4 | The agents-page e2e asserts only that "Run test" is enabled; the click flow is asserted once S5's route exists. |
 | T1 | The brief's `definition_of_done` lost its only editor when `BriefTab` went; ADR 0074 moves it to the project. The Automation panel needs a "Definition of done" textarea writing `projects.definition_of_done` (T2a appends it to what the agent reads). |
 | S5 | "This machine's runner" is found as the newest active `local-%` runner; a runner-id accessor on `LocalRunnerControl` would make it exact. |
+| T3a/T3b | `run_settings` is typed `Object` in OpenAPI, which generates `Record<string, never>`; the dialog casts. A `schema(value_type = Value)` or a named schema fixes the generated type. |
+| T3b | `agent_profile_id` is remembered whenever the auto-selected profile differs from the project's default, so a project without a default stores it needlessly; store it only when the person picked a pill. |
