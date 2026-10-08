@@ -755,3 +755,34 @@ async fn a_dirty_workspace_is_committed_and_pushed_to_origin() {
         "the harness wrote this"
     );
 }
+
+#[tokio::test]
+async fn evidence_is_captured_when_the_base_is_a_branch_name() {
+    let source = SourceRepository::create();
+    // A branch name and a full sha must both yield the same evidence.
+    for (label, revision) in [
+        ("branch", "main".to_owned()),
+        ("sha", source.second_commit.clone()),
+    ] {
+        let root_dir = temp_dir("root");
+        let workspace = attempt_workspace(root_dir.path(), &format!("attempt-{label}"), &revision);
+        let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+        provisioner
+            .provision(&workspace, &source.spec(&revision))
+            .await
+            .expect("checkout");
+        fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
+
+        let evidence = provisioner
+            .capture_evidence(&workspace, &[])
+            .await
+            .unwrap_or_else(|error| panic!("{label}: captured: false ({error:?})"))
+            .expect("a git provisioner reads the repository");
+
+        assert_eq!(evidence.files.len(), 1, "{label}");
+        assert_eq!(evidence.files[0].op, FileOp::Added, "{label}");
+        assert!(!evidence.patch.is_empty(), "{label}");
+        assert_eq!(evidence.base_commit, source.second_commit, "{label}");
+        assert_eq!(evidence.base_commit.len(), 40, "{label}");
+    }
+}

@@ -11,7 +11,8 @@
     "harness_kind": {"type": "string"},
     "captured": {"type": "boolean", "description": "false when git could not be read; then reason is set and head_commit, worktree_dirty and patch are null."},
     "reason": {"type": ["string", "null"]},
-    "base_commit": {"type": "string", "description": "The workspace's base_revision."},
+    "base_commit": {"type": "string", "description": "The commit the workspace's base_revision resolved to when git evidence exists; the requested name otherwise."},
+    "base_revision_requested": {"type": "string", "description": "The base_revision the request named, as asked. Optional."},
     "head_commit": {"type": ["string", "null"], "description": "git rev-parse HEAD; the harness may have committed."},
     "worktree_dirty": {"type": ["boolean", "null"], "description": "The staged diff against HEAD is non-empty."},
     "files": {

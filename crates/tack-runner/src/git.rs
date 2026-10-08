@@ -444,7 +444,12 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         let stage: Vec<&str> = stage.iter().map(String::as_str).collect();
         self.git_ok(path, &stage, &secrets).await?;
 
-        let base = workspace.base_revision.as_str();
+        // The checkout was fetched by name into a fresh repository, where a
+        // bare branch name resolves to nothing: diff against the commit it is.
+        let base_commit = self
+            .resolve_revision(path, &workspace.base_revision, &secrets)
+            .await?;
+        let base = base_commit.as_str();
         let head_commit = self
             .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
             .await?
@@ -482,6 +487,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             )
             .await?;
         Ok(Some(GitEvidence {
+            base_commit,
             head_commit,
             worktree_dirty: !dirty.stdout.is_empty(),
             files: parse_name_status(listing.stdout.as_bytes()),

@@ -5,6 +5,7 @@
   "captured": true,
   "reason": null,
   "base_commit": "0123456789abcdef0123456789abcdef01234567",
+  "base_revision_requested": "main",
   "head_commit": "0123456789abcdef0123456789abcdef01234567",
   "worktree_dirty": true,
   "files": [
