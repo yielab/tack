@@ -886,4 +886,22 @@ None open on 2026-10-07. The two that may come up while building:
 
 ## Status
 
-Proposed 2026-10-07. Nothing dispatched.
+Proposed 2026-10-07; the maintainer said "start the phase" the same day.
+
+- **Wave 0** (Z1–Z6b) merged 2026-10-07, gate green. **Wave 1** (M0 measured, M1–M3) merged
+  2026-10-08. **Wave 2**: S0, S1, S2, S3, S4 merged 2026-10-08; S5, S6, S7 in progress.
+- M1's finding: codex, opencode and docket declare `ModelSelection::Explicit`, so they report
+  `required`; only claude-code reports `optional`. The fixture's codex entry says `required`.
+- M0's finding: codex 0.149.1 on a ChatGPT account refused every model id, including its own
+  configured default; it ships with no list ("Other…" only). opencode's list depends on the
+  configured providers and is not pinned.
+
+Follow-ups found while executing, not yet scheduled (small, one task each when a wave has room):
+
+| Found by | Follow-up |
+|---|---|
+| S3 | The Automation panel's "Specific model" radio is shown disabled ("not available yet"); deleting `AgentsPanel` removed the only editor of `default_model`. A task writes `default_model` from that radio with M3's list. |
+| S3 | `ApiError` carries no `details.field`, so a 400 on an invalid folder or URL is a toast, not a sentence under the field (decision 8 wants the field). Extend the client's error type. |
+| S3 | `schema.gen.ts` types the check-folder response as `unknown` and `AgentProfileSummary` has no `summary`: the S2/S6 handlers need `ToSchema` response types. |
+| Z2 | When `WorkspaceManager::keep` itself fails, the workspace is still deleted by the later cleanup; log it at warn. |
+| S4 | The agents-page e2e asserts only that "Run test" is enabled; the click flow is asserted once S5's route exists. |
