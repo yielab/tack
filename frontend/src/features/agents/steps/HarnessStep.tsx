@@ -4,7 +4,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { RunnerSummary } from '../../../shared/execution/api';
 import type { HarnessCapability } from '../../../shared/execution/types';
 import { findHarness, harnessesOf } from '../runnerObservations';
-import { HARNESS_INSTALL_COMMAND } from '../constants';
+import { HARNESS_INSTALL_COMMAND, HARNESS_LOGIN_COMMAND } from '../constants';
 
 export interface HarnessStepProps {
   /** This machine's own active runner row, or `null` when agent execution
@@ -16,6 +16,9 @@ export interface HarnessStepProps {
    *  read). */
   onRecheck: () => void;
   rechecking: boolean;
+  /** `GET /api/local-runner/harness-verification`: harness kind -> time of
+   *  its last succeeded run. Absent kind = not signed in. */
+  verification: Readonly<Record<string, string>>;
 }
 
 /** One harness row's status, entirely from the runner's own probe — never
@@ -24,14 +27,25 @@ export interface HarnessStepProps {
  *  explicit "not found on PATH": this build's two adapters always probe
  *  both known harnesses, so a missing entry only happens against an older
  *  or fake snapshot that never ran the probe. */
-function statusLabel(harness: HarnessCapability | undefined): { text: string; tone: 'success' | 'neutral' | 'warning' } {
+function statusLabel(
+  harness: HarnessCapability | undefined,
+  kind: string,
+  signedInAt: string | undefined,
+): { text: string; tone: 'success' | 'neutral' | 'warning' } {
   if (harness && harness.probe_error === null && harness.installed_version) {
-    return { text: `Installed v${harness.installed_version}`, tone: 'success' };
+    const installed = `Installed v${harness.installed_version}`;
+    if (signedInAt) {
+      return { text: `${installed} · Signed in ${new Date(signedInAt).toLocaleDateString()}`, tone: 'success' };
+    }
+    return {
+      text: `${installed} · Not signed in — run \`${HARNESS_LOGIN_COMMAND[kind] ?? kind}\` once in a terminal`,
+      tone: 'neutral',
+    };
   }
   if (harness?.probe_error && !/not found on path/i.test(harness.probe_error)) {
     return { text: 'Could not check', tone: 'warning' };
   }
-  return { text: 'Not found', tone: 'neutral' };
+  return { text: 'Not installed', tone: 'neutral' };
 }
 
 /** The round initial badge each row leads with — decorative, cycled by
@@ -62,7 +76,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
           <For each={HARNESS_KINDS}>
             {(kind, index) => {
               const harness = () => findHarness(harnessesOf(props.thisMachineRunner), kind.value);
-              const status = () => statusLabel(harness());
+              const status = () => statusLabel(harness(), kind.value, props.verification[kind.value]);
               return (
                 <div class="flex flex-wrap items-center gap-3 rounded-[22px] bg-app px-3.5 py-3 text-sm">
                   <span
@@ -77,7 +91,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                     <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{kind.value}</span>
                   </div>
                   <Badge tone={status().tone}>{status().text}</Badge>
-                  <Show when={status().text === 'Not found'}>
+                  <Show when={status().text === 'Not installed'}>
                     <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[11.5px]" style={{ color: 'var(--color-text-secondary)' }}>
                       {HARNESS_INSTALL_COMMAND[kind.value] ?? 'see the vendor\'s own install instructions'}
                     </code>
