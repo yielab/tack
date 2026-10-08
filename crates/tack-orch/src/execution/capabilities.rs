@@ -117,6 +117,13 @@ pub struct HarnessCapability {
     /// attested" and are treated like `Unsupported`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decisions: Option<CapabilityValue>,
+    /// The provider this harness uses when a request names none.
+    #[serde(default)]
+    pub native_provider: String,
+    /// The configured providers whose wire this harness speaks, so a request
+    /// naming one of them can reach it.
+    #[serde(default)]
+    pub providers: Vec<String>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
