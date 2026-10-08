@@ -124,7 +124,7 @@ const DecisionRow: Component<{
           <Badge tone="info">Pending</Badge>
         </Show>
         <Show when={isExpired()}>
-          <Badge tone="danger">Expired</Badge>
+          <Badge tone="neutral">Expired</Badge>
         </Show>
         <Show when={isResolved()}>
           <Badge tone="success">Resolved</Badge>

@@ -516,7 +516,7 @@ export default function TemplateCreator() {
                           </span>
                           <Badge>{fieldTypeLabel(field.field_type)}</Badge>
                           <Show when={field.required}>
-                            <Badge tone="danger">Required</Badge>
+                            <Badge tone="neutral">Required</Badge>
                           </Show>
                         </div>
                         <Show when={field.options && field.options.length > 0}>
