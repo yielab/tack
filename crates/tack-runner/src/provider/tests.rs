@@ -258,6 +258,8 @@ fn empty_capabilities() -> RunnerCapabilities {
             model_combinations: Vec::new(),
             model_passthrough: None,
             decisions: None,
+            native_provider: String::new(),
+            providers: Vec::new(),
             additional: Default::default(),
         }],
         features: tack_orch::execution::FeatureCapabilities {

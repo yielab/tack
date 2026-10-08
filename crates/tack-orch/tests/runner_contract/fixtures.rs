@@ -15,7 +15,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     // combination) and per-model `model_metadata` (one of the two model ids
     // priced and windowed, the other absent from the map entirely — a model
     // the catalog said nothing about, not a claim of zero).
-    ("capabilities.json", 0xecb0_79e8_21b5_c12f),
+    ("capabilities.json", 0x02b7_1cb8_3d51_4a5e),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
     ("claim.response.json", 0x6145_96b7_fde8_48b4),

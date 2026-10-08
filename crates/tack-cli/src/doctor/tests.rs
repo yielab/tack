@@ -16,6 +16,8 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
         model_combinations: Vec::new(),
         model_passthrough: None,
         decisions: None,
+        native_provider: String::new(),
+        providers: Vec::new(),
         additional: Default::default(),
     }
 }

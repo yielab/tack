@@ -35,6 +35,8 @@ fn harness(
             .collect(),
         model_passthrough: None,
         decisions: None,
+        native_provider: String::new(),
+        providers: Vec::new(),
         additional: BTreeMap::new(),
     }
 }
