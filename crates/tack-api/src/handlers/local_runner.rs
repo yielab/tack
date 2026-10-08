@@ -163,6 +163,9 @@ pub trait LocalRunnerControl: Send + Sync {
     /// Stops the embedded runner if running. A no-op otherwise.
     async fn stop(&self);
 
+    /// The enrolled runner's id once the runner has registered, `None` before.
+    async fn runner_id(&self) -> Option<String>;
+
     /// Names and set-at timestamps of every stored secret. Never values.
     async fn list_secrets(&self) -> Vec<SecretMeta>;
 
@@ -581,15 +584,11 @@ pub async fn post_test_run(
     if control.status().await.state != RuntimeState::Running {
         return Err(unavailable("The embedded runner is not running"));
     }
+    let runner_id = control
+        .runner_id()
+        .await
+        .ok_or_else(|| unavailable("The embedded runner is not enrolled"))?;
     let pool = state.pool();
-    let runner_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM agent_runners WHERE name LIKE 'local-%' AND state = 'active' \
-         AND revoked_at IS NULL ORDER BY COALESCE(last_heartbeat_at, created_at) DESC LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| internal("Could not look up the local runner"))?;
-    let runner_id = runner_id.ok_or_else(|| unavailable("The embedded runner is not enrolled"))?;
     let profile: Option<(String, String, String, String, String)> = sqlx::query_as(
         "SELECT id, name, instructions, tool_policy, limits FROM agent_profiles \
          WHERE kind = 'implementer'",
