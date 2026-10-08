@@ -48,6 +48,32 @@ describe('EventTimeline', () => {
     expect(c.textContent).toContain('progress');
   });
 
+  it('attempt.terminal shows the result and artifact names, and hides the rest until "Raw"', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocol_version: 1,
+          data: [
+            {
+              event_id: 'evt_9', sequence: 9, source: 'runner', kind: 'attempt.terminal',
+              payload: { result: 'Added the retry wrapper.', artifacts: [{ name: 'changes.patch', kind: 'patch' }], modelUsage: { input: 1234 } },
+              occurred_at: '2026-08-06T12:01:00Z', created_at: '2026-08-06T12:01:00Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Added the retry wrapper.');
+    expect(c.textContent).toContain('changes.patch');
+    expect(c.textContent).not.toContain('modelUsage');
+    Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Raw')!.click();
+    expect(c.textContent).toContain('modelUsage');
+  });
+
   it('shows an honest empty state for zero events, not a blank screen', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NOT_MEASURED_TEXT,
+  describeAttemptOutcome,
   describeModelProvenance,
   formatRunnerTimeCost,
   formatUsageEconomics,
@@ -103,7 +104,7 @@ describe('describeModelProvenance', () => {
   });
 
   it('matched renders a success tone and names the real provider/model', () => {
-    const d = describeModelProvenance({ kind: 'matched', provider: 'openai', model_id: 'opaque/model-alpha' });
+    const d = describeModelProvenance({ kind: 'matched', provider: 'openai', model_id: 'opaque/model-alpha' }, 'observed');
     expect(d.tone).toBe('success');
     expect(d.detail).toContain('openai');
     expect(d.detail).toContain('opaque/model-alpha');
@@ -128,5 +129,49 @@ describe('describeModelProvenance', () => {
     expect(d.detail).toContain('opaque/model-alpha');
     expect(d.detail).toContain('anthropic');
     expect(d.detail).toContain('opaque/model-beta');
+  });
+});
+
+describe('describeAttemptOutcome — the card leads with the outcome', () => {
+  const rejected = {
+    code: 'harness_rejected',
+    message: 'requested model provider "claude" is not supported by claude-code',
+  };
+
+  it('a_rejected_attempt_leads_with_why_it_stopped', () => {
+    const o = describeAttemptOutcome('failed', rejected);
+    expect(o.whyStopped).toBe('Did not start — requested model provider "claude" is not supported by claude-code');
+  });
+
+  it('why-it-stopped falls back to code, then to "No reason was reported"; live attempts have none', () => {
+    expect(describeAttemptOutcome('cancelled', { code: 'user_cancelled' }).whyStopped).toBe('user_cancelled');
+    expect(describeAttemptOutcome('lost', null).whyStopped).toBe('No reason was reported');
+    expect(describeAttemptOutcome('running', null).whyStopped).toBeNull();
+  });
+
+  it('matched is produced only for an observation; requested_not_confirmed is neutral and says so', () => {
+    const matched = { kind: 'matched' as const, provider: 'claude', model_id: 'claude-sonnet-5-5' };
+    expect(describeModelProvenance(matched, 'confirmed_from_output').label).toBe('Matched request');
+    const d = describeModelProvenance(matched, 'requested_not_confirmed');
+    expect(d.label).not.toBe('Matched request');
+    expect(d.detail).toBe('Requested claude / claude-sonnet-5-5 (not confirmed by the run)');
+    expect(d.tone).toBe('neutral');
+  });
+
+  it('a null wall clock reads "Did not start" on a terminal attempt, the current text on a live one', () => {
+    expect(formatWallClock(null, true)).toBe('Did not start');
+    expect(formatWallClock(null, false)).toBe('Unknown — attempt has not finished yet');
+  });
+
+  it('the succeeded badge is green with a patch, amber without one, amber when the workspace was kept', () => {
+    const art = (size: number) => ({ artifacts: [{ kind: 'patch', size_bytes: size }] });
+    expect(describeAttemptOutcome('succeeded', art(10)).badge).toEqual({ label: 'Succeeded', tone: 'success' });
+    expect(describeAttemptOutcome('succeeded', art(0)).badge).toEqual({
+      label: 'Finished — no changes recorded',
+      tone: 'warning',
+    });
+    const kept = describeAttemptOutcome('succeeded', { workspace_kept_at: '/var/ws/1' }).badge;
+    expect(kept?.label).toBe('Finished — changes could not be read');
+    expect(kept?.detail).toContain('/var/ws/1');
   });
 });
