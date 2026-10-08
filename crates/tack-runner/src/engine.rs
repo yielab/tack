@@ -530,7 +530,13 @@ where
         session: &RunnerSession,
         work: ClaimedWork,
     ) -> Result<RunCycle, EngineError> {
-        let repository = work.workspace_repository()?;
+        let mut repository = work.workspace_repository()?;
+        // A scratch request names no remote and no revision; its one commit
+        // is made at provision time, so `HEAD` is the base evidence diffs against.
+        let scratch = work.request.repository.kind == "scratch";
+        if scratch {
+            repository.base_revision = "HEAD".to_owned();
+        }
         if work.lease.runner_id != session.runner_id {
             return Err(EngineError::RunnerMismatch);
         }
@@ -553,7 +559,11 @@ where
                 },
             )
             .await?;
-        self.workspaces.provision(&workspace, &repository).await?;
+        if scratch {
+            self.workspaces.provision_scratch(&workspace).await?;
+        } else {
+            self.workspaces.provision(&workspace, &repository).await?;
+        }
 
         let spec = ExecutionSpec {
             work: work.clone(),

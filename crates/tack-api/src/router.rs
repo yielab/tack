@@ -94,6 +94,7 @@ fn local_runner_routes() -> Router<AppState> {
             "/local-runner/init-folder",
             post(local_runner::init_local_runner_folder),
         )
+        .route("/local-runner/test-run", post(local_runner::post_test_run))
         .route(
             "/local-runner/harness-verification",
             get(local_runner::get_harness_verification),

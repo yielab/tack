@@ -80,6 +80,13 @@ pub trait WorktreeProvisioner: Send + Sync {
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError>;
 
+    /// An empty directory with a repository and one empty initial commit, in
+    /// place of a fetch: the checkout for a request that names no remote.
+    /// Refused unless a provisioner opts in.
+    async fn provision_scratch(&self, _workspace: &Workspace) -> Result<(), WorkspaceError> {
+        Err(WorkspaceError::WorktreeUnavailable)
+    }
+
     /// What the attempt changed in `workspace`, read before the workspace is
     /// deleted. `exclude` names workspace-relative paths that are the runner's
     /// own, not the harness's. `Ok(None)` is a provisioner with no repository
@@ -172,6 +179,20 @@ where
         workspace: &Workspace,
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError> {
+        self.reserve_directory(workspace)?;
+        self.provisioner.provision(workspace, repository).await?;
+        Ok(())
+    }
+
+    /// [`Self::provision`] for a request with no remote: the same directory
+    /// guards, then an empty repository instead of a fetch.
+    pub async fn provision_scratch(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
+        self.reserve_directory(workspace)?;
+        self.provisioner.provision_scratch(workspace).await?;
+        Ok(())
+    }
+
+    fn reserve_directory(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
         let root = self.ensure_safe_root()?;
         if workspace.path != root.join(encode_id(workspace.attempt_id.as_str())) {
             return Err(WorkspaceError::UnsafePath);
@@ -196,7 +217,6 @@ where
                 return Err(WorkspaceError::AttemptMismatch);
             }
         }
-        self.provisioner.provision(workspace, repository).await?;
         Ok(())
     }
 
