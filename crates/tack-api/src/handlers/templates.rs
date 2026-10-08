@@ -211,6 +211,7 @@ pub(crate) async fn build_project_from_template(
         default_model: None,
         github_token_ref: None,
         archived: None,
+        ..Default::default()
     };
 
     state
