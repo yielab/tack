@@ -2071,6 +2071,68 @@
         }
       }
     },
+    "/api/items/{id}/subtasks-from-plan": {
+      "post": {
+        "tags": [
+          "items"
+        ],
+        "operationId": "create_subtasks_from_plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Parent Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubtasksFromPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Subtasks created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSubtasksFromPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Parent item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{item_id}/attachments": {
       "get": {
         "tags": [
@@ -7967,6 +8029,78 @@
               "null"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "CreateSubtaskFromPlan": {
+        "type": "object",
+        "required": [
+          "title",
+          "acceptance"
+        ],
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateSubtasksFromPlanRequest": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "subtasks"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateSubtaskFromPlan"
+            }
+          }
+        }
+      },
+      "CreateSubtasksFromPlanResponse": {
+        "type": "object",
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreatedSubtask"
+            }
+          }
+        }
+      },
+      "CreatedSubtask": {
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
           }
         }
       },
