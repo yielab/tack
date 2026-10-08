@@ -294,6 +294,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(items::delete_item_github_link),
         )
         .route(
+            "/items/{id}/subtasks-from-plan",
+            post(items::create_subtasks_from_plan),
+        )
+        .route(
             "/projects/{project_id}/sprints",
             post(sprints::create_sprint),
         )

@@ -535,6 +535,150 @@ pub async fn delete_item_github_link(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Debug, Deserialize, Serialize, Validate, utoipa::ToSchema)]
+pub struct CreateSubtaskFromPlan {
+    #[validate(length(min = 1, message = "title must not be empty"))]
+    pub title: String,
+    #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
+    pub description: Option<String>,
+    #[validate(length(max = 50, message = "at most 50 acceptance criteria"))]
+    pub acceptance: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Validate, Serialize, utoipa::ToSchema)]
+pub struct CreateSubtasksFromPlanRequest {
+    pub artifact_id: String,
+    #[validate(length(min = 1, message = "subtasks list must not be empty"))]
+    pub subtasks: Vec<CreateSubtaskFromPlan>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CreatedSubtask {
+    pub id: Uuid,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CreateSubtasksFromPlanResponse {
+    pub created: Vec<CreatedSubtask>,
+}
+
+#[instrument(skip(state, input))]
+#[utoipa::path(
+    post,
+    path = "/api/items/{id}/subtasks-from-plan",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Parent Item ID"),
+    ),
+    request_body = CreateSubtasksFromPlanRequest,
+    responses(
+        (status = 200, description = "Subtasks created", body = CreateSubtasksFromPlanResponse),
+        (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Parent item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn create_subtasks_from_plan(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<CreateSubtasksFromPlanRequest>,
+) -> ApiResult<Json<CreateSubtasksFromPlanResponse>> {
+    // Validate request
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    // Get parent item
+    let parent = state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+    // Get project to find initial status from workflow
+    let project = state
+        .repo
+        .get_project(parent.project_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Project {} not found", parent.project_id)))?;
+
+    let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
+
+    let mut created = Vec::new();
+
+    // Create each subtask
+    for (idx, subtask_input) in input.subtasks.iter().enumerate() {
+        subtask_input
+            .validate()
+            .map_err(|e| ApiError::BadRequest(format!("subtasks[{}]: {}", idx, e)))?;
+
+        // Create the item
+        let item = state
+            .repo
+            .create_item_with_source(
+                parent.project_id,
+                &initial_status,
+                CreateItem {
+                    title: subtask_input.title.clone(),
+                    description: subtask_input.description.clone(),
+                    item_type: Some(parent.item_type.clone()),
+                    parent_id: Some(id),
+                    ..Default::default()
+                },
+                tack_core::models::ItemSource::Manual,
+            )
+            .await?;
+
+        // Create brief with manual acceptance criteria
+        if !subtask_input.acceptance.is_empty() {
+            let mut acceptance = Vec::new();
+            for (i, text) in subtask_input.acceptance.iter().enumerate() {
+                let title = if text.len() > 60 {
+                    text[..60].to_string()
+                } else {
+                    text.clone()
+                };
+                acceptance.push(tack_core::models::AcceptanceCriterion::Manual {
+                    id: format!("m{}", i + 1),
+                    title,
+                    text: text.clone(),
+                });
+            }
+
+            state
+                .repo
+                .upsert_item_brief(
+                    item.id,
+                    tack_core::models::UpsertItemBrief {
+                        acceptance,
+                        constraints: Vec::new(),
+                        definition_of_done: None,
+                        risk: None,
+                    },
+                )
+                .await?;
+        }
+
+        created.push(CreatedSubtask {
+            id: item.id,
+            title: item.title,
+        });
+    }
+
+    // Broadcast WebSocket event
+    websocket::broadcast_event(
+        &state,
+        BoardEvent::ItemUpdated {
+            project_id: parent.project_id,
+            item_id: id,
+            old_status: Some(parent.status.clone()),
+            new_status: parent.status.clone(),
+        },
+    );
+
+    Ok(Json(CreateSubtasksFromPlanResponse { created }))
+}
+
 #[instrument(skip(state))]
 #[utoipa::path(
     get,

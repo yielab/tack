@@ -720,6 +720,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/{id}/subtasks-from-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_subtasks_from_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{item_id}/attachments": {
         parameters: {
             query?: never;
@@ -3348,6 +3364,23 @@ export interface components {
             /** Format: date-time */
             start_date?: string | null;
         };
+        CreateSubtaskFromPlan: {
+            acceptance: string[];
+            description?: string | null;
+            title: string;
+        };
+        CreateSubtasksFromPlanRequest: {
+            artifact_id: string;
+            subtasks: components["schemas"]["CreateSubtaskFromPlan"][];
+        };
+        CreateSubtasksFromPlanResponse: {
+            created: components["schemas"]["CreatedSubtask"][];
+        };
+        CreatedSubtask: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+        };
         CustomFieldDefinition: {
             /** Format: date-time */
             created_at: string;
@@ -5815,6 +5848,51 @@ export interface operations {
                 content?: never;
             };
             /** @description Item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_subtasks_from_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Parent Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSubtasksFromPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Subtasks created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateSubtasksFromPlanResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Parent item not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -853,6 +853,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::items::get_item_github_link,
         handlers::items::put_item_github_link,
         handlers::items::delete_item_github_link,
+        handlers::items::create_subtasks_from_plan,
         handlers::executions::get_item_agent_context,
         // ── Sprints ───────────────────────────────────────────────────────
         handlers::sprints::create_sprint,
@@ -977,6 +978,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         PaginatedItems,
         ItemDetail,
         handlers::items::GithubLinkBody,
+        handlers::items::CreateSubtaskFromPlan,
+        handlers::items::CreateSubtasksFromPlanRequest,
+        handlers::items::CreatedSubtask,
+        handlers::items::CreateSubtasksFromPlanResponse,
         handlers::boards_multi::BoardViewResponse,
         handlers::boards_multi::BoardColumnWithItems,
         tack_core::models::UpdateSprint,
