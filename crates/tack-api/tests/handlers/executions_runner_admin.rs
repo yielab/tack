@@ -56,6 +56,7 @@ async fn setup() -> (axum::Router, Repository, String) {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -618,6 +619,7 @@ async fn list_executions_scoped_to_item_id_excludes_other_items_rows() {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -758,6 +760,7 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -839,6 +842,7 @@ async fn list_executions_item_ids_returns_latest_row_per_item() {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -921,6 +925,7 @@ async fn list_executions_item_ids_take_precedence_over_id_and_limit() {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await

@@ -1133,6 +1133,8 @@ async fn subtasks_from_plan_create_children_with_criteria() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(item1["item"]["parent_id"], parent_id.to_string());
     assert_eq!(item1["item"]["title"], "First subtask");
+    assert_eq!(item1["item"]["source"], "plan");
+    assert_eq!(item1["item"]["source_artifact_id"], "plan-artifact-123");
 
     // Verify first subtask's brief
     let (status, brief1) = common::send(
@@ -1627,6 +1629,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -1810,6 +1813,7 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -1908,6 +1912,7 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
@@ -2031,6 +2036,7 @@ async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await

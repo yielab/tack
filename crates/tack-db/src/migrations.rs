@@ -144,6 +144,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("080_mrp_reviews", &MIGRATION_080[..]),
         ordinary("081_pull_requests", &MIGRATION_081[..]),
         ordinary("082_automation", &MIGRATION_082[..]),
+        ordinary("083_plan_source", &MIGRATION_083[..]),
     ]
 }
 
@@ -1770,3 +1771,6 @@ const MIGRATION_082: [&str; 14] = [
         reviewed_at TEXT NOT NULL
     )",
 ];
+
+// 083: the plan artifact an item was created from (`source = 'plan'`).
+const MIGRATION_083: [&str; 1] = ["ALTER TABLE items ADD COLUMN source_artifact_id TEXT"];

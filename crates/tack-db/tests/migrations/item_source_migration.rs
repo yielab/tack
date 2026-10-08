@@ -27,6 +27,7 @@ fn minimal_create_item(title: &str) -> CreateItem {
         due_date: None,
         sprint_id: None,
         assignee: None,
+        source_artifact_id: None,
     }
 }
 
