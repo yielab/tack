@@ -139,7 +139,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   // reports exactly one, so it is always index "0") ties the assertion to
   // this test's own runner, the same way every project-touching test in
   // `scheduler-e2e.spec.ts` already does.
-  await modal.getByText('Choose…').click();
+  await modal.getByText('Specific model').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
