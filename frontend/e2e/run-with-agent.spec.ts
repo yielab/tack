@@ -4,8 +4,8 @@ import {
   expect,
   API,
   getOrCreateProject,
-  getOrCreateItem,
   createFreshProject,
+  createRunnableProject,
   createFreshItem,
   createSprintWithItem,
   createFleet,
@@ -56,14 +56,16 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   page,
   request,
 }) => {
-  const projectId = await getOrCreateProject(request);
-  const itemId = await getOrCreateItem(request, projectId, `RWA board item ${Date.now()}`);
+  // A fresh project with no code location: the dialog's blocked state is the
+  // one sentence-and-link that stands in for Run.
+  const projectId = await createFreshProject(request, `RWA board project ${Date.now()}`);
+  const itemId = await createFreshItem(request, projectId, `RWA board item ${Date.now()}`);
   // A fleet AND a runner — two targets, so the picker shows instead of
   // auto-selecting (this test wants "Select where this runs." visible).
   await createFleet(request, `RWA board fleet ${Date.now()}`);
   await enrollRunner(request, `RWA board runner ${Date.now()}`, 'opaque/model-alpha');
-  // Two profiles, so none is auto-selected (exactly one would be, and the
-  // "Select an agent profile." reason would never show).
+  // Two profiles and no project default, so none is preselected (exactly one
+  // would be, and the "Select an agent profile." reason would never show).
   await createAgentProfile(request, `RWA board profile A ${Date.now()}`);
   await createAgentProfile(request, `RWA board profile B ${Date.now()}`);
 
@@ -77,16 +79,13 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
   await expect(dialog).toBeVisible();
 
-  // Nothing is filled in yet — the submit control must be disabled with
-  // visible, specific reasons, not merely rejected server-side after a
-  // click.
-  // `exact: true` — an inexact match also catches the "Change for this run"
-  // button, which contains "run" as a substring.
-  const runButton = dialog.getByRole('button', { name: 'Run', exact: true });
-  await expect(runButton).toBeDisabled();
+  // Nothing is filled in yet — there is no Run button at all, one sentence
+  // with one link stands in its place, and the specific reasons are listed
+  // rather than the request being rejected server-side after a click.
+  await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('link', { name: "Choose where this project's code is →" })).toBeVisible();
   await expect(dialog.getByText('Select where this runs.')).toBeVisible();
   await expect(dialog.getByText('Select an agent profile.')).toBeVisible();
-  await expect(dialog.getByText('Enter a repository remote.')).toBeVisible();
 
   // Escape closes it — the same keyboard path every other modal in this app
   // supports (`shared/ui/Modal.tsx`), proving the focus/keyboard path works
@@ -102,12 +101,16 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   executionToggleLock,
 }) => {
   void executionToggleLock;
-  const projectId = await getOrCreateProject(request);
+  // A project with a folder: the dialog has no repository fields, the server
+  // fills the repository from the project. A fresh one keeps that write off the
+  // shared project.
+  const projectId = await createRunnableProject(request, `RWA detail project ${Date.now()}`);
   // A guaranteed-fresh item (not `getOrCreateItem`, which would reuse
   // whatever item this project already has and accumulate a "Queued" badge
   // per past test run against the same persistent e2e.db).
   const itemId = await createFreshItem(request, projectId, `RWA detail item ${Date.now()}`);
-  const profileId = await createAgentProfile(request, `E2E Profile ${Date.now()}`);
+  const profileName = `E2E Profile ${Date.now()}`;
+  await createAgentProfile(request, profileName);
   const runnerName = `RWA detail runner ${Date.now()}`;
   await enrollRunner(request, runnerName, 'opaque/model-alpha');
 
@@ -122,11 +125,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   await expect(modal).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
-  await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
-  // Repository is a read-only summary by default — no free-text field
-  // visible until "Change for this run" is clicked.
-  await modal.getByRole('button', { name: 'Change for this run' }).click();
-  await modal.getByLabel('Remote').fill('git@example.com:org/repo.git');
+  await modal.getByRole('button', { name: profileName, exact: true }).click();
 
   // An explicit, real, matching model choice — never left on whatever the
   // shared `getOrCreateProject` project's own default model happens to be.
@@ -139,6 +138,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   // reports exactly one, so it is always index "0") ties the assertion to
   // this test's own runner, the same way every project-touching test in
   // `scheduler-e2e.spec.ts` already does.
+  await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
@@ -177,9 +177,10 @@ test('the run form submits the project\'s configured model default, byte for byt
   // to clear once set (`createFreshProject`'s own doc comment) — doing that
   // to the shared project would permanently change what every other spec
   // sees on a reused `e2e.db`.
-  const projectId = await createFreshProject(request, `RWA project-default project ${Date.now()}`);
+  const projectId = await createRunnableProject(request, `RWA project-default project ${Date.now()}`);
   const itemId = await createFreshItem(request, projectId, `RWA project-default item ${Date.now()}`);
-  const profileId = await createAgentProfile(request, `RWA project-default profile ${Date.now()}`);
+  const profileName = `RWA project-default profile ${Date.now()}`;
+  const profileId = await createAgentProfile(request, profileName);
   // The one runner reports the exact combination the project will default
   // to — required for the submit gate (`shared.ts#gateHarnessModelSelection`)
   // to allow it through.
@@ -211,15 +212,11 @@ test('the run form submits the project\'s configured model default, byte for byt
   // runners mean the picker shows (`selectTargetIfPickerShows`'s own
   // comment); either way `selector_kind`/`selector_id` below prove it
   // resolved to this test's own runner, by name, never a free-typed id.
+  await modal.getByText('Advanced for this run').click();
   await expect(modal.getByText('Project default — openai / opaque/model-alpha')).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
-  await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
-  // Repository has no project-level default — only the model tier does —
-  // so the remote is the one field that is genuinely still typed by hand
-  // here.
-  await modal.getByRole('button', { name: 'Change for this run' }).click();
-  await modal.getByLabel('Remote').fill('git@example.com:org/repo.git');
+  await modal.getByRole('button', { name: profileName, exact: true }).click();
 
   await modal.getByRole('button', { name: 'Run', exact: true }).click();
   await expect(modal).toBeHidden();
@@ -257,16 +254,17 @@ test('Sprint: the per-item "Run with agent" trigger is present and opens the sam
   void itemId;
 });
 
-test('run flow: with nothing configured the model row is missing, its link leads to the fix, and coming back it is ok', async ({
+test('run flow: with no model chosen Run is replaced by one sentence, the fix link leads to the settings, and coming back Run is there', async ({
   page,
   request,
   executionToggleLock,
 }) => {
   void executionToggleLock;
   // A dedicated project: its model default is written below, which the shared project must never get.
-  const projectId = await createFreshProject(request, `RWA flow project ${Date.now()}`);
+  const projectId = await createRunnableProject(request, `RWA flow project ${Date.now()}`);
   const itemId = await createFreshItem(request, projectId, `RWA flow item ${Date.now()}`);
-  const profileId = await createAgentProfile(request, `RWA flow profile ${Date.now()}`);
+  const profileName = `RWA flow profile ${Date.now()}`;
+  await createAgentProfile(request, profileName);
   const runnerName = `RWA flow runner ${Date.now()}`;
   await enrollRunner(request, runnerName, 'opaque/model-alpha');
 
@@ -277,21 +275,20 @@ test('run flow: with nothing configured the model row is missing, its link leads
     const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(modal).toBeVisible();
     await selectTargetIfPickerShows(modal, runnerName);
-    await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
+    await modal.getByRole('button', { name: profileName, exact: true }).click();
     return modal;
   };
 
   let modal = await openModal();
-  const row = (m: Locator) => m.locator('[data-prerequisite]').filter({ hasText: 'A model is set for this run' });
-  await expect(row(modal)).toHaveAttribute('data-prerequisite', 'missing');
-  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeDisabled();
-
-  await row(modal).getByRole('link').click();
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=agents`));
+  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
+  // The one sentence that replaces Run opens "Advanced for this run", where the model is chosen.
+  await modal.getByRole('button', { name: 'Choose a model for this run' }).click();
+  await modal.getByRole('link', { name: 'Set a default model for this project' }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=automation`));
 
   // The fix itself is the settings panel's own save; the API write is the same one it makes.
   await setProjectDefaultModel(request, projectId, 'openai', 'opaque/model-alpha');
   await page.goBack();
   modal = await openModal();
-  await expect(row(modal)).toHaveAttribute('data-prerequisite', 'ok');
+  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
 });
