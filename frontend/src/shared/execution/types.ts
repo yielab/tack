@@ -159,6 +159,17 @@ export interface HarnessCapability {
    * `select.rs` treatment.
    */
   decisions?: CapabilityValue;
+  /**
+   * The provider this harness reaches natively (`"anthropic"` for claude-code,
+   * `"openai"` for codex). Optional: older runners omit it.
+   */
+  native_provider?: string;
+  /**
+   * Wire names of the configured, enabled providers that reach this harness
+   * (e.g. a gateway's `"vercel-ai-gateway"`); may be empty. Optional: older
+   * runners omit it.
+   */
+  providers?: string[];
 }
 
 export interface CapabilityLimits {

@@ -438,6 +438,49 @@ describe('RunWithAgentModal', () => {
     expect(field('Model id')).toBeTruthy();
   });
 
+  it('the_provider_comes_from_the_harness', async () => {
+    const harness = (providers: string[]) => ({
+      harness_kind: 'codex',
+      installed_version: '1.0.0',
+      probe_error: null,
+      probed_at: '2026-08-06T12:00:00Z',
+      model_combinations: [],
+      model_passthrough: { support: 'supported', reason: 'forwards the model id verbatim' },
+      native_provider: 'anthropic',
+      providers,
+    });
+    const submitCustom = async (providers: string[], through?: string) => {
+      const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot({ harnesses: [harness(providers)] }));
+      mount({}, { runners: [row], fleets: [] });
+      await flush();
+      setSelect(select('Agent profile'), PROFILE.agent_profile_id);
+      expandRepository();
+      setField(field('Remote'), 'git@example.com:org/repo.git');
+      modelModeRadio(0).click();
+      await flush();
+      setSelect(select('Model'), '__custom__');
+      await flush();
+      setField(field('Model id'), 'opaque/typed');
+      await flush();
+      expect(document.body.textContent).not.toMatch(/Provider/);
+      expect(document.body.textContent?.includes('Through')).toBe(providers.length > 1);
+      if (through) {
+        setSelect(select('Through'), through);
+        await flush();
+      }
+      submitButton().click();
+      await flush();
+      await flush();
+      return lastCreateBody as Record<string, unknown>;
+    };
+
+    expect(await submitCustom(['anthropic'])).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'opaque/typed' });
+    teardown();
+    expect(await submitCustom(['anthropic', 'vercel-ai-gateway'])).toMatchObject({ requested_model_provider: 'anthropic' });
+    teardown();
+    expect(await submitCustom(['anthropic', 'vercel-ai-gateway'], 'vercel-ai-gateway')).toMatchObject({ requested_model_provider: 'vercel-ai-gateway' });
+  });
+
   it('proves the gate is load-bearing: injecting a real supported combination allows submit', async () => {
     const caps: RunnerCapabilities[] = [
       {
