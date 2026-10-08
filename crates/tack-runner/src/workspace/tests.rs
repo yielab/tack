@@ -297,3 +297,47 @@ async fn cleanup_refuses_traversal_through_a_symlinked_directory() {
     assert!(victim.join("important.txt").exists());
     fs::remove_dir_all(outside).expect("remove temporary outside root");
 }
+
+#[tokio::test]
+async fn in_place_is_locked_per_folder_and_cleanup_only_releases_the_lock() {
+    let state = root();
+    let folder = state.path().join("users-folder");
+    fs::create_dir_all(&folder).expect("folder");
+    fs::write(folder.join("mine.txt"), "keep\n").expect("file");
+    let manager = WorkspaceManager::new(state.path().join("workspaces"), FakeProvisioner);
+    let repository = RepositorySpec {
+        workspace_mode: WorkspaceMode::InPlace,
+        repository_path: Some(folder.clone()),
+        ..repository()
+    };
+
+    let first = manager
+        .prepare(&lease("attempt-one"), &repository)
+        .await
+        .expect("the first attempt takes the folder");
+    assert_eq!(first.path, folder.canonicalize().expect("canonical"));
+    let second = manager.prepare(&lease("attempt-two"), &repository).await;
+    assert_eq!(second, Err(WorkspaceError::Busy));
+    assert_eq!(
+        fs::read_dir(state.path().join("locks"))
+            .expect("locks")
+            .count(),
+        1
+    );
+
+    assert_eq!(manager.cleanup(&first), Ok(CleanupResult::Refused));
+    assert!(
+        folder.join("mine.txt").is_file(),
+        "the folder is never deleted"
+    );
+    assert_eq!(
+        fs::read_dir(state.path().join("locks"))
+            .expect("locks")
+            .count(),
+        0
+    );
+    manager
+        .prepare(&lease("attempt-two"), &repository)
+        .await
+        .expect("the lock was released");
+}
