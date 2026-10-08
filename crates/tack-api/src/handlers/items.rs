@@ -10,6 +10,7 @@ use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
@@ -220,6 +221,21 @@ pub async fn update_item(
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if let Some(Some(value)) = &input.run_settings
+        && !value.is_object()
+    {
+        let envelope = ProtocolErrorEnvelope::new(
+            StableErrorCode::InvalidRequest,
+            "run_settings must be a JSON object or null",
+            "req_operator_items",
+            serde_json::json!({"field": "run_settings"}),
+        );
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::to_value(envelope).expect("envelope serializes")),
+        )
+            .into_response());
+    }
 
     // This snapshot is the version the browser is allowed to mutate.  The
     // repository carries it into the same transaction as every field/WIP

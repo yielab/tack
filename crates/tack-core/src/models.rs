@@ -183,6 +183,11 @@ pub struct Item {
     /// untrusted" rule migration 029 applies to pre-existing database rows.
     #[serde(default)]
     pub source: ItemSource,
+    /// The run dialog's Advanced values this task overrides (a JSON object),
+    /// or `None` when it follows the project.
+    #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
+    pub run_settings: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -592,6 +597,11 @@ pub struct UpdateItem {
     /// Omitted leaves the assignee untouched; JSON `null` clears it.
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub assignee: Option<Option<String>>,
+    /// Omitted leaves the run settings untouched; JSON `null` clears them.
+    /// The handler rejects anything but an object or `null`.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
+    pub run_settings: Option<Option<serde_json::Value>>,
     /// Server-only: the target status's category, populated by the update handler
     /// when the status changes so the persistence layer can maintain
     /// `started_at` / `completed_at`. Never (de)serialized from client requests.

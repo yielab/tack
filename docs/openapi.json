@@ -8645,6 +8645,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "run_settings": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The run dialog's Advanced values this task overrides (a JSON object),\nor `None` when it follows the project."
+          },
           "sort_order": {
             "type": "integer",
             "format": "int32"
@@ -10133,6 +10140,13 @@
                 "$ref": "#/components/schemas/Priority"
               }
             ]
+          },
+          "run_settings": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Omitted leaves the run settings untouched; JSON `null` clears them.\nThe handler rejects anything but an object or `null`."
           },
           "sort_order": {
             "type": [
