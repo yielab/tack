@@ -37,6 +37,8 @@ pub(crate) struct FakeControl {
     /// Name → value, filled by `set_secret` — what `resolve_secret` reads
     /// back, so a test can seed `store:<name>` to resolve to a chosen value.
     secret_values: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// The runner id to return from `runner_id()`. Defaults to Some("runner-test").
+    pub(crate) runner_id_override: std::sync::Mutex<Option<Option<String>>>,
 }
 
 #[async_trait::async_trait]
@@ -63,6 +65,14 @@ impl LocalRunnerControl for FakeControl {
 
     async fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
+    }
+
+    async fn runner_id(&self) -> Option<String> {
+        self.runner_id_override
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Some("runner-test".to_string()))
     }
 
     async fn list_secrets(&self) -> Vec<SecretMeta> {
@@ -528,7 +538,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     let t = "2026-09-01T00:00:00Z";
     sqlx::query(
         "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
-         VALUES ('run_local', 'local-1', 'h', 1, ?, ?)",
+         VALUES ('runner-test', 'local-1', 'h', 1, ?, ?)",
     )
     .bind(t)
     .bind(t)
@@ -566,7 +576,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(row.0, "run_local");
+    assert_eq!(row.0, "runner-test");
     let repository: serde_json::Value = serde_json::from_str(&row.1).unwrap();
     assert_eq!(repository["kind"], "scratch");
     assert_eq!(repository["remote"], "");
@@ -616,4 +626,42 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
         .await
         .unwrap();
     assert_eq!(items, 2);
+}
+
+#[tokio::test]
+async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
+        .bind(workspace_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+        .await
+        .unwrap();
+    let control = Arc::new(FakeControl::default());
+    // Override runner_id to return None
+    *control.runner_id_override.lock().unwrap() = Some(None);
+
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let app = tack_api::router::build_router(tack_api::AppState {
+        repo,
+        config: loopback_config(),
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: Some(control.clone()),
+    });
+    let body = serde_json::json!({ "harness_kind": "claude-code" });
+
+    // Start the runner but with runner_id returning None
+    control.start().await.unwrap();
+    let (status, error) = post_json(&app, "/api/local-runner/test-run", body).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["error"]["code"], "local_runner_unavailable");
+    assert_eq!(
+        error["error"]["message"],
+        "The embedded runner is not enrolled"
+    );
 }

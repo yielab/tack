@@ -403,6 +403,15 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
         }
     }
 
+    async fn runner_id(&self) -> Option<String> {
+        let state = self.state.lock().await;
+        if state.running.is_some() {
+            Some(state.runner_config.runner_id.clone())
+        } else {
+            None
+        }
+    }
+
     async fn list_secrets(&self) -> Vec<SecretMeta> {
         let state = self.state.lock().await;
         let store = SecretStore::open(&state.runner_config.secret_store_path());
