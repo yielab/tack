@@ -760,9 +760,19 @@ where
                     } else {
                         self.workspaces.keep(&spec.workspace)
                     };
-                    if let Ok(kept) = kept
-                        && let Some(reason) = outcome.terminal_reason.as_object_mut()
-                    {
+                    // A workspace that cannot be moved to quarantine stays
+                    // where it is, and is not cleaned up: it holds the
+                    // changes the evidence could not read.
+                    let kept = kept.unwrap_or_else(|e| {
+                        tracing::warn!(
+                            attempt_id = %record.attempt_id.as_str(),
+                            error = ?e,
+                            "workspace could not be moved to quarantine; left in place"
+                        );
+                        worktree_kept = true;
+                        spec.workspace.path.clone()
+                    });
+                    if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                         reason.insert(
                             "workspace_kept_at".to_owned(),
                             serde_json::Value::String(kept.display().to_string()),
