@@ -14,6 +14,9 @@ export interface ModalProps {
   title: string;
   children: JSX.Element;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** The book page for this dialog: a "Help" link in the title row, since the
+   *  top bar's help button sits under the overlay. */
+  help?: string;
 }
 
 const SIZE: Record<NonNullable<ModalProps['size']>, string> = {
@@ -85,6 +88,19 @@ const Modal: Component<ModalProps> = (props) => {
               >
                 {props.title}
               </h2>
+              <Show when={props.help}>
+                {(href) => (
+                  <a
+                    href={href()}
+                    target="_blank"
+                    rel="noreferrer"
+                    class="ml-auto mr-2 text-sm underline"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Help
+                  </a>
+                )}
+              </Show>
               <button
                 onClick={props.onClose}
                 aria-label="Close"

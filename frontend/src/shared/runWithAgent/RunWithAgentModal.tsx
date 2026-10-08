@@ -3,6 +3,7 @@ import { type Component, createSignal, createResource, createMemo, createEffect,
 import { A } from '@solidjs/router';
 import { Modal } from '../ui';
 import { toast } from '../ui/toast';
+import { BOOK } from '../help/routes';
 import { api } from '../api';
 import {
   fleetsApi, agentProfilesApi, runnersApi, listModelCombinationsForHarness, listReportedHarnessKinds,
@@ -337,7 +338,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
 
   return (
-    <Modal isOpen={props.isOpen} onClose={props.onClose} title={`Run with agent: ${props.itemTitle}`} size="lg">
+    <Modal isOpen={props.isOpen} onClose={props.onClose} title={`Run with agent: ${props.itemTitle}`} size="lg" help={BOOK.runDialog}>
       <Show
         when={!executionOff()}
         fallback={

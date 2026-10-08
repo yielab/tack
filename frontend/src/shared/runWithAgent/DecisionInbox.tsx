@@ -121,7 +121,7 @@ const DecisionRow: Component<{
             merged into one generic "decision" badge. */}
         <Badge tone="neutral">{props.decision.kind}</Badge>
         <Show when={isPending()}>
-          <Badge tone="warning">Pending</Badge>
+          <Badge tone="info">Pending</Badge>
         </Show>
         <Show when={isExpired()}>
           <Badge tone="danger">Expired</Badge>
