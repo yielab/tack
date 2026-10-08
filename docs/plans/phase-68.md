@@ -262,3 +262,22 @@ green twice in a row; the gate green.
 
 Opened 2026-10-08. Rounds are dispatched in order; each merge is a `--no-ff` into `develop`
 with the gate on the merge. Pushing and the release are the maintainer's.
+
+- **Round 1 merged 2026-10-08**: K1 (`066817c`), K2 (`ad27a9d`); D1 merged early (`26853aa`)
+  because it depended on nothing. Gate green on each merge; `tack-api`/`tack-core`/`tack-db`
+  605 passed after K2.
+- K1's finding: the `workspace_kept_at` assertions live in `engine/tests.rs`, not in the two
+  integration files the plan named; the test went there.
+- K2's finding: a body that is not an `UpdateItem` was axum's 422; it is now a 400 for every
+  malformed item PATCH, with axum's message and no `details.field`.
+- D1's findings, tabled: the panel derives the provider from the runner's `native_provider`
+  only; the dialog's gateway choice is not offered at project level. codex and opencode have
+  no measured list, so the panel offers no specific model for them (the dialog's "Other…"
+  stays per run). The disabled list says why.
+
+Follow-ups found while executing, not yet scheduled:
+
+| Found by | Follow-up |
+|---|---|
+| D1 | A "Through the gateway" choice beside the native provider in Automation, when a gateway key is set. |
+| K2 | A stored `run_settings` that does not fit `RunSettings` reads back as `None` (the row conversion's `.ok()`); log it at warn so a typed-wrong value is not silent. |
