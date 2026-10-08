@@ -93,6 +93,13 @@ fn generated_spec_is_well_formed() {
         schemas >= 30,
         "expected >= 30 component schemas, found {schemas}"
     );
+    // The shapes the run dialog reads are named, not anonymous objects.
+    assert!(raw["components"]["schemas"]["RunSettings"].is_object());
+    assert_eq!(
+        raw["paths"]["/api/local-runner/check-folder"]["post"]["responses"]["200"]["content"]["application/json"]
+            ["schema"]["$ref"],
+        "#/components/schemas/FolderCheck"
+    );
 }
 
 /// Item optimistic concurrency is a browser-visible wire contract. Keep the

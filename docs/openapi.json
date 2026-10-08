@@ -2930,7 +2930,9 @@
             "description": "Whether the path exists, is a directory, and its git facts",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FolderCheck"
+                }
               }
             }
           },
@@ -8756,6 +8758,43 @@
           }
         }
       },
+      "FolderCheck": {
+        "type": "object",
+        "description": "What the folder check found at a path.",
+        "required": [
+          "exists",
+          "is_dir",
+          "is_git",
+          "dirty_files"
+        ],
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dirty_files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "is_git": {
+            "type": "boolean"
+          },
+          "remote_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "FolderPath": {
         "type": "object",
         "required": [
@@ -8954,11 +8993,15 @@
             "format": "uuid"
           },
           "run_settings": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "description": "The run dialog's Advanced values this task overrides (a JSON object),\nor `None` when it follows the project."
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RunSettings",
+                "description": "The run dialog's Advanced values this task overrides (a JSON object),\nor `None` when it follows the project."
+              }
+            ]
           },
           "sort_order": {
             "type": "integer",
@@ -9915,6 +9958,85 @@
           }
         }
       },
+      "RunSettings": {
+        "type": "object",
+        "description": "The run dialog's Advanced values a task overrides. Every field is optional;\na key this version does not know survives a round trip in `extra`.",
+        "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvals": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A string, not an enum: the dialog validates it."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "network": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "push": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "timeout_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "verify": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": {}
+      },
       "RunnerListResponse": {
         "type": "object",
         "required": [
@@ -10468,11 +10590,15 @@
             ]
           },
           "run_settings": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "description": "Omitted leaves the run settings untouched; JSON `null` clears them.\nThe handler rejects anything but an object or `null`."
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RunSettings",
+                "description": "Omitted leaves the run settings untouched; JSON `null` clears them.\nAnything but an object or `null` fails to deserialize."
+              }
+            ]
           },
           "sort_order": {
             "type": [

@@ -1691,7 +1691,7 @@ what is at `path`; writes nothing.
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Whether the path exists, is a directory, and its git facts | — |
+| 200 | Whether the path exists, is a directory, and its git facts | `FolderCheck` |
 | 400 | The path is not absolute | — |
 | 409 | The embedded runner is not configured | — |
 
