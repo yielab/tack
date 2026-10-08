@@ -21,5 +21,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": "(((mailto:\\w+)|(tel:\\w+)|(https?://\\w+)).+|/[^-].*|[A-Za-z]:\\\\.*)"
+    }
   }
 }
