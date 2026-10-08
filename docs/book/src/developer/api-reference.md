@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (84 paths, 119 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (87 paths, 122 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1613,6 +1613,38 @@ save the preference and start/stop the embedded
 | Status | Meaning | Schema |
 |---|---|---|
 | 204 | Preference saved and the runtime reconciled to match | — |
+
+#### `POST /api/local-runner/check-folder`
+
+what is at `path`; writes nothing.
+
+**Request body:** `FolderPath`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Whether the path exists, is a directory, and its git facts | — |
+| 400 | The path is not absolute | — |
+| 409 | The embedded runner is not configured | — |
+
+#### `GET /api/local-runner/harness-verification`
+
+per harness kind, when its
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Harness kind to the ended_at of its latest succeeded attempt | — |
+
+#### `POST /api/local-runner/init-folder`
+
+creates `path` and runs `git init`.
+
+**Request body:** `FolderPath`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Directory created and initialised as a git repository | — |
+| 400 | The path is not absolute | — |
+| 409 | The path exists and is not an empty directory, or the embedded runner is not configured | — |
 
 #### `GET /api/local-runner/secrets`
 
