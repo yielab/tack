@@ -140,6 +140,7 @@ function capsWith(harness: {
   probe_error: string | null;
   model_combinations: { model_provider: string; model_ids: string[] }[];
   model_passthrough?: { support: 'supported' | 'unsupported' | 'advisory'; reason: string | null };
+  model_selection?: 'optional' | 'required';
 }): RunnerCapabilities[] {
   return [
     {
@@ -155,6 +156,7 @@ function capsWith(harness: {
           probed_at: '2026-08-06T12:00:00Z',
           model_combinations: harness.model_combinations.map((c) => ({ ...c, discovery: 'reported' })),
           ...(harness.model_passthrough ? { model_passthrough: harness.model_passthrough } : {}),
+          ...(harness.model_selection ? { model_selection: harness.model_selection } : {}),
         },
       ],
       features: {
@@ -170,6 +172,15 @@ function capsWith(harness: {
 }
 
 describe('gateHarnessModelSelection', () => {
+  it('auto_is_allowed_when_the_harness_needs_no_model', () => {
+    const base = { harness_kind: 'claude-code', probe_error: null, model_combinations: [] };
+    const optional = gateHarnessModelSelection(capsWith({ ...base, model_selection: 'optional' }), 'claude-code', null, null);
+    expect(optional).toMatchObject({ allowed: true, advisory: false, reason: "Uses the agent's own model" });
+    // required, or an older runner that omits the field: the unresolved branch still blocks.
+    expect(gateHarnessModelSelection(capsWith({ ...base, model_selection: 'required' }), 'claude-code', null, null).allowed).toBe(false);
+    expect(gateHarnessModelSelection(capsWith(base), 'claude-code', null, null).allowed).toBe(false);
+  });
+
   it('with zero capability snapshots and a SPECIFIC model chosen, blocks submission with a typed reason', () => {
     // This is a falsifiable claim ("this exact combination works"), and with
     // no real capability data available it cannot be verified as supported —

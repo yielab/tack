@@ -307,7 +307,8 @@ export interface CombinationGate {
  * exact function that module's own header comment names as "the single
  * function a 'Run with agent' submit gate needs."
  *
- * Two cases:
+ * Two cases (plus a short-circuit: when every runner reporting the harness says
+ * `model_selection === 'optional'`, no model is needed and Auto is allowed):
  *
  * 1. **A specific model provider/id was chosen** (including a model chosen
  *    via "Project default"). This is a real, falsifiable claim ("this exact
@@ -342,6 +343,10 @@ export function gateHarnessModelSelection(
   projectSettingsHref?: string,
 ): CombinationGate {
   if (modelProvider == null || modelId == null) {
+    const reporting = capabilities.flatMap((c) => c.harnesses).filter((h) => h.harness_kind === harnessKind);
+    if (reporting.length > 0 && reporting.every((h) => h.model_selection === 'optional')) {
+      return { allowed: true, advisory: false, reason: "Uses the agent's own model" };
+    }
     if (autoResolution.outcome === 'explicit') {
       const tierLabel = MODEL_POLICY_TIER_LABEL[autoResolution.source];
       const combo = isCombinationSupported(
