@@ -7309,7 +7309,6 @@
           "agent_profile_id",
           "requested_harness_kind",
           "agent_profile_snapshot",
-          "repository_snapshot",
           "permission_policy",
           "budgets",
           "environment",
@@ -7344,7 +7343,7 @@
             "description": "`false` declines the runner's branch push for this run. The runner's own\nconfiguration decides whether a push exists; `true` never enables one."
           },
           "repository_snapshot": {
-            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`)."
+            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project; a project with no code is `invalid_request`\n(`details.reason = \"project_has_no_code\"`)."
           },
           "requested_harness_kind": {
             "type": "string"
