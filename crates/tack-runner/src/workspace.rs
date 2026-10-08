@@ -101,13 +101,16 @@ pub trait WorktreeProvisioner: Send + Sync {
 
     /// Puts what the attempt left in `workspace` on `branch`, commits it when
     /// the index holds staged work, and pushes it to the remote the checkout
-    /// was fetched from. `Ok(None)` is a provisioner with no repository.
+    /// was fetched from when `push` is set. A `local_branch` worktree is
+    /// removed here and its branch stays in the user's repository.
+    /// `Ok(None)` is a provisioner with no repository.
     async fn publish_branch(
         &self,
         _workspace: &Workspace,
         _branch: &str,
         _author: &str,
         _message: &str,
+        _push: bool,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         Ok(None)
     }
@@ -234,9 +237,10 @@ where
         branch: &str,
         author: &str,
         message: &str,
+        push: bool,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         self.provisioner
-            .publish_branch(workspace, branch, author, message)
+            .publish_branch(workspace, branch, author, message, push)
             .await
     }
 

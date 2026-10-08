@@ -24,6 +24,7 @@ use super::{
     EnrollmentResponse, EventBatchReport, HeartbeatRequest, PendingTerminalReport,
     PendingTerminalReportKind, ProtocolClientError, ProtocolEvent, PullProtocol, Recommendation,
     RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
+    WorkspaceMode,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -704,6 +705,7 @@ where
         }
         let mut outcome = outcome.normalize_workspace_facts(&spec.workspace);
         let mut evidence_failure = None;
+        let mut worktree_kept = false;
         // Read what the attempt changed before the workspace is deleted after
         // the report; the staged files ride `terminal_reason.artifacts`.
         let evidence_scratch = match self
@@ -743,7 +745,17 @@ where
                     && manifest["reason"] == crate::evidence::EVIDENCE_REASON_GIT_UNREADABLE
                 {
                     evidence_failure = Some(manifest["reason"].clone());
-                    if let Ok(kept) = self.workspaces.keep(&spec.workspace)
+                    // A registered worktree is not moved (its gitdir pointer
+                    // would break): it stays where it is, and is not cleaned up.
+                    worktree_kept = spec.work.workspace_repository().is_ok_and(|repository| {
+                        repository.workspace_mode == WorkspaceMode::LocalBranch
+                    });
+                    let kept = if worktree_kept {
+                        Ok(spec.workspace.path.clone())
+                    } else {
+                        self.workspaces.keep(&spec.workspace)
+                    };
+                    if let Ok(kept) = kept
                         && let Some(reason) = outcome.terminal_reason.as_object_mut()
                     {
                         reason.insert(
@@ -819,7 +831,7 @@ where
         let cycle = self
             .send_pending_terminal_report(session, &mut record)
             .await?;
-        if matches!(cycle, RunCycle::Completed { .. }) {
+        if matches!(cycle, RunCycle::Completed { .. }) && !worktree_kept {
             let _ = self.workspaces.cleanup(&spec.workspace);
         }
         Ok(cycle)
@@ -1181,17 +1193,42 @@ where
         scratch: &std::path::Path,
         staged: &mut [serde_json::Value],
     ) -> Option<crate::evidence::PublishedBranch> {
-        if !self.git.push_branches {
-            if spec.work.request.push_branch == Some(true) {
+        // A `local_branch` attempt always keeps its branch in the user's
+        // repository; the push is a separate, doubly-opt-in step: the request
+        // asks (`push_after_run`) and this runner's `[git] push_branches` is on.
+        let local_branch = spec
+            .work
+            .workspace_repository()
+            .is_ok_and(|repository| repository.workspace_mode == WorkspaceMode::LocalBranch);
+        let push = if local_branch {
+            let asked = spec
+                .work
+                .request
+                .repository
+                .additional
+                .get("push_after_run")
+                == Some(&serde_json::Value::Bool(true));
+            if asked && !self.git.push_branches {
                 let payload = serde_json::json!({"reason": "this runner does not push branches"});
                 self.submit_event(session, record, "attempt.push_skipped", payload)
                     .await;
             }
-            return None;
-        }
-        if spec.work.request.push_branch == Some(false) {
-            return None;
-        }
+            asked && self.git.push_branches
+        } else {
+            if !self.git.push_branches {
+                if spec.work.request.push_branch == Some(true) {
+                    let payload =
+                        serde_json::json!({"reason": "this runner does not push branches"});
+                    self.submit_event(session, record, "attempt.push_skipped", payload)
+                        .await;
+                }
+                return None;
+            }
+            if spec.work.request.push_branch == Some(false) {
+                return None;
+            }
+            true
+        };
         let evidence_path = scratch.join("src/evidence.json");
         let mut evidence = std::fs::read(&evidence_path)
             .ok()
@@ -1215,9 +1252,13 @@ where
         );
         // A push to a slow remote can outlast the lease; renew it meanwhile,
         // exactly as while the verifier runs.
-        let publishing =
-            self.workspaces
-                .publish_branch(&spec.workspace, &branch, &self.git.author, &message);
+        let publishing = self.workspaces.publish_branch(
+            &spec.workspace,
+            &branch,
+            &self.git.author,
+            &message,
+            push,
+        );
         tokio::pin!(publishing);
         let mut renewal = tokio::time::interval_at(
             tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
