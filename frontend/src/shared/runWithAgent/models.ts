@@ -9,3 +9,12 @@ export const ACCEPTED_MODELS: Record<string, readonly string[]> = {
   codex: [],
   opencode: [],
 };
+
+/** Tool names measured per harness (docs/plans/measurements/tools-<harness>.md). Only claude-code
+ *  has a measured list; the others offer "All tools" and free text only. */
+export const KNOWN_TOOLS: Record<string, readonly string[]> = {
+  'claude-code': ['Read', 'Edit', 'Write', 'Bash', 'Agent', 'Grep', 'Glob', 'WebFetch', 'WebSearch'],
+  codex: [],
+  opencode: [],
+  docket: [],
+};
