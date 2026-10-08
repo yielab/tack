@@ -735,6 +735,24 @@ async fn a_probe_reports_a_version_or_says_why_it_cannot() {
     }
 }
 
+#[tokio::test]
+async fn probe_reports_the_native_provider() {
+    let state = scratch("probe-native");
+    let bare = harness(state.path()).probe().await;
+    assert_eq!(bare.native_provider, "native");
+    assert!(bare.providers.is_empty());
+
+    let reached = harness(state.path()).with_providers(gateway("key"));
+    assert_eq!(reached.probe().await.providers, [GATEWAY]);
+
+    let mut disabled = gateway("key");
+    for config in disabled.values_mut() {
+        config.enabled = false;
+    }
+    let off = harness(state.path()).with_providers(disabled);
+    assert!(off.probe().await.providers.is_empty());
+}
+
 // ---- cancel and reconcile ---------------------------------------------------
 
 /// `spawn_child` keeps the shell itself alive, waiting on a child; `hang`

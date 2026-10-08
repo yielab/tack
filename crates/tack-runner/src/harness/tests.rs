@@ -342,6 +342,8 @@ impl HarnessProbe for FakeProbe {
             // explicitly.
             model_passthrough: None,
             decisions: None,
+            native_provider: String::new(),
+            providers: Vec::new(),
             additional: Default::default(),
         }
     }

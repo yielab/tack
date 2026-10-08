@@ -924,6 +924,17 @@ where
             // divergent claim — `declared_capabilities` below reuses the
             // exact same call.
             decisions: Some(self.grammar.capabilities().decisions),
+            native_provider: descriptor.native_provider.to_owned(),
+            providers: crate::provider::registry()
+                .into_iter()
+                .filter(|provider| {
+                    self.providers
+                        .get(provider.config_key())
+                        .is_some_and(|config| config.enabled)
+                        && provider.endpoint(descriptor.wire).is_some()
+                })
+                .map(|provider| provider.wire_name().to_owned())
+                .collect(),
             additional,
         }
     }
