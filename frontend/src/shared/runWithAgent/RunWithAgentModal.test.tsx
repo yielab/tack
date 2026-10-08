@@ -242,6 +242,28 @@ describe('RunWithAgentModal', () => {
     expect(field('Timeout').value).toBe('120');
   });
 
+  it('only_a_picked_profile_is_remembered_on_the_task', async () => {
+    const opts = { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE], project: { ...PROJECT, default_profile_id: null } };
+    mount({}, opts);
+    await flush();
+    await flush();
+    setField(field('Timeout'), '120');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastItemPatch).toEqual({ run_settings: { timeout_seconds: 120 } });
+    teardown();
+    mount({}, opts);
+    await flush();
+    await flush();
+    const pill = Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Reviewer') as HTMLButtonElement;
+    pill.click();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastItemPatch).toEqual({ run_settings: { agent_profile_id: 'profile-1' } });
+  });
+
   it('a_configured_project_opens_ready_to_run', async () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{

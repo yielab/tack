@@ -69,11 +69,13 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [creatingProfile, setCreatingProfile] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   const [form, setForm] = createStore<RunForm>(initialForm());
+  // Set only by a click on a profile pill: an auto-selected profile is not remembered.
+  const [profilePicked, setProfilePicked] = createSignal(false);
 
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
   let settingsApplied = false;
-  createEffect(() => { if (props.isOpen) { settingsApplied = false; setForm(initialForm()); } });
+  createEffect(() => { if (props.isOpen) { settingsApplied = false; setProfilePicked(false); setForm(initialForm()); } });
 
   createEffect(() => {
     if (!props.isOpen || form.selectorId) return;
@@ -162,7 +164,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!props.isOpen || settingsApplied || project.loading || item.loading || liveRunners.loading || agentProfiles.loading) return;
     settingsApplied = true;
     const p = project();
-    const saved = (item.error === undefined ? item()?.run_settings : null) as Record<string, unknown> | null | undefined;
+    const saved = item.error === undefined ? item()?.run_settings : null;
     if (p?.default_harness) setForm('harnessKind', p.default_harness);
     if (typeof p?.push_after_run === 'boolean') setForm('pushBranch', p.push_after_run);
     if (!saved) return;
@@ -288,7 +290,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const d = initialForm();
     const diff: Record<string, unknown> = {};
     if (form.harnessKind !== (p?.default_harness || d.harnessKind)) diff.harness = form.harnessKind;
-    if (form.agentProfileId !== (p?.default_profile_id ?? '')) diff.agent_profile_id = form.agentProfileId;
+    const savedProfile = item.error === undefined && typeof item()?.run_settings?.agent_profile_id === 'string';
+    if (form.agentProfileId && (profilePicked() || savedProfile)) diff.agent_profile_id = form.agentProfileId;
     if (form.modelMode === 'choose' && modelProvider() && modelId()) { diff.model_provider = modelProvider(); diff.model_id = modelId(); }
     const branch = form.branch.trim();
     if (branch && branch !== p?.default_branch) diff.branch = branch;
@@ -308,7 +311,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const had = item.error === undefined && !!item()?.run_settings;
     if (Object.keys(diff).length === 0 && !had) return;
     try {
-      const run_settings = (Object.keys(diff).length === 0 ? null : diff) as Record<string, never> | null;
+      const run_settings = Object.keys(diff).length === 0 ? null : diff;
       await api.items.update(props.itemId, { run_settings });
     } catch {
       toast.error('The run started, but its settings could not be saved on the task.');
@@ -360,6 +363,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           <RunFlow
             form={form}
             setForm={setForm}
+            onProfilePicked={() => setProfilePicked(true)}
             projectId={props.projectId}
             hideTargetPicker={() => shouldHideTargetPicker(activeRunners().length, fleetsData().length)}
             runnersLoading={() => liveRunners.loading}
