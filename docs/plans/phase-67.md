@@ -910,3 +910,5 @@ Follow-ups found while executing, not yet scheduled (small, one task each when a
 | S5 | "This machine's runner" is found as the newest active `local-%` runner; a runner-id accessor on `LocalRunnerControl` would make it exact. |
 | T3a/T3b | `run_settings` is typed `Object` in OpenAPI, which generates `Record<string, never>`; the dialog casts. A `schema(value_type = Value)` or a named schema fixes the generated type. |
 | T3b | `agent_profile_id` is remembered whenever the auto-selected profile differs from the project's default, so a project without a default stores it needlessly; store it only when the person picked a pill. |
+| T5 | "Open folder" shows only when `workspace_kept_at` is set; a `local_branch` or `in_place` run whose work is in the project's own folder gets no folder action. The card should fall back to the project's `repository` (the item's project is one fetch away). |
+| T4b | The kit has one attention tone, so "Needs your review" and "Asking you" share a colour and differ by text only. |
