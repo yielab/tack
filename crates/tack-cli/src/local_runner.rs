@@ -405,11 +405,13 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
 
     async fn runner_id(&self) -> Option<String> {
         let state = self.state.lock().await;
-        if state.running.is_some() {
-            Some(state.runner_config.runner_id.clone())
-        } else {
-            None
+        if state.running.is_none() {
+            return None;
         }
+        // The id the API assigned at enrolment (`runr_…`), persisted with the
+        // session — not `runner_config.runner_id`, which is the runner's own
+        // configured name and is never a selector the API would accept.
+        tack_runner::client::persisted_session_runner_id(&state.runner_config.state_dir)
     }
 
     async fn list_secrets(&self) -> Vec<SecretMeta> {
