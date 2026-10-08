@@ -932,3 +932,5 @@ Follow-ups found while executing, not yet scheduled (small, one task each when a
 | T5 | "Open folder" shows only when `workspace_kept_at` is set; a `local_branch` or `in_place` run whose work is in the project's own folder gets no folder action. The card should fall back to the project's `repository` (the item's project is one fetch away). |
 | T4b | The kit has one attention tone, so "Needs your review" and "Asking you" share a colour and differ by text only. |
 | P2 | `ItemSource` is a closed enum (Manual, Github, Linear, …) so subtasks created from a plan are `Manual` and the artifact id is not recorded; a `Plan { artifact_id }` variant (model + column + migration) would keep the provenance. |
+| V2 | `Select` has no `help` prop, so the Model `(?)` in the dialog is positioned by a fixed offset; the popover closes only by clicking `(?)` again (no Escape, no outside click); the help button may sit under the modal overlay while the dialog is open. Three small kit changes. |
+| V2 | The app has no documentation link of its own; the book base URL is a constant in `shared/help/routes.ts` (`https://yielab.github.io/tack/`, matching the README). |
