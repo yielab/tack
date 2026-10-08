@@ -1,5 +1,5 @@
 //! What the located `docket` binary can do, measured once. The probes are
-//! all `harness run` invocations that docket refuses before any network
+//! all `exec` invocations that docket refuses before any network
 //! call, because `DOCKET_HOME` is deliberately left unset: zero spend, no
 //! model endpoint, no state written. Why these probes and not others is in
 //! `fixtures/docket/README.md`.
@@ -98,13 +98,12 @@ struct Refusal {
     error: String,
 }
 
-/// `harness run` with no `DOCKET_HOME`, plus `extra`: docket answers with
+/// `exec` with no `DOCKET_HOME`, plus `extra`: docket answers with
 /// one `refused` result line (exit 2) after reading its flags and before
 /// doing anything else. `None` when the output was not such a line.
 fn refusal(program: &Path, extra: &[&str]) -> Option<Refusal> {
     let mut args = vec![
-        "harness",
-        "run",
+        "exec",
         "--workspace",
         ".",
         "--task",

@@ -39,8 +39,7 @@ fn a_request_becomes_a_harness_run_command() {
     assert_eq!(
         invocation.args,
         [
-            "harness",
-            "run",
+            "exec",
             "--workspace",
             &state.path().display().to_string(),
             "--task-file",
@@ -106,8 +105,7 @@ fn contract_1_1_passes_the_task_as_a_file() {
     assert_eq!(
         invocation.args,
         [
-            "harness",
-            "run",
+            "exec",
             "--workspace",
             &state.path().display().to_string(),
             "--task-file",
@@ -395,7 +393,7 @@ fn limits_and_policy_are_passed_only_where_probed() {
         policy: false,
         ..everything.clone()
     };
-    let flags = |args: Vec<String>| args[12..].to_vec();
+    let flags = |args: Vec<String>| args[11..].to_vec();
     let run = RunContext {
         spec: &request,
         endpoint: Some(&endpoint),
@@ -503,7 +501,7 @@ fn recipe_is_passed_only_when_probed_and_specified() {
         recipe: false,
         ..DocketFeatures::default()
     };
-    let flags = |args: Vec<String>| args[12..].to_vec();
+    let flags = |args: Vec<String>| args[11..].to_vec();
 
     // Recipe is passed when probed and specified.
     {
@@ -522,7 +520,7 @@ fn recipe_is_passed_only_when_probed_and_specified() {
         assert!(!recipe_args.contains(&"--agent-id".to_owned()));
         assert!(!recipe_args.contains(&"--max-tokens".to_owned()));
         assert_eq!(
-            recipe_args[8..],
+            recipe_args[7..],
             [
                 "--timeout",
                 "30",
@@ -609,8 +607,7 @@ fn the_real_docket_is_negotiated_not_assumed() {
     let refusal = |policy: &std::path::Path| {
         let output = std::process::Command::new(&program)
             .args([
-                "harness",
-                "run",
+                "exec",
                 "--workspace",
                 ".",
                 "--task",
