@@ -72,6 +72,109 @@
         }
       }
     },
+    "/api/agent-profiles/{id}": {
+      "delete": {
+        "tags": [
+          "execution-operator"
+        ],
+        "operationId": "delete_profile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent profile id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent profile deleted"
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict (built-in profile, details.reason = builtin_profile)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "execution-operator"
+        ],
+        "operationId": "update_profile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent profile id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Agent profile updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict (name already exists)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/attachments/{id}": {
       "get": {
         "tags": [
@@ -6356,18 +6459,32 @@
           "name",
           "instructions",
           "tool_policy",
-          "limits"
+          "limits",
+          "kind",
+          "builtin"
         ],
         "properties": {
           "agent_profile_id": {
             "type": "string"
           },
+          "builtin": {
+            "type": "boolean"
+          },
           "instructions": {
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           },
           "limits": {},
           "name": {
             "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tool_policy": {}
         }
@@ -10021,6 +10138,31 @@
           "enabled": {
             "type": "boolean"
           }
+        }
+      },
+      "UpdateProfile": {
+        "type": "object",
+        "properties": {
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limits": {},
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_policy": {}
         }
       },
       "UpdateProject": {

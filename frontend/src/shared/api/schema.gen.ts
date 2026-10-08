@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent-profiles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_profile"];
+        options?: never;
+        head?: never;
+        patch: operations["update_profile"];
+        trace?: never;
+    };
     "/api/attachments/{id}": {
         parameters: {
             query?: never;
@@ -2852,9 +2868,12 @@ export interface components {
         };
         AgentProfileSummary: {
             agent_profile_id: string;
+            builtin: boolean;
             instructions: string;
+            kind: string;
             limits: unknown;
             name: string;
+            summary?: string | null;
             tool_policy: unknown;
         };
         ArtifactListResponse: {
@@ -4135,6 +4154,13 @@ export interface components {
         UpdateLocalRunner: {
             enabled: boolean;
         };
+        UpdateProfile: {
+            instructions?: string | null;
+            limits?: unknown;
+            name?: string | null;
+            summary?: string | null;
+            tool_policy?: unknown;
+        };
         UpdateProject: {
             archived?: boolean | null;
             code_origin?: null | components["schemas"]["CodeOrigin"];
@@ -4319,6 +4345,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateProfileResponse"];
+                };
+            };
+            /** @description conflict (name already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent profile id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent profile deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict (built-in profile, details.reason = builtin_profile) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent profile id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfile"];
+            };
+        };
+        responses: {
+            /** @description Agent profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileSummary"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
             /** @description conflict (name already exists) */

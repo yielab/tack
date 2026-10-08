@@ -85,6 +85,7 @@ async fn serve_inner(
     let pool = init_pool(&config.database_url).await?;
     migrations::run_all(&pool).await?;
     repo::templates::seed_builtin_templates(&pool).await?;
+    repo::execution::seed_builtin_profiles(&pool).await?;
 
     let workspace_id = ensure_default_workspace(&pool).await?;
     let repo = Repository::new(pool);
