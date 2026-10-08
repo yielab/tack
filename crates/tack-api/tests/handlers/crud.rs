@@ -228,6 +228,48 @@ async fn automation_settings_round_trip_and_clear() {
 }
 
 #[tokio::test]
+async fn run_settings_round_trip_and_clear() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "Run settings", "software").await;
+    let iid = make_item(&app, pid).await;
+    let uri = format!("/api/items/{iid}");
+    let list_uri = format!("/api/projects/{pid}/items");
+
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["item"]["run_settings"].is_null());
+
+    let settings = json!({"timeout_seconds": 900});
+    let (status, _) =
+        common::send(&app, "PATCH", &uri, json!({"run_settings": settings}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(body["item"]["run_settings"], settings);
+    let (_, list) = common::send(&app, "GET", &list_uri, Value::Null, &[]).await;
+    assert_eq!(list["data"][0]["run_settings"], settings);
+
+    // A PATCH without the key leaves it alone.
+    let (status, _) = common::send(&app, "PATCH", &uri, json!({"title": "Renamed"}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(body["item"]["run_settings"], settings);
+
+    // Anything but an object or null is a 400 naming the field, and writes nothing.
+    for bad in [json!("nope"), json!(5), json!([1])] {
+        let (status, body) =
+            common::send(&app, "PATCH", &uri, json!({"run_settings": bad}), &[]).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["details"]["field"], "run_settings");
+    }
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(body["item"]["run_settings"], settings);
+
+    let (status, _) = common::send(&app, "PATCH", &uri, json!({"run_settings": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["item"]["run_settings"].is_null());
+}
+
+#[tokio::test]
 async fn update_project_workflow_statuses_valid() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "Vocab Project", "software").await;
