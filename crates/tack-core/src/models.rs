@@ -151,6 +151,39 @@ impl std::fmt::Display for ProjectType {
 
 // ─── Item (universal work unit) ──────────────────────────────
 
+/// The run dialog's Advanced values a task overrides. Every field is optional;
+/// a key this version does not know survives a round trip in `extra`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RunSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<bool>,
+    /// A string, not an enum: the dialog validates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify: Option<bool>,
+    #[serde(flatten)]
+    #[cfg_attr(feature = "openapi", schema(additional_properties = true))]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Item {
@@ -186,8 +219,7 @@ pub struct Item {
     /// The run dialog's Advanced values this task overrides (a JSON object),
     /// or `None` when it follows the project.
     #[serde(default)]
-    #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
-    pub run_settings: Option<serde_json::Value>,
+    pub run_settings: Option<RunSettings>,
     /// True when the latest finished attempt left a patch or a kept
     /// workspace that nobody has reviewed yet.
     #[serde(default)]
@@ -602,10 +634,10 @@ pub struct UpdateItem {
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub assignee: Option<Option<String>>,
     /// Omitted leaves the run settings untouched; JSON `null` clears them.
-    /// The handler rejects anything but an object or `null`.
+    /// Anything but an object or `null` fails to deserialize.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
-    pub run_settings: Option<Option<serde_json::Value>>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<RunSettings>))]
+    pub run_settings: Option<Option<RunSettings>>,
     /// Server-only: the target status's category, populated by the update handler
     /// when the status changes so the persistence layer can maintain
     /// `started_at` / `completed_at`. Never (de)serialized from client requests.

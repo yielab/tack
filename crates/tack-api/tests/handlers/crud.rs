@@ -238,7 +238,7 @@ async fn run_settings_round_trip_and_clear() {
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert!(body["item"]["run_settings"].is_null());
 
-    let settings = json!({"timeout_seconds": 900});
+    let settings = json!({"timeout_seconds": 900, "push": true, "later_key": 1});
     let (status, _) =
         common::send(&app, "PATCH", &uri, json!({"run_settings": settings}), &[]).await;
     assert_eq!(status, StatusCode::OK);
@@ -258,7 +258,12 @@ async fn run_settings_round_trip_and_clear() {
         let (status, body) =
             common::send(&app, "PATCH", &uri, json!({"run_settings": bad}), &[]).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(body["error"]["details"]["field"], "run_settings");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("run_settings")
+        );
     }
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert_eq!(body["item"]["run_settings"], settings);
