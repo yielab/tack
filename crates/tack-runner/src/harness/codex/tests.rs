@@ -143,8 +143,9 @@ fn codex_declares_what_it_does_not_enforce() {
 #[test]
 fn the_permission_policy_maps_onto_the_sandbox_flag() {
     let state = scratch("codex-permission-policy");
-    let rows: [(&[&str], bool, Option<Approvals>, &str); 6] = [
+    let rows: [(&[&str], bool, Option<Approvals>, &str); 7] = [
         (&[], false, None, "read-only"),
+        (&["*"], false, None, "workspace-write"),
         (&["bash"], false, None, "workspace-write"),
         (&["Edit"], false, None, "workspace-write"),
         (&["read"], false, None, "read-only"),

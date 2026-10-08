@@ -4,7 +4,7 @@
 //! Vendor findings — what is measured, what is a documented guess, and at
 //! which version — are in `fixtures/codex/README.md`.
 
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
@@ -67,7 +67,9 @@ fn toml_quoted(value: &str) -> String {
 /// Whether `tools` names `tool` (case-insensitively), the same convention
 /// `opencode.rs`'s own `grants` uses.
 fn grants(tools: &[String], tool: &str) -> bool {
-    tools.iter().any(|name| name.eq_ignore_ascii_case(tool))
+    tools
+        .iter()
+        .any(|name| name == PermissionPolicy::ALL_TOOLS || name.eq_ignore_ascii_case(tool))
 }
 
 fn bounded_preview(text: &str, max_chars: usize) -> String {

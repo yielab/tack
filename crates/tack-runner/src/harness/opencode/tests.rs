@@ -886,3 +886,12 @@ async fn the_real_opencode_asks_before_bash_over_acp() {
         "real HOME must never be touched"
     );
 }
+
+#[test]
+fn every_tool_grants_each_permission() {
+    let all = vec!["*".to_owned()];
+    for tool in ["edit", "bash", "task"] {
+        assert!(grants(&all, tool), "{tool}");
+    }
+    assert!(!grants(&[], "edit"));
+}

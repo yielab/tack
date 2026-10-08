@@ -180,6 +180,16 @@ fn policy_document(policy: &PermissionPolicy) -> Result<Option<String>, HarnessE
             "permission_policy.{field} cannot be expressed as a docket policy document"
         )));
     }
+    // Every tool, less `fetch` when the network is denied.
+    if policy.allows_all_tools() {
+        let mut all = policy.clone();
+        all.tools = DOCKET_TOOLS
+            .iter()
+            .filter(|tool| policy.network || **tool != "fetch")
+            .map(|tool| (*tool).to_owned())
+            .collect();
+        return policy_document(&all);
+    }
     let allowed: Vec<String> = policy
         .tools
         .iter()
