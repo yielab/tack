@@ -247,6 +247,30 @@ describe('AttemptList', () => {
       expect(added).toEqual(['+added a', '+added b']);
     });
 
+    it('a_run_in_the_users_folder_offers_the_projects_folder', async () => {
+      mockApi([art('a1', 'patch', 'changes.patch')]);
+      const fetchSpy = vi.mocked(globalThis.fetch);
+      const base = fetchSpy.getMockImplementation()!;
+      fetchSpy.mockImplementation((input, init) => {
+        const url = String(input);
+        if (url.endsWith('/items/item-1')) return Promise.resolve(new Response(JSON.stringify({ item: { id: 'item-1', project_id: 'project-1' } }), { headers: { ETag: '"1"' } }));
+        if (url.endsWith('/projects/project-1')) return Promise.resolve(new Response(JSON.stringify({ id: 'project-1', workspace_mode: 'local_branch', repository: '/home/ox/app' })));
+        return base(input, init);
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[attempt()]} itemId="item-1" />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      const writeText = vi.fn();
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      await flush();
+      await flush();
+      await flush();
+      expect(labels(container)).toEqual(['Open diff', 'Copy path']);
+      (Array.from(container.querySelectorAll('[data-testid="attempt-tools"] button')).find((b) => b.textContent === 'Copy path') as HTMLButtonElement).click();
+      expect(writeText).toHaveBeenCalledWith('/home/ox/app');
+    });
+
     it('without a patch only Result and Log show', async () => {
       mockApi([art('a2', 'log', 'run.log')]);
       const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
