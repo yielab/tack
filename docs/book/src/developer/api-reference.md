@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (89 paths, 125 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (90 paths, 126 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -136,6 +136,19 @@ Items: the universal work unit (epics, tasks, bugs, …).
 | 400 | Invalid transition / validation error | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 | 412 | If-Match did not match the current item version — nothing was written | `ErrorEnvelope` |
+
+#### `GET /api/items/{id}/agent-context`
+
+what the agent will read for a given item:
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The composed instructions for the agent | `AgentContextResponse` |
+| 404 | Item or project not found | `ErrorEnvelope` |
 
 #### `DELETE /api/items/{id}/github-link`
 
