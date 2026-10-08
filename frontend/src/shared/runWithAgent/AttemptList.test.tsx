@@ -151,8 +151,8 @@ describe('AttemptList', () => {
   });
 
   it('events/decisions/artifacts are collapsed by default and expand on demand', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
     const c = mount([attempt()]);
     expect(c.textContent).not.toContain('Loading events');
@@ -213,6 +213,46 @@ describe('AttemptList', () => {
         while (disposers.length) disposers.pop()!();
         document.body.innerHTML = '';
       });
+    });
+  });
+
+  describe('tools to see what it did', () => {
+    const PATCH =
+      'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+added a\n' +
+      'diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1 @@\n-x\n+added b\n';
+    const art = (artifact_id: string, kind: string, name: string) => ({
+      artifact_id, kind, name, media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-08-06T12:05:00Z',
+    });
+    const mockApi = (artifacts: ReturnType<typeof art>[]) =>
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/content')) return Promise.resolve(new Response(PATCH));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: artifacts })));
+      });
+    const labels = (c: HTMLElement) =>
+      Array.from(c.querySelectorAll('[data-testid="attempt-tools"] button')).map((b) => b.textContent);
+
+    it('a_terminal_attempt_offers_the_diff_and_the_folder', async () => {
+      mockApi([art('a1', 'patch', 'changes.patch'), art('a2', 'log', 'run.log')]);
+      const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.' } })]);
+      await flush();
+      await flush();
+      expect(labels(c)).toEqual(['Open diff', 'Copy path', 'Result', 'Log']);
+      (c.querySelector('[data-testid="attempt-tools"] button') as HTMLButtonElement).click();
+      await flush();
+      await flush();
+      const headings = Array.from(document.querySelectorAll('[data-testid="diff-file"]')).map((h) => h.textContent);
+      expect(headings).toEqual(['src/a.ts', 'src/b.ts']);
+      const added = Array.from(document.querySelectorAll('[data-diff="add"]')).map((l) => l.textContent);
+      expect(added).toEqual(['+added a', '+added b']);
+    });
+
+    it('without a patch only Result and Log show', async () => {
+      mockApi([art('a2', 'log', 'run.log')]);
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      await flush();
+      await flush();
+      expect(labels(c)).toEqual(['Result', 'Log']);
     });
   });
 });
