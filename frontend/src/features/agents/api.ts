@@ -91,6 +91,13 @@ export interface SecretListResult {
   data: SecretMeta[];
 }
 
+/** `GET /api/local-runner/harness-verification` — only the harness kinds with
+ *  a succeeded run appear, each mapped to the time of that run. A kind absent
+ *  from the map has never been seen signed in. */
+export interface HarnessVerification {
+  harnesses: Record<string, string>;
+}
+
 /** True when a request failed because this deployment has no reachable
  *  embedded-runner control surface — either the server isn't bound to
  *  loopback, or the process serving it never wired one in at all. Both
@@ -116,6 +123,14 @@ export const localRunnerApi = {
     request<void>(`/local-runner/secrets/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),
+    }),
+
+  harnessVerification: () => request<HarnessVerification>('/local-runner/harness-verification'),
+
+  testRun: (harnessKind: string) =>
+    request<{ request_id: string }>('/local-runner/test-run', {
+      method: 'POST',
+      body: JSON.stringify({ harness_kind: harnessKind }),
     }),
 
   removeSecret: (name: string) =>

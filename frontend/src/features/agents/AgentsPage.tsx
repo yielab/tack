@@ -1,16 +1,12 @@
-import { type Component, type JSX, Show, createEffect, createResource, createSignal, onCleanup, onMount } from 'solid-js';
-import { api } from '../../shared/api';
-import { Select } from '../../shared/ui';
+import { type Component, type JSX, Show, createResource, createSignal, onCleanup, onMount } from 'solid-js';
 import { runnersApi } from '../../shared/execution';
 import { localRunnerApi, isLocalRunnerUnavailable } from './api';
 import ExecutionToggle from './ExecutionToggle';
 import HarnessStep from './steps/HarnessStep';
 import ProviderStep from './steps/ProviderStep';
-import ModelDefaultStep from './steps/ModelDefaultStep';
 import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
 import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isThisMachineRunner } from './runnerObservations';
-import { getRememberedAgentsProjectId, setRememberedAgentsProjectId } from './agentsProjectPreference';
 
 /** How often this page re-polls `GET /api/runners` while mounted — enough
  *  to notice a toggle/re-check without the operator reloading, without
@@ -73,11 +69,10 @@ const StepRow: Component<{ number: number; state: StepState; last?: boolean; chi
 };
 
 /**
- * The Agents page — five numbered, API-observed steps from an installed
- * binary to a completed attempt, plus an Advanced section for running
+ * The Agents page — three numbered, API-observed steps on this computer, a one-button test run, plus an Advanced section for running
  * agents on other machines. Composes `ExecutionToggle`/`ProviderKeyPanel`
  * (each independently fetches and owns its own state) with the harness,
- * provider-login, default-model and test-run steps, and the `runnerFleet/`
+ * provider and test-run steps, and the `runnerFleet/`
  * management tree.
  */
 const AgentsPage: Component = () => {
@@ -90,7 +85,7 @@ const AgentsPage: Component = () => {
   // `last_heartbeat_at` freezes) — so "this machine's own row" is only
   // trustworthy while `/api/local-runner` itself reports `running`.
   // Filtering it out otherwise, once, here keeps every step below (harness
-  // list, provider logins, model-default union, test-run target) from
+  // list, test-run target) from
   // separately re-deriving the same check.
   const runners = () => {
     const all = runnersResult()?.data.data ?? [];
@@ -105,6 +100,7 @@ const AgentsPage: Component = () => {
     pollHandle = setInterval(() => {
       void refetchRunners();
       void refetchLocalRunnerStatus();
+      void refetchVerification();
     }, RUNNERS_POLL_MS);
   });
   onCleanup(() => {
@@ -123,45 +119,17 @@ const AgentsPage: Component = () => {
     }
   };
 
-  // Step 4/5 need a project; this route carries no `:id` (it is a global
-  // page, not nested under `/projects/:id`), so it keeps its own
-  // selection, remembered per browser.
-  const [projects] = createResource(() => api.projects.list());
-  const [selectedProjectId, setSelectedProjectId] = createSignal('');
-  createEffect(() => {
-    if (selectedProjectId()) return;
-    const list = projects();
-    if (!list || list.length === 0) return;
-    const remembered = getRememberedAgentsProjectId();
-    setSelectedProjectId(remembered && list.some((p) => p.id === remembered) ? remembered : list[0].id);
-  });
-  createEffect(() => {
-    const id = selectedProjectId();
-    if (id) setRememberedAgentsProjectId(id);
-  });
-  const [project, { refetch: refetchProject }] = createResource(selectedProjectId, (id) =>
-    id ? api.projects.get(id) : null,
-  );
-
-  const [verifiedHarnessKinds, setVerifiedHarnessKinds] = createSignal<ReadonlySet<string>>(new Set());
-  const markVerified = (harnessKind: string) => {
-    setVerifiedHarnessKinds((prev) => new Set(prev).add(harnessKind));
-  };
+  const [verification, { refetch: refetchVerification }] = createResource(() => localRunnerApi.harnessVerification());
 
   // Each marker reads the same observations its step already renders —
-  // nothing here is a separate notion of progress. Step 3 and step 5 both
-  // flip only on a test run this tab watched succeed (the one signal that
-  // turns step 3's "Present, unverified" badge into "Verified").
-  const stepDone = (): boolean[] => {
-    const verified = verifiedHarnessKinds().size > 0;
-    return [
-      localRunnerStatus.error === undefined && localRunnerStatus()?.state === 'running',
-      harnessesOf(thisMachineRunner()).some((h) => h.probe_error === null && !!h.installed_version),
-      verified,
-      !!project()?.default_model,
-      verified,
-    ];
-  };
+  // nothing here is a separate notion of progress.
+  // An errored resource throws when read; a failed read means "nobody is signed in".
+  const signedIn = () => (verification.error ? {} : (verification()?.harnesses ?? {}));
+  const stepDone = (): boolean[] => [
+    localRunnerStatus.error === undefined && localRunnerStatus()?.state === 'running',
+    harnessesOf(thisMachineRunner()).some((h) => h.probe_error === null && !!h.installed_version),
+    Object.keys(signedIn()).length > 0,
+  ];
   const stepState = (index: number): StepState => {
     const done = stepDone();
     if (done[index]) return 'done';
@@ -175,32 +143,20 @@ const AgentsPage: Component = () => {
           Agents
         </h1>
         <p class="mt-1.5 max-w-[620px] text-[15px]" style={{ color: 'var(--color-text-secondary)' }}>
-          Turn on an agent, give it a model provider, and run a test — the whole path from
+          Turn on an agent on this computer, sign it in, and run a test — the whole path from
           an installed binary to a completed run.
         </p>
       </div>
 
-      <Show when={(projects()?.length ?? 0) > 1 || (!localRunnerUnavailable() && otherActiveCount() > 0)}>
+      <Show when={!localRunnerUnavailable() && otherActiveCount() > 0}>
         <div class="flex flex-wrap items-end gap-3">
-          <Show when={(projects()?.length ?? 0) > 1}>
-            <div class="w-[260px] max-w-full">
-              <Select
-                label="Project"
-                value={selectedProjectId()}
-                onChange={(e) => setSelectedProjectId(e.currentTarget.value)}
-                options={(projects() ?? []).map((p) => ({ value: p.id, label: p.name }))}
-              />
-            </div>
-          </Show>
-          <Show when={!localRunnerUnavailable() && otherActiveCount() > 0}>
-            <p
+          <p
               class="rounded-full px-3.5 py-2 text-[13px]"
               style={{ background: 'var(--color-accent2-soft)', color: 'var(--color-accent2-ink)' }}
             >
               {otherActiveCount()} other machine{otherActiveCount() === 1 ? ' is' : 's are'} running agents —{' '}
               <a href="#advanced" class="font-bold underline" style={{ color: 'inherit' }}>see Advanced</a>.
             </p>
-          </Show>
         </div>
       </Show>
 
@@ -210,21 +166,15 @@ const AgentsPage: Component = () => {
         </StepRow>
 
         <StepRow number={2} state={stepState(1)}>
-          <HarnessStep thisMachineRunner={thisMachineRunner()} onRecheck={() => void recheck()} rechecking={rechecking()} />
+          <HarnessStep thisMachineRunner={thisMachineRunner()} onRecheck={() => void recheck()} rechecking={rechecking()} verification={signedIn()} />
         </StepRow>
 
-        <StepRow number={3} state={stepState(2)}>
-          <ProviderStep thisMachineRunner={thisMachineRunner()} verifiedHarnessKinds={verifiedHarnessKinds()} />
-        </StepRow>
-
-        <StepRow number={4} state={stepState(3)}>
-          <ModelDefaultStep project={project()} runners={runners()} onSaved={() => void refetchProject()} />
-        </StepRow>
-
-        <StepRow number={5} state={stepState(4)} last>
-          <TestRunStep project={project()} runners={runners()} onVerified={markVerified} />
+        <StepRow number={3} state={stepState(2)} last>
+          <ProviderStep />
         </StepRow>
       </div>
+
+      <TestRunStep thisMachineRunner={thisMachineRunner()} />
 
       <AdvancedSection />
     </div>
