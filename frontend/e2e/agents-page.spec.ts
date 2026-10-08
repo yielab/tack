@@ -24,6 +24,8 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   page,
   executionToggleLock,
 }) => {
+  test.setTimeout(120_000);
+
   await page.goto('/agents');
   await waitForApp(page);
 
@@ -51,8 +53,19 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   await expect(page.getByText('Not signed in').first()).toBeVisible();
   await expect(page.getByText('Not signed in')).toHaveCount(2);
 
-  // The click flow (POST /api/local-runner/test-run) is asserted after S5 lands.
-  await expect(page.getByRole('button', { name: 'Run test' })).toBeEnabled();
+  // The embedded ExecutionTimeline (rendered right below "Run test") shows
+  // the same request/attempt lifecycle the hero item does, via the shared
+  // store's own poll — no reload needed, just time on the clock.
+  // The click flow: POST /api/local-runner/test-run creates a request on this
+  // machine's runner, the embedded runner claims it, and the shim exits 0
+  // having changed nothing — so the attempt finishes amber, "no changes
+  // recorded", with its runner named. The timeline below the button is the
+  // shared store's own poll; no reload.
+  await page.getByRole('button', { name: 'Run test' }).click();
+  const attempt = page.getByRole('listitem').filter({ hasText: /^Attempt #1/ });
+  await expect(attempt).toContainText('Finished — no changes recorded', { timeout: 90_000 });
+  await expect(attempt).toContainText(/runner runr_/);
+  await expect(attempt.getByRole('button', { name: 'Log' })).toBeVisible();
 
   // Leave the machine as this test found it, for every other spec in this
   // suite that assumes agent execution starts off — but only when it is
