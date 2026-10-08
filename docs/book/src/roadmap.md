@@ -14,7 +14,9 @@ service, and the codebase cleanup that retired the Docket control-plane bridge
 it left open is in Phase 65.
 
 **Phase 66 closed on 2026-10-05** and ships as `v0.1.0-beta.10`; what it left open and what
-it parked are in its plan, [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md). Phase 65's plan
+it parked are in its plan, [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md).
+**Phase 67 closed on 2026-10-08** (ADR 0074: a run a normal person can start) and
+**Phase 68** finishes what its agents found on the way; both are below. Phase 65's plan
 holds the rest of its Wave 0, the maintainer's:
 [`docs/plans/phase-65.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-65.md). It folds together what the roadmap,
 the ADRs and the harness plan still owed — the release tag and `docs/LAUNCH-CHECKLIST.md`,
@@ -90,6 +92,49 @@ reconfigured; on a docket that accepts a policy, a request must name docket's ow
 `tack runner doctor` does not yet print each harness's `artifacts` and `permission_policy`
 lines. Opening a pull request as a choice in the "Run with agent" dialog is shown disabled:
 a pull request is opened for a pushed branch whose item is linked to a GitHub issue.
+
+---
+
+## Phase 67 — a run a normal person can start
+
+**Status:** closed 2026-10-08; every task built and merged, to ship as the next beta.
+**Plan:** [`docs/plans/phase-67.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-67.md).
+**ADR:** 0074 (amends 0069, 0071 and 0072).
+
+A manual run of beta.10 produced fourteen findings; three lost or hid work. After this phase
+a project is created knowing where its code is, and the agent works on a new branch of that
+folder, in the folder itself, or in a clone for another computer. No model or provider is
+asked for: the agent's own is the default. Four built-in profiles (Implementer, Reviewer,
+Researcher, Planner) carry their tools. A task is a description plus acceptance criteria,
+with what only the agent needs collapsed. The dialog is a pre-flight that shows what the
+agent will read. A finished run flags the task **Needs your review** and hands over the diff,
+the folder, the branch and the result. Every word on screen is Tack's, with a `(?)` beside it
+and a help button into this book.
+
+| Wave | What lands | Who |
+|---|---|---|
+| 0 | Stop losing data: evidence against the resolved commit; a workspace whose evidence failed is kept; the failure reason typed and shown; the outcome leads the card; native controls follow the palette; the provider derived, never typed. | Sonnet and Haiku agents |
+| 1 | The agent's default model: measured ids per agent; the harness says whether it needs one; the scheduler believes it. | Sonnet agents |
+| 2 | The project knows where its code is: the migrations; project creation asks; Settings → Automation; the Agents page is about this computer; a test run with nothing typed; four profiles seeded and edited in a form. | Sonnet and Haiku agents |
+| 3 | The agent works where the code lives: a worktree on `tack/<task>`; the folder itself; the server fills the repository from the project. | Sonnet agents |
+| 4 | The task and the dialog: the form; what the agent will read, on a route; the pre-flight; remembered settings; the review flag and the verdict; the tools to see what it did; the Planner's plan and the subtasks a person creates from it. | Sonnet agents |
+| 5 | Tack's words; `(?)` on every field and a help button; the book describes the flow; the e2e specs follow the new screens. | Sonnet agents |
+
+---
+
+## Phase 68 — what Phase 67 left on the table
+
+**Status:** opened 2026-10-08. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
+
+Fourteen follow-ups, each found by the agent that built the task beside it, each finishing a
+decision ADR 0074 already takes. No new decision.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | A workspace the runner could not keep is left in place, never deleted; run settings and the folder check are named shapes on the wire. | Sonnet agents |
+| 2 | A subtask created from a plan records the plan; the Automation panel writes a specific model and the definition of done, and shows a rejected folder under the field. | Sonnet agents |
+| 3 | The embedded runner says which runner it is; the dialog remembers the profile only when a person picked it; the card finds the folder of a run in your own repo. | Haiku, Sonnet |
+| 4 | `Select` takes a `(?)`; the popover closes; a question from the agent and a review you owe no longer share a colour; the agents page's test run is asserted end to end. | Sonnet, Haiku |
 
 ---
 
