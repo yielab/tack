@@ -102,6 +102,32 @@ pub struct AttemptEvidence {
     pub usage: serde_json::Value,
 }
 
+/// The file the Planner profile writes at the workspace root.
+pub const PLAN_FILE: &str = "tack-plan.json";
+/// Written beside `src/` in the scratch directory (never staged) when
+/// [`PLAN_FILE`] exists but does not parse; the engine reads it into the
+/// `attempt.plan_invalid` event.
+pub const PLAN_INVALID_FILE: &str = "plan-invalid.txt";
+
+/// `tack-plan.json`, the shape pinned by `docs/contracts/plan-v1/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanV1 {
+    pub v: String,
+    pub subtasks: Vec<PlanSubtask>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSubtask {
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub acceptance: Vec<String>,
+    #[serde(default)]
+    pub depends_on: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<String>,
+}
+
 /// Why `captured` is false when git could not read the workspace.
 pub const EVIDENCE_REASON_GIT_UNREADABLE: &str = "git could not read the workspace";
 /// Why `captured` is false when the provisioner has no repository to read.
@@ -120,7 +146,10 @@ pub async fn capture<P: WorktreeProvisioner>(
     brief: Option<&serde_json::Value>,
 ) -> (PathBuf, Vec<serde_json::Value>) {
     let attempt_id = workspace.attempt_id.as_str();
-    let (git, reason) = match workspaces.capture_evidence(workspace, &[RUNNER_DIR]).await {
+    let (git, reason) = match workspaces
+        .capture_evidence(workspace, &[RUNNER_DIR, PLAN_FILE])
+        .await
+    {
         Ok(Some(git)) => (Some(git), None),
         Ok(None) => (None, Some(EVIDENCE_REASON_NO_REPOSITORY)),
         Err(_) => (None, Some(EVIDENCE_REASON_GIT_UNREADABLE)),
@@ -210,6 +239,25 @@ pub async fn capture<P: WorktreeProvisioner>(
     if let Some(brief) = brief {
         let bytes = serde_json::to_vec_pretty(brief).unwrap_or_default();
         stage("brief.json", "brief", "application/json", &bytes);
+    }
+    // Read after capture, from the workspace that is about to be deleted. A
+    // missing file is not a failure.
+    if let Ok(bytes) = fs::read(workspace.path.join(PLAN_FILE)) {
+        let parsed = serde_json::from_slice::<PlanV1>(&bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|plan| {
+                if plan.v == "1" {
+                    Ok(())
+                } else {
+                    Err(format!("unsupported plan version {:?}", plan.v))
+                }
+            });
+        match parsed {
+            Ok(()) => stage(PLAN_FILE, "plan", "application/vnd.tack.plan+json", &bytes),
+            Err(reason) => {
+                let _ = fs::write(scratch.join(PLAN_INVALID_FILE), reason);
+            }
+        }
     }
     let manifest = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
     stage("evidence.json", "evidence", "application/json", &manifest);
