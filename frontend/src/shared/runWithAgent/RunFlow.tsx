@@ -101,7 +101,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
   const blocker = (): { text: string; href?: string } | undefined => {
     if (props.project()?.code_origin === 'none') return { text: "Choose where this project's code is →", href: automation() };
     if (props.rows.runner() === 'missing') return { text: 'Turn on agent execution →', href: '/agents' };
-    if (!props.gate().allowed) return { text: 'Choose a model for this run' };
+    if (!props.gate().allowed || (props.form.modelMode === 'choose' && props.form.chooseIndex === '')) return { text: 'Choose a model for this run' };
   };
 
   return (

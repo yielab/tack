@@ -1,5 +1,5 @@
 import { createStore } from 'solid-js/store';
-import { type Component, createSignal, createResource, createMemo, createEffect, Show } from 'solid-js';
+import { type Component, createSignal, createResource, createMemo, createEffect, Show, untrack } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Modal } from '../ui';
 import { toast } from '../ui/toast';
@@ -157,8 +157,15 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     return (ACCEPTED_MODELS[form.harnessKind] ?? []).filter((id) => !reported.has(id));
   });
   // A harness that needs a model opens on "Specific model", unless the project already names one.
+  // The harness can change after that (the project's default lands once runners load), so a
+  // "Specific model" nobody filled in goes back to the default when the new harness needs none.
   createEffect(() => {
-    if (targetHarnessCapability()?.model_selection === 'required' && !projectDefaultLabel()) setForm('modelMode', 'choose');
+    const required = targetHarnessCapability()?.model_selection === 'required' && !projectDefaultLabel();
+    const fallback = projectDefaultLabel() ? 'project' : 'auto';
+    untrack(() => {
+      if (required) setForm('modelMode', 'choose');
+      else if (form.modelMode === 'choose' && form.chooseIndex === '') setForm('modelMode', fallback);
+    });
   });
   // Start from the project's values, then overlay what this task remembered.
   createEffect(() => {
@@ -390,7 +397,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             gate={combinationGate}
             project={project}
             agentContext={() => agentContext()}
-            modelLabel={() => modelId() ?? "the agent's default"}
+            modelLabel={() => modelId() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}
