@@ -415,6 +415,7 @@ impl HarnessGrammar for DocketGrammar {
             tokens_out: Some(parsed.usage.output_tokens),
             duration_ms: None,
             cost_usd: None,
+            usage_detail: Default::default(),
         }
     }
 

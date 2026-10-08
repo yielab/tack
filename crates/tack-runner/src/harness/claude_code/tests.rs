@@ -316,6 +316,41 @@ fn a_success_transcript_yields_model_version_and_usage() {
     );
 }
 
+/// The figures of a real 2.1.273 run that read 1.08M tokens: `usage.input_tokens`
+/// alone said 12.
+#[test]
+fn tokens_in_counts_the_cache_and_model_usage_names_every_model() {
+    let init = r#"{"type":"system","subtype":"init","model":"claude-sonnet-5-5","claude_code_version":"2.1.273"}"#;
+    let result = r#"{"type":"result","is_error":false,"num_turns":6,"total_cost_usd":1.3368094,
+        "usage":{"input_tokens":12,"cache_creation_input_tokens":286414,"cache_read_input_tokens":791447,"output_tokens":3284},
+        "modelUsage":{
+          "claude-haiku-4-5":{"inputTokens":300,"outputTokens":40,"cacheReadInputTokens":0,"cacheCreationInputTokens":0},
+          "claude-sonnet-5-5":{"inputTokens":12,"outputTokens":3284,"cacheReadInputTokens":791447,"cacheCreationInputTokens":286414}}}"#
+        .replace('\n', "");
+    let report = read(ProcessExit::Exited(0), &format!("{init}\n{result}\n"));
+    assert_eq!(report.tokens_in, Some(312 + 791_447 + 286_414));
+    assert_eq!(report.tokens_out, Some(3_324));
+    assert_eq!(
+        report.usage_detail,
+        UsageDetail {
+            cache_read_tokens: Some(791_447),
+            cache_write_tokens: Some(286_414),
+            model_calls: Some(6),
+            models: vec!["claude-sonnet-5-5".into(), "claude-haiku-4-5".into()],
+        }
+    );
+
+    // Without `modelUsage`, `usage` carries the same breakdown.
+    let plain = r#"{"type":"result","is_error":false,"num_turns":2,"usage":{"input_tokens":3,"cache_read_input_tokens":100,"output_tokens":9}}"#;
+    let report = read(ProcessExit::Exited(0), &format!("{init}\n{plain}\n"));
+    assert_eq!((report.tokens_in, report.tokens_out), (Some(103), Some(9)));
+    assert_eq!(report.usage_detail.cache_write_tokens, None);
+    assert_eq!(
+        report.usage_detail.models,
+        vec!["claude-sonnet-5-5".to_owned()]
+    );
+}
+
 /// `(transcript, exit, the field of the reason that says why, its value)`.
 /// `is_error` decides, not `subtype` and not the exit status.
 #[test]

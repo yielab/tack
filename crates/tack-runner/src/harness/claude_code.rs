@@ -14,7 +14,7 @@ use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        RunContext, RunReport, capability, policy_capability,
+        RunContext, RunReport, UsageDetail, capability, policy_capability,
     },
     process::{ProcessExit, ProcessResult},
 };
@@ -85,6 +85,12 @@ fn bounded_prefix(text: &str, max_chars: usize) -> String {
 /// success: `subtype` was observed reporting `"success"` beside
 /// `"is_error":true` for an invalid-model API error. A missing `is_error`
 /// fails closed.
+///
+/// `usage.input_tokens` counts only input the cache did not serve (12 for a
+/// run that read 1.08M tokens, measured on 2.1.273), so `tokens_in` adds the
+/// cache reads and writes to it: the input the model actually read.
+/// `modelUsage` covers every model the run used, auxiliary ones included, so
+/// its totals win over `usage` when it is present.
 fn report_from_result_line(
     result: &Value,
     init_model: Option<String>,
@@ -94,19 +100,74 @@ fn report_from_result_line(
         .get("is_error")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    let usage = result_usage(result, init_model.as_deref());
+    let cached = |tokens: Option<u64>| tokens.unwrap_or(0);
     RunReport {
         succeeded: !is_error,
         terminal_reason: result.clone(),
         harness_version,
         observed_model: init_model,
-        tokens_in: result
-            .pointer("/usage/input_tokens")
-            .and_then(Value::as_u64),
-        tokens_out: result
-            .pointer("/usage/output_tokens")
-            .and_then(Value::as_u64),
+        tokens_in: usage.input.map(|input| {
+            input + cached(usage.detail.cache_read_tokens) + cached(usage.detail.cache_write_tokens)
+        }),
+        tokens_out: usage.output,
         duration_ms: result.get("duration_ms").and_then(Value::as_u64),
         cost_usd: result.get("total_cost_usd").and_then(Value::as_f64),
+        usage_detail: usage.detail,
+    }
+}
+
+struct ResultUsage {
+    input: Option<u64>,
+    output: Option<u64>,
+    detail: UsageDetail,
+}
+
+fn result_usage(result: &Value, init_model: Option<&str>) -> ResultUsage {
+    let model_calls = result.get("num_turns").and_then(Value::as_u64);
+    if let Some(per_model) = result.get("modelUsage").and_then(Value::as_object)
+        && !per_model.is_empty()
+    {
+        let sum = |key: &str| {
+            per_model
+                .values()
+                .filter_map(|usage| usage.get(key).and_then(Value::as_u64))
+                .reduce(|a, b| a + b)
+        };
+        let mut models: Vec<String> = per_model.keys().cloned().collect();
+        // The session's own model first, then the rest by output size.
+        models.sort_by_key(|name| {
+            let output = per_model[name]
+                .get("outputTokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            (Some(name.as_str()) != init_model, std::cmp::Reverse(output))
+        });
+        return ResultUsage {
+            input: sum("inputTokens"),
+            output: sum("outputTokens"),
+            detail: UsageDetail {
+                cache_read_tokens: sum("cacheReadInputTokens"),
+                cache_write_tokens: sum("cacheCreationInputTokens"),
+                model_calls,
+                models,
+            },
+        };
+    }
+    let field = |key: &str| {
+        result
+            .pointer(&format!("/usage/{key}"))
+            .and_then(Value::as_u64)
+    };
+    ResultUsage {
+        input: field("input_tokens"),
+        output: field("output_tokens"),
+        detail: UsageDetail {
+            cache_read_tokens: field("cache_read_input_tokens"),
+            cache_write_tokens: field("cache_creation_input_tokens"),
+            model_calls,
+            models: init_model.map(str::to_owned).into_iter().collect(),
+        },
     }
 }
 
@@ -324,10 +385,10 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             ),
             usage: capability(
                 CapabilitySupport::Advisory,
-                "The harness reports token and cost totals, but an auxiliary model's usage is \
-                 folded into `total_cost_usd` while `usage.input_tokens`/`output_tokens` were \
-                 observed to cover only the primary turn, so tokens may undercount relative to \
-                 cost.",
+                "Token totals, cache reads and writes, model calls and the models used are read \
+                 from the result line's `modelUsage` (every model, auxiliary ones included) or, \
+                 without it, `usage`; `total_cost_usd` is Claude Code's own estimate at list \
+                 price, not a bill.",
             ),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
