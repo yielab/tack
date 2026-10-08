@@ -57,13 +57,23 @@ impl Repository {
             created_at: now,
             updated_at: now,
             archived: false,
+            code_origin: Default::default(),
+            repository: None,
+            default_branch: None,
+            workspace_mode: Default::default(),
+            push_after_run: false,
+            default_harness: None,
+            default_profile_id: None,
+            on_finish_status: None,
+            definition_of_done: None,
         })
     }
 
     #[instrument(skip(self))]
     pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
         let row = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done
              FROM projects WHERE id = ?"
         )
         .bind(id.to_string())
@@ -76,7 +86,8 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done
              FROM projects WHERE workspace_id = ? AND archived = 0 ORDER BY updated_at DESC"
         )
         .bind(workspace_id.to_string())
@@ -163,6 +174,43 @@ impl Repository {
                 .await?;
         }
 
+        if let Some(push_after_run) = input.push_after_run {
+            sqlx::query("UPDATE projects SET push_after_run = ?, updated_at = ? WHERE id = ?")
+                .bind(push_after_run as i32)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
+        // Each column name is a literal here, never client input.
+        for (column, value) in [
+            (
+                "code_origin",
+                input.code_origin.map(|v| Some(v.to_string())),
+            ),
+            (
+                "workspace_mode",
+                input.workspace_mode.map(|v| Some(v.to_string())),
+            ),
+            ("repository", input.repository),
+            ("default_branch", input.default_branch),
+            ("default_harness", input.default_harness),
+            ("default_profile_id", input.default_profile_id),
+            ("on_finish_status", input.on_finish_status),
+            ("definition_of_done", input.definition_of_done),
+        ] {
+            if let Some(value) = value {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
+                )))
+                .bind(value)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+            }
+        }
+
         self.get_project(id).await
     }
 
@@ -192,6 +240,15 @@ struct ProjectRow {
     archived: i32,
     created_at: String,
     updated_at: String,
+    code_origin: String,
+    repository: Option<String>,
+    default_branch: Option<String>,
+    workspace_mode: String,
+    push_after_run: i32,
+    default_harness: Option<String>,
+    default_profile_id: Option<String>,
+    on_finish_status: Option<String>,
+    definition_of_done: Option<String>,
 }
 
 impl ProjectRow {
@@ -230,6 +287,17 @@ impl ProjectRow {
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
             archived: self.archived != 0,
+            code_origin: serde_json::from_str(&format!("\"{}\"", self.code_origin))
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            repository: self.repository,
+            default_branch: self.default_branch,
+            workspace_mode: serde_json::from_str(&format!("\"{}\"", self.workspace_mode))
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            push_after_run: self.push_after_run != 0,
+            default_harness: self.default_harness,
+            default_profile_id: self.default_profile_id,
+            on_finish_status: self.on_finish_status,
+            definition_of_done: self.definition_of_done,
         })
     }
 }
