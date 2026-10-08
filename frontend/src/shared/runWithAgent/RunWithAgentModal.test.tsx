@@ -344,7 +344,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).not.toContain('Project default —');
-    expect(modelModeRadio(1).checked).toBe(true); // "Auto" is the only other radio besides "Choose…"
+    expect(modelModeRadio(0).checked).toBe(true); // "The agent's default", the first of two radios
   });
 
   it('with no default model configured at any tier, Auto is blocked and names the fix, with a link to set one', async () => {
@@ -356,7 +356,7 @@ describe('RunWithAgentModal', () => {
     expandRepository();
     setField(field('Remote'), 'git@example.com:org/repo.git');
     await flush();
-    expect(modelModeRadio(1).checked).toBe(true); // Auto, the default with no project opinion
+    expect(modelModeRadio(0).checked).toBe(true); // the agent's default, with no project opinion
     expect(submitButton().disabled).toBe(true);
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Unsupported');
@@ -388,7 +388,7 @@ describe('RunWithAgentModal', () => {
   it('"Choose…" lists the target\'s own reported model combinations, and picking one is real, gate-supported data', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();
-    modelModeRadio(0).click(); // "Choose…" is first when there is no project default
+    modelModeRadio(1).click(); // "Specific model"
     await flush();
     const modelSelect = select('Model');
     const labels = [...modelSelect.options].map((o) => o.textContent);
@@ -406,12 +406,12 @@ describe('RunWithAgentModal', () => {
     expect(document.body.textContent).toContain('Supported');
   });
 
-  it('a custom model id is only offered when the harness attests model_passthrough: supported', async () => {
+  it('"Other…" ends the model list and reveals the model id field', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();
-    modelModeRadio(0).click();
+    modelModeRadio(1).click();
     await flush();
-    expect([...select('Model').options].map((o) => o.textContent)).not.toContain('Other (type a model id)');
+    expect([...select('Model').options].map((o) => o.textContent).pop()).toBe('Other…');
 
     disposers.pop()!();
     document.body.innerHTML = '';
@@ -429,13 +429,53 @@ describe('RunWithAgentModal', () => {
     }));
     mount({}, { runners: [passthroughRunner], fleets: [] });
     await flush();
-    modelModeRadio(0).click();
+    modelModeRadio(1).click();
     await flush();
     const options = [...select('Model').options].map((o) => o.textContent);
-    expect(options).toContain('Other (type a model id)');
+    expect(options).toContain('Other…');
     setSelect(select('Model'), '__custom__');
     await flush();
     expect(field('Model id')).toBeTruthy();
+  });
+
+  it('the_dialog_follows_what_the_harness_reports_about_models', async () => {
+    const claude = (model_selection?: string, extra: Record<string, unknown> = {}) => runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+      harnesses: [{
+        harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+        model_combinations: [], native_provider: 'anthropic', providers: ['anthropic'], ...(model_selection ? { model_selection } : {}), ...extra,
+      }],
+    }));
+    // optional: opens on the agent's default, Run is enabled with no model chosen, and null/null is sent.
+    mount({}, { runners: [claude('optional')], fleets: [] });
+    await flush();
+    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
+    expandRepository();
+    setField(field('Remote'), 'git@example.com:org/repo.git');
+    await flush();
+    expect(modelModeRadio(0).checked).toBe(true);
+    expect(document.body.textContent).toContain("Uses the agent's own model");
+    expect(submitButton().disabled).toBe(false);
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_model_provider: null, requested_model_id: null });
+    teardown();
+    // required: opens on "Specific model" with the measured list; a listed id goes out with the derived provider.
+    mount({}, { runners: [claude('required', { model_passthrough: { support: 'supported', reason: null } })], fleets: [] });
+    await flush();
+    expect(modelModeRadio(1).checked).toBe(true);
+    const options = [...select('Model').options].map((o) => o.textContent);
+    expect(options).toContain('claude-sonnet-5-5');
+    expect(options).toContain('Other…');
+    setSelect(select('Agent profile'), PROFILE.agent_profile_id);
+    expandRepository();
+    setField(field('Remote'), 'git@example.com:org/repo.git');
+    setSelect(select('Model'), 'static:claude-sonnet-5-5');
+    await flush();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'claude-sonnet-5-5' });
   });
 
   it('the_provider_comes_from_the_harness', async () => {
@@ -456,7 +496,7 @@ describe('RunWithAgentModal', () => {
       setSelect(select('Agent profile'), PROFILE.agent_profile_id);
       expandRepository();
       setField(field('Remote'), 'git@example.com:org/repo.git');
-      modelModeRadio(0).click();
+      modelModeRadio(1).click();
       await flush();
       setSelect(select('Model'), '__custom__');
       await flush();
@@ -512,7 +552,7 @@ describe('RunWithAgentModal', () => {
     setSelect(select('Agent profile'), PROFILE.agent_profile_id);
     expandRepository();
     setField(field('Remote'), 'git@example.com:org/repo.git');
-    modelModeRadio(0).click();
+    modelModeRadio(1).click();
     await flush();
     setSelect(select('Model'), '0');
     await flush();

@@ -8,8 +8,10 @@ import RadioRow from './RadioRow';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 
-/** A model id typed by hand, unlocked only when the harness attests `model_passthrough`. */
+/** "Other…": a model id typed by hand. */
 export const CUSTOM_MODEL_VALUE = '__custom__';
+/** Prefix of a Select value naming an id from the measured list rather than a reported combination. */
+export const STATIC_MODEL_PREFIX = 'static:';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
  *  lists (docs/plans/measurements/tools-claude-code.md). The rest of that list depends on
@@ -48,7 +50,8 @@ export interface RunFlowProps {
   /** Native provider and gateway, when the harness lists both; empty otherwise. */
   throughOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   through: Accessor<string | null>;
-  passthroughAttested: Accessor<boolean>;
+  /** Measured ids for this harness that the runner did not already report. */
+  staticModels: Accessor<string[]>;
   gate: Accessor<ReturnType<typeof gateHarnessModelSelection>>;
   repoSummary: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
@@ -118,18 +121,16 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         />
         <Prerequisite state={props.rows.harness()} label="The harness is installed and signed in" href="/agents" fixLabel="Check the harness" />
         <div class="flex flex-col gap-2">
+          <RadioRow name="model-mode" checked={props.form.modelMode !== 'choose'} onChange={() => props.setForm('modelMode', props.projectDefaultLabel() ? 'project' : 'auto')}>
+            The agent's default (recommended)
+          </RadioRow>
           <Show when={props.projectDefaultLabel()}>
             {(label) => (
-              <RadioRow name="model-mode" checked={props.form.modelMode === 'project'} onChange={() => props.setForm('modelMode', 'project')}>
-                Project default — {label()}
-              </RadioRow>
+              <p class="pl-7 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Project default — {label()}</p>
             )}
           </Show>
           <RadioRow name="model-mode" checked={props.form.modelMode === 'choose'} onChange={() => props.setForm('modelMode', 'choose')}>
-            Choose…
-          </RadioRow>
-          <RadioRow name="model-mode" checked={props.form.modelMode === 'auto'} onChange={() => props.setForm('modelMode', 'auto')}>
-            Auto (let the runner decide)
+            Specific model
           </RadioRow>
         </div>
         <Show when={props.form.modelMode === 'choose'}>
@@ -143,7 +144,8 @@ const RunFlow: Component<RunFlowProps> = (props) => {
                 value: String(i),
                 label: `${c.model_provider} / ${c.model_id} (${c.supportingRunnerCount} runner${c.supportingRunnerCount === 1 ? '' : 's'})`,
               })),
-              ...(props.passthroughAttested() ? [{ value: CUSTOM_MODEL_VALUE, label: 'Other (type a model id)' }] : []),
+              ...props.staticModels().map((id) => ({ value: `${STATIC_MODEL_PREFIX}${id}`, label: id })),
+              { value: CUSTOM_MODEL_VALUE, label: 'Other…' },
             ]}
           />
           <Show when={props.form.chooseIndex === CUSTOM_MODEL_VALUE}>

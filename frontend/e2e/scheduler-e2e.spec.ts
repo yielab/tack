@@ -92,12 +92,12 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   await fillExactRunnerTarget(modal, runnerId, agentProfileId);
 
   // A specific, real, matching model choice — the live-capability gate
-  // (`RunWithAgentModal.tsx`'s "Choose…" list, built from the target's own
+  // (`RunWithAgentModal.tsx`'s "Specific model" list, built from the target's own
   // `GET /api/runners` capability report) must show it as genuinely
   // supported, not merely "unverified." The target declares exactly one
   // combination (`helpers.ts#enrollRunner`'s fixed capability shape), so it
   // is always index "0".
-  await modal.getByText('Choose…').click();
+  await modal.getByText('Specific model').click();
   await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
@@ -132,7 +132,7 @@ test('an unsupported model is blocked client-side with a named reason, using the
   // A fresh project, never the shared one `getOrCreateProject` returns —
   // this test writes the project's own default model, which the API has no
   // route to clear once set (`helpers.ts#createFreshProject`'s own doc
-  // comment). `RunWithAgentModal.tsx`'s "Choose…" list only ever offers a
+  // comment). `RunWithAgentModal.tsx`'s "Specific model" list only ever offers a
   // combination the target itself declares (or a free-text override when it
   // attests `model_passthrough`, which this fixture does not), so there is
   // no dropdown entry for an arbitrary undeclared model any more — the
