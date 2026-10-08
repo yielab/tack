@@ -49,6 +49,8 @@ pub struct FileChange {
 /// What git reported for one workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitEvidence {
+    /// The commit `base_revision` resolved to in the checkout.
+    pub base_commit: String,
     pub head_commit: String,
     /// The staged diff against `HEAD` is non-empty: the harness left work
     /// that it did not commit.
@@ -84,6 +86,9 @@ pub struct AttemptEvidence {
     pub captured: bool,
     pub reason: Option<String>,
     pub base_commit: String,
+    /// The `base_revision` the request named, as asked.
+    #[serde(default)]
+    pub base_revision_requested: String,
     pub head_commit: Option<String>,
     pub worktree_dirty: Option<bool>,
     pub files: Vec<FileChange>,
@@ -118,7 +123,11 @@ pub async fn capture<P: WorktreeProvisioner>(
         harness_kind,
         captured: git.is_some(),
         reason: reason.map(str::to_owned),
-        base_commit: workspace.base_revision.clone(),
+        base_commit: git.as_ref().map_or_else(
+            || workspace.base_revision.clone(),
+            |git| git.base_commit.clone(),
+        ),
+        base_revision_requested: workspace.base_revision.clone(),
         head_commit: git.as_ref().map(|git| git.head_commit.clone()),
         worktree_dirty: git.as_ref().map(|git| git.worktree_dirty),
         files: git
