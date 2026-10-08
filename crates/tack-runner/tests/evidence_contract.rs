@@ -7,7 +7,7 @@ const EXAMPLE: &str =
     include_str!("../../../docs/contracts/evidence-v1/attempt-evidence.example.json");
 
 /// FNV-1a 64 of the example's bytes, pinned like `runner_contract/fixtures.rs`.
-const EXAMPLE_FNV1A64: u64 = 0x0dd8_434e_afcf_7e88;
+const EXAMPLE_FNV1A64: u64 = 0x0f64_7195_33b7_8713;
 
 fn fnv1a64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
