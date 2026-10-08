@@ -1517,6 +1517,88 @@
         }
       }
     },
+    "/api/executions/{request_id}/attempts/{attempt_number}/review": {
+      "post": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`POST /api/executions/{request_id}/attempts/{attempt_number}/review` —\nrecords the operator's verdict on one attempt. One verdict per attempt: a\nsecond is `409` with `details.reason = \"already_reviewed\"`.",
+        "operationId": "review_execution_attempt",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The recorded verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request (verdict is not accepted or rejected)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (execution_request or execution_attempt)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict (details.reason = already_reviewed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/executions/{request_id}/cancel": {
       "post": {
         "tags": [
@@ -6716,6 +6798,28 @@
           }
         }
       },
+      "AttemptReview": {
+        "type": "object",
+        "description": "An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.",
+        "required": [
+          "verdict",
+          "reviewed_at"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_at": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        }
+      },
       "AttemptSummary": {
         "type": "object",
         "description": "One attempt as reported by `GET /api/executions/{id}/attempts` — every\ncolumn `execution_attempts` carries (migration 045).",
@@ -6810,6 +6914,17 @@
           },
           "request_id": {
             "type": "string"
+          },
+          "review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttemptReview",
+                "description": "The operator's verdict on this attempt, or `null` while unreviewed."
+              }
+            ]
           },
           "runner_id": {
             "type": "string"
@@ -8686,6 +8801,10 @@
           "item_type": {
             "$ref": "#/components/schemas/ItemType"
           },
+          "needs_review": {
+            "type": "boolean",
+            "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
+          },
           "parent_id": {
             "type": [
               "string",
@@ -9549,6 +9668,24 @@
               "null"
             ],
             "description": "Object key to restore. Defaults to the latest backup when omitted."
+          }
+        }
+      },
+      "ReviewAttemptRequest": {
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "description": "`accepted` or `rejected`."
           }
         }
       },

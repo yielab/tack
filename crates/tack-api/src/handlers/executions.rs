@@ -502,6 +502,16 @@ pub struct AttemptSummary {
     pub usage_economics: Value,
     /// The pull request this attempt opened on GitHub, or `null`.
     pub pull_request: Option<AttemptPullRequest>,
+    /// The operator's verdict on this attempt, or `null` while unreviewed.
+    pub review: Option<AttemptReview>,
+}
+
+/// An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptReview {
+    pub verdict: String,
+    pub note: Option<String>,
+    pub reviewed_at: String,
 }
 
 /// The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
@@ -1267,6 +1277,33 @@ pub async fn list_execution_attempts(
             );
         }
     }
+    let mut reviews = std::collections::HashMap::new();
+    for attempt in &attempts {
+        let row: Option<(String, Option<String>, String)> = sqlx::query_as(
+            "SELECT verdict, note, reviewed_at FROM attempt_reviews WHERE attempt_id = ?",
+        )
+        .bind(&attempt.id)
+        .fetch_optional(state.repo.pool())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list attempt reviews",
+                json!({}),
+            )
+        })?;
+        if let Some((verdict, note, reviewed_at)) = row {
+            reviews.insert(
+                attempt.id.clone(),
+                AttemptReview {
+                    verdict,
+                    note,
+                    reviewed_at,
+                },
+            );
+        }
+    }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
         .map(|attempt| {
@@ -1288,6 +1325,7 @@ pub async fn list_execution_attempts(
             );
             AttemptSummary {
                 pull_request: pull_requests.remove(&attempt.id),
+                review: reviews.remove(&attempt.id),
                 attempt_id: attempt.id,
                 request_id: attempt.request_id,
                 attempt_number: attempt.attempt_number,

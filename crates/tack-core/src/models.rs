@@ -188,6 +188,10 @@ pub struct Item {
     #[serde(default)]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
     pub run_settings: Option<serde_json::Value>,
+    /// True when the latest finished attempt left a patch or a kept
+    /// workspace that nobody has reviewed yet.
+    #[serde(default)]
+    pub needs_review: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -1018,6 +1018,55 @@ async fn done_on_success_moves_the_item_to_the_first_done_status_and_null_leaves
 }
 
 #[tokio::test]
+async fn on_finish_status_moves_the_item_only_when_the_attempt_left_a_patch() {
+    for (artifacts, expected) in [
+        (json!([{"kind": "patch", "size_bytes": 12}]), "In Progress"),
+        (json!([]), "To Do"),
+    ] {
+        let fx = Fixture::new().await;
+        sqlx::query("UPDATE projects SET on_finish_status = 'In Progress'")
+            .execute(fx.repo.pool())
+            .await
+            .unwrap();
+        enqueue_request(
+            &fx.repo,
+            &fx.clock,
+            &fx.item_id,
+            RUNNER_ID,
+            "profile-c2",
+            "finish-key",
+            None,
+        )
+        .await;
+        let claimed = fx.claim("claim-finish").await;
+        let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
+        let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+        fx.accept(&attempt_id, fencing_token).await;
+        fx.start(&attempt_id, fencing_token, "pid-1").await;
+        let mut body: Value = serde_json::from_str(&fx.default_completion_body(
+            &attempt_id,
+            fencing_token,
+            "complete-finish",
+        ))
+        .unwrap();
+        body["terminal_reason"]["artifacts"] = artifacts;
+        let (status, completed) = fx
+            .post(
+                &format!("/attempts/{attempt_id}/completion"),
+                body.to_string(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{completed}");
+        let item_status: String = sqlx::query_scalar("SELECT status FROM items WHERE id=?")
+            .bind(&fx.item_id)
+            .fetch_one(fx.repo.pool())
+            .await
+            .unwrap();
+        assert_eq!(item_status, expected);
+    }
+}
+
+#[tokio::test]
 async fn create_execution_rejects_an_unknown_status_map_policy_id() {
     let fx = Fixture::new().await;
     let state = tack_api::handlers::executions::OperatorExecutionState::with_clock(
