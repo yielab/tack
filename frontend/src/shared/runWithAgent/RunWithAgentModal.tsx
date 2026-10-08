@@ -12,10 +12,11 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   shouldHideTargetPicker, isExecutionOff, describeProjectModelDefault, projectDefaultModelPair,
-  isModelPassthroughAttested, isDecisionsAttested, resolveAutoModelPolicy,
+  isDecisionsAttested, resolveAutoModelPolicy,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
-import RunFlow, { CUSTOM_MODEL_VALUE } from './RunFlow';
+import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
+import { ACCEPTED_MODELS } from './models';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
@@ -141,7 +142,15 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const targetHarnessCapability = createMemo(() =>
     targetCapabilities().flatMap((c) => c.harnesses).find((h) => h.harness_kind === form.harnessKind));
-  const passthroughAttested = createMemo(() => isModelPassthroughAttested(targetHarnessCapability()));
+  // The measured list is the fallback: ids the runner already reports are not repeated.
+  const staticModels = createMemo(() => {
+    const reported = new Set(modelCombos().map((c) => c.model_id));
+    return (ACCEPTED_MODELS[form.harnessKind] ?? []).filter((id) => !reported.has(id));
+  });
+  // A harness that needs a model opens on "Specific model", unless the project already names one.
+  createEffect(() => {
+    if (targetHarnessCapability()?.model_selection === 'required' && !projectDefaultLabel()) setForm('modelMode', 'choose');
+  });
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
 
   const verifyConfigured = createMemo(() => capabilities().some((c) => c.verify_configured === true));
@@ -168,6 +177,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (form.modelMode === 'project') return projectDefaultModelPair(project()?.default_model ?? null)[key];
     if (form.modelMode !== 'choose') return null;
     if (form.chooseIndex === CUSTOM_MODEL_VALUE) return key === 'provider' ? derivedProvider() : (form.customModelId.trim() || null);
+    if (form.chooseIndex.startsWith(STATIC_MODEL_PREFIX)) {
+      return key === 'provider' ? derivedProvider() : form.chooseIndex.slice(STATIC_MODEL_PREFIX.length);
+    }
     const combo = modelCombos()[Number(form.chooseIndex)];
     return (key === 'provider' ? combo?.model_provider : combo?.model_id) ?? null;
   };
@@ -190,7 +202,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!form.selectorId.trim()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Select an agent profile.');
     if (!form.harnessKind) errors.push('Select a harness.');
-    if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or switch to Auto.');
+    if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or use the agent\'s default.');
     if (form.modelMode === 'choose' && form.chooseIndex === CUSTOM_MODEL_VALUE && !form.customModelId.trim()) errors.push('Enter a model id, or pick one from the list.');
     if (!form.repoRemote.trim()) errors.push('Enter a repository remote.');
     if (!form.repoBaseRevision.trim()) errors.push('Enter a base revision.');
@@ -311,7 +323,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             modelCombos={modelCombos}
             throughOptions={throughOptions}
             through={derivedProvider}
-            passthroughAttested={passthroughAttested}
+            staticModels={staticModels}
             gate={combinationGate}
             repoSummary={repoSummary}
             decisionsAttested={decisionsAttested}

@@ -144,6 +144,9 @@ export interface HarnessCapability {
    * scheduler's own `select.rs` treats them the same).
    */
   model_passthrough?: CapabilityValue;
+  /** Whether the harness runs without a chosen model (`'optional'`, it uses its own) or needs
+   *  one (`'required'`). Absent on an older runner, which reads as not optional. */
+  model_selection?: 'optional' | 'required';
   /**
    * Whether this harness can pause a run and ask the operator before it
    * acts, for a request whose `permission_policy.approvals` is `"ask"` —
