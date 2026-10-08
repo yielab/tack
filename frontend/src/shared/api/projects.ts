@@ -1,6 +1,15 @@
 import { request } from './client';
 import type { Project, CreateProject, UpdateProject } from '../types';
 
+export interface FolderCheck {
+  exists: boolean;
+  is_dir: boolean;
+  is_git: boolean;
+  branch: string | null;
+  remote_url: string | null;
+  dirty_files: number;
+}
+
 export const projects = {
   list: () => request<Project[]>('/projects'),
 
@@ -16,6 +25,20 @@ export const projects = {
     request<Project>(`/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    }),
+
+  /** `POST /local-runner/check-folder` — what is at `path`; writes nothing. */
+  checkFolder: (path: string) =>
+    request<FolderCheck>('/local-runner/check-folder', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
+  /** `POST /local-runner/init-folder` — creates `path` and runs `git init`. */
+  initFolder: (path: string) =>
+    request<void>('/local-runner/init-folder', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
     }),
 
   remove: (id: string) =>

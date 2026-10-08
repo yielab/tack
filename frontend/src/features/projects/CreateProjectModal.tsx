@@ -2,7 +2,8 @@ import { type Component, createSignal, createResource, createMemo, For, Show } f
 import { useNavigate } from '@solidjs/router';
 import { Modal, Button, Field, Select, FieldShell, Badge } from '../../shared/ui';
 import { api } from '../../shared/api';
-import type { ProjectType, ProjectTemplate } from '../../shared/types';
+import type { ProjectType, ProjectTemplate, UpdateProject } from '../../shared/types';
+import type { FolderCheck } from '../../shared/api/projects';
 import { toast } from '../../shared/ui/toast';
 import { projectTypeTone } from '../../shared/ui/projectTypeTone';
 
@@ -61,6 +62,18 @@ function vocabSamples(t: ProjectTemplate): string[] {
   return keys.slice(0, 3).map((k) => `${k} → ${vocab[k]}`);
 }
 
+type CodeChoice = 'folder' | 'new_folder' | 'none';
+
+/** One sentence for what `check-folder` found at a path. */
+function checkSentence(r: FolderCheck): string {
+  if (!r.exists) return 'That path does not exist';
+  if (!r.is_dir) return 'That path is a file, not a folder';
+  if (!r.is_git) return 'A folder without git — the agent will work in it directly';
+  const dirty = Array.isArray(r.dirty_files) ? r.dirty_files.length : Number(r.dirty_files ?? 0);
+  const on = r.branch ? ` on branch ${r.branch}` : '';
+  return `A git repository${on}, ${dirty === 0 ? 'no uncommitted files' : `${dirty} uncommitted file${dirty === 1 ? '' : 's'}`}`;
+}
+
 export interface CreateProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -74,6 +87,9 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
   const [projectType, setProjectType] = createSignal<ProjectType>('software');
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
+  const [codeChoice, setCodeChoice] = createSignal<CodeChoice>('none');
+  const [codePath, setCodePath] = createSignal('');
+  const [pathCheck, setPathCheck] = createSignal<FolderCheck | null>(null);
 
   // null selection = "Start blank" (bare project-type flow, the original behavior).
   const [selectedTemplate, setSelectedTemplate] = createSignal<ProjectTemplate | null>(null);
@@ -101,6 +117,48 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     setSelectedTemplate(null);
     setPreviewId(null);
     setError('');
+    setCodeChoice('none');
+    setCodePath('');
+    setPathCheck(null);
+  };
+
+  const inTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+  const checkPath = async (path: string) => {
+    setCodePath(path);
+    setPathCheck(null);
+    if (codeChoice() !== 'folder' || !path.trim()) return;
+    try {
+      setPathCheck(await api.projects.checkFolder(path.trim()));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check that folder');
+    }
+  };
+
+  const browse = async () => {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const picked = await open({ directory: true });
+    if (typeof picked === 'string') await checkPath(picked);
+  };
+
+  /** Stores the code answer on a freshly created project. */
+  const saveCode = async (id: string) => {
+    const choice = codeChoice();
+    const path = codePath().trim();
+    let patch: UpdateProject = { code_origin: 'none' };
+    if (choice === 'folder' && path) {
+      const check = pathCheck() ?? (await api.projects.checkFolder(path));
+      patch = {
+        code_origin: 'folder',
+        repository: path,
+        workspace_mode: check.is_git ? 'local_branch' : 'in_place',
+        default_branch: check.is_git ? check.branch : null,
+      };
+    } else if (choice === 'new_folder' && path) {
+      await api.projects.initFolder(path);
+      patch = { code_origin: 'new_folder', repository: path, workspace_mode: 'local_branch' };
+    }
+    await api.projects.update(id, patch);
   };
 
   const handleSubmit = async (e: Event) => {
@@ -127,6 +185,12 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
           description: description().trim() || undefined,
           project_type: projectType(),
         });
+      }
+
+      try {
+        if (created?.id) await saveCode(created.id);
+      } catch (err) {
+        toast.error(`Project created, but its code folder was not saved: ${err instanceof Error ? err.message : 'unknown error'}`);
       }
 
       reset();
@@ -241,6 +305,53 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
               '--tw-ring-color': 'var(--color-focus-ring)',
             }}
           />
+        </FieldShell>
+
+        <FieldShell label="Does this project have code?" for="code-choice">
+          <div id="code-choice" class="space-y-2">
+            <For
+              each={[
+                ['folder', 'An existing folder on this computer'],
+                ['new_folder', 'A new folder Tack creates'],
+                ['none', 'No code yet'],
+              ] as [CodeChoice, string][]}
+            >
+              {([value, label]) => (
+                <label class="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                  <input
+                    type="radio"
+                    name="code-choice"
+                    checked={codeChoice() === value}
+                    disabled={loading()}
+                    onChange={() => { setCodeChoice(value); void checkPath(codePath()); }}
+                  />
+                  {label}
+                </label>
+              )}
+            </For>
+            <Show when={codeChoice() !== 'none'}>
+              <div class="flex items-end gap-2">
+                <div class="flex-1">
+                  <Field
+                    label={codeChoice() === 'folder' ? 'Folder' : 'Where to create it'}
+                    aria-label="Code folder"
+                    value={codePath()}
+                    onChange={(e) => void checkPath(e.currentTarget.value)}
+                    placeholder="/home/you/code/project"
+                    disabled={loading()}
+                  />
+                </div>
+                <Show when={inTauri()}>
+                  <Button type="button" variant="secondary" onClick={() => void browse()} disabled={loading()}>
+                    Browse…
+                  </Button>
+                </Show>
+              </div>
+              <Show when={pathCheck()}>
+                <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{checkSentence(pathCheck()!)}</p>
+              </Show>
+            </Show>
+          </div>
         </FieldShell>
 
         {/* Template picker */}
