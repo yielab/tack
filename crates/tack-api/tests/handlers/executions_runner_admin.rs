@@ -10,6 +10,7 @@ use crate::common;
 use crate::common::send_as_operator as snd;
 use axum::http::StatusCode;
 use chrono::Utc;
+use serde_json::json;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
@@ -93,6 +94,94 @@ async fn setup() -> (axum::Router, Repository, String) {
     );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
     (app, repo, item.id.to_string())
+}
+
+#[tokio::test]
+async fn builtin_profiles_exist_on_a_fresh_database() {
+    let (app, repo, _item_id) = setup().await;
+    sqlx::query("DELETE FROM agent_profiles")
+        .execute(repo.pool())
+        .await
+        .expect("clear");
+    let list = |app: axum::Router| async move {
+        let (status, body) = snd(&app, "GET", "/agent-profiles", String::new()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["data"].as_array().unwrap().clone()
+    };
+    assert!(list(app.clone()).await.is_empty());
+
+    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+        .await
+        .expect("seed");
+    let profiles = list(app.clone()).await;
+    let mut kinds: Vec<&str> = profiles
+        .iter()
+        .map(|p| p["kind"].as_str().unwrap())
+        .collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["implementer", "planner", "researcher", "reviewer"]);
+    assert!(profiles.iter().all(|p| p["builtin"] == true));
+    let implementer = profiles
+        .iter()
+        .find(|p| p["kind"] == "implementer")
+        .unwrap();
+    assert_eq!(
+        implementer["tool_policy"]["tools"]["claude-code"],
+        json!(["Read", "Edit", "Write", "Bash", "Agent", "Grep", "Glob"])
+    );
+    assert_eq!(implementer["tool_policy"]["tools"]["codex"], json!(["*"]));
+    assert_eq!(
+        implementer["summary"],
+        "Reads, edits and runs commands to make the change"
+    );
+
+    // A second start inserts nothing and keeps the user's edit.
+    let id = implementer["agent_profile_id"].as_str().unwrap().to_owned();
+    let (status, patched) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"instructions": "edited"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    assert_eq!(patched["instructions"], "edited");
+    assert_eq!(patched["builtin"], true);
+    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+        .await
+        .expect("second seed");
+    let again = list(app.clone()).await;
+    assert_eq!(again.len(), 4);
+    let kept = again.iter().find(|p| p["kind"] == "implementer").unwrap();
+    assert_eq!(kept["instructions"], "edited");
+
+    let (status, body) = snd(
+        &app,
+        "DELETE",
+        &format!("/agent-profiles/{id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["error"]["details"]["reason"], "builtin_profile");
+
+    // A custom profile can be deleted.
+    let (_, created) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "mine", "instructions": "x"}).to_string(),
+    )
+    .await;
+    let custom = created["agent_profile_id"].as_str().unwrap();
+    let (status, _) = snd(
+        &app,
+        "DELETE",
+        &format!("/agent-profiles/{custom}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 fn create_body(item_id: &str) -> String {
