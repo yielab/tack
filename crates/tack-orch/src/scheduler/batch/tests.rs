@@ -33,6 +33,8 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
             }],
             model_passthrough: None,
             decisions: None,
+            native_provider: String::new(),
+            providers: Vec::new(),
             additional: BTreeMap::new(),
         }],
     }
