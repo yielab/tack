@@ -3409,3 +3409,78 @@ async fn a_failed_push_is_one_event_and_the_attempt_still_succeeds() {
         serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
     assert_eq!(evidence.branch, None);
 }
+
+/// A provisioner whose evidence read fails the way a broken `.git` does.
+struct UnreadableWorktree;
+
+#[async_trait]
+impl WorktreeProvisioner for UnreadableWorktree {
+    async fn provision(
+        &self,
+        _workspace: &Workspace,
+        _repository: &super::super::RepositorySpec,
+    ) -> Result<(), WorkspaceError> {
+        Ok(())
+    }
+
+    async fn capture_evidence(
+        &self,
+        _workspace: &Workspace,
+        _exclude: &[&str],
+    ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
+        Err(WorkspaceError::Git)
+    }
+}
+
+#[tokio::test]
+async fn a_failed_evidence_capture_keeps_the_workspace() {
+    let root_dir = temporary_root("evidence-failed");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
+    let data_protocol = FakeDataProtocol::new();
+    let fake_protocol = protocol(work(), false, false);
+    let reported = fake_protocol.reported_completions.clone();
+    let engine = RunnerEngine::new(
+        fake_protocol,
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        WorkspaceManager::new(root.join("workspaces"), UnreadableWorktree),
+    )
+    .with_data_protocol(Arc::new(data_protocol.clone()));
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("cycle");
+
+    let key = "attempt"
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let kept = root.join("quarantine").join(&key);
+    assert!(kept.is_dir(), "the workspace is kept under quarantine/");
+    assert!(!root.join("workspaces").join(&key).exists());
+
+    let completions = reported.lock().expect("lock").clone();
+    assert_eq!(completions.len(), 1);
+    assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+    assert_eq!(
+        completions[0].terminal_reason["workspace_kept_at"],
+        kept.canonicalize()
+            .expect("canonical")
+            .display()
+            .to_string()
+    );
+
+    let state = data_protocol.state.lock().expect("fake data protocol lock");
+    let failed: Vec<_> = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.evidence_failed")
+        .collect();
+    assert_eq!(failed.len(), 1, "one attempt.evidence_failed event");
+    assert_eq!(
+        failed[0].payload["reason"],
+        "git could not read the workspace"
+    );
+}
