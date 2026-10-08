@@ -413,6 +413,11 @@ function ItemRow(props: {
         {/* Status */}
         <Badge tone="info" class="flex-shrink-0">{props.item.status}</Badge>
 
+        {/* Review */}
+        <Show when={props.item.needs_review}>
+          <Badge tone="warning" class="flex-shrink-0">Needs your review</Badge>
+        </Show>
+
         {/* Tags */}
         <Show when={props.item.tags && props.item.tags.length > 0}>
           <div class="flex-shrink-0 flex gap-1">

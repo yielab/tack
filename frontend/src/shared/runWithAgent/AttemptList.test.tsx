@@ -34,6 +34,7 @@ function attempt(overrides: Partial<AttemptSummary> = {}): AttemptSummary {
       runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
     },
     pull_request: null,
+    review: null,
     ...overrides,
   };
 }
@@ -64,6 +65,14 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('runner_2');
     expect(c.textContent).toContain('Succeeded');
     expect(c.textContent).toContain('Failed');
+  });
+
+  it('a terminal attempt with a kept workspace and no patch shows Accept and Reject', () => {
+    const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]);
+    expect(c.textContent).toContain('Finished — changes could not be read, needs your review');
+    expect(Array.from(c.querySelectorAll('button')).map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(['Accept', 'Reject']),
+    );
   });
 
   it("renders the user's rejected attempt leading with why it stopped, not as a matched request", () => {
