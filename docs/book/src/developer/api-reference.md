@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (87 paths, 122 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (88 paths, 124 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1124,6 +1124,32 @@ Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Agent profile created | `CreateProfileResponse` |
+| 409 | conflict (name already exists) | `RunnerV1ErrorEnvelope` |
+
+#### `DELETE /api/agent-profiles/{id}`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Agent profile id |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Agent profile deleted | — |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict (built-in profile, details.reason = builtin_profile) | `RunnerV1ErrorEnvelope` |
+
+#### `PATCH /api/agent-profiles/{id}`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Agent profile id |
+
+**Request body:** `UpdateProfile`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Agent profile updated | `AgentProfileSummary` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict (name already exists) | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`
