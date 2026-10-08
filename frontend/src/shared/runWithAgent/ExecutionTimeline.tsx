@@ -195,7 +195,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
           const a = attempts();
           if (a.status !== 'ready') return null;
           return a.data.length > 0 ? (
-            <AttemptList requestId={summary()?.request_id ?? ''} attempts={a.data} />
+            <AttemptList requestId={summary()?.request_id ?? ''} attempts={a.data} itemId={props.itemId} />
           ) : (
             <p class="rounded-[20px] border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
               No attempts yet.

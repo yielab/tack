@@ -75,6 +75,16 @@ export const items = {
     }
   },
 
+  /** `POST /items/{id}/subtasks-from-plan` — creates the accepted subtasks of a Planner `plan` artifact. */
+  createSubtasksFromPlan: (
+    itemId: string,
+    data: { artifact_id: string; subtasks: Array<{ title: string; description: string; acceptance: string[] }> },
+  ) =>
+    request<{ created: Array<{ id: string; title: string }> }>(`/items/${itemId}/subtasks-from-plan`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   remove: (id: string) => request<void>(`/items/${id}`, { method: 'DELETE' }),
 
   /** The item's current GitHub link, or `null` when it has none (a 404). */
