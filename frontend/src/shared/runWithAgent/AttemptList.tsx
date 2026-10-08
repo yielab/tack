@@ -14,11 +14,14 @@ import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
+import PlanPanel from './PlanPanel';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
   requestId: string;
   attempts: AttemptSummary[];
+  /** The item the request belongs to; the plan panel creates subtasks under it. */
+  itemId?: string;
 }
 
 /** The pack panel, shown only when the attempt's artifacts include a
@@ -41,7 +44,7 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props)
 };
 
 /** The row of actions on a terminal attempt: see what it did. */
-const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary }> = (props) => {
+const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; itemId?: string }> = (props) => {
   const n = () => props.attempt.attempt_number;
   const reason = () => (props.attempt.terminal_reason ?? {}) as { workspace_kept_at?: unknown; result?: unknown };
   const [artifacts] = createResource(
@@ -50,6 +53,7 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary }> = 
   );
   const patch = () => (artifacts() ?? []).find((a) => a.kind === 'patch');
   const log = () => (artifacts() ?? []).find((a) => a.kind === 'log' || a.name.endsWith('.log'));
+  const plan = () => (artifacts() ?? []).find((a) => a.kind === 'plan');
   const evidence = () => (artifacts() ?? []).find((a) => a.kind === 'evidence');
   const [branch] = createResource(evidence, async (e) => {
     try {
@@ -121,6 +125,11 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary }> = 
         <Show when={logOpen()}>
           <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} />
         </Show>
+        <Show when={plan() && props.itemId}>
+          {(itemId) => (
+            <PlanPanel requestId={props.requestId} attemptNumber={n()} artifactId={plan()!.artifact_id} itemId={itemId()} />
+          )}
+        </Show>
         <Modal isOpen={diffOpen()} onClose={() => setDiffOpen(false)} title={`Attempt #${n()} changes`} size="xl">
           <Show when={diffText()} fallback={<p class="text-sm">Loading the diff…</p>}>
             {(t) => <DiffView patch={t()} />}
@@ -131,7 +140,7 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary }> = 
   );
 };
 
-const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (props) => {
+const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary; itemId?: string }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const stateInfo = () => describeExecutionState(props.attempt.state);
   const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
@@ -275,7 +284,7 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
         </div>
       </Show>
 
-      <AttemptTools requestId={props.requestId} attempt={props.attempt} />
+      <AttemptTools requestId={props.requestId} attempt={props.attempt} itemId={props.itemId} />
 
       {/* Model provenance — a distinct, honest tone per case, never a bare
           "matched" boolean. */}
@@ -365,7 +374,7 @@ const CostTile: Component<{ label: string; value: string }> = (props) => {
  */
 const AttemptList: Component<AttemptListProps> = (props) => (
   <ul class="space-y-2">
-    <For each={props.attempts}>{(attempt) => <AttemptRow requestId={props.requestId} attempt={attempt} />}</For>
+    <For each={props.attempts}>{(attempt) => <AttemptRow requestId={props.requestId} attempt={attempt} itemId={props.itemId} />}</For>
   </ul>
 );
 
