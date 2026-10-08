@@ -781,6 +781,18 @@ where
         // never a fabricated summary. Runs before the completion report so
         // an operator inspecting the timeline after `succeeded` sees the
         // event/artifact already there.
+        if let Some(scratch) = &evidence_scratch
+            && let Ok(reason) =
+                std::fs::read_to_string(scratch.join(crate::evidence::PLAN_INVALID_FILE))
+        {
+            self.submit_event(
+                session,
+                &mut record,
+                "attempt.plan_invalid",
+                serde_json::json!({ "reason": reason }),
+            )
+            .await;
+        }
         if let Some(reason) = evidence_failure {
             self.submit_event(
                 session,

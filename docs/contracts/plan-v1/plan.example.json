@@ -1,0 +1,26 @@
+{
+  "v": "1",
+  "subtasks": [
+    {
+      "title": "Add the settings table",
+      "description": "Create the migration and the repository functions for per-user settings.",
+      "acceptance": ["The migration applies to an empty database", "A setting can be read back after it is written"],
+      "depends_on": [],
+      "estimate": "S"
+    },
+    {
+      "title": "Expose settings over the API",
+      "description": "Add GET and PUT routes for the settings and regenerate the OpenAPI document.",
+      "acceptance": ["GET returns the stored value", "PUT with an unknown key is rejected"],
+      "depends_on": [],
+      "estimate": "M"
+    },
+    {
+      "title": "Settings page in the frontend",
+      "description": "Render the settings form against the new routes.",
+      "acceptance": ["Saving a value shows it after a reload"],
+      "depends_on": [0, 1],
+      "estimate": "L"
+    }
+  ]
+}
