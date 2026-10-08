@@ -529,8 +529,12 @@ project (this tab) or the task (the dialog). The dialog shows project values rea
 - **When a run finishes** — optionally the column the task moves to, in addition to
   **Needs your review**.
 - **Definition of done** — one text the agent reads on every run of this project.
-
----
+- **Agent** — which installed agent a new run uses. Each pill is an agent a runner on this
+  computer reports.
+- **Model** — **The agent's default (recommended)**, or **Specific model**: an id from the
+  short list measured for that agent, sent with the provider the agent speaks natively. An
+  agent with no measured list yet (codex, opencode) keeps its default here; the dialog's
+  **Other…** is where you type an id for one run.
 
 ## Where the agent works
 
