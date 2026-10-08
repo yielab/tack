@@ -281,6 +281,9 @@ export interface AgentProfileSummary {
   instructions: string;
   tool_policy: unknown;
   limits: unknown;
+  kind?: 'implementer' | 'reviewer' | 'researcher' | 'planner' | 'custom';
+  builtin?: boolean;
+  summary?: string;
 }
 
 export interface AgentProfileListResult {
@@ -293,6 +296,7 @@ export interface CreateAgentProfileInput {
   instructions: string;
   tool_policy?: unknown;
   limits?: unknown;
+  summary?: string;
 }
 
 export interface CreateAgentProfileResult {
@@ -308,6 +312,13 @@ export const agentProfilesApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  update: (id: string, patch: Partial<CreateAgentProfileInput>) =>
+    request<unknown>(`/agent-profiles/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  remove: (id: string) =>
+    request<unknown>(`/agent-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
 // ── Runners ─────────────────────────────────────────────────────────────────

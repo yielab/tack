@@ -50,7 +50,7 @@ describe('AgentProfilesPanel', () => {
     expect(container.textContent).toContain('Review the diff.');
   });
 
-  it('creates a profile via the form, sending well-formed JSON policy/limits', async () => {
+  it('the_form_builds_the_tool_policy', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input);
       const method = (init as RequestInit | undefined)?.method ?? 'GET';
@@ -69,65 +69,75 @@ describe('AgentProfilesPanel', () => {
 
     const { container } = mount();
     await flush();
-    const showFormBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Create agent profile'),
-    )!;
-    showFormBtn.click();
+    Array.from(container.querySelectorAll('button'))
+      .find((b) => b.textContent?.includes('Create agent profile'))!
+      .click();
     await flush();
 
-    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!;
-    nameInput.value = 'builder';
-    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const instructionsInput = container.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="Review the diff for correctness and style."]',
-    )!;
-    instructionsInput.value = 'Build the feature.';
-    instructionsInput.dispatchEvent(new Event('input', { bubbles: true }));
+    const type = (el: HTMLInputElement | HTMLTextAreaElement, v: string) => {
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    type(container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!, 'builder');
+    type(
+      container.querySelector<HTMLTextAreaElement>('textarea[placeholder="Review the diff for correctness and style."]')!,
+      'Build the feature.',
+    );
+    // No raw JSON input anywhere.
+    expect(container.querySelector('input[placeholder="{}"]')).toBeNull();
+    expect(container.textContent).toContain("Shown as the profile's tooltip");
 
-    const submitBtn = Array.from(container.querySelectorAll('button[type="submit"]')).find((b) =>
-      b.textContent?.includes('Create'),
-    )!;
-    submitBtn.click();
+    // claude-code: untick "All tools", tick Read and Grep, add a free-text name.
+    const all = container.querySelector<HTMLInputElement>('input[aria-label="All tools (claude-code)"]')!;
+    all.click();
+    await flush();
+    container.querySelector<HTMLInputElement>('input[aria-label="Read (claude-code)"]')!.click();
+    container.querySelector<HTMLInputElement>('input[aria-label="Grep (claude-code)"]')!.click();
+    type(container.querySelector<HTMLInputElement>('input[aria-label="Other tools (claude-code)"]')!, 'mcp__x__y');
     await flush();
 
-    expect(container.textContent).toContain('builder');
+    Array.from(container.querySelectorAll('button[type="submit"]'))
+      .find((b) => b.textContent?.includes('Create'))!
+      .click();
+    await flush();
+
     const postCall = fetchMock.mock.calls.find(
       (c) => String(c[0]).endsWith('/api/agent-profiles') && (c[1] as RequestInit)?.method === 'POST',
     );
     const body = JSON.parse((postCall![1] as RequestInit).body as string);
-    expect(body).toEqual({ name: 'builder', instructions: 'Build the feature.', tool_policy: {}, limits: {} });
+    expect(body).toEqual({
+      name: 'builder',
+      instructions: 'Build the feature.',
+      tool_policy: {
+        tools: {
+          'claude-code': ['Read', 'Grep', 'mcp__x__y'],
+          codex: ['*'],
+          opencode: ['*'],
+          docket: ['*'],
+        },
+      },
+    });
   });
 
-  it('rejects an invalid tool_policy JSON body before calling the API', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }),
+  it('shows the Built-in chip and no Delete for a built-in, Delete for a custom profile', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocol_version: 1,
+          data: [
+            { agent_profile_id: 'ap_b', name: 'Implementer', instructions: 'x', tool_policy: {}, limits: {}, kind: 'implementer', builtin: true, summary: 's' },
+            { agent_profile_id: 'ap_c', name: 'mine', instructions: 'y', tool_policy: {}, limits: {}, kind: 'custom', builtin: false, summary: '' },
+          ],
+        }),
+        { status: 200 },
+      ),
     );
     const { container } = mount();
     await flush();
-    const showFormBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Create agent profile'),
-    )!;
-    showFormBtn.click();
-    await flush();
-
-    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!;
-    nameInput.value = 'builder';
-    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const instructionsInput = container.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="Review the diff for correctness and style."]',
-    )!;
-    instructionsInput.value = 'do it';
-    instructionsInput.dispatchEvent(new Event('input', { bubbles: true }));
-    const policyInput = container.querySelector<HTMLInputElement>('input[placeholder="{}"]')!;
-    policyInput.value = 'not json';
-    policyInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-    const submitBtn = Array.from(container.querySelectorAll('button[type="submit"]')).find((b) =>
-      b.textContent?.includes('Create'),
-    )!;
-    submitBtn.click();
-    await flush();
-
-    expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(false);
+    const items = container.querySelectorAll('li');
+    expect(items[0].textContent).toContain('Built-in');
+    expect(items[0].textContent).not.toContain('Delete');
+    expect(items[1].textContent).not.toContain('Built-in');
+    expect(items[1].textContent).toContain('Delete');
   });
 });
