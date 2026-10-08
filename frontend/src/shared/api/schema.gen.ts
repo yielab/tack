@@ -652,6 +652,27 @@ export interface paths {
         patch: operations["update_item"];
         trace?: never;
     };
+    "/api/items/{id}/agent-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/items/{id}/agent-context` — what the agent will read for a given item:
+         *     the project's default profile's instructions, the item's title and description,
+         *     the item's brief when it has one, and the project's definition_of_done when set.
+         */
+        get: operations["get_item_agent_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{id}/github-link": {
         parameters: {
             query?: never;
@@ -2882,6 +2903,10 @@ export interface components {
          */
         AddFleetMember: {
             runner_id: string;
+        };
+        /** @description Response body for `GET /api/items/{id}/agent-context`. */
+        AgentContextResponse: {
+            text: string;
         };
         AgentProfileListResponse: {
             data: components["schemas"]["AgentProfileSummary"][];
@@ -5550,6 +5575,38 @@ export interface operations {
             };
             /** @description If-Match did not match the current item version — nothing was written */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_item_agent_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The composed instructions for the agent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContextResponse"];
+                };
+            };
+            /** @description Item or project not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

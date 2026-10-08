@@ -1124,3 +1124,213 @@ async fn the_repository_comes_from_the_project_when_omitted() {
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
     assert_eq!(snapshot["repository"]["kind"], "scratch");
 }
+
+#[tokio::test]
+async fn agent_context_includes_the_projects_definition_of_done() {
+    let (_app, repo, item_id) = setup().await;
+    let item_uuid: Uuid = item_id.parse().unwrap();
+    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+
+    // Seed builtin profiles
+    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+        .await
+        .expect("seed profiles");
+
+    // Set the project's default_profile_id to the implementer profile
+    sqlx::query(
+        "UPDATE projects SET default_profile_id = (SELECT id FROM agent_profiles WHERE kind = 'implementer') WHERE id = ?",
+    )
+    .bind(&project_id)
+    .execute(repo.pool())
+    .await
+    .expect("set default profile");
+
+    // Set the project's definition_of_done
+    sqlx::query("UPDATE projects SET definition_of_done = ? WHERE id = ?")
+        .bind("Tests pass and the docs are updated")
+        .bind(&project_id)
+        .execute(repo.pool())
+        .await
+        .expect("set definition_of_done");
+
+    // Update the item with description
+    sqlx::query(
+        "UPDATE items SET description = 'Implement the feature', title = 'Feature X' WHERE id = ?",
+    )
+    .bind(&item_id)
+    .execute(repo.pool())
+    .await
+    .expect("update item");
+
+    // Add a brief with two manual criteria
+    let _brief = repo
+        .upsert_item_brief(
+            item_uuid,
+            tack_core::models::UpsertItemBrief {
+                acceptance: vec![
+                    tack_core::models::AcceptanceCriterion::Manual {
+                        id: "m1".into(),
+                        title: "Code Review".into(),
+                        text: "Code is reviewed".into(),
+                    },
+                    tack_core::models::AcceptanceCriterion::Manual {
+                        id: "m2".into(),
+                        title: "Tests Pass".into(),
+                        text: "All tests pass".into(),
+                    },
+                ],
+                constraints: vec![],
+                definition_of_done: None,
+                risk: None,
+            },
+        )
+        .await
+        .expect("brief");
+
+    // Create AppState and test the handler directly
+    use tack_api::{AppState, config::AppConfig};
+    use tokio::sync::broadcast;
+    let state = AppState {
+        repo: repo.clone(),
+        config: AppConfig::default(),
+        workspace_id: Uuid::new_v4(),
+        broadcast_tx: broadcast::channel(16).0,
+        webhook: None,
+        local_runner: None,
+    };
+
+    // Test the handler: should include Definition of Done section
+    let response = executions::get_item_agent_context(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(item_uuid),
+    )
+    .await;
+
+    assert!(response.is_ok(), "Handler should succeed");
+    let response_data = response.unwrap();
+    let text = response_data.text.as_str();
+    assert!(
+        text.contains("## Definition of done"),
+        "Definition of done section not found"
+    );
+    assert!(
+        text.contains("Tests pass and the docs are updated"),
+        "Definition of done content not found"
+    );
+    assert!(text.contains("Feature X"), "Item title not found");
+    assert!(
+        text.contains("Implement the feature"),
+        "Item description not found"
+    );
+    assert!(text.contains("Code Review"), "Brief criteria not found");
+    assert!(text.contains("Tests Pass"), "Brief criteria not found");
+
+    // Now remove the definition_of_done from the project
+    sqlx::query("UPDATE projects SET definition_of_done = NULL WHERE id = ?")
+        .bind(&project_id)
+        .execute(repo.pool())
+        .await
+        .expect("clear definition_of_done");
+
+    // Test again: should NOT include Definition of Done section
+    let response = executions::get_item_agent_context(
+        axum::extract::State(state),
+        axum::extract::Path(item_uuid),
+    )
+    .await;
+
+    assert!(response.is_ok(), "Handler should succeed");
+    let response_data = response.unwrap();
+    let text = response_data.text.as_str();
+    assert!(
+        !text.contains("## Definition of done"),
+        "Definition of done section should not be present"
+    );
+    assert!(
+        text.contains("Feature X"),
+        "Item title should still be present"
+    );
+    assert!(
+        text.contains("Implement the feature"),
+        "Item description should still be present"
+    );
+    assert!(
+        text.contains("Code Review"),
+        "Brief criteria should still be present"
+    );
+    assert!(
+        text.contains("Tests Pass"),
+        "Brief criteria should still be present"
+    );
+
+    // Now test that create_execution also includes the definition_of_done in the stored snapshot
+    // Re-set the definition_of_done
+    sqlx::query("UPDATE projects SET definition_of_done = ? WHERE id = ?")
+        .bind("Tests pass and the docs are updated")
+        .bind(&project_id)
+        .execute(repo.pool())
+        .await
+        .expect("re-set definition_of_done");
+
+    // Create an app for create_execution
+    let state = executions::OperatorExecutionState::with_clock(
+        repo.clone(),
+        std::sync::Arc::new(tack_db::repo::execution::SystemExecutionClock),
+    );
+    let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
+
+    let create_body_val = serde_json::json!({
+        "item_id": item_id,
+        "idempotency_key": "dod-test-key",
+        "selector_kind": "exact_runner",
+        "selector_id": "runner-active",
+        "agent_profile_id": "profile-c1",
+        "requested_harness_kind": "codex",
+        "agent_profile_snapshot": {
+            "name": "C1",
+            "instructions": "work safely",
+            "tool_policy": {"mode": "safe"},
+            "timeout_seconds": 60,
+            "budgets": {"tokens": 1000}
+        },
+        "repository_snapshot": {
+            "kind": "git",
+            "remote": "https://example.test/c1.git",
+            "base_revision": "abc123",
+            "subdirectory": null
+        },
+        "permission_policy": {"tools": ["shell"], "network": false},
+        "timeout_seconds": 60,
+        "budgets": {"tokens": 1000},
+        "environment": {"MODE": {"value": "test", "secret_reference": null}},
+        "metadata": {"source": "c1-test"}
+    });
+
+    let (status, response) = snd(&app, "POST", "/executions", create_body_val.to_string()).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Execution creation should succeed: {response}"
+    );
+
+    // Read the stored request snapshot
+    let request_id = response["request_id"].as_str().unwrap();
+    let snapshot = stored_snapshot(&repo, request_id).await;
+
+    // Assert that the instructions in the resolved_agent_profile contain the definition_of_done
+    let instructions = snapshot["resolved_agent_profile"]["instructions"]
+        .as_str()
+        .expect("instructions field");
+    assert!(
+        instructions.contains("## Definition of done"),
+        "DoD section not found in execution instructions: {instructions}"
+    );
+    assert!(
+        instructions.contains("Tests pass and the docs are updated"),
+        "DoD content not found in execution instructions"
+    );
+}

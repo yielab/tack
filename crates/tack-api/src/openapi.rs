@@ -853,6 +853,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::items::get_item_github_link,
         handlers::items::put_item_github_link,
         handlers::items::delete_item_github_link,
+        handlers::executions::get_item_agent_context,
         // ── Sprints ───────────────────────────────────────────────────────
         handlers::sprints::create_sprint,
         handlers::sprints::list_sprints,
