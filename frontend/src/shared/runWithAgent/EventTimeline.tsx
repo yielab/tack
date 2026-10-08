@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource } from 'solid-js';
+import { type Component, For, Show, createResource, createSignal } from 'solid-js';
 import { Badge, EmptyState } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
@@ -31,6 +31,41 @@ function describeEventPayload(payload: unknown): string {
   return String(payload);
 }
 
+/** `attempt.terminal`: the result text is the body, artifact names a list,
+ *  every other key sits behind a "Raw" toggle. */
+const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) => {
+  const [raw, setRaw] = createSignal(false);
+  const names = () =>
+    (Array.isArray(props.payload.artifacts) ? props.payload.artifacts : []).map((a) => {
+      const o = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>;
+      return String(o.name ?? o.path ?? o.kind ?? a);
+    });
+  const rest = () => {
+    const { result: _r, artifacts: _a, ...others } = props.payload;
+    return others;
+  };
+  return (
+    <div class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
+      <Show when={typeof props.payload.result === 'string'}>
+        <p>{props.payload.result as string}</p>
+      </Show>
+      <Show when={names().length > 0}>
+        <ul class="list-disc pl-4">
+          <For each={names()}>{(n) => <li>{n}</li>}</For>
+        </ul>
+      </Show>
+      <Show when={Object.keys(rest()).length > 0}>
+        <button type="button" class="underline" aria-expanded={raw()} onClick={() => setRaw((v) => !v)}>
+          Raw
+        </button>
+        <Show when={raw()}>
+          <pre class="whitespace-pre-wrap">{JSON.stringify(rest(), null, 2)}</pre>
+        </Show>
+      </Show>
+    </div>
+  );
+};
+
 const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => (
   <li class="grid grid-cols-[14px_minmax(0,1fr)_auto] gap-3">
     {/* Rail: a dot per event, joined by a line to the next one. */}
@@ -47,9 +82,16 @@ const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => (
         </span>
         <Badge tone="neutral">{props.event.source}</Badge>
       </div>
-      <p class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
-        {describeEventPayload(props.event.payload)}
-      </p>
+      <Show
+        when={props.event.kind === 'attempt.terminal' && props.event.payload && typeof props.event.payload === 'object'}
+        fallback={
+          <p class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
+            {describeEventPayload(props.event.payload)}
+          </p>
+        }
+      >
+        <TerminalBody payload={props.event.payload as Record<string, unknown>} />
+      </Show>
     </div>
     <div class="flex flex-col items-end text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>

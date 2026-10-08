@@ -66,6 +66,37 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Failed');
   });
 
+  it("renders the user's rejected attempt leading with why it stopped, not as a matched request", () => {
+    const c = mount([
+      attempt({
+        state: 'failed',
+        started_at: null,
+        ended_at: null,
+        terminal_reason: {
+          code: 'harness_rejected',
+          message:
+            'requested model provider "claude" is not supported by claude-code; supported: anthropic, bedrock, vertex, foundry, vercel-ai-gateway, anthropic-direct',
+        },
+        model_provenance: { kind: 'matched', provider: 'claude', model_id: 'claude-sonnet-5-5' },
+        actual_execution: null,
+      }),
+    ]);
+    expect(c.textContent).toContain('Why it stopped:');
+    expect(c.textContent).toContain('Did not start — requested model provider');
+    expect(c.textContent).toContain('Requested claude / claude-sonnet-5-5 (not confirmed by the run)');
+    expect(c.textContent).not.toContain('Matched request');
+  });
+
+  it('a matched attempt whose actual_execution observed the model renders "Matched request"', () => {
+    const c = mount([
+      attempt({
+        model_provenance: { kind: 'matched', provider: 'anthropic', model_id: 'm1' },
+        actual_execution: { model_observation_source: 'observed' },
+      }),
+    ]);
+    expect(c.textContent).toContain('Matched request');
+  });
+
   it('renders "Not measured" (exact) for the real-world every-response-today usage_economics shape — never $0.00', () => {
     const c = mount([attempt()]);
     expect(c.textContent).toContain('Not measured');
