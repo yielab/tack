@@ -652,18 +652,13 @@ async fn with_item_context(
     Ok((profile, brief))
 }
 
-/// The request's explicit repository snapshot, or the one its project implies
-/// when it sent none (absent or `{}`).
-async fn resolve_repository(
+/// The item's project, loaded once per request: `create_execution` needs it
+/// for the repository it implies and for its definition of done.
+async fn load_project(
     repo: &tack_db::Repository,
     project_id: Uuid,
-    explicit: Option<Value>,
-) -> Result<Value, (StatusCode, Json<Value>)> {
-    if let Some(explicit) = explicit.filter(|v| v.as_object().is_none_or(|o| !o.is_empty())) {
-        return Ok(explicit);
-    }
-    let project = repo
-        .get_project(project_id)
+) -> Result<tack_core::models::Project, (StatusCode, Json<Value>)> {
+    repo.get_project(project_id)
         .await
         .map_err(|_| {
             error(
@@ -680,8 +675,18 @@ async fn resolve_repository(
                 "Project does not exist",
                 json!({"resource": "project"}),
             )
-        })?;
-    let project = &project;
+        })
+}
+
+/// The request's explicit repository snapshot, or the one its project implies
+/// when it sent none (absent or `{}`).
+fn resolve_repository(
+    project: &tack_core::models::Project,
+    explicit: Option<Value>,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    if let Some(explicit) = explicit.filter(|v| v.as_object().is_none_or(|o| !o.is_empty())) {
+        return Ok(explicit);
+    }
     use tack_core::models::{CodeOrigin, WorkspaceMode};
     let local = matches!(
         project.code_origin,
@@ -759,12 +764,8 @@ pub async fn create_execution(
             json!({"resource": "item"}),
         ));
     };
-    let repository_snapshot = resolve_repository(
-        &state.repo,
-        item.project_id,
-        input.repository_snapshot.clone(),
-    )
-    .await?;
+    let project = load_project(&state.repo, item.project_id).await?;
+    let repository_snapshot = resolve_repository(&project, input.repository_snapshot.clone())?;
     let existing_snapshot: Option<String> = sqlx::query_scalar(
         "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
     )
@@ -920,26 +921,6 @@ pub async fn create_execution(
         "fleet" => json!({"kind":"fleet","fleet_id":input.selector_id}),
         _ => unreachable!("selector kind was validated"),
     };
-    let project = state
-        .repo
-        .get_project(item.project_id)
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not load project",
-                json!({}),
-            )
-        })?
-        .ok_or_else(|| {
-            error(
-                StatusCode::NOT_FOUND,
-                StableErrorCode::NotFound,
-                "Project does not exist",
-                json!({"resource": "project"}),
-            )
-        })?;
     let (agent_profile_snapshot, brief) = with_item_context(
         &state.repo,
         &item,
