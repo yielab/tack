@@ -1,8 +1,8 @@
 # ADR 0074: a run a normal person can start
 
-**Status: PROPOSED 2026-10-07, waiting on the maintainer.** Amends ADR 0072 (onboarding), ADR
-0069 (the brief's place in the UI) and ADR 0071 (where a run's work ends up). The plan is
-`docs/plans/phase-67.md`.
+**Status: ACCEPTED 2026-10-07 (the maintainer: "start the phase"); executed 2026-10-07/08.**
+Amends ADR 0072 (onboarding), ADR 0069 (the brief's place in the UI) and ADR 0071 (where a
+run's work ends up). The plan is `docs/plans/phase-67.md`.
 
 **Decide:** that Tack separates three things it mixes today — *this computer can run agents*,
 *this project has code here and the agent works on it this way*, and *run this task now* —
