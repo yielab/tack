@@ -865,6 +865,25 @@ anchors V2 links to exist; screenshots re-taken by the launcher after the wave m
 
 **Model:** Sonnet.
 
+### E1 — the e2e specs follow the new screens (added 2026-10-08)
+
+**Files:** `frontend/e2e/run-with-agent.spec.ts`, `a11y.spec.ts`, `scheduler-e2e.spec.ts`,
+`tutorial-assets.spec.ts`, `execution-attempt-detail.spec.ts`, `screenshots.spec.ts` and any
+other spec under `frontend/e2e/` that still drives the old dialog (a `combobox` named "Agent
+profile", a "Harness" select, "Repository remote"/"Base revision" fields, the "Choose…" radio,
+a "Succeeded" chip, a "Decisions" heading, the Brief tab); `frontend/e2e/helpers.ts` only for
+a helper those specs share. No `src/` file: a behaviour the spec cannot reach any more is a
+finding, not a UI change.
+
+**Done when:** `npx playwright test --project=chromium --workers=1` passes headless on the
+default suite (the config's excluded specs stay excluded; `agent-assets.spec.ts`,
+`recovery-demo.spec.ts` and `screenshots.spec.ts` are not run); every spec drives the screens as
+V1 names them; `.githooks/pre-push` passes.
+
+**RED:** the suite as it is at `aceb0b6`; the report names which specs failed before.
+
+**Model:** Sonnet.
+
 ## Parked — not scheduled, and why
 
 | Item | Why |
