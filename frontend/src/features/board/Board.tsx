@@ -12,7 +12,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, Badge, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -23,7 +23,7 @@ function shortId(id: string): string {
   return id.replace(/-/g, '').slice(0, 6).toUpperCase();
 }
 
-const ItemCard: Component<{
+export const ItemCard: Component<{
   item: Item;
   typeLabel: string;
   onEdit: (item: Item) => void;
@@ -92,6 +92,9 @@ const ItemCard: Component<{
       }}>
         {props.item.title}
       </h4>
+      <Show when={props.item.needs_review}>
+        <div><Badge tone="warning">Needs your review</Badge></div>
+      </Show>
       <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px' }}>
         <Show when={props.item.priority !== 'none'}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
