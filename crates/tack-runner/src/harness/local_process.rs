@@ -26,7 +26,7 @@ use chrono::{DateTime, Utc};
 use tack_orch::execution::{
     ActualExecution, ActualModelId, ActualModelProvider, CapabilitySupport, CapabilityValue,
     FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind, Measurement,
-    MeasurementSource, Usage, WorkspaceId as DomainWorkspaceId,
+    MeasurementSource, ModelSelectionReport, Usage, WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::mpsc;
 
@@ -925,6 +925,10 @@ where
             // exact same call.
             decisions: Some(self.grammar.capabilities().decisions),
             native_provider: descriptor.native_provider.to_owned(),
+            model_selection: Some(match descriptor.model_selection {
+                ModelSelection::Optional => ModelSelectionReport::Optional,
+                ModelSelection::Explicit(_) => ModelSelectionReport::Required,
+            }),
             providers: crate::provider::registry()
                 .into_iter()
                 .filter(|provider| {

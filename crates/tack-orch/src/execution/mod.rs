@@ -13,7 +13,8 @@ mod types;
 // field `RunnerCapabilities::limits`, so downstream crates can name it.
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
-    FeatureCapabilities, HarnessCapability, ModelCombination, ModelMetadata, RunnerCapabilities,
+    FeatureCapabilities, HarnessCapability, ModelCombination, ModelMetadata, ModelSelectionReport,
+    RunnerCapabilities,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{
