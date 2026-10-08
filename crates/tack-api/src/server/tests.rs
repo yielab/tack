@@ -294,6 +294,9 @@ impl LocalRunnerControl for RecordingControl {
         Ok(())
     }
     async fn stop(&self) {}
+    async fn runner_id(&self) -> Option<String> {
+        Some("runner-test".to_string())
+    }
     async fn list_secrets(&self) -> Vec<crate::handlers::local_runner::SecretMeta> {
         Vec::new()
     }
