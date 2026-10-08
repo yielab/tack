@@ -104,6 +104,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await

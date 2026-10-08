@@ -216,6 +216,9 @@ pub struct Item {
     /// untrusted" rule migration 029 applies to pre-existing database rows.
     #[serde(default)]
     pub source: ItemSource,
+    /// The plan artifact this item was created from (`source` is `plan`), else `None`.
+    #[serde(default)]
+    pub source_artifact_id: Option<String>,
     /// The run dialog's Advanced values this task overrides (a JSON object),
     /// or `None` when it follows the project.
     #[serde(default)]
@@ -271,6 +274,9 @@ pub enum ItemSource {
     /// migration's backfill and the serde default for old payloads.
     #[default]
     Unknown,
+    /// A subtask a person created from a Planner plan
+    /// (`POST /api/items/{id}/subtasks-from-plan`); the record says so.
+    Plan,
 }
 
 impl ItemSource {
@@ -291,6 +297,7 @@ impl std::fmt::Display for ItemSource {
             Self::JsonImport => write!(f, "json_import"),
             Self::CsvImport => write!(f, "csv_import"),
             Self::Unknown => write!(f, "unknown"),
+            Self::Plan => write!(f, "plan"),
         }
     }
 }
@@ -311,6 +318,7 @@ impl std::str::FromStr for ItemSource {
             "linear" => Self::Linear,
             "json_import" => Self::JsonImport,
             "csv_import" => Self::CsvImport,
+            "plan" => Self::Plan,
             _ => Self::Unknown,
         })
     }
@@ -597,6 +605,9 @@ pub struct CreateItem {
     pub sprint_id: Option<Uuid>,
     #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
     pub assignee: Option<String>,
+    /// Set by the server when an item is created from a plan; never read from a request body.
+    #[serde(skip)]
+    pub source_artifact_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

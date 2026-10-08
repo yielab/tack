@@ -7,7 +7,7 @@ use sqlx::ConnectOptions;
 use tack_db::{init_pool, migrations};
 use uuid::Uuid;
 
-use crate::common::{create_test_workspace, make_item, make_project};
+use crate::common::{create_test_workspace, make_project};
 
 #[tokio::test]
 async fn the_bridge_tables_are_dropped_and_their_rows_kept_in_the_snapshot() {
@@ -22,7 +22,18 @@ async fn the_bridge_tables_are_dropped_and_their_rows_kept_in_the_snapshot() {
     let repo = tack_db::Repository::new(pool.clone());
     let workspace_id = create_test_workspace(&repo).await;
     let project = make_project(&repo, workspace_id).await;
-    let item = make_item(&repo, &project).await;
+    // Raw insert: the repository's INSERT writes columns newer than this
+    // pre-drop schema.
+    let item_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, item_type, status, priority, estimate_unit, tags, sort_order, source, created_at, updated_at) \
+         VALUES (?, ?, 'Board item', 'task', 'todo', 'medium', '\"points\"', '[]', 1, 'manual', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .bind(item_id.to_string())
+    .bind(project.id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert items row");
 
     let plane_id = Uuid::new_v4();
     sqlx::query(
@@ -92,7 +103,7 @@ async fn the_bridge_tables_are_dropped_and_their_rows_kept_in_the_snapshot() {
     );
 
     let board_item: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE id = ?")
-        .bind(item.id.to_string())
+        .bind(item_id.to_string())
         .fetch_one(&pool)
         .await
         .expect("query items");

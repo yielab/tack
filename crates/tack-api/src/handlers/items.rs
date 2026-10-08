@@ -610,9 +610,10 @@ pub async fn create_subtasks_from_plan(
                     description: subtask_input.description.clone(),
                     item_type: Some(parent.item_type.clone()),
                     parent_id: Some(id),
+                    source_artifact_id: Some(input.artifact_id.clone()),
                     ..Default::default()
                 },
-                tack_core::models::ItemSource::Manual,
+                tack_core::models::ItemSource::Plan,
             )
             .await?;
 

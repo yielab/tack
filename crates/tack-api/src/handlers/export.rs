@@ -324,6 +324,7 @@ async fn run_import(
                     due_date: item.due_date,
                     sprint_id: item.sprint_id.and_then(|s| sprint_id_map.get(&s).copied()),
                     assignee: item.assignee.clone(),
+                    source_artifact_id: item.source_artifact_id.clone(),
                 },
                 item.source.clone(),
             )
@@ -542,6 +543,7 @@ pub async fn import_csv(
             tags: None,
             due_date: None,
             sprint_id: None,
+            source_artifact_id: None,
             assignee: get(assign_col).map(|s| s.to_string()),
         };
 

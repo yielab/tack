@@ -256,6 +256,7 @@ pub async fn import_linear(
                 due_date: None,
                 sprint_id: None,
                 assignee: issue.assignee.as_ref().map(|u| u.name.clone()),
+                source_artifact_id: None,
             };
 
             // `ItemSource::Linear` — untrusted for dispatch purposes, same

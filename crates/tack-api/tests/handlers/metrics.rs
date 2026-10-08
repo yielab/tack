@@ -59,6 +59,7 @@ async fn project_with_item(repo: &Repository, workspace_id: Uuid, name: &str) ->
                 due_date: None,
                 sprint_id: None,
                 assignee: None,
+                source_artifact_id: None,
             },
         )
         .await
