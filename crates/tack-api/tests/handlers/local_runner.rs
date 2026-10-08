@@ -512,3 +512,108 @@ async fn harness_verification_reports_the_latest_succeeded_attempt() {
         serde_json::json!({ "harnesses": { "claude-code": "2026-09-03T00:00:00Z" } })
     );
 }
+
+#[tokio::test]
+async fn test_run_creates_a_hidden_project_and_a_request() {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
+        .bind(workspace_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+        .await
+        .unwrap();
+    let t = "2026-09-01T00:00:00Z";
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run_local', 'local-1', 'h', 1, ?, ?)",
+    )
+    .bind(t)
+    .bind(t)
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let pool = repo.pool().clone();
+    let control = Arc::new(FakeControl::default());
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let app = tack_api::router::build_router(tack_api::AppState {
+        repo,
+        config: loopback_config(),
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: Some(control.clone()),
+    });
+    let body = serde_json::json!({ "harness_kind": "claude-code" });
+
+    // The embedded runner is stopped: nothing to target.
+    let (status, error) = post_json(&app, "/api/local-runner/test-run", body.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["error"]["code"], "local_runner_unavailable");
+
+    control.start().await.unwrap();
+    let (status, first) = post_json(&app, "/api/local-runner/test-run", body.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let request_id = first["request_id"].as_str().unwrap().to_owned();
+
+    let row: (String, String, Option<String>, String, String, i64) = sqlx::query_as(
+        "SELECT selector_id, repository_snapshot, requested_model_provider, permission_policy,
+                agent_profile_id, timeout_seconds FROM execution_requests WHERE id = ?",
+    )
+    .bind(&request_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.0, "run_local");
+    let repository: serde_json::Value = serde_json::from_str(&row.1).unwrap();
+    assert_eq!(repository["kind"], "scratch");
+    assert_eq!(repository["remote"], "");
+    assert_eq!(row.2, None);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&row.3).unwrap(),
+        serde_json::json!({ "tools": [], "network": false })
+    );
+    let implementer: String =
+        sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(row.4, implementer);
+    assert_eq!(row.5, 300);
+
+    let listing = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/projects")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let listing: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(listing.into_body(), usize::MAX)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(listing, serde_json::json!([]), "the test project is hidden");
+
+    let (status, second) = post_json(&app, "/api/local-runner/test-run", body).await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    assert_ne!(second["request_id"], first["request_id"]);
+    let projects: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM projects WHERE name = 'Agent tests' AND archived = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(projects, 1, "the second call reuses the project");
+    let items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(items, 2);
+}

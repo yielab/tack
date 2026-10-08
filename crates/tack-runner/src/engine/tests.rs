@@ -511,8 +511,18 @@ impl WorktreeProvisioner for FakeWorktree {
     async fn provision(
         &self,
         _workspace: &Workspace,
-        _repository: &super::super::RepositorySpec,
+        repository: &super::super::RepositorySpec,
     ) -> Result<(), WorkspaceError> {
+        // A real fetch of an empty remote cannot succeed.
+        if repository.remote.is_empty() {
+            return Err(WorkspaceError::RepositoryUnreachable);
+        }
+        self.provision_after_journal
+            .store(self.expected_journal.exists(), Ordering::SeqCst);
+        Ok(())
+    }
+
+    async fn provision_scratch(&self, _workspace: &Workspace) -> Result<(), WorkspaceError> {
         self.provision_after_journal
             .store(self.expected_journal.exists(), Ordering::SeqCst);
         Ok(())
@@ -3482,5 +3492,31 @@ async fn a_failed_evidence_capture_keeps_the_workspace() {
     assert_eq!(
         failed[0].payload["reason"],
         "git could not read the workspace"
+    );
+}
+
+#[tokio::test]
+async fn a_scratch_request_is_provisioned_without_a_remote_and_based_on_head() {
+    let (root_dir, journal) = fresh_journal("scratch");
+    let mut scratch = work();
+    scratch.request.repository.kind = "scratch".into();
+    scratch.request.repository.remote = String::new();
+    scratch.request.repository.base_revision = String::new();
+    scratch.attempt.base_revision = String::new();
+    let protocol = protocol(scratch, false, false);
+    let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    let engine = runner_engine(protocol.clone(), adapter, journal, root_dir.path());
+
+    let cycle = engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("a scratch request needs no remote");
+
+    assert!(matches!(cycle, RunCycle::Completed { .. }));
+    let starts = protocol.reported_starts.lock().expect("fake protocol lock");
+    assert!(
+        starts
+            .iter()
+            .all(|report| report.base_revision.as_deref() == Some("HEAD"))
     );
 }

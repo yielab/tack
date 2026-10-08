@@ -929,6 +929,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::local_runner::delete_local_runner_secret,
         handlers::local_runner::check_local_runner_folder,
         handlers::local_runner::init_local_runner_folder,
+        handlers::local_runner::post_test_run,
         handlers::local_runner::get_harness_verification,
         // ── Harness-agnostic runner fleet: operator execution API ──────────
         handlers::executions::create_execution,

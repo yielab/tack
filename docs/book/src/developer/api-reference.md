@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (88 paths, 124 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (89 paths, 125 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1697,5 +1697,16 @@ store a value. Never echoes it
 | Status | Meaning | Schema |
 |---|---|---|
 | 204 | Stored; the value is never echoed back | — |
+
+#### `POST /api/local-runner/test-run`
+
+runs the harness once on this machine
+
+**Request body:** `TestRun`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The execution request that was queued | — |
+| 409 | The embedded runner is not configured, not running or not enrolled | — |
 
 ---
