@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -70,6 +70,10 @@ pub fn routes(state: OperatorExecutionState) -> Router {
         )
         .route("/runners/{runner_id}/revoke", post(revoke_runner))
         .route("/agent-profiles", post(create_profile).get(list_profiles))
+        .route(
+            "/agent-profiles/{id}",
+            patch(update_profile).delete(delete_profile),
+        )
         .with_state(state)
 }
 
@@ -220,6 +224,18 @@ pub struct AgentProfileSummary {
     pub instructions: String,
     pub tool_policy: Value,
     pub limits: Value,
+    pub kind: String,
+    pub builtin: bool,
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateProfile {
+    pub name: Option<String>,
+    pub instructions: Option<String>,
+    pub tool_policy: Option<Value>,
+    pub limits: Option<Value>,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -920,9 +936,10 @@ pub async fn create_profile(
 pub async fn list_profiles(
     State(state): State<OperatorExecutionState>,
 ) -> Result<Json<AgentProfileListResponse>, (StatusCode, Json<Value>)> {
-    let rows = sqlx::query(
-        "SELECT id,name,instructions,tool_policy,limits FROM agent_profiles ORDER BY name",
-    )
+    let rows = sqlx::query(concat!(
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary FROM agent_profiles",
+        " ORDER BY name"
+    ))
     .fetch_all(state.repo.pool())
     .await
     .map_err(|_| {
@@ -933,40 +950,153 @@ pub async fn list_profiles(
             json!({}),
         )
     })?;
-    let data: Vec<AgentProfileSummary> = rows
-        .into_iter()
-        .map(
-            |r| -> Result<AgentProfileSummary, (StatusCode, Json<Value>)> {
-                let tool_policy = serde_json::from_str::<Value>(&r.get::<String, _>("tool_policy"))
-                    .map_err(|_| {
-                        error(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            StableErrorCode::InternalError,
-                            "Agent profile policy is corrupt",
-                            json!({}),
-                        )
-                    })?;
-                let limits =
-                    serde_json::from_str::<Value>(&r.get::<String, _>("limits")).map_err(|_| {
-                        error(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            StableErrorCode::InternalError,
-                            "Agent profile limits are corrupt",
-                            json!({}),
-                        )
-                    })?;
-                Ok(AgentProfileSummary {
-                    agent_profile_id: r.get("id"),
-                    name: r.get("name"),
-                    instructions: r.get("instructions"),
-                    tool_policy,
-                    limits,
-                })
-            },
-        )
-        .collect::<Result<_, _>>()?;
+    let data = rows
+        .iter()
+        .map(profile_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(AgentProfileListResponse {
         protocol_version: 1,
         data,
     }))
+}
+
+fn profile_from_row(
+    r: &sqlx::sqlite::SqliteRow,
+) -> Result<AgentProfileSummary, (StatusCode, Json<Value>)> {
+    let corrupt = |what: &str| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            what,
+            json!({}),
+        )
+    };
+    Ok(AgentProfileSummary {
+        agent_profile_id: r.get("id"),
+        name: r.get("name"),
+        instructions: r.get("instructions"),
+        tool_policy: serde_json::from_str(&r.get::<String, _>("tool_policy"))
+            .map_err(|_| corrupt("Agent profile policy is corrupt"))?,
+        limits: serde_json::from_str(&r.get::<String, _>("limits"))
+            .map_err(|_| corrupt("Agent profile limits are corrupt"))?,
+        kind: r.get("kind"),
+        builtin: r.get::<i64, _>("builtin") != 0,
+        summary: r.get("summary"),
+    })
+}
+
+fn profile_not_found() -> (StatusCode, Json<Value>) {
+    error(
+        StatusCode::NOT_FOUND,
+        StableErrorCode::NotFound,
+        "Agent profile does not exist",
+        json!({"resource": "agent_profile"}),
+    )
+}
+
+fn profile_db_error(what: &str) -> (StatusCode, Json<Value>) {
+    error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StableErrorCode::InternalError,
+        what,
+        json!({}),
+    )
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/agent-profiles/{id}",
+    tag = "execution-operator",
+    params(("id" = String, Path, description = "Agent profile id")),
+    request_body = UpdateProfile,
+    responses(
+        (status = 200, description = "Agent profile updated", body = AgentProfileSummary),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict (name already exists)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn update_profile(
+    State(state): State<OperatorExecutionState>,
+    Path(id): Path<String>,
+    Json(input): Json<UpdateProfile>,
+) -> Result<Json<AgentProfileSummary>, (StatusCode, Json<Value>)> {
+    let tool_policy = input.tool_policy.map(|v| v.to_string());
+    let limits = input.limits.map(|v| v.to_string());
+    let now = state.clock.now().to_rfc3339();
+    let result = sqlx::query(
+        "UPDATE agent_profiles SET name = COALESCE(?, name), instructions = COALESCE(?, instructions), \
+         tool_policy = COALESCE(?, tool_policy), limits = COALESCE(?, limits), \
+         summary = COALESCE(?, summary), updated_at = ? WHERE id = ?",
+    )
+    .bind(&input.name)
+    .bind(&input.instructions)
+    .bind(&tool_policy)
+    .bind(&limits)
+    .bind(&input.summary)
+    .bind(&now)
+    .bind(&id)
+    .execute(state.repo.pool())
+    .await;
+    match result {
+        Ok(done) if done.rows_affected() == 0 => return Err(profile_not_found()),
+        Ok(_) => {}
+        Err(err) if is_unique_violation(&err) => {
+            return Err(error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "Agent profile name already exists",
+                json!({}),
+            ));
+        }
+        Err(_) => return Err(profile_db_error("Could not update agent profile")),
+    }
+    let row = sqlx::query(concat!(
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary FROM agent_profiles",
+        " WHERE id = ?"
+    ))
+    .bind(&id)
+    .fetch_one(state.repo.pool())
+    .await
+    .map_err(|_| profile_db_error("Could not read agent profile"))?;
+    Ok(Json(profile_from_row(&row)?))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/agent-profiles/{id}",
+    tag = "execution-operator",
+    params(("id" = String, Path, description = "Agent profile id")),
+    responses(
+        (status = 200, description = "Agent profile deleted"),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict (built-in profile, details.reason = builtin_profile)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn delete_profile(
+    State(state): State<OperatorExecutionState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let builtin: Option<i64> =
+        sqlx::query_scalar("SELECT builtin FROM agent_profiles WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(state.repo.pool())
+            .await
+            .map_err(|_| profile_db_error("Could not read agent profile"))?;
+    match builtin {
+        None => Err(profile_not_found()),
+        Some(0) => {
+            sqlx::query("DELETE FROM agent_profiles WHERE id = ? AND builtin = 0")
+                .bind(&id)
+                .execute(state.repo.pool())
+                .await
+                .map_err(|_| profile_db_error("Could not delete agent profile"))?;
+            Ok(Json(json!({"agent_profile_id": id, "deleted": true})))
+        }
+        Some(_) => Err(error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            "A built-in agent profile cannot be deleted",
+            json!({"reason": "builtin_profile"}),
+        )),
+    }
 }

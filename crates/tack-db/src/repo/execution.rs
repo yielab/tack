@@ -42,6 +42,76 @@ pub struct NewAgentProfile<'a> {
     pub limits: &'a str,
 }
 
+/// The four built-in profiles: (kind, name, summary, claude-code tools, instructions).
+const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
+    (
+        "implementer",
+        "Implementer",
+        "Reads, edits and runs commands to make the change",
+        &["Read", "Edit", "Write", "Bash", "Agent", "Grep", "Glob"],
+        "Complete the requested change. Keep the diff focused. Run the project's tests when they exist. Summarize what changed and what you could not do.",
+    ),
+    (
+        "reviewer",
+        "Reviewer",
+        "Reads and reports; changes nothing",
+        &["Read", "Grep", "Glob", "WebFetch"],
+        "Review the task against its acceptance criteria. Do not modify files. Report findings, each with file and line, most severe first.",
+    ),
+    (
+        "researcher",
+        "Researcher",
+        "Reads and searches; writes a report",
+        &["Read", "Grep", "Glob", "WebFetch", "WebSearch"],
+        "Investigate the question. Do not modify project files. Write your findings as the result, with sources.",
+    ),
+    (
+        "planner",
+        "Planner",
+        "Plans and designs; proposes subtasks you can accept",
+        &["Read", "Grep", "Glob", "WebFetch"],
+        "Plan the work. Do not modify project files. Write `tack-plan.json` at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\"}]}`. Explain the plan as the result.",
+    ),
+];
+
+/// Inserts each built-in agent profile whose `kind` is absent (profiles are
+/// global, so once per database). A `builtin = 1` row that already exists is
+/// only ever refreshed in `summary`; edits to the rest are never overwritten.
+/// A custom profile already holding a built-in's name makes that insert a
+/// no-op (`name` is unique) rather than failing startup.
+pub async fn seed_builtin_profiles(pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
+    let now = chrono::Utc::now().to_rfc3339();
+    for (kind, name, summary, tools, instructions) in BUILTIN_PROFILES {
+        let tool_policy = serde_json::json!({"tools": {
+            "claude-code": tools, "codex": ["*"], "opencode": ["*"], "docket": ["*"],
+        }});
+        sqlx::query(
+            "INSERT OR IGNORE INTO agent_profiles \
+             (id, name, instructions, tool_policy, limits, kind, builtin, summary, created_at, updated_at) \
+             SELECT ?, ?, ?, ?, '{}', ?, 1, ?, ?, ? \
+             WHERE NOT EXISTS (SELECT 1 FROM agent_profiles WHERE kind = ?)",
+        )
+        .bind(format!("ap_{}", uuid::Uuid::new_v4()))
+        .bind(name)
+        .bind(instructions)
+        .bind(tool_policy.to_string())
+        .bind(kind)
+        .bind(summary)
+        .bind(&now)
+        .bind(&now)
+        .bind(kind)
+        .execute(pool)
+        .await?;
+        sqlx::query("UPDATE agent_profiles SET summary = ? WHERE kind = ? AND builtin = 1 AND summary IS NOT ?")
+            .bind(summary)
+            .bind(kind)
+            .bind(summary)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct NewExecutionRequest<'a> {
     pub id: &'a str,
