@@ -6,12 +6,12 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import type { Item, Priority, UpdateItem } from '../../shared/types';
-import { Button, Skeleton } from '../../shared/ui';
+import { Badge, Button, Skeleton } from '../../shared/ui';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 
 // ── Pure helpers (exported for unit testing) ──────────────────────────────────
 
-export type SortKey = 'title' | 'item_type' | 'status' | 'priority' | 'assignee' | 'due_date';
+export type SortKey = 'title' | 'item_type' | 'status' | 'priority' | 'assignee' | 'due_date' | 'needs_review';
 export type SortDir = 'asc' | 'desc';
 
 /** Rank priorities so sorting goes Critical → … → None rather than alphabetic. */
@@ -29,6 +29,7 @@ export function typeKey(t: Item['item_type']): string {
 }
 
 function cellValue(item: Item, key: SortKey): string | number {
+  if (key === 'needs_review') return item.needs_review ? 0 : 1;
   if (key === 'priority') return PRIORITY_RANK[item.priority] ?? 99;
   if (key === 'due_date') return item.due_date ?? '￿'; // undated sorts last
   if (key === 'item_type') return typeKey(item.item_type).toLowerCase();
@@ -75,6 +76,7 @@ const COLUMNS: ColDef[] = [
   { key: 'priority', label: 'Priority', editable: true },
   { key: 'assignee', vocabKey: 'assignee', label: 'Assignee', editable: true },
   { key: 'due_date', label: 'Due', editable: true },
+  { key: 'needs_review', label: 'Review', editable: false },
 ];
 
 const PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low', 'none'];
@@ -369,6 +371,8 @@ function renderCell(
     }
     case 'status':
       return <span>{item.status}</span>;
+    case 'needs_review':
+      return item.needs_review ? <Badge tone="warning">Needs your review</Badge> : null;
     case 'priority':
       return (
         <span class="inline-flex items-center gap-1.5 capitalize">

@@ -129,6 +129,8 @@ export interface AttemptSummary {
   usage_economics: UsageEconomics;
   /** `null` when no pull request was opened by the run. */
   pull_request: AttemptPullRequest | null;
+  /** `null` until a person accepts or rejects the attempt's result. */
+  review: { verdict: 'accepted' | 'rejected'; note: string | null; reviewed_at: string } | null;
 }
 
 export interface AttemptListResult {
@@ -167,5 +169,10 @@ export const attemptsApi = {
   events: (requestId: string, attemptNumber: number) =>
     requestWithHeaders<EventListResult>(
       `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(String(attemptNumber))}/events`,
+    ),
+  review: (requestId: string, attemptNumber: number, body: { verdict: 'accepted' | 'rejected'; note?: string }) =>
+    requestWithHeaders<unknown>(
+      `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(String(attemptNumber))}/review`,
+      { method: 'POST', body: JSON.stringify(body) },
     ),
 };
