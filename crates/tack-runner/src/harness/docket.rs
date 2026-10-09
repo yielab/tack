@@ -26,7 +26,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     program: "docket",
     wire: Wire::OpenAiChatCompletions,
     model_selection: ModelSelection::Explicit(
-        "docket harness mode refuses to run without --model, so a request with no explicit \
+        "docket exec refuses to run without --model, so a request with no explicit \
          requested_model_provider and requested_model_id is rejected before spawn",
     ),
     native_provider: "docket",
