@@ -20,13 +20,13 @@
 #
 # Usage:
 #   ./scripts/record-recovery-demo.sh                  # uses TACK_DEMO_VERSION below
-#   TACK_DEMO_VERSION=v0.1.0-beta.8 ./scripts/record-recovery-demo.sh
+#   TACK_DEMO_VERSION=v0.1.0-beta.9 ./scripts/record-recovery-demo.sh
 #
 # Requires: docker, curl, jq, git, node/npm (frontend deps installed), ffmpeg.
 
 set -euo pipefail
 
-TACK_DEMO_VERSION="${TACK_DEMO_VERSION:-v0.1.0-beta.7}"
+TACK_DEMO_VERSION="${TACK_DEMO_VERSION:-v0.1.0-beta.9}"
 TACK_DEMO_PORT="${TACK_DEMO_PORT:-3411}"
 REPO_SLUG="yielab/tack"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

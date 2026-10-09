@@ -8,16 +8,19 @@ import { waitForApp } from './helpers';
 
 // Captures the step-by-step tutorial screenshots (docs/screenshots/tutorial/)
 // that docs/book/src/user-guide/tutorial.md embeds, every step done through
-// the UI: first open, project creation, adding tasks, a task's brief, turning
-// agent execution on (the harnesses it finds), a default model, an agent
-// profile, the "Run with agent" dialog, and one REAL Claude Code execution
-// tracked from the board chip through the Execution tab to its artifacts.
+// the UI: first open, project creation, adding tasks, a task's acceptance
+// criteria, turning agent execution on (the agents it finds), the project's
+// agent settings, an agent profile, the "Run with agent" dialog, and one REAL
+// Claude Code execution tracked from the board chip through the Execution tab
+// to its files. Then records docs/screenshots/workflow.gif: the whole loop on
+// one page, from a new project to an accepted run.
 //
 // Run against an ALREADY-RUNNING release build of `tack serve` (built with
 // `--features embed-spa`), started with a FRESH database so the first
 // screenshot really is a first open, with a real, signed-in `claude` on PATH
 // — see playwright.tutorial-assets.config.ts for the exact recipe.
-// The one execution this file creates is a real, live, billed model call.
+// The two executions this file creates — the tutorial's and workflow.gif's —
+// are real, live, billed model calls.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.join(__dirname, '../../docs/screenshots/tutorial');
@@ -349,10 +352,14 @@ test.describe.serial('tutorial screenshots', () => {
     const form = page.locator('form').filter({ has: page.getByLabel('Instructions') });
     await form.getByLabel('Name').fill(PROFILE_NAME);
     await form.getByLabel('Instructions').fill(PROFILE_INSTRUCTIONS);
-    const advanced = page.locator('section#advanced');
-    await advanced.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
-    await advanced.screenshot({ path: path.join(OUT_DIR, '10-agent-profile.png') });
+    // The form alone, in a viewport tall enough that it never scrolls under
+    // the sticky page header (an element screenshot of the whole Advanced
+    // section did, and captured the header across it).
+    await page.setViewportSize({ width: 1440, height: 2200 });
+    await form.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(400);
+    await form.screenshot({ path: path.join(OUT_DIR, '10-agent-profile.png') });
+    await page.setViewportSize({ width: 1440, height: 900 });
     await form.getByRole('button', { name: 'Create' }).click();
     await expect(page.getByText(PROFILE_NAME).first()).toBeVisible();
   });
@@ -444,7 +451,7 @@ test.describe.serial('tutorial screenshots', () => {
     );
     await waitForApp(page);
     await expect(
-      page.getByText('Succeeded', { exact: true }).first(),
+      page.getByText(/^Finished/).first(),
     ).toBeVisible({ timeout: 15_000 });
     // Bring the attempt card fully into the drawer's own scroll viewport —
     // its cost tiles sit below the fold otherwise.
@@ -483,5 +490,163 @@ test.describe.serial('tutorial screenshots', () => {
     console.log(
       `\n✓ tutorial screenshots saved -> ${OUT_DIR} (request ${requestId})\n`,
     );
+  });
+});
+
+// ── workflow.gif ─────────────────────────────────────────────────────────
+// The whole loop on one page and one recording: a new project pointed at a
+// folder, a task with its acceptance criteria, the run with Claude Code, the
+// card's chip, the finished run, Accept, and the files it changed. Runs after
+// the screenshots above, so agent execution is already on. The wait for the
+// agent is cut down to a few seconds in the GIF; everything else plays at
+// real speed. A second real, billed Claude Code call.
+const GIF_PROJECT = 'Docs Site';
+const GIF_ITEM = 'Add a changelog page';
+const GIF_CRITERIA = [
+  'CHANGELOG.md exists at the repository root',
+  'It has an Unreleased section',
+];
+
+test.describe('workflow gif', () => {
+  test('workflow gif', async ({ browser }) => {
+    try {
+      execSync('ffmpeg -version', { stdio: 'pipe' });
+    } catch {
+      test.skip(true, 'ffmpeg not found — required to convert the recording to a GIF');
+    }
+    const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-gif-'));
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      colorScheme: 'light',
+      recordVideo: { dir: framesDir, size: { width: 1440, height: 900 } },
+    });
+    const page = await context.newPage();
+    const started = Date.now();
+    const at = () => (Date.now() - started) / 1000;
+    const gifRepo = path.join(scratchRoot, 'docs-site');
+    fs.mkdirSync(gifRepo, { recursive: true });
+    execSync('git init -q -b main', { cwd: gifRepo });
+    fs.writeFileSync(path.join(gifRepo, 'README.md'), '# Docs site\n');
+    execSync('git add README.md', { cwd: gifRepo });
+    execSync('git -c user.email=demo@invalid -c user.name=demo commit -q -m seed', { cwd: gifRepo });
+
+    // ── A project whose code is a folder on this computer ─────────────────
+    await page.goto(`${BASE}/`);
+    await waitForApp(page);
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: 'New Project' }).first().click();
+    await page.waitForTimeout(500);
+    await page.getByPlaceholder('My Awesome Project').pressSequentially(GIF_PROJECT, { delay: 40 });
+    await page.getByLabel('An existing folder on this computer').check();
+    await page.getByLabel('Code folder').fill(gifRepo);
+    await page.getByLabel('Code folder').blur();
+    await expect(page.getByText(/^A git repository/)).toBeVisible();
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: 'Create Project' }).click();
+    await expect(page.getByText('Backlog').first()).toBeVisible();
+    await page.waitForTimeout(4_500);
+
+    // ── A task, and what "done" means for it ───────────────────────────────
+    await page.getByTitle('Add item').first().click();
+    await page.waitForTimeout(400);
+    await page.getByPlaceholder('What needs to be done?').pressSequentially(GIF_ITEM, { delay: 40 });
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Create Item' }).click();
+    await expect(page.getByPlaceholder('What needs to be done?')).toBeHidden();
+    await page.waitForTimeout(1200);
+    await page.getByText(GIF_ITEM, { exact: true }).first().click();
+    const drawer = page.getByRole('dialog', { name: 'Item details' });
+    await expect(drawer).toBeVisible();
+    await page.waitForTimeout(800);
+    for (const [i, text] of GIF_CRITERIA.entries()) {
+      await drawer.getByRole('button', { name: 'Add check' }).click();
+      const line = drawer.getByLabel('Acceptance criterion').nth(i);
+      await line.pressSequentially(text, { delay: 30 });
+      await line.blur();
+      await page.waitForTimeout(600);
+    }
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await page.waitForTimeout(800);
+
+    // ── Run it with Claude Code ────────────────────────────────────────────
+    await page.getByRole('button', { name: `Run with agent: ${GIF_ITEM}` }).click();
+    const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(1500);
+    await dialog.getByText('Advanced for this run').click();
+    await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
+    await page.waitForTimeout(1200);
+    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const chip = page.getByRole('button', { name: `Open the Execution tab for ${GIF_ITEM}` });
+    await expect(chip).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(2500);
+    await chip.click();
+    await page.waitForTimeout(2000);
+
+    const projects = (await apiFetch('/projects')) as Array<{ id: string; name: string }>;
+    const gifProjectId = projects.find((p) => p.name === GIF_PROJECT)?.id;
+    if (!gifProjectId) throw new Error(`project "${GIF_PROJECT}" not found`);
+    const items = (await apiFetch(`/projects/${gifProjectId}/items`)) as {
+      data: Array<{ id: string; title: string }>;
+    };
+    const gifItemId = items.data.find((it) => it.title === GIF_ITEM)?.id;
+    if (!gifItemId) throw new Error(`item "${GIF_ITEM}" not found`);
+    const listed = (await apiFetch(`/executions?item_id=${gifItemId}`)) as {
+      data: Array<{ request_id: string }>;
+    };
+    const requestId = listed.data[0]?.request_id;
+    if (!requestId) throw new Error('no execution request found after clicking Run');
+
+    // ── The wait, cut in the GIF ───────────────────────────────────────────
+    const waitFrom = at();
+    const finalState = await waitForRequestState(requestId, ['succeeded', 'failed'], 240_000);
+    expect(finalState, 'the GIF shows a run that succeeded').toBe('succeeded');
+    await expect(
+      page.getByText(/^Finished/).first(),
+    ).toBeVisible({ timeout: 15_000 });
+    const waitTo = at();
+    await page.waitForTimeout(2500);
+
+    // ── Review it: Accept, then what it changed ───────────────────────────
+    await page.getByRole('button', { name: 'Accept', exact: true }).first().click();
+    await expect(page.getByText(/^Accepted/).first()).toBeVisible();
+    await page.waitForTimeout(2000);
+    await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    const files = page.getByRole('heading', { name: 'Files from this run', exact: true });
+    await expect(files).toBeVisible();
+    await files.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(3500);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(3000);
+
+    // ── Flush the video; cut the wait; convert to GIF ─────────────────────
+    await page.close();
+    await context.close();
+    const videoPath = await page.video()!.path();
+    const palettePath = path.join(framesDir, 'palette.png');
+    const gifPath = path.join(OUT_DIR, '..', 'workflow.gif');
+    // Keep 2s of the wait at real speed, then play the rest in 3s.
+    const cut = (waitFrom + 2).toFixed(2);
+    const resume = waitTo.toFixed(2);
+    const squeeze = (3 / Math.max(waitTo - waitFrom - 2, 3)).toFixed(4);
+    const cutGraph =
+      `[0:v]trim=0.6:${cut},setpts=PTS-STARTPTS[a];` +
+      `[0:v]trim=${cut}:${resume},setpts=(PTS-STARTPTS)*${squeeze}[b];` +
+      `[0:v]trim=${resume},setpts=PTS-STARTPTS[c];` +
+      `[a][b][c]concat=n=3:v=1:a=0,fps=6,scale=960:-2:flags=lanczos`;
+    execSync(
+      `ffmpeg -y -i "${videoPath}" -filter_complex "${cutGraph},palettegen=stats_mode=diff" -update 1 "${palettePath}"`,
+      { stdio: 'pipe' },
+    );
+    execSync(
+      `ffmpeg -y -i "${videoPath}" -i "${palettePath}" -filter_complex "${cutGraph}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" "${gifPath}"`,
+      { stdio: 'pipe' },
+    );
+    fs.rmSync(framesDir, { recursive: true, force: true });
+    const sizeMB = (fs.statSync(gifPath).size / 1_048_576).toFixed(2);
+    console.log(`\n✓ workflow.gif saved (${sizeMB} MB) -> ${gifPath} (request ${requestId})\n`);
   });
 });

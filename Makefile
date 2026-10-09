@@ -69,9 +69,10 @@ e2e-ui: frontend/node_modules ## Run E2E tests in the interactive Playwright UI
 screenshots: frontend/node_modules ## Capture the README and book screenshots → docs/screenshots/ (starts API + Vite; no model is called)
 	cd frontend && npx playwright test e2e/screenshots.spec.ts --config playwright.capture.config.ts --project=chromium --workers=1
 
-# hero.gif / agents-flow.gif are real, live, billed recordings against a
-# release build with real installed agents — there is no `make` target for
-# them. See the recipe in frontend/e2e/agent-assets.spec.ts's own header.
+# hero.gif / agents-flow.gif / workflow.gif and the tutorial screenshots are
+# real, live, billed recordings against a release build with real installed
+# agents — there is no `make` target for them. See the recipes in the headers
+# of frontend/e2e/agent-assets.spec.ts and frontend/e2e/tutorial-assets.spec.ts.
 
 # ─── Security & Performance ──────────────────────
 audit: ## Scan Rust + npm dependencies for known CVEs (both workspaces + frontend)

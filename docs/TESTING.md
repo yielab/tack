@@ -400,9 +400,10 @@ layer and not re-proved through a browser. The suite, in `frontend/e2e/`:
 | `shared-project-identity.spec.ts` | Guards the suite itself: the shared project keeps one identity while specs run concurrently |
 
 `helpers.ts` is the single source of truth for API response shapes and setup calls.
-Three more files in the directory are recorders, not tests — `screenshots.spec.ts`,
-`recovery-demo.spec.ts` and `agent-assets.spec.ts` produce the README's images, each through
-its own config and its own header recipe. The default config ignores them and CI never runs them.
+Four more files in the directory are recorders, not tests — `screenshots.spec.ts`,
+`recovery-demo.spec.ts`, `agent-assets.spec.ts` and `tutorial-assets.spec.ts` produce the
+README's and the book's images and GIFs, each through its own config and its own header recipe.
+The default config ignores them and CI never runs them.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it
