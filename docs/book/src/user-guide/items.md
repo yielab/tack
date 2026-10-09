@@ -27,38 +27,48 @@ All header edits save immediately (optimistic update: applied locally first, the
 
 ## Details tab
 
-The Details tab holds the item **description**, edited with the rich-text editor. Use it for details, acceptance criteria, or notes.
+The Details tab is the task itself, top to bottom: its **description**, its **acceptance
+criteria**, what the agent gets beyond them (**For the agent**), and a linked GitHub issue.
 
-The description **autosaves** — edits are debounced and persisted automatically a short pause (about 0.6 seconds) after you stop typing. There is no save button.
+The description is edited with the rich-text editor and **autosaves** — edits are debounced
+and persisted automatically a short pause (about 0.6 seconds) after you stop typing. There is
+no save button.
 
 Core metadata — **assignee, priority, estimate, sprint, due date, and labels (tags)** — lives in the header above the tabs (see [Opening an item](#opening-an-item)), so it is always visible regardless of which tab is active.
 
+<img src="../screenshots/brief.png" width="50%" alt="The Details tab of an item: the description editor, an Acceptance criteria checklist with one check and Add check, a collapsed For the agent section summarised as 3 checks, 3 limits and risk noted, and Link GitHub issue.">
+
 ---
 
-## Brief tab
+## Acceptance criteria and For the agent
 
-The Brief says what "done" means for an item, in a form a person or a program can check. It has four parts, and **Save brief** writes them all at once.
+Together these say what "done" means for the item, in a form a person or a program can check.
+The agent receives them with the title and description, and every run keeps a copy.
 
-<img src="../screenshots/brief.png" width="50%" alt="The Brief tab of an item: acceptance criteria, each with a kind — Manual (marked as costing a person's time), Test and Command — a title, and the fields its kind needs.">
+**Acceptance criteria** is a checklist: one line per thing a person checks before calling the
+item done. **Add check** adds a line, **Up** and **Down** reorder, **Remove** deletes; each line
+saves when you leave it.
 
-**Acceptance criteria** are the checks that must pass. Each has a title and one of six kinds:
+**For the agent** is optional and collapsed by default; its summary line says what it holds
+(for example *3 checks · 3 limits · risk noted*). **Save for the agent** writes all three parts:
 
-- **Command** — a shell command and the exit code it must return (0 by default), with an optional working directory.
-- **Test** — a named test, with an optional runner such as `pytest`.
-- **Metric** — a named measurement compared to a threshold: at most, at least, or exactly, with an optional unit.
-- **File exists** — a path that must be present.
-- **File is absent** — a path that must not be present.
-- **Manual** — something a person has to check by hand.
+- **Checks a machine runs.** Each has a title and one of five kinds:
+  - **Command** — a shell command and the exit code it must return (0 by default), with an optional working directory.
+  - **Test** — a named test, with an optional runner such as `pytest`.
+  - **Metric** — a named measurement compared to a threshold: at most, at least, or exactly, with an optional unit.
+  - **File exists** — a path that must be present.
+  - **File is absent** — a path that must not be present.
 
-Use **Manual** as a last resort. Every other kind can be checked without anyone's time, so a Manual criterion is marked as one that costs a person. Reach for it only when nothing else can express the check.
+  Prefer a check a machine runs over a line in the checklist: it costs nobody's time.
+- **Constraints** limit how the work is done: a forbidden path, an allowed dependency, a
+  maximum number of changed files, or a free-form note.
+- **Risk** is low, medium or high. Leave it *Not set* if you are not sure.
 
-**Constraints** limit how the work is done: a path that must not change, a dependency that is allowed, a maximum number of changed files, or a free-form note.
+The definition of done in plain sentences is set once per project, in
+[Automation](agent-runners.md#automation) — not on each task.
 
-**Definition of done** is a few plain sentences on when someone can stop and call the item finished. It covers what the criteria cannot, and it is the first thing a reviewer reads.
-
-**Risk** is low, medium or high. Leave it unset if you are not sure.
-
-A brief holds up to 50 criteria and 100 constraints, and each criterion needs an id that is unique within the brief (the editor chooses one for you). If the server rejects a save, the reason appears next to the part it concerns.
+An item holds up to 50 criteria and 100 constraints. If the server rejects a save, the reason
+appears next to the part it concerns.
 
 ---
 
@@ -90,16 +100,21 @@ A field definition may also carry extra **validation rules** that apply on top o
 
 ## Execution tab
 
-The record of every time an agent was handed this item. Each request lists its attempts, with the
-state, the runner, the model that ran against the one requested, and what it cost (or **Not
-measured**). When the attempt's branch became a pull request, a **PR #n** link and a badge (open,
-merged, closed or reverted) sit on the attempt. **Show events, decisions & artifacts** opens its
-timeline, the questions the agent asked, the files it produced, and, when a verifier ran, the
-merge-readiness pack to accept or reject. A question that is still waiting appears in the decision
-inbox on the same tab, with the options, their risks and the agent's recommendation. Everything on
-this tab, and how to start a run, is in [Agent Runners](agent-runners.md); the item's
-[Brief](#brief-tab) is what the agent is given as the definition of done. An item that was never
-run shows an empty tab, not a hidden one.
+The record of every time an agent was handed this item. Above the tabs, a **Last run** panel
+says how the latest run is doing, what the agent said, its tokens and approximate cost, and offers
+**Run again**; the board card carries the same status as a chip.
+
+On the tab, each run (**Run 1**, **Run 2**, …) shows one status — *Running*, *Finished — needs
+your review*, *Finished — no changes recorded*, *Accepted*, and so on — with the agent that ran,
+what it did and said, and its usage, tokens first. A finished run that changed files waits for you:
+**Accept** or **Reject**, with an optional note, and the card's *Needs your review* flag clears.
+When the run's branch became a pull request, a **PR #n** link and its state sit on the run.
+**Show timeline, questions & files** opens the timeline, the questions the agent asked, the files
+from the run and, when a verifier ran, the merge-readiness pack. A question that is still waiting
+appears on the same tab, with the options, their risks and the agent's recommendation. Everything
+on this tab, and how to start a run, is in [Agent Runners](agent-runners.md); the item's
+[acceptance criteria](#acceptance-criteria-and-for-the-agent) are what the agent is given as the
+definition of done. An item that was never run shows an empty tab, not a hidden one.
 
 ---
 
