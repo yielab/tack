@@ -145,7 +145,7 @@ The snapshot contains:
 - `items` — every item in the project
 - `sprints` — all sprints
 - `dependencies` — all dependency edges
-- `briefs` — every item's [brief](items.md#brief-tab) (acceptance criteria, constraints, definition of done, risk)
+- `briefs` — every item's [brief](items.md#acceptance-criteria-and-for-the-agent) (acceptance criteria, constraints, definition of done, risk)
 - `metadata` — `exported_at` timestamp, the exporting Tack `version`, and totals for items, sprints, and dependencies
 
 `format` defaults to `json`, so omitting the query parameter produces the same result. A `format=yaml` variant is also available and produces the identical structure as YAML.

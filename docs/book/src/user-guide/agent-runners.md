@@ -341,7 +341,7 @@ story. **Acceptance criteria** is one sentence per line, and each line becomes a
 item the review can tick off. What only the agent needs — automatic checks, limits, risk —
 sits in a collapsed **For the agent** block, which you can ignore. The project carries a
 **Definition of done** once (under **Settings → Automation**), and every run reads it.
-All of this is stored as the item's [brief](items.md#brief-tab); the dialog's **What the
+All of this is stored as the item's [brief](items.md#acceptance-criteria-and-for-the-agent); the dialog's **What the
 agent will read** shows exactly what it will be given.
 
 ### What happens when a run finishes

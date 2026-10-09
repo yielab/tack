@@ -13,7 +13,7 @@ token system** every component relies on.
 frontend/src/
 ├── app/          App shell — Router, Layout (sidebar + top bar), routes
 ├── features/     One folder per surface: board, list, table, calendar,
-│                 timeline, sprints, item-detail (incl. the Brief tab),
+│                 timeline, sprints, item-detail (incl. acceptance criteria),
 │                 dashboard (Overview and Factory metrics), projects,
 │                 settings, templates, agents
 ├── shared/

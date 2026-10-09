@@ -6,14 +6,14 @@
 Codex, docket, or opencode — and track the run as part of the item's history.** Self-hosted, one binary,
 no cloud account.
 
-<img src="screenshots/hero.gif" width="98%" alt="A board item assigned to Claude Code through Run with agent, tracked live from Leased to Succeeded, with its Execution tab showing the matched model and measured cost">
+<img src="screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the Execution tab following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run">
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
 maintenance schedule — through fully configurable vocabulary and workflow columns, and can hand
 any item that's agent-eligible to a real coding-agent run instead of just tracking it. No
 accounts. No cloud. No subscriptions. One binary, one SQLite file.
 
-<img src="screenshots/agents.png" width="98%" alt="The Agents page, fully earned: agent execution on, Codex and Claude Code both detected, Claude Code's own login verified by a real test run, a project default model saved, and that test run's own attempt shown Succeeded.">
+<img src="screenshots/agents.png" width="98%" alt="The Agents page after a real test run: agent execution running, Codex and Claude Code both installed, Claude Code signed in as of that run, the optional gateway key, and the test run itself — what the agent did and said, and its tokens.">
 
 ## The board and the runner
 

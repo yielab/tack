@@ -10,7 +10,7 @@ docket or opencode — and keep the run on the item's record.**
 A desktop app on your machine, or the same binary as a server. One SQLite file, no account.
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Leased and Succeeded" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Starting and Finished" />
 </p>
 
 ## Why Tack
@@ -37,9 +37,10 @@ can hand any item to the agent you already use and keep the result on the item.
    with its own login or a key you gave it.
 3. **Watch it on the item.** Progress arrives live. The finished run stays in the
    item's history.
+4. **Review what it did.** A run that changed files waits for you to accept or reject it.
 
 <p align="center">
-  <img src="docs/screenshots/hero.gif" width="98%" alt="A board item assigned to Claude Code through Run with agent, tracked live from Leased to Succeeded, with its Execution tab showing the matched model and measured cost" />
+  <img src="docs/screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the Execution tab following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run" />
 </p>
 
 **Four harnesses, one flow.** Claude Code, Codex, docket and opencode, each driven
