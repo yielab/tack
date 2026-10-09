@@ -372,7 +372,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
       <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
         Description
       </h3>
@@ -383,7 +383,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
       />
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Acceptance criteria
@@ -440,7 +440,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </Button>
       </section>
 
-      <details class="rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <details class="rounded-[28px] p-5" style={panelStyle}>
         <summary class="cursor-pointer text-lg" style={{ color: 'var(--color-text-primary)' }}>
           For the agent
           <HelpHint label="For the agent" help={HELP.forTheAgent} />
@@ -571,7 +571,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </div>
       </details>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
       <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
         Link GitHub issue
       </h3>
