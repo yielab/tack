@@ -202,7 +202,7 @@ test.beforeAll(async () => {
     body: JSON.stringify({ title: ITEM_TITLE, item_type: 'task' }),
   })) as { id: string };
   itemId = item.id;
-  void agentProfileId; // selected automatically — exactly one profile exists
+  void agentProfileId; // picked by name in the dialog
 });
 
 test.afterAll(() => {
@@ -236,6 +236,11 @@ test('hero gif', async ({ page }) => {
   // ── Scene: open "Run with agent" on the item's board card ──────────────
   await page.getByRole('button', { name: `Run with agent: ${ITEM_TITLE}` }).click();
   await page.waitForTimeout(700);
+
+  // Four built-in profiles exist beside this one, and the dialog opens on
+  // the Implementer: pick the connection check's own profile.
+  await page.getByRole('group', { name: 'Profile' }).getByRole('button', { name: PROFILE_NAME, exact: true }).click();
+  await page.waitForTimeout(500);
 
   await page.getByText('Advanced for this run').click();
   await page.waitForTimeout(400);
@@ -276,7 +281,7 @@ test('hero gif', async ({ page }) => {
   await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
   await waitForApp(page);
   await page.waitForTimeout(600);
-  await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/^Finished/).first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(1200);
 
   await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
@@ -313,19 +318,20 @@ test('agents screenshot', async ({ page }) => {
   await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 
   // Step 5 — a real test run, through the Agents page's own control (not
-  // the "Run with agent" modal), so its Provider badge earns "Verified" by
+  // the "Run with agent" modal), so its agent reads "Signed in" by
   // observation rather than by construction.
-  await page.getByLabel('Repository remote').fill(repoDir);
-  await page.waitForTimeout(300);
+  // A run already finished on this page reads Finished too: wait for one more.
+  const finished = page.getByText(/^Finished/);
+  const finishedBefore = await finished.count();
   await page.getByRole('button', { name: 'Run test' }).click();
   await page.waitForTimeout(600);
 
   // The embedded ExecutionTimeline (rendered right below "Run test") shows
   // the same request/attempt lifecycle the hero item does, via the shared
   // store's own poll — no reload needed, just time on the clock.
-  await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => finished.count(), { timeout: 90_000 }).toBeGreaterThan(finishedBefore);
   await page.waitForTimeout(1000);
-  await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Signed in/).first()).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(600);
 
   await screenshotFullContent(page, path.join(OUT_DIR, 'agents.png'));
@@ -334,7 +340,7 @@ test('agents screenshot', async ({ page }) => {
 
 // ── agents-flow.gif ──────────────────────────────────────────────────────
 // The same Test-run control as the screenshot above, but scrolled to that
-// section alone and recorded through to a real Succeeded/Verified result —
+// section alone and recorded through to a real Finished / Signed in result —
 // the onboarding form above it carries no state change over time, so a
 // GIF of it would show nothing a static screenshot doesn't already.
 test('agents flow gif', async ({ page }) => {
@@ -368,14 +374,15 @@ test('agents flow gif', async ({ page }) => {
   });
   await page.waitForTimeout(1000);
 
-  await page.getByLabel('Repository remote').fill(repoDir);
-  await page.waitForTimeout(400);
+  // A run already finished on this page reads Finished too: wait for one more.
+  const finished = page.getByText(/^Finished/);
+  const finishedBefore = await finished.count();
   await page.getByRole('button', { name: 'Run test' }).click();
   await page.waitForTimeout(1500);
 
-  await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => finished.count(), { timeout: 90_000 }).toBeGreaterThan(finishedBefore);
   await page.waitForTimeout(1000);
-  await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Signed in/).first()).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(2000);
 
   await page.close();
@@ -442,7 +449,7 @@ test('attempt screenshot', async ({ page }) => {
   await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
   await waitForApp(page);
   await page.waitForTimeout(800);
-  await expect(page.getByText('Succeeded', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/^Finished/).first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(500);
 
   // Deliberately NOT expanding "Show timeline, questions & files": the one
