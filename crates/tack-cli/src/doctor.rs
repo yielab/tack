@@ -81,6 +81,7 @@ fn render_verify(verify: &tack_runner::VerifyConfig) {
     };
     println!();
     println!("verify: enabled");
+    println!("  kind:    {}", verify.kind);
     println!("  program: {} ({found})", verify.program);
     println!("  args:    {}", verify.args.join(" "));
     println!("  timeout: {}s", verify.timeout_seconds);

@@ -3207,6 +3207,7 @@ async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() 
     let script = crate::harness::fixtures::fake_harness_path().with_file_name("fake_verifier.sh");
     let verifier = |knob: &str| crate::config::VerifyConfig {
         enabled: true,
+        kind: crate::config::VerifyKind::Command,
         program: "env".to_owned(),
         args: vec![
             knob.to_owned(),
@@ -3270,6 +3271,7 @@ async fn a_request_may_decline_the_verifier_but_never_enable_one() {
     let script = crate::harness::fixtures::fake_harness_path().with_file_name("fake_verifier.sh");
     let verifier = || crate::config::VerifyConfig {
         enabled: true,
+        kind: crate::config::VerifyKind::Command,
         program: "env".to_owned(),
         args: vec![
             "TACK_FAKE_VERIFIER_FIXTURE=ready".to_owned(),

@@ -2,12 +2,23 @@
 //!
 //! The verifier is a program the operator names in the runner's `[verify]`
 //! table; the board never runs it. [`run`] copies the staged evidence into
-//! `<scratch>/evidence`, runs `<program> <args…> --evidence <scratch>/evidence
-//! --workspace <workspace> --output <scratch>/evidence/mrp.json` under the
-//! runner's process limits and the configured timeout with an environment of
-//! `PATH` only, reads the pack it wrote through [`tack_core::mrp`], and stages
-//! `mrp.json` (kind `mrp`) for the engine's ordinary upload. Every failure is
-//! a [`VerifyFailure`]; none of them changes the attempt's outcome.
+//! `<scratch>/evidence`, runs the program under the runner's process limits
+//! and the configured timeout with an environment of `PATH` only, and stages
+//! the `mrp-v1` pack that results as `<scratch>/evidence/mrp.json` (kind
+//! `mrp`) for the engine's ordinary upload. Every failure is a
+//! [`VerifyFailure`]; none of them changes the attempt's outcome.
+//!
+//! Two kinds of program ([`VerifyKind`]):
+//!
+//! - `command`: `<program> <args…> --evidence <scratch>/evidence --workspace
+//!   <workspace> --output <scratch>/evidence/mrp.json`, and the pack it
+//!   writes is read through [`tack_core::mrp`] as it is.
+//! - `prill`: the program is prill, whose command line, input documents and
+//!   pack are all its own; [`prill`] is the seam that snapshots the
+//!   workspace, writes prill's documents, runs `<program> verify …` and
+//!   translates the pack it prints.
+
+mod prill;
 
 use std::{
     collections::BTreeMap,
@@ -20,10 +31,10 @@ use tack_core::mrp::MergeReadinessPack;
 
 use crate::{
     client::workspace::Workspace,
-    config::VerifyConfig,
+    config::{VerifyConfig, VerifyKind},
     harness::{
         artifact::ArtifactStager,
-        process::{ProcessExit, ProcessLimits, ProcessSpec},
+        process::{ProcessExit, ProcessLimits, ProcessResult, ProcessSpec},
         redact::SecretMaterial,
     },
 };
@@ -79,6 +90,41 @@ pub async fn run(
     }
     let output = evidence.join("mrp.json");
 
+    match config.kind {
+        VerifyKind::Command => run_command(config, limits, workspace, &evidence, &output).await?,
+        VerifyKind::Prill => prill::run(config, limits, workspace, &evidence, &output).await?,
+    }
+
+    let attempt_id = workspace.attempt_id.as_str();
+    let stager = ArtifactStager::new(scratch.join("staged"));
+    let artifact = stager
+        .stage_file(
+            attempt_id,
+            &evidence,
+            Path::new("mrp.json"),
+            "mrp",
+            MRP_MEDIA_TYPE,
+        )
+        .map_err(|_| failure(Some(0), "the pack could not be staged"))?;
+    Ok(serde_json::json!({
+        "kind": artifact.kind,
+        "name": artifact.name,
+        "media_type": artifact.media_type,
+        "size_bytes": artifact.size_bytes,
+        "sha256": artifact.sha256,
+        "staged_path": artifact.staged_path.display().to_string(),
+    }))
+}
+
+/// `kind = "command"`: the program reads the evidence directory and writes
+/// the pack to `output` itself.
+async fn run_command(
+    config: &VerifyConfig,
+    limits: &ProcessLimits,
+    workspace: &Workspace,
+    evidence: &Path,
+    output: &Path,
+) -> Result<(), VerifyFailure> {
     let mut args = config.args.clone();
     args.extend([
         "--evidence".to_owned(),
@@ -88,35 +134,8 @@ pub async fn run(
         "--output".to_owned(),
         output.display().to_string(),
     ]);
-    #[allow(clippy::disallowed_methods)]
-    let path = std::env::var("PATH").unwrap_or_default();
-    let spec = ProcessSpec {
-        program: PathBuf::from(&config.program),
-        args,
-        env: BTreeMap::from([("PATH".to_owned(), path)]),
-        stdin: None,
-        working_directory: workspace.path.clone(),
-        workspace_root: workspace.path.clone(),
-        keep_stdin_open: false,
-    };
-    let limits = ProcessLimits {
-        timeout: Duration::from_secs(config.timeout_seconds),
-        ..limits.clone()
-    };
-    let process = spec
-        .spawn()
-        .await
-        .map_err(|_| failure(None, format!("{} could not be started", config.program)))?;
-    let result = process
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .map_err(|_| failure(None, "the verifier could not be supervised"))?;
-    let stderr: String = result
-        .stderr
-        .text
-        .chars()
-        .take(STDERR_PREFIX_CHARS)
-        .collect();
+    let result = spawn_verifier(config, limits, workspace, args).await?;
+    let stderr = stderr_prefix(&result);
     match result.exit {
         ProcessExit::Exited(0) => {}
         ProcessExit::Exited(code) => {
@@ -143,32 +162,57 @@ pub async fn run(
         }
     }
 
-    let bytes = fs::read(&output).map_err(|_| failure(Some(0), "the verifier wrote no pack"))?;
+    let bytes = fs::read(output).map_err(|_| failure(Some(0), "the verifier wrote no pack"))?;
     if serde_json::from_slice::<MergeReadinessPack>(&bytes).is_err() {
         return Err(failure(
             Some(0),
             format!("the verifier's pack does not parse: {stderr}"),
         ));
     }
-    let attempt_id = workspace.attempt_id.as_str();
-    let stager = ArtifactStager::new(scratch.join("staged"));
-    let artifact = stager
-        .stage_file(
-            attempt_id,
-            &evidence,
-            Path::new("mrp.json"),
-            "mrp",
-            MRP_MEDIA_TYPE,
-        )
-        .map_err(|_| failure(Some(0), "the pack could not be staged"))?;
-    Ok(serde_json::json!({
-        "kind": artifact.kind,
-        "name": artifact.name,
-        "media_type": artifact.media_type,
-        "size_bytes": artifact.size_bytes,
-        "sha256": artifact.sha256,
-        "staged_path": artifact.staged_path.display().to_string(),
-    }))
+    Ok(())
+}
+
+/// Starts `config.program` with `args` in the workspace, `PATH` as its only
+/// environment variable, under `limits` with the configured timeout, and
+/// waits for it.
+async fn spawn_verifier(
+    config: &VerifyConfig,
+    limits: &ProcessLimits,
+    workspace: &Workspace,
+    args: Vec<String>,
+) -> Result<ProcessResult, VerifyFailure> {
+    #[allow(clippy::disallowed_methods)]
+    let path = std::env::var("PATH").unwrap_or_default();
+    let spec = ProcessSpec {
+        program: PathBuf::from(&config.program),
+        args,
+        env: BTreeMap::from([("PATH".to_owned(), path)]),
+        stdin: None,
+        working_directory: workspace.path.clone(),
+        workspace_root: workspace.path.clone(),
+        keep_stdin_open: false,
+    };
+    let limits = ProcessLimits {
+        timeout: Duration::from_secs(config.timeout_seconds),
+        ..limits.clone()
+    };
+    let process = spec
+        .spawn()
+        .await
+        .map_err(|_| failure(None, format!("{} could not be started", config.program)))?;
+    process
+        .wait_with_capture(&limits, &SecretMaterial::new())
+        .await
+        .map_err(|_| failure(None, "the verifier could not be supervised"))
+}
+
+fn stderr_prefix(result: &ProcessResult) -> String {
+    result
+        .stderr
+        .text
+        .chars()
+        .take(STDERR_PREFIX_CHARS)
+        .collect()
 }
 
 #[cfg(test)]

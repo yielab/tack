@@ -1,0 +1,455 @@
+{
+  "contract": "mrp/v1",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "prill": {
+    "name": "prill",
+    "version": "0.1.0"
+  },
+  "attempt": {
+    "attemptId": "attempt-1",
+    "harness": {
+      "name": "harness-x",
+      "version": null
+    },
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "brief": null,
+  "config": {
+    "version": 1,
+    "layers": [
+      {
+        "source": "base",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      {
+        "source": "cli",
+        "sha256": null
+      }
+    ],
+    "effectiveSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "changedInHead": false
+  },
+  "sandbox": {
+    "backend": "none",
+    "image": null,
+    "imageId": null,
+    "imagePinned": false,
+    "network": "host",
+    "limits": {
+      "cpus": null,
+      "memoryMb": null,
+      "pids": null,
+      "tmpfsMb": null,
+      "commandTimeoutS": 600,
+      "totalTimeoutS": 3600,
+      "outputTailBytes": 65536
+    },
+    "prepare": {
+      "command": {
+        "kind": "command",
+        "command": "make deps",
+        "exitCode": 0,
+        "expectedExitCode": null,
+        "timedOut": false,
+        "outputTail": "",
+        "truncated": false,
+        "durationS": 1.5
+      },
+      "imageId": null
+    }
+  },
+  "diff": {
+    "filesChanged": 1,
+    "insertions": 3,
+    "deletions": 1,
+    "files": [
+      {
+        "path": "src/app.py",
+        "status": "modified",
+        "insertions": 3,
+        "deletions": 1,
+        "changedLines": [
+          {
+            "start": 3,
+            "end": 5
+          },
+          {
+            "start": 9,
+            "end": 9
+          }
+        ]
+      }
+    ]
+  },
+  "stages": [
+    {
+      "name": "checkout",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "criteria",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "anti_tautology",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "suite",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "mutation",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "static_analysis",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "complexity",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "judge",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": {
+        "input": 812,
+        "output": 41
+      }
+    },
+    {
+      "name": "risk",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    }
+  ],
+  "criteria": [
+    {
+      "id": "c1",
+      "type": "metric",
+      "status": "pass",
+      "reason": null,
+      "evidence": {
+        "kind": "command",
+        "command": "make coverage",
+        "exitCode": 0,
+        "expectedExitCode": null,
+        "timedOut": false,
+        "outputTail": "",
+        "truncated": false,
+        "durationS": 1.5
+      },
+      "value": 91.5
+    }
+  ],
+  "antiTautology": {
+    "tests": [
+      {
+        "path": "tests/test_app.py",
+        "suite": "default",
+        "change": "added",
+        "base": "fail",
+        "head": "pass",
+        "verdict": "discriminating",
+        "granularity": "testcase",
+        "evidence": {
+          "base": {
+            "kind": "command",
+            "command": "pytest",
+            "exitCode": 1,
+            "expectedExitCode": null,
+            "timedOut": false,
+            "outputTail": "",
+            "truncated": false,
+            "durationS": 1.5
+          },
+          "head": {
+            "kind": "command",
+            "command": "pytest",
+            "exitCode": 0,
+            "expectedExitCode": null,
+            "timedOut": false,
+            "outputTail": "",
+            "truncated": false,
+            "durationS": 1.5
+          }
+        },
+        "cases": [
+          {
+            "id": "tests/test_app.py::test_a",
+            "base": "fail",
+            "head": "pass",
+            "verdict": "discriminating"
+          }
+        ]
+      }
+    ],
+    "skippedTests": [],
+    "deletedTests": []
+  },
+  "constraints": [
+    {
+      "type": "forbidden_paths",
+      "status": "pass",
+      "reason": null,
+      "detail": null
+    }
+  ],
+  "suite": {
+    "command": {
+      "kind": "command",
+      "command": "pytest",
+      "exitCode": 0,
+      "expectedExitCode": null,
+      "timedOut": false,
+      "outputTail": "",
+      "truncated": false,
+      "durationS": 1.5
+    },
+    "report": "present",
+    "totals": {
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "failedCases": [
+      {
+        "id": "tests/test_app.py::test_b",
+        "classname": "tests.test_app",
+        "name": "test_b",
+        "status": "failed",
+        "message": "assert 1 == 2",
+        "durationS": 0.01
+      }
+    ]
+  },
+  "mutation": {
+    "tool": "mutmut",
+    "files": [
+      {
+        "path": "src/app.py",
+        "command": {
+          "kind": "command",
+          "command": "mutmut run",
+          "exitCode": 0,
+          "expectedExitCode": null,
+          "timedOut": false,
+          "outputTail": "",
+          "truncated": false,
+          "durationS": 1.5
+        },
+        "report": "present",
+        "mutants": 2,
+        "reason": null
+      }
+    ],
+    "totals": {
+      "total": 2,
+      "killed": 1,
+      "survived": 1,
+      "compileError": 0,
+      "runtimeError": 0
+    },
+    "score": 0.5,
+    "survivors": [
+      {
+        "id": "m1",
+        "path": "src/app.py",
+        "line": 4,
+        "operator": "negate",
+        "status": "survived"
+      }
+    ]
+  },
+  "staticAnalysis": {
+    "tools": [
+      {
+        "name": "ruff",
+        "head": {
+          "kind": "command",
+          "command": "ruff check",
+          "exitCode": 0,
+          "expectedExitCode": null,
+          "timedOut": false,
+          "outputTail": "",
+          "truncated": false,
+          "durationS": 1.5
+        },
+        "base": {
+          "kind": "command",
+          "command": "ruff check",
+          "exitCode": 0,
+          "expectedExitCode": null,
+          "timedOut": false,
+          "outputTail": "",
+          "truncated": false,
+          "durationS": 1.5
+        },
+        "reportHead": "present",
+        "reportBase": "present",
+        "findingsHead": 2,
+        "findingsBase": 1
+      }
+    ],
+    "newFindings": [
+      {
+        "tool": "ruff",
+        "ruleId": "E501",
+        "level": "warning",
+        "path": "src/app.py",
+        "line": 4,
+        "message": "line too long",
+        "fingerprint": "abc123"
+      }
+    ],
+    "fixed": 0
+  },
+  "complexity": {
+    "commands": [
+      {
+        "kind": "command",
+        "command": "lizard src",
+        "exitCode": 0,
+        "expectedExitCode": null,
+        "timedOut": false,
+        "outputTail": "",
+        "truncated": false,
+        "durationS": 1.5
+      }
+    ],
+    "reportHead": "present",
+    "reportBase": "present",
+    "files": [
+      "src/app.py"
+    ],
+    "functions": [
+      {
+        "path": "src/app.py",
+        "name": "run",
+        "line": 3,
+        "ccnBase": 2,
+        "ccnHead": 4
+      }
+    ],
+    "delta": 2,
+    "maxCcnHead": 4,
+    "budgets": [
+      {
+        "type": "complexity_budget",
+        "status": "fail",
+        "reason": "complexity_budget_exceeded",
+        "detail": "delta 2 exceeds 1"
+      }
+    ]
+  },
+  "judge": {
+    "model": "local-reviewer",
+    "family": "other-family",
+    "generatorFamily": "some-family",
+    "verdicts": [
+      {
+        "id": "c-manual",
+        "question": "Is the error message helpful?",
+        "answer": "yes",
+        "rationale": "The message names the file.",
+        "tokens": {
+          "input": 812,
+          "output": 41
+        },
+        "durationS": 1.25
+      },
+      {
+        "id": "objective",
+        "question": "Does the change achieve the objective?",
+        "answer": "no",
+        "rationale": null,
+        "tokens": null,
+        "durationS": 0.75
+      }
+    ],
+    "filesSent": 1,
+    "filesOmitted": 0,
+    "diffBytes": 240
+  },
+  "risk": {
+    "level": "high",
+    "changedLines": 4,
+    "signals": [
+      {
+        "rule": "ci",
+        "level": "high",
+        "paths": [
+          ".github/workflows/ci.yml"
+        ],
+        "detail": null
+      },
+      {
+        "rule": "hint",
+        "level": "medium",
+        "paths": [],
+        "detail": "touches billing"
+      }
+    ]
+  },
+  "claims": null,
+  "flags": [
+    {
+      "code": "no_sandbox",
+      "detail": "Commands ran on the host."
+    }
+  ],
+  "recommendation": {
+    "decision": "human-review",
+    "reasons": [
+      {
+        "severity": "review",
+        "code": "no_sandbox",
+        "detail": "No sandbox was used."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "git",
+      "version": "2.43.0"
+    }
+  ]
+}

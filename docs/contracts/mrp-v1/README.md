@@ -4,12 +4,15 @@ The **Merge Readiness Pack** (`mrp-v1`) is a JSON document that certifies whethe
 
 ## Who produces it
 
-One producer: an independent verifier, working name **Assay**, that Tack never contains. The
-runner runs it after an attempt, over the attempt's evidence, and uploads the pack as an
-artifact. Tack drafts this contract as the consumer because Assay does not exist yet and a
-pinned fixture is the only thing both sides can test against. Assay adopts `mrp-v1` or
-supersedes it with a later version (`v`); Tack reads the versions it knows and never guesses
-at one it does not.
+The runner, after an attempt, from what an independent verifier says — Tack never contains
+the verifier. The verifier is **prill** by default (`[verify]` with `kind = "prill"`,
+`docs/CONFIG.md`): the runner snapshots the attempt's workspace, gives prill its own input
+documents, and translates the `mrp/v1` pack prill prints (camelCase; decisions
+`auto-merge-eligible` / `human-review` / `reject`) into this contract
+(`crates/tack-runner/src/verify/prill.rs`). `fixtures/prill/` holds prill's own packs the
+translation is tested on. A verifier of your own (`kind = "command"`) writes `mrp-v1`
+directly. Tack drafts this contract as the consumer: it reads the versions (`v`) it knows
+and never guesses at one it does not.
 
 ## Who reads it
 

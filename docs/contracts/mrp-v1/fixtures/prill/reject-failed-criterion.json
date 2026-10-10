@@ -1,0 +1,172 @@
+{
+  "contract": "mrp/v1",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "prill": {
+    "name": "prill",
+    "version": "0.1.0"
+  },
+  "attempt": {
+    "attemptId": "attempt-1",
+    "harness": {
+      "name": "harness-x",
+      "version": null
+    },
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "brief": {
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "id": "brief-1",
+    "objective": "Fix the parser."
+  },
+  "config": {
+    "version": 1,
+    "layers": [],
+    "effectiveSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "changedInHead": false
+  },
+  "sandbox": {
+    "backend": "docker",
+    "image": "registry.example/image@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "imageId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "imagePinned": true,
+    "network": "none",
+    "limits": {
+      "cpus": 2.0,
+      "memoryMb": 2048,
+      "pids": 512,
+      "tmpfsMb": 512,
+      "commandTimeoutS": 600,
+      "totalTimeoutS": 3600,
+      "outputTailBytes": 65536
+    }
+  },
+  "diff": {
+    "filesChanged": 1,
+    "insertions": 3,
+    "deletions": 1,
+    "files": [
+      {
+        "path": "src/app.py",
+        "status": "modified",
+        "insertions": 3,
+        "deletions": 1
+      }
+    ]
+  },
+  "stages": [
+    {
+      "name": "checkout",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "criteria",
+      "status": "failed",
+      "reason": "criterion_failed",
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "anti_tautology",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "suite",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "mutation",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "static_analysis",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "complexity",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "judge",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "risk",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    }
+  ],
+  "criteria": [
+    {
+      "id": "unit",
+      "type": "command",
+      "status": "fail",
+      "reason": "exit_code_mismatch",
+      "evidence": {
+        "kind": "command",
+        "command": "python -m pytest -q",
+        "exitCode": 1,
+        "expectedExitCode": 0,
+        "timedOut": false,
+        "outputTail": "1 failed",
+        "truncated": false,
+        "durationS": 3.2
+      }
+    }
+  ],
+  "antiTautology": {
+    "tests": [],
+    "skippedTests": [],
+    "deletedTests": []
+  },
+  "claims": null,
+  "flags": [],
+  "recommendation": {
+    "decision": "reject",
+    "reasons": [
+      {
+        "severity": "blocking",
+        "code": "criterion_failed",
+        "detail": "Criterion unit failed."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "git",
+      "version": "2.43.0"
+    }
+  ]
+}

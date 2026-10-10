@@ -215,3 +215,57 @@ fn an_unrecognized_provider_name_does_not_affect_the_known_ones() {
         .expect("the known provider's default entry is untouched");
     assert!(!vercel.enabled);
 }
+
+/// The verifier is prill unless the file says otherwise; `kind = "command"`
+/// is the operator's own program, and a kind this build does not know is
+/// rejected rather than run as something else.
+#[test]
+fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
+    let defaults = VerifyConfig::default();
+    assert!(!defaults.enabled);
+    assert_eq!(defaults.kind, VerifyKind::Prill);
+    assert_eq!(defaults.program, "prill");
+    assert!(defaults.args.is_empty());
+
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some(
+            r#"
+                [verify]
+                enabled = true
+                args = ["--image", "registry.invalid/verify@sha256:0"]
+            "#,
+        ),
+        ..RunnerConfigSources::default()
+    })
+    .expect("a [verify] table without a kind is prill");
+    assert_eq!(config.verify.kind, VerifyKind::Prill);
+    assert_eq!(config.verify.program, "prill");
+    assert_eq!(config.verify.args.len(), 2);
+
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some(
+            r#"
+                [verify]
+                enabled = true
+                kind = "command"
+                program = "/opt/verifier/bin/verify"
+            "#,
+        ),
+        ..RunnerConfigSources::default()
+    })
+    .expect("kind = \"command\" names the operator's own program");
+    assert_eq!(config.verify.kind, VerifyKind::Command);
+    assert_eq!(config.verify.program, "/opt/verifier/bin/verify");
+
+    let error = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some(
+            r#"
+                [verify]
+                kind = "assay"
+            "#,
+        ),
+        ..RunnerConfigSources::default()
+    })
+    .expect_err("an unknown verify kind is rejected");
+    assert_eq!(error, ConfigError::Invalid);
+}
