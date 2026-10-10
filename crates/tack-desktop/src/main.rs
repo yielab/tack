@@ -109,6 +109,16 @@ enum ServerMode {
 struct DesktopState(Mutex<Option<ServerMode>>);
 
 fn main() {
+    // WebKitGTK's DMA-BUF renderer aborts the whole process when it cannot
+    // open a GBM/EGL display (NVIDIA's driver, or any driver whose kernel
+    // module and libraries disagree until a reboot): "Could not create GBM
+    // EGL display". Without it WebKit falls back to rendering that works
+    // everywhere. Set before any thread exists; an explicit value wins.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // SAFETY: first statement of `main`, before any other thread runs.
+        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    }
     tracing_subscriber::fmt::init();
 
     tauri::Builder::default()
