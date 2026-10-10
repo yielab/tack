@@ -1131,6 +1131,43 @@ async fn the_repository_comes_from_the_project_when_omitted() {
 }
 
 #[tokio::test]
+async fn agent_context_reads_the_editors_html_description_as_text() {
+    let (_app, repo, item_id) = setup().await;
+    let item_uuid: Uuid = item_id.parse().unwrap();
+    sqlx::query("UPDATE items SET description = ? WHERE id = ?")
+        .bind("<p>línea 1</p><p>línea 2</p><ul><li>criterio <strong>uno</strong></li></ul>")
+        .bind(&item_id)
+        .execute(repo.pool())
+        .await
+        .expect("update item");
+
+    use tack_api::{AppState, config::AppConfig};
+    use tokio::sync::broadcast;
+    let state = AppState {
+        repo: repo.clone(),
+        config: AppConfig::default(),
+        workspace_id: Uuid::new_v4(),
+        broadcast_tx: broadcast::channel(16).0,
+        webhook: None,
+        local_runner: None,
+    };
+    let text = executions::get_item_agent_context(
+        axum::extract::State(state),
+        axum::extract::Path(item_uuid),
+    )
+    .await
+    .expect("agent context")
+    .text
+    .clone();
+
+    assert!(
+        text.contains("Description:\n\nlínea 1\n\nlínea 2\n\n- criterio **uno**\n"),
+        "{text}"
+    );
+    assert!(!text.contains("<p>") && !text.contains("<li>"), "{text}");
+}
+
+#[tokio::test]
 async fn agent_context_includes_the_projects_definition_of_done() {
     let (_app, repo, item_id) = setup().await;
     let item_uuid: Uuid = item_id.parse().unwrap();
