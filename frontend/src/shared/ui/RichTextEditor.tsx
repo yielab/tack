@@ -12,6 +12,9 @@ const ALLOWED_ELEMENTS = new Set([
   'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a',
 ]);
 
+/** A line the browser wrapped in a `div` (Enter in a contenteditable) is a paragraph. */
+const RENAMED_ELEMENTS: Record<string, string> = { div: 'p' };
+
 function safeLink(value: string): string | null {
   try {
     const url = new URL(value, window.location.href);
@@ -39,7 +42,8 @@ export function sanitizeRichText(value: string): string {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const element = node as HTMLElement;
-    const tag = element.tagName.toLowerCase();
+    const raw = element.tagName.toLowerCase();
+    const tag = RENAMED_ELEMENTS[raw] ?? raw;
     if (blockedElements.has(tag)) return;
     if (!ALLOWED_ELEMENTS.has(tag)) {
       for (const child of Array.from(element.childNodes)) appendClean(child, parent);
@@ -79,17 +83,27 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
     updateContent();
   };
 
+  // What is typed stays as the browser laid it out: rewriting the editor's
+  // HTML mid-typing puts the caret back at the start, so each new line lands
+  // before the last. Only the emitted value is sanitised; paste and drop are
+  // plain text, so nothing foreign enters the editor to begin with.
   const updateContent = () => {
     if (editorRef) {
-      const sanitized = sanitizeRichText(editorRef.innerHTML);
-      if (editorRef.innerHTML !== sanitized) editorRef.innerHTML = sanitized;
-      props.onChange(sanitized);
+      props.onChange(sanitizeRichText(editorRef.innerHTML));
     }
   };
 
   const handlePaste = (e: ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData?.getData('text/plain');
+    if (text) {
+      document.execCommand('insertText', false, text);
+    }
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    const text = e.dataTransfer?.getData('text/plain');
     if (text) {
       document.execCommand('insertText', false, text);
     }
@@ -155,9 +169,13 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         ref={editorRef}
         contentEditable={!props.disabled}
         onInput={updateContent}
-        onFocus={() => setIsFocused(true)}
+        onFocus={() => {
+          document.execCommand('defaultParagraphSeparator', false, 'p');
+          setIsFocused(true);
+        }}
         onBlur={() => setIsFocused(false)}
         onPaste={handlePaste}
+        onDrop={handleDrop}
         class={`
           min-h-[120px] max-h-[300px] overflow-y-auto px-3 py-2
           text-content
