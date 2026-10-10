@@ -32,6 +32,10 @@ fn project_input(name: &str) -> CreateProject {
         description: None,
         project_type: ProjectType::Software,
         template: None,
+        code_origin: None,
+        repository: None,
+        default_branch: None,
+        workspace_mode: None,
     }
 }
 
@@ -174,6 +178,10 @@ async fn create_and_get_project() {
                 description: Some("A test project".into()),
                 project_type: ProjectType::Software,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await
@@ -199,6 +207,10 @@ async fn list_projects() {
                 description: None,
                 project_type: ProjectType::Software,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await
@@ -222,6 +234,10 @@ async fn update_project() {
                 description: None,
                 project_type: ProjectType::Personal,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await
@@ -261,6 +277,10 @@ async fn delete_project() {
                 description: None,
                 project_type: ProjectType::Custom,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await
@@ -385,6 +405,10 @@ async fn sprint_lifecycle() {
                 description: None,
                 project_type: ProjectType::Software,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await

@@ -98,6 +98,10 @@ impl Fixture {
                     description: None,
                     project_type: ProjectType::Software,
                     template: None,
+                    code_origin: None,
+                    repository: None,
+                    default_branch: None,
+                    workspace_mode: None,
                 },
             )
             .await

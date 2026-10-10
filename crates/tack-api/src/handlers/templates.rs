@@ -187,6 +187,10 @@ pub(crate) async fn build_project_from_template(
         description: data.description,
         project_type: template.project_type,
         template: None, // Already applied
+        code_origin: None,
+        repository: None,
+        default_branch: None,
+        workspace_mode: None,
     };
 
     let mut project = state

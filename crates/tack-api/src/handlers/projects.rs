@@ -28,12 +28,53 @@ use crate::router::AppState;
 pub async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProject>,
-) -> ApiResult<Json<serde_json::Value>> {
-    input
-        .validate()
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let project = state.repo.create_project(state.workspace_id, input).await?;
-    Ok(Json(serde_json::to_value(project).unwrap()))
+) -> Response {
+    if let Err(e) = input.validate() {
+        return ApiError::BadRequest(e.to_string()).into_response();
+    }
+    let code_origin = input.code_origin.unwrap_or_default();
+    if let Some(message) = repository_problem(code_origin, input.repository.as_deref()) {
+        return repository_rejected(message);
+    }
+    match state.repo.create_project(state.workspace_id, input).await {
+        Ok(project) => Json(serde_json::to_value(project).unwrap()).into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
+}
+
+/// Why a `code_origin`/`repository` pair cannot be stored, or `None` when it
+/// can: a folder origin needs an absolute path, a url origin a URL. Shared by
+/// creation and update so both reject exactly the same combinations.
+fn repository_problem(code_origin: CodeOrigin, repository: Option<&str>) -> Option<&'static str> {
+    match (code_origin, repository) {
+        (CodeOrigin::Folder | CodeOrigin::NewFolder, Some(path)) if !path.starts_with('/') => {
+            Some("repository must be an absolute path for a folder code origin")
+        }
+        (CodeOrigin::Url, Some(url))
+            if !url
+                .split_once("://")
+                .is_some_and(|(scheme, rest)| !scheme.is_empty() && !rest.is_empty()) =>
+        {
+            Some("repository must be a URL for a url code origin")
+        }
+        _ => None,
+    }
+}
+
+/// The 400 for a rejected `repository`: the protocol envelope naming the
+/// field, so a form can show the message under that one input.
+fn repository_rejected(message: &str) -> Response {
+    let envelope = ProtocolErrorEnvelope::new(
+        StableErrorCode::InvalidRequest,
+        message,
+        "req_operator_projects",
+        json!({"field": "repository"}),
+    );
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::to_value(envelope).expect("envelope serializes")),
+    )
+        .into_response()
 }
 
 #[utoipa::path(
@@ -102,31 +143,8 @@ pub async fn update_project(
         Some(value) => value.as_deref(),
         None => current.repository.as_deref(),
     };
-    let problem = match (code_origin, repository) {
-        (CodeOrigin::Folder | CodeOrigin::NewFolder, Some(path)) if !path.starts_with('/') => {
-            Some("repository must be an absolute path for a folder code origin")
-        }
-        (CodeOrigin::Url, Some(url))
-            if !url
-                .split_once("://")
-                .is_some_and(|(scheme, rest)| !scheme.is_empty() && !rest.is_empty()) =>
-        {
-            Some("repository must be a URL for a url code origin")
-        }
-        _ => None,
-    };
-    if let Some(message) = problem {
-        let envelope = ProtocolErrorEnvelope::new(
-            StableErrorCode::InvalidRequest,
-            message,
-            "req_operator_projects",
-            json!({"field": "repository"}),
-        );
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::to_value(envelope).expect("envelope serializes")),
-        )
-            .into_response();
+    if let Some(message) = repository_problem(code_origin, repository) {
+        return repository_rejected(message);
     }
     match state.repo.update_project(id, input).await {
         Ok(Some(project)) => Json(serde_json::to_value(project).unwrap()).into_response(),

@@ -7,7 +7,7 @@ use sqlx::ConnectOptions;
 use tack_db::{init_pool, migrations};
 use uuid::Uuid;
 
-use crate::common::{create_test_workspace, make_project};
+use crate::common::create_test_workspace;
 
 #[tokio::test]
 async fn the_bridge_tables_are_dropped_and_their_rows_kept_in_the_snapshot() {
@@ -21,16 +21,25 @@ async fn the_bridge_tables_are_dropped_and_their_rows_kept_in_the_snapshot() {
 
     let repo = tack_db::Repository::new(pool.clone());
     let workspace_id = create_test_workspace(&repo).await;
-    let project = make_project(&repo, workspace_id).await;
-    // Raw insert: the repository's INSERT writes columns newer than this
-    // pre-drop schema.
+    // Raw inserts: the repository's INSERTs for projects and items write
+    // columns newer than this pre-drop schema.
+    let project_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO projects (id, workspace_id, name, project_type, vocabulary, workflow, created_at, updated_at) \
+         VALUES (?, ?, 'Test Project', 'software', '{}', '{\"workflow_type\":\"kanban\",\"statuses\":[]}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .bind(project_id.to_string())
+    .bind(workspace_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert projects row");
     let item_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO items (id, project_id, title, item_type, status, priority, estimate_unit, tags, sort_order, source, created_at, updated_at) \
          VALUES (?, ?, 'Board item', 'task', 'todo', 'medium', '\"points\"', '[]', 1, 'manual', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
     )
     .bind(item_id.to_string())
-    .bind(project.id.to_string())
+    .bind(project_id.to_string())
     .execute(&pool)
     .await
     .expect("insert items row");

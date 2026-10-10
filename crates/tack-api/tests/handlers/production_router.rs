@@ -69,6 +69,10 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
                 description: None,
                 project_type: ProjectType::Software,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await
