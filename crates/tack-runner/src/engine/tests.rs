@@ -2865,6 +2865,9 @@ struct SeededGitWorktree {
     /// may push; `break_origin` deletes it just before the push.
     origin: Option<PathBuf>,
     break_origin: bool,
+    /// The real provisioner for everything but a clone; one instance, as the
+    /// manager holds, because `in_place` keeps its baseline between calls.
+    git: crate::client::workspace::git::GitWorktreeProvisioner,
 }
 
 #[async_trait]
@@ -2875,9 +2878,7 @@ impl WorktreeProvisioner for SeededGitWorktree {
         repository: &super::super::RepositorySpec,
     ) -> Result<(), WorkspaceError> {
         if repository.workspace_mode != super::super::WorkspaceMode::Clone {
-            return crate::client::workspace::git::GitWorktreeProvisioner::default()
-                .provision(workspace, repository)
-                .await;
+            return self.git.provision(workspace, repository).await;
         }
         let seed = self.seed.display().to_string();
         for args in [
@@ -2923,9 +2924,7 @@ impl WorktreeProvisioner for SeededGitWorktree {
         workspace: &Workspace,
         exclude: &[&str],
     ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
-        crate::client::workspace::git::GitWorktreeProvisioner::default()
-            .capture_evidence(workspace, exclude)
-            .await
+        self.git.capture_evidence(workspace, exclude).await
     }
 
     async fn publish_branch(
@@ -3087,6 +3086,7 @@ async fn run_evidence_attempt_requesting(
                 seed,
                 origin: git_config.is_some().then(|| origin.clone()),
                 break_origin,
+                git: Default::default(),
             },
         ),
     )
@@ -3540,6 +3540,7 @@ async fn an_in_place_attempt_runs_in_the_users_folder_and_moves_nothing() {
                 seed: folder.clone(),
                 origin: None,
                 break_origin: false,
+                git: Default::default(),
             },
         ),
     )

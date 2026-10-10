@@ -60,10 +60,10 @@ pub const DEFAULT_GIT_TIMEOUT: Duration = Duration::from_secs(600);
 pub struct GitWorktreeProvisioner {
     program: PathBuf,
     timeout: Duration,
-    /// `in_place` folders without git: the listing taken at provision time,
-    /// per attempt, the "before" of the snapshot diff. In memory only: a
-    /// runner restarted mid-attempt has no baseline and captures nothing.
-    snapshots: Arc<Mutex<HashMap<String, Listing>>>,
+    /// `in_place` folders: what the folder held at provision time, per
+    /// attempt, the "before" of the evidence diff. In memory only: a runner
+    /// restarted mid-attempt has no baseline and captures nothing.
+    baselines: Arc<Mutex<HashMap<String, Baseline>>>,
 }
 
 impl Default for GitWorktreeProvisioner {
@@ -77,7 +77,7 @@ impl GitWorktreeProvisioner {
         Self {
             program: program.into(),
             timeout,
-            snapshots: Arc::default(),
+            baselines: Arc::default(),
         }
     }
 
@@ -343,14 +343,31 @@ impl GitWorktreeProvisioner {
         Ok(head)
     }
 
-    /// Maps a requested revision onto a commit that now exists locally.
-    /// Ordered deliberately: an exact object id first, then a remote-tracking
-    /// branch, then a tag. `origin/<name>` is tried before a bare `<name>`
-    /// because after `git init` a bare branch name resolves to nothing, while
-    /// a *local* name colliding with a fetched one cannot exist yet.
+    /// Stages the whole working tree — untracked files and deletions
+    /// included — into the repository's index, or into a temporary `index`
+    /// seeded from `HEAD`, which leaves the user's own index untouched.
+    async fn stage_worktree(
+        &self,
+        path: &Path,
+        pathspec: &[String],
+        secrets: &SecretMaterial,
+        index: Option<&Path>,
+    ) -> Result<(), WorkspaceError> {
+        if index.is_some() {
+            self.git_ok_indexed(path, &["read-tree", "HEAD"], secrets, index)
+                .await?;
+        }
+        let mut stage = vec!["add", "-A", "--"];
+        stage.extend(pathspec.iter().map(String::as_str));
+        self.git_ok_indexed(path, &stage, secrets, index).await?;
+        Ok(())
+    }
+
     /// The staged diff of `workspace` against its resolved base. With a
     /// `scratch` directory (an `in_place` folder) staging happens in a
-    /// temporary index in it and nothing is written into the folder's `.git`.
+    /// temporary index in it and nothing is written into the folder's `.git`
+    /// but objects; the diff is then against the tree the folder held at
+    /// provision time, so what was already dirty is never the harness's work.
     async fn capture_git(
         &self,
         workspace: &Workspace,
@@ -361,35 +378,34 @@ impl GitWorktreeProvisioner {
         let secrets = SecretMaterial::new();
         let index = scratch.map(|scratch| scratch.join("index"));
         let index = index.as_deref();
-        if index.is_some() {
-            self.git_ok_indexed(path, &["read-tree", "HEAD"], &secrets, index)
-                .await?;
-        }
         // The clone is disposable, and staging is how untracked files and
         // deletions enter one diff. The runner's own markers are never the
-        // harness's work, whatever the caller excludes.
-        let mut stage = vec![
-            "add".to_owned(),
-            "-A".to_owned(),
-            "--".to_owned(),
-            ".".to_owned(),
-        ];
-        for name in exclude
-            .iter()
-            .copied()
-            .chain([ATTEMPT_MARKER, CHECKOUT_MARKER])
-        {
-            stage.push(format!(":(exclude){name}"));
-        }
-        let stage: Vec<&str> = stage.iter().map(String::as_str).collect();
-        self.git_ok_indexed(path, &stage, &secrets, index).await?;
+        // harness's work, whatever the caller excludes; the diffs carry the
+        // same pathspec, so an excluded file the baseline holds is not
+        // reported as deleted.
+        let pathspec = evidence_pathspec(exclude);
+        self.stage_worktree(path, &pathspec, &secrets, index)
+            .await?;
 
         // The checkout was fetched by name into a fresh repository, where a
         // bare branch name resolves to nothing: diff against the commit it is.
         let base_commit = self
             .resolve_revision(path, &workspace.base_revision, &secrets)
             .await?;
-        let base = base_commit.as_str();
+        let before = if scratch.is_some() {
+            match self
+                .baselines
+                .lock()
+                .map_err(|_| WorkspaceError::Io)?
+                .get(workspace.attempt_id.as_str())
+            {
+                Some(Baseline::Tree(tree)) => tree.clone(),
+                _ => return Err(WorkspaceError::Io),
+            }
+        } else {
+            base_commit.clone()
+        };
+        let base = before.as_str();
         let head_commit = self
             .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
             .await?
@@ -415,33 +431,25 @@ impl GitWorktreeProvisioner {
             |scratch| scratch.join("tack-evidence.patch"),
         );
         let output_arg = format!("--output={}", patch_file.display());
-        self.git_ok_indexed(
-            path,
-            &[
-                "diff",
-                "--cached",
-                "--binary",
-                "--no-color",
-                "--no-ext-diff",
-                &output_arg,
-                base,
-            ],
-            &secrets,
-            index,
-        )
-        .await?;
+        let mut diff = vec![
+            "diff",
+            "--cached",
+            "--binary",
+            "--no-color",
+            "--no-ext-diff",
+            &output_arg,
+            base,
+            "--",
+        ];
+        diff.extend(pathspec.iter().map(String::as_str));
+        self.git_ok_indexed(path, &diff, &secrets, index).await?;
         let mut patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
         let _ = fs::remove_file(&patch_file);
         let truncated = patch.len() > PATCH_CAP_BYTES;
         patch.truncate(PATCH_CAP_BYTES);
-        let listing = self
-            .git_ok_indexed(
-                path,
-                &["diff", "--cached", "--name-status", "-z", base],
-                &secrets,
-                index,
-            )
-            .await?;
+        let mut names = vec!["diff", "--cached", "--name-status", "-z", base, "--"];
+        names.extend(pathspec.iter().map(String::as_str));
+        let listing = self.git_ok_indexed(path, &names, &secrets, index).await?;
         Ok(GitEvidence {
             base_commit,
             head_commit,
@@ -454,8 +462,9 @@ impl GitWorktreeProvisioner {
     }
 
     /// `in_place` provisions nothing: the attempt's workspace is the user's
-    /// own folder, which is only validated here. A folder without git gets its
-    /// "before" listing; the lock is the manager's.
+    /// own folder, which is only validated here and gets its "before" — the
+    /// tree of everything it holds, dirty or untracked, staged in a temporary
+    /// index; a listing when it has no git. The lock is the manager's.
     async fn provision_in_place(
         &self,
         workspace: &Workspace,
@@ -469,13 +478,29 @@ impl GitWorktreeProvisioner {
         if metadata.file_type().is_symlink() || !metadata.is_dir() || folder != workspace.path {
             return Err(WorkspaceError::UnsafePath);
         }
-        if !folder.join(".git").exists() {
-            let listing = list_folder(folder, &[]).map_err(|_| WorkspaceError::Io)?;
-            self.snapshots
-                .lock()
-                .map_err(|_| WorkspaceError::Io)?
-                .insert(workspace.attempt_id.as_str().to_owned(), listing);
-        }
+        let baseline = if folder.join(".git").exists() {
+            let scratch = index_scratch(workspace)?;
+            let index = scratch.join("index");
+            let secrets = SecretMaterial::new();
+            let staged = self
+                .stage_worktree(folder, &evidence_pathspec(&[]), &secrets, Some(&index))
+                .await;
+            let tree = match staged {
+                Ok(()) => {
+                    self.git_ok_indexed(folder, &["write-tree"], &secrets, Some(&index))
+                        .await
+                }
+                Err(error) => Err(error),
+            };
+            let _ = fs::remove_dir_all(&scratch);
+            Baseline::Tree(tree?.stdout)
+        } else {
+            Baseline::Listing(list_folder(folder, &[]).map_err(|_| WorkspaceError::Io)?)
+        };
+        self.baselines
+            .lock()
+            .map_err(|_| WorkspaceError::Io)?
+            .insert(workspace.attempt_id.as_str().to_owned(), baseline);
         Ok(())
     }
 
@@ -486,13 +511,15 @@ impl GitWorktreeProvisioner {
         workspace: &Workspace,
         exclude: &[&str],
     ) -> Result<GitEvidence, WorkspaceError> {
-        let before = self
-            .snapshots
+        let before = match self
+            .baselines
             .lock()
             .map_err(|_| WorkspaceError::Io)?
             .get(workspace.attempt_id.as_str())
-            .cloned()
-            .ok_or(WorkspaceError::Io)?;
+        {
+            Some(Baseline::Listing(listing)) => listing.clone(),
+            _ => return Err(WorkspaceError::Io),
+        };
         let after = list_folder(&workspace.path, exclude).map_err(|_| WorkspaceError::Io)?;
         let mut files = Vec::new();
         let mut rows = Vec::new();
@@ -530,6 +557,11 @@ impl GitWorktreeProvisioner {
         })
     }
 
+    /// Maps a requested revision onto a commit that now exists locally.
+    /// Ordered deliberately: an exact object id first, then a remote-tracking
+    /// branch, then a tag. `origin/<name>` is tried before a bare `<name>`
+    /// because after `git init` a bare branch name resolves to nothing, while
+    /// a *local* name colliding with a fetched one cannot exist yet.
     async fn resolve_revision(
         &self,
         path: &Path,
@@ -731,19 +763,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         if !path.join(".git").exists() {
             return self.capture_snapshot(workspace, exclude).map(Some);
         }
-        #[allow(clippy::disallowed_methods)]
-        let scratch = std::env::temp_dir().join(format!(
-            "tack-index-{}-{}",
-            std::process::id(),
-            workspace
-                .attempt_id
-                .as_str()
-                .bytes()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        ));
-        let _ = fs::remove_dir_all(&scratch);
-        fs::create_dir_all(&scratch).map_err(|_| WorkspaceError::Io)?;
+        let scratch = index_scratch(workspace)?;
         let result = self.capture_git(workspace, exclude, Some(&scratch)).await;
         let _ = fs::remove_dir_all(&scratch);
         result.map(Some)
@@ -880,6 +900,48 @@ struct Entry {
 }
 
 type Listing = BTreeMap<String, Entry>;
+
+/// The "before" of an `in_place` attempt.
+#[derive(Debug, Clone)]
+enum Baseline {
+    /// The tree object of the folder's whole working tree, as staged.
+    Tree(String),
+    /// A folder without git: every file by path.
+    Listing(Listing),
+}
+
+/// `add`/`diff` pathspec for an evidence capture: everything but `exclude`
+/// and the runner's own markers.
+fn evidence_pathspec(exclude: &[&str]) -> Vec<String> {
+    std::iter::once(".".to_owned())
+        .chain(
+            exclude
+                .iter()
+                .copied()
+                .chain([ATTEMPT_MARKER, CHECKOUT_MARKER])
+                .map(|name| format!(":(exclude){name}")),
+        )
+        .collect()
+}
+
+/// A fresh, empty directory outside the user's folder for an `in_place`
+/// attempt's temporary index; the caller removes it.
+fn index_scratch(workspace: &Workspace) -> Result<PathBuf, WorkspaceError> {
+    #[allow(clippy::disallowed_methods)]
+    let scratch = std::env::temp_dir().join(format!(
+        "tack-index-{}-{}",
+        std::process::id(),
+        workspace
+            .attempt_id
+            .as_str()
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ));
+    let _ = fs::remove_dir_all(&scratch);
+    fs::create_dir_all(&scratch).map_err(|_| WorkspaceError::Io)?;
+    Ok(scratch)
+}
 
 fn snapshot_row(path: &str, op: FileOp, entry: &Entry) -> serde_json::Value {
     serde_json::json!({

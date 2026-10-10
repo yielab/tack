@@ -939,8 +939,18 @@ async fn in_place_never_touches_the_users_index() {
         "the index file is byte-identical"
     );
     assert_eq!(run_git(folder, &["diff", "--cached"]), cached_before);
-    assert!(evidence.files.iter().any(|file| file.path == "work.txt"));
-    assert!(!evidence.patch.is_empty());
+    let paths: Vec<&str> = evidence
+        .files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
+    assert_eq!(
+        paths,
+        ["work.txt"],
+        "what the user had staged or edited before the attempt is not the harness's work"
+    );
+    let patch = String::from_utf8_lossy(&evidence.patch);
+    assert!(patch.contains("the harness wrote this") && !patch.contains("staged by the user"));
     assert!(evidence.snapshot.is_none());
     assert_eq!(
         fs::read_to_string(folder.join("README.md")).expect("kept"),
@@ -952,6 +962,49 @@ async fn in_place_never_touches_the_users_index() {
         !folder.join(".git/tack-evidence.patch").exists() && !folder.join(ATTEMPT_MARKER).exists(),
         "the runner leaves no file of its own in the user's folder"
     );
+}
+
+#[tokio::test]
+async fn in_place_reports_only_the_harness_delta_on_an_already_dirty_file() {
+    let source = SourceRepository::create();
+    let folder = source.path();
+    fs::write(folder.join("README.md"), "the user's line\n").expect("write");
+    fs::write(folder.join("notes.md"), "untracked since last week\n").expect("write");
+    fs::create_dir_all(folder.join(".tack-runner")).expect("mkdir");
+    fs::write(folder.join(".tack-runner/old.log"), "a previous run\n").expect("write");
+
+    let workspace = in_place_workspace(folder, "attempt-dirty", &source.second_commit);
+    let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
+    provisioner
+        .provision(&workspace, &in_place_spec(folder, &source.second_commit))
+        .await
+        .expect("provisioned");
+    fs::write(
+        folder.join("README.md"),
+        "the user's line\nthe harness's line\n",
+    )
+    .expect("write");
+    fs::remove_dir_all(folder.join(".tack-runner")).expect("remove");
+
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[".tack-runner"])
+        .await
+        .expect("captured")
+        .expect("evidence");
+
+    let ops: Vec<(&str, FileOp)> = evidence
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file.op))
+        .collect();
+    assert_eq!(ops, [("README.md", FileOp::Modified)]);
+    let patch = String::from_utf8_lossy(&evidence.patch);
+    assert!(patch.contains("+the harness's line"), "{patch}");
+    assert!(
+        !patch.contains("+the user's line"),
+        "the user's own edit is the baseline, not a change: {patch}"
+    );
+    assert_eq!(evidence.base_commit, source.second_commit);
 }
 
 #[tokio::test]

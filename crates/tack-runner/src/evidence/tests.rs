@@ -111,6 +111,7 @@ async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
     fs::write(path.join("new.txt"), "new\n").expect("add");
     let plan = r#"{"v":"1","subtasks":[{"title":"t","description":"d"}]}"#;
     fs::write(path.join("tack-plan.json"), plan).expect("plan");
+    fs::write(path.join(".tack-attempt"), "attempt").expect("marker");
 
     let workspace = Workspace {
         attempt_id: AttemptId::new("attempt"),
