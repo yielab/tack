@@ -26,11 +26,13 @@ import type { ProjectModelDefault } from '../types';
 // ─── Harness kinds ──────────────────────────────────────────────────────────
 
 /**
- * The in-tree v1 harness adapters, with their real,
+ * The in-tree v1 harness adapters (`crates/tack-runner/src/harness/`), with their real,
  * verified `harness_kind` wire values — read directly from each adapter's own
  * constant, not guessed:
  *   - `codex.rs`'s `CODEX_HARNESS_KIND = "codex"`
  *   - `claude_code.rs`'s `HARNESS_KIND = "claude-code"` (a HYPHEN)
+ *   - `docket.rs`'s descriptor `kind: "docket"`
+ *   - `opencode.rs`'s descriptor `kind: "opencode"`
  *
  * This list is not the whole harness vocabulary — a runner's own
  * `harness_kind` is an opaque string (`HarnessKind::Other(String)` on the
@@ -51,6 +53,8 @@ import type { ProjectModelDefault } from '../types';
 export const HARNESS_KINDS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'codex', label: 'Codex' },
   { value: 'claude-code', label: 'Claude Code' },
+  { value: 'docket', label: 'Docket' },
+  { value: 'opencode', label: 'OpenCode' },
 ];
 
 // ─── Payload construction ───────────────────────────────────────────────────

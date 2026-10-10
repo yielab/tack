@@ -84,6 +84,43 @@ function mount(comp: () => unknown) {
 const btn = (c: HTMLElement, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)!;
 
+/** The labels the "Specific model" select offers, in order, without the placeholder. */
+const modelLabels = (c: HTMLElement) =>
+  Array.from(c.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.options)
+    .map((o) => o.textContent)
+    .filter((label) => label !== 'Choose a model');
+
+/** Picks a model by its visible label: the option values are the panel's own encoding, never typed here. */
+const chooseModel = (c: HTMLElement, label: string) => {
+  const model = c.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
+  const option = Array.from(model.options).find((o) => o.textContent === label);
+  if (!option) throw new Error(`no model option labelled ${label}`);
+  model.value = option.value;
+  model.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+/** A `/api/runners` body whose one runner reports `harnesses`. */
+const runnersWith = (harnesses: unknown[]) =>
+  new Response(
+    JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: { harnesses, push_configured: true } }] }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+
+const GATEWAY_CATALOG = {
+  harness_kind: 'docket',
+  native_provider: 'docket',
+  model_combinations: [
+    { model_provider: 'vercel-ai-gateway', model_ids: ['anthropic/claude-sonnet-4-5', 'openai/gpt-5'], discovery: 'probed' },
+  ],
+};
+
+const lastModelPatch = () => {
+  const calls = fetchMock.mock.calls.filter(
+    (c) => (c[1] as RequestInit)?.method === 'PATCH' && String(c[0]).endsWith('/api/projects/p1'),
+  );
+  return JSON.parse((calls[calls.length - 1][1] as RequestInit).body as string);
+};
+
 describe('Settings panels', () => {
   it('GeneralPanel saves via PATCH /projects/{id}', async () => {
     const { container } = mount(() => <GeneralPanel />);
@@ -190,9 +227,7 @@ describe('Settings panels', () => {
     rows.push(
       ['specific model', () => {
         byText('label', 'Specific model').querySelector('input')!.click();
-        const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
-        model.value = 'claude-opus-5-5';
-        model.dispatchEvent(new Event('change', { bubbles: true }));
+        chooseModel(container, 'anthropic / claude-opus-5-5');
       }, { default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-opus-5-5' } }],
       ['auto model', () => byText('label', "The agent's default (recommended)").querySelector('input')!.click(), { default_model: { kind: 'auto' } }],
       ['definition of done', () => { dod.value = 'Tests pass'; dod.dispatchEvent(new Event('blur')); }, { definition_of_done: 'Tests pass' }],
@@ -227,5 +262,89 @@ describe('Settings panels', () => {
     await flush();
     expect(container.textContent).toContain('That folder does not exist');
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('automation_panel_offers_a_docket_gateway_catalog_as_provider_model_pairs_and_saves_the_pair', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([GATEWAY_CATALOG])) : base(input, init),
+    );
+    (PROJECT as { default_harness: string | null }).default_harness = 'docket';
+    try {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      await flush();
+      expect(modelLabels(container)).toEqual(['vercel-ai-gateway / anthropic/claude-sonnet-4-5', 'vercel-ai-gateway / openai/gpt-5']);
+      expect(container.textContent).not.toContain('No model ids are measured for this agent yet');
+      chooseModel(container, 'vercel-ai-gateway / anthropic/claude-sonnet-4-5');
+      await flush();
+      await flush();
+      expect(lastModelPatch()).toEqual({
+        default_model: { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'anthropic/claude-sonnet-4-5' },
+      });
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
+    }
+  });
+
+  it('automation_panel_shows_the_saved_pair_selected_whichever_provider_it_names', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([GATEWAY_CATALOG])) : base(input, init),
+    );
+    const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
+    mutable.default_harness = 'docket';
+    mutable.default_model = { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'openai/gpt-5' };
+    try {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
+      expect(model.selectedOptions[0]?.textContent).toBe('vercel-ai-gateway / openai/gpt-5');
+    } finally {
+      mutable.default_harness = null;
+      mutable.default_model = undefined;
+    }
+  });
+
+  it('automation_panel_keeps_the_static_list_under_the_native_provider_for_claude_code', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
+    try {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      await flush();
+      const labels = modelLabels(container);
+      expect(labels[0]).toBe('anthropic / claude-sonnet-5-5');
+      expect(labels).toContain('anthropic / claude-opus-5-5');
+      expect(labels.every((l) => l!.startsWith('anthropic / '))).toBe(true);
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
+    }
+  });
+
+  it('automation_panel_says_no_model_ids_are_measured_only_when_the_merged_list_is_empty', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'codex';
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/runners')
+        ? Promise.resolve(runnersWith([{ harness_kind: 'codex', native_provider: 'openai', model_combinations: [] }]))
+        : base(input, init),
+    );
+    try {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      await flush();
+      expect(modelLabels(container)).toEqual([]);
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.disabled).toBe(true);
+      expect(container.textContent).toContain('No model ids are measured for this agent yet; its default is used.');
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
+    }
   });
 });

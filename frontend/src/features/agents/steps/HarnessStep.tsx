@@ -4,7 +4,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { RunnerSummary } from '../../../shared/execution/api';
 import type { HarnessCapability } from '../../../shared/execution/types';
 import { findHarness, harnessesOf } from '../runnerObservations';
-import { HARNESS_INSTALL_COMMAND, HARNESS_LOGIN_COMMAND } from '../constants';
+import { HARNESS_INSTALL_COMMAND, HARNESS_INSTALL_NOTE, HARNESS_LOGIN_COMMAND } from '../constants';
 
 export interface HarnessStepProps {
   /** This machine's own active runner row, or `null` when agent execution
@@ -24,9 +24,12 @@ export interface HarnessStepProps {
 /** One harness row's status, entirely from the runner's own probe — never
  *  a check mark derived from anything this page assumes. A harness kind
  *  this runner's snapshot never mentions at all is treated the same as an
- *  explicit "not found on PATH": this build's two adapters always probe
- *  both known harnesses, so a missing entry only happens against an older
- *  or fake snapshot that never ran the probe. */
+ *  explicit "not found on PATH": the bundled adapters always probe every
+ *  harness in `HARNESS_KINDS`, so a missing entry only happens against an
+ *  older or fake snapshot that never ran the probe. An installed harness
+ *  with no vendor login of its own (no `HARNESS_LOGIN_COMMAND` entry) is
+ *  never "not signed in": it authenticates through the endpoint step 3
+ *  configures, so its row says that instead of naming a command. */
 function statusLabel(
   harness: HarnessCapability | undefined,
   kind: string,
@@ -37,10 +40,11 @@ function statusLabel(
     if (signedInAt) {
       return { text: `${installed} · Signed in ${new Date(signedInAt).toLocaleDateString()}`, tone: 'success' };
     }
-    return {
-      text: `${installed} · Not signed in — run \`${HARNESS_LOGIN_COMMAND[kind] ?? kind}\` once in a terminal`,
-      tone: 'neutral',
-    };
+    const login = HARNESS_LOGIN_COMMAND[kind];
+    if (!login) {
+      return { text: `${installed} · uses a provider endpoint (step 3)`, tone: 'neutral' };
+    }
+    return { text: `${installed} · Not signed in — run \`${login}\` once in a terminal`, tone: 'neutral' };
   }
   if (harness?.probe_error && !/not found on path/i.test(harness.probe_error)) {
     return { text: 'Could not check', tone: 'warning' };
@@ -92,9 +96,20 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                   </div>
                   <Badge tone={status().tone}>{status().text}</Badge>
                   <Show when={status().text === 'Not installed'}>
-                    <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[11.5px]" style={{ color: 'var(--color-text-secondary)' }}>
-                      {HARNESS_INSTALL_COMMAND[kind.value] ?? 'see the vendor\'s own install instructions'}
-                    </code>
+                    <Show
+                      when={HARNESS_INSTALL_COMMAND[kind.value]}
+                      fallback={
+                        <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {HARNESS_INSTALL_NOTE[kind.value] ?? "See the vendor's own install instructions."}
+                        </span>
+                      }
+                    >
+                      {(command) => (
+                        <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[11.5px]" style={{ color: 'var(--color-text-secondary)' }}>
+                          {command()}
+                        </code>
+                      )}
+                    </Show>
                   </Show>
                   <Show when={status().text === 'Could not check'}>
                     <span class="basis-full pl-[52px] font-mono text-[11px]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>

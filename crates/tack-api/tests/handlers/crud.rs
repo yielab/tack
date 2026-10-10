@@ -130,8 +130,58 @@ async fn create_project_empty_name_rejected() {
 async fn create_project_valid_accepted() {
     let (app, _) = common::test_app().await;
     let body = json!({"name":"My Project","project_type":"software"});
-    let (status, _) = common::send(&app, "POST", "/api/projects", body, &[]).await;
+    let (status, body) = common::send(&app, "POST", "/api/projects", body, &[]).await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["code_origin"], "none");
+    assert!(body["repository"].is_null());
+    assert_eq!(body["workspace_mode"], "local_branch");
+}
+
+#[tokio::test]
+async fn create_project_with_folder_stores_it_in_the_one_request() {
+    let (app, _) = common::test_app().await;
+    let body = json!({
+        "name": "With code", "project_type": "software",
+        "code_origin": "folder", "repository": "/tmp/code", "workspace_mode": "in_place", "default_branch": "main",
+    });
+    let (status, body) = common::send(&app, "POST", "/api/projects", body, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["code_origin"], "folder");
+    assert_eq!(body["repository"], "/tmp/code");
+    assert_eq!(body["workspace_mode"], "in_place");
+    assert_eq!(body["default_branch"], "main");
+
+    let uri = format!("/api/projects/{}", body["id"].as_str().unwrap());
+    let (_, stored) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(stored["code_origin"], "folder");
+    assert_eq!(stored["repository"], "/tmp/code");
+    assert_eq!(stored["workspace_mode"], "in_place");
+    assert_eq!(stored["default_branch"], "main");
+}
+
+#[tokio::test]
+async fn create_project_rejects_a_bad_repository_like_a_patch_does() {
+    let (app, _) = common::test_app().await;
+    for (code_origin, repository) in [
+        ("folder", "relative/dir"),
+        ("new_folder", "x"),
+        ("url", "/tmp/x"),
+    ] {
+        let body = json!({
+            "name": "Bad", "project_type": "software",
+            "code_origin": code_origin, "repository": repository,
+        });
+        let (status, body) = common::send(&app, "POST", "/api/projects", body, &[]).await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{code_origin} {repository}"
+        );
+        assert_eq!(body["error"]["code"], "invalid_request");
+        assert_eq!(body["error"]["details"]["field"], "repository");
+    }
+    let (_, projects) = common::send(&app, "GET", "/api/projects", Value::Null, &[]).await;
+    assert_eq!(projects.as_array().map(Vec::len), Some(0));
 }
 
 #[tokio::test]

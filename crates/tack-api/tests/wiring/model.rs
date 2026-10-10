@@ -53,6 +53,10 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
                 description: None,
                 project_type: tack_core::models::ProjectType::Software,
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await

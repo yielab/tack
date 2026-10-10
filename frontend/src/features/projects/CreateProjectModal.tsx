@@ -2,10 +2,14 @@ import { type Component, createSignal, createResource, createMemo, For, Show } f
 import { useNavigate } from '@solidjs/router';
 import { Modal, Button, Field, Select, FieldShell, Badge } from '../../shared/ui';
 import { api } from '../../shared/api';
-import type { ProjectType, ProjectTemplate, UpdateProject } from '../../shared/types';
+import type { CreateProject, ProjectType, ProjectTemplate } from '../../shared/types';
 import type { FolderCheck } from '../../shared/api/projects';
 import { toast } from '../../shared/ui/toast';
 import { projectTypeTone } from '../../shared/ui/projectTypeTone';
+
+/** The four fields that store where a project's code is, sent in the one
+ *  POST that creates it so the project never exists without its folder. */
+type CodeFields = Required<Pick<CreateProject, 'code_origin' | 'repository' | 'workspace_mode' | 'default_branch'>>;
 
 const PROJECT_TYPE_OPTIONS = [
   { value: 'software', label: 'Software (Scrum)' },
@@ -141,24 +145,26 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     if (typeof picked === 'string') await checkPath(picked);
   };
 
-  /** Stores the code answer on a freshly created project. */
-  const saveCode = async (id: string) => {
+  /** The code answer as the four project fields that store it. A folder's
+   *  check decides how the agent works in it; a new folder is created (and
+   *  `git init`ed) here, before the project that points at it exists. */
+  const codeFields = async (): Promise<CodeFields> => {
     const choice = codeChoice();
     const path = codePath().trim();
-    let patch: UpdateProject = { code_origin: 'none' };
     if (choice === 'folder' && path) {
       const check = pathCheck() ?? (await api.projects.checkFolder(path));
-      patch = {
+      return {
         code_origin: 'folder',
         repository: path,
         workspace_mode: check.is_git ? 'local_branch' : 'in_place',
         default_branch: check.is_git ? check.branch : null,
       };
-    } else if (choice === 'new_folder' && path) {
-      await api.projects.initFolder(path);
-      patch = { code_origin: 'new_folder', repository: path, workspace_mode: 'local_branch' };
     }
-    await api.projects.update(id, patch);
+    if (choice === 'new_folder' && path) {
+      await api.projects.initFolder(path);
+      return { code_origin: 'new_folder', repository: path, workspace_mode: 'local_branch', default_branch: null };
+    }
+    return { code_origin: 'none', repository: null, workspace_mode: 'local_branch', default_branch: null };
   };
 
   const handleSubmit = async (e: Event) => {
@@ -175,22 +181,24 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       const tmpl = selectedTemplate();
       let created: { id: string };
       if (tmpl) {
+        // A template creates through its own route, which takes no code
+        // fields, so the folder is stored in a second request here.
         created = await api.templates.createProject(tmpl.id, {
           name: name().trim(),
           description: description().trim() || null,
         });
+        try {
+          if (created?.id) await api.projects.update(created.id, await codeFields());
+        } catch (err) {
+          toast.error(`Project created, but its code folder was not saved: ${err instanceof Error ? err.message : 'unknown error'}`);
+        }
       } else {
         created = await api.projects.create({
           name: name().trim(),
           description: description().trim() || undefined,
           project_type: projectType(),
+          ...(await codeFields()),
         });
-      }
-
-      try {
-        if (created?.id) await saveCode(created.id);
-      } catch (err) {
-        toast.error(`Project created, but its code folder was not saved: ${err instanceof Error ? err.message : 'unknown error'}`);
       }
 
       reset();

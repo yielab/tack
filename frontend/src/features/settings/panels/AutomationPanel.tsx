@@ -8,7 +8,34 @@ import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
 import { HELP } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
+import type { ModelCombination } from '../../../shared/execution/types';
 import type { UpdateProject } from '../../../shared/types';
+
+/** The part of a runner's reported harness this panel reads. Every field
+ *  but the kind is optional: an older runner omits them. */
+interface SnapshotHarness {
+  harness_kind: string;
+  native_provider?: string;
+  model_combinations?: ModelCombination[];
+}
+
+/** One choice in the "Specific model" list. */
+interface ModelPair {
+  provider: string;
+  model_id: string;
+}
+
+/** A `<select>` option value for a pair. JSON, so neither a provider nor a
+ *  model id ever has to be split on a separator it might itself contain. */
+const encodePair = (pair: ModelPair): string => JSON.stringify([pair.provider, pair.model_id]);
+const decodePair = (value: string): ModelPair | null => {
+  try {
+    const [provider, model_id] = JSON.parse(value) as [string, string];
+    return provider && model_id ? { provider, model_id } : null;
+  } catch {
+    return null;
+  }
+};
 
 /** One sentence for what `check-folder` found at a path. */
 function checkSentence(r: FolderCheck): string {
@@ -106,18 +133,47 @@ const AutomationPanel: Component = () => {
   const [runners] = createResource(() => runnersApi.list().then((r) => r.data.data).catch(() => []));
   const [profiles] = createResource(() => agentProfilesApi.list().then((r) => r.data.data).catch(() => []));
   const snapshots = createMemo(() =>
-    (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: { harness_kind: string; native_provider?: string }[]; push_configured?: boolean } | null),
+    (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: SnapshotHarness[]; push_configured?: boolean } | null),
   );
   const harnesses = createMemo(() => [
     ...new Set(snapshots().flatMap((s) => (s?.harnesses ?? []).map((h) => h.harness_kind))),
   ]);
-  /** The measured ids for the default agent, and the provider that agent speaks natively. */
-  const modelIds = () => ACCEPTED_MODELS[p()?.default_harness ?? ''] ?? [];
-  const nativeProvider = () =>
-    snapshots().flatMap((s) => s?.harnesses ?? []).find((h) => h.harness_kind === p()?.default_harness)?.native_provider;
+  /** Every runner's report of the default agent, across snapshots. */
+  const defaultHarnessReports = () =>
+    snapshots().flatMap((s) => s?.harnesses ?? []).filter((h) => h.harness_kind === p()?.default_harness);
+  const nativeProvider = () => defaultHarnessReports().find((h) => h.native_provider)?.native_provider;
   const explicit = () => {
     const m = p()?.default_model;
     return m?.kind === 'explicit' ? m : null;
+  };
+  /** The pairs the "Specific model" list offers: the static ids under the
+   *  native provider, then every measured combination each runner reports
+   *  for this agent (a gateway catalog, for docket), deduplicated. The pair
+   *  already saved stays listed even when no runner reports it any more, so
+   *  the select never shows an empty choice for a project that has one. */
+  const modelOptions = createMemo<ModelPair[]>(() => {
+    const harness = p()?.default_harness;
+    if (!harness) return [];
+    const pairs: ModelPair[] = [];
+    const seen = new Set<string>();
+    const add = (provider: string, model_id: string) => {
+      const key = encodePair({ provider, model_id });
+      if (seen.has(key)) return;
+      seen.add(key);
+      pairs.push({ provider, model_id });
+    };
+    const native = nativeProvider();
+    if (native) for (const id of ACCEPTED_MODELS[harness] ?? []) add(native, id);
+    for (const h of defaultHarnessReports()) {
+      for (const c of h.model_combinations ?? []) for (const id of c.model_ids) add(c.model_provider, id);
+    }
+    const saved = explicit();
+    if (saved) add(saved.provider, saved.model_id);
+    return pairs;
+  });
+  const selectedPair = () => {
+    const saved = explicit();
+    return saved ? encodePair({ provider: saved.provider, model_id: saved.model_id }) : '';
   };
   const [wantsSpecific, setWantsSpecific] = createSignal(false);
   const specific = () => !!p()?.default_harness && (wantsSpecific() || explicit() !== null);
@@ -289,20 +345,23 @@ const AutomationPanel: Component = () => {
             <Show when={specific()}>
               <Select
                 aria-label="Model"
-                value={explicit()?.model_id ?? ''}
-                disabled={!nativeProvider()}
+                value={selectedPair()}
+                disabled={modelOptions().length === 0}
                 onChange={(e) => {
-                  const id = e.currentTarget.value;
-                  const provider = nativeProvider();
-                  if (id && provider) void save({ default_model: { kind: 'explicit', provider, model_id: id } });
+                  const pair = decodePair(e.currentTarget.value);
+                  if (pair) void save({ default_model: { kind: 'explicit', ...pair } });
                 }}
-                options={[{ value: '', label: 'Choose a model' }, ...modelIds().map((id) => ({ value: id, label: id }))]}
+                options={[
+                  { value: '', label: 'Choose a model' },
+                  ...modelOptions().map((pair) => ({ value: encodePair(pair), label: `${pair.provider} / ${pair.model_id}` })),
+                ]}
               />
-              <Show when={!nativeProvider()}>
-                <Note>No runner on this computer reports a provider for this agent yet.</Note>
-              </Show>
-              <Show when={nativeProvider() && modelIds().length === 0}>
-                <Note>No model ids are measured for this agent yet; its default is used.</Note>
+              <Show when={modelOptions().length === 0}>
+                <Note>
+                  {nativeProvider()
+                    ? 'No model ids are measured for this agent yet; its default is used.'
+                    : 'No runner on this computer reports a provider for this agent yet.'}
+                </Note>
               </Show>
             </Show>
           </div>

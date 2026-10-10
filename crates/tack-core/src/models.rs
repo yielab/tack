@@ -547,6 +547,19 @@ pub struct CreateProject {
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub template: Option<String>,
+    /// Where the code is, settable at creation so a project never exists
+    /// without its folder in between two requests. Each absent field takes
+    /// the column's default (`none`, no repository, `local_branch`); the
+    /// handler validates `code_origin`/`repository` together exactly as a
+    /// `PATCH` does.
+    #[serde(default)]
+    pub code_origin: Option<CodeOrigin>,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    #[serde(default)]
+    pub workspace_mode: Option<WorkspaceMode>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

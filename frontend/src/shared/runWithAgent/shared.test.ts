@@ -42,8 +42,8 @@ function values(overrides: Partial<RunWithAgentFormValues> = {}): RunWithAgentFo
 }
 
 describe('HARNESS_KINDS', () => {
-  it('carries the two verified v1 wire values — codex, claude-code (hyphen)', () => {
-    expect(HARNESS_KINDS.map((h) => h.value)).toEqual(['codex', 'claude-code']);
+  it('carries the four bundled adapters under their wire values — claude-code with a hyphen', () => {
+    expect(HARNESS_KINDS.map((h) => h.value)).toEqual(['codex', 'claude-code', 'docket', 'opencode']);
   });
 });
 

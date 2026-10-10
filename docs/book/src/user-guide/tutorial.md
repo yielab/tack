@@ -108,7 +108,9 @@ Click **Turn on**. This starts an embedded runner inside the same server process
 second binary. Step 2 lists the agents it found on this machine with their installed versions;
 this machine has Codex and Claude Code, and the tutorial uses Claude Code. Tack cannot see an
 agent's own login, so each reads **Not signed in** with its sign-in command until a run with that
-agent succeeds here, and then **Signed in** with the date. **Run test** at the bottom runs the
+agent succeeds here, and then **Signed in** with the date. Docket and OpenCode have no login of
+their own that Tack uses, so an installed one reads **uses a provider endpoint (step 3)** instead;
+an agent that isn't installed shows how to install it. **Run test** at the bottom runs the
 agent once to prove it. If you'd rather not use the agent's own subscription, paste a Vercel AI
 Gateway key under **Provider** instead:
 

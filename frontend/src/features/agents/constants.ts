@@ -6,18 +6,31 @@
 
 /** Per-harness vendor install command, shown when step 2's probe reports the
  *  binary absent from `PATH`. Verified against the vendor's own published
- *  npm package (`@anthropic-ai/claude-code`, `@openai/codex`) rather than
- *  guessed. Keyed by the wire `harness_kind` values
- *  `shared/runWithAgent/shared.ts#HARNESS_KINDS` already establishes. */
+ *  package (`@anthropic-ai/claude-code`, `@openai/codex`, the `opencode`
+ *  Homebrew formula) rather than guessed. Keyed by the wire `harness_kind`
+ *  values `shared/runWithAgent/shared.ts#HARNESS_KINDS` already establishes.
+ *  A harness with no one-line command (docket) is in
+ *  {@link HARNESS_INSTALL_NOTE} instead. */
 export const HARNESS_INSTALL_COMMAND: Readonly<Record<string, string>> = {
   'claude-code': 'npm install -g @anthropic-ai/claude-code',
   codex: 'npm install -g @openai/codex',
+  opencode: 'brew install opencode',
+};
+
+/** Per-harness install hint for a harness with no one-line install command:
+ *  a sentence to read, not a command to paste. The wording is the user
+ *  guide's (`docs/book/src/user-guide/agent-runners.md`, "Choosing a
+ *  harness"). */
+export const HARNESS_INSTALL_NOTE: Readonly<Record<string, string>> = {
+  docket: 'From the docket project, following its own install instructions.',
 };
 
 /** Per-harness vendor login command — step 3's "use the agent's own login"
  *  path. Each is the harness's own CLI entry point; Tack never touches
  *  vendor credentials (ADR 0050/0058), so this is the whole of what Tack can
- *  tell the operator to run. */
+ *  tell the operator to run. A harness absent here (docket, opencode) has no
+ *  login of its own that Tack's adapter uses: it reaches a model only through
+ *  the endpoint step 3 configures. */
 export const HARNESS_LOGIN_COMMAND: Readonly<Record<string, string>> = {
   'claude-code': 'claude',
   codex: 'codex login',

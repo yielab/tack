@@ -23,10 +23,13 @@ impl Repository {
         let workflow_json = serde_json::to_string(&workflow).unwrap();
         let project_type_str = input.project_type.to_string();
         let now_str = now.to_rfc3339();
+        let code_origin = input.code_origin.unwrap_or_default();
+        let workspace_mode = input.workspace_mode.unwrap_or_default();
 
         sqlx::query(
-            "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at,
+                                   code_origin, repository, default_branch, workspace_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(workspace_id.to_string())
@@ -37,6 +40,10 @@ impl Repository {
         .bind(&workflow_json)
         .bind(&now_str)
         .bind(&now_str)
+        .bind(code_origin.to_string())
+        .bind(&input.repository)
+        .bind(&input.default_branch)
+        .bind(workspace_mode.to_string())
         .execute(self.pool())
         .await?;
 
@@ -57,10 +64,10 @@ impl Repository {
             created_at: now,
             updated_at: now,
             archived: false,
-            code_origin: Default::default(),
-            repository: None,
-            default_branch: None,
-            workspace_mode: Default::default(),
+            code_origin,
+            repository: input.repository,
+            default_branch: input.default_branch,
+            workspace_mode,
             push_after_run: false,
             default_harness: None,
             default_profile_id: None,

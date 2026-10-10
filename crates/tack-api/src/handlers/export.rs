@@ -224,6 +224,10 @@ pub async fn import_project(
                 description: src.description.clone(),
                 project_type: src.project_type.clone(),
                 template: None,
+                code_origin: None,
+                repository: None,
+                default_branch: None,
+                workspace_mode: None,
             },
         )
         .await

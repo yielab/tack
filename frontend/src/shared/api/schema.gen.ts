@@ -3333,10 +3333,14 @@ export interface components {
             protocol_version: number;
         };
         CreateProject: {
+            code_origin?: null | components["schemas"]["CodeOrigin"];
+            default_branch?: string | null;
             description?: string | null;
             name: string;
             project_type: components["schemas"]["ProjectType"];
+            repository?: string | null;
             template?: string | null;
+            workspace_mode?: null | components["schemas"]["WorkspaceMode"];
         };
         CreateProjectFromTemplate: {
             description?: string | null;

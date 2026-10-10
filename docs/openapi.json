@@ -7884,6 +7884,23 @@
           "project_type"
         ],
         "properties": {
+          "code_origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeOrigin",
+                "description": "Where the code is, settable at creation so a project never exists\nwithout its folder in between two requests. Each absent field takes\nthe column's default (`none`, no repository, `local_branch`); the\nhandler validates `code_origin`/`repository` together exactly as a\n`PATCH` does."
+              }
+            ]
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "description": {
             "type": [
               "string",
@@ -7896,10 +7913,26 @@
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
           },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "template": {
             "type": [
               "string",
               "null"
+            ]
+          },
+          "workspace_mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceMode"
+              }
             ]
           }
         }
