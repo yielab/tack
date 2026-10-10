@@ -647,12 +647,15 @@ fn completion_body(
 #[tokio::test]
 async fn accept_is_idempotent_and_start_transitions_to_running() {
     let fx = Fixture::new().await;
-    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("accept-key", "claim-accept").await;
+    let (request_id, attempt_id, fencing_token) =
+        fx.enqueue_and_claim("accept-key", "claim-accept").await;
+    assert_eq!(fx.request_state(&request_id).await, "leased");
 
     let (status, accepted) = fx.accept(&attempt_id, fencing_token).await;
     assert_eq!(status, StatusCode::OK, "{accepted}");
     assert_eq!(accepted["state"], "preparing");
     assert_eq!(accepted["replayed"], false);
+    assert_eq!(fx.request_state(&request_id).await, "preparing");
     let (status, replayed) = fx.accept(&attempt_id, fencing_token).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replayed["replayed"], true);
@@ -661,6 +664,7 @@ async fn accept_is_idempotent_and_start_transitions_to_running() {
     let (status, started) = fx.start(&attempt_id, fencing_token, "pid-123").await;
     assert_eq!(status, StatusCode::OK, "{started}");
     assert_eq!(started["state"], "running");
+    assert_eq!(fx.request_state(&request_id).await, "running");
 }
 
 // ---------------------------------------------------------------------
@@ -878,12 +882,15 @@ async fn event_batch_commits_checkpoint_and_persists_events() {
 #[tokio::test]
 async fn decision_poll_returns_pending_then_resolved() {
     let fx = Fixture::new().await;
-    let (_, attempt_id, fencing_token) = fx.ready_running("decision-key", "claim-decision").await;
+    let (request_id, attempt_id, fencing_token) =
+        fx.ready_running("decision-key", "claim-decision").await;
     let (status, decision) = fx
         .decision(&attempt_id, fencing_token, "dec-1", "Allow?")
         .await;
     assert_eq!(status, StatusCode::OK, "{decision}");
     assert_eq!(decision["state"], "pending");
+    assert_eq!(fx.attempt_state(&attempt_id).await, "waiting_decision");
+    assert_eq!(fx.request_state(&request_id).await, "waiting_decision");
     let created_at = decision["created_at"].as_str().unwrap().to_owned();
 
     let before = (fx.clock.now() - Duration::hours(1)).to_rfc3339();

@@ -1053,6 +1053,138 @@ async fn concurrent_resolves_serialize_to_exactly_one_winner() {
     );
 }
 
+async fn attempt_and_request_state(repo: &Repository, attempt_id: &str) -> (String, String) {
+    let row = sqlx::query(
+        "SELECT a.state AS attempt_state, r.state AS request_state \
+         FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
+         WHERE a.id = ?",
+    )
+    .bind(attempt_id)
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    (row.get("attempt_state"), row.get("request_state"))
+}
+
+#[tokio::test]
+async fn resolving_the_last_pending_decision_resumes_attempt_and_request() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "resume").await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-a", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-b", two_options(), None).await;
+    assert_eq!(
+        attempt_and_request_state(&repo, &attempt_id).await,
+        ("waiting_decision".into(), "waiting_decision".into())
+    );
+    let app = app(&repo, &clock);
+
+    let (status, _) = common::send_post_strict(
+        &app,
+        &resolve_uri(&attempt_id, "dec-a"),
+        json!({"answer": {"option_id": "allow_once", "text": null}}),
+        OPERATOR,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        attempt_and_request_state(&repo, &attempt_id).await,
+        ("waiting_decision".into(), "waiting_decision".into()),
+        "one answer of two leaves the attempt waiting"
+    );
+
+    let (status, _) = common::send_post_strict(
+        &app,
+        &resolve_uri(&attempt_id, "dec-b"),
+        json!({"answer": {"option_id": "deny", "text": null}}),
+        OPERATOR,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        attempt_and_request_state(&repo, &attempt_id).await,
+        ("running".into(), "running".into())
+    );
+}
+
+#[tokio::test]
+async fn expiry_resumes_the_attempt_like_a_resolution_does() {
+    let (repo, clock, item_id) = setup().await;
+    let overdue = clock.now() - Duration::seconds(5);
+
+    // Lazy expiry: the fail-closed answer to an overdue decision settles it.
+    let lazy = claim_running_attempt(&repo, &clock, &item_id, "expire-lazy").await;
+    seed_decision(
+        &repo,
+        &clock,
+        &lazy,
+        1,
+        "dec-late",
+        two_options(),
+        Some(overdue),
+    )
+    .await;
+    assert_eq!(
+        attempt_and_request_state(&repo, &lazy).await,
+        ("waiting_decision".into(), "waiting_decision".into())
+    );
+    let (status, body) = common::send_post_strict(
+        &app(&repo, &clock),
+        &resolve_uri(&lazy, "dec-late"),
+        json!({"answer": {"option_id": "allow_once", "text": null}}),
+        OPERATOR,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["error"]["code"], "decision_expired");
+    assert_eq!(
+        attempt_and_request_state(&repo, &lazy).await,
+        ("running".into(), "running".into())
+    );
+
+    // The periodic sweep settles the rest the same way, one attempt at a
+    // time: a still-pending decision keeps its attempt waiting.
+    sqlx::query("UPDATE agent_runners SET total_capacity = 3, available_capacity = 2 WHERE id = ?")
+        .bind(RUNNER_ID)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    let swept = claim_running_attempt(&repo, &clock, &item_id, "expire-sweep").await;
+    seed_decision(
+        &repo,
+        &clock,
+        &swept,
+        1,
+        "dec-overdue",
+        two_options(),
+        Some(overdue),
+    )
+    .await;
+    let kept = claim_running_attempt(&repo, &clock, &item_id, "expire-kept").await;
+    seed_decision(
+        &repo,
+        &clock,
+        &kept,
+        1,
+        "dec-overdue",
+        two_options(),
+        Some(overdue),
+    )
+    .await;
+    seed_decision(&repo, &clock, &kept, 1, "dec-open", two_options(), None).await;
+    let affected = decisions::expire_overdue_decisions(repo.pool(), clock.now())
+        .await
+        .expect("sweep");
+    assert_eq!(affected, 2);
+    assert_eq!(
+        attempt_and_request_state(&repo, &swept).await,
+        ("running".into(), "running".into())
+    );
+    assert_eq!(
+        attempt_and_request_state(&repo, &kept).await,
+        ("waiting_decision".into(), "waiting_decision".into())
+    );
+}
+
 fn resolved_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
     outcomes
         .iter()

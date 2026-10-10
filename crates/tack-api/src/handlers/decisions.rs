@@ -30,8 +30,12 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::{Row, SqlitePool};
+use std::collections::BTreeSet;
 use std::sync::Arc;
-use tack_db::{Repository, repo::execution::ExecutionClock};
+use tack_db::{
+    Repository,
+    repo::execution::{ExecutionClock, resume_attempt_after_decisions},
+};
 use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 use crate::handlers::executions::canonical_json;
@@ -243,6 +247,9 @@ pub enum ResolveOutcome {
 /// un-transacted statements, which is what would let a concurrent resolve
 /// (or a concurrent expiry sweep, see [`expire_overdue_decisions`]) land a
 /// second, conflicting write between this function's own read and write.
+/// Settling the attempt's last pending decision, by answer or by expiry,
+/// resumes the attempt and its request from `waiting_decision` to `running`
+/// in that same transaction (`resume_attempt_after_decisions`).
 pub async fn resolve_decision_row(
     pool: &SqlitePool,
     attempt_id: &str,
@@ -324,6 +331,7 @@ pub async fn resolve_decision_row(
                 .bind(&row_id)
                 .execute(&mut *tx)
                 .await?;
+                resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
                 tx.commit().await?;
                 return Ok(ResolveOutcome::Expired {
                     resolved_at: now_s,
@@ -358,6 +366,7 @@ pub async fn resolve_decision_row(
             .bind(&row_id)
             .execute(&mut *tx)
             .await?;
+            resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
             tx.commit().await?;
             Ok(ResolveOutcome::Resolved {
                 resolved_at: now_s,
@@ -376,9 +385,10 @@ pub async fn resolve_decision_row(
 /// Fail-closed bulk expiry sweep: transitions every still-`pending` decision
 /// whose `expires_at` has passed into `state='expired'` with a `system`
 /// `resolved_by` — the same terminal shape [`resolve_decision_row`] writes
-/// lazily for a single row. Not called by this module's own handler,
+/// lazily for a single row — and, like it, resumes each attempt the sweep
+/// left with no pending decision. Not called by this module's own handler,
 /// which only ever touches one row at a time — wired instead as a periodic
-/// caller in `execution_runtime.rs`.
+/// caller in `execution_runtime.rs`. Returns the number of decisions expired.
 pub async fn expire_overdue_decisions(
     pool: &SqlitePool,
     now: DateTime<Utc>,
@@ -387,18 +397,26 @@ pub async fn expire_overdue_decisions(
     let system_resolved_by = json!({"kind": "system", "subject_id": "expiry"});
     let resolved_by_json = serde_json::to_string(&system_resolved_by).unwrap();
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let result = sqlx::query(
+    let expired = sqlx::query(
         "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
-         WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ?",
+         WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ? \
+         RETURNING attempt_id",
     )
     .bind(&now_s)
     .bind(&resolved_by_json)
     .bind(&now_s)
     .bind(&now_s)
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
+    let attempts: BTreeSet<String> = expired
+        .iter()
+        .map(|row| row.get::<String, _>("attempt_id"))
+        .collect();
+    for attempt_id in &attempts {
+        resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
+    }
     tx.commit().await?;
-    Ok(result.rows_affected())
+    Ok(expired.len() as u64)
 }
 
 // ---------------------------------------------------------------------
@@ -647,6 +665,31 @@ mod tests {
         assert_eq!(
             fixture["decision_answer_bytes_max"].as_u64().unwrap(),
             DECISION_ANSWER_BYTES_MAX
+        );
+    }
+
+    /// The attempt moves this module drives through
+    /// `resume_attempt_after_decisions` (and its counterpart in
+    /// `create_execution_decision`) are the lease owner's own edges of the
+    /// frozen lifecycle, not an invention of the decision code.
+    #[test]
+    fn decision_state_moves_are_lease_owner_lifecycle_edges() {
+        use tack_orch::execution::{ExecutionState, TransitionActor, validate_transition};
+        assert!(
+            validate_transition(
+                ExecutionState::Running,
+                ExecutionState::WaitingDecision,
+                TransitionActor::LeaseOwner,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_transition(
+                ExecutionState::WaitingDecision,
+                ExecutionState::Running,
+                TransitionActor::LeaseOwner,
+            )
+            .is_ok()
         );
     }
 
