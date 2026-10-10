@@ -3,7 +3,7 @@
 //! their example prefixes.  All runner-owned writes are fenced in SQL.
 
 use chrono::{DateTime, Duration, Utc};
-use sqlx::{AssertSqlSafe, Row};
+use sqlx::{AssertSqlSafe, Row, SqliteConnection};
 use tracing::instrument;
 
 use super::Repository;
@@ -688,6 +688,82 @@ fn stamp(clock: &dyn ExecutionClock) -> String {
 
 fn terminal(state: &str) -> bool {
     matches!(state, "succeeded" | "failed" | "cancelled")
+}
+
+/// Sets the request that owns `attempt_id` to `state`. A request's state
+/// mirrors its live attempt's, so every attempt transition that is not a
+/// claim or a terminal/recovery move calls this in the same transaction.
+async fn mirror_request_state(
+    conn: &mut SqliteConnection,
+    attempt_id: &str,
+    state: &str,
+    now: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE execution_requests SET state=?,updated_at=? \
+         WHERE id=(SELECT request_id FROM execution_attempts WHERE id=?)",
+    )
+    .bind(state)
+    .bind(now)
+    .bind(attempt_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Parks `attempt_id` in `waiting_decision` while it is `running` with a
+/// pending decision, and its request with it. Keyed on a pending row rather
+/// than on the insert that preceded it, so a replayed create of an already
+/// settled decision leaves a running attempt alone; an attempt already
+/// waiting, or no longer live, is untouched.
+async fn park_attempt_on_pending_decision(
+    conn: &mut SqliteConnection,
+    attempt_id: &str,
+    now: &str,
+) -> Result<(), sqlx::Error> {
+    let parked = sqlx::query(
+        "UPDATE execution_attempts SET state='waiting_decision',updated_at=? \
+         WHERE id=? AND state='running' \
+         AND EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')",
+    )
+    .bind(now)
+    .bind(attempt_id)
+    .bind(attempt_id)
+    .execute(&mut *conn)
+    .await?;
+    if parked.rows_affected() == 1 {
+        mirror_request_state(conn, attempt_id, "waiting_decision", now).await?;
+    }
+    Ok(())
+}
+
+/// Releases `attempt_id` from `waiting_decision` back to `running` once no
+/// pending decision remains on it, moving its request with it. Runs on the
+/// caller's connection so a decision's own resolution or expiry commits
+/// together with the resume. Returns whether the attempt resumed; one that
+/// still has a pending decision, or is not `waiting_decision` at all
+/// (terminal, lost, needs an operator), is left as it is.
+pub async fn resume_attempt_after_decisions(
+    conn: &mut SqliteConnection,
+    attempt_id: &str,
+    now: DateTime<Utc>,
+) -> Result<bool, sqlx::Error> {
+    let now = now.to_rfc3339();
+    let resumed = sqlx::query(
+        "UPDATE execution_attempts SET state='running',updated_at=? \
+         WHERE id=? AND state='waiting_decision' \
+         AND NOT EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')",
+    )
+    .bind(&now)
+    .bind(attempt_id)
+    .bind(attempt_id)
+    .execute(&mut *conn)
+    .await?;
+    if resumed.rows_affected() != 1 {
+        return Ok(false);
+    }
+    mirror_request_state(conn, attempt_id, "running", &now).await?;
+    Ok(true)
 }
 
 fn event_batch_fingerprint(
@@ -1622,7 +1698,9 @@ impl Repository {
     }
     /// Persist the two runner start acknowledgements with natural idempotency.
     /// Workspace facts are immutable once preparation is accepted; observing
-    /// a process is the only transition that may add `process_id`.
+    /// a process is the only transition that may add `process_id`. The
+    /// request follows its attempt into `preparing` and `running` in the
+    /// same transaction.
     pub async fn transition_attempt_with_facts(
         &self,
         input: AttemptTransitionInput<'_>,
@@ -1722,6 +1800,7 @@ impl Repository {
                     tx.rollback().await?;
                     return Ok(AttemptTransitionResult::Stale);
                 }
+                mirror_request_state(&mut tx, input.attempt_id, "preparing", &now).await?;
                 tx.commit().await?;
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
@@ -1752,6 +1831,7 @@ impl Repository {
                     tx.rollback().await?;
                     return Ok(AttemptTransitionResult::Stale);
                 }
+                mirror_request_state(&mut tx, input.attempt_id, "running", &now).await?;
                 tx.commit().await?;
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
@@ -3198,6 +3278,11 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
+    /// Records a `pending` decision against a live `running` or
+    /// `waiting_decision` attempt and parks the attempt (and its request) in
+    /// `waiting_decision` in the same transaction. `false` means the attempt
+    /// is not eligible (wrong fence, expired lease, or not in either state)
+    /// and nothing was written.
     #[instrument(skip(self, decision, clock))]
     pub async fn create_execution_decision(
         &self,
@@ -3224,6 +3309,7 @@ impl Repository {
         }
         sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
         .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(&now).bind(&now).execute(&mut *tx).await?;
+        park_attempt_on_pending_decision(&mut tx, attempt_id, &now).await?;
         tx.commit().await?;
         Ok(true)
     }

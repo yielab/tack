@@ -6,8 +6,9 @@ use crate::common::execution_fixture::{Fixture, recovery_input, request};
 use chrono::Duration;
 use sqlx::Row;
 use tack_db::repo::execution::{
-    EventApplyResult, EventBatch, HeartbeatBatchResult, HeartbeatLease, NewEvent,
-    RecoveryDisposition, RecoveryObservation, RecoveryObservationResult,
+    AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, EventApplyResult,
+    EventBatch, HeartbeatBatchResult, HeartbeatLease, NewEvent, RecoveryDisposition,
+    RecoveryObservation, RecoveryObservationResult,
 };
 
 #[tokio::test]
@@ -432,6 +433,87 @@ async fn expired_unrecovered_attempt_blocks_capacity_and_claims() {
         fx.claim("attempt-heartbeat-blocked", Duration::seconds(60))
             .await
             .is_none()
+    );
+}
+
+#[tokio::test]
+async fn in_flight_request_is_never_claimed_again_in_any_live_state() {
+    let fx = Fixture::new().await;
+    sqlx::query("UPDATE agent_runners SET total_capacity = 2, available_capacity = 2")
+        .execute(fx.repo.pool())
+        .await
+        .unwrap();
+    fx.enqueue("request-flight", "key-flight", "same").await;
+    let lease = fx
+        .claim("attempt-flight-leased", Duration::seconds(60))
+        .await
+        .unwrap();
+
+    let preparing = AttemptTransitionInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-flight-leased",
+        fencing_token: lease.fencing_token,
+        phase: AttemptTransitionPhase::Preparing,
+        workspace_id: "workspace-1",
+        base_revision: "abc123",
+        process_id: None,
+    };
+    let running = AttemptTransitionInput {
+        phase: AttemptTransitionPhase::Running,
+        process_id: Some("process-1"),
+        ..preparing.clone()
+    };
+    for (expected_request_state, next_claim) in [
+        ("leased", "attempt-flight-after-lease"),
+        ("preparing", "attempt-flight-after-accept"),
+        ("running", "attempt-flight-after-start"),
+        ("waiting_decision", "attempt-flight-after-decision"),
+    ] {
+        assert_eq!(
+            fx.request_state("request-flight").await,
+            expected_request_state
+        );
+        assert!(
+            fx.repo
+                .list_eligible_queued_requests("runner-a")
+                .await
+                .unwrap()
+                .is_empty(),
+            "a {expected_request_state} request is not scheduling input"
+        );
+        assert!(
+            fx.claim(next_claim, Duration::seconds(60)).await.is_none(),
+            "a {expected_request_state} request must not be claimed again"
+        );
+        match expected_request_state {
+            "leased" => assert!(matches!(
+                fx.transition(preparing.clone()).await,
+                AttemptTransitionResult::Applied(_)
+            )),
+            "preparing" => assert!(matches!(
+                fx.transition(running.clone()).await,
+                AttemptTransitionResult::Applied(_)
+            )),
+            "running" => assert!(
+                fx.create_decision(
+                    "attempt-flight-leased",
+                    lease.fencing_token,
+                    "decision-flight"
+                )
+                .await
+            ),
+            _ => {}
+        }
+    }
+    assert_eq!(
+        fx.count_by("execution_attempts", "request_id", "request-flight")
+            .await,
+        1
+    );
+    assert_eq!(
+        fx.capacity().await,
+        1,
+        "a refused claim gives its capacity reservation back"
     );
 }
 

@@ -8,7 +8,7 @@ use crate::common::execution_fixture::{
 
 use chrono::Duration;
 use tack_db::repo::execution::{
-    CancellationObservation, CancellationObservationInput, RecoveryObservation,
+    CancellationObservation, CancellationObservationInput, CompletionResult, RecoveryObservation,
 };
 
 #[tokio::test]
@@ -488,4 +488,105 @@ async fn artifact_and_decision_reject_concurrently_terminal_attempt() {
         "no decision row may exist"
     );
     assert_eq!(fx.attempt_state("attempt-race-terminal").await, "succeeded");
+}
+
+#[tokio::test]
+async fn pending_decision_parks_attempt_and_request_until_the_last_one_settles() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_running_attempt("request-park", "attempt-park")
+        .await;
+    assert_eq!(fx.request_state("request-park").await, "running");
+
+    assert!(
+        fx.create_decision("attempt-park", fence, "decision-1")
+            .await
+    );
+    assert_eq!(fx.attempt_state("attempt-park").await, "waiting_decision");
+    assert_eq!(fx.request_state("request-park").await, "waiting_decision");
+
+    // A second decision is accepted on an attempt that already waits, and
+    // leaves it waiting.
+    assert!(
+        fx.create_decision("attempt-park", fence, "decision-2")
+            .await
+    );
+    assert_eq!(fx.attempt_state("attempt-park").await, "waiting_decision");
+    assert_eq!(fx.request_state("request-park").await, "waiting_decision");
+
+    // Settling one of two pending decisions resumes nothing.
+    assert!(
+        !fx.settle_decision("attempt-park", "decision-1", "resolved")
+            .await
+    );
+    assert_eq!(fx.attempt_state("attempt-park").await, "waiting_decision");
+    assert_eq!(fx.request_state("request-park").await, "waiting_decision");
+
+    // Expiry settles a decision exactly like an answer does.
+    assert!(
+        fx.settle_decision("attempt-park", "decision-2", "expired")
+            .await
+    );
+    assert_eq!(fx.attempt_state("attempt-park").await, "running");
+    assert_eq!(fx.request_state("request-park").await, "running");
+
+    // A replayed create of a settled decision writes nothing and does not
+    // park the resumed attempt again.
+    assert!(
+        fx.create_decision("attempt-park", fence, "decision-1")
+            .await
+    );
+    assert_eq!(fx.count("execution_decisions", "attempt-park").await, 2);
+    assert_eq!(fx.attempt_state("attempt-park").await, "running");
+    assert_eq!(fx.request_state("request-park").await, "running");
+}
+
+#[tokio::test]
+async fn completion_from_waiting_decision_is_terminal_and_never_resumed() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_running_attempt("request-complete-waiting", "attempt-complete-waiting")
+        .await;
+    assert!(
+        fx.create_decision("attempt-complete-waiting", fence, "decision-open")
+            .await
+    );
+    assert_eq!(
+        fx.attempt_state("attempt-complete-waiting").await,
+        "waiting_decision"
+    );
+
+    assert!(matches!(
+        fx.complete(completion_input(
+            "attempt-complete-waiting",
+            fence,
+            "completion-waiting",
+            None
+        ))
+        .await,
+        CompletionResult::Committed(_)
+    ));
+    assert_eq!(
+        fx.attempt_state("attempt-complete-waiting").await,
+        "succeeded"
+    );
+    assert_eq!(
+        fx.request_state("request-complete-waiting").await,
+        "succeeded"
+    );
+
+    // Settling the decision the runner left open cannot reopen a terminal
+    // attempt.
+    assert!(
+        !fx.settle_decision("attempt-complete-waiting", "decision-open", "expired")
+            .await
+    );
+    assert_eq!(
+        fx.attempt_state("attempt-complete-waiting").await,
+        "succeeded"
+    );
+    assert_eq!(
+        fx.request_state("request-complete-waiting").await,
+        "succeeded"
+    );
 }

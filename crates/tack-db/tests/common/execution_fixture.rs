@@ -9,13 +9,13 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::repo::execution::{
-    AttemptTransitionInput, AttemptTransitionResult, CancellationObservation,
-    CancellationObservationInput, ClaimedExecution, Completion, CompletionResult,
-    CredentialRotationResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
-    ExecutionClock, HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile, NewArtifact,
-    NewDecision, NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult,
+    AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
+    CancellationObservation, CancellationObservationInput, ClaimedExecution, Completion,
+    CompletionResult, CredentialRotationResult, EnqueueResult, EnrollmentToken, EventApplyResult,
+    EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile,
+    NewArtifact, NewDecision, NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult,
     RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
-    RedeemEnrollmentResult, RequestSelection,
+    RedeemEnrollmentResult, RequestSelection, resume_attempt_after_decisions,
 };
 use tack_db::{Repository, init_pool, migrations};
 
@@ -210,6 +210,68 @@ impl Fixture {
             .await
             .unwrap()
             .fencing_token
+    }
+
+    /// Like [`Self::ready_completion_attempt`], then accepted and started
+    /// through the real transitions, so attempt and request both read
+    /// `running` — the state a decision needs.
+    pub async fn ready_running_attempt(&self, request_id: &str, attempt_id: &str) -> i64 {
+        let fence = self.ready_completion_attempt(request_id, attempt_id).await;
+        let preparing = AttemptTransitionInput {
+            runner_id: "runner-a",
+            attempt_id,
+            fencing_token: fence,
+            phase: AttemptTransitionPhase::Preparing,
+            workspace_id: "workspace-1",
+            base_revision: "abc123",
+            process_id: None,
+        };
+        assert!(matches!(
+            self.transition(preparing.clone()).await,
+            AttemptTransitionResult::Applied(_)
+        ));
+        assert!(matches!(
+            self.transition(AttemptTransitionInput {
+                phase: AttemptTransitionPhase::Running,
+                process_id: Some("process-1"),
+                ..preparing
+            })
+            .await,
+            AttemptTransitionResult::Applied(_)
+        ));
+        fence
+    }
+
+    /// Settles `decision_id` on `attempt_id` at the row level with `state`
+    /// (`resolved` or `expired`), standing in for the operator resolution
+    /// and expiry paths that live above this crate; returns whether
+    /// [`tack_db::repo::execution::resume_attempt_after_decisions`] then
+    /// resumed the attempt.
+    pub async fn settle_decision(&self, attempt_id: &str, decision_id: &str, state: &str) -> bool {
+        let now = self.clock.now();
+        let mut tx = self
+            .repo
+            .pool()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE execution_decisions SET state=?, resolved_at=?, updated_at=? \
+             WHERE attempt_id=? AND decision_id=? AND state='pending'",
+        )
+        .bind(state)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .bind(attempt_id)
+        .bind(decision_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let resumed = resume_attempt_after_decisions(&mut tx, attempt_id, now)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        resumed
     }
 
     /// A "runner-a" heartbeat for `leases`, sent now, with no missed count

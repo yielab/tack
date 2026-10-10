@@ -44,10 +44,10 @@ use tack_db::{
     },
 };
 use tack_orch::execution::{
-    ActualExecution, AttemptId, EmbeddedCapabilitySnapshot, ProtocolVersion,
+    ActualExecution, AttemptId, EmbeddedCapabilitySnapshot, ExecutionState, ProtocolVersion,
     RecoveryDisposition as TackRecoveryDisposition, RecoveryKey,
     RecoveryObservation as TackRecoveryObservation, RecoveryObservationRequest,
-    RecoveryObservationResponse, StableErrorCode, Usage,
+    RecoveryObservationResponse, StableErrorCode, TransitionActor, Usage, validate_transition,
 };
 use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
 use uuid::Uuid;
@@ -1366,7 +1366,21 @@ pub async fn create_decision(
     if lease_expires_at <= now.to_rfc3339() {
         return Err(stale_lease(&attempt_id));
     }
-    if !matches!(attempt_state.as_str(), "running" | "waiting_decision") {
+    // Eligibility is the frozen lifecycle's: a decision may open while the
+    // attempt already waits on one, or while its lease owner may park it
+    // there — which `create_execution_decision` then does in the same
+    // transaction as the insert.
+    let may_open_decision = serde_json::from_value::<ExecutionState>(json!(attempt_state))
+        .is_ok_and(|current| {
+            current == ExecutionState::WaitingDecision
+                || validate_transition(
+                    current,
+                    ExecutionState::WaitingDecision,
+                    TransitionActor::LeaseOwner,
+                )
+                .is_ok()
+        });
+    if !may_open_decision {
         return Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::Conflict,

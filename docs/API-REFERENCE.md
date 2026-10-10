@@ -162,6 +162,13 @@ per-endpoint listing precisely so they do not get duplicated by one.
 - Both search routes use SQLite FTS5 over titles, descriptions and tags; `q` needs
   at least 2 characters.
 
+**Executions**
+- `GET /api/executions/{id}` — the request's `state` mirrors its live attempt's:
+  `leased` on claim, then `preparing` and `running` as the runner reports them, and
+  `waiting_decision` for exactly as long as the attempt has a pending decision — the
+  runner opening one parks both, and the last answer or expiry returns both to
+  `running`. A request in any of these states is never claimed again.
+
 **Backup & restore**
 - A local or remote restore is **staged**, not applied immediately: the swap
   happens atomically on the next server start, and the previous DB/attachments are

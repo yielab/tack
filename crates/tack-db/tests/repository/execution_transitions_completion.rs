@@ -32,6 +32,7 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
         AttemptTransitionResult::Applied(response) => response.committed_at,
         result => panic!("expected preparation to apply, got {result:?}"),
     };
+    assert_eq!(fx.request_state("request-start").await, "preparing");
     fx.clock.advance(Duration::seconds(1));
     assert!(matches!(
         fx.transition(preparing.clone()).await,
@@ -59,6 +60,7 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
         AttemptTransitionResult::Applied(response) => response.committed_at,
         result => panic!("expected start to apply, got {result:?}"),
     };
+    assert_eq!(fx.request_state("request-start").await, "running");
     fx.clock.advance(Duration::seconds(1));
     assert!(matches!(
         fx.transition(AttemptTransitionInput {
