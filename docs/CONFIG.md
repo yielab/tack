@@ -187,29 +187,71 @@ enroll` call, no token to copy anywhere.
 
 ## Runner verifier (`[verify]`)
 
-A runner can run a program of your choosing over each attempt that succeeded, after the
-attempt's changes are captured and before its workspace is deleted. The program reads the
-captured evidence and writes a merge-readiness pack; the runner uploads that pack as one
-more artifact on the attempt. The runner runs it, on your machine: the board never runs it.
+A runner can run a verifier over each attempt that succeeded, after the attempt's changes
+are captured and before its workspace is deleted. The verifier reads the captured evidence
+and produces a merge-readiness pack (`docs/contracts/mrp-v1/`); the runner uploads that pack
+as one more artifact on the attempt. The runner runs it, on your machine: the board never
+runs it. Whatever the kind, the program starts with an environment of `PATH` only, in the
+attempt's workspace, under the runner's process limits and `timeout_seconds`.
 
 ```toml
 [verify]
 enabled = false          # off by default; there is no environment variable for it
-program = "assay"        # looked up on PATH
-args = ["verify"]        # placed before the flags the runner adds
+kind = "prill"           # "prill" (the default) or "command"
+program = "prill"        # looked up on PATH
+args = []                # prill: its own flags, such as ["--image", "<digest-pinned image>"]
 timeout_seconds = 1800
 ```
 
-The runner appends `--evidence <dir> --workspace <dir> --output <dir>/mrp.json` to `args`
-and starts the program with an environment of `PATH` only. A program that exits non-zero,
-times out, is not on `PATH`, or writes a pack that does not parse never changes the
+**`kind = "prill"`** (the default): the program is [prill](https://github.com/yielab/prill),
+which reads commits only and speaks its own documents. For each attempt the runner:
+
+1. commits what the agent left in the workspace through a temporary index — the agent's own
+   index and `HEAD` are untouched, no ref is written, and the runner's markers
+   (`.tack-runner/`, `.tack-attempt`, `.tack-checkout`) never enter the commit;
+2. writes prill's `attempt-evidence/v0` document from `evidence.json` and, when the item has
+   a brief, a `briefing/v1` document from `brief.json` (a metric criterion and a
+   `max_changed_files` constraint have no prill shape and are named in its `riskHints`
+   instead of being dropped);
+3. runs `prill verify --repo <workspace> --evidence … [--brief …] --out <dir> --json`
+   followed by `args`;
+4. translates the `mrp/v1` pack prill prints into `mrp-v1` (`auto-merge-eligible` → `merge`,
+   `human-review` → `review`, `reject` → `reject`; prill's risk level, reasons, flags and
+   signals; its suite, mutation and judge sections; its stage tokens as `usage`) and uploads
+   that. prill's exit 1 is a `reject` pack, not a failure; exit 2 is a failure carrying
+   prill's error code and message.
+
+`args` is where prill's sandbox goes: `["--image", "registry.example/verify@sha256:…"]`
+runs the checks in that image (prill never pulls one; an image pinned by anything but a
+digest or an id keeps the decision at `human-review`), `["--no-sandbox"]` runs them on this
+machine. With neither, prill needs a container backend on this machine and the image named
+by `sandbox.image` in the repository's `prill.yaml`, and refuses (`sandbox_unavailable`,
+`sandbox_image_unset`) otherwise. Anything else prill accepts (`--db`, `--sign`,
+`--config`) goes there too. prill's own `mrp.json` and
+`mrp.md`, and the documents it was given, stay in the attempt's scratch directory under
+`evidence/prill/` beside the translated pack; they are not uploaded.
+
+**`kind = "command"`**: a program of your own that writes an `mrp-v1` pack itself. The
+runner appends `--evidence <dir> --workspace <dir> --output <dir>/mrp.json` to `args` and
+reads the pack at `--output`; a non-zero exit, or a pack that does not parse, is a failure.
+
+```toml
+[verify]
+enabled = true
+kind = "command"
+program = "/opt/verifier/bin/verify"
+args = ["--strict"]      # placed before the flags the runner adds
+```
+
+A verifier that fails, times out, is not on `PATH`, or produces no pack never changes the
 attempt's outcome: the attempt still completes `succeeded` and records an
-`attempt.verify_failed` event carrying the exit code and the start of the program's error
-output. With `enabled = false`, nothing is started. A run request can decline the verifier for
-one run (the run dialog's "Verify the result" box); it can never turn on a verifier the runner has
-off. A request that asks for one from a runner without it changes nothing, and the attempt records
-an `attempt.verify_skipped` event saying why. A program that is not on `PATH` is
-logged as a warning when the runner starts.
+`attempt.verify_failed` event carrying the exit code and the reason. With `enabled = false`,
+nothing is started. A run request can decline the verifier for one run (the run dialog's
+"Verify the result" box); it can never turn on a verifier the runner has off. A request that
+asks for one from a runner without it changes nothing, and the attempt records an
+`attempt.verify_skipped` event saying why. A program that is not on `PATH` is logged as a
+warning when the runner starts, and `tack runner doctor` prints the kind, program and
+arguments the runner would use.
 
 ## Pushing the attempt's branch (`[git]`)
 

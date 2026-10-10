@@ -8,6 +8,7 @@ fn fake(knob: &str) -> VerifyConfig {
     let script = fake_harness_path().with_file_name("fake_verifier.sh");
     VerifyConfig {
         enabled: true,
+        kind: VerifyKind::Command,
         program: "env".to_owned(),
         args: vec![
             knob.to_owned(),
@@ -66,6 +67,7 @@ async fn every_way_to_produce_no_pack_is_a_failure() {
         ),
         (
             VerifyConfig {
+                kind: VerifyKind::Command,
                 program: "tack-no-such-verifier".to_owned(),
                 ..VerifyConfig::default()
             },

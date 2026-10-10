@@ -24,7 +24,7 @@ pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
 pub use config::{
     ConfigOverrides, EnrollmentCredential, ProviderConfig, ProviderOverride, RunnerConfig,
-    RunnerConfigSources, VerifyConfig,
+    RunnerConfigSources, VerifyConfig, VerifyKind,
 };
 pub use error::{ConfigError, RunnerError};
 pub use filesystem::{LocalFilesystem, RunnerFilesystem};

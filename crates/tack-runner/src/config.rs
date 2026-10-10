@@ -153,11 +153,37 @@ impl Default for GitConfig {
     }
 }
 
+/// How the runner talks to the program in its `[verify]` table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifyKind {
+    /// The program is prill: the runner snapshots the workspace, writes
+    /// prill's own input documents, runs `<program> verify …` and translates
+    /// the `mrp/v1` pack it prints into `mrp-v1`.
+    Prill,
+    /// The program reads the staged evidence directory itself and writes an
+    /// `mrp-v1` pack where `--output` says.
+    Command,
+}
+
+impl std::fmt::Display for VerifyKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Prill => write!(f, "prill"),
+            Self::Command => write!(f, "command"),
+        }
+    }
+}
+
 /// The `[verify]` table. Off by default; no environment variable sets it.
+/// `args` go after the flags the runner adds for `kind = "prill"` (so an
+/// `--image` or `--no-sandbox` reaches prill) and before them for
+/// `kind = "command"`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VerifyConfig {
     pub enabled: bool,
+    pub kind: VerifyKind,
     pub program: String,
     pub args: Vec<String>,
     pub timeout_seconds: u64,
@@ -167,8 +193,9 @@ impl Default for VerifyConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            program: "assay".to_owned(),
-            args: vec!["verify".to_owned()],
+            kind: VerifyKind::Prill,
+            program: "prill".to_owned(),
+            args: Vec::new(),
             timeout_seconds: 1800,
         }
     }

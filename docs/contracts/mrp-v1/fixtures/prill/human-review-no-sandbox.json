@@ -1,0 +1,171 @@
+{
+  "contract": "mrp/v1",
+  "createdAt": "2026-01-01T00:00:00Z",
+  "prill": {
+    "name": "prill",
+    "version": "0.1.0"
+  },
+  "attempt": {
+    "attemptId": "attempt-1",
+    "harness": {
+      "name": "harness-x",
+      "version": null
+    },
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "brief": null,
+  "config": {
+    "version": 1,
+    "layers": [
+      {
+        "source": "base",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      {
+        "source": "cli",
+        "sha256": null
+      }
+    ],
+    "effectiveSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "changedInHead": false
+  },
+  "sandbox": {
+    "backend": "none",
+    "image": null,
+    "imageId": null,
+    "imagePinned": false,
+    "network": "host",
+    "limits": {
+      "cpus": null,
+      "memoryMb": null,
+      "pids": null,
+      "tmpfsMb": null,
+      "commandTimeoutS": 600,
+      "totalTimeoutS": 3600,
+      "outputTailBytes": 65536
+    }
+  },
+  "diff": {
+    "filesChanged": 1,
+    "insertions": 3,
+    "deletions": 1,
+    "files": [
+      {
+        "path": "src/app.py",
+        "status": "modified",
+        "insertions": 3,
+        "deletions": 1
+      }
+    ]
+  },
+  "stages": [
+    {
+      "name": "checkout",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "criteria",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "anti_tautology",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "suite",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "mutation",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "static_analysis",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "complexity",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "judge",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    },
+    {
+      "name": "risk",
+      "status": "passed",
+      "reason": null,
+      "detail": null,
+      "durationS": 0.5,
+      "tokens": null
+    }
+  ],
+  "criteria": [],
+  "antiTautology": {
+    "tests": [],
+    "skippedTests": [
+      {
+        "path": "tests/test_app.py",
+        "suite": "default",
+        "reason": "no_sandbox"
+      }
+    ],
+    "deletedTests": []
+  },
+  "claims": null,
+  "flags": [
+    {
+      "code": "no_sandbox",
+      "detail": "Commands ran on the host."
+    }
+  ],
+  "recommendation": {
+    "decision": "human-review",
+    "reasons": [
+      {
+        "severity": "review",
+        "code": "no_sandbox",
+        "detail": "No sandbox was used."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "git",
+      "version": "2.43.0"
+    }
+  ]
+}

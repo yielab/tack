@@ -6,8 +6,8 @@
 #   - `docket` from its source tree (DOCKET_SRC, default ~/Sites/rack-cli) and
 #     `prill` from its source tree (PRILL_SRC, default ~/Sites/prill), each behind a
 #     one-line launcher placed ahead of any installed release on PATH;
-#   - a runner configuration with prill as the verifier (`[verify]`, through
-#     `scripts/prill-tack-verify.py`) and docket pointed at a local OpenAI-compatible
+#   - a runner configuration with prill as the verifier (`[verify]` with
+#     `kind = "prill"`, the runner's own seam) and docket pointed at a local OpenAI-compatible
 #     model endpoint through the gateway provider's loopback override — the same
 #     test-only knob `scripts/smoke.sh` uses, because docket always needs a
 #     Tack-configured endpoint and nothing else on this machine stands in for one.
@@ -127,7 +127,7 @@ secret = "vercel-ai-gateway/default"
 
 [verify]
 enabled = true
-program = "$ROOT/scripts/prill-tack-verify.py"
+kind = "prill"
 args = ["--image", "$PRILL_IMAGE"]
 timeout_seconds = 900
 
