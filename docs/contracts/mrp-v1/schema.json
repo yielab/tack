@@ -248,8 +248,6 @@
     },
     "signature": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["kind"],
       "oneOf": [
         {
           "properties": {

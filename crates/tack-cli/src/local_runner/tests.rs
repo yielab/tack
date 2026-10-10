@@ -605,3 +605,52 @@ fn migrate_legacy_state_dir_is_noop_when_neither_dir_exists() {
 // share one test binary process per test function, not per server —
 // still test at most one real embedded server each. Two genuinely
 // separate `tack` processes have no such conflict.
+
+#[tokio::test]
+async fn the_embedded_runner_loads_the_file_tack_local_runner_config_names() {
+    // SAFETY: same posture as `with_runner_enabled_reads_the_environment_gate`:
+    // nothing else in this crate's tests reads `TACK_LOCAL_RUNNER_CONFIG`, and
+    // the variable is restored before the test returns.
+    let previous = std::env::var_os(RUNNER_CONFIG_ENV);
+    let root = unique_temp_dir("runner-config");
+    let config_path = root.path().join("runner.toml");
+    std::fs::write(
+        &config_path,
+        "[verify]\nenabled = true\nprogram = \"prill\"\n\n[git]\npush_branches = true\n",
+    )
+    .expect("config file");
+    let server_config = tack_api::config::AppConfig {
+        storage_dir: root.path().join("storage").display().to_string(),
+        ..tack_api::config::AppConfig::default()
+    };
+
+    unsafe {
+        std::env::remove_var(RUNNER_CONFIG_ENV);
+    }
+    assert!(runner_config_path().is_none());
+    let without = EmbeddedRunnerControl::new(server_config.clone()).expect("defaults");
+    assert!(!without.state.lock().await.runner_config.verify.enabled);
+
+    unsafe {
+        std::env::set_var(RUNNER_CONFIG_ENV, &config_path);
+    }
+    assert_eq!(runner_config_path().as_deref(), Some(config_path.as_path()));
+    let with = EmbeddedRunnerControl::new(server_config).expect("named file");
+    let state = with.state.lock().await;
+    assert!(state.runner_config.verify.enabled);
+    assert_eq!(state.runner_config.verify.program, "prill");
+    assert!(state.runner_config.git.push_branches);
+    assert_eq!(
+        state.runner_config.state_dir,
+        root.path().join("storage").join("runner"),
+        "the file names no state_dir, so the storage-scoped default still applies"
+    );
+    drop(state);
+
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var(RUNNER_CONFIG_ENV, value),
+            None => std::env::remove_var(RUNNER_CONFIG_ENV),
+        }
+    }
+}

@@ -117,6 +117,21 @@ fn migrate_legacy_state_dir(new_dir: &Path) {
     }
 }
 
+/// The variable `tack serve --runner-config` sets, naming the TOML file the
+/// embedded runner loads — the same file `tack runner start --config` reads.
+/// Without it the embedded runner has defaults only, which leaves its
+/// `[verify]`, `[git]` and `[provider.<name>]` tables unset: those have no
+/// environment equivalent.
+pub const RUNNER_CONFIG_ENV: &str = "TACK_LOCAL_RUNNER_CONFIG";
+
+/// The embedded runner's configuration file, when one is named; an empty
+/// value counts as none.
+pub fn runner_config_path() -> Option<PathBuf> {
+    std::env::var_os(RUNNER_CONFIG_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Whether the embedded runner should start at boot, combining
 /// `--with-runner` with its environment equivalent. Off unless one explicitly
 /// says on. Only feeds `AppConfig::local_runner_enable`'s startup value — a
@@ -337,7 +352,8 @@ impl EmbeddedRunnerControl {
                 ..ConfigOverrides::default()
             }
         };
-        let runner_config = load_runner_config(command_line, None)?;
+        let config_path = runner_config_path();
+        let runner_config = load_runner_config(command_line, config_path.as_deref())?;
         let secret_meta = load_secret_meta(&runner_config.state_dir);
         Ok(Self {
             server_config,

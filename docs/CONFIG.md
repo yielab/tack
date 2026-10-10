@@ -102,6 +102,12 @@ enroll` call, no token to copy anywhere.
   in-process, so no token is ever printed, copied, or configured by hand. A later start
   against the same state directory reuses the credential already on disk instead of
   provisioning a second runner.
+- **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`)
+  names the TOML file the embedded runner loads — the same file `tack runner start --config`
+  reads, with the same precedence (file, then environment, then the state directory this
+  server scopes for it). It is the only way to give the embedded runner a `[verify]`, `[git]`
+  or `[provider.<name>]` table, since those have no environment variable. Without it the
+  embedded runner runs on defaults: no verifier, no branch push, no configured endpoint.
 - **State directory.** Defaults to `<TACK_STORAGE_DIR>/runner` — scoped to the same
   configuration as the database, so a server started against a different
   `TACK_DATABASE_URL` (paired, as every other per-install artifact in this crate already

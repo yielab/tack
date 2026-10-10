@@ -1,6 +1,7 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 use serde_json::json;
+use std::path::PathBuf;
 
 use tack_cli::client::TackClient;
 use tack_cli::config::{self, Config};
@@ -46,6 +47,12 @@ enum Commands {
         /// if the server is not bound to loopback.
         #[arg(long)]
         with_runner: bool,
+        /// A TOML configuration file for the embedded runner — the same file
+        /// `tack runner start --config` reads, which is the only place its
+        /// `[verify]`, `[git]` and `[provider.<name>]` tables can be set.
+        /// Also settable via TACK_LOCAL_RUNNER_CONFIG.
+        #[arg(long, value_name = "PATH")]
+        runner_config: Option<PathBuf>,
     },
 
     /// Create a new project
@@ -837,7 +844,7 @@ fn main() -> anyhow::Result<()> {
     // Bare `tack` (no subcommand) launches the server + web UI — the primary,
     // UI-first experience. `tack serve` does the same explicitly.
     let Some(command) = cli.command else {
-        return run_server(local_runner::with_runner_enabled(false));
+        return run_server(local_runner::with_runner_enabled(false), None);
     };
 
     // Serve, Runner Start, Runner Doctor, Service, Config and Completions
@@ -847,8 +854,14 @@ fn main() -> anyhow::Result<()> {
     // own harness installations; Service only writes/reads a unit file and
     // shells out to the OS's own service manager.
     let command = match command {
-        Commands::Serve { with_runner } => {
-            return run_server(local_runner::with_runner_enabled(with_runner));
+        Commands::Serve {
+            with_runner,
+            runner_config,
+        } => {
+            return run_server(
+                local_runner::with_runner_enabled(with_runner),
+                runner_config,
+            );
         }
         Commands::Runner {
             action:
@@ -1173,13 +1186,18 @@ fn main() -> anyhow::Result<()> {
 ///
 /// The rest of the CLI is synchronous (it uses a blocking HTTP client), so we
 /// build a Tokio runtime on demand here rather than making `main` async.
-fn run_server(with_runner: bool) -> anyhow::Result<()> {
+fn run_server(with_runner: bool, runner_config: Option<PathBuf>) -> anyhow::Result<()> {
+    // SAFETY: single-threaded at this point in `main` — no other code has
+    // spawned a thread yet, so nothing else can race these reads/writes of
+    // the process environment.
     if with_runner {
-        // SAFETY: single-threaded at this point in `main` — no other code
-        // has spawned a thread yet, so nothing else can race this read/write
-        // of the process environment.
         unsafe {
             std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
+        }
+    }
+    if let Some(path) = runner_config {
+        unsafe {
+            std::env::set_var(local_runner::RUNNER_CONFIG_ENV, path);
         }
     }
     let runtime = tokio::runtime::Runtime::new()?;
