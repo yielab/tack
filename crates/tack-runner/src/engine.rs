@@ -1334,6 +1334,10 @@ where
         // `evidence.json` was staged before the push; stage it again with the
         // branch, keeping the manifest entry's size and digest true to the file.
         evidence.branch = serde_json::to_value(&published).ok();
+        // The work now ends at the branch's commit, with nothing left
+        // uncommitted on top of it: the patch is exactly base..head.
+        evidence.head_commit = Some(published.head_commit.clone());
+        evidence.worktree_dirty = Some(false);
         let bytes = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
         let _ = std::fs::write(&evidence_path, &bytes);
         if let Some(entry) = staged

@@ -13,8 +13,8 @@
     "reason": {"type": ["string", "null"]},
     "base_commit": {"type": "string", "description": "The commit the workspace's base_revision resolved to when git evidence exists; the requested name otherwise."},
     "base_revision_requested": {"type": "string", "description": "The base_revision the request named, as asked. Optional."},
-    "head_commit": {"type": ["string", "null"], "description": "git rev-parse HEAD; the harness may have committed."},
-    "worktree_dirty": {"type": ["boolean", "null"], "description": "The staged diff against HEAD is non-empty."},
+    "head_commit": {"type": ["string", "null"], "description": "The commit the work ends at: branch.head_commit when the runner published a branch, otherwise git rev-parse HEAD (the harness may have committed)."},
+    "worktree_dirty": {"type": ["boolean", "null"], "description": "The staged diff against head_commit is non-empty; false once the runner committed the work to a published branch."},
     "files": {
       "type": "array",
       "items": {

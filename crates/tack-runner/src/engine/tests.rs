@@ -3374,6 +3374,10 @@ async fn a_pushed_branch_lands_on_origin_and_is_reported_and_recorded() {
     let bytes = uploaded(&state, "evidence.json");
     let evidence: crate::evidence::AttemptEvidence =
         serde_json::from_slice(&bytes).expect("evidence");
+    assert_eq!(
+        evidence.head_commit.as_deref(),
+        reported["head_commit"].as_str()
+    );
     assert_eq!(evidence.branch, Some(reported));
     let item = state
         .manifests
@@ -3477,6 +3481,16 @@ async fn a_local_branch_attempt_keeps_its_branch_and_reports_the_skipped_push() 
         serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
     assert!(evidence.captured);
     assert_eq!(evidence.files.len(), 2);
+    assert_eq!(
+        evidence.head_commit.as_deref(),
+        reported["head_commit"].as_str(),
+        "the top-level head is the branch's commit, not the base"
+    );
+    assert_ne!(
+        evidence.head_commit.as_deref(),
+        Some(evidence.base_commit.as_str())
+    );
+    assert_eq!(evidence.worktree_dirty, Some(false));
     assert_eq!(evidence.branch, Some(reported));
     let skipped: Vec<_> = state
         .events
