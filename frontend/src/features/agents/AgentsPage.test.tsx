@@ -156,6 +156,19 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('codex needs a model named for every run');
   });
 
+  it('the_test_run_stays_disabled_when_only_docket_is_installed_because_it_needs_a_model', async () => {
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', model_selection: 'required' }]),
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain('docket needs a model named for every run, and the test run names none');
+  });
+
   it('badges come from harness-verification: signed-in date, or "Not signed in" with the command', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,
@@ -169,6 +182,29 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('2026');
     expect(container.textContent).toContain('Not signed in — run `codex login` once in a terminal');
     expect(container.textContent).toContain('Your agents sign in on their own');
+    // The two harnesses this runner never reported are rows too, each with its install hint.
+    expect(container.textContent).toContain('Docket');
+    expect(container.textContent).toContain('OpenCode');
+    expect((container.textContent!.match(/Not installed/g) ?? []).length).toBe(2);
+    expect(container.textContent).toContain('brew install opencode');
+    expect(container.textContent).toContain('From the docket project, following its own install instructions.');
+  });
+
+  it('an installed harness with no vendor login reads as using a provider endpoint, never "Not signed in"', async () => {
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([
+        { ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', model_selection: 'required' },
+        { ...CLAUDE_INSTALLED, harness_kind: 'opencode', installed_version: '1.0.3', model_selection: 'required' },
+      ]),
+      '/api/local-runner/harness-verification': { harnesses: { docket: '2026-10-09T10:00:00Z' } },
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    expect(container.textContent).toContain('Installed v0.4.0 · Signed in ');
+    expect(container.textContent).toContain('Installed v1.0.3 · uses a provider endpoint (step 3)');
+    expect(container.textContent).not.toContain('Not signed in');
   });
 });
 
