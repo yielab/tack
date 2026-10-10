@@ -823,6 +823,18 @@ describe('RunWithAgentModal', () => {
     expect(document.body.textContent).not.toContain('Codex exposes no list');
   });
 
+  it('a reported harness outside HARNESS_KINDS (docket) is offered under its wire name, so a docket runner can be run from the dialog', async () => {
+    const docketOnly = runnerRow('runner-7', 'Docket only', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'docket', native_provider: 'docket' }],
+    }));
+    mount({}, { runners: [docketOnly], fleets: [] });
+    await flush();
+    const options = [...select('Agent').options].map((o) => [o.value, o.textContent]);
+    expect(options).toEqual([['docket', 'docket']]);
+    expect(select('Agent').value).toBe('docket');
+    expect(document.body.textContent).toContain('Docket exposes no list');
+  });
+
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();

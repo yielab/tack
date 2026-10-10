@@ -128,7 +128,7 @@ export async function createFreshProject(request: APIRequestContext, name: strin
 
 /**
  * Sets a project's default-model tier directly, via the same
- * `PATCH /api/projects/:id` route `features/settings/panels/AgentsPanel.tsx`'s
+ * `PATCH /api/projects/:id` route `features/settings/panels/AutomationPanel.tsx`'s
  * "Project default model" field writes. Only usable on a project from
  * {@link createFreshProject}, never the shared one `getOrCreateProject`
  * returns — see that function's own doc comment on why.

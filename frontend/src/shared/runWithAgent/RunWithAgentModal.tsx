@@ -103,8 +103,16 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const harnessOptions = createMemo(() => {
     const reported = liveRunners.loading ? [] : listReportedHarnessKinds(targetCapabilities());
-    const filtered = HARNESS_KINDS.filter((h) => reported.includes(h.value));
-    return filtered.length > 0 ? filtered : HARNESS_KINDS;
+    // Every harness the target reports is offered: the ones `HARNESS_KINDS`
+    // names, with their labels, then any other reported kind under its wire
+    // name (docket, opencode), so a runner that reports one of those is not
+    // hidden behind a list that predates their adapters.
+    const named = HARNESS_KINDS.filter((h) => reported.includes(h.value));
+    const unnamed = reported
+      .filter((kind) => !HARNESS_KINDS.some((h) => h.value === kind))
+      .map((kind) => ({ value: kind, label: kind }));
+    const offered = [...named, ...unnamed];
+    return offered.length > 0 ? offered : HARNESS_KINDS;
   });
   // The select can only show a listed harness; keep the form on one, so what is shown is what is sent.
   createEffect(() => {
