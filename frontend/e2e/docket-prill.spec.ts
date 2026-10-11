@@ -90,7 +90,7 @@ const ITEMS = {
     type: 'Task',
     title: 'Record completion with a shell command',
     description:
-      'Using the bash tool, run exactly this command and nothing else: echo done > DONE.txt ' +
+      "Using the bash tool, run exactly this command and nothing else: sh -c 'echo done > DONE.txt' " +
       'Then stop. Do not create the file any other way.',
     checklist: ['DONE.txt contains the word done'],
     criteria: [{ kind: 'file', id: 'done_marker', title: 'DONE.txt exists', path: 'DONE.txt' }],
@@ -691,16 +691,11 @@ test.describe.serial('docket runs, prill verifies', () => {
     await ensureRunner();
     const itemId = await ensureItem('ask');
     const requestId = await runFromBoard(page, 'ask', { ask: true, capture: true });
-    // `echo … > file` is a command docket always gates (a model-composed
-    // redirect), so a model that follows the instruction makes docket ask.
-    // A model that writes the file some other way never asks; that is the
-    // model's choice, recorded here rather than failed, and the run's end
-    // state is still checked.
-    // Watched through the decisions endpoint, not the request's state: when
-    // docket pauses, the decision row is pending while the request still
-    // reads `leased` and the attempt `running` — no component ever produces
-    // `waiting_decision`, so "Asking you" never shows (a finding, not a
-    // selector problem).
+    // `sh` is off docket's list of safe binaries, so a model that follows the
+    // instruction makes docket ask (a bare `echo … > file` inside the workspace
+    // runs unattended). A model that writes the file some other way never asks;
+    // that is the model's choice, recorded here rather than failed, and the
+    // run's end state is still checked.
     const start = Date.now();
     let state = '';
     let asked = false;
@@ -723,6 +718,9 @@ test.describe.serial('docket runs, prill verifies', () => {
       await shot(page, 'execution-ask-no-question');
       return;
     }
+    await expect
+      .poll(async () => ((await apiFetch(`/executions/${requestId}`)) as { state: string }).state, { timeout: 20_000 })
+      .toBe('waiting_decision');
     await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
     await waitForApp(page);
     await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
