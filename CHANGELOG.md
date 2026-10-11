@@ -9,6 +9,101 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
+## [Unreleased]
+
+A run a normal person can start (Phases 67 and 68, ADR 0074): a project knows where its code
+is, the agent works on a branch of that folder or in the folder itself, its own model is the
+default, and a finished run hands over what it did for review. Then the first live run of the
+whole workflow, with docket as the agent and prill as the verifier, and what it found
+(ADR 0075). And a project with all its items from one outline or CSV (ADR 0076). Upgrading
+applies migrations 082–083 on first start — new tables and columns only.
+
+### Added
+
+- **projects:** Project creation asks where the code is; **Settings → Automation** holds the
+  folder, how the agent works there, the agent, its default model, the definition of done and
+  the column a finished run moves the task to
+- **runner:** The agent works on a new `tack/<task>` branch of your repository (a worktree;
+  the branch stays), in your folder itself (nothing is deleted, the evidence is read-only), or
+  in a clone for another computer
+- **runs:** The agent's own model is the default; no model or provider has to be typed, and
+  the provider is derived from the agent
+- **profiles:** Four built-in agent profiles — Implementer, Reviewer, Researcher, Planner —
+  each with its tools, edited in a form
+- **items:** A task is a description plus acceptance criteria, with what only the agent needs
+  in a collapsed **For the agent** block; the Run dialog is a pre-flight that shows what the
+  agent will read
+- **runs:** A run that left changes flags the task **Needs your review**; the attempt card
+  leads with why it stopped and hands over the diff, the folder, the branch, the result and
+  the log; **Accept** or **Reject** clears the flag
+- **planner:** The Planner proposes a plan and a person creates its subtasks; the subtask
+  records the plan it came from
+- **ui:** A `(?)` beside every field and a help button into the book; every word on screen
+  is Tack's, not the runner's
+- **agents:** The Agents page is about this computer: the agents installed here, a test run
+  with nothing typed, and docket and opencode listed beside codex and claude-code
+- **runner:** prill is the runner's native verifier (`[verify] kind = "prill"`, the default):
+  the runner hands prill the attempt's work and documents and translates its pack into
+  `mrp-v1`; `kind = "command"` keeps the old contract
+- **runner:** An OpenAI-compatible server, such as a local llama.cpp, is a provider endpoint
+  for docket and opencode (`[provider.openai_compatible]`), its models read from the server
+- **cli:** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`) gives the
+  embedded runner the same configuration file `tack runner start --config` reads
+- **runs:** A running agent's steps appear on its timeline as it takes them — each call to the
+  model, each tool it ran (a shell command shown as the command) and each call it was refused
+  — and the timeline refreshes itself while the run is live. docket reports them today
+- **import:** A project and its items from one JSON/YAML outline or CSV — parents and
+  dependencies by a `ref` or a title, every problem reported before anything is written, one
+  transaction — from Project settings → Data, `tack import`, MCP `create_outline` and the API;
+  MCP gains `create_project`
+
+### Changed
+
+- **runs:** A run that stops to ask reads **Asking you** (`waiting_decision`) until the
+  question is answered, and the request's state follows its attempt through preparing,
+  running and asking instead of reading "leased" for the whole run
+- **runs:** docket's question names what it would allow and why: *Allow bash to run
+  "sh -c '…'"? docket's policy: 'sh' is not on the curated allowlist.*, followed by the
+  agent's own reason when it gave one, instead of a call id
+- **automation:** The default-model list merges the models runners measured with each agent's
+  known models, so docket can have a default model
+- **api:** `POST /api/projects` takes the project's folder, workspace mode and default branch
+  in the one request
+- **api:** The server fills a run's repository from its project; the MCP tool and the CLI may
+  still send it
+- **runs:** Tokens in counts the cache, and a run records its model calls and the models it used
+- **runs:** claude-code loads no MCP server, not even the account's own connectors
+- **runner:** docket runs through `docket exec`
+
+### Fixed
+
+- **runner:** A runner event no longer replaces an earlier one of the same attempt: every
+  event went out as sequence 0, so a run that recorded a plan or evidence failure lost the
+  event saying it had ended
+- **ui:** "Show timeline, questions & files" no longer closes by itself while you answer a
+  question; a refresh updates the attempt's row in place
+- **runner:** A run's evidence diffs against the commit its base revision resolved to, and a
+  workspace whose evidence could not be read is kept, never deleted
+- **runner:** In your own folder, the evidence diffs against what the folder held before the
+  run, so work already there is not reported as the agent's
+- **runner:** A pushed branch's evidence names the branch's commit as `head_commit`
+- **runs:** The agent reads the item's description as text, not as the editor's HTML
+- **items:** The description editor keeps lines in the order they were typed
+- **desktop:** The app no longer aborts where WebKit cannot open a GBM/EGL display (NVIDIA, or
+  a driver updated without a reboot)
+- **contracts:** The published `mrp-v1` schema accepts packs again, its own fixture included
+- **agents:** The test run picks an agent that can run without a model, or says why it cannot;
+  the embedded runner reports the id it enrolled with, not its name
+
+### Documentation
+
+- **book:** Every screenshot and GIF re-recorded; the tutorial records the whole workflow; the
+  quick start, the agent pages and the task docs follow the new run flow
+- **testing:** `scripts/docket-prill-e2e.sh` drives the whole workflow through the UI with
+  docket and prill built from source against a local model, with a screenshot per step
+
+---
+
 ## [0.1.0-beta.10] - 2026-10-05
 
 Phase 66: an agent run now closes the loop up to the merge. An item carries a brief that

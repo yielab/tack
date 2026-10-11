@@ -16,7 +16,8 @@ it left open is in Phase 65.
 **Phase 66 closed on 2026-10-05** and ships as `v0.1.0-beta.10`; what it left open and what
 it parked are in its plan, [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md).
 **Phase 67 closed on 2026-10-08** (ADR 0074: a run a normal person can start) and
-**Phase 68** finishes what its agents found on the way; both are below. Phase 65's plan
+**Phase 68** finishes what its agents found on the way; both are below, followed by what the
+first live docket + prill run found (ADR 0075). Phase 65's plan
 holds the rest of its Wave 0, the maintainer's:
 [`docs/plans/phase-65.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-65.md). It folds together what the roadmap,
 the ADRs and the harness plan still owed — the release tag and `docs/LAUNCH-CHECKLIST.md`,
@@ -140,6 +141,29 @@ claim waits in Queued without saying why.
 | 2 | A subtask created from a plan records the plan; the Automation panel writes a specific model and the definition of done, and shows a rejected folder under the field. | Sonnet agents |
 | 3 | The embedded runner says which runner it is; the dialog remembers the profile only when a person picked it; the card finds the folder of a run in your own repo. | Haiku, Sonnet |
 | 4 | `Select` takes a `(?)`; the popover closes; a question from the agent and a review you owe no longer share a colour; the agents page's test run is asserted end to end. | Sonnet, Haiku |
+
+---
+
+## The first live docket + prill run
+
+**Status:** done 2026-10-10 and 2026-10-11, to ship with Phases 67 and 68.
+**ADR:** 0075 (amends 0074 and 0071). **Proof:** `scripts/docket-prill-e2e.sh`.
+
+The whole workflow, run through the UI with docket as the agent and prill as the verifier, both
+built from source, against a local model: a project, its runner, its settings, a bug, a
+feature, a task and a run that asks, each verified and reviewed. The first run could not finish
+without nine changes; the second found five more. After them docket and opencode are offered
+wherever an agent is, prill is the runner's own verifier, a local OpenAI-compatible server
+reaches docket and opencode, a run that asks reads **Asking you**, a running agent's steps fill
+its timeline as it takes them, and docket's question says which command it would allow and why.
+
+| Run | What lands |
+|---|---|
+| 1 | docket and opencode everywhere; prill spoken natively; `[provider.openai_compatible]`; `waiting_decision` while a question is open; the request follows its attempt; `tack serve --runner-config`; the Automation model list; one request to create a project; the `mrp-v1` schema. |
+| 2 | A running agent's steps on its timeline (docket first); one sequence per runner event; docket's question names the command; the e2e pins prill's image by id; a refresh keeps an opened attempt open. |
+
+Next here: codex, claude-code and opencode report their steps too, once their tool lines are
+captured from the real binaries.
 
 ---
 

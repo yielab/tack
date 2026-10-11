@@ -467,7 +467,7 @@ cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
 binary, the version probe, the request policy, environment and secrets, provider
 injection, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
 `HarnessDescriptor` (data) and a four-method `HarnessGrammar` (its command line, how its
-output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. docket's contract and flags are probed when the runner starts, never assumed from its version. Adding one is a module
+output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. Reading output, a grammar may report a line as a step (`StreamSignal::Progress`); a harness whose descriptor sets `reports_progress` is read line by line on every run, and the engine sends its steps as runner events every two seconds and when the run ends — docket's grammar is the only one that reports any yet. Every runner event takes the attempt's next sequence, counted in the journal (`events_submitted`), because the server keeps one event per sequence. docket's contract and flags are probed when the runner starts, never assumed from its version. Adding one is a module
 plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness
 vocabulary itself stays open (`HarnessKind::Other(String)`). Two engine-facing
 traits:

@@ -249,7 +249,8 @@ which reads commits only and speaks its own documents. For each attempt the runn
 
 `args` is where prill's sandbox goes: `["--image", "registry.example/verify@sha256:…"]`
 runs the checks in that image (prill never pulls one; an image pinned by anything but a
-digest or an id keeps the decision at `human-review`), `["--no-sandbox"]` runs them on this
+digest or an id keeps the decision at `human-review` and puts `image_not_pinned` on the pack; a
+local image's id is `docker image inspect <tag> --format '{{.Id}}'`), `["--no-sandbox"]` runs them on this
 machine. With neither, prill needs a container backend on this machine and the image named
 by `sandbox.image` in the repository's `prill.yaml`, and refuses (`sandbox_unavailable`,
 `sandbox_image_unset`) otherwise. Anything else prill accepts (`--db`, `--sign`,

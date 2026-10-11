@@ -405,6 +405,16 @@ Four more files in the directory are recorders, not tests — `screenshots.spec.
 README's and the book's images and GIFs, each through its own config and its own header recipe.
 The default config ignores them and CI never runs them.
 
+`docket-prill.spec.ts` is a live test, not a CI one: `scripts/docket-prill-e2e.sh` builds `tack`
+with the SPA embedded, runs docket and prill from their own source trees (`DOCKET_SRC`,
+`PRILL_SRC`) against a local OpenAI-compatible model, and drives the whole workflow through the
+UI — a project, its runner enrolled on the Agents page, its settings, a bug, a feature, a task
+and a run that asks — with a screenshot per step in `frontend/test-results/docket-prill/`. It
+checks what a person would: every run's steps reach the timeline before it ends, in order; a
+question names the command it would allow; prill's pack comes back for each run and is
+reviewed. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1` when nothing in Tack changed; the script
+lists its knobs at the top.
+
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it
 `test.fixme()` with a one-line comment that says what was seen and links the issue, so the

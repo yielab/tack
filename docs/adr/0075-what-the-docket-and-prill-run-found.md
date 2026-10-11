@@ -1,6 +1,7 @@
 # ADR 0075: what the first docket + prill run found, and what Tack changes for it
 
-**Status: PROPOSED 2026-10-10; the fixes below are executed in `develop` the same day.**
+**Status: PROPOSED 2026-10-10; decisions 1–9 executed in `develop` on 2026-10-10, decisions 10–14
+on 2026-10-11 after the second run.**
 Amends ADR 0074 (a run a normal person can start) and ADR 0071 (where a run's work ends up).
 The test that found everything here is `frontend/e2e/docket-prill.spec.ts`, run through
 `scripts/docket-prill-e2e.sh`.

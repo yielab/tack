@@ -27,8 +27,11 @@ Wave 0 publish list is the user's.
 ADR 0074's follow-ups found by the first live docket + prill run (2026-10-10) are in ADR 0075 and
 landed the same day: prill is the runner's native verifier, `[provider.openai_compatible]`
 reaches docket and opencode, a run that asks reads `waiting_decision`, the request follows its
-attempt, the embedded runner takes `--runner-config`. `scripts/docket-prill-e2e.sh` is the live
-proof.
+attempt, the embedded runner takes `--runner-config`. The second run (2026-10-11, ADR 0075
+decisions 10–14) put a running agent's steps on its timeline (docket only so far), gave every runner
+event its own sequence, and made docket's question name the command. `scripts/docket-prill-e2e.sh`
+is the live proof. What ships next is in `CHANGELOG.md`'s `[Unreleased]` section, written by hand
+because the `Add:`/`Fix:` commits since beta.10 are not conventional and git-cliff skips them.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

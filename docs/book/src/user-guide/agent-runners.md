@@ -184,7 +184,10 @@ still refuses a gated call outright.
 
 With docket, choosing "Ask me" pauses the agent before each gated call and waits for your answer
 in Tack. Allow lets the call run; Deny refuses it, and the agent is told it was refused and
-carries on. This works the same whether docket is running a single task or a recipe.
+carries on. This works the same whether docket is running a single task or a recipe. The question
+names the call and docket's reason for stopping it — *Allow bash to run "sh -c 'echo done >
+DONE.txt'"? docket's policy: 'sh' is not on the curated allowlist.* — followed by the agent's own
+reason when it gave one.
 
 A question waits on the item's Execution tab. Each option can carry a description, its risks and
 an estimate in tokens; the option the agent recommends is marked, with its reasoning and the files
@@ -344,6 +347,16 @@ sits in a collapsed **For the agent** block, which you can ignore. The project c
 **Definition of done** once (under **Settings → Automation**), and every run reads it.
 All of this is stored as the item's [brief](items.md#acceptance-criteria-and-for-the-agent); the dialog's **What the
 agent will read** shows exactly what it will be given.
+
+### While a run works
+
+The attempt's timeline (**Show timeline, questions & files** on the item's Execution tab) fills
+as the agent works: each call to the model with its tokens, each tool it ran — a shell command
+is shown as the command — and each call it was refused. The runner sends the steps every two
+seconds and once more when the run ends, and the timeline refreshes itself until the run is
+over. Only docket reports its steps today; with codex, claude-code and opencode the timeline
+holds the run's events (a question, a failure, the end), and the run's log has the rest once it
+ends.
 
 ### What happens when a run finishes
 
@@ -1148,6 +1161,9 @@ These are documented rather than papered over, per this project's
   support** in its readable output; for docket those are decided when the runner starts.
 - **The branch push runs git in the attempt's workspace**, which the agent could have
   reconfigured while it worked. Hooks are disabled; see `docs/CONFIG.md`.
+- **Only docket reports a run's steps while it works.** codex, claude-code and opencode show
+  their steps in the log only; their timelines fill once their tool lines are read from
+  captured output of the real binaries.
 
 ---
 
@@ -1186,3 +1202,9 @@ through claim → checkout → harness → completion, restart recovery included
 does the same inside a single `tack serve --with-runner` process. **A fresh-machine
 operator today can enroll a runner and point a real `tack-runner` process (standalone
 or embedded) at a real server and watch it enroll, claim, and complete real work.**
+
+The whole workflow through the browser is proven by hand with `scripts/docket-prill-e2e.sh`:
+it builds Tack from the checkout, runs docket and prill from their own source trees against a
+local OpenAI-compatible model, and drives a project, its runner, its settings, a bug, a
+feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a
+screenshot per step. It makes real model calls, so CI never runs it.
