@@ -15,14 +15,14 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 Phase 64 shipped 2026-09-19; the runner, harnesses, MCP and desktop app are the product
 surface. Phase 65 shipped as `v0.1.0-beta.9` (2026-09-21), the first release with the
 desktop bundles. Phase 66 (briefs, evidence, the verifier's merge-readiness pack, branch
-push and pull requests, factory metrics, docket contract 1.1) closed 2026-10-05 and ships
-as `v0.1.0-beta.10`. Phase 67 (ADR 0074: a run a normal person can start — project
+push and pull requests, factory metrics, docket contract 1.1) closed 2026-10-05. Phase 67 (ADR 0074: a run a normal person can start — project
 Automation settings, the agent works on a branch of your repo or in your folder, the agent's
 default model, built-in profiles, acceptance criteria, Needs your review, Tack's words and
 help) executed 2026-10-07/08. Phase 68 (`docs/plans/phase-68.md`) finished the fourteen
 follow-ups phase 67's agents found and closed 2026-10-08; its Status section tables what it
 found in turn, the weightiest being a request no runner can claim staying Queued with no
-reason shown. Both phases sit in `develop` unpushed, to ship as the next beta. Phase-65's
+reason shown. Phases 66–68 and the work below ship together as `v0.1.0-beta.10`, not yet
+tagged. Phase-65's
 Wave 0 publish list is the user's.
 ADR 0074's follow-ups found by the first live docket + prill run (2026-10-10) are in ADR 0075 and
 landed the same day: prill is the runner's native verifier, `[provider.openai_compatible]`
@@ -30,8 +30,8 @@ reaches docket and opencode, a run that asks reads `waiting_decision`, the reque
 attempt, the embedded runner takes `--runner-config`. The second run (2026-10-11, ADR 0075
 decisions 10–14) put a running agent's steps on its timeline (docket only so far), gave every runner
 event its own sequence, and made docket's question name the command. `scripts/docket-prill-e2e.sh`
-is the live proof. What ships next is in `CHANGELOG.md`'s `[Unreleased]` section, written by hand
-because the `Add:`/`Fix:` commits since beta.10 are not conventional and git-cliff skips them.
+is the live proof. What ships is in `CHANGELOG.md`'s `[0.1.0-beta.10]` section, written by hand
+because the `Add:`/`Fix:` commits since beta.9 are not conventional and git-cliff skips them.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

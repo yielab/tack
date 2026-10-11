@@ -9,14 +9,24 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
-## [Unreleased]
+## [0.1.0-beta.10] - 2026-10-11
+
+Phases 66, 67 and 68. The version moved to `0.1.0-beta.10` on 2026-10-05 when Phase 66
+closed, but it was not tagged then, so everything since beta.9 ships here.
+
+Phase 66: an agent run now closes the loop up to the merge. An item carries a brief that
+says what "done" means and travels to the agent; every attempt keeps its evidence; a
+verifier you run yourself can judge the work and Tack shows its merge-readiness pack for you
+to accept or reject; the branch can be pushed and its pull request followed; and a Factory
+metrics page per project measures the loop.
 
 A run a normal person can start (Phases 67 and 68, ADR 0074): a project knows where its code
 is, the agent works on a branch of that folder or in the folder itself, its own model is the
-default, and a finished run hands over what it did for review. Then the first live run of the
-whole workflow, with docket as the agent and prill as the verifier, and what it found
-(ADR 0075). And a project with all its items from one outline or CSV (ADR 0076). Upgrading
-applies migrations 082–083 on first start — new tables and columns only.
+default, and a finished run hands over what it did for review. Then the first live run of
+the whole workflow, with docket as the agent and prill as the verifier, and what it found
+(ADR 0075). And a project with all its items from one outline or CSV (ADR 0076).
+
+Upgrading applies migrations 078–083 on first start — new tables and columns only.
 
 ### Added
 
@@ -56,6 +66,33 @@ applies migrations 082–083 on first start — new tables and columns only.
   dependencies by a `ref` or a title, every problem reported before anything is written, one
   transaction — from Project settings → Data, `tack import`, MCP `create_outline` and the API;
   MCP gains `create_project`
+- **frontend:** HarborCoral palette, sail mark, and the Organic design language
+- **install:** Windows installer, Scoop manifest, and a Windows verify job
+- **runner:** Capture attempt evidence before the workspace is deleted
+- **db:** Add the factory loop's tables in migrations 078–081
+- **executions:** Resolve status_map_policy_id; done_on_success moves the item on completion
+- **core:** The item brief type, its validation and its Markdown
+- **runner:** Negotiate docket's harness contract at boot instead of assuming 1.0
+- **core:** Draft the mrp-v1 contract Tack reads from a verifier
+- **decisions:** A decision can carry options' risks and a recommendation, and records when it was first seen
+- **briefs:** Store an item's brief, serve it at /api/items/{id}/brief, carry it in exports
+- **run-with-agent:** Lay the dialog out as the whole flow; show what is not ready yet
+- **runner:** Run the operator's verifier after a succeeded attempt and stage its pack
+- **item-detail:** A Brief tab to write what "done" means for an item
+- **mrp:** Serve an attempt's merge-readiness pack and record the human verdict on it
+- **decisions:** The runner sends a decision's options and recommendation; the inbox shows them
+- **executions:** The agent receives the item and its brief; the evidence keeps the brief
+- **attempt:** A merge-readiness panel to read the verifier's pack and record a verdict
+- **runner:** Push a succeeded attempt's work as a branch, off by default
+- **run-with-agent:** Verification and branch push are live choices when the runner offers them
+- **github:** Open a pull request for a pushed attempt and follow it to merged, closed or reverted
+- **attempt:** Show an attempt's pull request and its state
+- **metrics:** Measure the factory loop per project at /api/projects/{id}/metrics/factory
+- **runner:** Stop every process group docket announces on cancel; cancel is Supported on contract 1.1
+- **metrics:** A Factory metrics page per project
+- **runner:** Docket can ask before acting when it supports answers
+- **runner:** Pass the caller's limits and policy to docket and read back the files it wrote
+- **runner:** Run a docket recipe from the agent profile; the guide's docket rows match the code
 
 ### Changed
 
@@ -94,57 +131,6 @@ applies migrations 082–083 on first start — new tables and columns only.
 - **contracts:** The published `mrp-v1` schema accepts packs again, its own fixture included
 - **agents:** The test run picks an agent that can run without a model, or says why it cannot;
   the embedded runner reports the id it enrolled with, not its name
-
-### Documentation
-
-- **book:** Every screenshot and GIF re-recorded; the tutorial records the whole workflow; the
-  quick start, the agent pages and the task docs follow the new run flow
-- **testing:** `scripts/docket-prill-e2e.sh` drives the whole workflow through the UI with
-  docket and prill built from source against a local model, with a screenshot per step
-
----
-
-## [0.1.0-beta.10] - 2026-10-05
-
-Phase 66: an agent run now closes the loop up to the merge. An item carries a brief that
-says what "done" means and travels to the agent; every attempt keeps its evidence; a
-verifier you run yourself can judge the work and Tack shows its merge-readiness pack for
-you to accept or reject; the branch can be pushed and its pull request followed; and a
-Factory metrics page per project measures the loop. Upgrading applies migrations 078–081
-on first start — new tables and columns only.
-
-### Added
-
-- **frontend:** HarborCoral palette, sail mark, and the Organic design language
-- **install:** Windows installer, Scoop manifest, and a Windows verify job
-- **runner:** Capture attempt evidence before the workspace is deleted
-- **db:** Add the factory loop's tables in migrations 078–081
-- **executions:** Resolve status_map_policy_id; done_on_success moves the item on completion
-- **core:** The item brief type, its validation and its Markdown
-- **runner:** Negotiate docket's harness contract at boot instead of assuming 1.0
-- **core:** Draft the mrp-v1 contract Tack reads from a verifier
-- **decisions:** A decision can carry options' risks and a recommendation, and records when it was first seen
-- **briefs:** Store an item's brief, serve it at /api/items/{id}/brief, carry it in exports
-- **run-with-agent:** Lay the dialog out as the whole flow; show what is not ready yet
-- **runner:** Run the operator's verifier after a succeeded attempt and stage its pack
-- **item-detail:** A Brief tab to write what "done" means for an item
-- **mrp:** Serve an attempt's merge-readiness pack and record the human verdict on it
-- **decisions:** The runner sends a decision's options and recommendation; the inbox shows them
-- **executions:** The agent receives the item and its brief; the evidence keeps the brief
-- **attempt:** A merge-readiness panel to read the verifier's pack and record a verdict
-- **runner:** Push a succeeded attempt's work as a branch, off by default
-- **run-with-agent:** Verification and branch push are live choices when the runner offers them
-- **github:** Open a pull request for a pushed attempt and follow it to merged, closed or reverted
-- **attempt:** Show an attempt's pull request and its state
-- **metrics:** Measure the factory loop per project at /api/projects/{id}/metrics/factory
-- **runner:** Stop every process group docket announces on cancel; cancel is Supported on contract 1.1
-- **metrics:** A Factory metrics page per project
-- **runner:** Docket can ask before acting when it supports answers
-- **runner:** Pass the caller's limits and policy to docket and read back the files it wrote
-- **runner:** Run a docket recipe from the agent profile; the guide's docket rows match the code
-
-### Fixed
-
 - **run-with-agent:** Restore the modal's props type; the production build compiles again
 - **runner-protocol:** A run that moves its item tells the board, like an edit does
 - **ui:** A Select shows its value, not its first option
@@ -160,6 +146,10 @@ on first start — new tables and columns only.
 
 ### Documentation
 
+- **book:** Every screenshot and GIF re-recorded; the tutorial records the whole workflow; the
+  quick start, the agent pages and the task docs follow the new run flow
+- **testing:** `scripts/docket-prill-e2e.sh` drives the whole workflow through the UI with
+  docket and prill built from source against a local model, with a screenshot per step
 - **readme:** Lead with the pitch, and re-capture the screenshots
 - **book:** Walk install to a finished agent run, every step photographed
 - **readme:** Lead with the desktop app; say what the server form is for

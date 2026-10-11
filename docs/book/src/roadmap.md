@@ -13,7 +13,7 @@ service, and the codebase cleanup that retired the Docket control-plane bridge
 **Phase 64 closed on 2026-09-19.** Its plan and its chapter of this file are archived; what
 it left open is in Phase 65.
 
-**Phase 66 closed on 2026-10-05** and ships as `v0.1.0-beta.10`; what it left open and what
+**Phase 66 closed on 2026-10-05** and ships, with Phases 67 and 68, as `v0.1.0-beta.10`; what it left open and what
 it parked are in its plan, [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md).
 **Phase 67 closed on 2026-10-08** (ADR 0074: a run a normal person can start) and
 **Phase 68** finishes what its agents found on the way; both are below, followed by what the
@@ -98,11 +98,11 @@ a pull request is opened for a pushed branch whose item is linked to a GitHub is
 
 ## Phase 67 — a run a normal person can start
 
-**Status:** closed 2026-10-08; every task built and merged, to ship as the next beta.
+**Status:** closed 2026-10-08; every task built and merged, and ships as `v0.1.0-beta.10`.
 **Plan:** [`docs/plans/phase-67.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-67.md).
 **ADR:** 0074 (amends 0069, 0071 and 0072).
 
-A manual run of beta.10 produced fourteen findings; three lost or hid work. After this phase
+A manual run of the Phase 66 build produced fourteen findings; three lost or hid work. After this phase
 a project is created knowing where its code is, and the agent works on a new branch of that
 folder, in the folder itself, or in a clone for another computer. No model or provider is
 asked for: the agent's own is the default. Four built-in profiles (Implementer, Reviewer,
@@ -125,8 +125,8 @@ and a help button into this book.
 
 ## Phase 68 — what Phase 67 left on the table
 
-**Status:** opened and closed 2026-10-08; every round built and merged, to ship with Phase 67
-as the next beta. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
+**Status:** opened and closed 2026-10-08; every round built and merged, and ships with Phase 67
+as `v0.1.0-beta.10`. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
 
 Fourteen follow-ups, each found by the agent that built the task beside it, each finishing a
 decision ADR 0074 already takes. No new decision. The end-to-end test of the Agents page's
