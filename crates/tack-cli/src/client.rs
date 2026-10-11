@@ -127,6 +127,27 @@ impl TackClient {
         extract(resp)
     }
 
+    /// POST a text body of the given content type, with query parameters,
+    /// and return the JSON response.
+    pub fn post_text(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        content_type: &str,
+        body: String,
+    ) -> anyhow::Result<serde_json::Value> {
+        let resp = self
+            .request(
+                reqwest::Method::POST,
+                path,
+                &[("Content-Type", content_type)],
+            )
+            .query(query)
+            .body(body)
+            .send()?;
+        extract(resp)
+    }
+
     pub fn delete(&self, path: &str) -> anyhow::Result<()> {
         let resp = self.request(reqwest::Method::DELETE, path, &[]).send()?;
         let status = resp.status();

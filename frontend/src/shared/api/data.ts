@@ -1,6 +1,35 @@
 import { request, requestBlob, apiUrl } from './client';
+import type { components } from './schema.gen';
 
 export type ExportFormat = 'json' | 'yaml' | 'csv';
+
+/** What an outline or CSV import created, or would create on a dry run. */
+export type OutlineResult = components['schemas']['OutlineResult'];
+
+/** An import file: a CSV, or an outline as JSON or YAML. */
+export type ImportFileKind = 'csv' | 'json' | 'yaml';
+
+/** The kind of an import file, by its extension (JSON when it has neither). */
+export function importFileKind(fileName: string): ImportFileKind {
+  if (/\.csv$/i.test(fileName)) return 'csv';
+  if (/\.ya?ml$/i.test(fileName)) return 'yaml';
+  return 'json';
+}
+
+const IMPORT_CONTENT_TYPE: Record<ImportFileKind, string> = {
+  csv: 'text/csv',
+  json: 'application/json',
+  yaml: 'application/x-yaml',
+};
+
+function importQuery(params: Record<string, string | boolean | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== false) query.set(key, String(value));
+  }
+  const text = query.toString();
+  return text ? `?${text}` : '';
+}
 
 /** Export / import (per project) and full-database backup / restore. */
 export const data = {
@@ -26,13 +55,29 @@ export const data = {
       body: yamlText,
     }),
 
-  /** Import items from a CSV file into an existing project. */
-  importCsv: (projectId: string, csvText: string) =>
-    request<{ created: number; skipped: number }>(`/projects/${projectId}/import-csv`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/csv' },
-      body: csvText,
-    }),
+  /**
+   * Add items to an existing project from a CSV or an outline. Nothing is
+   * written unless the whole file can be; `dryRun` reports what would be.
+   */
+  importItems: (projectId: string, text: string, kind: ImportFileKind, dryRun = false) =>
+    request<OutlineResult>(
+      `/projects/${projectId}/${kind === 'csv' ? 'import-csv' : 'outline'}${importQuery({ dry_run: dryRun })}`,
+      { method: 'POST', headers: { 'Content-Type': IMPORT_CONTENT_TYPE[kind] }, body: text },
+    ),
+
+  /**
+   * Create a project with its items from a CSV or an outline. `name` is
+   * required for a CSV and overrides an outline's own.
+   */
+  createProjectFromFile: (
+    text: string,
+    kind: ImportFileKind,
+    options: { name?: string; dryRun?: boolean } = {},
+  ) =>
+    request<OutlineResult>(
+      `/projects/${kind === 'csv' ? 'import-csv' : 'outline'}${importQuery({ name: options.name, dry_run: options.dryRun })}`,
+      { method: 'POST', headers: { 'Content-Type': IMPORT_CONTENT_TYPE[kind] }, body: text },
+    ),
 
   /** Download a full SQLite database backup. */
   backup: () => requestBlob('/backup'),

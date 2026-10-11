@@ -1,8 +1,144 @@
 # Import and Export
 
-Tack can pull issues in from GitHub and Linear, keep linked GitHub issues in sync both ways, and export an entire project to JSON, YAML, or CSV. All import and export operations are exposed over the HTTP API; there is no dedicated CLI subcommand for them.
+Tack can create a project and its items from one outline or CSV file, pull issues in from GitHub and Linear, keep linked GitHub issues in sync both ways, and export an entire project to JSON, YAML, or CSV. Every import and export is exposed over the HTTP API; files can also be imported from **Project settings → Data**, with `tack import`, and from an AI assistant through the MCP tool `create_outline`.
 
 The examples below use a base URL of `http://127.0.0.1:3210` and assume a server started with `tack serve`. If you set `TACK_API_TOKEN`, add `-H "Authorization: Bearer <token>"` to every request.
+
+---
+
+## How do I create a project and its items from a file?
+
+Write the plan once — by hand, from a script, from a spreadsheet, or by asking an AI assistant — and Tack creates the project, every item, their hierarchy and their dependencies in one step. Two file formats are read, through the same rules:
+
+- an **outline**, as JSON or YAML;
+- a **CSV** with a header row, one item per row.
+
+The whole file is checked before anything is written. If anything is wrong, nothing is created and the error lists every problem at once, so a person or a model can fix the file in one pass. When the file is accepted, everything is written in one transaction.
+
+### The outline
+
+```yaml
+project:
+  name: Website relaunch
+  project_type: web          # optional; default custom
+  description: Q4 relaunch   # optional
+items:
+  - ref: design
+    title: Design
+    type: epic
+  - title: Wireframes
+    parent: design
+    depends_on: [research]
+    due_date: 2026-11-01
+    priority: high
+  - ref: research
+    title: User research
+    status: In Progress
+    tags: [ux]
+    description: |
+      Interview five users.
+      Summarise the findings.
+```
+
+The same outline as JSON uses the same keys. Items can come in any order; a parent is always written before its children.
+
+| Field | Description |
+|-------|-------------|
+| `ref` | A name for the item that other items use in `parent` and `depends_on`. Any text or number, unique in the outline. Optional. |
+| `title` | Required. |
+| `description` | Optional. |
+| `type` | `epic`, `feature`, `task` (the default), `subtask`, `bug`, `requirement`, or any other word as a custom type. |
+| `status` | A status of the project's workflow, in any case. Absent: the workflow's first status. |
+| `priority` | `critical`, `high`, `medium` (the default), `low` or `none`. |
+| `assignee` | Optional. |
+| `estimate` | A number. |
+| `due_date` | `YYYY-MM-DD`, or an RFC 3339 timestamp. |
+| `tags` | A list of words. |
+| `parent` | The parent's `ref`, or its exact title. When adding to an existing project, also the id of an item already in it. |
+| `depends_on` | The `ref`s or titles of items that must finish first. Each becomes a *blocks* dependency. |
+
+`project` is read only when the file creates a project. An outline with any other key is refused, so a misspelt field is reported rather than lost.
+
+### The CSV
+
+Only `title` is required. Headers are matched in any case and use the outline's names; these spellings are also read:
+
+| Column | Also read as |
+|--------|--------------|
+| `ref` | `id`, `key` |
+| `type` | `item_type` |
+| `due_date` | `due` |
+| `tags` | `labels` |
+| `parent` | `parent_id`, `parent_ref` |
+| `depends_on` | `blocked_by` |
+
+`tags` and `depends_on` hold several values separated by `;` or `|` — never `,`, which a title may contain. Quoted cells may contain commas, quotes (written `""`) and line breaks. Rows with no title are skipped and counted. A CSV exported from Tack re-imports with its hierarchy, since its `id` and `parent_id` columns are read as `ref` and `parent`.
+
+### What is refused, and what is only a warning
+
+The file is **refused** for: an item with no title; a `ref` used twice; a `parent` or `depends_on` that names no item, or a title shared by several items (give them refs); an item that is its own parent, or parents that loop; dependencies that loop; a due date that is not a date; a value the item routes reject (a title over 500 characters, a negative estimate, more than 20 tags); a parent id that is not an item of the project; more than 1,000 items.
+
+The file is **accepted with a warning** for a status the workflow does not have (the item starts in the first status), a priority Tack does not know (the item is medium), and a CSV column Tack does not read. A spreadsheet written for another tool should not have to be rewritten to be imported; the preview shows each warning before anything is written.
+
+### From the web UI
+
+**Project settings → Data → Import**:
+
+- **Add items from a file…** adds the items to this project.
+- **New project from a file…** creates a project. A CSV's project is named after the file.
+
+Either way, Tack first shows what would be created — the items, the number of dependencies and any warnings — or every reason the file cannot be imported. Nothing is written until you confirm.
+
+### From the command line
+
+```sh
+tack import plan.yaml --dry-run              # check and show, write nothing
+tack import plan.yaml                        # create the project the outline names
+tack import tasks.csv --name "Relaunch" -t web
+tack import tasks.csv -p <project-id>        # add to an existing project
+```
+
+The format is chosen by extension: `.csv`, `.yaml`/`.yml`, otherwise JSON. `--name` and `--type` override the outline's `project`.
+
+### From an AI assistant (MCP)
+
+With `tack mcp` configured (see [MCP](https://github.com/yielab/tack/blob/develop/docs/MCP.md)), an assistant calls `create_outline` with either `project` (to create one) or `project_id` (to add to one), and `items` in the outline format. Ask it to call with `dry_run: true` first. A web chat assistant that cannot reach Tack can write the outline as YAML for you to save and import.
+
+### Via API
+
+| Route | Does |
+|-------|------|
+| `POST /api/projects/outline` | Creates a project from an outline. |
+| `POST /api/projects/{id}/outline` | Adds an outline's items to a project; its `project` block is ignored, with a warning. |
+| `POST /api/projects/import-csv?name=…` | Creates a project from a CSV; `name` is required. |
+| `POST /api/projects/{id}/import-csv` | Adds a CSV's rows to a project. |
+
+The outline routes read JSON, or YAML when `Content-Type` mentions `yaml`; the CSV routes read `text/csv`. Every route takes `dry_run=true`. The routes that create a project also take `name`, `project_type` and `description`, which override the outline's own.
+
+```sh
+curl -X POST "http://127.0.0.1:3210/api/projects/outline?dry_run=true" \
+  -H "Content-Type: application/x-yaml" --data-binary @plan.yaml
+```
+
+The response:
+
+```json
+{
+  "dry_run": false,
+  "project": { "id": "…", "name": "Website relaunch", "…": "…" },
+  "created": 3,
+  "skipped": 0,
+  "dependencies": 1,
+  "items": [
+    { "ref": "design", "id": "…", "title": "Design", "status": "Backlog", "parent_id": null }
+  ],
+  "warnings": []
+}
+```
+
+`items` is in written order, parents first. On a dry run `id` is null and `project` is absent. A refused file answers `400` with every problem in the message.
+
+Items from an outline are recorded with `source: outline` and items from a CSV with `source: csv_import`. Both are untrusted: when such an item is handed to an agent, its text is labelled as data to work from rather than instructions, because Tack cannot tell who wrote it.
 
 ---
 
@@ -169,13 +305,19 @@ The CSV has one row per item with these columns:
 | Column | Description |
 |--------|-------------|
 | `id` | Item UUID |
-| `title` | Item title (commas replaced with spaces) |
+| `title` | Item title |
+| `description` | Item description, or empty |
 | `type` | Item type (task, bug, epic, etc.) |
 | `status` | Current workflow status |
 | `priority` | Item priority |
 | `assignee` | Assignee, or empty if unassigned |
+| `estimate` | Estimate, or empty |
+| `due_date` | `YYYY-MM-DD`, or a full timestamp when the due date has a time of day |
+| `tags` | Tags separated by `;` |
 | `parent_id` | Parent item UUID, or empty if top-level |
 | `created_at` | Creation timestamp (RFC 3339) |
+
+Cells are quoted where needed, so commas and line breaks survive. The file re-imports into any project through [an import from a file](#how-do-i-create-a-project-and-its-items-from-a-file), hierarchy included.
 
 CSV export covers items only — it does not include sprints, dependencies, briefs, or workflow configuration. Use JSON or YAML export for a full, re-importable backup.
 
@@ -183,4 +325,4 @@ CSV export covers items only — it does not include sprints, dependencies, brie
 
 ## Which should I use?
 
-Use **GitHub** or **Linear** import to seed a Tack project from work already tracked elsewhere; choose GitHub import (with `TACK_GITHUB_TOKEN` set) if you also want completed Tack items to close their upstream issues. Use **JSON** (or YAML) export for a complete, re-importable backup or to move a project between Tack instances, since it preserves workflow, sprints, dependencies, and hierarchy. Use **CSV** export when you only need a quick item list for a spreadsheet or report.
+Use an **outline** or a **CSV** to create a project from a plan — your own, a spreadsheet's, or an AI assistant's. Use **GitHub** or **Linear** import to seed a Tack project from work already tracked elsewhere; choose GitHub import (with `TACK_GITHUB_TOKEN` set) if you also want completed Tack items to close their upstream issues. Use **JSON** (or YAML) export for a complete, re-importable backup or to move a project between Tack instances, since it preserves workflow, sprints, dependencies, and hierarchy. Use **CSV** export for an item list to edit in a spreadsheet and import again.

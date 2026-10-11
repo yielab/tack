@@ -1392,40 +1392,6 @@ async fn github_import_redirect_never_leaks_user_token() {
     );
 }
 
-#[tokio::test]
-async fn csv_import_marks_items_with_csv_import_source() {
-    let (app, _) = common::test_app().await;
-    let pid = common::create_project(&app, "P", "software").await;
-
-    let csv = "title,description\nFrom a spreadsheet,could be anyone's data\n";
-    let res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri(format!("/api/projects/{pid}/import-csv"))
-                .header("Content-Type", "text/csv")
-                .body(Body::from(csv))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-
-    let (_, items) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(
-        items["data"][0]["source"], "csv_import",
-        "a CSV-imported row must be recorded with source: csv_import (untrusted for dispatch)"
-    );
-}
-
 // ─── GitHub push sync ───────────────────────────────────────────────
 
 #[tokio::test]

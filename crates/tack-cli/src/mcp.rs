@@ -145,12 +145,65 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 "item_type": opt_str(args, "item_type").unwrap_or_else(|| "task".into()),
                 "priority": opt_str(args, "priority").unwrap_or_else(|| "medium".into()),
             });
-            for (arg, field) in [("parent_id", "parent_id"), ("assignee", "assignee")] {
-                if let Some(v) = opt_str(args, arg) {
+            for field in ["parent_id", "assignee", "description"] {
+                if let Some(v) = opt_str(args, field) {
                     body[field] = json!(v);
                 }
             }
+            if let Some(due) = opt_str(args, "due_date") {
+                body["due_date"] = json!(due_timestamp(&due));
+            }
+            if let Some(tags) = args.get("tags").filter(|v| v.is_array()) {
+                body["tags"] = tags.clone();
+            }
             call(client.post(&format!("/projects/{project_id}/items"), &body))
+        }
+        "create_project" => {
+            let name = require_str(args, "name")?;
+            let body = json!({
+                "name": name,
+                "project_type": opt_str(args, "project_type")
+                    .map(|t| t.to_lowercase())
+                    .unwrap_or_else(|| "custom".into()),
+                "description": opt_str(args, "description"),
+            });
+            let project = call(client.post("/projects", &body))?;
+            Ok(project_summary(&project))
+        }
+        "create_outline" => {
+            let items = match args.get("items") {
+                Some(v) if v.is_array() => v.clone(),
+                _ => return Err("missing required argument: items (an array)".into()),
+            };
+            let suffix = if args.get("dry_run").and_then(Value::as_bool) == Some(true) {
+                "?dry_run=true"
+            } else {
+                ""
+            };
+            let written = match (opt_str(args, "project_id"), args.get("project")) {
+                (Some(_), Some(_)) => {
+                    Err("create_outline: pass project_id or project, not both".into())
+                }
+                (Some(pid), None) => call(client.post(
+                    &format!("/projects/{pid}/outline{suffix}"),
+                    &json!({ "items": items }),
+                )),
+                (None, Some(project)) if project.is_object() => call(client.post(
+                    &format!("/projects/outline{suffix}"),
+                    &json!({ "project": project, "items": items }),
+                )),
+                _ => Err(
+                    "create_outline: pass project_id to add to a project, or project \
+                          {name, project_type?, description?} to create one"
+                        .into(),
+                ),
+            };
+            written.map(|mut result| {
+                if result["project"].is_object() {
+                    result["project"] = project_summary(&result["project"]);
+                }
+                result
+            })
         }
         "update_item" => {
             let id = require_str(args, "id")?;
@@ -335,6 +388,36 @@ fn require_u64(args: &Value, key: &str) -> Result<u64, String> {
 
 // ── Compact projections (keep agent context small) ───────────────────────────
 
+/// `YYYY-MM-DD` as midnight UTC, which is how the item routes store a date;
+/// anything else goes to the server as written, to be accepted or refused
+/// there.
+fn due_timestamp(text: &str) -> String {
+    match chrono::NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d") {
+        Ok(date) => format!("{date}T00:00:00Z"),
+        Err(_) => text.to_string(),
+    }
+}
+
+/// A created project, with its workflow's status names in order — the
+/// values `create_outline`'s `status` and `move_item` accept.
+fn project_summary(project: &Value) -> Value {
+    let mut statuses: Vec<(i64, String)> = project["workflow"]["statuses"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .filter_map(|s| Some((s["order"].as_i64()?, s["name"].as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    statuses.sort();
+    json!({
+        "id": project.get("id"),
+        "name": project.get("name"),
+        "project_type": project.get("project_type"),
+        "statuses": statuses.into_iter().map(|(_, name)| name).collect::<Vec<_>>(),
+    })
+}
+
 fn project_list(value: &Value) -> Value {
     let arr = value.as_array().cloned().unwrap_or_default();
     let projects: Vec<Value> = arr
@@ -482,18 +565,84 @@ fn tool_specs() -> Value {
         ),
         tool(
             "create_item",
-            "Create an item in a project.",
+            "Create an item in a project. To create many items, or a project \
+             with its items, use create_outline: one call instead of one per item.",
             json!({
                 "type": "object",
                 "properties": {
                     "project_id": { "type": "string" },
                     "title": { "type": "string" },
+                    "description": { "type": "string" },
                     "item_type": { "type": "string", "description": "task (default), epic, feature, bug, subtask, requirement" },
                     "priority": { "type": "string", "description": "critical, high, medium (default), low" },
                     "parent_id": { "type": "string" },
-                    "assignee": { "type": "string" }
+                    "assignee": { "type": "string" },
+                    "due_date": { "type": "string", "description": "YYYY-MM-DD or an RFC3339 timestamp" },
+                    "tags": { "type": "array", "items": { "type": "string" } }
                 },
                 "required": ["project_id", "title"]
+            })
+        ),
+        tool(
+            "create_project",
+            "Create an empty project. Returns its id and its workflow's status names.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "project_type": { "type": "string", "description": "custom (default), software, web, mobile, construction, personal, homework, maintenance, legal, research, event — sets the workflow and vocabulary" },
+                    "description": { "type": "string" }
+                },
+                "required": ["name"]
+            })
+        ),
+        tool(
+            "create_outline",
+            "Create many items in one call, with their hierarchy and dependencies: \
+             in a new project (pass project) or an existing one (pass project_id). \
+             Every item is checked before anything is written, and every problem \
+             is reported at once; nothing is written unless all of it can be. \
+             Give an item a ref and name it from other items' parent or \
+             depends_on (an exact title works too). Order does not matter. \
+             Use dry_run first to see what would be created and any warnings.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Add to this project (mutually exclusive with project)" },
+                    "project": {
+                        "type": "object",
+                        "description": "Create this project: {name, project_type?, description?}; project_type as in create_project",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "project_type": { "type": "string" },
+                            "description": { "type": "string" }
+                        },
+                        "required": ["name"]
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ref": { "type": "string", "description": "A name for this item, unique in the outline" },
+                                "title": { "type": "string" },
+                                "description": { "type": "string" },
+                                "type": { "type": "string", "description": "epic, feature, task (default), subtask, bug, requirement, or a custom word" },
+                                "status": { "type": "string", "description": "A workflow status (any case); default the first one" },
+                                "priority": { "type": "string", "description": "critical, high, medium (default), low, none" },
+                                "assignee": { "type": "string" },
+                                "estimate": { "type": "number" },
+                                "due_date": { "type": "string", "description": "YYYY-MM-DD" },
+                                "tags": { "type": "array", "items": { "type": "string" } },
+                                "parent": { "type": "string", "description": "Parent's ref or title; with project_id, also an existing item's id" },
+                                "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Refs or titles of items that must finish first" }
+                            },
+                            "required": ["title"]
+                        }
+                    },
+                    "dry_run": { "type": "boolean", "description": "Check and report without writing" }
+                },
+                "required": ["items"]
             })
         ),
         tool(

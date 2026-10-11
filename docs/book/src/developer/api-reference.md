@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (92 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (95 paths, 131 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -944,20 +944,53 @@ POST /api/projects/import
 | 200 | Import result with the new project and stats | — |
 | 400 | Invalid import payload | `ErrorEnvelope` |
 
-#### `POST /api/projects/{id}/import-csv`
-
-csv
+#### `POST /api/projects/import-csv`
 
 | Param | In | Type | Required | Description |
 |---|---|---|---|---|
-| `id` | path | `string` | yes | Project ID |
+| `dry_run` | query | `boolean` | no | Check the file and report what would be created, writing nothing. |
+| `name` | query | `string` | no | The new project's name. Overrides an outline's `project.name`; |
+| `project_type` | query | `string` | no | The new project's type (default `custom`). Overrides an outline's |
+| `description` | query | `string` | no | Overrides an outline's `project.description`. |
 
 **Request body:** `string`
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Counts of created and skipped rows | — |
-| 400 | Malformed CSV | `ErrorEnvelope` |
+| 200 | The project and items created, or that would be on a dry run | `OutlineResult` |
+| 400 | The CSV was refused; the message lists every problem | `ErrorEnvelope` |
+
+#### `POST /api/projects/outline`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `dry_run` | query | `boolean` | no | Check the file and report what would be created, writing nothing. |
+| `name` | query | `string` | no | The new project's name. Overrides an outline's `project.name`; |
+| `project_type` | query | `string` | no | The new project's type (default `custom`). Overrides an outline's |
+| `description` | query | `string` | no | Overrides an outline's `project.description`. |
+
+**Request body:** `Outline`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project and items created, or that would be on a dry run | `OutlineResult` |
+| 400 | The outline was refused; the message lists every problem | `ErrorEnvelope` |
+
+#### `POST /api/projects/{id}/import-csv`
+
+`ItemSource::CsvImport` — a bare CSV carries no provenance of its own, so
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `dry_run` | query | `boolean` | no | Check the file and report what would be created, writing nothing. |
+
+**Request body:** `string`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The items created, or that would be on a dry run | `OutlineResult` |
+| 400 | The CSV was refused; the message lists every problem | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
 
 #### `POST /api/projects/{id}/import-github`
@@ -990,6 +1023,21 @@ linear
 |---|---|---|
 | 200 | Counts of created and skipped issues | — |
 | 400 | Bad API key, filter, or rate limit | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `POST /api/projects/{id}/outline`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+| `dry_run` | query | `boolean` | no | Check the file and report what would be created, writing nothing. |
+
+**Request body:** `Outline`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The items created, or that would be on a dry run | `OutlineResult` |
+| 400 | The outline was refused; the message lists every problem | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
 
 ---

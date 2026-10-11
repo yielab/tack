@@ -106,8 +106,9 @@ Everything here works the moment Tack starts, with no agent set up.
   work isn't handed to an agent.
 - **The rest you'd expect:** sub-items, custom fields, comments, attachments, full-text
   search, templates, bulk edits, live updates across tabs.
-- **Your data stays portable.** Export to JSON, YAML or CSV. Import from GitHub Issues
-  or Linear. Back up locally or to S3-compatible storage.
+- **Your data stays portable.** Export to JSON, YAML or CSV. Create a whole project from
+  one outline or CSV — yours, a spreadsheet's, or an AI assistant's. Import from GitHub
+  Issues or Linear. Back up locally or to S3-compatible storage.
 
 <details>
 <summary>More screenshots: overview and vocabulary</summary>

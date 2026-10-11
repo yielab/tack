@@ -82,7 +82,8 @@ docs/                Documentation
 - Error mapping: `CoreError` → HTTP status codes
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)
-- Export functionality: JSON and CSV formats
+- Export functionality: JSON, YAML and CSV formats
+- Outline and CSV import (`handlers/outline.rs`): the format and its checks are `tack_core::outline`; the write is one transaction (`Repository::create_outline_items`)
 
 **tack-runner** (the pull-based execution runner — its own binary, separate from `tack`):
 - Polls the Tack API's `/api/runner/v1` surface: enroll, refresh capabilities, claim, heartbeat, accept, start, stream events, poll decisions, submit artifacts, complete, and report cancellation/recovery observations
@@ -155,6 +156,7 @@ All routes follow RESTful conventions:
   - `GET /api/projects/{id}/boards/live` — **WebSocket** for real-time updates
 - `/api/projects/{id}/export` — Export to JSON/YAML/CSV (1 endpoint)
 - `/api/projects/import` — Import from JSON or YAML (1 endpoint)
+- `/api/projects/outline`, `/api/projects/{id}/outline`, `/api/projects/import-csv`, `/api/projects/{id}/import-csv` — A project and its items, or items for a project, from an outline or a CSV (4 endpoints)
 - `/api/projects/{id}/items` — Items scoped to project (3 endpoints)
 - `/api/items/{id}` — Individual item operations (3 endpoints with WebSocket broadcasting)
 - `/api/items/{id}/dependencies` — Dependency management (3 endpoints)
@@ -248,7 +250,7 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
   - `GET /api/projects/{id}/export?format=yaml`
 - **CSV Export**: Simplified item list for spreadsheet import
   - `GET /api/projects/{id}/export?format=csv`
-  - Includes: id, title, type, status, priority, parent_id, created_at
+  - Includes: id, title, description, type, status, priority, assignee, estimate, due_date, tags, parent_id, created_at — the columns the CSV import reads, so an export re-imports with its hierarchy
 - **Import**: `POST /api/projects/import` (`handlers/export.rs::import_project`) accepts the same JSON-or-YAML snapshot shape produced by export, dispatched on `Content-Type`. Creates a new project, imports sprints then items (two passes — create, then wire up `parent_id`) then dependencies, preserves each item's original `source` trust marker, and restores the source project's workflow and vocabulary. If any step fails, the created project is deleted and the error is returned — nothing is left half-imported.
 
 ### WebSocket Real-Time Updates

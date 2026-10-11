@@ -1,4 +1,5 @@
 use chrono::Utc;
+use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
@@ -27,38 +28,15 @@ impl Repository {
             .validate_new_edge(source_item_id, input.target_item_id)
             .map_err(DependencyError::Core)?;
 
-        let id = Uuid::new_v4();
-        let now = Utc::now();
-        let dep_type_str = input.dependency_type.to_string();
-
-        sqlx::query(
-            "INSERT INTO dependencies (id, source_item_id, target_item_id, dependency_type, created_at)
-             VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind(source_item_id.to_string())
-        .bind(input.target_item_id.to_string())
-        .bind(&dep_type_str)
-        .bind(now.to_rfc3339())
-        .execute(self.pool())
-        .await
-        .map_err(DependencyError::Db)?;
-
-        debug!(
-            dependency_id = %id,
-            source = %source_item_id,
-            target = %input.target_item_id,
-            dep_type = %dep_type_str,
-            "Dependency created"
-        );
-
-        Ok(Dependency {
-            id,
+        let mut conn = self.pool().acquire().await.map_err(DependencyError::Db)?;
+        insert_dependency(
+            &mut conn,
             source_item_id,
-            target_item_id: input.target_item_id,
-            dependency_type: input.dependency_type,
-            created_at: now,
-        })
+            input.target_item_id,
+            &input.dependency_type,
+        )
+        .await
+        .map_err(DependencyError::Db)
     }
 
     #[instrument(skip(self))]
@@ -209,4 +187,46 @@ fn parse_dep_type(s: &str) -> DependencyType {
         "duplicates" => DependencyType::Duplicates,
         _ => DependencyType::RelatesTo,
     }
+}
+
+/// The dependency `INSERT`, with no cycle check: callers that cannot have
+/// checked the graph go through [`Repository::create_dependency`]; a batch
+/// whose graph was checked before writing calls this inside its transaction.
+pub(crate) async fn insert_dependency(
+    conn: &mut SqliteConnection,
+    source_item_id: Uuid,
+    target_item_id: Uuid,
+    dependency_type: &DependencyType,
+) -> Result<Dependency, sqlx::Error> {
+    let id = Uuid::new_v4();
+    let now = Utc::now();
+    let dep_type_str = dependency_type.to_string();
+
+    sqlx::query(
+        "INSERT INTO dependencies (id, source_item_id, target_item_id, dependency_type, created_at)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(id.to_string())
+    .bind(source_item_id.to_string())
+    .bind(target_item_id.to_string())
+    .bind(&dep_type_str)
+    .bind(now.to_rfc3339())
+    .execute(&mut *conn)
+    .await?;
+
+    debug!(
+        dependency_id = %id,
+        source = %source_item_id,
+        target = %target_item_id,
+        dep_type = %dep_type_str,
+        "Dependency created"
+    );
+
+    Ok(Dependency {
+        id,
+        source_item_id,
+        target_item_id,
+        dependency_type: dependency_type.clone(),
+        created_at: now,
+    })
 }

@@ -70,13 +70,28 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 | `list_items` | read | `project_id`*, `status`, `item_type`, `assignee` | `GET /api/projects/{id}/items` |
 | `get_item` | read | `id`* | `GET /api/items/{id}` |
 | `search_items` | read | `query`*, `project_id` | `GET /api/search` or `/projects/{id}/search` |
-| `create_item` | write | `project_id`*, `title`*, `item_type`, `priority`, `parent_id`, `assignee` | `POST /api/projects/{id}/items` |
+| `create_item` | write | `project_id`*, `title`*, `description`, `item_type`, `priority`, `parent_id`, `assignee`, `due_date`, `tags` | `POST /api/projects/{id}/items` |
+| `create_project` | write | `name`*, `project_type`, `description` | `POST /api/projects` |
+| `create_outline` | write | `items`*, one of `project_id` / `project`*, `dry_run` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
 | `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date` | `PATCH /api/items/{id}` |
 | `move_item` | write | `id`*, `status`* | `PATCH /api/items/{id}` |
 | `add_comment` | write | `item_id`*, `content`*, `author` | `POST /api/items/{id}/comments` |
 
 `*` = required. Read tools return a compact projection (id, title, type, status,
 priority, assignee) to keep agent context small; `get_item` returns full detail.
+
+`create_outline` creates many items in one call — in a new project (`project`:
+`{name, project_type?, description?}`) or an existing one (`project_id`) — with their
+hierarchy and dependencies. Each item takes the outline fields (`ref`, `title`,
+`description`, `type`, `status`, `priority`, `assignee`, `estimate`, `due_date`, `tags`,
+`parent`, `depends_on`); an item names its parent and what it waits on by another item's
+`ref` or exact title. The whole outline is checked before anything is written and every
+problem comes back in one error; nothing is written unless all of it can be. `dry_run:
+true` reports what would be created. The format and its rules are in the book's
+[import page](book/src/user-guide/import-export.md#how-do-i-create-a-project-and-its-items-from-a-file).
+`create_project` returns the new project's id and its workflow's status names, the values
+`status` and `move_item` accept. A project is created with `project_type: custom` unless
+another is given.
 
 ### Execution/fleet/profile tools (Part III, card E5)
 

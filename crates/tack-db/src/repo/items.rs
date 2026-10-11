@@ -1,13 +1,17 @@
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite};
+use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::CoreError;
-use tack_core::models::{CreateItem, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem};
+use tack_core::models::{
+    CreateItem, DependencyType, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem,
+};
+use tack_core::outline::{PlannedParent, ResolvedOutline};
 use tack_core::workflow::{StatusCategory, WorkflowConfig};
 
 use super::Repository;
+use super::dependencies::insert_dependency;
 
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
 /// the item's latest execution request left a non-empty patch or a kept
@@ -91,83 +95,45 @@ impl Repository {
         input: CreateItem,
         source: ItemSource,
     ) -> Result<Item, sqlx::Error> {
-        let id = Uuid::new_v4();
-        let now = Utc::now();
-        let now_str = now.to_rfc3339();
-        let item_type = input.item_type.unwrap_or(ItemType::Task);
-        let priority = input.priority.unwrap_or_default();
-        let estimate_unit = input.estimate_unit.unwrap_or_default();
-        let tags = input.tags.unwrap_or_default();
-        let tags_json = serde_json::to_string(&tags).unwrap();
-        let item_type_str = item_type.to_string();
-        let priority_str = priority.to_string();
-        let estimate_unit_str = serde_json::to_string(&estimate_unit).unwrap();
+        let mut conn = self.pool().acquire().await?;
+        insert_item(&mut conn, project_id, initial_status, input, source).await
+    }
 
-        // Get next sort order
-        let max_sort: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(sort_order) FROM items WHERE project_id = ? AND status = ?",
-        )
-        .bind(project_id.to_string())
-        .bind(initial_status)
-        .fetch_one(self.pool())
-        .await?;
-        let sort_order = max_sort.unwrap_or(0) + 1;
-
-        let source_str = source.to_string();
-
-        sqlx::query(
-            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind(project_id.to_string())
-        .bind(input.parent_id.map(|p| p.to_string()))
-        .bind(&input.title)
-        .bind(&input.description)
-        .bind(&item_type_str)
-        .bind(initial_status)
-        .bind(&priority_str)
-        .bind(input.estimate)
-        .bind(&estimate_unit_str)
-        .bind(&tags_json)
-        .bind(sort_order)
-        .bind(input.sprint_id.map(|s| s.to_string()))
-        .bind(&input.assignee)
-        .bind(input.due_date.map(|d| d.to_rfc3339()))
-        .bind(&source_str)
-        .bind(&input.source_artifact_id)
-        .bind(&now_str)
-        .bind(&now_str)
-        .execute(self.pool())
-        .await?;
-
-        debug!(item_id = %id, title = %input.title, source = %source_str, "Item created");
-
-        Ok(Item {
-            id,
-            project_id,
-            parent_id: input.parent_id,
-            title: input.title,
-            description: input.description,
-            item_type,
-            status: initial_status.to_string(),
-            priority,
-            estimate: input.estimate,
-            estimate_unit,
-            tags,
-            sort_order,
-            sprint_id: input.sprint_id,
-            assignee: input.assignee,
-            due_date: input.due_date,
-            started_at: None,
-            completed_at: None,
-            source,
-            source_artifact_id: input.source_artifact_id,
-            run_settings: None,
-            needs_review: false,
-            created_at: now,
-            updated_at: now,
-        })
+    /// Write a resolved outline's items, parents first, and its dependencies
+    /// in one transaction: either the whole outline lands or none of it does.
+    /// Returns the items in written order and how many dependencies were
+    /// recorded. `source` is the outline's provenance, as for
+    /// [`create_item_with_source`](Self::create_item_with_source).
+    #[instrument(skip(self, outline), fields(items = outline.items.len()))]
+    pub async fn create_outline_items(
+        &self,
+        project_id: Uuid,
+        outline: ResolvedOutline,
+        source: ItemSource,
+    ) -> Result<(Vec<Item>, usize), sqlx::Error> {
+        let mut tx = self.pool().begin().await?;
+        let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
+        for planned in outline.items {
+            let mut input = planned.input;
+            input.parent_id = planned.parent.map(|parent| match parent {
+                PlannedParent::Planned(i) => created[i].id,
+                PlannedParent::Existing(id) => id,
+            });
+            let item =
+                insert_item(&mut tx, project_id, &planned.status, input, source.clone()).await?;
+            created.push(item);
+        }
+        for &(blocker, blocked) in &outline.blocks {
+            insert_dependency(
+                &mut tx,
+                created[blocker].id,
+                created[blocked].id,
+                &DependencyType::Blocks,
+            )
+            .await?;
+        }
+        tx.commit().await?;
+        Ok((created, outline.blocks.len()))
     }
 
     #[instrument(skip(self))]
@@ -1027,4 +993,91 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
     }
 
     (clause, binds)
+}
+
+/// The one `INSERT` every item-creating path shares, on whatever connection
+/// the caller holds — a pooled one, or a transaction's.
+async fn insert_item(
+    conn: &mut SqliteConnection,
+    project_id: Uuid,
+    initial_status: &str,
+    input: CreateItem,
+    source: ItemSource,
+) -> Result<Item, sqlx::Error> {
+    let id = Uuid::new_v4();
+    let now = Utc::now();
+    let now_str = now.to_rfc3339();
+    let item_type = input.item_type.unwrap_or(ItemType::Task);
+    let priority = input.priority.unwrap_or_default();
+    let estimate_unit = input.estimate_unit.unwrap_or_default();
+    let tags = input.tags.unwrap_or_default();
+    let tags_json = serde_json::to_string(&tags).unwrap();
+    let item_type_str = item_type.to_string();
+    let priority_str = priority.to_string();
+    let estimate_unit_str = serde_json::to_string(&estimate_unit).unwrap();
+
+    // Get next sort order
+    let max_sort: Option<i32> =
+        sqlx::query_scalar("SELECT MAX(sort_order) FROM items WHERE project_id = ? AND status = ?")
+            .bind(project_id.to_string())
+            .bind(initial_status)
+            .fetch_one(&mut *conn)
+            .await?;
+    let sort_order = max_sort.unwrap_or(0) + 1;
+
+    let source_str = source.to_string();
+
+    sqlx::query(
+            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(id.to_string())
+        .bind(project_id.to_string())
+        .bind(input.parent_id.map(|p| p.to_string()))
+        .bind(&input.title)
+        .bind(&input.description)
+        .bind(&item_type_str)
+        .bind(initial_status)
+        .bind(&priority_str)
+        .bind(input.estimate)
+        .bind(&estimate_unit_str)
+        .bind(&tags_json)
+        .bind(sort_order)
+        .bind(input.sprint_id.map(|s| s.to_string()))
+        .bind(&input.assignee)
+        .bind(input.due_date.map(|d| d.to_rfc3339()))
+        .bind(&source_str)
+        .bind(&input.source_artifact_id)
+        .bind(&now_str)
+        .bind(&now_str)
+        .execute(&mut *conn)
+        .await?;
+
+    debug!(item_id = %id, title = %input.title, source = %source_str, "Item created");
+
+    Ok(Item {
+        id,
+        project_id,
+        parent_id: input.parent_id,
+        title: input.title,
+        description: input.description,
+        item_type,
+        status: initial_status.to_string(),
+        priority,
+        estimate: input.estimate,
+        estimate_unit,
+        tags,
+        sort_order,
+        sprint_id: input.sprint_id,
+        assignee: input.assignee,
+        due_date: input.due_date,
+        started_at: None,
+        completed_at: None,
+        source,
+        source_artifact_id: input.source_artifact_id,
+        run_settings: None,
+        needs_review: false,
+        created_at: now,
+        updated_at: now,
+    })
 }

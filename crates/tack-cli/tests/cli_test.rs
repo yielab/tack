@@ -50,6 +50,34 @@ async fn init_sends_post_projects() {
     assert_eq!(resp.unwrap()["name"], "My App");
 }
 
+// ── import (POST /api/projects/import-csv) ───────────────────────────────────
+
+#[tokio::test]
+async fn post_text_sends_content_type_query_and_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/import-csv"))
+        .and(header("Content-Type", "text/csv"))
+        .and(query_param("name", "my plan"))
+        .and(wiremock::matchers::body_string("title\nA\n"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "created": 1 })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let resp = run_blocking(move || {
+        TackClient::new(&make_config(&uri)).unwrap().post_text(
+            "/projects/import-csv",
+            &[("name", "my plan")],
+            "text/csv",
+            "title\nA\n".into(),
+        )
+    })
+    .await;
+
+    assert_eq!(resp.unwrap()["created"], 1);
+}
+
 // ── list (GET /api/projects/:id/items) ───────────────────────────────────────
 
 #[tokio::test]

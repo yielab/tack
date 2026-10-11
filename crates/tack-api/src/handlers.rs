@@ -15,6 +15,7 @@ pub mod items;
 pub mod local_runner;
 pub mod metrics;
 pub mod mrp;
+pub mod outline;
 pub mod projects;
 pub mod roles;
 pub mod runner_admin;

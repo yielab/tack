@@ -838,7 +838,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Export / import ───────────────────────────────────────────────
         handlers::export::export_project,
         handlers::export::import_project,
-        handlers::export::import_csv,
+        handlers::outline::create_project_from_outline,
+        handlers::outline::add_outline_to_project,
+        handlers::outline::create_project_from_csv,
+        handlers::outline::import_csv,
         handlers::import_github::import_github,
         handlers::import_linear::import_linear,
         // ── Items ─────────────────────────────────────────────────────────
@@ -989,6 +992,11 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::templates::CreateProjectFromTemplate,
         handlers::templates::SaveAsTemplateRequest,
         handlers::import_github::GitHubImportRequest,
+        handlers::outline::OutlineResult,
+        handlers::outline::OutlineResultItem,
+        tack_core::outline::Outline,
+        tack_core::outline::OutlineProject,
+        tack_core::outline::OutlineItem,
         handlers::import_linear::LinearImportRequest,
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,

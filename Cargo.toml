@@ -54,6 +54,8 @@ serde_with = { version = "3", default-features = false, features = ["std"] }
 # YAML project export/import (plaintext, git-diffable round-trip). serde_yaml is
 # feature-frozen but stable and the de-facto standard for serde<->YAML.
 serde_yaml = "0.9"
+# CSV import/export of items: quoted cells may span lines, which a line splitter breaks.
+csv = "1.4"
 
 # Logging & Diagnostics
 tracing = "0.1"

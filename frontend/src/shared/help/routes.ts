@@ -7,6 +7,7 @@ export const BOOK = {
   runDialog: `${BOOK_BASE}user-guide/agent-runners.html#the-run-with-agent-dialog`,
   workspace: `${BOOK_BASE}user-guide/agent-runners.html#where-the-agent-works`,
   items: `${BOOK_BASE}user-guide/items.html`,
+  importFiles: `${BOOK_BASE}user-guide/import-export.html#how-do-i-create-a-project-and-its-items-from-a-file`,
 };
 
 /** The book page for where the user is. `dialogOpen` (the Run dialog) wins over the route. */

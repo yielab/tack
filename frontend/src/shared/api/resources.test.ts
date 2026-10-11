@@ -296,12 +296,23 @@ describe('api.data (export/import/backup/restore)', () => {
     expect(c).toMatchObject({ url: '/api/restore', method: 'POST' });
     expect(c.body).toBe(blob);
   });
-  it('importCsv → POST /projects/{id}/import-csv with text/csv body', async () => {
-    await api.data.importCsv('p1', 'title\nFoo');
+  it('importItems → POST /projects/{id}/import-csv with text/csv body', async () => {
+    await api.data.importItems('p1', 'title\nFoo', 'csv');
     const [url, init] = fetchMock.mock.calls.at(-1)!;
     expect(String(url)).toBe('/api/projects/p1/import-csv');
     expect(init?.method).toBe('POST');
     expect(init?.body).toBe('title\nFoo');
     expect((init?.headers as Headers).get('Content-Type')).toBe('text/csv');
+  });
+  it('importItems → POST /projects/{id}/outline?dry_run=true with a YAML body', async () => {
+    await api.data.importItems('p1', 'items: []', 'yaml', true);
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(String(url)).toBe('/api/projects/p1/outline?dry_run=true');
+    expect((init?.headers as Headers).get('Content-Type')).toBe('application/x-yaml');
+  });
+  it('createProjectFromFile → POST /projects/import-csv?name=…', async () => {
+    await api.data.createProjectFromFile('title\nFoo', 'csv', { name: 'My plan' });
+    const [url] = fetchMock.mock.calls.at(-1)!;
+    expect(String(url)).toBe('/api/projects/import-csv?name=My+plan');
   });
 });

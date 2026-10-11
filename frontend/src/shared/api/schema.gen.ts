@@ -1080,6 +1080,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/import-csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_project_from_csv"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_project_from_outline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}": {
         parameters: {
             query?: never;
@@ -1123,13 +1155,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * POST /api/projects/:id/import-csv
-         * @description Accepts a UTF-8 CSV body (Content-Type: text/csv or text/plain).
-         *     First row must be column headers.  Only `title` is required; all other
-         *     columns are optional.  Recognised headers (case-insensitive):
-         *       title, description, type, item_type, status, priority, assignee, estimate
-         *
-         *     Returns `{ "created": N, "skipped": N }`.
+         * `ItemSource::CsvImport` — a bare CSV carries no provenance of its own, so
+         *     every row is untrusted for dispatch purposes, same as the GitHub/Linear
+         *     importers.
          */
         post: operations["import_csv"];
         delete?: never;
@@ -1194,6 +1222,22 @@ export interface paths {
         get: operations["factory_metrics"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_outline_to_project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3788,7 +3832,7 @@ export interface components {
          *     should independently decide whether a `source` counts as trusted.
          * @enum {string}
          */
-        ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown" | "plan";
+        ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown" | "plan" | "outline";
         ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
             custom: string;
         };
@@ -3883,6 +3927,88 @@ export interface components {
             pqc_rate: components["schemas"]["Ratio"];
             /** Format: int64 */
             reverted: number;
+        };
+        /**
+         * @description What `POST /api/projects/outline` and `POST /api/projects/{id}/outline`
+         *     read, as JSON or YAML. Unknown keys are refused rather than dropped, so a
+         *     misspelt field is an error the writer sees instead of data that vanishes.
+         */
+        Outline: {
+            items?: components["schemas"]["OutlineItem"][];
+            project?: null | components["schemas"]["OutlineProject"];
+        };
+        OutlineItem: {
+            assignee?: string | null;
+            /** @description Items that must finish before this one, by `ref` or exact title. */
+            depends_on?: string[];
+            description?: string | null;
+            /** @description `YYYY-MM-DD` or an RFC 3339 timestamp. */
+            due_date?: string | null;
+            /** Format: double */
+            estimate?: number | null;
+            /**
+             * @description Another item's `ref` or exact title; when adding to an existing
+             *     project, also the id of an item already in it.
+             */
+            parent?: string | null;
+            /** @description critical, high, medium (the default), low or none. */
+            priority?: string | null;
+            /**
+             * @description A name other items use in `parent` and `depends_on`. Any text or
+             *     number, unique within the outline.
+             */
+            ref?: string | null;
+            /**
+             * @description A status of the project's workflow, any case. Unknown or absent: the
+             *     workflow's first status.
+             */
+            status?: string | null;
+            tags?: string[];
+            title?: string;
+            /**
+             * @description epic, feature, task (the default), subtask, bug, requirement, or any
+             *     other word as a custom type.
+             */
+            type?: string | null;
+        };
+        OutlineProject: {
+            description?: string | null;
+            name?: string | null;
+            /**
+             * @description software, web, mobile, construction, personal, homework, maintenance,
+             *     legal, research, event or custom (the default).
+             */
+            project_type?: string | null;
+        };
+        /** @description What an outline or CSV import created, or would create on a dry run. */
+        OutlineResult: {
+            /** @description Items created (on a dry run, that would be created). */
+            created: number;
+            /** @description Dependencies created between the new items. */
+            dependencies: number;
+            dry_run: boolean;
+            /** @description The items in written order: parents before their children. */
+            items: components["schemas"]["OutlineResultItem"][];
+            project?: null | components["schemas"]["Project"];
+            /** @description CSV rows with no title, which create nothing. */
+            skipped: number;
+            /**
+             * @description What was read but not used as written: an unknown status or priority,
+             *     a column with no field, a project block an add ignores.
+             */
+            warnings: string[];
+        };
+        OutlineResultItem: {
+            /**
+             * Format: uuid
+             * @description Absent on a dry run.
+             */
+            id?: string | null;
+            /** Format: uuid */
+            parent_id?: string | null;
+            ref?: string | null;
+            status: string;
+            title: string;
         };
         /**
          * @description Pagination envelope for the item-list endpoint. `total` is the
@@ -6806,6 +6932,104 @@ export interface operations {
             };
         };
     };
+    create_project_from_csv: {
+        parameters: {
+            query?: {
+                /** @description Check the file and report what would be created, writing nothing. */
+                dry_run?: boolean;
+                /**
+                 * @description The new project's name. Overrides an outline's `project.name`;
+                 *     required for a CSV, which has no project of its own.
+                 */
+                name?: string;
+                /**
+                 * @description The new project's type (default `custom`). Overrides an outline's
+                 *     `project.project_type`.
+                 */
+                project_type?: string;
+                /** @description Overrides an outline's `project.description`. */
+                description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CSV with a header row; `title` column required */
+        requestBody: {
+            content: {
+                "text/csv": string;
+            };
+        };
+        responses: {
+            /** @description The project and items created, or that would be on a dry run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlineResult"];
+                };
+            };
+            /** @description The CSV was refused; the message lists every problem */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_project_from_outline: {
+        parameters: {
+            query?: {
+                /** @description Check the file and report what would be created, writing nothing. */
+                dry_run?: boolean;
+                /**
+                 * @description The new project's name. Overrides an outline's `project.name`;
+                 *     required for a CSV, which has no project of its own.
+                 */
+                name?: string;
+                /**
+                 * @description The new project's type (default `custom`). Overrides an outline's
+                 *     `project.project_type`.
+                 */
+                project_type?: string;
+                /** @description Overrides an outline's `project.description`. */
+                description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description An outline as JSON, or YAML when Content-Type mentions yaml */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Outline"];
+            };
+        };
+        responses: {
+            /** @description The project and items created, or that would be on a dry run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlineResult"];
+                };
+            };
+            /** @description The outline was refused; the message lists every problem */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     get_project: {
         parameters: {
             query?: never;
@@ -6958,7 +7182,10 @@ export interface operations {
     };
     import_csv: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Check the file and report what would be created, writing nothing. */
+                dry_run?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Project ID */
@@ -6973,16 +7200,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Counts of created and skipped rows */
+            /** @description The items created, or that would be on a dry run */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["OutlineResult"];
                 };
             };
-            /** @description Malformed CSV */
+            /** @description The CSV was refused; the message lists every problem */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -7117,6 +7344,55 @@ export interface operations {
                 };
             };
             /** @description `since` is not RFC 3339 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_outline_to_project: {
+        parameters: {
+            query?: {
+                /** @description Check the file and report what would be created, writing nothing. */
+                dry_run?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description An outline as JSON, or YAML when Content-Type mentions yaml; its project block is ignored */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Outline"];
+            };
+        };
+        responses: {
+            /** @description The items created, or that would be on a dry run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlineResult"];
+                };
+            };
+            /** @description The outline was refused; the message lists every problem */
             400: {
                 headers: {
                     [name: string]: unknown;

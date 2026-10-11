@@ -4,7 +4,8 @@
 //! through the real production router, the two focused read-only
 //! runner/attempt routes, the attempt-scoped artifact/decision list routes,
 //! cross-execution scoping on the attempt-events and artifact-download
-//! routes, runner-fleet membership, and optimistic item-version concurrency.
+//! routes, runner-fleet membership, optimistic item-version concurrency, and
+//! outline and CSV imports.
 
 mod common;
 
@@ -36,6 +37,8 @@ mod metrics;
 mod mrp;
 #[path = "handlers/operator_read_routes.rs"]
 mod operator_read_routes;
+#[path = "handlers/outline.rs"]
+mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
 #[path = "handlers/templates.rs"]

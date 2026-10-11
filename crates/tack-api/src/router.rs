@@ -23,7 +23,8 @@ use crate::handlers::spa;
 use crate::handlers::{
     attachments, attempt_lists, backup, boards_multi, briefs, comments, custom_fields, decisions,
     dependencies, executions, export, import_github, import_linear, items, local_runner, metrics,
-    mrp, projects, roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
+    mrp, outline, projects, roles, runner_admin, runner_protocol, settings, sprints, templates,
+    websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
 use crate::webhook::WebhookClient;
@@ -263,7 +264,19 @@ pub fn build_router(state: AppState) -> Router {
         .route("/projects/{id}", delete(projects::delete_project))
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
-        .route("/projects/{id}/import-csv", post(export::import_csv))
+        .route(
+            "/projects/outline",
+            post(outline::create_project_from_outline),
+        )
+        .route(
+            "/projects/{id}/outline",
+            post(outline::add_outline_to_project),
+        )
+        .route(
+            "/projects/import-csv",
+            post(outline::create_project_from_csv),
+        )
+        .route("/projects/{id}/import-csv", post(outline::import_csv))
         .route(
             "/projects/{id}/import-github",
             post(import_github::import_github),

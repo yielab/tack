@@ -60,7 +60,10 @@ beforeEach(() => {
     if (url.includes('/export')) return Promise.resolve(new Response('x', { status: 200 }));
     if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response('[]', { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
-    if (url.endsWith('/api/projects/p1/import-csv')) return Promise.resolve(new Response(JSON.stringify({ created: 3, skipped: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    if (url.includes('/api/projects/p1/import-csv')) {
+      const result = { dry_run: url.includes('dry_run'), created: 3, skipped: 0, dependencies: 0, warnings: [], items: [] };
+      return Promise.resolve(new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
     return Promise.resolve(new Response(JSON.stringify({ id: 'p1' }), { status: 200 }));
   });
 });
@@ -175,27 +178,27 @@ describe('Settings panels', () => {
     ).toBe(true);
   });
 
-  it('DataPanel CSV import POSTs to /projects/{id}/import-csv', async () => {
+  it('data_panel_file_import_previews_then_writes_on_confirm', async () => {
     const { container, dispose } = mount(() => <DataPanel />);
     await flush();
 
-    // The CSV file input is the second input[type="file"] (JSON import is the first).
+    // Inputs: the snapshot restore, then "Add items", then "New project".
     const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
-    const csvInput = inputs[1];
-    const csvText = 'title\nFoo\nBar\nBaz';
-    const file = new File([csvText], 'items.csv', { type: 'text/csv' });
-    Object.defineProperty(csvInput, 'files', { value: [file], configurable: true });
-    csvInput.dispatchEvent(new Event('change', { bubbles: true }));
-    await flush();
-    await flush(); // second flush for file.text() async resolution
+    const file = new File(['title\nFoo\nBar\nBaz'], 'items.csv', { type: 'text/csv' });
+    Object.defineProperty(inputs[1], 'files', { value: [file], configurable: true });
+    inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
 
-    expect(
-      fetchMock.mock.calls.some(
-        (c) =>
-          (c[1] as RequestInit)?.method === 'POST' &&
-          String(c[0]).endsWith('/api/projects/p1/import-csv'),
-      ),
-    ).toBe(true);
+    const csvPosts = () =>
+      fetchMock.mock.calls
+        .filter((c) => (c[1] as RequestInit)?.method === 'POST' && String(c[0]).includes('/api/projects/p1/import-csv'))
+        .map((c) => String(c[0]));
+    await vi.waitFor(() => expect(csvPosts()).toEqual(['/api/projects/p1/import-csv?dry_run=true']));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('3 items'));
+
+    btn(document.body, 'Add items').click();
+    await vi.waitFor(() =>
+      expect(csvPosts()).toEqual(['/api/projects/p1/import-csv?dry_run=true', '/api/projects/p1/import-csv']),
+    );
     dispose();
   });
 

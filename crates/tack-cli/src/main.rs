@@ -70,6 +70,30 @@ enum Commands {
         json: bool,
     },
 
+    /// Create a project and its items, or add items to a project, from an
+    /// outline (.json, .yaml, .yml) or a CSV file. Nothing is written unless
+    /// the whole file can be.
+    Import {
+        /// The file: an outline as JSON or YAML, or a CSV with a header row
+        file: PathBuf,
+        /// Add the items to this project instead of creating one
+        #[arg(short = 'p', long)]
+        project: Option<String>,
+        /// The new project's name; overrides an outline's. A CSV defaults to
+        /// the file's name
+        #[arg(long, conflicts_with = "project")]
+        name: Option<String>,
+        /// The new project's type (default custom); overrides an outline's
+        #[arg(short = 't', long = "type", conflicts_with = "project")]
+        project_type: Option<String>,
+        /// Check the file and show what would be created, writing nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// List projects
     Projects {
         /// Output raw JSON
@@ -926,6 +950,25 @@ fn main() -> anyhow::Result<()> {
             json,
         } => cmd_init(&client, name, r#type, description, json),
 
+        Commands::Import {
+            file,
+            project,
+            name,
+            project_type,
+            dry_run,
+            json,
+        } => cmd_import(
+            &client,
+            &file,
+            ImportTarget {
+                project,
+                name,
+                project_type,
+            },
+            dry_run,
+            json,
+        ),
+
         Commands::Projects { json } => cmd_projects(&client, json),
 
         Commands::Add {
@@ -1253,6 +1296,90 @@ fn cmd_init(
     println!("Created project: {} ({})", name, &id[..8.min(id.len())]);
     println!("  type: {project_type}");
     println!("  id:   {id}");
+    Ok(())
+}
+
+/// Where `tack import` puts the items: an existing project, or a new one.
+struct ImportTarget {
+    project: Option<String>,
+    name: Option<String>,
+    project_type: Option<String>,
+}
+
+fn cmd_import(
+    client: &TackClient,
+    file: &std::path::Path,
+    target: ImportTarget,
+    dry_run: bool,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = std::fs::read_to_string(file)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", file.display()))?;
+    let extension = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let (content_type, is_csv) = match extension.as_str() {
+        "csv" => ("text/csv", true),
+        "yaml" | "yml" => ("application/x-yaml", false),
+        _ => ("application/json", false),
+    };
+    let route = if is_csv { "import-csv" } else { "outline" };
+    let default_name = file.file_stem().map(|s| s.to_string_lossy().into_owned());
+
+    let mut query: Vec<(&str, &str)> = Vec::new();
+    if dry_run {
+        query.push(("dry_run", "true"));
+    }
+    let path = match &target.project {
+        Some(project) => format!("/projects/{project}/{route}"),
+        None => {
+            let name = target.name.as_deref().or(if is_csv {
+                default_name.as_deref()
+            } else {
+                None
+            });
+            if let Some(name) = name {
+                query.push(("name", name));
+            }
+            if let Some(project_type) = target.project_type.as_deref() {
+                query.push(("project_type", project_type));
+            }
+            format!("/projects/{route}")
+        }
+    };
+    let resp = client.post_text(&path, &query, content_type, body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+
+    if let Some(id) = resp["project"]["id"].as_str() {
+        let name = resp["project"]["name"].as_str().unwrap_or("?");
+        println!("Created project: {name} ({})", &id[..8.min(id.len())]);
+        println!("  id:   {id}");
+    }
+    let created = resp["created"].as_u64().unwrap_or(0);
+    let dependencies = resp["dependencies"].as_u64().unwrap_or(0);
+    let verb = if dry_run { "Would create" } else { "Created" };
+    let items_word = if created == 1 { "item" } else { "items" };
+    let deps_word = if dependencies == 1 {
+        "dependency"
+    } else {
+        "dependencies"
+    };
+    println!("{verb} {created} {items_word} and {dependencies} {deps_word}");
+    for item in resp["items"].as_array().into_iter().flatten() {
+        println!(
+            "  - {} [{}]",
+            item["title"].as_str().unwrap_or("?"),
+            item["status"].as_str().unwrap_or("?")
+        );
+    }
+    for warning in resp["warnings"].as_array().into_iter().flatten() {
+        println!("  warning: {}", warning.as_str().unwrap_or("?"));
+    }
     Ok(())
 }
 

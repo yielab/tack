@@ -1003,3 +1003,77 @@ async fn foreign_key_rejects_orphan_item() {
         "inserting an item with a dangling project_id must be rejected by the FK constraint"
     );
 }
+
+// ─── Outline batches ─────────────────────────────────────────────────────────
+
+fn outline_item(title: &str, parent: Option<&str>) -> tack_core::outline::OutlineItem {
+    tack_core::outline::OutlineItem {
+        reference: Some(title.into()),
+        title: title.into(),
+        parent: parent.map(str::to_string),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn outline_batch_writes_parents_and_dependencies() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+    let project = repo
+        .create_project(ws_id, project_input("P"))
+        .await
+        .unwrap();
+    let mut kid = outline_item("Kid", Some("Epic"));
+    kid.depends_on = vec!["Other".into()];
+    let items = [kid, outline_item("Epic", None), outline_item("Other", None)];
+    let resolved = tack_core::outline::resolve(&items, &project.workflow).unwrap();
+
+    let (created, deps) = repo
+        .create_outline_items(project.id, resolved, ItemSource::Outline)
+        .await
+        .unwrap();
+
+    assert_eq!(deps, 1);
+    let epic = created.iter().find(|i| i.title == "Epic").unwrap();
+    let kid = created.iter().find(|i| i.title == "Kid").unwrap();
+    assert_eq!(kid.parent_id, Some(epic.id));
+    assert_eq!(
+        repo.list_dependencies_for_project(project.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn outline_batch_failing_midway_writes_nothing() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+    let project = repo
+        .create_project(ws_id, project_input("P"))
+        .await
+        .unwrap();
+    // The second row's parent passes the outline check (an id is assumed to
+    // exist) but breaks the foreign key, after the first row was inserted.
+    let missing = uuid::Uuid::new_v4().to_string();
+    let items = [
+        outline_item("Fine", None),
+        outline_item("Broken", Some(&missing)),
+    ];
+    let resolved = tack_core::outline::resolve(&items, &project.workflow).unwrap();
+
+    let result = repo
+        .create_outline_items(project.id, resolved, ItemSource::Outline)
+        .await;
+
+    assert!(result.is_err());
+    let left = repo
+        .list_items(project.id, &Default::default())
+        .await
+        .unwrap();
+    assert!(
+        left.is_empty(),
+        "the first row must roll back with the second"
+    );
+}

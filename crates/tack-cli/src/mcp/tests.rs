@@ -59,12 +59,14 @@ fn mcp_tool_names() -> Vec<String> {
 }
 
 #[test]
-fn tools_list_advertises_all_fourteen() {
-    // The original 8 item/project tools plus 6 execution/fleet/profile tools.
+fn tools_list_advertises_all_sixteen() {
+    // 10 item/project tools plus 6 execution/fleet/profile tools.
     let names = mcp_tool_names();
-    assert_eq!(names.len(), 14);
+    assert_eq!(names.len(), 16);
     for expected in [
         "list_projects",
+        "create_project",
+        "create_outline",
         "move_item",
         "add_comment",
         "list_fleets",
@@ -519,4 +521,100 @@ fn get_execution_requires_request_id() {
     assert_eq!(v["result"]["isError"], true);
     let text = v["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("request_id"), "unexpected: {text}");
+}
+
+#[test]
+fn create_outline_needs_items_and_exactly_one_target() {
+    let cases = [
+        (
+            json!({ "project_id": "p" }),
+            "missing required argument: items",
+        ),
+        (
+            json!({ "items": [] }),
+            "pass project_id to add to a project",
+        ),
+        (
+            json!({ "items": [], "project_id": "p", "project": { "name": "N" } }),
+            "not both",
+        ),
+    ];
+    for (args, expected) in cases {
+        let err = dispatch_tool(&test_client(), "create_outline", &args).unwrap_err();
+        assert!(err.contains(expected), "{args}: {err}");
+    }
+}
+
+#[test]
+fn due_timestamp_turns_a_date_into_midnight_utc() {
+    assert_eq!(due_timestamp("2026-11-01"), "2026-11-01T00:00:00Z");
+    assert_eq!(
+        due_timestamp("2026-11-01T09:30:00Z"),
+        "2026-11-01T09:30:00Z"
+    );
+}
+
+/// Both outline targets reach their own route with the body the API reads,
+/// and a dry run asks for one.
+#[tokio::test]
+async fn mcp_create_outline_posts_to_the_matching_route() {
+    let server = wiremock::MockServer::start().await;
+    let items = json!([{ "ref": "a", "title": "A" }, { "title": "B", "parent": "a" }]);
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/api/projects/outline"))
+        .and(wiremock::matchers::query_param("dry_run", "true"))
+        .and(wiremock::matchers::body_json(
+            json!({ "project": { "name": "N" }, "items": items }),
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({ "created": 2 })))
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/api/projects/p1/outline"))
+        .and(wiremock::matchers::body_json(json!({ "items": items })))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({ "created": 2 })))
+        .mount(&server)
+        .await;
+
+    for args in [
+        json!({ "project": { "name": "N" }, "items": items, "dry_run": true }),
+        json!({ "project_id": "p1", "items": items }),
+    ] {
+        let uri = server.uri();
+        let result =
+            run_blocking(move || dispatch_tool(&mock_client(&uri), "create_outline", &args)).await;
+        assert_eq!(result.unwrap()["created"], 2);
+    }
+}
+
+#[tokio::test]
+async fn mcp_create_project_returns_statuses_in_order() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/api/projects"))
+        .and(wiremock::matchers::body_partial_json(
+            json!({ "name": "N", "project_type": "custom" }),
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "id": "p1", "name": "N", "project_type": "custom",
+            "workflow": { "statuses": [
+                { "name": "Done", "order": 2 },
+                { "name": "To Do", "order": 0 },
+                { "name": "In Progress", "order": 1 }
+            ] }
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let summary = run_blocking(move || {
+        dispatch_tool(
+            &mock_client(&uri),
+            "create_project",
+            &json!({ "name": "N" }),
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(summary["statuses"], json!(["To Do", "In Progress", "Done"]));
 }

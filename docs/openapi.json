@@ -3249,6 +3249,164 @@
         }
       }
     },
+    "/api/projects/import-csv": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "operationId": "create_project_from_csv",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Check the file and report what would be created, writing nothing.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The new project's name. Overrides an outline's `project.name`;\nrequired for a CSV, which has no project of its own.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_type",
+            "in": "query",
+            "description": "The new project's type (default `custom`). Overrides an outline's\n`project.project_type`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "description": "Overrides an outline's `project.description`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "CSV with a header row; `title` column required",
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The project and items created, or that would be on a dry run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutlineResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The CSV was refused; the message lists every problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/outline": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "operationId": "create_project_from_outline",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Check the file and report what would be created, writing nothing.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The new project's name. Overrides an outline's `project.name`;\nrequired for a CSV, which has no project of its own.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_type",
+            "in": "query",
+            "description": "The new project's type (default `custom`). Overrides an outline's\n`project.project_type`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "description": "Overrides an outline's `project.description`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "An outline as JSON, or YAML when Content-Type mentions yaml",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Outline"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The project and items created, or that would be on a dry run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutlineResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The outline was refused; the message lists every problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{id}": {
       "get": {
         "tags": [
@@ -3448,8 +3606,7 @@
         "tags": [
           "import"
         ],
-        "summary": "POST /api/projects/:id/import-csv",
-        "description": "Accepts a UTF-8 CSV body (Content-Type: text/csv or text/plain).\nFirst row must be column headers.  Only `title` is required; all other\ncolumns are optional.  Recognised headers (case-insensitive):\n  title, description, type, item_type, status, priority, assignee, estimate\n\nReturns `{ \"created\": N, \"skipped\": N }`.",
+        "summary": "`ItemSource::CsvImport` — a bare CSV carries no provenance of its own, so\nevery row is untrusted for dispatch purposes, same as the GitHub/Linear\nimporters.",
         "operationId": "import_csv",
         "parameters": [
           {
@@ -3460,6 +3617,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Check the file and report what would be created, writing nothing.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -3476,15 +3642,17 @@
         },
         "responses": {
           "200": {
-            "description": "Counts of created and skipped rows",
+            "description": "The items created, or that would be on a dry run",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OutlineResult"
+                }
               }
             }
           },
           "400": {
-            "description": "Malformed CSV",
+            "description": "The CSV was refused; the message lists every problem",
             "content": {
               "application/json": {
                 "schema": {
@@ -3671,6 +3839,78 @@
           },
           "400": {
             "description": "`since` is not RFC 3339",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/outline": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "operationId": "add_outline_to_project",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Check the file and report what would be created, writing nothing.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "An outline as JSON, or YAML when Content-Type mentions yaml; its project block is ignored",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Outline"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The items created, or that would be on a dry run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutlineResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The outline was refused; the message lists every problem",
             "content": {
               "application/json": {
                 "schema": {
@@ -9189,7 +9429,8 @@
           "json_import",
           "csv_import",
           "unknown",
-          "plan"
+          "plan",
+          "outline"
         ]
       },
       "ItemType": {
@@ -9457,6 +9698,231 @@
           "reverted": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "Outline": {
+        "type": "object",
+        "description": "What `POST /api/projects/outline` and `POST /api/projects/{id}/outline`\nread, as JSON or YAML. Unknown keys are refused rather than dropped, so a\nmisspelt field is an error the writer sees instead of data that vanishes.",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutlineItem"
+            }
+          },
+          "project": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutlineProject",
+                "description": "The project to create. Read only when the outline creates a project."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "OutlineItem": {
+        "type": "object",
+        "properties": {
+          "assignee": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Items that must finish before this one, by `ref` or exact title."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM-DD` or an RFC 3339 timestamp."
+          },
+          "estimate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Another item's `ref` or exact title; when adding to an existing\nproject, also the id of an item already in it."
+          },
+          "priority": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "critical, high, medium (the default), low or none."
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A name other items use in `parent` and `depends_on`. Any text or\nnumber, unique within the outline."
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A status of the project's workflow, any case. Unknown or absent: the\nworkflow's first status."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "epic, feature, task (the default), subtask, bug, requirement, or any\nother word as a custom type."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OutlineProject": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "software, web, mobile, construction, personal, homework, maintenance,\nlegal, research, event or custom (the default)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OutlineResult": {
+        "type": "object",
+        "description": "What an outline or CSV import created, or would create on a dry run.",
+        "required": [
+          "dry_run",
+          "created",
+          "skipped",
+          "dependencies",
+          "items",
+          "warnings"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "description": "Items created (on a dry run, that would be created).",
+            "minimum": 0
+          },
+          "dependencies": {
+            "type": "integer",
+            "description": "Dependencies created between the new items.",
+            "minimum": 0
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutlineResultItem"
+            },
+            "description": "The items in written order: parents before their children."
+          },
+          "project": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Project",
+                "description": "The project created; absent when adding to a project and on a dry run."
+              }
+            ]
+          },
+          "skipped": {
+            "type": "integer",
+            "description": "CSV rows with no title, which create nothing.",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What was read but not used as written: an unknown status or priority,\na column with no field, a project block an add ignores."
+          }
+        }
+      },
+      "OutlineResultItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Absent on a dry run."
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         }
       },

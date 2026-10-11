@@ -277,6 +277,10 @@ pub enum ItemSource {
     /// A subtask a person created from a Planner plan
     /// (`POST /api/items/{id}/subtasks-from-plan`); the record says so.
     Plan,
+    /// `POST /api/projects/outline` and `POST /api/projects/{id}/outline` —
+    /// a batch a script or a language model may have written from text Tack
+    /// never saw, so untrusted like every other import.
+    Outline,
 }
 
 impl ItemSource {
@@ -298,6 +302,7 @@ impl std::fmt::Display for ItemSource {
             Self::CsvImport => write!(f, "csv_import"),
             Self::Unknown => write!(f, "unknown"),
             Self::Plan => write!(f, "plan"),
+            Self::Outline => write!(f, "outline"),
         }
     }
 }
@@ -319,6 +324,7 @@ impl std::str::FromStr for ItemSource {
             "json_import" => Self::JsonImport,
             "csv_import" => Self::CsvImport,
             "plan" => Self::Plan,
+            "outline" => Self::Outline,
             _ => Self::Unknown,
         })
     }
