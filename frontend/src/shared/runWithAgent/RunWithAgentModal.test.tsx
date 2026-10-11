@@ -846,6 +846,25 @@ describe('RunWithAgentModal', () => {
     expect(select('Agent').value).toBe('prill');
   });
 
+  it('the Through select names a configured OpenAI-compatible endpoint in words', async () => {
+    const local = runnerRow('runner-8', 'Local model', runnerCapabilitySnapshot({
+      harnesses: [{
+        ...runnerCapabilitySnapshot().harnesses[0],
+        harness_kind: 'docket',
+        native_provider: 'docket',
+        providers: ['openai-compatible'],
+      }],
+    }));
+    mount({}, { runners: [local], fleets: [] });
+    await flush();
+    modelModeRadio(1).click();
+    await flush();
+    setSelect(select('Model'), '__custom__');
+    await flush();
+    const labels = [...select('Through').options].map((o) => o.textContent);
+    expect(labels).toEqual(['Docket', 'OpenAI-compatible endpoint']);
+  });
+
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();

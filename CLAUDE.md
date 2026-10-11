@@ -24,6 +24,11 @@ follow-ups phase 67's agents found and closed 2026-10-08; its Status section tab
 found in turn, the weightiest being a request no runner can claim staying Queued with no
 reason shown. Both phases sit in `develop` unpushed, to ship as the next beta. Phase-65's
 Wave 0 publish list is the user's.
+ADR 0074's follow-ups found by the first live docket + prill run (2026-10-10) are in ADR 0075 and
+landed the same day: prill is the runner's native verifier, `[provider.openai_compatible]`
+reaches docket and opencode, a run that asks reads `waiting_decision`, the request follows its
+attempt, the embedded runner takes `--runner-config`. `scripts/docket-prill-e2e.sh` is the live
+proof.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

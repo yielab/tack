@@ -43,7 +43,8 @@ const NO_KEYCHAIN = process.env.DOCKET_PRILL_NO_KEYCHAIN || 'unix:path=/nonexist
 
 const PROJECT_NAME = 'Calculator';
 const RUNNER_NAME = 'workstation-docket-prill';
-const GATEWAY_PROVIDER = 'vercel-ai-gateway';
+/** The wire name of `[provider.openai_compatible]`, the endpoint the script configures. */
+const ENDPOINT_PROVIDER = 'openai-compatible';
 
 /** The three kinds of work, each with what prill can check by itself. */
 const ITEMS = {
@@ -332,7 +333,7 @@ async function runFromBoard(page: Page, key: ItemKey, options: { ask?: boolean; 
   await expect(modal.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
   await modal.getByText('Advanced for this run').click();
   await modal.getByLabel('Agent', { exact: true }).selectOption('docket');
-  await expect(modal.getByText(`Project default — ${GATEWAY_PROVIDER} / ${modelId}`)).toBeVisible();
+  await expect(modal.getByText(`Project default — ${ENDPOINT_PROVIDER} / ${modelId}`)).toBeVisible();
   // prill is this runner's verifier: the switch is live and on, not deferred.
   const verify = modal.getByLabel('Verify the result');
   await expect(verify).toBeEnabled();
@@ -505,7 +506,6 @@ test.describe.serial('docket runs, prill verifies', () => {
           PATH: RUNNER_PATH,
           HOME: os.homedir(),
           TACK_RUNNER_ENROLLMENT_TOKEN: token,
-          TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL: MODEL_BASE_URL,
           DBUS_SESSION_BUS_ADDRESS: NO_KEYCHAIN,
         },
         stdio: ['ignore', log, log],
@@ -518,8 +518,8 @@ test.describe.serial('docket runs, prill verifies', () => {
     const mine = (await runners()).find((r) => r.runner_id === runnerId)!;
     const docket = mine.capability_snapshot?.harnesses?.find((h) => h.harness_kind === 'docket');
     expect(docket, 'the runner reports docket').toBeTruthy();
-    const combo = docket!.model_combinations?.find((c) => c.model_provider === GATEWAY_PROVIDER);
-    expect(combo?.model_ids.length, 'the endpoint\'s catalog was read through the gateway provider').toBeGreaterThan(0);
+    const combo = docket!.model_combinations?.find((c) => c.model_provider === ENDPOINT_PROVIDER);
+    expect(combo?.model_ids.length, 'the endpoint\'s catalog was read through the OpenAI-compatible provider').toBeGreaterThan(0);
     modelId = combo!.model_ids[0];
     summary.runner = { runnerId, name: RUNNER_NAME, modelId };
     await page.waitForTimeout(4500);
@@ -531,7 +531,7 @@ test.describe.serial('docket runs, prill verifies', () => {
     await ensureRunner();
     if (!modelId) {
       const mine = (await runners()).find((r) => r.runner_id === runnerId)!;
-      modelId = mine.capability_snapshot!.harnesses!.find((h) => h.harness_kind === 'docket')!.model_combinations!.find((c) => c.model_provider === GATEWAY_PROVIDER)!.model_ids[0];
+      modelId = mine.capability_snapshot!.harnesses!.find((h) => h.harness_kind === 'docket')!.model_combinations!.find((c) => c.model_provider === ENDPOINT_PROVIDER)!.model_ids[0];
     }
     await page.goto(`${BASE}/projects/${projectId}/settings?tab=automation`);
     await waitForApp(page);
@@ -539,11 +539,13 @@ test.describe.serial('docket runs, prill verifies', () => {
     await expect(page.getByLabel('An existing folder on this computer')).toBeChecked();
     await page.getByLabel('On a new branch of your repo (recommended)').check();
     await page.getByRole('button', { name: 'docket', exact: true }).click();
-    // The panel offers no measured model id for docket (its list is empty by
-    // design: docket forwards whatever it is given), so the one default a
-    // person can set here is the endpoint's own catalog entry, through the
-    // same write the panel makes.
-    await apiFetch(`/projects/${projectId}`, json('PATCH', { default_model: { kind: 'explicit', provider: GATEWAY_PROVIDER, model_id: modelId } }));
+    // The model list merges what the runner measured: the endpoint's own
+    // catalog shows up as `openai-compatible / <id>` and is chosen here.
+    await page.getByLabel('Specific model').check();
+    await page.getByRole('combobox', { name: 'Model' }).selectOption({ label: `${ENDPOINT_PROVIDER} / ${modelId}` });
+    await expect
+      .poll(async () => ((await apiFetch(`/projects/${projectId}`)) as { default_model: unknown }).default_model, { timeout: 10_000 })
+      .toEqual({ kind: 'explicit', provider: ENDPOINT_PROVIDER, model_id: modelId });
     await page.reload();
     await waitForApp(page);
     await expect(page.getByRole('button', { name: 'docket', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -760,6 +762,9 @@ test.describe.serial('docket runs, prill verifies', () => {
     summary.fixtureLog = log.split('\n');
     expect(log.split('\n').length, 'main carries the seed plus one merged attempt per accepted run').toBeGreaterThanOrEqual(4);
     expect(git(repoDir, 'status', '--porcelain'), 'the user\'s checkout was never touched').toBe('');
-    expect(git(repoDir, 'for-each-ref', 'refs/prill/snapshots')).toContain('refs/prill/snapshots/');
+    // The runner snapshots with its own git plumbing and keeps no ref, so the
+    // user's repository holds the attempt branches and nothing else.
+    expect(git(repoDir, 'for-each-ref', 'refs/prill')).toBe('');
+    expect(git(repoDir, 'branch', '--list', 'tack/*').split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(4);
   });
 });

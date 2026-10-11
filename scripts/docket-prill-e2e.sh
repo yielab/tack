@@ -8,9 +8,8 @@
 #     one-line launcher placed ahead of any installed release on PATH;
 #   - a runner configuration with prill as the verifier (`[verify]` with
 #     `kind = "prill"`, the runner's own seam) and docket pointed at a local OpenAI-compatible
-#     model endpoint through the gateway provider's loopback override — the same
-#     test-only knob `scripts/smoke.sh` uses, because docket always needs a
-#     Tack-configured endpoint and nothing else on this machine stands in for one.
+#     model endpoint through `[provider.openai_compatible]`, because docket always
+#     needs a Tack-configured endpoint.
 #
 # The spec enrols that runner through the Agents page and starts it itself, so
 # the whole workflow (project, settings, items, runs, packs, review) is one UI
@@ -114,16 +113,13 @@ for _ in $(seq 1 120); do
 done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || die "the server never answered — see $WORK/server.log"
 
-# ── The runner's configuration: prill as verifier, docket through the loopback endpoint ──
+# ── The runner's configuration: prill as verifier, docket through the local endpoint ──
 RUNNER_PATH="$WORK/bin:$SYSTEM_PATH"
-TACK_RUNNER_SECRET_VALUE=local-endpoint-needs-no-key \
-  DBUS_SESSION_BUS_ADDRESS="$NO_KEYCHAIN" \
-  "$BIN" runner secret set vercel-ai-gateway/default --state-dir "$WORK/runner-state" >/dev/null
 cat > "$WORK/runner.toml" <<EOF
 # Written by scripts/docket-prill-e2e.sh for one run of the docket + prill e2e.
-[provider.vercel_ai_gateway]
+[provider.openai_compatible]
 enabled = true
-secret = "vercel-ai-gateway/default"
+base_url = "$MODEL_BASE_URL"
 
 [verify]
 enabled = true

@@ -220,13 +220,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   /** The provider is the harness's own, or the gateway's when chosen; never typed. */
   const derivedProvider = (): string | null =>
     (form.viaGateway ? gatewayProvider() : undefined) ?? nativeProvider() ?? null;
+  /** The configured providers a harness can be routed through, in words. */
+  const PROVIDER_LABELS: Record<string, string> = {
+    'vercel-ai-gateway': 'Vercel AI Gateway',
+    'openai-compatible': 'OpenAI-compatible endpoint',
+  };
   const throughOptions = createMemo(() => {
     const native = nativeProvider();
     const gateway = gatewayProvider();
     if (!native || !gateway) return [];
     return [
       { value: native, label: native.charAt(0).toUpperCase() + native.slice(1) },
-      { value: gateway, label: gateway === 'vercel-ai-gateway' ? 'Vercel AI Gateway' : gateway },
+      { value: gateway, label: PROVIDER_LABELS[gateway] ?? gateway },
     ];
   });
 
