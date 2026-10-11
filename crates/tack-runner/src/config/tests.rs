@@ -104,6 +104,7 @@ fn enabling_one_provider_does_not_affect_others_default() {
                 ProviderOverride {
                     enabled: Some(true),
                     secret: Some("anthropic-secret".to_owned()),
+                    base_url: None,
                 },
             )]),
             ..ConfigOverrides::default()
@@ -147,6 +148,7 @@ fn provider_precedence_is_defaults_file_environment_then_cli() {
                 ProviderOverride {
                     enabled: None,
                     secret: Some("environment-secret".to_owned()),
+                    base_url: None,
                 },
             )]),
             ..ConfigOverrides::default()
@@ -214,4 +216,169 @@ fn an_unrecognized_provider_name_does_not_affect_the_known_ones() {
         .get(VERCEL_AI_GATEWAY_CONFIG_KEY)
         .expect("the known provider's default entry is untouched");
     assert!(!vercel.enabled);
+}
+
+#[test]
+fn openai_compatible_defaults_to_disabled_with_no_secret_and_no_base_url() {
+    let config = RunnerConfig::defaults();
+    let provider = config
+        .providers
+        .get(OPENAI_COMPATIBLE_CONFIG_KEY)
+        .expect("default provider entry present");
+    assert!(!provider.enabled);
+    assert!(provider.secret.is_empty());
+    assert_eq!(provider.base_url, None);
+}
+
+#[test]
+fn openai_compatible_file_entry_carries_its_base_url() {
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some(
+            r#"
+                [provider.openai_compatible]
+                enabled = true
+                base_url = "http://127.0.0.1:8081"
+            "#,
+        ),
+        ..RunnerConfigSources::default()
+    })
+    .expect("configuration should load");
+
+    let provider = config
+        .providers
+        .get(OPENAI_COMPATIBLE_CONFIG_KEY)
+        .expect("entry present");
+    assert!(provider.enabled);
+    assert_eq!(provider.base_url.as_deref(), Some("http://127.0.0.1:8081"));
+    assert!(
+        provider.secret.is_empty(),
+        "no secret is the server-checks-none case, not an error"
+    );
+}
+
+/// `(file, enabled by the environment)` rows: an enabled entry with no
+/// `base_url` at all, one with a blank `base_url`, and one the environment
+/// alone enables — each is refused at load, naming the table and the field.
+#[test]
+fn enabling_openai_compatible_without_a_base_url_is_refused_at_load() {
+    for (file, enabled_by_environment) in [
+        ("[provider.openai_compatible]\nenabled = true\n", false),
+        (
+            "[provider.openai_compatible]\nenabled = true\nbase_url = \"  \"\n",
+            false,
+        ),
+        ("", true),
+    ] {
+        let error = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: Some(file),
+            environment: ConfigOverrides {
+                providers: BTreeMap::from([(
+                    OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+                    ProviderOverride {
+                        enabled: enabled_by_environment.then_some(true),
+                        secret: None,
+                        base_url: None,
+                    },
+                )]),
+                ..ConfigOverrides::default()
+            },
+            ..RunnerConfigSources::default()
+        })
+        .expect_err("an enabled entry with no base_url must be refused");
+        assert_eq!(
+            error,
+            ConfigError::ProviderBaseUrlMissing {
+                provider: OPENAI_COMPATIBLE_CONFIG_KEY.to_owned()
+            },
+            "{file:?}"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains("[provider.openai_compatible]") && message.contains("base_url"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn a_base_url_from_the_environment_completes_a_file_enabled_entry() {
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some("[provider.openai_compatible]\nenabled = true\n"),
+        environment: ConfigOverrides {
+            providers: BTreeMap::from([(
+                OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+                ProviderOverride {
+                    enabled: None,
+                    secret: Some("store:local/key".to_owned()),
+                    base_url: Some("http://127.0.0.1:8081".to_owned()),
+                },
+            )]),
+            ..ConfigOverrides::default()
+        },
+        ..RunnerConfigSources::default()
+    })
+    .expect("configuration should load");
+
+    let provider = config
+        .providers
+        .get(OPENAI_COMPATIBLE_CONFIG_KEY)
+        .expect("entry present");
+    assert!(provider.enabled);
+    assert_eq!(provider.base_url.as_deref(), Some("http://127.0.0.1:8081"));
+    assert_eq!(provider.secret, "store:local/key");
+}
+
+/// Mutates process-wide variables: safe under `cargo nextest` (one process
+/// per test), never under a bare `cargo test` alongside this module's
+/// other tests.
+#[test]
+fn provider_environment_variables_are_read_per_provider() {
+    let variables = [
+        ("TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_ENABLED", "true"),
+        (
+            "TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_BASE_URL",
+            "http://127.0.0.1:8081",
+        ),
+        (
+            "TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_SECRET",
+            "openai-compatible/local",
+        ),
+        // A hosted provider's host is the vendor's: this one is never read.
+        (
+            "TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_BASE_URL",
+            "http://127.0.0.1:1",
+        ),
+        ("TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED", "1"),
+    ];
+    for (name, value) in variables {
+        unsafe { std::env::set_var(name, value) };
+    }
+    let overrides = RunnerConfig::environment_overrides();
+    for (name, _) in variables {
+        unsafe { std::env::remove_var(name) };
+    }
+
+    assert_eq!(
+        overrides.providers.get(OPENAI_COMPATIBLE_CONFIG_KEY),
+        Some(&ProviderOverride {
+            enabled: Some(true),
+            secret: Some("openai-compatible/local".to_owned()),
+            base_url: Some("http://127.0.0.1:8081".to_owned()),
+        })
+    );
+    assert_eq!(
+        overrides.providers.get(ANTHROPIC_CONFIG_KEY),
+        Some(&ProviderOverride {
+            enabled: Some(true),
+            secret: None,
+            base_url: None,
+        })
+    );
+    assert!(
+        !overrides
+            .providers
+            .contains_key(VERCEL_AI_GATEWAY_CONFIG_KEY),
+        "{:?}",
+        overrides.providers
+    );
 }

@@ -195,6 +195,7 @@ async fn live_codex_through_the_configured_provider_when_opted_in() {
         ProviderConfig {
             enabled: true,
             secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            base_url: None,
         },
     )]);
 

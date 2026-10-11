@@ -50,6 +50,15 @@ static CREDENTIAL_NAMED: HarnessDescriptor = HarnessDescriptor {
     ..BASE
 };
 
+/// Speaks the one wire an OpenAI-compatible server serves, and reads its
+/// credential from a name of its own like docket does.
+static CHAT_COMPLETIONS: HarnessDescriptor = HarnessDescriptor {
+    wire: Wire::OpenAiChatCompletions,
+    model_selection: ModelSelection::Optional,
+    credential_env: Some("TACK_TEST_FIXTURE_CREDENTIAL"),
+    ..BASE
+};
+
 struct TestGrammar {
     descriptor: &'static HarnessDescriptor,
     observed_model: Option<&'static str>,
@@ -586,9 +595,20 @@ exit 0"#;
 // ---- what reaches the child ----------------------------------------------
 
 /// Runs a shim that records the names of its environment variables, and
-/// the value of `$ECHOED` on stdout. Returns the names and the outcome.
+/// the value of `$ECHOED` on stdout, with the gateway as the one configured
+/// provider. Returns the names and the outcome.
 async fn run_recording_env(
     descriptor: &'static HarnessDescriptor,
+    provider: &str,
+    echoed: &str,
+) -> (Vec<String>, HarnessOutcome) {
+    run_recording_env_with(descriptor, gateway("key"), provider, echoed).await
+}
+
+/// [`run_recording_env`] against `providers` instead of the gateway.
+async fn run_recording_env_with(
+    descriptor: &'static HarnessDescriptor,
+    providers: BTreeMap<String, ProviderConfig>,
     provider: &str,
     echoed: &str,
 ) -> (Vec<String>, HarnessOutcome) {
@@ -605,7 +625,7 @@ async fn run_recording_env(
         ask: false,
     };
     let harness = harness_with(grammar, script(state.path(), &body), state.path())
-        .with_providers(gateway("key"));
+        .with_providers(providers);
     let mut request = spec(KIND, state.path());
     request.work.request.requested_model_provider =
         Some(tack_orch::execution::RequestedModelProvider::new(provider));
@@ -912,4 +932,42 @@ fn usage_detail_names_only_what_the_harness_reported() {
         serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"]})
     );
     assert!(UsageDetail::default().into_additional().is_empty());
+}
+
+/// An endpoint with no credential (an OpenAI-compatible server with an
+/// empty `secret`) sets neither the harness's own credential name nor the
+/// endpoint's: the child sees the variable unset, never empty.
+#[tokio::test]
+async fn a_credential_free_endpoint_sets_no_credential_variable() {
+    let (names, outcome) = run_recording_env_with(
+        &CHAT_COMPLETIONS,
+        crate::harness::test_support::openai_compatible("http://127.0.0.1:9", ""),
+        crate::config::OPENAI_COMPATIBLE_PROVIDER,
+        "",
+    )
+    .await;
+    let has = |name: &str| names.iter().any(|recorded| recorded == name);
+    assert!(!has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
+    assert!(!has("OPENAI_API_KEY"), "{names:?}");
+    assert!(has("SECRET_VAR"), "{names:?}");
+    assert_eq!(
+        outcome.actual_execution.model_provider.as_str(),
+        crate::config::OPENAI_COMPATIBLE_PROVIDER
+    );
+}
+
+/// The same endpoint with a `secret` configured injects it under the
+/// harness's own credential name, exactly as the gateway's is.
+#[tokio::test]
+async fn an_openai_compatible_endpoint_with_a_secret_injects_it() {
+    let (names, _) = run_recording_env_with(
+        &CHAT_COMPLETIONS,
+        crate::harness::test_support::openai_compatible("http://127.0.0.1:9", "key"),
+        crate::config::OPENAI_COMPATIBLE_PROVIDER,
+        "",
+    )
+    .await;
+    let has = |name: &str| names.iter().any(|recorded| recorded == name);
+    assert!(has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
+    assert!(!has("OPENAI_API_KEY"), "{names:?}");
 }

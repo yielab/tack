@@ -10,6 +10,14 @@ pub enum ConfigError {
     Unreadable,
     #[error("runner id must not be empty")]
     EmptyRunnerId,
+    /// Names the table, never its contents: the message prints the entry's
+    /// key, nothing a `secret` value could leak through.
+    #[error(
+        "[provider.{provider}] is enabled but names no base_url; set it to the server's root \
+         URL (for example http://127.0.0.1:8081) in the configuration file or through \
+         TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_BASE_URL"
+    )]
+    ProviderBaseUrlMissing { provider: String },
 }
 
 #[derive(Debug, Error)]

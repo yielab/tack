@@ -307,7 +307,7 @@ fn a_configured_endpoint_sets_the_base_url_and_nothing_secret() {
     assert!(
         !routed
             .values()
-            .any(|value| value == endpoint.credential.expose())
+            .any(|value| value == endpoint.credential.as_ref().expect("credential present").expose())
     );
 }
 

@@ -164,6 +164,7 @@ fn gateway_providers() -> BTreeMap<String, ProviderConfig> {
         ProviderConfig {
             enabled: true,
             secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            base_url: None,
         },
     )])
 }

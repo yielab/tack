@@ -1,5 +1,8 @@
 use super::*;
-use crate::config::{VERCEL_AI_GATEWAY_CONFIG_KEY, VERCEL_AI_GATEWAY_PROVIDER};
+use crate::config::{
+    OPENAI_COMPATIBLE_CONFIG_KEY, OPENAI_COMPATIBLE_PROVIDER, VERCEL_AI_GATEWAY_CONFIG_KEY,
+    VERCEL_AI_GATEWAY_PROVIDER,
+};
 
 fn providers(enabled: bool, secret: &str) -> BTreeMap<String, ProviderConfig> {
     BTreeMap::from([(
@@ -7,6 +10,7 @@ fn providers(enabled: bool, secret: &str) -> BTreeMap<String, ProviderConfig> {
         ProviderConfig {
             enabled,
             secret: secret.to_owned(),
+            base_url: None,
         },
     )])
 }
@@ -100,7 +104,7 @@ fn a_configured_provider_resolves_the_wire_specific_endpoint() {
         assert_eq!(endpoint.credential_env_var, credential_env_var, "{wire:?}");
     }
     assert_eq!(
-        resolve(Wire::AnthropicMessages).credential.expose(),
+        resolve(Wire::AnthropicMessages).credential.as_ref().expect("credential present").expose(),
         "the-real-key"
     );
 }
@@ -135,9 +139,9 @@ fn the_registry_carries_both_providers_each_on_its_own_wire() {
         .into_iter()
         .find(|p| p.wire_name() == "anthropic-direct")
         .expect("anthropic is registered");
-    assert!(anthropic.endpoint(Wire::AnthropicMessages).is_some());
+    assert!(anthropic.serves(Wire::AnthropicMessages));
     assert!(
-        anthropic.endpoint(Wire::OpenAiResponses).is_none(),
+        !anthropic.serves(Wire::OpenAiResponses),
         "Anthropic's own API has no OpenAI-Responses endpoint"
     );
 }
@@ -155,6 +159,7 @@ fn resolve_endpoint_reaches_the_anthropic_provider_too() {
         ProviderConfig {
             enabled: true,
             secret: "anthropic-secret".to_owned(),
+            base_url: None,
         },
     )]);
 
@@ -167,7 +172,7 @@ fn resolve_endpoint_reaches_the_anthropic_provider_too() {
     .expect("resolves")
     .expect("endpoint present");
     assert_eq!(endpoint.credential_env_var, "ANTHROPIC_API_KEY");
-    assert_eq!(endpoint.credential.expose(), "sk-ant-demo");
+    assert_eq!(endpoint.credential.as_ref().expect("credential present").expose(), "sk-ant-demo");
 
     assert!(matches!(
         resolve_endpoint(
@@ -189,6 +194,9 @@ fn resolve_endpoint_reaches_the_anthropic_provider_too() {
 struct FakeProvider {
     config_key: &'static str,
     wire_name: &'static str,
+    /// Whether an empty `secret` means "no credential" (an
+    /// OpenAI-compatible server) rather than an unresolvable one.
+    credential_optional: bool,
     result: FakeResult,
 }
 
@@ -211,16 +219,25 @@ impl Provider for FakeProvider {
         self.config_key
     }
 
-    fn endpoint(&self, _wire: Wire) -> Option<KnownEndpoint> {
+    fn serves(&self, _wire: Wire) -> bool {
+        true
+    }
+
+    fn requires_credential(&self) -> bool {
+        !self.credential_optional
+    }
+
+    fn endpoint(&self, _wire: Wire, _config: &ProviderConfig) -> Option<KnownEndpoint> {
         Some(KnownEndpoint {
-            base_url: "https://example.invalid",
+            base_url: "https://example.invalid".to_owned(),
             credential_env_var: "FAKE_TOKEN",
         })
     }
 
     async fn fetch_catalog(
         &self,
-        _secret: &SecretValue,
+        _config: &ProviderConfig,
+        _credential: Option<&SecretValue>,
     ) -> Result<Vec<CatalogEntry>, CatalogFetchError> {
         match &self.result {
             FakeResult::Entries(entries) => Ok(entries.clone()),
@@ -289,6 +306,7 @@ fn broken_and_working_registry() -> (BTreeMap<String, ProviderConfig>, Vec<Box<d
             ProviderConfig {
                 enabled: true,
                 secret: "no-such-secret".to_owned(),
+                base_url: None,
             },
         ),
         (
@@ -296,6 +314,7 @@ fn broken_and_working_registry() -> (BTreeMap<String, ProviderConfig>, Vec<Box<d
             ProviderConfig {
                 enabled: true,
                 secret: "working-secret".to_owned(),
+                base_url: None,
             },
         ),
     ]);
@@ -303,11 +322,13 @@ fn broken_and_working_registry() -> (BTreeMap<String, ProviderConfig>, Vec<Box<d
         Box::new(FakeProvider {
             config_key: "broken",
             wire_name: "broken-vendor",
+            credential_optional: false,
             result: FakeResult::SecretNeverResolves,
         }),
         Box::new(FakeProvider {
             config_key: "working",
             wire_name: "working-vendor",
+            credential_optional: false,
             result: FakeResult::Entries(vec![CatalogEntry {
                 id: "working-vendor/model-1".to_owned(),
                 context_window: Some(128_000),
@@ -378,4 +399,149 @@ async fn one_providers_unresolvable_secret_never_suppresses_others() {
         other => panic!("expected the working provider's catalog to arrive, got {other:?}"),
     }
     assert_working_vendor_model_attached(&capabilities);
+}
+
+fn openai_compatible(base_url: Option<&str>, secret: &str) -> BTreeMap<String, ProviderConfig> {
+    BTreeMap::from([(
+        OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+        ProviderConfig {
+            enabled: true,
+            secret: secret.to_owned(),
+            base_url: base_url.map(str::to_owned),
+        },
+    )])
+}
+
+#[test]
+fn the_registry_carries_the_openai_compatible_provider_on_the_chat_wire_alone() {
+    let provider = registry()
+        .into_iter()
+        .find(|p| p.wire_name() == OPENAI_COMPATIBLE_PROVIDER)
+        .expect("the OpenAI-compatible provider is registered");
+    assert_eq!(provider.config_key(), OPENAI_COMPATIBLE_CONFIG_KEY);
+    assert_eq!(reaches(provider.as_ref()), ["docket", "opencode"]);
+}
+
+#[test]
+fn an_openai_compatible_endpoint_resolves_with_no_credential_when_no_secret_is_configured() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    let providers = openai_compatible(Some("http://127.0.0.1:8081"), "");
+
+    let endpoint = resolve_endpoint(
+        &providers,
+        &secrets,
+        OPENAI_COMPATIBLE_PROVIDER,
+        Wire::OpenAiChatCompletions,
+    )
+    .expect("resolves")
+    .expect("endpoint present");
+    assert_eq!(endpoint.base_url, "http://127.0.0.1:8081/v1");
+    assert_eq!(endpoint.credential_env_var, "OPENAI_API_KEY");
+    assert!(endpoint.credential.is_none());
+    assert_eq!(endpoint.display_name, "OpenAI-compatible endpoint");
+
+    for wire in [Wire::AnthropicMessages, Wire::OpenAiResponses] {
+        assert!(
+            matches!(
+                resolve_endpoint(&providers, &secrets, OPENAI_COMPATIBLE_PROVIDER, wire),
+                Ok(None)
+            ),
+            "{wire:?}"
+        );
+    }
+}
+
+#[test]
+fn an_openai_compatible_endpoint_carries_a_configured_secret() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    secrets.set("local", "local-key").expect("seed secret");
+
+    let endpoint = resolve_endpoint(
+        &openai_compatible(Some("http://127.0.0.1:8081"), "local"),
+        &secrets,
+        OPENAI_COMPATIBLE_PROVIDER,
+        Wire::OpenAiChatCompletions,
+    )
+    .expect("resolves")
+    .expect("endpoint present");
+    let credential = endpoint.credential.as_ref().expect("credential present");
+    assert_eq!(credential.expose(), "local-key");
+}
+
+#[test]
+fn an_openai_compatible_entry_without_a_base_url_is_a_typed_error() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    let result = resolve_endpoint(
+        &openai_compatible(None, ""),
+        &secrets,
+        OPENAI_COMPATIBLE_PROVIDER,
+        Wire::OpenAiChatCompletions,
+    );
+    assert!(
+        matches!(result, Err(ProviderError::NoBaseUrl(name)) if name == OPENAI_COMPATIBLE_PROVIDER)
+    );
+}
+
+/// An empty `secret` is only the no-credential case for a provider that
+/// needs none; the gateway with an empty `secret` is still a secret error,
+/// never a request sent without the credential it requires.
+#[test]
+fn an_empty_secret_on_a_provider_that_needs_one_is_still_a_secret_error() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    let result = resolve_endpoint(
+        &providers(true, ""),
+        &secrets,
+        VERCEL_AI_GATEWAY_PROVIDER,
+        Wire::AnthropicMessages,
+    );
+    assert!(
+        matches!(result, Err(ProviderError::Secret(name, _)) if name == VERCEL_AI_GATEWAY_PROVIDER)
+    );
+}
+
+#[tokio::test]
+async fn a_credential_free_provider_with_an_empty_secret_still_gets_its_catalog() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    let providers = BTreeMap::from([(
+        "local".to_owned(),
+        ProviderConfig {
+            enabled: true,
+            secret: String::new(),
+            base_url: Some("http://127.0.0.1:9".to_owned()),
+        },
+    )]);
+    let registry: Vec<Box<dyn Provider>> = vec![Box::new(FakeProvider {
+        config_key: "local",
+        wire_name: "local-vendor",
+        credential_optional: true,
+        result: FakeResult::Entries(vec![CatalogEntry {
+            id: "local-vendor/model-1".to_owned(),
+            context_window: None,
+            price: None,
+            modality: None,
+        }]),
+    })];
+
+    let mut capabilities = empty_capabilities();
+    let statuses = attach_catalog_to(
+        registry,
+        &mut capabilities,
+        &providers,
+        &secrets,
+        &crate::clock::SystemClock,
+    )
+    .await;
+
+    assert!(
+        matches!(
+            statuses.get("local"),
+            Some(CatalogStatus::Configured { model_count: 1, .. })
+        ),
+        "{statuses:?}"
+    );
 }

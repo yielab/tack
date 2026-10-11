@@ -895,3 +895,33 @@ fn every_tool_grants_each_permission() {
     }
     assert!(!grants(&[], "edit"));
 }
+
+/// An OpenAI-compatible server that checks no credential: the injected
+/// config names the server and no `apiKey` at all, so opencode never
+/// references a variable that was never set.
+#[test]
+fn a_credential_free_endpoint_writes_no_api_key() {
+    let state = scratch("opencode-no-credential");
+    let scratch_dir = scratch("opencode-no-credential-scratch");
+    let endpoint = crate::provider::resolve_endpoint(
+        &crate::harness::test_support::openai_compatible("http://127.0.0.1:8081", ""),
+        &secret_store(state.path()),
+        crate::config::OPENAI_COMPATIBLE_PROVIDER,
+        DESCRIPTOR.wire,
+    )
+    .expect("resolve")
+    .expect("the server serves this wire");
+    assert!(endpoint.credential.is_none());
+    let request = networked(state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let invocation = OpencodeGrammar.invocation(&run).expect("invocation");
+    let content: serde_json::Value =
+        serde_json::from_str(&invocation.env["OPENCODE_CONFIG_CONTENT"]).expect("valid json");
+    let options = &content["provider"]["tack"]["options"];
+    assert_eq!(options["baseURL"], "http://127.0.0.1:8081/v1");
+    assert!(options.get("apiKey").is_none(), "{options}");
+}

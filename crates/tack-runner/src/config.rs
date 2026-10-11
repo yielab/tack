@@ -47,6 +47,18 @@ pub const ANTHROPIC_PROVIDER: &str = "anthropic-direct";
 /// [`DEFAULT_VERCEL_AI_GATEWAY_SECRET`].
 pub const DEFAULT_ANTHROPIC_SECRET: &str = "anthropic/default";
 
+/// The `[provider.<name>]`/`RunnerConfig::providers` key for any server
+/// speaking OpenAI Chat Completions (llama.cpp, LM Studio, vLLM, Ollama, a
+/// hosted router). The only provider with a configurable endpoint: its
+/// entry must name a `base_url`, and its `secret` may stay empty, because
+/// a local server usually checks no credential — which is why it has no
+/// default secret name of its own.
+pub const OPENAI_COMPATIBLE_CONFIG_KEY: &str = "openai_compatible";
+
+/// The value recorded as `ModelProvider`/`requested_model_provider` when a
+/// request wants the OpenAI-compatible endpoint above.
+pub const OPENAI_COMPATIBLE_PROVIDER: &str = "openai-compatible";
+
 /// A credential whose normal formatting is always redacted.
 #[derive(Clone, PartialEq, Eq)]
 pub struct EnrollmentCredential(String);
@@ -94,16 +106,24 @@ pub struct ConfigOverrides {
 pub struct ProviderOverride {
     pub enabled: Option<bool>,
     pub secret: Option<String>,
+    pub base_url: Option<String>,
 }
 
-/// Whether a provider is on, and where its credential lives — the only two
-/// user-configurable facts about it. Endpoint URLs and credential env-var
-/// names are not configuration; they are fixed per-provider data in
-/// `crate::provider::known_endpoint`.
+/// Whether a provider is on, where its credential lives and — for an
+/// OpenAI-compatible server only — where the server is. A hosted
+/// provider's endpoint URL and every credential env-var name are not
+/// configuration; they are fixed per-provider data behind
+/// `crate::provider::KnownEndpoint`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProviderConfig {
     pub enabled: bool,
+    /// Empty means no credential — accepted only by a provider that needs
+    /// none (`[provider.openai_compatible]`); every other provider's
+    /// default names a secret-store entry.
     pub secret: String,
+    /// The server root an OpenAI-compatible provider appends `/v1` to.
+    /// Read by that provider alone; the hosted providers ignore it.
+    pub base_url: Option<String>,
 }
 
 #[derive(Default)]
@@ -183,8 +203,8 @@ struct FileConfig {
     enrollment_credential: Option<String>,
     /// `[provider.<name>]` tables. Free-form key: a name this build does
     /// not recognize simply sits unused rather than failing to parse — the
-    /// dedicated `enabled`/`secret` fields inside each table still reject
-    /// an unknown field via `deny_unknown_fields` on
+    /// dedicated `enabled`/`secret`/`base_url` fields inside each table
+    /// still reject an unknown field via `deny_unknown_fields` on
     /// [`ProviderFileConfig`].
     provider: Option<BTreeMap<String, ProviderFileConfig>>,
     verify: Option<VerifyConfig>,
@@ -196,6 +216,7 @@ struct FileConfig {
 struct ProviderFileConfig {
     enabled: Option<bool>,
     secret: Option<String>,
+    base_url: Option<String>,
 }
 
 impl RunnerConfig {
@@ -206,6 +227,7 @@ impl RunnerConfig {
             ProviderConfig {
                 enabled: false,
                 secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+                base_url: None,
             },
         );
         providers.insert(
@@ -213,6 +235,15 @@ impl RunnerConfig {
             ProviderConfig {
                 enabled: false,
                 secret: DEFAULT_ANTHROPIC_SECRET.to_owned(),
+                base_url: None,
+            },
+        );
+        providers.insert(
+            OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+            ProviderConfig {
+                enabled: false,
+                secret: String::new(),
+                base_url: None,
             },
         );
         Self {
@@ -250,6 +281,7 @@ impl RunnerConfig {
                         ProviderOverride {
                             enabled: entry.enabled,
                             secret: entry.secret,
+                            base_url: entry.base_url,
                         },
                     )
                 })
@@ -268,33 +300,33 @@ impl RunnerConfig {
         if config.runner_id.trim().is_empty() {
             return Err(ConfigError::EmptyRunnerId);
         }
+        // The one provider whose endpoint is configuration: enabling it
+        // without saying where the server is would otherwise surface only
+        // at the first run, as a rejected request.
+        if let Some(provider) = config.providers.get(OPENAI_COMPATIBLE_CONFIG_KEY)
+            && provider.enabled
+            && provider
+                .base_url
+                .as_deref()
+                .is_none_or(|base_url| base_url.trim().is_empty())
+        {
+            return Err(ConfigError::ProviderBaseUrlMissing {
+                provider: OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+            });
+        }
         Ok(config)
     }
 
     pub fn environment_overrides() -> ConfigOverrides {
         let mut providers = BTreeMap::new();
-        let enabled = std::env::var("TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED")
-            .ok()
-            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"));
-        let secret = std::env::var("TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET").ok();
-        if enabled.is_some() || secret.is_some() {
-            providers.insert(
-                VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-                ProviderOverride { enabled, secret },
-            );
-        }
-        let anthropic_enabled = std::env::var("TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED")
-            .ok()
-            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"));
-        let anthropic_secret = std::env::var("TACK_RUNNER_PROVIDER_ANTHROPIC_SECRET").ok();
-        if anthropic_enabled.is_some() || anthropic_secret.is_some() {
-            providers.insert(
-                ANTHROPIC_CONFIG_KEY.to_owned(),
-                ProviderOverride {
-                    enabled: anthropic_enabled,
-                    secret: anthropic_secret,
-                },
-            );
+        for (key, reads_base_url) in [
+            (VERCEL_AI_GATEWAY_CONFIG_KEY, false),
+            (ANTHROPIC_CONFIG_KEY, false),
+            (OPENAI_COMPATIBLE_CONFIG_KEY, true),
+        ] {
+            if let Some(provider_override) = provider_environment_override(key, reads_base_url) {
+                providers.insert(key.to_owned(), provider_override);
+            }
         }
         ConfigOverrides {
             api_base_url: std::env::var("TACK_RUNNER_API_URL").ok(),
@@ -341,7 +373,11 @@ impl RunnerConfig {
                 .or_insert_with(|| ProviderConfig {
                     enabled: false,
                     secret: String::new(),
+                    base_url: None,
                 });
+            if let Some(base_url) = provider_override.base_url {
+                entry.base_url = Some(base_url);
+            }
             if let Some(enabled) = provider_override.enabled {
                 entry.enabled = enabled;
             }
@@ -350,6 +386,28 @@ impl RunnerConfig {
             }
         }
     }
+}
+
+/// One provider's `TACK_RUNNER_PROVIDER_<KEY>_{ENABLED,SECRET,BASE_URL}`
+/// variables (`<KEY>` is its config key upper-cased), or `None` when none
+/// of them is set. `BASE_URL` is read only for a provider whose endpoint
+/// is configuration (`reads_base_url`), so a hosted provider's fixed host
+/// can never be pointed elsewhere through the environment.
+fn provider_environment_override(key: &str, reads_base_url: bool) -> Option<ProviderOverride> {
+    let variable =
+        |field: &str| std::env::var(format!("TACK_RUNNER_PROVIDER_{}_{field}", key.to_uppercase())).ok();
+    let enabled = variable("ENABLED").map(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+    let secret = variable("SECRET");
+    let base_url = if reads_base_url {
+        variable("BASE_URL")
+    } else {
+        None
+    };
+    (enabled.is_some() || secret.is_some() || base_url.is_some()).then_some(ProviderOverride {
+        enabled,
+        secret,
+        base_url,
+    })
 }
 
 #[cfg(test)]

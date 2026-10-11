@@ -1,5 +1,14 @@
 use super::*;
 
+/// The default `[provider.vercel_ai_gateway]` entry: this provider reads
+/// nothing from it, so any entry proves the endpoints are fixed.
+fn gateway_config() -> ProviderConfig {
+    crate::config::RunnerConfig::defaults()
+        .providers
+        .remove(VERCEL_AI_GATEWAY_CONFIG_KEY)
+        .expect("default entry present")
+}
+
 /// The override's guard compares the whole host, never a prefix. Each
 /// rejected case below is a host that shares a loopback host's opening
 /// characters while belonging to somebody else — accepting one would
@@ -35,7 +44,7 @@ fn only_a_whole_loopback_host_is_accepted_as_a_base() {
 fn assert_catalog_and_claude_base(label: &str, expected_catalog: &str, expected_claude_base: &str) {
     assert_eq!(catalog_url(), expected_catalog, "{label}: catalog_url");
     let claude = VercelAiGateway
-        .endpoint(Wire::AnthropicMessages)
+        .endpoint(Wire::AnthropicMessages, &gateway_config())
         .expect("endpoint present");
     assert_eq!(
         claude.base_url, expected_claude_base,
@@ -48,17 +57,17 @@ fn assert_catalog_and_claude_base(label: &str, expected_catalog: &str, expected_
 /// other phases share.
 fn assert_full_override_wiring(claude_base: &str, codex_base: &str, chat_base: &str) {
     let claude = VercelAiGateway
-        .endpoint(Wire::AnthropicMessages)
+        .endpoint(Wire::AnthropicMessages, &gateway_config())
         .expect("endpoint present");
     assert_eq!(claude.base_url, claude_base);
     assert_eq!(claude.credential_env_var, "ANTHROPIC_AUTH_TOKEN");
     let codex = VercelAiGateway
-        .endpoint(Wire::OpenAiResponses)
+        .endpoint(Wire::OpenAiResponses, &gateway_config())
         .expect("endpoint present");
     assert_eq!(codex.base_url, codex_base);
     assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
     let chat = VercelAiGateway
-        .endpoint(Wire::OpenAiChatCompletions)
+        .endpoint(Wire::OpenAiChatCompletions, &gateway_config())
         .expect("endpoint present");
     assert_eq!(chat.base_url, chat_base);
     assert_eq!(chat.credential_env_var, "AI_GATEWAY_API_KEY");
@@ -244,7 +253,7 @@ async fn live_fetch_catalog_reaches_the_real_gateway_when_opted_in() {
     let secret = secrets.resolve("live-key").expect("resolve secret");
 
     let entries = VercelAiGateway
-        .fetch_catalog(&secret)
+        .fetch_catalog(&gateway_config(), Some(&secret))
         .await
         .expect("the real gateway answers a real key with a parseable catalog");
     assert!(

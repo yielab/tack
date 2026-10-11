@@ -10,14 +10,17 @@
 //! What this module adds is the other mode: `RunnerConfig::providers` names
 //! an entry (`[provider.<name>]`), and [`resolve_endpoint`] tells a harness
 //! adapter what to inject — a base URL, the credential env var name, and the
-//! resolved credential. A gateway and a vendor's own direct API are the same
-//! shape here, so a second provider is a new [`Provider`] impl registered in
-//! [`registry`], never a new mechanism. Each provider parses its own catalog
-//! body/auth/pricing shape into the common [`CatalogEntry`] shape.
+//! resolved credential. A gateway, a vendor's own direct API and a server
+//! the operator runs themselves are the same shape here, so another
+//! provider is a new [`Provider`] impl registered in [`registry`], never a
+//! new mechanism. Each provider parses its own catalog body/auth/pricing
+//! shape into the common [`CatalogEntry`] shape.
 //!
-//! Two providers exist today: [`vercel_ai_gateway`] and [`anthropic`].
+//! Three providers exist today: [`vercel_ai_gateway`], [`anthropic`] and
+//! [`openai_compatible`].
 
 mod anthropic;
+mod openai_compatible;
 mod vercel_ai_gateway;
 
 use std::collections::BTreeMap;
@@ -66,15 +69,19 @@ fn wire_for_harness(harness_kind: &str) -> Option<Wire> {
 pub struct ProviderEndpoint {
     pub base_url: String,
     pub credential_env_var: String,
-    pub credential: SecretValue,
+    /// `None` when the provider needs no credential and none is configured
+    /// (an OpenAI-compatible server with an empty `secret`); the adapter
+    /// then injects no credential variable at all.
+    pub credential: Option<SecretValue>,
     pub display_name: String,
 }
 
-/// Fixed, non-configurable facts about one provider's endpoint for one
-/// wire — vendor data, never user configuration (`[provider.<name>]` only
-/// exposes `enabled`/`secret`).
+/// One provider's endpoint for one wire. The credential variable name is
+/// always the provider's own fixed data; the base URL is vendor data for
+/// a hosted provider and the configured `base_url` for an
+/// OpenAI-compatible server, which is why it is owned.
 pub struct KnownEndpoint {
-    pub base_url: &'static str,
+    pub base_url: String,
     pub credential_env_var: &'static str,
 }
 
@@ -101,14 +108,18 @@ pub enum ProviderError {
     NotConfigured(String),
     #[error("provider {0:?} secret: {1}")]
     Secret(String, crate::secrets::SecretError),
+    #[error("provider {0:?} is enabled but its [provider.<name>] entry names no base_url")]
+    NoBaseUrl(String),
 }
 
 /// Why a catalog request did not produce a parsed body: a status the
-/// vendor returned, or no response at all.
+/// vendor returned, no response at all, or no request sent because the
+/// provider needs a credential and was handed none.
 #[derive(Debug)]
 pub enum CatalogFetchError {
     Transport,
     Status(u16),
+    CredentialRequired,
 }
 
 /// One provider this runner knows how to talk to in key+endpoint mode (ADR
@@ -126,8 +137,21 @@ pub trait Provider: Send + Sync {
     /// A human-readable label for `tack runner doctor`.
     fn display_name(&self) -> &'static str;
 
-    /// This provider's endpoint for `wire`, or `None` if it doesn't serve it.
-    fn endpoint(&self, wire: Wire) -> Option<KnownEndpoint>;
+    /// Whether this provider has an endpoint for `wire` at all — a vendor
+    /// fact, independent of any configuration.
+    fn serves(&self, wire: Wire) -> bool;
+
+    /// This provider's endpoint for `wire` under `config`: `None` when it
+    /// does not serve `wire`, or when `config` lacks what the endpoint
+    /// needs (an OpenAI-compatible server's `base_url`).
+    fn endpoint(&self, wire: Wire, config: &ProviderConfig) -> Option<KnownEndpoint>;
+
+    /// Whether a request to this provider must carry a credential. A
+    /// provider answering `false` accepts an empty `secret`, and then no
+    /// credential is resolved, injected or sent with its catalog request.
+    fn requires_credential(&self) -> bool {
+        true
+    }
 
     /// Whether a harness's own init/result line states which model actually
     /// served the request, not just which was requested. The init line is
@@ -141,9 +165,13 @@ pub trait Provider: Send + Sync {
 
     /// Fetches and parses this provider's own model catalog, using
     /// whatever auth placement and body shape its vendor requires.
+    /// `credential` is `None` only for a provider whose
+    /// [`Provider::requires_credential`] is `false` and whose `secret` is
+    /// empty — see [`resolve_credential`].
     async fn fetch_catalog(
         &self,
-        secret: &SecretValue,
+        config: &ProviderConfig,
+        credential: Option<&SecretValue>,
     ) -> Result<Vec<CatalogEntry>, CatalogFetchError>;
 }
 
@@ -154,6 +182,7 @@ pub fn registry() -> Vec<Box<dyn Provider>> {
     vec![
         Box::new(vercel_ai_gateway::VercelAiGateway),
         Box::new(anthropic::Anthropic),
+        Box::new(openai_compatible::OpenAiCompatible),
     ]
 }
 
@@ -162,9 +191,24 @@ pub fn registry() -> Vec<Box<dyn Provider>> {
 pub fn reaches(provider: &dyn Provider) -> Vec<&'static str> {
     crate::harness::DESCRIPTORS
         .into_iter()
-        .filter(|descriptor| provider.endpoint(descriptor.wire).is_some())
+        .filter(|descriptor| provider.serves(descriptor.wire))
         .map(|descriptor| descriptor.kind)
         .collect()
+}
+
+/// The credential a provider's requests carry: `None` for a provider that
+/// needs none and has an empty `secret`; otherwise the resolved secret, so
+/// an empty `secret` on a provider that does need one is still the
+/// store's own error, never a silently unauthenticated request.
+fn resolve_credential(
+    provider: &dyn Provider,
+    config: &ProviderConfig,
+    secrets: &SecretStore,
+) -> Result<Option<SecretValue>, crate::secrets::SecretError> {
+    if config.secret.trim().is_empty() && !provider.requires_credential() {
+        return Ok(None);
+    }
+    secrets.resolve(&config.secret).map(Some)
 }
 
 /// Whether a harness adapter must record the model for `requested_provider`
@@ -196,23 +240,26 @@ pub fn resolve_endpoint(
     else {
         return Ok(None);
     };
-    let Some(known) = provider.endpoint(wire) else {
+    if !provider.serves(wire) {
         return Ok(None);
-    };
+    }
     let config = providers
         .get(provider.config_key())
         .filter(|config| config.enabled)
         .ok_or_else(|| ProviderError::NotConfigured(requested_provider.to_owned()))?;
-    let credential = secrets
-        .resolve(&config.secret)
+    let known = provider
+        .endpoint(wire, config)
+        .ok_or_else(|| ProviderError::NoBaseUrl(requested_provider.to_owned()))?;
+    let credential = resolve_credential(provider.as_ref(), config, secrets)
         .map_err(|error| ProviderError::Secret(requested_provider.to_owned(), error))?;
     tracing::debug!(
         provider = requested_provider,
         secret = %config.secret,
+        with_credential = credential.is_some(),
         "provider endpoint resolved for spawn injection"
     );
     Ok(Some(ProviderEndpoint {
-        base_url: known.base_url.to_owned(),
+        base_url: known.base_url,
         credential_env_var: known.credential_env_var.to_owned(),
         credential,
         display_name: provider.display_name().to_owned(),
@@ -289,12 +336,16 @@ async fn attach_one_catalog<C: Clock>(
     else {
         return CatalogStatus::NotConfigured;
     };
-    let secret = match secrets.resolve(&config.secret) {
-        Ok(secret) => secret,
+    let credential = match resolve_credential(provider, config, secrets) {
+        Ok(credential) => credential,
         Err(_) => return CatalogStatus::SecretUnresolved,
     };
-    tracing::debug!(secret = %config.secret, "provider secret resolved for catalog fetch");
-    let entries = match provider.fetch_catalog(&secret).await {
+    tracing::debug!(
+        secret = %config.secret,
+        with_credential = credential.is_some(),
+        "provider credential resolved for catalog fetch"
+    );
+    let entries = match provider.fetch_catalog(config, credential.as_ref()).await {
         Ok(entries) => entries,
         Err(CatalogFetchError::Status(status)) => {
             tracing::warn!(status, "provider catalog fetch rejected");
@@ -306,6 +357,7 @@ async fn attach_one_catalog<C: Clock>(
             tracing::warn!("provider catalog fetch failed: transport error");
             return CatalogStatus::Unreachable { status: None };
         }
+        Err(CatalogFetchError::CredentialRequired) => return CatalogStatus::SecretUnresolved,
     };
     tracing::debug!(model_count = entries.len(), "provider catalog fetched");
 
@@ -338,7 +390,7 @@ async fn attach_one_catalog<C: Clock>(
         let Some(wire) = wire_for_harness(harness.harness_kind.as_str()) else {
             continue;
         };
-        if provider.endpoint(wire).is_none() {
+        if !provider.serves(wire) {
             continue;
         }
         harness.model_combinations.push(ModelCombination {

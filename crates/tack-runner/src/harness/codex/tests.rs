@@ -77,7 +77,7 @@ fn a_configured_endpoint_is_named_before_the_subcommand() {
     assert!(
         !args
             .iter()
-            .any(|arg| arg.contains(endpoint.credential.expose()))
+            .any(|arg| arg.contains(endpoint.credential.as_ref().expect("credential present").expose()))
     );
 }
 

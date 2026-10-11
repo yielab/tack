@@ -15,7 +15,7 @@
 use async_trait::async_trait;
 
 use super::{CATALOG_TIMEOUT, CatalogEntry, CatalogFetchError, KnownEndpoint, Provider, Wire};
-use crate::config::{ANTHROPIC_CONFIG_KEY, ANTHROPIC_PROVIDER};
+use crate::config::{ANTHROPIC_CONFIG_KEY, ANTHROPIC_PROVIDER, ProviderConfig};
 use crate::secrets::SecretValue;
 
 const BASE_URL: &str = "https://api.anthropic.com";
@@ -42,22 +42,28 @@ impl Provider for Anthropic {
         "Anthropic"
     }
 
-    fn endpoint(&self, wire: Wire) -> Option<KnownEndpoint> {
+    fn serves(&self, wire: Wire) -> bool {
         match wire {
-            Wire::AnthropicMessages => Some(KnownEndpoint {
-                base_url: BASE_URL,
-                // claude-code's own env-based auth distinguishes a bearer
-                // token (`ANTHROPIC_AUTH_TOKEN`, used for a gateway proxy)
-                // from a native Anthropic key (`ANTHROPIC_API_KEY`, sent as
-                // `x-api-key`). Anthropic's own API needs the latter.
-                credential_env_var: "ANTHROPIC_API_KEY",
-            }),
+            Wire::AnthropicMessages => true,
             // Anthropic's own API does not speak the OpenAI-Responses wire
             // at all — there is no endpoint to point codex at here.
-            Wire::OpenAiResponses => None,
+            Wire::OpenAiResponses => false,
             // Unmeasured whether Anthropic's own API answers this shape.
-            Wire::OpenAiChatCompletions => None,
+            Wire::OpenAiChatCompletions => false,
         }
+    }
+
+    /// The `[provider.anthropic]` entry carries nothing the endpoint
+    /// reads: the host is the vendor's own.
+    fn endpoint(&self, wire: Wire, _config: &ProviderConfig) -> Option<KnownEndpoint> {
+        self.serves(wire).then(|| KnownEndpoint {
+            base_url: BASE_URL.to_owned(),
+            // claude-code's own env-based auth distinguishes a bearer
+            // token (`ANTHROPIC_AUTH_TOKEN`, used for a gateway proxy)
+            // from a native Anthropic key (`ANTHROPIC_API_KEY`, sent as
+            // `x-api-key`). Anthropic's own API needs the latter.
+            credential_env_var: "ANTHROPIC_API_KEY",
+        })
     }
 
     // A direct vendor API is not a proxy: it serves the requested model or
@@ -71,8 +77,10 @@ impl Provider for Anthropic {
 
     async fn fetch_catalog(
         &self,
-        secret: &SecretValue,
+        _config: &ProviderConfig,
+        credential: Option<&SecretValue>,
     ) -> Result<Vec<CatalogEntry>, CatalogFetchError> {
+        let secret = credential.ok_or(CatalogFetchError::CredentialRequired)?;
         let client = reqwest::Client::builder()
             .timeout(CATALOG_TIMEOUT)
             .user_agent(concat!("tack-runner/", env!("CARGO_PKG_VERSION")))
@@ -194,8 +202,15 @@ mod tests {
     #[test]
     fn serves_only_the_anthropic_messages_wire() {
         let provider = Anthropic;
-        assert!(provider.endpoint(Wire::AnthropicMessages).is_some());
-        assert!(provider.endpoint(Wire::OpenAiResponses).is_none());
-        assert!(provider.endpoint(Wire::OpenAiChatCompletions).is_none());
+        let config = crate::config::RunnerConfig::defaults()
+            .providers
+            .remove(ANTHROPIC_CONFIG_KEY)
+            .expect("default entry present");
+        assert!(provider.serves(Wire::AnthropicMessages));
+        assert!(provider.endpoint(Wire::AnthropicMessages, &config).is_some());
+        assert!(!provider.serves(Wire::OpenAiResponses));
+        assert!(provider.endpoint(Wire::OpenAiResponses, &config).is_none());
+        assert!(!provider.serves(Wire::OpenAiChatCompletions));
+        assert!(provider.endpoint(Wire::OpenAiChatCompletions, &config).is_none());
     }
 }
