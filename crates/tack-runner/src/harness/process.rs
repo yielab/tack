@@ -44,7 +44,7 @@ use tokio::{
 use super::redact::{RedactedEnv, SecretMaterial};
 use crate::client::{
     DecisionAnswer,
-    engine::{Question, StreamSignal},
+    engine::{Progress, Question, StreamSignal},
 };
 
 /// What to launch and where. `working_directory` must be the attempt's own
@@ -304,17 +304,24 @@ impl SupervisedProcess {
         })
     }
 
-    /// The interactive counterpart of [`Self::wait_with_capture`], for a
-    /// child spawned with `keep_stdin_open`. Reads stdout line by line into
-    /// the same bounded head/tail capture, offering each line to `signal`;
-    /// a [`StreamSignal::Question`] goes out on `questions_tx` and this loop
-    /// blocks on `answers_rx` for the reply, which `answer` turns into the
+    /// The line-reading counterpart of [`Self::wait_with_capture`]. Reads
+    /// stdout line by line into the same bounded head/tail capture, offering
+    /// each line to `signal`.
+    ///
+    /// With `questions` (a child spawned with `keep_stdin_open`), a
+    /// [`StreamSignal::Question`] goes out on its sender and this loop
+    /// blocks on its receiver for the reply, which `answer` turns into the
     /// bytes written back to the child's stdin. A `StreamSignal::Reply`
     /// writes its bytes straight back to the child's stdin without waiting
     /// on a question at all, for a grammar driving its own handshake. A
     /// `StreamSignal::Finished`, a dropped answer channel, or EOF all close
     /// stdin and end the loop — the child's own exit (or the timeout) is
-    /// what this method actually waits on. `signal`/`answer` stay generic
+    /// what this method actually waits on. Without `questions` stdin is
+    /// already closed, and a question or reply has no one to reach.
+    ///
+    /// With `progress`, each [`StreamSignal::Progress`] is scrubbed and
+    /// handed on without waiting: a step that finds the channel full is
+    /// dropped rather than slow the read. `signal`/`answer` stay generic
     /// closures rather than a `HarnessGrammar` reference so this module
     /// keeps no per-CLI knowledge.
     pub async fn wait_with_capture_and_questions(
@@ -323,10 +330,19 @@ impl SupervisedProcess {
         secrets: &SecretMaterial,
         mut signal: impl FnMut(&str) -> Option<StreamSignal> + Send,
         mut answer: impl FnMut(&Question, &DecisionAnswer) -> Vec<u8> + Send,
-        questions_tx: mpsc::Sender<Question>,
-        mut answers_rx: mpsc::Receiver<DecisionAnswer>,
+        questions: Option<(mpsc::Sender<Question>, mpsc::Receiver<DecisionAnswer>)>,
+        progress: Option<mpsc::Sender<Progress>>,
     ) -> Result<ProcessResult, ProcessError> {
-        let mut stdin = Some(self.child.stdin.take().ok_or(ProcessError::Io)?);
+        let (mut stdin, mut questions) = match questions {
+            Some(questions) => (
+                Some(self.child.stdin.take().ok_or(ProcessError::Io)?),
+                Some(questions),
+            ),
+            None => {
+                drop(self.child.stdin.take());
+                (None, None)
+            }
+        };
         let stdout_pipe = self.child.stdout.take().ok_or(ProcessError::Io)?;
         let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::Io)?;
         let stderr_cap = limits.max_stderr_bytes;
@@ -353,6 +369,12 @@ impl SupervisedProcess {
                 let text = text.trim_end_matches(['\n', '\r']);
                 match signal(text) {
                     Some(StreamSignal::Question(mut question)) => {
+                        let Some((questions_tx, answers_rx)) = questions.as_mut() else {
+                            continue;
+                        };
+                        if stdin.is_none() {
+                            continue;
+                        }
                         // The same scrub captured output gets, applied before
                         // the question ever leaves this loop — a tool's
                         // command or path argument is ordinary content, not
@@ -386,7 +408,7 @@ impl SupervisedProcess {
                         }
                     }
                     Some(StreamSignal::Reply(bytes)) => {
-                        let Some(pipe) = stdin.as_mut() else { break };
+                        let Some(pipe) = stdin.as_mut() else { continue };
                         if pipe.write_all(&bytes).await.is_err()
                             || pipe.write_all(b"\n").await.is_err()
                         {
@@ -396,6 +418,12 @@ impl SupervisedProcess {
                     // Closing stdin is what lets a CLI that keeps listening
                     // exit; its remaining output is still drained to EOF so
                     // it can never block on a full pipe.
+                    Some(StreamSignal::Progress(mut step)) => {
+                        if let Some(progress) = progress.as_ref() {
+                            step.text = secrets.scrub(&step.text);
+                            let _ = progress.try_send(step);
+                        }
+                    }
                     Some(StreamSignal::Finished) => stdin = None,
                     Some(
                         announced @ (StreamSignal::ProcessStarted { .. }

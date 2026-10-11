@@ -24,6 +24,7 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     credential_env: None,
     observes_served_model: false,
     reports_process_groups: false,
+    reports_progress: false,
 };
 
 static PLAIN: HarnessDescriptor = BASE;
@@ -841,6 +842,7 @@ fn journal(process_id: Option<&str>) -> AttemptJournal {
         state: JournalState::ProcessObservedRunning,
         process_id: process_id.map(str::to_owned),
         last_event_checkpoint: None,
+        events_submitted: 0,
         pending_terminal_report: None,
     }
 }

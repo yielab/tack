@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { type Component, For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
 import { Badge, EmptyState } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
@@ -6,7 +6,13 @@ import { relativeTimeFromIso } from './shared';
 export interface EventTimelineProps {
   requestId: string;
   attemptNumber: number;
+  /** The attempt is still going: the timeline reloads every few seconds, and
+   *  once more when it ends, so the agent's steps appear as it takes them. */
+  live?: boolean;
 }
+
+/** How often a live attempt's timeline reloads. */
+const LIVE_RELOAD_MS = 3000;
 
 /** Best-effort, human-readable rendering of an event's free-form `payload`
  *  (III.1.6: event `kind`/`payload` are harness/runner-defined, not a fixed
@@ -41,6 +47,9 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
   'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
   'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },
   'attempt.plan_invalid': { label: 'The plan could not be read', failed: true },
+  'agent.model_turn': { label: 'A call to the model' },
+  'agent.tool_call': { label: 'The agent ran a tool' },
+  'agent.tool_refused': { label: 'A tool call was refused', failed: true },
 };
 
 /** `attempt.terminal`: the agent's message and files are on the card above, so this
@@ -109,30 +118,46 @@ const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => {
  * `ExecutionTimeline.tsx` once had to for the whole attempts surface.
  */
 const EventTimeline: Component<EventTimelineProps> = (props) => {
-  const [events] = createResource(
+  const [events, { refetch }] = createResource(
     () => `${props.requestId}:${props.attemptNumber}`,
     () => attemptsApi.events(props.requestId, props.attemptNumber).then((r) => r.data.data),
   );
+  createEffect(() => {
+    if (!props.live) return;
+    const timer = setInterval(() => void refetch(), LIVE_RELOAD_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+  createEffect(
+    on(
+      () => props.live,
+      (live, wasLive) => {
+        if (wasLive && !live) void refetch();
+      },
+      { defer: true },
+    ),
+  );
+  // A reload keeps the rows on screen: only the first load says "Loading".
+  const loaded = () => (events.state === 'ready' || events.state === 'refreshing' ? (events.latest ?? []) : null);
 
   return (
     <div>
-      <Show when={events.loading}>
+      <Show when={events.state === 'pending'}>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           Loading events…
         </p>
       </Show>
-      <Show when={events.error}>
+      <Show when={events.state === 'errored'}>
         <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load events: {events.error instanceof Error ? events.error.message : 'unknown error'}
         </p>
       </Show>
-      <Show when={!events.loading && !events.error && (events() ?? []).length === 0}>
+      <Show when={loaded()?.length === 0}>
         <EmptyState title="No events reported yet" />
       </Show>
-      <Show when={!events.loading && !events.error && (events() ?? []).length > 0}>
+      <Show when={(loaded()?.length ?? 0) > 0}>
         <ul>
-          <For each={events()}>
-            {(event, i) => <EventRow event={event} last={i() === (events() ?? []).length - 1} />}
+          <For each={loaded()}>
+            {(event, i) => <EventRow event={event} last={i() === (loaded() ?? []).length - 1} />}
           </For>
         </ul>
       </Show>

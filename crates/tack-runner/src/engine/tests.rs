@@ -420,6 +420,9 @@ struct FakeAdapter {
     // out and blocks for the engine's answer before completing; the
     // received answer is recorded so the test can inspect it.
     interactive: Arc<Mutex<Option<InteractiveFake>>>,
+    // `None` for every test that does not prove the progress path:
+    // `progress_channel` hands this out once.
+    progress: Arc<Mutex<Option<mpsc::Receiver<Progress>>>>,
 }
 
 struct InteractiveFake {
@@ -497,6 +500,10 @@ impl HarnessAdapter for FakeAdapter {
             .as_mut()?
             .engine_side
             .take()
+    }
+
+    async fn progress_channel(&self, _handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
+        self.progress.lock().expect("fake adapter lock").take()
     }
 }
 
@@ -717,6 +724,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         completion_terminal_reason: default_completion_terminal_reason(),
         wait_delay: std::time::Duration::ZERO,
         interactive: Arc::new(Mutex::new(None)),
+        progress: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -3776,4 +3784,88 @@ async fn a_scratch_request_is_provisioned_without_a_remote_and_based_on_head() {
             .iter()
             .all(|report| report.base_revision.as_deref() == Some("HEAD"))
     );
+}
+
+/// The steps a harness reports reach the server as runner events numbered
+/// from the attempt's first, with the resolved prompt scrubbed out, and the
+/// terminal event that follows takes the next number and chains on their
+/// checkpoint. Both ways a step leaves the wait are covered: drained when the
+/// harness ends at once, and flushed on the timer when it runs past one.
+#[tokio::test(start_paused = true)]
+async fn reported_steps_reach_the_timeline_in_order_before_the_terminal_event() {
+    let canary = "top-secret-instructions-canary-5d07";
+    for (name, wait_delay) in [
+        ("drained", std::time::Duration::ZERO),
+        ("flushed", PROGRESS_FLUSH_INTERVAL * 3),
+    ] {
+        let (root_dir, journal) = fresh_journal(&format!("progress-{name}"));
+        let root = root_dir.path();
+        let mut claimed = work();
+        claimed.request.resolved_agent_profile.instructions = canary.to_owned();
+        let (steps_tx, steps_rx) = mpsc::channel(8);
+        for (kind, text) in [
+            (
+                "agent.model_turn",
+                "Model turn 1: 20 tokens in, 8 out".to_owned(),
+            ),
+            ("agent.tool_call", format!("bash: echo {canary}")),
+        ] {
+            steps_tx
+                .send(Progress {
+                    kind: kind.to_owned(),
+                    text,
+                })
+                .await
+                .expect("send");
+        }
+        drop(steps_tx);
+        let fake_adapter = FakeAdapter {
+            wait_delay,
+            progress: Arc::new(Mutex::new(Some(steps_rx))),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        let data_protocol = FakeDataProtocol::new();
+        let engine = runner_engine(protocol(claimed, false, false), fake_adapter, journal, root)
+            .with_data_protocol(Arc::new(data_protocol.clone()));
+        assert!(
+            matches!(
+                engine
+                    .run_once(&session(), claim_request())
+                    .await
+                    .expect("cycle"),
+                RunCycle::Completed { .. }
+            ),
+            "{name}"
+        );
+
+        let batches = data_protocol.state.lock().expect("lock").events.clone();
+        let events: Vec<_> = batches
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .map(|event| (event.sequence, event.kind.as_str(), event.payload.clone()))
+            .collect();
+        assert_eq!(
+            events[..2],
+            [
+                (
+                    0,
+                    "agent.model_turn",
+                    serde_json::json!({"text": "Model turn 1: 20 tokens in, 8 out"})
+                ),
+                (
+                    1,
+                    "agent.tool_call",
+                    serde_json::json!({"text": "bash: echo [REDACTED]"})
+                ),
+            ],
+            "{name}"
+        );
+        let (sequence, kind, _) = &events[2];
+        assert_eq!((*sequence, *kind), (2, "attempt.terminal"), "{name}");
+        assert_eq!(
+            batches[1].previous_checkpoint.as_ref(),
+            Some(&batches[0].checkpoint),
+            "{name}"
+        );
+    }
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
+import { createSignal } from 'solid-js';
 import AttemptList from './AttemptList';
 import type { AttemptSummary } from '../execution';
 
@@ -57,6 +58,25 @@ afterEach(() => {
 });
 
 describe('AttemptList', () => {
+  it('a refresh that brings the same attempt changed keeps its details open', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const [attempts, setAttempts] = createSignal([attempt({ state: 'running', ended_at: null })]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
+    disposers.push(() => { dispose(); container.remove(); });
+    const toggle = () => Array.from(container.querySelectorAll('button')).find((b) => /timeline|Hide details/.test(b.textContent ?? ''))!;
+    toggle().click();
+    await flush();
+    expect(toggle().textContent).toBe('Hide details');
+
+    setAttempts([attempt({ state: 'running', ended_at: null, event_checkpoint: 'chk:2', updated_at: '2026-08-06T12:06:00Z' })]);
+    await flush();
+    expect(toggle().textContent).toBe('Hide details');
+  });
+
   it('renders every attempt with its number, state badge and runner id', () => {
     const c = mount([attempt(), attempt({ attempt_id: 'att_2', attempt_number: 2, state: 'failed', runner_id: 'runner_2' })]);
     expect(c.textContent).toContain('Attempt 1');

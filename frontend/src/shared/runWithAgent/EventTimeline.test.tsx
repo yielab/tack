@@ -5,10 +5,13 @@ import EventTimeline from './EventTimeline';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
-function mount(requestId = 'exec_1', attemptNumber = 1) {
+function mount(requestId = 'exec_1', attemptNumber = 1, live?: () => boolean) {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <EventTimeline requestId={requestId} attemptNumber={attemptNumber} />, container);
+  const dispose = render(
+    () => <EventTimeline requestId={requestId} attemptNumber={attemptNumber} live={live?.()} />,
+    container,
+  );
   disposers.push(() => {
     dispose();
     container.remove();
@@ -22,7 +25,52 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const page = (data: unknown[]) => new Response(JSON.stringify({ protocol_version: 1, data }), { status: 200 });
+const step = (sequence: number, kind: string, text: string) => ({
+  event_id: `evt_${sequence}`, sequence, source: 'runner', kind, payload: { text },
+  occurred_at: '2026-10-11T12:00:00Z', created_at: '2026-10-11T12:00:00Z',
+});
+
 describe('EventTimeline', () => {
+  it('reloads a live attempt so each step appears as the agent takes it, without blanking the rows', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(page([step(0, 'agent.model_turn', 'Model turn 1: 20 tokens in, 8 out')]))
+        .mockResolvedValueOnce(page([
+          step(0, 'agent.model_turn', 'Model turn 1: 20 tokens in, 8 out'),
+          step(1, 'agent.tool_call', "bash: sh -c 'echo done > DONE.txt'"),
+        ]))
+        .mockResolvedValue(page([step(2, 'agent.tool_refused', 'bash was refused: not allowed')]));
+      const c = mount('exec_1', 1, () => true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(c.textContent).toContain('A call to the model');
+      expect(c.textContent).toContain('Model turn 1: 20 tokens in, 8 out');
+      expect(c.textContent).not.toContain('The agent ran a tool');
+
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(c.textContent).toContain('The agent ran a tool');
+      expect(c.textContent).toContain("bash: sh -c 'echo done > DONE.txt'");
+      expect(c.textContent).not.toContain('Loading events');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a finished attempt loads once and never polls', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([]));
+      mount('exec_1', 1, () => false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fetches GET /executions/{id}/attempts/{n}/events and renders events oldest-first with source/kind/payload', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

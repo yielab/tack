@@ -110,8 +110,11 @@ what it did and said, and its usage, tokens first. A finished run that changed f
 **Accept** or **Reject**, with an optional note, and the card's *Needs your review* flag clears.
 When the run's branch became a pull request, a **PR #n** link and its state sit on the run.
 **Show timeline, questions & files** opens the timeline, the questions the agent asked, the files
-from the run and, when a verifier ran, the merge-readiness pack. A question that is still waiting
-appears on the same tab, with the options, their risks and the agent's recommendation. Everything
+from the run and, when a verifier ran, the merge-readiness pack. While a docket run is going, its
+timeline fills as the agent works: each call to the model, each tool it ran (a shell command is
+shown as the command) and each call docket refused. A question that is still waiting appears on
+the same tab, with the command it is about, why the agent's policy stopped it, the options, their
+risks and the agent's recommendation. Everything
 on this tab, and how to start a run, is in [Agent Runners](agent-runners.md); the item's
 [acceptance criteria](#acceptance-criteria-and-for-the-agent) are what the agent is given as the
 definition of done. An item that was never run shows an empty tab, not a hidden one.

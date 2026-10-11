@@ -39,7 +39,7 @@ use crate::secrets::SecretStore;
 
 pub use crate::client::engine::{
     CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter, HarnessError,
-    HarnessOutcome, LocalRunHandle, Question, StreamSignal,
+    HarnessOutcome, LocalRunHandle, Progress, Question, StreamSignal,
 };
 pub use crate::client::{AttemptJournal, DecisionAnswer, DecisionOption, RecoveryObservation};
 
@@ -392,6 +392,17 @@ impl HarnessAdapter for AdapterRegistry {
         self.resolve(&kind)
             .ok()?
             .decision_channels(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
+    async fn progress_channel(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<tokio::sync::mpsc::Receiver<Progress>> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .progress_channel(&LocalRunHandle { process_id: inner })
             .await
     }
 }

@@ -37,7 +37,7 @@ use crate::{
     harness::{
         AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, ExecutionSpec,
         HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
-        ModelObservationSource, Question, RecoveryObservation, StreamSignal,
+        ModelObservationSource, Progress, Question, RecoveryObservation, StreamSignal,
         process::{
             CancelOutcome, ProcessExit, ProcessGroups, ProcessLimits, ProcessResult, ProcessSpec,
             SupervisedProcess,
@@ -105,6 +105,10 @@ pub struct HarnessDescriptor {
     /// can stop a group the main one does not contain and say whether it
     /// did. Only a grammar that does may declare `cancel: Supported`.
     pub reports_process_groups: bool,
+    /// Whether this CLI's stdout carries steps worth showing while the run
+    /// is going (`StreamSignal::Progress`). A grammar that does is read line
+    /// by line on every run, not only one kept open to be asked questions.
+    pub reports_progress: bool,
 }
 
 /// What the grammar is given to build a command line.
@@ -222,7 +226,9 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     fn report(&self, run: &RunContext<'_>, result: &ProcessResult) -> RunReport;
 
     /// What a line of this CLI's stdout means to the core, if anything.
-    /// Only ever consulted when [`Invocation::stdin_stays_open`] was set.
+    /// Only ever consulted when [`Invocation::stdin_stays_open`] was set or
+    /// the descriptor's `reports_progress` is; a question or reply read on a
+    /// run whose stdin is closed reaches no one.
     /// `run` is what the grammar needs to build the handshake's requests
     /// from a reply: the prompt text is
     /// `run.spec.work.request.resolved_agent_profile.instructions`, the
@@ -312,6 +318,10 @@ pub(crate) struct RunningProcess {
     /// only when [`Invocation::stdin_stays_open`] was set. Taken once by
     /// `decision_channels`, before `wait` consumes the rest of this entry.
     decision_channels: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    /// The engine-facing end of the steps the run reports, present only
+    /// when the descriptor's `reports_progress` is set. Taken once by
+    /// `progress_channel`.
+    progress: Option<mpsc::Receiver<Progress>>,
 }
 
 /// What `wait` needs back once the process itself has been consumed.
@@ -327,7 +337,14 @@ struct RunRecord {
     /// its answer back on. Present exactly when `decision_channels` (above,
     /// on the sibling [`RunningProcess`]) is.
     interactive: Option<(mpsc::Sender<Question>, mpsc::Receiver<DecisionAnswer>)>,
+    /// Where `wait`'s read loop hands each reported step; present exactly
+    /// when `progress` on the sibling [`RunningProcess`] is.
+    progress: Option<mpsc::Sender<Progress>>,
 }
+
+/// How many reported steps may wait for the engine before the read loop
+/// starts dropping them: a few flushes' worth of a busy agent.
+const PROGRESS_BUFFER: usize = 256;
 
 /// The adapter and probe for any [`HarnessGrammar`].
 pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
@@ -1036,6 +1053,12 @@ where
         } else {
             (None, None)
         };
+        let (progress_tx, progress_rx) = if self.grammar.descriptor().reports_progress {
+            let (progress_tx, progress_rx) = mpsc::channel(PROGRESS_BUFFER);
+            (Some(progress_tx), Some(progress_rx))
+        } else {
+            (None, None)
+        };
         self.running.lock().await.insert(
             process_id.clone(),
             RunningProcess {
@@ -1048,8 +1071,10 @@ where
                     endpoint,
                     scratch,
                     interactive,
+                    progress: progress_tx,
                 },
                 decision_channels,
+                progress: progress_rx,
             },
         );
         Ok(LocalRunHandle { process_id })
@@ -1064,6 +1089,15 @@ where
             .await
             .get_mut(&handle.process_id)?
             .decision_channels
+            .take()
+    }
+
+    async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
+        self.running
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .progress
             .take()
     }
 
@@ -1131,7 +1165,9 @@ where
             mut record,
             ..
         } = self.take_running(&handle.process_id).await?;
-        let result = if let Some((questions_tx, answers_rx)) = record.interactive.take() {
+        let questions = record.interactive.take();
+        let progress = record.progress.take();
+        let result = if questions.is_some() || progress.is_some() {
             let run_context = RunContext {
                 spec: &record.spec,
                 endpoint: record.endpoint.as_ref(),
@@ -1143,8 +1179,8 @@ where
                     &record.secrets,
                     |line| self.grammar.signal(&run_context, line),
                     |question, answer| self.grammar.answer(question, answer),
-                    questions_tx,
-                    answers_rx,
+                    questions,
+                    progress,
                 )
                 .await
         } else {

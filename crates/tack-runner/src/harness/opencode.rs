@@ -58,6 +58,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     // ever names it — both only ever name the requested model.
     observes_served_model: false,
     reports_process_groups: false,
+    reports_progress: false,
 };
 
 pub struct OpencodeGrammar;

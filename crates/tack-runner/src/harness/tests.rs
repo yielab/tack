@@ -149,6 +149,7 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
         state: JournalState::ProcessObservedRunning,
         process_id: process_id.map(str::to_owned),
         last_event_checkpoint: None,
+        events_submitted: 0,
         pending_terminal_report: None,
     }
 }

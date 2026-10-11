@@ -421,3 +421,65 @@ pub(crate) async fn wait_until_dead(pid: u32, budget: Duration) -> bool {
         .is_some()
         || !process_alive(pid)
 }
+
+/// A run nobody can answer is still read line by line when it reports
+/// steps: each step arrives scrubbed, a question it asks reaches no one
+/// instead of blocking the read, and the child, its stdin already closed,
+/// exits on its own.
+#[tokio::test]
+async fn a_run_without_questions_reports_its_steps_scrubbed() {
+    let workspace_dir = temp_workspace("steps");
+    let workspace = workspace_dir.path();
+    const CANARY: &str = "tack-test-canary-step-4c2e";
+    let mut process_spec = spec(workspace, env_with_mode("echo_canary"));
+    process_spec.stdin = Some(CANARY.as_bytes().to_vec());
+    let mut secrets = SecretMaterial::new();
+    secrets.register(CANARY);
+    let (progress_tx, mut progress_rx) = mpsc::channel(16);
+
+    let result = process_spec
+        .spawn()
+        .await
+        .expect("spawn")
+        .wait_with_capture_and_questions(
+            &generous_limits(),
+            &secrets,
+            |line| {
+                if line.trim().is_empty() {
+                    return None;
+                }
+                Some(if line.contains(CANARY) {
+                    StreamSignal::Progress(Progress {
+                        kind: "agent.step".to_owned(),
+                        text: line.to_owned(),
+                    })
+                } else {
+                    StreamSignal::Question(Question {
+                        vendor_id: "nobody".to_owned(),
+                        kind: "tool_permission".to_owned(),
+                        prompt: line.to_owned(),
+                        options: Vec::new(),
+                        recommendation: None,
+                        metadata: serde_json::Map::new(),
+                    })
+                })
+            },
+            |_, _| b"never".to_vec(),
+            None,
+            Some(progress_tx),
+        )
+        .await
+        .expect("wait");
+
+    assert_eq!(result.exit, ProcessExit::Exited(0));
+    let mut steps = Vec::new();
+    while let Ok(step) = progress_rx.try_recv() {
+        steps.push(step);
+    }
+    assert!(!steps.is_empty(), "the fake harness echoed its stdin");
+    for step in &steps {
+        assert_eq!(step.kind, "agent.step");
+        assert!(!step.text.contains(CANARY), "{step:?}");
+        assert!(step.text.contains("[REDACTED]"), "{step:?}");
+    }
+}

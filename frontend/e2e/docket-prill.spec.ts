@@ -292,8 +292,8 @@ async function artifactJson(requestId: string, n: number, artifactId: string): P
   if (!res.ok) throw new Error(`artifact ${artifactId} -> ${res.status}`);
   return res.json();
 }
-async function eventsOf(requestId: string, n: number): Promise<Array<{ kind: string; payload?: unknown }>> {
-  return ((await apiFetch(`/executions/${requestId}/attempts/${n}/events`)) as { data: Array<{ kind: string; payload?: unknown }> }).data;
+async function eventsOf(requestId: string, n: number): Promise<Array<{ kind: string; sequence: number; payload?: unknown }>> {
+  return ((await apiFetch(`/executions/${requestId}/attempts/${n}/events`)) as { data: Array<{ kind: string; sequence: number; payload?: unknown }> }).data;
 }
 
 interface Pack {
@@ -371,6 +371,14 @@ async function inspectFinishedRun(page: Page, key: ItemKey, requestId: string, c
   const events = await eventsOf(requestId, n);
   const verifyFailed = events.find((e) => e.kind === 'attempt.verify_failed');
   expect(verifyFailed, `prill did not fail: ${JSON.stringify(verifyFailed?.payload ?? null)}`).toBeUndefined();
+  // The steps docket reported while it ran come first, in order, and the run's end after them.
+  const kindsInOrder = events.map((e) => e.kind);
+  expect(kindsInOrder, 'the model was called').toContain('agent.model_turn');
+  expect(kindsInOrder, 'the agent used a tool').toContain('agent.tool_call');
+  expect(kindsInOrder.indexOf('agent.tool_call')).toBeLessThan(kindsInOrder.indexOf('attempt.terminal'));
+  const sequences = events.map((e) => e.sequence);
+  expect(sequences, 'one event per sequence, oldest first').toEqual([...sequences].sort((a, b) => a - b));
+  expect(new Set(sequences).size).toBe(sequences.length);
   expect(kinds, 'evidence, files and the pack were uploaded').toEqual(expect.arrayContaining(['evidence', 'files', 'patch', 'mrp']));
 
   const mrp = artifacts.find((a) => a.kind === 'mrp')!;
@@ -412,6 +420,7 @@ async function inspectFinishedRun(page: Page, key: ItemKey, requestId: string, c
     branch,
     files: evidence.files?.map((f) => f.path),
     prill: pack.produced_by.version,
+    steps: events.filter((e) => e.kind.startsWith('agent.')).length,
   };
   return { pack, branch, attempt: n };
 }
@@ -725,7 +734,13 @@ test.describe.serial('docket runs, prill verifies', () => {
     await waitForApp(page);
     await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
     await expect(page.getByText('Pending', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/^Allow bash/).first()).toBeVisible();
+    // The question names the command and docket's reason, not only the tool.
+    const question = page.getByText(/^Allow bash to run "sh /).first();
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("docket's policy:");
+    // The timeline is live: the call that is waiting is already on it.
+    await expect(page.getByText('The agent ran a tool').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/^bash: sh /).first()).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 2000 });
     await page.waitForTimeout(300);
     await shot(page.getByRole('dialog', { name: 'Item details' }), 'decision-pending');

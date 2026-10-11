@@ -18,7 +18,8 @@
 # Usage: scripts/docket-prill-e2e.sh [extra playwright args…]
 # Knobs (environment):
 #   DOCKET_PRILL_MODEL_BASE_URL  OpenAI-compatible endpoint, without /v1 (default http://127.0.0.1:8081)
-#   PRILL_IMAGE                  prill's sandbox image, present locally (default prill-verify-py313:local)
+#   PRILL_IMAGE                  prill's sandbox image, present locally (default prill-verify-py313:local);
+#                                passed to prill by its image id
 #   DOCKET_PRILL_WORK            working directory (default: a fresh mktemp dir, kept afterwards)
 #   DOCKET_PRILL_PORT            the server's port (default 3377)
 #   DOCKET_PRILL_SHOTS           where the screenshots go (default frontend/test-results/docket-prill)
@@ -47,6 +48,9 @@ die() { printf 'docket-prill-e2e: %s\n' "$*" >&2; exit 1; }
 [ -d "$DOCKET_SRC/.venv" ] || die "no $DOCKET_SRC/.venv — run 'uv sync' in the docket checkout first"
 [ -x "$PRILL_SRC/.venv/bin/prill" ] || die "no $PRILL_SRC/.venv/bin/prill — run 'uv sync' in the prill checkout first"
 docker image inspect "$PRILL_IMAGE" >/dev/null 2>&1 || die "the prill sandbox image $PRILL_IMAGE is not present locally (prill never pulls one)"
+# prill counts only a digest or a bare `sha256:` id as pinned; a local tag would
+# put `image_not_pinned` on every pack, so the runner is handed the id.
+PRILL_IMAGE_ID=$(docker image inspect "$PRILL_IMAGE" --format '{{.Id}}')
 curl -fsS -m 5 "$MODEL_BASE_URL/v1/models" >/dev/null || die "no OpenAI-compatible endpoint answers at $MODEL_BASE_URL/v1/models"
 command -v ffmpeg >/dev/null 2>&1 || echo "note: ffmpeg not found; the spec records no GIF without it"
 if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$PORT\$"; then
@@ -71,7 +75,7 @@ chmod +x "$WORK/bin/docket" "$WORK/bin/prill"
   echo "docket: $("$WORK/bin/docket" --version 2>/dev/null | tail -1) from $DOCKET_SRC @ $(git -C "$DOCKET_SRC" rev-parse --short HEAD) ($(git -C "$DOCKET_SRC" branch --show-current))$([ -n "$(git -C "$DOCKET_SRC" status --porcelain)" ] && echo ' +uncommitted')"
   echo "docket installed release (not used): $(command -v docket || echo none) $(docket --version 2>/dev/null | tail -1)"
   echo "prill: $("$WORK/bin/prill" --version 2>/dev/null | tail -1) from $PRILL_SRC @ $(git -C "$PRILL_SRC" rev-parse --short HEAD) ($(git -C "$PRILL_SRC" branch --show-current))$([ -n "$(git -C "$PRILL_SRC" status --porcelain)" ] && echo ' +uncommitted')"
-  echo "prill image: $PRILL_IMAGE $(docker image inspect "$PRILL_IMAGE" --format '{{.Id}}')"
+  echo "prill image: $PRILL_IMAGE $PRILL_IMAGE_ID"
   echo "model endpoint: $MODEL_BASE_URL/v1 -> $(curl -fsS -m 5 "$MODEL_BASE_URL/v1/models" | python3 -c 'import json,sys; print(", ".join(m["id"] for m in json.load(sys.stdin).get("data", [])))')"
 } | tee "$WORK/versions.txt"
 
@@ -124,7 +128,7 @@ base_url = "$MODEL_BASE_URL"
 [verify]
 enabled = true
 kind = "prill"
-args = ["--image", "$PRILL_IMAGE"]
+args = ["--image", "$PRILL_IMAGE_ID"]
 timeout_seconds = 900
 
 [git]

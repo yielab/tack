@@ -33,6 +33,24 @@ verifier's pack does not parse", and a run that stops to ask reads "Running" for
 | 8 | **Project creation is one request**: `POST /api/projects` accepts `code_origin`, `repository`, `workspace_mode` and `default_branch` with the update route's validation. | The modal created the project, then patched the folder; a read in between saw a project with no folder. |
 | 9 | **`docs/contracts/mrp-v1/schema.json`'s `signature` keeps only its `oneOf`.** | The outer `additionalProperties: false` without `properties` rejected every pack, Tack's own `ready.json` included. The Rust parser was right; the published schema was not. |
 
+## Found by the second run (2026-10-11)
+
+The same test, rerun against the day's docket and prill, found three more things Tack did not
+show or say, one it lost, and, once the timeline was live, one it undid. All five are executed in
+`develop` the same day.
+
+| # | Decision | What was observed |
+|---|---|---|
+| 10 | **A running agent's steps reach its timeline as it takes them.** A grammar may report a line of its CLI's stdout as a step (`StreamSignal::Progress`); a harness whose descriptor sets `reports_progress` is read line by line on every run, not only one that can ask. The runner sends the steps as runner events every two seconds and once more when the run ends; the timeline reloads while the attempt is live. docket reports `agent.model_turn`, `agent.tool_call` (a shell command shown as the command) and `agent.tool_refused`. | A run's timeline was empty until it ended and then held one event, `attempt.terminal`: the runner had no way to carry anything else, for any harness. |
+| 11 | **Every runner event takes the next sequence of its attempt**, counted in the runner's journal. | Every event went out as `sequence: 0`, and the server keeps one event per sequence, so an attempt that recorded `attempt.plan_invalid` or `attempt.evidence_failed` lost the `attempt.terminal` that followed. |
+| 12 | **docket's question names the command and the reason**: `Allow bash to run "sh -c '…'"? docket's policy: 'sh' is not on the curated allowlist.`, then the model's own reason when it gave one. | The question read `Allow bash (call vdNDuh46…)?`; the person answering could not see what they were allowing. docket sends the call and its reason in `approval_requested`'s `action`. |
+| 13 | **The e2e hands prill the sandbox image by its id**, which prill counts as pinned. | Every pack carried `image_not_pinned` because the script passed a local tag. |
+| 14 | **A refresh updates an attempt's row in place**: the Execution tab mounts its attempt list once and keys the rows by attempt id. | Each event moves the attempt's `event_checkpoint`, so every poll brought a "new" attempt and remounted its row: "Show timeline, questions & files" closed by itself mid-answer. A heartbeat did the same every 20 seconds before this. |
+
+Other harnesses report no steps yet: their grammars return none, and their timelines stay as they
+were. Adding codex, claude-code and opencode is reading their own stream formats, not a change to
+the seam.
+
 ## Not decided here
 
 - prill's own findings (a local image can never be digest-pinned; `riskHints` always count as

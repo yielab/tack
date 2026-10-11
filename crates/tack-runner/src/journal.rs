@@ -69,6 +69,10 @@ pub struct AttemptJournal {
     pub state: JournalState,
     pub process_id: Option<String>,
     pub last_event_checkpoint: Option<Checkpoint>,
+    /// How many events the server has taken for this attempt, which is the
+    /// next event's `sequence`: the server keeps one event per sequence.
+    #[serde(default)]
+    pub events_submitted: u64,
     /// Absent in old journals; present only after exact terminal payload fsync.
     #[serde(default)]
     pub pending_terminal_report: Option<PendingTerminalReport>,
@@ -84,6 +88,7 @@ impl AttemptJournal {
             state: JournalState::Prepared,
             process_id: None,
             last_event_checkpoint: None,
+            events_submitted: 0,
             pending_terminal_report: None,
         }
     }

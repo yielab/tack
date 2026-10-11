@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 
 use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
 
-use crate::client::engine::{Question, StreamSignal};
+use crate::client::engine::{Progress, Question, StreamSignal};
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError,
     local_process::{
@@ -41,6 +41,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     credential_env: Some("DOCKET_LLM_API_KEY"),
     observes_served_model: true,
     reports_process_groups: true,
+    reports_progress: true,
 };
 
 /// The variable docket's own `run` command refuses to start without, unless
@@ -127,8 +128,11 @@ struct ResultUsage {
 }
 
 /// One progress line, as far as the process lifecycle is concerned: a 1.1
-/// docket reports a `bash` call's process group when it starts and when it
-/// is gone (`fixtures/docket/contract-1.1/cancelled-process.ndjson`).
+/// One of docket's progress events: a `bash` call's process group when it
+/// starts and when it is gone
+/// (`fixtures/docket/contract-1.1/cancelled-process.ndjson`), and the tool
+/// calls, tool results and model calls a run makes
+/// (`fixtures/docket/contract-1.1/asked-answered.ndjson`).
 #[derive(serde::Deserialize)]
 struct ProgressLine {
     event: Option<ProgressEvent>,
@@ -137,12 +141,73 @@ struct ProgressLine {
 #[derive(serde::Deserialize)]
 struct ProgressEvent {
     event_type: String,
-    payload: ProgressPayload,
+    #[serde(default)]
+    payload: serde_json::Value,
 }
 
-#[derive(serde::Deserialize)]
-struct ProgressPayload {
-    pgid: Option<u32>,
+/// The event types [`DocketGrammar::signal`] reads past the approval and the
+/// result line; a line naming none of them is never parsed.
+const READ_EVENTS: [&str; 4] = [
+    "\"process_",
+    "\"tool_call\"",
+    "\"tool_result\"",
+    "\"llm_call\"",
+];
+
+/// How much of a step's text reaches the timeline.
+const STEP_TEXT_CHARS: usize = 400;
+
+/// A docket event worth a line on the attempt's timeline: a tool call and
+/// what it runs, a call docket refused, a model call and what it cost.
+fn step(event: &ProgressEvent) -> Option<Progress> {
+    let payload = &event.payload;
+    let text_of = |key: &str| payload.get(key).and_then(serde_json::Value::as_str);
+    let count = |key: &str| payload.get(key).and_then(serde_json::Value::as_u64);
+    let tool = text_of("tool").unwrap_or("a tool");
+    let (kind, text) = match event.event_type.as_str() {
+        "tool_call" => {
+            // `arguments` is the call's arguments as the model sent them: a
+            // JSON object in a string.
+            let arguments = text_of("arguments").unwrap_or_default();
+            let parsed = serde_json::from_str::<serde_json::Value>(arguments).ok();
+            let command = parsed
+                .as_ref()
+                .and_then(|value| value.get("command"))
+                .and_then(serde_json::Value::as_str);
+            let text = match command {
+                Some(command) => format!("{tool}: {command}"),
+                None if arguments.trim().is_empty() || arguments.trim() == "{}" => tool.to_owned(),
+                None => format!("{tool} {arguments}"),
+            };
+            ("agent.tool_call", text)
+        }
+        "tool_result" if text_of("decision") == Some("deny") => {
+            let reason = text_of("reason").unwrap_or("no reason given");
+            (
+                "agent.tool_refused",
+                format!("{tool} was refused: {reason}"),
+            )
+        }
+        "llm_call" if payload.get("ok") == Some(&serde_json::Value::Bool(false)) => {
+            let why = text_of("failureKind").unwrap_or("no reason given");
+            ("agent.model_turn", format!("A model call failed: {why}"))
+        }
+        "llm_call" => {
+            let turn = count("iteration")
+                .map(|n| format!(" {n}"))
+                .unwrap_or_default();
+            let tokens = match (count("inputTokens"), count("outputTokens")) {
+                (Some(input), Some(output)) => format!(": {input} tokens in, {output} out"),
+                _ => String::new(),
+            };
+            ("agent.model_turn", format!("Model turn{turn}{tokens}"))
+        }
+        _ => return None,
+    };
+    Some(Progress {
+        kind: kind.to_owned(),
+        text: bounded_prefix(&text, STEP_TEXT_CHARS),
+    })
 }
 
 fn last_non_empty_line(text: &str) -> Option<&str> {
@@ -427,17 +492,21 @@ impl HarnessGrammar for DocketGrammar {
         if line.contains("\"status\"") && is_result_line(line) {
             return Some(StreamSignal::Finished);
         }
-        // Every other event names no group; only a line that mentions one
-        // is worth parsing.
-        if !line.contains("\"process_") {
+        if !READ_EVENTS.iter().any(|name| line.contains(name)) {
             return None;
         }
         let event = serde_json::from_str::<ProgressLine>(line).ok()?.event?;
-        let pgid = event.payload.pgid?;
+        let pgid = || {
+            event
+                .payload
+                .get("pgid")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|pgid| u32::try_from(pgid).ok())
+        };
         match event.event_type.as_str() {
-            "process_started" => Some(StreamSignal::ProcessStarted { pgid }),
-            "process_exited" => Some(StreamSignal::ProcessExited { pgid }),
-            _ => None,
+            "process_started" => Some(StreamSignal::ProcessStarted { pgid: pgid()? }),
+            "process_exited" => Some(StreamSignal::ProcessExited { pgid: pgid()? }),
+            _ => step(&event).map(StreamSignal::Progress),
         }
     }
 
@@ -485,11 +554,13 @@ fn approval_question(line: &str) -> Option<StreamSignal> {
     let run_token = value.get("token")?.as_str()?;
     let tool = payload.get("tool").and_then(serde_json::Value::as_str);
     let call_id = payload.get("callId").and_then(serde_json::Value::as_str);
-    let prompt = match (tool, call_id) {
-        (Some(tool), Some(call)) => format!("Allow {tool} (call {call})?"),
-        (Some(tool), None) => format!("Allow {tool}?"),
-        _ => "Allow a gated tool call?".to_owned(),
-    };
+    let action = payload.get("action").and_then(serde_json::Value::as_str);
+    let rationale = payload
+        .get("rationale")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|rationale| !rationale.is_empty());
+    let prompt = approval_prompt(tool, call_id, action, rationale);
     let option = |option_id: &str, label: &str| DecisionOption {
         option_id: option_id.to_owned(),
         label: label.to_owned(),
@@ -509,6 +580,58 @@ fn approval_question(line: &str) -> Option<StreamSignal> {
         recommendation: None,
         metadata,
     }))
+}
+
+/// What the person reads before answering: the call itself, why docket's
+/// policy stopped it, and the model's own reason when it gave one.
+///
+/// docket's `action` is `tool call '<tool>': <reason>; call=<tool> <key>=<json> …`,
+/// the render its `pre_tool_call` policies match, cut at 1000 characters. A
+/// bash call's single `command` is shown as the bare command; any other call
+/// shows its rendered arguments as they are. An `action` in another shape is
+/// shown whole, and no `action` at all falls back to the tool and call id.
+fn approval_prompt(
+    tool: Option<&str>,
+    call_id: Option<&str>,
+    action: Option<&str>,
+    rationale: Option<&str>,
+) -> String {
+    let asked = match (tool, action) {
+        (Some(tool), Some(action)) => Some(match parse_action(tool, action) {
+            Some((reason, call)) => format!("Allow {tool}{call}? docket's policy: {reason}."),
+            None => format!("Allow {tool}? {action}"),
+        }),
+        (None, Some(action)) => Some(format!("Allow a gated tool call? {action}")),
+        _ => None,
+    };
+    let mut prompt = asked.unwrap_or_else(|| match (tool, call_id) {
+        (Some(tool), Some(call)) => format!("Allow {tool} (call {call})?"),
+        (Some(tool), None) => format!("Allow {tool}?"),
+        _ => "Allow a gated tool call?".to_owned(),
+    });
+    if let Some(rationale) = rationale {
+        prompt.push_str(&format!(" The agent says: \"{rationale}\""));
+    }
+    prompt
+}
+
+/// `(reason, call)` out of docket's `action`, the call worded to follow the
+/// tool's name: a bash `command` decoded from its JSON and quoted, any other
+/// arguments as rendered, nothing for a call without arguments.
+fn parse_action<'a>(tool: &str, action: &'a str) -> Option<(&'a str, String)> {
+    let rest = action.strip_prefix(&format!("tool call '{tool}': "))?;
+    let (reason, call) = rest.split_once("; call=")?;
+    let arguments = call.strip_prefix(tool)?.trim_start();
+    let call = match arguments.strip_prefix("command=") {
+        Some(command) => {
+            let command = serde_json::from_str::<String>(command)
+                .unwrap_or_else(|_| command.trim_start_matches('"').to_owned());
+            format!(" to run \"{command}\"")
+        }
+        None if arguments.is_empty() => String::new(),
+        None => format!(" with {arguments}"),
+    };
+    Some((reason, call))
 }
 
 /// `base`, then `note` when the binary offers what the note describes.

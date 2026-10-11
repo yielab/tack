@@ -201,8 +201,9 @@ fn capability_lines_follow_what_was_negotiated() {
     assert_eq!(negotiated.cancel.support, CapabilitySupport::Supported);
 }
 
-/// The captured cancelled run names one group, started then gone, and ends
-/// on its result line; no other line of it means anything to the core.
+/// The captured cancelled run makes one model call and one bash call, names
+/// that call's group, started then gone, and ends on its result line; no
+/// other line of it means anything to the core.
 #[test]
 fn process_lines_become_group_signals() {
     let state = scratch("docket-signal");
@@ -219,6 +220,11 @@ fn process_lines_become_group_signals() {
     assert_eq!(
         signals,
         [
+            step("agent.model_turn", "Model turn 1: 10 tokens in, 5 out"),
+            step(
+                "agent.tool_call",
+                "bash: python3 -c \"import time; time.sleep(30)\""
+            ),
             StreamSignal::ProcessStarted { pgid: 2_169_014 },
             StreamSignal::ProcessExited { pgid: 2_169_014 },
             StreamSignal::Finished,
@@ -281,20 +287,35 @@ fn an_approval_request_becomes_a_question_and_its_answer_is_one_line() {
         .filter_map(|line| DocketGrammar.signal(&run, line))
         .collect();
     let [
+        first_turn,
+        tool_call,
         StreamSignal::Question(question),
         StreamSignal::ProcessStarted { .. },
         StreamSignal::ProcessExited { .. },
+        second_turn,
         StreamSignal::Finished,
     ] = signals.as_slice()
     else {
         panic!("{signals:?}");
     };
     assert_eq!(
+        [first_turn, tool_call, second_turn],
+        [
+            &step("agent.model_turn", "Model turn 1: 20 tokens in, 8 out"),
+            &step("agent.tool_call", "bash: git push origin production"),
+            &step("agent.model_turn", "Model turn 2: 50 tokens in, 10 out"),
+        ]
+    );
+    assert_eq!(
         question.vendor_id,
         "apr-957ee731-4440-4419-b4e0-da5b18fabf67"
     );
     assert_eq!(question.kind, "tool_permission");
-    assert_eq!(question.prompt, "Allow bash (call call-1)?");
+    assert_eq!(
+        question.prompt,
+        "Allow bash to run \"git push origin production\"? docket's policy: matches high-risk \
+         action class 'prod-deploy': Production deploys and release pushes."
+    );
     assert_eq!(
         question
             .options
@@ -983,4 +1004,110 @@ fn an_openai_compatible_endpoint_sets_the_base_url_alone() {
         .position(|arg| arg == "--model")
         .map(|index| invocation.args[index + 1].as_str());
     assert_eq!(model, Some("openai-compatible/qwen2.5-coder"));
+}
+
+#[test]
+fn an_approval_prompt_names_the_call_the_reason_and_the_agents_own_words() {
+    assert_eq!(
+        approval_prompt(
+            Some("bash"),
+            Some("c1"),
+            Some(
+                "tool call 'bash': 'sh' is not on the curated allowlist; call=bash \
+                 command=\"sh -c 'echo done > DONE.txt'\""
+            ),
+            Some("I'll run the exact shell command as requested."),
+        ),
+        "Allow bash to run \"sh -c 'echo done > DONE.txt'\"? docket's policy: 'sh' is not on the \
+         curated allowlist. The agent says: \"I'll run the exact shell command as requested.\""
+    );
+    assert_eq!(
+        approval_prompt(
+            Some("write_file"),
+            None,
+            Some(
+                "tool call 'write_file': outside the workspace; call=write_file path=\"/etc/x\" content=\"y\""
+            ),
+            None,
+        ),
+        "Allow write_file with path=\"/etc/x\" content=\"y\"? docket's policy: outside the workspace."
+    );
+    assert_eq!(
+        approval_prompt(Some("bash"), None, Some("something else entirely"), None),
+        "Allow bash? something else entirely"
+    );
+    assert_eq!(
+        approval_prompt(Some("bash"), Some("c1"), None, None),
+        "Allow bash (call c1)?"
+    );
+    assert_eq!(
+        approval_prompt(None, None, None, None),
+        "Allow a gated tool call?"
+    );
+}
+
+fn step(kind: &str, text: &str) -> StreamSignal {
+    StreamSignal::Progress(Progress {
+        kind: kind.to_owned(),
+        text: text.to_owned(),
+    })
+}
+
+/// A call docket refused and a model call that failed are steps too; a call
+/// it allowed adds nothing past the call itself, and arguments that are not
+/// a command are shown as the model sent them.
+#[test]
+fn refused_calls_failed_model_calls_and_other_tools_are_steps() {
+    let state = scratch("docket-steps");
+    let request = spec(DESCRIPTOR.kind, state.path());
+    let run = RunContext {
+        spec: &request,
+        endpoint: None,
+        scratch: state.path(),
+    };
+    let line = |event_type: &str, payload: serde_json::Value| {
+        serde_json::json!({
+            "v": "1.1.0",
+            "token": "run-1",
+            "event": {"event_type": event_type, "payload": payload},
+        })
+        .to_string()
+    };
+    let signals: Vec<_> = [
+        line(
+            "tool_result",
+            serde_json::json!({"tool": "bash", "decision": "deny", "reason": "'sh' is not on the curated allowlist"}),
+        ),
+        line(
+            "tool_result",
+            serde_json::json!({"tool": "bash", "decision": "allow", "ok": true}),
+        ),
+        line(
+            "llm_call",
+            serde_json::json!({"ok": false, "failureKind": "timeout", "iteration": 3}),
+        ),
+        line(
+            "tool_call",
+            serde_json::json!({"tool": "write_file", "arguments": "{\"path\": \"DONE.txt\"}"}),
+        ),
+        line(
+            "tool_call",
+            serde_json::json!({"tool": "list_files", "arguments": "{}"}),
+        ),
+    ]
+    .iter()
+    .filter_map(|line| DocketGrammar.signal(&run, line))
+    .collect();
+    assert_eq!(
+        signals,
+        [
+            step(
+                "agent.tool_refused",
+                "bash was refused: 'sh' is not on the curated allowlist"
+            ),
+            step("agent.model_turn", "A model call failed: timeout"),
+            step("agent.tool_call", "write_file {\"path\": \"DONE.txt\"}"),
+            step("agent.tool_call", "list_files"),
+        ]
+    );
 }

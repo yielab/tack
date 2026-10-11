@@ -134,6 +134,10 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
   };
 
   const attempts = createMemo(() => store.attemptsFor(summary()?.request_id ?? ''));
+  const readyAttempts = () => {
+    const a = attempts();
+    return a.status === 'ready' ? a.data : [];
+  };
 
   // One status per run: its latest attempt's, which knows more (Running,
   // needs your review, Accepted) than the request's own state, which stays
@@ -207,26 +211,27 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
           ) : null;
         })()}
       </Show>
+      {/* Mounted once and fed the fresh attempts, so a refresh updates the
+          rows in place and what the person opened on them stays open. */}
       <Show when={attempts().status === 'ready'}>
-        {(() => {
-          const a = attempts();
-          if (a.status !== 'ready') return null;
-          return a.data.length > 0 ? (
-            <AttemptList
-              requestId={summary()?.request_id ?? ''}
-              attempts={a.data}
-              itemId={props.itemId}
-              onReviewed={() => {
-                const id = summary()?.request_id;
-                if (id) void store.loadAttempts(id).catch(() => undefined);
-              }}
-            />
-          ) : (
+        <Show
+          when={readyAttempts().length > 0}
+          fallback={
             <p class="rounded-[20px] border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
               No attempts yet.
             </p>
-          );
-        })()}
+          }
+        >
+          <AttemptList
+            requestId={summary()?.request_id ?? ''}
+            attempts={readyAttempts()}
+            itemId={props.itemId}
+            onReviewed={() => {
+              const id = summary()?.request_id;
+              if (id) void store.loadAttempts(id).catch(() => undefined);
+            }}
+          />
+        </Show>
       </Show>
 
       <div class="flex flex-wrap items-center gap-2">

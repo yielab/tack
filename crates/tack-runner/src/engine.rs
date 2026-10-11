@@ -47,6 +47,17 @@ pub struct Question {
     pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
+/// One step a running harness reported, for the attempt's timeline: what
+/// kind of step it was (`agent.tool_call`, `agent.model_turn`) and a line
+/// saying it. Read off a line of stdout by
+/// [`HarnessGrammar::signal`](crate::harness::local_process::HarnessGrammar::signal)
+/// and submitted as a runner event of that `kind` whose payload is `{"text": …}`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Progress {
+    pub kind: String,
+    pub text: String,
+}
+
 /// What one line of a harness's stdout means to the core, when the run is
 /// listening for a pause-and-ask conversation. `Finished` is what lets the
 /// core close the child's stdin, which is what lets a CLI that keeps
@@ -57,9 +68,12 @@ pub struct Question {
 /// `ProcessStarted` and `ProcessExited` tell the core that the harness
 /// started, or finished with, a process group of its own (a tool call's),
 /// so a cancellation can reach a group the main one does not contain.
+/// `Progress` is a step worth showing on the attempt's timeline while the
+/// run is still going.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamSignal {
     Question(Question),
+    Progress(Progress),
     Reply(Vec<u8>),
     Finished,
     ProcessStarted { pgid: u32 },
@@ -90,6 +104,14 @@ struct PendingDecision {
 /// run for it to move.
 const DECISION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// How often the steps a running harness reported are sent to the server:
+/// often enough that the timeline reads as live, seldom enough that a busy
+/// agent costs a request every few seconds, not one per step.
+const PROGRESS_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The most steps one event batch carries; the server takes up to 100.
+const PROGRESS_BATCH_MAX: usize = 50;
+
 /// Where a fresh decision's poll cursor starts.
 const POLL_FROM_THE_START: &str = "1970-01-01T00:00:00Z";
 
@@ -115,6 +137,15 @@ async fn next_question(
     match decisions.as_mut() {
         Some((questions_rx, _)) if !already_pending => questions_rx.recv().await,
         _ => std::future::pending().await,
+    }
+}
+
+/// The next step a running harness reports, or never resolves when it
+/// reports none; `None` once the harness has stopped reporting.
+async fn next_step(progress: &mut Option<mpsc::Receiver<Progress>>) -> Option<Option<Progress>> {
+    match progress.as_mut() {
+        Some(steps) => Some(steps.recv().await),
+        None => std::future::pending().await,
     }
 }
 
@@ -318,6 +349,13 @@ pub trait HarnessAdapter: Send + Sync {
         &self,
         _handle: &LocalRunHandle,
     ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        None
+    }
+
+    /// The steps a running harness reports as it goes, for the attempt's
+    /// timeline. `None` for a harness that reports none. Taken once per
+    /// handle, like [`Self::decision_channels`].
+    async fn progress_channel(&self, _handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
         None
     }
 }
@@ -691,7 +729,7 @@ where
         }
 
         let outcome = match self
-            .wait_with_lease_renewal(session, &record, &handle, &spec)
+            .wait_with_lease_renewal(session, &mut record, &handle, &spec)
             .await
         {
             Ok(outcome) => outcome,
@@ -905,9 +943,10 @@ where
     }
 
     /// Runs `self.adapter.wait(handle)` to completion while sending a
-    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`], and
+    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`],
     /// carrying any question the harness asks out to the operator through a
-    /// decision.
+    /// decision, and sending the steps it reports to the attempt's timeline
+    /// every [`PROGRESS_FLUSH_INTERVAL`] and once more when it ends.
     ///
     /// The lease is granted for a bounded window at claim time and only
     /// extended by a heartbeat naming the attempt. A harness run can take up
@@ -929,7 +968,7 @@ where
     async fn wait_with_lease_renewal(
         &self,
         session: &RunnerSession,
-        record: &AttemptJournal,
+        record: &mut AttemptJournal,
         handle: &LocalRunHandle,
         spec: &ExecutionSpec,
     ) -> Result<HarnessOutcome, HarnessError> {
@@ -944,6 +983,8 @@ where
             + chrono::Duration::seconds(timeout_seconds);
 
         let mut decisions = self.adapter.decision_channels(handle).await;
+        let mut progress = self.adapter.progress_channel(handle).await;
+        let mut steps: Vec<Progress> = Vec::new();
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
         // An interval, not a `sleep` rebuilt every turn of the loop: the
@@ -954,6 +995,11 @@ where
             LEASE_RENEWAL_INTERVAL,
         );
         renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut flush = tokio::time::interval_at(
+            tokio::time::Instant::now() + PROGRESS_FLUSH_INTERVAL,
+            PROGRESS_FLUSH_INTERVAL,
+        );
+        flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             let waiting_for_an_answer = pending.is_some();
             let mut state = DecisionState {
@@ -963,9 +1009,26 @@ where
             };
             tokio::select! {
                 biased;
-                outcome = &mut wait_future => return outcome,
+                outcome = &mut wait_future => {
+                    // The read loop has ended, so whatever it reported is
+                    // already in the channel.
+                    if let Some(rest) = progress.as_mut() {
+                        while let Ok(step) = rest.try_recv() {
+                            steps.push(step);
+                        }
+                    }
+                    self.submit_progress(session, record, &mut steps, prompt).await;
+                    return outcome;
+                }
                 Some(question) = next_question(state.decisions, state.pending.is_some()) => {
                     self.open_decision(session, record, &mut state, question, prompt).await;
+                }
+                Some(step) = next_step(&mut progress) => match step {
+                    Some(step) => steps.push(step),
+                    None => progress = None,
+                },
+                _ = flush.tick(), if !steps.is_empty() => {
+                    self.submit_progress(session, record, &mut steps, prompt).await;
                 }
                 _ = renewal.tick() => {
                     let request = self.heartbeat_request(session, record);
@@ -1097,9 +1160,10 @@ where
     // -----------------------------------------------------------------
     // Events, decisions and artifacts.
     //
-    // The methods below are the call sites: one runner-sourced
-    // event per terminal outcome (completion or cancellation), plus a
-    // best-effort upload of whatever artifact an adapter already staged
+    // The methods below are the call sites: the steps a harness reports
+    // while it runs, one runner-sourced event per terminal outcome
+    // (completion or cancellation) and per step after it (verify, push),
+    // each numbered on from the attempt's last, plus a best-effort upload of whatever artifact an adapter already staged
     // locally (`terminal_reason.artifact`, each harness adapter's own
     // convention — see e.g. `harness::codex::CodexGrammar::stage_run_log`).
     //
@@ -1431,13 +1495,7 @@ where
             checkpoint: checkpoint.clone(),
             events: vec![ProtocolEvent {
                 event_id,
-                // Exactly one event is ever submitted per checkpoint in this
-                // card's wiring (completion XOR cancellation, never both),
-                // so a fixed `0` is honest, not a placeholder — see the
-                // module doc above on what still needs a real sequence
-                // counter if a future card submits more than one event per
-                // attempt.
-                sequence: 0,
+                sequence: record.events_submitted,
                 occurred_at: Timestamp::new(sent_at),
                 source: "runner".to_owned(),
                 kind: kind.to_owned(),
@@ -1447,6 +1505,7 @@ where
         match data_protocol.submit_events(session, report).await {
             Ok(response) => {
                 record.last_event_checkpoint = response.committed_checkpoint.or(Some(checkpoint));
+                record.events_submitted += 1;
                 // Best-effort: the event already reached the server; a local
                 // journal-write failure here only affects this runner's own
                 // `last_event_checkpoint` bookkeeping (used for a future
@@ -1458,6 +1517,69 @@ where
                     attempt_id = record.attempt_id.as_str(),
                     "event submission failed"
                 );
+            }
+        }
+    }
+
+    /// Submits the steps a running harness reported since the last flush,
+    /// each a runner event of its own `kind` whose payload is `{"text": …}`,
+    /// numbered on from the attempt's last event. Best effort, like every
+    /// event: a batch the server does not take is logged and dropped, never
+    /// retried, so a step can be missing from the timeline but never shown
+    /// twice. `prompt` is scrubbed from each text as it is from a decision.
+    async fn submit_progress(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        steps: &mut Vec<Progress>,
+        prompt: &str,
+    ) {
+        let steps = std::mem::take(steps);
+        let Some(data_protocol) = self.data_protocol.as_ref() else {
+            return;
+        };
+        for chunk in steps.chunks(PROGRESS_BATCH_MAX) {
+            let occurred_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let first = record.events_submitted;
+            let checkpoint = Checkpoint::new(format!(
+                "chk:{}:{}:progress:{first}",
+                record.attempt_id.as_str(),
+                record.fencing_token.0
+            ));
+            let events = chunk
+                .iter()
+                .zip(first..)
+                .map(|(step, sequence)| ProtocolEvent {
+                    event_id: Self::event_id(record, &format!("progress:{sequence}")),
+                    sequence,
+                    occurred_at: Timestamp::new(occurred_at.clone()),
+                    source: "runner".to_owned(),
+                    kind: step.kind.clone(),
+                    payload: serde_json::json!({ "text": scrub_with_prompt(&step.text, prompt) }),
+                })
+                .collect();
+            let report = EventBatchReport {
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                previous_checkpoint: record.last_event_checkpoint.clone(),
+                checkpoint: checkpoint.clone(),
+                events,
+            };
+            match data_protocol.submit_events(session, report).await {
+                Ok(response) => {
+                    record.last_event_checkpoint =
+                        response.committed_checkpoint.or(Some(checkpoint));
+                    record.events_submitted += chunk.len() as u64;
+                    let _ = self.journal.update(record);
+                }
+                Err(_error) => {
+                    tracing::warn!(
+                        attempt_id = record.attempt_id.as_str(),
+                        steps = chunk.len(),
+                        "progress submission failed; these steps are left off the timeline"
+                    );
+                }
             }
         }
     }

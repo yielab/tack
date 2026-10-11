@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { type Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
 import { Badge, Button, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { api } from '../api';
@@ -347,7 +347,7 @@ const AttemptRow: Component<{
           <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             {props.attempt.state === 'waiting_decision'
               ? 'The agent is waiting for your answer — see Questions from the agent below.'
-              : 'The agent is working. What it did, the tokens it used and its cost appear here when it finishes.'}
+              : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used and its cost appear here when it finishes.'}
           </p>
         }
       >
@@ -364,7 +364,7 @@ const AttemptRow: Component<{
             <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Timeline
             </h4>
-            <EventTimeline requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
+            <EventTimeline requestId={props.requestId} attemptNumber={props.attempt.attempt_number} live={!terminal()} />
           </section>
 
           <section>
@@ -495,20 +495,31 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
  * of every visible request) its normalized event timeline, decision inbox,
  * and artifact download action.
  */
-const AttemptList: Component<AttemptListProps> = (props) => (
-  <ul class="space-y-2">
-    <For each={props.attempts}>
-      {(attempt) => (
-        <AttemptRow
-          requestId={props.requestId}
-          attempt={attempt}
-          itemId={props.itemId}
-          numbered={props.attempts.length > 1}
-          onReviewed={props.onReviewed}
-        />
-      )}
-    </For>
-  </ul>
-);
+const AttemptList: Component<AttemptListProps> = (props) => {
+  // Rows follow the attempt's id, not its object: a refresh that brings the
+  // same attempt changed (a new event moves its checkpoint) updates its row in
+  // place, so what the person opened on it stays open.
+  const ids = createMemo(() => props.attempts.map((attempt) => attempt.attempt_id));
+  const byId = createMemo(() => new Map(props.attempts.map((attempt) => [attempt.attempt_id, attempt])));
+  return (
+    <ul class="space-y-2">
+      <For each={ids()}>
+        {(id) => (
+          <Show when={byId().get(id)}>
+            {(attempt) => (
+              <AttemptRow
+                requestId={props.requestId}
+                attempt={attempt()}
+                itemId={props.itemId}
+                numbered={props.attempts.length > 1}
+                onReviewed={props.onReviewed}
+              />
+            )}
+          </Show>
+        )}
+      </For>
+    </ul>
+  );
+};
 
 export default AttemptList;
