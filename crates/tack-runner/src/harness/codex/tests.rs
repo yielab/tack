@@ -74,11 +74,15 @@ fn a_configured_endpoint_is_named_before_the_subcommand() {
         overrides
             .contains(&&"model_providers.tack_provider.env_key=\"AI_GATEWAY_API_KEY\"".to_owned())
     );
-    assert!(
-        !args
-            .iter()
-            .any(|arg| arg.contains(endpoint.credential.expose()))
-    );
+    assert!(!args.iter().any(|arg| {
+        arg.contains(
+            endpoint
+                .credential
+                .as_ref()
+                .expect("credential present")
+                .expose(),
+        )
+    }));
 }
 
 /// The exit decides, never the output: `exec --json`'s shape is unverified,

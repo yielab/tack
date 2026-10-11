@@ -6,9 +6,10 @@
 use async_trait::async_trait;
 
 use super::{CATALOG_TIMEOUT, CatalogEntry, CatalogFetchError, KnownEndpoint, Provider, Wire};
-use crate::config::{VERCEL_AI_GATEWAY_CONFIG_KEY, VERCEL_AI_GATEWAY_PROVIDER};
+use crate::config::{ProviderConfig, VERCEL_AI_GATEWAY_CONFIG_KEY, VERCEL_AI_GATEWAY_PROVIDER};
 use crate::secrets::SecretValue;
 
+const GATEWAY_HOST: &str = "https://ai-gateway.vercel.sh";
 const CATALOG_URL: &str = "https://ai-gateway.vercel.sh/v1/models";
 
 /// Test-only escape hatch: `scripts/smoke.sh` step 13 is this variable's
@@ -94,41 +95,30 @@ impl Provider for VercelAiGateway {
         "Vercel AI Gateway"
     }
 
-    fn endpoint(&self, wire: Wire) -> Option<KnownEndpoint> {
-        if let Some(base) = test_base_url_override() {
-            let (suffix, credential_env_var) = match wire {
-                Wire::AnthropicMessages => ("/claude-code", "ANTHROPIC_AUTH_TOKEN"),
-                Wire::OpenAiResponses => ("/codex/v1", "AI_GATEWAY_API_KEY"),
-                Wire::OpenAiChatCompletions => ("/v1", "AI_GATEWAY_API_KEY"),
-            };
-            // Leaked deliberately: this arm only ever runs under the smoke
-            // test's own opt-in env var, at most twice per process (one
-            // leak per `Wire`), never in a production runner.
-            let base_url: &'static str = Box::leak(format!("{base}{suffix}").into_boxed_str());
-            return Some(KnownEndpoint {
-                base_url,
-                credential_env_var,
-            });
-        }
-        match wire {
+    // One gateway host serves every wire this crate speaks.
+    fn serves(&self, _wire: Wire) -> bool {
+        true
+    }
+
+    /// The `[provider.vercel_ai_gateway]` entry carries nothing the
+    /// endpoint reads: the host is the vendor's, rebased only by the
+    /// smoke test's own override above.
+    fn endpoint(&self, wire: Wire, _config: &ProviderConfig) -> Option<KnownEndpoint> {
+        let (suffix, credential_env_var) = match wire {
             // No `/v1` suffix: the CLI appends `/v1/messages` itself, and a
             // double suffix 404s.
-            Wire::AnthropicMessages => Some(KnownEndpoint {
-                base_url: "https://ai-gateway.vercel.sh/claude-code",
-                credential_env_var: "ANTHROPIC_AUTH_TOKEN",
-            }),
-            Wire::OpenAiResponses => Some(KnownEndpoint {
-                base_url: "https://ai-gateway.vercel.sh/codex/v1",
-                credential_env_var: "AI_GATEWAY_API_KEY",
-            }),
+            Wire::AnthropicMessages => ("/claude-code", "ANTHROPIC_AUTH_TOKEN"),
+            Wire::OpenAiResponses => ("/codex/v1", "AI_GATEWAY_API_KEY"),
             // Same host and credential as the catalog itself: docket and
             // opencode both call `<base>/chat/completions` directly, with
             // no per-CLI path segment to disambiguate them.
-            Wire::OpenAiChatCompletions => Some(KnownEndpoint {
-                base_url: "https://ai-gateway.vercel.sh/v1",
-                credential_env_var: "AI_GATEWAY_API_KEY",
-            }),
-        }
+            Wire::OpenAiChatCompletions => ("/v1", "AI_GATEWAY_API_KEY"),
+        };
+        let host = test_base_url_override().unwrap_or_else(|| GATEWAY_HOST.to_owned());
+        Some(KnownEndpoint {
+            base_url: format!("{host}{suffix}"),
+            credential_env_var,
+        })
     }
 
     // A gateway can route, fall back, or alias a request to a different
@@ -143,8 +133,10 @@ impl Provider for VercelAiGateway {
 
     async fn fetch_catalog(
         &self,
-        secret: &SecretValue,
+        _config: &ProviderConfig,
+        credential: Option<&SecretValue>,
     ) -> Result<Vec<CatalogEntry>, CatalogFetchError> {
+        let secret = credential.ok_or(CatalogFetchError::CredentialRequired)?;
         let client = reqwest::Client::builder()
             .timeout(CATALOG_TIMEOUT)
             .user_agent(concat!("tack-runner/", env!("CARGO_PKG_VERSION")))

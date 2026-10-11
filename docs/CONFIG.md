@@ -64,6 +64,9 @@ in that order):
 | `TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL` | **Test-only, not a real deployment knob.** `scripts/smoke.sh` step 13's only intended setter. When set to a loopback URL (`http://127.0.0.1:*`, `http://localhost:*`, or `http://[::1]:*`), rebases the catalog fetch and both per-harness endpoints under it instead of the real `ai-gateway.vercel.sh`, so a smoke run can prove key → catalog → spawn → actual-model against a local fake shim with a fake key, never a real vendor call. **This redirects wherever `fetch_catalog`'s `bearer_auth` sends the resolved credential** — it is not inert with respect to the secret, only with respect to whether the real vendor is ever reached. A non-loopback value is ignored outright (treated as unset), a cheap guard against an accidental redirect of a real key to a non-loopback host; it is not a defense against a process whose environment an attacker already controls, since that attacker could read the same credential directly out of the secret store this same process has open. Unset in every real deployment |
 | `TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED` | Turns on Anthropic's own API as a provider endpoint (`[provider.anthropic]` in the TOML config) — a runner-held key pointed at `api.anthropic.com` directly, distinct from claude-code's own subscription login. Same on/off convention and off-by-default posture as the Vercel entry above |
 | `TACK_RUNNER_PROVIDER_ANTHROPIC_SECRET` | Secret-store entry name this provider's credential is resolved from. Default `anthropic/default` |
+| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_ENABLED` | Turns on an OpenAI-compatible server as a provider endpoint (`[provider.openai_compatible]` in the TOML config): llama.cpp, LM Studio, vLLM, Ollama or a hosted router, reached by the Chat Completions harnesses (`docket`, `opencode`). Same on/off convention and off-by-default posture as the entries above |
+| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_BASE_URL` | The server root, e.g. `http://127.0.0.1:8081` — the runner appends `/v1` for the harness and `/v1/models` for the catalog (a value already ending in `/v1` is not doubled). Required when the provider is enabled; a runner whose config enables it without one refuses to start, naming this variable |
+| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_SECRET` | Secret-store entry name the server's credential is resolved from. **Optional**, with no default: unset or empty means the server checks no credential, no `Authorization` header is sent and no credential variable is injected into the run |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
 structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not
@@ -136,8 +139,10 @@ enroll` call, no token to copy anywhere.
   | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. | When a request's provider names the configured endpoint: per-invocation `-c model_provider=…`/`model_providers.<key>.*` flags plus `AI_GATEWAY_API_KEY` in the spawned environment — never a write to `~/.codex/config.toml`. A request for a direct model receives none of it. |
   | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (plus a defensive empty `ANTHROPIC_API_KEY`) in the spawned environment, only when the request's provider names the configured endpoint. A request for a direct model receives none of it. |
 
-  OpenRouter access and local-model endpoints (llama.cpp and similar) are configured the
-  same way: through the harness's own configuration or environment. No `TACK_*` variable
+  `docket` and `opencode` reach a model only through an endpoint the runner is configured
+  with: the gateway above, or any OpenAI-compatible server (llama.cpp, LM Studio, vLLM, Ollama,
+  OpenRouter) named in `[provider.openai_compatible]` — see below. Their own vendor logins are
+  out of scope for these adapters. No `TACK_*` variable
   on the **API server** names a model provider or endpoint, and the API server itself
   never holds, forwards, or proxies a provider credential. The **runner** is not under
   that restriction: it may hold a provider key in its own owner-only state directory, and
@@ -184,6 +189,27 @@ enroll` call, no token to copy anywhere.
   `tack_api::handlers::runner_protocol`'s own `runner enrolled runner_id=...` line) are
   visible either way, since `tack_api` is already in the default filter — only the
   *runner's own* log lines were missing.
+
+## An OpenAI-compatible endpoint (`[provider.openai_compatible]`)
+
+Any server that speaks OpenAI Chat Completions can stand behind the `docket` and `opencode`
+harnesses — a local llama.cpp, LM Studio, vLLM or Ollama, or a hosted router. It is the one
+provider whose endpoint is configuration rather than vendor data:
+
+```toml
+[provider.openai_compatible]
+enabled = true
+base_url = "http://127.0.0.1:8081"   # the server root; the runner appends /v1
+secret = ""                           # optional: a secret-store entry, or empty for a server with no credential
+```
+
+At start the runner reads the server's catalog (`GET <base_url>/v1/models`) and reports every
+id it lists as a `openai-compatible / <id>` combination for docket and opencode, so the run
+dialog, the project's Automation settings and `tack runner doctor` all show them. A request
+that names the provider `openai-compatible` reaches `<base_url>/v1`; the harness's credential
+variable (`DOCKET_LLM_API_KEY` for docket, `OPENAI_API_KEY` through opencode's config) is
+injected only when `secret` names one. `codex` and `claude-code` speak other wires and are never
+routed here.
 
 ## Runner verifier (`[verify]`)
 

@@ -943,3 +943,44 @@ fn every_tool_blocks_only_fetch_when_offline() {
     assert!(offline.contains("fetch"), "{offline}");
     assert!(!offline.contains("bash"), "{offline}");
 }
+
+/// An OpenAI-compatible server reaches docket the way the gateway does:
+/// its `/v1` root under `DOCKET_LLM_BASE_URL`, the model joined as
+/// `<provider>/<id>`. Injecting the credential variable is the lifecycle's
+/// job (`local_process/tests.rs`), and this endpoint carries none.
+#[test]
+fn an_openai_compatible_endpoint_sets_the_base_url_alone() {
+    let state = scratch("docket-openai-compatible");
+    let scratch_dir = scratch("docket-openai-compatible-scratch");
+    let endpoint = crate::provider::resolve_endpoint(
+        &crate::harness::test_support::openai_compatible("http://127.0.0.1:8081/", ""),
+        &secret_store(state.path()),
+        crate::config::OPENAI_COMPATIBLE_PROVIDER,
+        DESCRIPTOR.wire,
+    )
+    .expect("resolve")
+    .expect("the server serves this wire");
+    assert!(endpoint.credential.is_none());
+    let mut request = spec(DESCRIPTOR.kind, state.path());
+    request.work.request.requested_model_provider = Some(RequestedModelProvider::new(
+        crate::config::OPENAI_COMPATIBLE_PROVIDER,
+    ));
+    request.work.request.requested_model_id = Some(RequestedModelId::new("qwen2.5-coder"));
+    let run = RunContext {
+        spec: &request,
+        endpoint: Some(&endpoint),
+        scratch: scratch_dir.path(),
+    };
+    let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
+    assert_eq!(
+        invocation.env["DOCKET_LLM_BASE_URL"],
+        "http://127.0.0.1:8081/v1"
+    );
+    assert!(!invocation.env.contains_key("DOCKET_LLM_API_KEY"));
+    let model = invocation
+        .args
+        .iter()
+        .position(|arg| arg == "--model")
+        .map(|index| invocation.args[index + 1].as_str());
+    assert_eq!(model, Some("openai-compatible/qwen2.5-coder"));
+}

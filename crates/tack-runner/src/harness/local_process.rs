@@ -555,8 +555,14 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
-        if let Some(endpoint) = &endpoint {
-            let credential = endpoint.credential.expose().to_owned();
+        // An endpoint with no credential (an OpenAI-compatible server that
+        // checks none) sets no credential variable at all, so the CLI sees
+        // exactly what it would with the variable unset — never an empty
+        // string it might send as an empty bearer token.
+        if let Some(endpoint) = &endpoint
+            && let Some(credential) = &endpoint.credential
+        {
+            let credential = credential.expose().to_owned();
             secrets.register(credential.clone());
             let credential_var = self
                 .grammar
@@ -971,7 +977,7 @@ where
                     self.providers
                         .get(provider.config_key())
                         .is_some_and(|config| config.enabled)
-                        && provider.endpoint(descriptor.wire).is_some()
+                        && provider.serves(descriptor.wire)
                 })
                 .map(|provider| provider.wire_name().to_owned())
                 .collect(),

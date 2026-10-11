@@ -139,6 +139,23 @@ pub fn gateway(secret_name: &str) -> BTreeMap<String, crate::config::ProviderCon
         crate::config::ProviderConfig {
             enabled: true,
             secret: secret_name.to_owned(),
+            base_url: None,
+        },
+    )])
+}
+
+/// An OpenAI-compatible server at `base_url`, enabled; `secret_name` empty
+/// means the server checks no credential.
+pub fn openai_compatible(
+    base_url: &str,
+    secret_name: &str,
+) -> BTreeMap<String, crate::config::ProviderConfig> {
+    BTreeMap::from([(
+        crate::config::OPENAI_COMPATIBLE_CONFIG_KEY.to_owned(),
+        crate::config::ProviderConfig {
+            enabled: true,
+            secret: secret_name.to_owned(),
+            base_url: Some(base_url.to_owned()),
         },
     )])
 }

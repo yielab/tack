@@ -304,11 +304,14 @@ fn a_configured_endpoint_sets_the_base_url_and_nothing_secret() {
         .env;
     assert_eq!(routed["ANTHROPIC_BASE_URL"], endpoint.base_url);
     assert_eq!(routed["ANTHROPIC_API_KEY"], "");
-    assert!(
-        !routed
-            .values()
-            .any(|value| value == endpoint.credential.expose())
-    );
+    assert!(!routed.values().any(|value| {
+        value
+            == endpoint
+                .credential
+                .as_ref()
+                .expect("credential present")
+                .expose()
+    }));
 }
 
 fn read(exit: ProcessExit, stdout: &str) -> RunReport {

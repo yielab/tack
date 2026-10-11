@@ -334,14 +334,19 @@ impl HarnessGrammar for OpencodeGrammar {
             "edit": if grants(tools, "edit") { granted } else { "deny" },
             "bash": if grants(tools, "bash") { granted } else { "deny" },
         });
+        // An endpoint with no credential gets no `apiKey` at all: the
+        // variable it would reference is never set for such a run, and the
+        // provider sends no `Authorization` header when the field is absent.
+        let mut options = serde_json::json!({ "baseURL": endpoint.base_url });
+        if endpoint.credential.is_some() {
+            options["apiKey"] =
+                serde_json::json!(format!("{{env:{}}}", endpoint.credential_env_var));
+        }
         let mut config_content = serde_json::json!({
             "provider": {
                 "tack": {
                     "npm": "@ai-sdk/openai-compatible",
-                    "options": {
-                        "baseURL": endpoint.base_url,
-                        "apiKey": format!("{{env:{}}}", endpoint.credential_env_var),
-                    },
+                    "options": options,
                     "models": { model_id.clone(): {} },
                 },
             },
