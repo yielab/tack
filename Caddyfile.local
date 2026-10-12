@@ -1,4 +1,4 @@
-# Managed by global ~/Sites/Caddyfile — do NOT add a global {} block here
+# Managed by the workstation's global Caddyfile — do NOT add a global {} block here
 tack.test {
     reverse_proxy localhost:3210
 }

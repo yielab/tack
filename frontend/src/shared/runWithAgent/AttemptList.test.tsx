@@ -335,7 +335,7 @@ describe('AttemptList', () => {
       fetchSpy.mockImplementation((input, init) => {
         const url = String(input);
         if (url.endsWith('/items/item-1')) return Promise.resolve(new Response(JSON.stringify({ item: { id: 'item-1', project_id: 'project-1' } }), { headers: { ETag: '"1"' } }));
-        if (url.endsWith('/projects/project-1')) return Promise.resolve(new Response(JSON.stringify({ id: 'project-1', workspace_mode: 'local_branch', repository: '~/app' })));
+        if (url.endsWith('/projects/project-1')) return Promise.resolve(new Response(JSON.stringify({ id: 'project-1', workspace_mode: 'local_branch', repository: '/home/alice/app' })));
         return base(input, init);
       });
       const container = document.createElement('div');
@@ -349,7 +349,7 @@ describe('AttemptList', () => {
       await flush();
       expect(labels(container)).toEqual(['Open diff', 'Copy path']);
       (Array.from(container.querySelectorAll('[data-testid="attempt-tools"] button')).find((b) => b.textContent === 'Copy path') as HTMLButtonElement).click();
-      expect(writeText).toHaveBeenCalledWith('~/app');
+      expect(writeText).toHaveBeenCalledWith('/home/alice/app');
     });
 
     it('without a patch only Log shows, and what the agent said is on the card', async () => {

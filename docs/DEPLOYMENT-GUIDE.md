@@ -226,7 +226,7 @@ tack.example.com {
 
 Reload Caddy after editing (`sudo systemctl reload caddy`). This project's own
 local dev setup uses exactly this pattern — a single upstream behind a
-systemd-managed Caddy (see `Caddyfile.local` and `~/Sites/LOCAL-DOMAINS.md`).
+systemd-managed Caddy (see `Caddyfile.local` and the workstation's global Caddyfile).
 
 ---
 

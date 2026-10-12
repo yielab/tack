@@ -22,7 +22,7 @@ tack.test {
 }
 ```
 
-Import it from the global `~/Sites/Caddyfile` and reload:
+Import it from the workstation's global Caddyfile and reload:
 
 ```sh
 sudo systemctl reload caddy

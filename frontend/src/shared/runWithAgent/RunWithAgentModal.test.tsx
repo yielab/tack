@@ -80,7 +80,7 @@ const RUNNER = runnerRow('runner-1', 'Dev laptop', runnerCapabilitySnapshot());
 
 /** A project that has a folder: the dialog needs nothing from the operator. */
 const PROJECT = {
-  id: 'project-1', name: 'P', default_model: null, code_origin: 'folder', repository: '~/Sites/app',
+  id: 'project-1', name: 'P', default_model: null, code_origin: 'folder', repository: '/home/alice/src/app',
   default_branch: 'main', workspace_mode: 'local_branch', default_profile_id: 'profile-1',
 };
 
@@ -283,7 +283,7 @@ describe('RunWithAgentModal', () => {
     const summary = dialog.querySelector('[data-testid="run-summary"]')!;
     expect(summary.textContent).toContain('Reviewer');
     expect(summary.textContent).toContain("the agent's default");
-    expect(summary.textContent).toContain('on a new branch of ~/Sites/app');
+    expect(summary.textContent).toContain('on a new branch of ~/src/app');
     for (const a of summary.querySelectorAll('a')) expect(a.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
     expect(dialog.textContent).toContain('What the agent will read');
     expect(dialog.textContent).toContain('The brief.');
@@ -402,7 +402,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(lastCreateBody).toMatchObject({
-      repository_snapshot: { kind: 'git', remote: '~/Sites/app', base_revision: 'dev', subdirectory: null },
+      repository_snapshot: { kind: 'git', remote: '/home/alice/src/app', base_revision: 'dev', subdirectory: null },
     });
   });
 
