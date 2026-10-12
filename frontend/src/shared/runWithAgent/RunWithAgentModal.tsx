@@ -18,6 +18,7 @@ import {
 } from './shared';
 import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
 import { ACCEPTED_MODELS } from './models';
+import { SANDBOX_TEXT } from '../help/texts';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
@@ -219,8 +220,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind).map((h) => h.sandbox));
   const unsandboxed = () => sandboxStates().includes('none');
   const sandboxLine = (): { text: string; unsandboxed: boolean } | null => {
-    if (unsandboxed()) return { text: 'Not sandboxed: the agent has your user\'s access to this machine', unsandboxed: true };
-    if (sandboxStates().length > 0 && sandboxStates().every((s) => s === 'bwrap')) return { text: 'Sandboxed with bwrap', unsandboxed: false };
+    if (unsandboxed()) return { text: SANDBOX_TEXT.none, unsandboxed: true };
+    if (sandboxStates().length > 0 && sandboxStates().every((s) => s === 'bwrap')) return { text: SANDBOX_TEXT.bwrap, unsandboxed: false };
     return null;
   };
   const defaultApprovals = (): 'auto' | 'ask' => (unsandboxed() ? 'ask' : 'auto');

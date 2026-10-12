@@ -472,6 +472,8 @@ pub struct ExecutionDetailResponse {
     pub state: String,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
+    /// The composed prompt the agent is given, as stored with the request; null when absent.
+    pub instructions: Option<String>,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -1332,7 +1334,7 @@ pub async fn get_execution(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
-    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests WHERE id = ?")
+    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
         .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1356,6 +1358,7 @@ pub async fn get_execution(
         state: row.get("state"),
         cancellation_requested_at: row.get("cancellation_requested_at"),
         created_at: row.get("created_at"),
+        instructions: row.get("instructions"),
     }))
 }
 

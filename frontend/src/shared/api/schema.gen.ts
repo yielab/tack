@@ -3599,6 +3599,8 @@ export interface components {
         ExecutionDetailResponse: {
             cancellation_requested_at?: string | null;
             created_at: string;
+            /** @description The composed prompt the agent is given, as stored with the request; null when absent. */
+            instructions?: string | null;
             item_id: string;
             /** Format: int32 */
             protocol_version: number;

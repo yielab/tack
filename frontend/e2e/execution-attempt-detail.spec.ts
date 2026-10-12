@@ -324,4 +324,63 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await expect(drawer.getByTestId('mrp-review')).toContainText('Accepted');
     await expect(drawer.getByTestId('mrp-review')).toContainText('Every criterion passed.');
   });
+  test('a finished run shows what the agent got, and the prompt it read carries the card-text fence', async ({
+    page,
+    request,
+  }) => {
+    const projectId = await getOrCreateProject(request);
+    const itemId = await createFreshItem(request, projectId, `F1b got ${Date.now()}`);
+    const profileId = await createAgentProfile(request, `F1b Profile ${Date.now()}`);
+    const modelId = 'opaque/model-alpha';
+
+    const { runnerId, credential } = await enrollRunner(request, `F1b Runner ${Date.now()}`, modelId);
+    const requestId = await createExecution(request, itemId, runnerId, profileId, modelId);
+    const lease = await claimOnceWithLease(request, runnerId, credential, `f1b-claim-${Date.now()}`);
+    expect(lease?.requestId).toBe(requestId);
+    const { attemptId, fencingToken } = lease!;
+    await acceptAndStartAttempt(request, runnerId, credential, attemptId, fencingToken);
+    const completion = await request.post(`${API}/runner/v1/attempts/${attemptId}/completion`, {
+      headers: { authorization: `Bearer ${credential}` },
+      data: {
+        protocol_version: 1,
+        runner_id: runnerId,
+        attempt_id: attemptId,
+        fencing_token: fencingToken,
+        completion_id: `f1b-completion-${Date.now()}`,
+        terminal_state: 'succeeded',
+        terminal_reason: { code: 'completed', message: 'Harness exited successfully' },
+        actual_execution: {
+          harness_kind: 'claude-code',
+          harness_version: '2.0.0',
+          model_provider: 'anthropic',
+          model_id: modelId,
+          model_observation_source: 'harness_reported',
+          capability_snapshot: {
+            cancel: { support: 'supported', reason: null },
+            resume: { support: 'unsupported', reason: 'no resumable session contract' },
+            decisions: { support: 'supported', reason: null },
+            artifacts: { support: 'supported', reason: null },
+            usage: { support: 'advisory', reason: 'usage may be absent' },
+          },
+          workspace_id: `ws-${attemptId}`,
+          base_revision: '0'.repeat(40),
+          started_at: new Date(Date.now() - 60_000).toISOString(),
+          ended_at: new Date().toISOString(),
+        },
+        usage: null,
+        final_event_checkpoint: null,
+      },
+    });
+    expect(completion.ok(), `completion failed: ${completion.status()}`).toBeTruthy();
+
+    await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+    await waitForApp(page);
+    const drawer = page.getByRole('dialog');
+    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    const got = drawer.getByTestId('agent-got');
+    await expect(got).toBeVisible();
+    await expect(got).toContainText('What the agent got');
+    await got.getByText('What the agent read').click();
+    await expect(got.getByTestId('agent-read')).toContainText('<<<card-text id=');
+  });
 });

@@ -1055,6 +1055,22 @@ async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_desc
         "{instructions}"
     );
     assert!(instructions.contains("source: "), "{instructions}");
+    let (status, detail) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{}", created["request_id"].as_str().unwrap()),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["instructions"], instructions);
+    assert!(
+        detail["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("<<<card-text id="),
+        "{detail}"
+    );
 }
 
 #[tokio::test]
