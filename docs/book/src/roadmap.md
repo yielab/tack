@@ -167,6 +167,28 @@ captured from the real binaries.
 
 ---
 
+## Phase 69 — the agent reaches only what you gave it
+
+**Status:** opened 2026-10-12; Wave 0 (the maintainer's) done the same day, no round dispatched.
+**ADR:** 0077 (proposed). **Plan:** [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md).
+Ships as the re-cut `v0.1.0-beta.10`; the tag of 2026-10-12 was withdrawn the same day.
+
+A security audit on 2026-10-12 found no planted code and no leaked secret, and found four
+properties that together let a prompt injection in a card or a repository file read your keys or
+merge code unseen: the board answers anyone when no token is set, a web page can post to it, an
+agent runs with permissions off and the same file access as Tack, and the evidence you review is
+computed from names the agent can move. This phase closes all four and makes every rule a test
+in a suite CI requires.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | A request must name this server; a raw body states its type; nothing imported is trusted; no credential reaches a log; the run's environment is the runner's to grant; the runner's git never runs the repository's code; a harness ends when its process ends; the desktop window trusts one origin; a release is built from nothing restored. | Sonnet, Haiku |
+| 2 | The API always has a token the browser cannot read; the server records the profile and the repository; the pull request opens when you accept; the evidence is the base you chose and the tree that was verified; the run log leaves the workspace; `serde_yaml` is replaced. | Sonnet, Haiku |
+| 3 | A run started over MCP always asks; untrusted text is fenced and the prompt you see is the prompt that runs; the agent is sandboxed with `bwrap` where Linux has it; the browser holds the cookie. | Sonnet, Haiku |
+| 4 | The dialog and the run page tell the truth (sandboxed or not, "Web tools", what the agent got and read); the two boundary suites become required checks; `SECURITY.md` and the book say what the agent can reach. | Sonnet, Haiku |
+
+---
+
 ## Archived
 
 - [Phases 0–57](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/boards/roadmap-phases-0-57.md) — the original

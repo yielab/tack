@@ -32,6 +32,12 @@ decisions 10–14) put a running agent's steps on its timeline (docket only so f
 event its own sequence, and made docket's question name the command. `scripts/docket-prill-e2e.sh`
 is the live proof. What ships is in `CHANGELOG.md`'s `[0.1.0-beta.10]` section, written by hand
 because the `Add:`/`Fix:` commits since beta.9 are not conventional and git-cliff skips them.
+A `v0.1.0-beta.10` tag was pushed on 2026-10-12 and withdrawn the same day: a security audit found
+the board answers anyone without a token, a web page can post to it, an agent runs with permissions
+off, and the evidence base is a name the agent can move. ADR 0077 and Phase 69
+(`docs/plans/phase-69.md`, four rounds for Haiku/Sonnet agents, two boundary suites as required
+checks) close that; the release is re-cut as beta.10 when the phase closes. The same day the history
+was rewritten to drop the `Co-Authored-By: Claude` trailers 159 commits carried — never add one.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
