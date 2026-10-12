@@ -1,12 +1,21 @@
-# Tack installer — downloads the latest release binary for Windows.
+# Tack installer — downloads a release binary for Windows.
 #
-#   irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex
+# Fetch the installer from the release you are installing, not from a branch
+# that moves, and name that release:
+#
+#   $tag = 'v0.1.0-beta.10'
+#   $env:TACK_VERSION = $tag
+#   irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 #
 # Options (environment variables):
 #   TACK_INSTALL_DIR   target directory (default: $env:LOCALAPPDATA\Programs\tack)
-#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.9 (default: newest)
-#   TACK_SKIP_CHECKSUM set to 1 to skip SHA256SUMS verification (only needed
-#                      for v0.1.0-beta.6 and earlier, which predate the file)
+#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.10 (default: newest)
+#   TACK_SKIP_CHECKSUM set to 1 to skip the SHA256SUMS and signature checks
+#                      (only needed for v0.1.0-beta.6 and earlier, which
+#                      predate the file)
+#
+# After the checksum matches, the signature on SHA256SUMS is checked with
+# cosign, or with an authenticated gh, whichever is on PATH.
 #
 # Installs the single tack.exe binary (server + CLI, web UI embedded). No
 # Docker, no database server — run `tack` and open http://localhost:3210.
@@ -144,6 +153,58 @@ try {
         }
 
         Write-Host "Checksum verified against the release SHA256SUMS."
+
+        # The signature on SHA256SUMS. Releases cut before checksums were
+        # signed have no bundle; those get a notice, not a failure, so they
+        # stay installable. A failed check stops the install.
+        $bundleAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.sigstore.json' } | Select-Object -First 1
+        if (-not $bundleAsset) {
+            Write-Host "checksum verified; signature not checked (this release has no signature)"
+        } else {
+            $bundlePath = Join-Path $Tmp 'SHA256SUMS.sigstore.json'
+            try {
+                Invoke-WebRequest -Uri $bundleAsset.browser_download_url -OutFile $bundlePath -UseBasicParsing
+            } catch {
+                Fail "could not fetch $($bundleAsset.browser_download_url) — re-run with TACK_SKIP_CHECKSUM=1 to install without verifying"
+            }
+
+            # Native tools write to stderr on failure; under 'Stop' Windows
+            # PowerShell 5.1 would turn that into a terminating error before
+            # the exit code can be read.
+            $cosign = Get-Command cosign -ErrorAction SilentlyContinue
+            $gh = Get-Command gh -ErrorAction SilentlyContinue
+            $ghSignedIn = $false
+            if ($gh) {
+                $prev = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                & gh auth status *> $null
+                $ghSignedIn = ($LASTEXITCODE -eq 0)
+                $ErrorActionPreference = $prev
+            }
+
+            if ($cosign) {
+                $prev = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                & cosign verify-blob --bundle $bundlePath `
+                    --certificate-identity-regexp "^https://github.com/$Repo/" `
+                    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' `
+                    $sumsPath *> $null
+                $ok = ($LASTEXITCODE -eq 0)
+                $ErrorActionPreference = $prev
+                if (-not $ok) { Fail "the signature on SHA256SUMS does not verify (cosign). Not installing." }
+                Write-Host "Signature on SHA256SUMS verified with cosign."
+            } elseif ($gh -and $ghSignedIn) {
+                $prev = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                & gh attestation verify $zipPath --repo $Repo *> $null
+                $ok = ($LASTEXITCODE -eq 0)
+                $ErrorActionPreference = $prev
+                if (-not $ok) { Fail "the build attestation for $($asset.name) does not verify (gh). Not installing." }
+                Write-Host "Build attestation verified with gh."
+            } else {
+                Write-Host "checksum verified; signature not checked (install cosign or gh to check it)"
+            }
+        }
     }
 
     # ── Extract & install ────────────────────────────────────────────────────

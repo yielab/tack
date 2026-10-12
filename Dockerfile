@@ -10,13 +10,15 @@
 #   2. compile a static musl binary (Rust) that embeds that dist
 #   3. copy the binary onto a distroless base — no OS, no shell, ~10 MB total
 #
+# Pinned by digest: a rebuild gets the same base images. Bump the digests on purpose.
+#
 # Build & run:
 #   docker build -t tack:latest .
 #   docker run --rm -p 3210:3210 -v tack-data:/data tack:latest
 #   # → http://localhost:3210
 
 # ── Stage 1: build the SPA ────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS frontend
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -24,7 +26,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Stage 2: compile the static, SPA-embedding binary ─────────────────────
-FROM rust:1-bookworm AS backend
+FROM rust:1-bookworm@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6 AS backend
 ENV TARGET=x86_64-unknown-linux-musl
 RUN apt-get update \
  && apt-get install -y --no-install-recommends musl-tools \
@@ -39,19 +41,23 @@ COPY . .
 RUN rustup target add "$TARGET"
 # Bring in the SPA built in stage 1 so `embed-spa` has a dist/ to embed.
 COPY --from=frontend /frontend/dist ./frontend/dist
-RUN cargo build --release --target "$TARGET" -p tack-cli --features embed-spa \
- && cp "target/$TARGET/release/tack" /tack
+RUN cargo build --locked --release --target "$TARGET" -p tack-cli --features embed-spa \
+ && cp "target/$TARGET/release/tack" /tack \
+ && mkdir /data-empty
 
 # ── Stage 3: minimal runtime ──────────────────────────────────────────────
 # distroless/static ships CA certs + tzdata + /etc/passwd (needed for outbound
 # HTTPS to GitHub / S3-compatible backup endpoints) and nothing else.
-FROM gcr.io/distroless/static-debian12:latest
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 LABEL org.opencontainers.image.title="Tack" \
       org.opencontainers.image.description="Lightweight, single-binary project management (Rust + SolidJS)" \
       org.opencontainers.image.source="https://github.com/yielab/tack" \
       org.opencontainers.image.licenses="MIT"
 
 COPY --from=backend /tack /usr/local/bin/tack
+# The data directory belongs to the unprivileged user (uid 65532) the process
+# runs as; a fresh named volume copies this ownership.
+COPY --from=backend --chown=65532:65532 /data-empty /data
 
 # Bind on all interfaces inside the container; the database and attachments
 # live under /data so a single volume persists everything. If you expose the
@@ -61,6 +67,7 @@ ENV TACK_HOST=0.0.0.0 \
     TACK_DATABASE_URL="sqlite:/data/tack.db?mode=rwc" \
     TACK_STORAGE_DIR="/data/storage"
 
+USER nonroot
 WORKDIR /data
 VOLUME ["/data"]
 EXPOSE 3210
