@@ -24,6 +24,15 @@ pub enum ApiError {
     #[error("{0}")]
     Conflict(String),
 
+    /// The `Host` header does not name this server (`misdirected_host`).
+    #[error("{0}")]
+    MisdirectedHost(String),
+
+    /// A state-changing request that a page on another site sent
+    /// (`cross_site_request`).
+    #[error("{0}")]
+    CrossSiteRequest(String),
+
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 
@@ -45,6 +54,8 @@ impl IntoResponse for ApiError {
             ApiError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            ApiError::MisdirectedHost(msg) => (StatusCode::MISDIRECTED_REQUEST, msg.clone()),
+            ApiError::CrossSiteRequest(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             ApiError::Core(err) => match err {
                 CoreError::ItemNotFound(_)
                 | CoreError::ProjectNotFound(_)
@@ -86,10 +97,18 @@ impl IntoResponse for ApiError {
             }
         };
 
-        let error_body = json!({
+        let code = match &self {
+            ApiError::MisdirectedHost(_) => Some("misdirected_host"),
+            ApiError::CrossSiteRequest(_) => Some("cross_site_request"),
+            _ => None,
+        };
+        let mut error_body = json!({
             "status": status.as_u16(),
             "message": message,
         });
+        if let Some(code) = code {
+            error_body["code"] = json!(code);
+        }
 
         let body = json!({ "error": error_body });
 

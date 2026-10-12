@@ -43,7 +43,7 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
         webhook: None,
         local_runner: None,
     };
-    let app = build_router(state);
+    let app = crate::common::with_default_host(build_router(state));
 
     let project = repo
         .create_project(

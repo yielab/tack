@@ -94,7 +94,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     .await;
     let repo = Repository::new(pool.clone());
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let app = build_router(AppState {
+    let app = crate::common::with_default_host(build_router(AppState {
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),
@@ -106,7 +106,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
-    });
+    }));
     let (project_id, item) = project_with_item(&repo, workspace_id, "G1a seeded").await;
     let (empty_id, _) = project_with_item(&repo, workspace_id, "G1a empty").await;
 

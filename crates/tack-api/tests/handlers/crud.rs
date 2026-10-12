@@ -1859,7 +1859,9 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
         webhook: None,
         local_runner: None,
     };
-    let app = tack_api::router::build_router(state.clone());
+    let app = crate::common::with_default_host(crate::common::with_default_host(
+        tack_api::router::build_router(state.clone()),
+    ));
 
     let (status, body) = common::send(
         &app,

@@ -40,7 +40,7 @@ async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
         webhook: None,
         local_runner: None,
     };
-    (build_router(state), pool)
+    (crate::common::with_default_host(build_router(state)), pool)
 }
 
 async fn create_field(app: &axum::Router, project_id: Uuid, body: Value) -> Value {

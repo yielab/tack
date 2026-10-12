@@ -100,7 +100,7 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
         .expect("item");
     let state = app_state(config, pool.clone(), workspace_id).await;
     (
-        build_router(state),
+        crate::common::with_default_host(build_router(state)),
         repo,
         pool,
         workspace_id,
@@ -115,7 +115,7 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
 /// against its existing (in production, file-backed) database.
 async fn restart(pool: sqlx::SqlitePool, config: AppConfig, workspace_id: Uuid) -> axum::Router {
     let state = app_state(config, pool, workspace_id).await;
-    build_router(state)
+    crate::common::with_default_host(build_router(state))
 }
 
 fn operator_headers() -> Vec<(&'static str, &'static str)> {
