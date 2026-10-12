@@ -113,7 +113,6 @@ describe('executionsApi', () => {
       agent_profile_id: 'ap_1',
       selector_id: 'runr_1',
       requested_harness_kind: 'codex',
-      agent_profile_snapshot: {},
       repository_snapshot: {},
       permission_policy: {},
       budgets: {},

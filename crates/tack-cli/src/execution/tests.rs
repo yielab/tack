@@ -7,16 +7,8 @@ use super::*;
 use tack_api::handlers::executions::{CreateExecution, RecoveryConfirmation};
 use tack_api::handlers::runner_admin::{CreateFleet, CreatePendingRunner, CreateProfile};
 
-/// Valid `AgentProfileSnapshot` JSON (`{name, instructions, tool_policy,
-/// timeout_seconds, budgets}`) reused across tests that don't care about
-/// its content, only that it round-trips.
-const AGENT_PROFILE_SNAPSHOT_JSON: &str = r#"{"name":"a","instructions":"be careful","tool_policy":{},"timeout_seconds":60,"budgets":{}}"#;
 /// Valid `PermissionPolicy` JSON (`{network}`; `tools` defaults to `[]`).
 const PERMISSION_POLICY_JSON: &str = r#"{"network":false}"#;
-/// Valid `RepositorySnapshot` JSON (`{kind, remote, base_revision}`;
-/// `subdirectory` is a genuine `Option` and may be omitted).
-const REPOSITORY_SNAPSHOT_JSON: &str =
-    r#"{"kind":"git","remote":"https://example.test/repo.git","base_revision":"main"}"#;
 
 #[test]
 fn create_execution_body_matches_handler_struct_exact_runner() {
@@ -28,8 +20,6 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
         requested_harness_kind: "claude_code",
         requested_model_provider: Some("anthropic"),
         requested_model_id: Some("claude-sonnet"),
-        agent_profile_snapshot: AGENT_PROFILE_SNAPSHOT_JSON,
-        repository_snapshot: REPOSITORY_SNAPSHOT_JSON,
         permission_policy: PERMISSION_POLICY_JSON,
         timeout_seconds: 3600,
         ..Default::default()
@@ -48,39 +38,17 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
     assert_eq!(typed.timeout_seconds, 3600);
 }
 
-/// One level deeper than `CreateExecution`'s own (loosely-`Value`-typed)
-/// fields: `agent_profile_snapshot`, `repository_snapshot` and
-/// `permission_policy` are re-validated server-side against
-/// `tack_orch::execution::{AgentProfileSnapshot, RepositorySnapshot,
-/// PermissionPolicy}` when the handler builds `ExecutionRequestSnapshot`
-/// (`crates/tack-api/src/handlers/executions.rs::create_execution`).
-/// A live smoke test against a running server is what surfaced this —
-/// `CreateExecution` alone accepts `{}` for all three fields (they're
-/// untyped `Value`), but the deeper snapshot rejects it with
-/// `missing field \`network\`` (or `name`, or `remote`, ...). This test
-/// pins that the module's *documented-required* example JSON for these
-/// three fields actually satisfies the deeper types, so nobody has to
-/// rediscover this by hand against a live server again.
+/// `permission_policy` is re-validated server-side against
+/// `tack_orch::execution::PermissionPolicy`; `{}` fails it (`network` has no
+/// default), so the example JSON must satisfy it and the CLI must require it.
 #[test]
-fn create_execution_nested_blobs_satisfy_deeper_snapshot_types() {
-    use tack_orch::execution::{AgentProfileSnapshot, PermissionPolicy, RepositorySnapshot};
+fn create_execution_permission_policy_satisfies_deeper_type() {
+    use tack_orch::execution::PermissionPolicy;
 
-    let _: AgentProfileSnapshot = serde_json::from_str(AGENT_PROFILE_SNAPSHOT_JSON)
-        .expect("example agent_profile_snapshot must satisfy AgentProfileSnapshot");
-    let _: RepositorySnapshot = serde_json::from_str(REPOSITORY_SNAPSHOT_JSON)
-        .expect("example repository_snapshot must satisfy RepositorySnapshot");
     let _: PermissionPolicy = serde_json::from_str(PERMISSION_POLICY_JSON)
         .expect("example permission_policy must satisfy PermissionPolicy");
-
-    // And confirm the historical failure mode really does fail — `{}`
-    // for permission_policy specifically, since that was the exact
-    // shape that produced "missing field `network`" against a live
-    // server.
     let empty: Result<PermissionPolicy, _> = serde_json::from_str("{}");
-    assert!(
-        empty.is_err(),
-        "an empty permission_policy must still fail — pins why this field is required, not defaulted"
-    );
+    assert!(empty.is_err());
 }
 
 #[test]
@@ -90,8 +58,6 @@ fn create_execution_body_defaults_optional_blobs_to_empty() {
         item_id: "22222222-2222-2222-2222-222222222222",
         agent_profile_id: "ap_1",
         requested_harness_kind: "codex",
-        agent_profile_snapshot: AGENT_PROFILE_SNAPSHOT_JSON,
-        repository_snapshot: "{}",
         permission_policy: PERMISSION_POLICY_JSON,
         timeout_seconds: 60,
         ..Default::default()
@@ -115,40 +81,22 @@ fn create_execution_rejects_invalid_json_in_a_named_field() {
         item_id: "id",
         agent_profile_id: "ap",
         requested_harness_kind: "codex",
-        agent_profile_snapshot: AGENT_PROFILE_SNAPSHOT_JSON,
-        repository_snapshot: "not json",
         permission_policy: PERMISSION_POLICY_JSON,
+        budgets: Some("not json"),
         timeout_seconds: 1,
         ..Default::default()
     };
     let err = build_create_execution_body(&selector, &args).unwrap_err();
-    assert!(err.contains("--repository"), "unexpected: {err}");
+    assert!(err.contains("--budgets"), "unexpected: {err}");
 }
 
 #[test]
-fn create_execution_args_require_profile_snapshot_and_policy() {
-    // Neither has a safe empty default (both fail the deeper snapshot
-    // types), so this module requires them rather than silently sending
-    // `{}` and letting the server 400 one step later.
+fn create_execution_args_require_policy() {
     let selector = Selector::ExactRunner("r".into());
-    let missing_profile = CreateExecutionArgs {
-        item_id: "id",
-        agent_profile_id: "ap",
-        requested_harness_kind: "codex",
-        agent_profile_snapshot: "",
-        repository_snapshot: REPOSITORY_SNAPSHOT_JSON,
-        permission_policy: PERMISSION_POLICY_JSON,
-        timeout_seconds: 1,
-        ..Default::default()
-    };
-    assert!(build_create_execution_body(&selector, &missing_profile).is_err());
-
     let missing_policy = CreateExecutionArgs {
         item_id: "id",
         agent_profile_id: "ap",
         requested_harness_kind: "codex",
-        agent_profile_snapshot: AGENT_PROFILE_SNAPSHOT_JSON,
-        repository_snapshot: REPOSITORY_SNAPSHOT_JSON,
         permission_policy: "",
         timeout_seconds: 1,
         ..Default::default()

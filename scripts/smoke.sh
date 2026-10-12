@@ -92,6 +92,14 @@ wait_for() {
 attempts_json() { curl -sf -H "$PRINCIPAL" "$API/api/executions/$1/attempts"; }
 
 # Creates one execution request and echoes its request_id (empty on refusal).
+# The server builds a run's repository from its project, so the project
+# names the smoke repository before any run is created.
+# $1 project
+set_project_repo() {
+  curl -sf -X PATCH "$API/api/projects/$1" -H 'content-type: application/json' \
+    -d "$(jq -n --arg repo "$SMOKE_REPO" '{code_origin:"folder", repository:$repo, workspace_mode:"clone"}')" >/dev/null
+}
+
 # $1 item  $2 runner  $3 harness kind  $4 provider  $5 model  $6 timeout_s
 # $7 environment JSON object  $8 idempotency key
 create_execution() {
@@ -106,9 +114,6 @@ create_execution() {
         agent_profile_id:$profile,
         requested_harness_kind:$kind,
         requested_model_provider:$provider, requested_model_id:$model,
-        agent_profile_snapshot:{name:"smoke-profile",
-          instructions:"Print the single word DONE and exit. Do not modify any files.",
-          tool_policy:{}, timeout_seconds:$timeout, budgets:{}},
         repository_snapshot:{kind:"git", remote:$remote, base_revision:$rev, subdirectory:null},
         permission_policy:{tools:[], network:false},
         budgets:{}, environment:$env, metadata:{}, timeout_seconds:$timeout}')" \
@@ -241,6 +246,7 @@ echo "hello from the smoke repo" > "$SMOKE_REPO/README.md"
 git -C "$SMOKE_REPO" -c user.email=smoke@invalid -c user.name=smoke add README.md
 git -C "$SMOKE_REPO" -c user.email=smoke@invalid -c user.name=smoke commit -qm "smoke fixture"
 SMOKE_REV=$(git -C "$SMOKE_REPO" rev-parse HEAD)
+set_project_repo "$PROJ" && ok "project $PROJ names the smoke repository" || bad "could not set the project's repository"
 
 AGENT_PROFILE=$(curl -sf -X POST "$API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
   -d '{"name":"smoke-profile","instructions":"Print the single word DONE and exit. Do not modify any files."}' \
@@ -502,6 +508,7 @@ if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
     # script can accidentally address the standalone server or profile.
     ORIGINAL_API="$API"; ORIGINAL_PROFILE="$AGENT_PROFILE"
     API="$STANDALONE_API"; AGENT_PROFILE="$SA_PROFILE"
+    set_project_repo "$SA_PROJ" || bad "could not set the standalone project's repository"
     REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" 120 '{}' "smoke-s10-$$")
     if [ -n "$REQ10" ]; then
       ok "standalone execution request $REQ10 queued against the self-provisioned runner"

@@ -255,6 +255,11 @@ fn parse_rfc3339(raw: &str) -> Option<DateTime<Utc>> {
         .map(|value| value.with_timezone(&Utc))
 }
 
+/// Deserializes a key's value, `null` included, so its presence is detectable.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
+}
+
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateExecution {
     pub item_id: Uuid,
@@ -267,17 +272,17 @@ pub struct CreateExecution {
     pub requested_model_provider: Option<String>,
     #[serde(default)]
     pub requested_model_id: Option<String>,
-    /// `tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,
-    /// tool_policy, timeout_seconds, budgets}`) — untyped here because that
-    /// type lives in `tack-orch`, which does not derive `ToSchema` (see
-    /// `RunnerV1ErrorEnvelope`'s doc comment for the same architectural
-    /// reason). Validated against the real nested struct server-side at
-    /// enqueue time.
-    pub agent_profile_snapshot: Value,
+    /// Removed: the server records the profile it loads by `agent_profile_id`.
+    /// A request that still carries the key is refused (`field_removed`).
+    #[serde(default, deserialize_with = "present", skip_serializing)]
+    #[schema(ignore)]
+    pub agent_profile_snapshot: Option<Value>,
     /// `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
     /// base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
-    /// from the item's project; a project with no code is `invalid_request`
-    /// (`details.reason = "project_has_no_code"`).
+    /// from the item's project. An explicit one must name the project's own
+    /// repository (`details.reason = "repository_differs_from_project"`) and
+    /// may only add `base_revision` and `subdirectory`; a project with no code
+    /// is `invalid_request` (`details.reason = "project_has_no_code"`).
     #[serde(default)]
     pub repository_snapshot: Option<Value>,
     /// `tack_orch::execution::PermissionPolicy` (`{tools, network,
@@ -694,15 +699,51 @@ async fn load_project(
         })
 }
 
-/// The request's explicit repository snapshot, or the one its project implies
-/// when it sent none (absent or `{}`).
+/// A remote as compared between the request and the project: no trailing `/`
+/// or `.git`, and a local path that exists in its canonical form.
+fn normalised_remote(remote: &str) -> String {
+    let trimmed = remote.trim().trim_end_matches('/');
+    let trimmed = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    std::fs::canonicalize(trimmed)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| trimmed.to_owned())
+}
+
+/// The repository the project implies, with the request's `base_revision` and
+/// `subdirectory` when it sent an explicit one naming the same repository.
 fn resolve_repository(
     project: &tack_core::models::Project,
     explicit: Option<Value>,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    if let Some(explicit) = explicit.filter(|v| v.as_object().is_none_or(|o| !o.is_empty())) {
-        return Ok(explicit);
+    let mut derived = project_repository(project)?;
+    let Some(explicit) = explicit.filter(|v| v.as_object().is_none_or(|o| !o.is_empty())) else {
+        return Ok(derived);
+    };
+    let same_remote = explicit["remote"].as_str().map(normalised_remote)
+        == derived["remote"].as_str().map(normalised_remote);
+    let same_mode = explicit
+        .get("workspace_mode")
+        .is_none_or(|mode| *mode == derived["workspace_mode"]);
+    if !(same_remote && same_mode) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "The repository is not the project's; change the project to run elsewhere",
+            json!({"field": "repository_snapshot", "reason": "repository_differs_from_project"}),
+        ));
     }
+    if let Some(revision) = explicit["base_revision"].as_str().filter(|r| !r.is_empty()) {
+        derived["base_revision"] = json!(revision);
+    }
+    if !explicit["subdirectory"].is_null() {
+        derived["subdirectory"] = explicit["subdirectory"].clone();
+    }
+    Ok(derived)
+}
+
+fn project_repository(
+    project: &tack_core::models::Project,
+) -> Result<Value, (StatusCode, Json<Value>)> {
     use tack_core::models::{CodeOrigin, WorkspaceMode};
     let local = matches!(
         project.code_origin,
@@ -715,7 +756,7 @@ fn resolve_repository(
         return Err(error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
-            "The project has no code to run against; set its folder or repository, or send repository_snapshot",
+            "The project has no code to run against; set its folder or repository first",
             json!({"field": "repository_snapshot", "reason": "project_has_no_code"}),
         ));
     };
@@ -752,7 +793,7 @@ pub async fn create_execution(
     headers: HeaderMap,
     Json(input): Json<CreateExecution>,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    let authenticated_principal = principal(&headers)?;
+    principal(&headers)?;
     if let Some(id) = input.status_map_policy_id.as_deref()
         && let Err(message) = id.parse::<tack_core::workflow::StatusMapPolicy>()
     {
@@ -763,6 +804,86 @@ pub async fn create_execution(
             json!({"field": "status_map_policy_id"}),
         ));
     }
+    if input.agent_profile_snapshot.is_some() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "agent_profile_snapshot was removed; the server records the profile named by agent_profile_id",
+            json!({"field": "agent_profile_snapshot", "reason": "field_removed"}),
+        ));
+    }
+    let Some(item) = state.repo.get_item(input.item_id).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not verify item",
+            json!({}),
+        )
+    })?
+    else {
+        return Err(item_not_found());
+    };
+    let project = load_project(&state.repo, item.project_id).await?;
+    let repository = resolve_repository(&project, input.repository_snapshot.clone())?;
+    let profile = load_profile(&state.repo, &input).await?;
+    enqueue_resolved(state, headers, input, profile, repository).await
+}
+
+/// The agent profile as the database has it now, shaped as the snapshot the
+/// request records.
+async fn load_profile(
+    repo: &tack_db::Repository,
+    input: &CreateExecution,
+) -> Result<Value, (StatusCode, Json<Value>)> {
+    let row: Option<(String, String, String)> =
+        sqlx::query_as("SELECT name, instructions, tool_policy FROM agent_profiles WHERE id = ?")
+            .bind(&input.agent_profile_id)
+            .fetch_optional(repo.pool())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not load agent profile",
+                    json!({}),
+                )
+            })?;
+    let Some((name, instructions, tool_policy)) = row else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Agent profile does not exist",
+            json!({"resource": "agent_profile", "reason": "agent_profile_not_found"}),
+        ));
+    };
+    Ok(json!({
+        "name": name,
+        "instructions": instructions,
+        "tool_policy": serde_json::from_str::<Value>(&tool_policy).unwrap_or_else(|_| json!({})),
+        "timeout_seconds": input.timeout_seconds,
+        "budgets": input.budgets,
+    }))
+}
+
+fn item_not_found() -> (StatusCode, Json<Value>) {
+    error(
+        StatusCode::NOT_FOUND,
+        StableErrorCode::NotFound,
+        "Item does not exist",
+        json!({"resource": "item"}),
+    )
+}
+
+/// Enqueues a request whose profile and repository are already resolved. Also
+/// the entry for server-built requests that have no HTTP body to validate.
+pub(crate) async fn enqueue_resolved(
+    state: OperatorExecutionState,
+    headers: HeaderMap,
+    input: CreateExecution,
+    profile: Value,
+    repository_snapshot: Value,
+) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
+    let authenticated_principal = principal(&headers)?;
     let idempotency_scope = format!("operator:{authenticated_principal}");
     let Some(item) = state.repo.get_item(input.item_id).await.map_err(|_| {
         error(
@@ -773,15 +894,9 @@ pub async fn create_execution(
         )
     })?
     else {
-        return Err(error(
-            StatusCode::NOT_FOUND,
-            StableErrorCode::NotFound,
-            "Item does not exist",
-            json!({"resource": "item"}),
-        ));
+        return Err(item_not_found());
     };
     let project = load_project(&state.repo, item.project_id).await?;
-    let repository_snapshot = resolve_repository(&project, input.repository_snapshot.clone())?;
     let existing_snapshot: Option<String> = sqlx::query_scalar(
         "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
     )
@@ -940,7 +1055,7 @@ pub async fn create_execution(
     let (agent_profile_snapshot, brief) = with_item_context(
         &state.repo,
         &item,
-        input.agent_profile_snapshot,
+        profile,
         project.definition_of_done.as_deref(),
     )
     .await?;

@@ -353,7 +353,6 @@ async fn runner_bearer_does_not_authenticate_operator_routes() {
     let create_body = json!({
         "item_id": Uuid::new_v4(), "idempotency_key": "attempt-by-runner", "selector_kind": "exact_runner",
         "selector_id": RUNNER_ID, "agent_profile_id": "profile-c2", "requested_harness_kind": "codex",
-        "agent_profile_snapshot": {"name":"C2 Profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
         "repository_snapshot": {"kind":"git","remote":"https://example.test/c2.git","base_revision":"abc123","subdirectory":null},
         "permission_policy": {"tools":["shell"],"network":false}, "timeout_seconds":60, "budgets":{"tokens":1000},
         "environment": {}, "metadata": {},

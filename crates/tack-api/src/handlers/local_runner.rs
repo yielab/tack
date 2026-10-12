@@ -691,16 +691,8 @@ pub async fn post_test_run(
         requested_harness_kind: input.harness_kind,
         requested_model_provider: None,
         requested_model_id: None,
-        agent_profile_snapshot: json!({
-            "name": name,
-            "instructions": instructions,
-            "tool_policy": tool_policy,
-            "timeout_seconds": 300,
-            "budgets": parse(&limits),
-        }),
-        repository_snapshot: Some(json!({
-            "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
-        })),
+        agent_profile_snapshot: None,
+        repository_snapshot: None,
         permission_policy: json!({ "tools": tools, "network": false }),
         budgets: json!({}),
         environment: json!({}),
@@ -714,8 +706,19 @@ pub async fn post_test_run(
         state.repo.clone(),
         Arc::new(tack_db::repo::execution::SystemExecutionClock),
     );
-    let Json(created) =
-        crate::handlers::executions::create_execution(State(operator), headers, Json(create))
-            .await?;
+    let profile = json!({
+        "name": name,
+        "instructions": instructions,
+        "tool_policy": tool_policy,
+        "timeout_seconds": 300,
+        "budgets": parse(&limits),
+    });
+    let repository = json!({
+        "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
+    });
+    let Json(created) = crate::handlers::executions::enqueue_resolved(
+        operator, headers, create, profile, repository,
+    )
+    .await?;
     Ok(Json(json!({ "request_id": created.request_id })))
 }

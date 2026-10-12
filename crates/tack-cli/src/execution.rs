@@ -83,22 +83,9 @@ pub struct CreateExecutionArgs<'a> {
     pub requested_harness_kind: &'a str,
     pub requested_model_provider: Option<&'a str>,
     pub requested_model_id: Option<&'a str>,
-    /// JSON object matching `tack_orch::execution::AgentProfileSnapshot`:
-    /// `{name, instructions, tool_policy, timeout_seconds, budgets}` are all
-    /// required (`subdirectory`-style `Option` fields aside, this struct has
-    /// none). Required, not defaulted to `{}` — an empty object always fails
-    /// this shape server-side, so defaulting to it would just move a
-    /// guaranteed error one step later instead of catching it at the CLI.
-    pub agent_profile_snapshot: &'a str,
-    /// JSON object matching `tack_orch::execution::RepositorySnapshot`. The
-    /// server fills it from the item's project when a request omits it
-    /// (phase 67, R3); the CLI keeps sending it explicitly, and an explicit
-    /// object always wins.
-    pub repository_snapshot: &'a str,
     /// JSON object matching `tack_orch::execution::PermissionPolicy`:
     /// `{network: bool, tools: [string] (optional, default [])}`. Required
-    /// for the same reason as `agent_profile_snapshot` — `network` has no
-    /// default server-side, so `{}` cannot succeed.
+    /// — `network` has no default server-side, so `{}` cannot succeed.
     pub permission_policy: &'a str,
     pub budgets: Option<&'a str>,
     pub environment: Option<&'a str>,
@@ -122,8 +109,6 @@ pub struct CreateExecutionValues<'a> {
     pub requested_harness_kind: &'a str,
     pub requested_model_provider: Option<&'a str>,
     pub requested_model_id: Option<&'a str>,
-    pub agent_profile_snapshot: Value,
-    pub repository_snapshot: Value,
     pub permission_policy: Value,
     pub budgets: Value,
     pub environment: Value,
@@ -151,8 +136,6 @@ pub fn create_execution_body(selector: &Selector, values: CreateExecutionValues<
         "requested_harness_kind": values.requested_harness_kind,
         "requested_model_provider": values.requested_model_provider,
         "requested_model_id": values.requested_model_id,
-        "agent_profile_snapshot": values.agent_profile_snapshot,
-        "repository_snapshot": values.repository_snapshot,
         "permission_policy": values.permission_policy,
         "budgets": values.budgets,
         "environment": values.environment,
@@ -176,11 +159,6 @@ pub fn build_create_execution_body(
         requested_harness_kind: args.requested_harness_kind,
         requested_model_provider: args.requested_model_provider,
         requested_model_id: args.requested_model_id,
-        agent_profile_snapshot: parse_json_field(
-            args.agent_profile_snapshot,
-            "agent-profile-snapshot",
-        )?,
-        repository_snapshot: parse_json_field(args.repository_snapshot, "repository")?,
         permission_policy: parse_json_field(args.permission_policy, "permission-policy")?,
         budgets: parse_json_field_or_empty(args.budgets, "budgets")?,
         environment: parse_json_field_or_empty(args.environment, "environment")?,

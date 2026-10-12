@@ -403,11 +403,21 @@ fn wait_for_terminal_attempt(
 
 /// Creates a project, an item on it, and an agent profile to dispatch
 /// through — the fixed target every dispatch in this test runs against.
-fn seed_dispatch_target(client: &reqwest::blocking::Client, base_url: &str) -> (String, String) {
+fn seed_dispatch_target(
+    client: &reqwest::blocking::Client,
+    base_url: &str,
+    repo_dir: &Path,
+) -> (String, String) {
     let project = post_json(
         client,
         &format!("{base_url}/api/projects"),
-        json!({ "name": "live-secret", "project_type": "software" }),
+        json!({
+            "name": "live-secret",
+            "project_type": "software",
+            "code_origin": "folder",
+            "repository": repo_dir.display().to_string(),
+            "workspace_mode": "clone",
+        }),
     );
     let project_id = project["id"].as_str().expect("project id").to_owned();
     let item = post_json(
@@ -452,13 +462,6 @@ fn dispatch_via_gateway(
             "requested_harness_kind": "claude-code",
             "requested_model_provider": "vercel-ai-gateway",
             "requested_model_id": FAKE_MODEL,
-            "agent_profile_snapshot": {
-                "name": "live-secret-profile",
-                "instructions": "Print DONE and exit.",
-                "tool_policy": {},
-                "timeout_seconds": 60,
-                "budgets": {}
-            },
             "repository_snapshot": {
                 "kind": "git",
                 "remote": repo_dir.display().to_string(),
@@ -524,7 +527,7 @@ fn dispatch_and_assert_success(
     env: &LiveSecretEnv,
     runner_id: &str,
 ) {
-    let (item_id, profile_id) = seed_dispatch_target(client, base_url);
+    let (item_id, profile_id) = seed_dispatch_target(client, base_url, &env.repo_dir);
     let request_id = dispatch_via_gateway(
         client,
         base_url,
