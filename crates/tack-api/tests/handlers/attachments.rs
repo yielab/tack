@@ -7,8 +7,13 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
+use sqlx::SqlitePool;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use tack_api::AppState;
 use tack_api::config::AppConfig;
+use tack_api::router::build_router;
+use tack_db::repo::attachments::AttachmentRepo;
 use tempfile::TempDir;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -216,6 +221,10 @@ async fn download_attachment_returns_bytes_and_headers() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "application/octet-stream"
+    );
     let disposition = res
         .headers()
         .get("content-disposition")
@@ -223,9 +232,117 @@ async fn download_attachment_returns_bytes_and_headers() {
         .to_str()
         .unwrap()
         .to_owned();
+    assert!(disposition.starts_with("attachment;"), "{disposition}");
     assert!(disposition.contains("notes.txt"), "{disposition}");
     let bytes = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     assert_eq!(bytes, "downloadable".as_bytes());
+}
+
+/// An app whose storage directory is `storage_dir`, sharing its database with
+/// the returned pool so a test can add an attachment row whose `storage_path`
+/// the upload route would never write. Also returns one item to attach to.
+async fn app_at(storage_dir: &Path) -> (Router, SqlitePool, Uuid) {
+    let repo = tack_test_support::setup_test_db().await;
+    let pool = repo.pool().clone();
+    let workspace_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
+        .bind(workspace_id.to_string())
+        .execute(&pool)
+        .await
+        .expect("insert workspace");
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = AppState {
+        repo,
+        config: AppConfig {
+            storage_dir: storage_dir.display().to_string(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: None,
+    };
+    let app = common::with_default_host(build_router(state));
+    let pid = common::create_project(&app, "P", "software").await;
+    let iid = common::create_item(&app, pid, "Item").await;
+    (app, pool, iid)
+}
+
+/// Inserts an attachment row at `storage_path` and returns its id.
+async fn insert_row(pool: &SqlitePool, item_id: Uuid, storage_path: &str) -> String {
+    AttachmentRepo::new(pool)
+        .create_attachment(
+            item_id,
+            "x.txt".to_string(),
+            "text/plain".to_string(),
+            storage_path.to_string(),
+            1,
+        )
+        .await
+        .expect("insert attachment row")
+        .id
+        .to_string()
+}
+
+#[tokio::test]
+async fn download_attachment_absolute_storage_path_is_404() {
+    let storage = tempfile::tempdir().expect("temp storage dir");
+    let (app, pool, iid) = app_at(storage.path()).await;
+    let id = insert_row(&pool, iid, "/etc/hostname").await;
+
+    let (status, _) = common::send(
+        &app,
+        "GET",
+        &format!("/api/attachments/{id}"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn download_attachment_parent_dir_storage_path_is_404() {
+    let root = tempfile::tempdir().expect("temp root");
+    let storage = root.path().join("a").join("b");
+    std::fs::create_dir_all(&storage).expect("storage dir");
+    std::fs::write(root.path().join("x"), b"outside the storage dir").expect("outside file");
+    let (app, pool, iid) = app_at(&storage).await;
+    let id = insert_row(&pool, iid, "../../x").await;
+
+    let (status, _) = common::send(
+        &app,
+        "GET",
+        &format!("/api/attachments/{id}"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn download_attachment_symlink_out_of_storage_is_404() {
+    let root = tempfile::tempdir().expect("temp root");
+    let storage = root.path().join("store");
+    let (app, pool, iid) = app_at(&storage).await;
+    let item_dir = storage.join(iid.to_string());
+    std::fs::create_dir_all(&item_dir).expect("item dir");
+    let outside = root.path().join("outside.txt");
+    std::fs::write(&outside, b"outside the storage dir").expect("outside file");
+    let relative = format!("{iid}/link.txt");
+    std::os::unix::fs::symlink(&outside, storage.join(&relative)).expect("symlink");
+    let id = insert_row(&pool, iid, &relative).await;
+
+    let (status, _) = common::send(
+        &app,
+        "GET",
+        &format!("/api/attachments/{id}"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 /// The attachment row survives but its file was removed from disk out of
