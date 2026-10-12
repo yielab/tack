@@ -25,6 +25,7 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
+    sandbox_binds: &[],
 };
 
 static PLAIN: HarnessDescriptor = BASE;

@@ -340,3 +340,18 @@ RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
 |---|---|
 | `[secrets] request_may_reference = ["gw"]` | The `store:` secret names a request's `secret_reference` may name. Empty (the default) means a request may reference none, and an `env:` reference is always refused. |
 | `[environment] NAME = { value = "x" }` or `{ secret_reference = "env:VAR" }` | Variables every run gets. Resolved once at startup; a request cannot override one, and the `env:` scheme works here because the file is yours. A request may not set `HOME`, `PATH`, `GIT_*`, `SSH_*`, `LD_*`, `DYLD_*`, `PYTHON*`, `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `BASH_ENV`, `ENV` or any `*_BASE_URL`. |
+
+### Harness sandbox
+
+When `bwrap` is on the runner's `PATH`, every harness runs inside it. The agent sees the
+workspace and a scratch home read-write, the directories its harness needs from your home
+(`~/.claude` for claude-code, `~/.codex` for codex), and `/usr`, `/etc`, `/bin` and `/lib*`
+read-only, with a private `/tmp`, `/proc` and `/dev`. It does not see the runner's state
+directory, `~/.tackrc`, `~/.ssh` or the API token file. The network is not restricted: the
+harness still reaches its model. There is nothing to configure. Without `bwrap` the harness runs
+with your user's access to this machine, and says so: `tack doctor` prints `sandbox: bwrap` or
+`sandbox: none (bwrap not on PATH)` for each harness, and the attempt's start report carries the
+same word. A harness installed under your home (a script that needs a runtime there) must be
+reachable from the sandbox; only the program file itself is shared. A harness that cannot start
+inside `bwrap` (its loader or runtime lives where the sandbox does not reach) runs unsandboxed, and
+`tack doctor` and the capability report say why.

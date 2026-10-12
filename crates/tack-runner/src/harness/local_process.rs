@@ -21,6 +21,8 @@ use std::{
     time::Duration,
 };
 
+use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_orch::execution::{
@@ -43,6 +45,7 @@ use crate::{
             SupervisedProcess,
         },
         redact::SecretMaterial,
+        sandbox::{self, Sandbox},
     },
     provider::{ProviderEndpoint, Wire},
     secrets::SecretStore,
@@ -109,6 +112,10 @@ pub struct HarnessDescriptor {
     /// is going (`StreamSignal::Progress`). A grammar that does is read line
     /// by line on every run, not only one kept open to be asked questions.
     pub reports_progress: bool,
+    /// Directories under `$HOME` this CLI needs as they are (its login
+    /// session, its settings) when it runs inside a sandbox. A CLI that
+    /// keeps all its state in the scratch home names none.
+    pub sandbox_binds: &'static [&'static str],
 }
 
 /// What the grammar is given to build a command line.
@@ -359,6 +366,8 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     request_may_reference: Vec<String>,
     /// The runner's own resolved `[environment]`, given to every run.
     own_environment: BTreeMap<String, String>,
+    /// What each spawn is wrapped in; none until [`Self::with_sandbox`].
+    sandbox: Sandbox,
     probe_timeout: Duration,
     /// Added to the version probe's environment only; tests steer the fake
     /// harness with it.
@@ -416,6 +425,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             providers: BTreeMap::new(),
             request_may_reference: Vec::new(),
             own_environment: BTreeMap::new(),
+            sandbox: Sandbox::none("not detected"),
             probe_timeout: PROBE_TIMEOUT,
             probe_env: BTreeMap::new(),
             probed_version: std::sync::Mutex::new(None),
@@ -442,6 +452,70 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         self.request_may_reference = request_may_reference;
         self.own_environment = own_environment;
         self
+    }
+
+    /// What every spawn runs inside, as [`sandbox::detect`] found it.
+    pub fn with_sandbox(mut self, sandbox: Sandbox) -> Self {
+        self.sandbox = sandbox;
+        self
+    }
+
+    /// Decides the sandbox for this harness alone. Where the machine's
+    /// sandbox is `bwrap`, the version probe runs once unwrapped and once
+    /// wrapped the way a spawn would be; a harness that starts only
+    /// unwrapped runs unsandboxed, and the reason says why.
+    pub fn with_probed_sandbox(mut self, machine: Sandbox) -> Self {
+        self.sandbox = self.decide_sandbox(machine);
+        self
+    }
+
+    fn decide_sandbox(&self, machine: Sandbox) -> Sandbox {
+        let Ok((program, mut args)) = self.locator.resolve() else {
+            return machine;
+        };
+        args.push("--version".to_owned());
+        let mut env = self.inherited_env();
+        env.extend(self.probe_env.clone());
+        // A throwaway scratch directory standing in for the home and the
+        // workspace; removed before this returns.
+        #[allow(clippy::disallowed_methods)]
+        let scratch = std::env::temp_dir().join(format!(
+            "tack-sandbox-probe-{}-{}",
+            std::process::id(),
+            self.kind()
+        ));
+        if std::fs::create_dir_all(&scratch).is_err() {
+            return machine;
+        }
+        let descriptor = self.grammar.descriptor();
+        let wrapped = machine.wrap(
+            &program,
+            &args,
+            &scratch,
+            &scratch,
+            descriptor.sandbox_binds,
+        );
+        let decided = match wrapped {
+            None => machine,
+            Some((bwrap, wrapped_args)) => {
+                let probe = |program: &Path, args: &[String]| {
+                    sandbox::run_probe(program, args, &env, &scratch, self.probe_timeout)
+                };
+                if probe(&program, &args).is_err() {
+                    machine
+                } else {
+                    match probe(&bwrap, &wrapped_args) {
+                        Ok(()) => machine,
+                        Err(why) => machine.without(format!(
+                            "{} does not start inside bwrap: {why}",
+                            descriptor.kind
+                        )),
+                    }
+                }
+            }
+        };
+        let _ = std::fs::remove_dir_all(&scratch);
+        decided
     }
 
     #[cfg(test)]
@@ -620,6 +694,16 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
             _ => workspace_root.clone(),
         };
+        let (program, args) = self
+            .sandbox
+            .wrap(
+                &program,
+                &args,
+                &workspace_root,
+                &scratch,
+                self.grammar.descriptor().sandbox_binds,
+            )
+            .unwrap_or((program, args));
         let process_spec = ProcessSpec {
             program,
             args,
@@ -732,7 +816,11 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         if canonical(argv0) == canonical(&expected) {
             return Some(true);
         }
-        Some(args.any(|arg| arg == attempt_id.as_bytes()))
+        // Inside a sandbox `argv[0]` is the wrapper and the program follows it.
+        Some(args.any(|arg| {
+            arg == attempt_id.as_bytes()
+                || canonical(Path::new(OsStr::from_bytes(arg))) == canonical(&expected)
+        }))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -997,6 +1085,14 @@ where
             .iter()
             .map(|(key, note)| ((*key).to_owned(), serde_json::json!(note)))
             .collect();
+        additional.insert(
+            "sandbox".to_owned(),
+            serde_json::json!(self.sandbox.kind.as_str()),
+        );
+        additional.insert(
+            "sandbox_reason".to_owned(),
+            serde_json::json!(self.sandbox.reason),
+        );
         if let Some(raw) = raw_output {
             additional.insert("raw_version_output".to_owned(), serde_json::json!(raw));
         }
@@ -1123,6 +1219,10 @@ where
             .get_mut(&handle.process_id)?
             .decision_channels
             .take()
+    }
+
+    async fn sandbox(&self, _handle: &LocalRunHandle) -> Option<String> {
+        Some(self.sandbox.kind.as_str().to_owned())
     }
 
     async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {

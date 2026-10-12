@@ -846,6 +846,7 @@ static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
         observes_served_model: false,
         reports_process_groups: true,
         reports_progress: false,
+        sandbox_binds: &[],
     };
 
 impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
@@ -1018,6 +1019,7 @@ static SHELL: tack_runner::harness::local_process::HarnessDescriptor =
         observes_served_model: false,
         reports_process_groups: false,
         reports_progress: false,
+        sandbox_binds: &[],
     };
 
 impl tack_runner::harness::local_process::HarnessGrammar for ShellGrammar {

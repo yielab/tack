@@ -371,6 +371,7 @@ fn start_report(attempt: &AttemptId, phase: StartPhase, process_id: Option<Strin
         base_revision: Some("0123456789abcdef0123456789abcdef01234567".into()),
         process_id,
         environment_names: vec!["K".to_owned()],
+        sandbox: Some("bwrap".to_owned()),
     }
 }
 

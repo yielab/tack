@@ -42,6 +42,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     observes_served_model: true,
     reports_process_groups: true,
     reports_progress: true,
+    sandbox_binds: &[],
 };
 
 /// The variable docket's own `run` command refuses to start without, unless

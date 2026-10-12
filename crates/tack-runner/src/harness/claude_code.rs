@@ -47,6 +47,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
+    sandbox_binds: &[".claude"],
 };
 
 /// Provider families the `claude` binary knows on its own, confirmed by
