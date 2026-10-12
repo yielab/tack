@@ -345,7 +345,7 @@ fn an_ask_request_becomes_an_acp_conversation() {
             "id": 2,
             "method": "session/new",
             "params": {
-                "cwd": working_directory(&run).display().to_string(),
+                "cwd": working_directory(&run).expect("a confined cwd").display().to_string(),
                 "mcpServers": [],
             },
         })
