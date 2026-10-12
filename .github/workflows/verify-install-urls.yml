@@ -50,6 +50,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Check install URLs resolve
         run: scripts/verify-install-urls.sh
 
@@ -70,6 +72,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Run install.ps1 for real and verify it
         run: |
           $installDir = Join-Path $env:RUNNER_TEMP 'tack-install-test'
