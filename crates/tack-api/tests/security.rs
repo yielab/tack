@@ -15,5 +15,7 @@ mod chaos_races;
 mod chaos_recovery;
 #[path = "security/cors.rs"]
 mod cors;
+#[path = "security/raw_body.rs"]
+mod raw_body;
 #[path = "security/trust_boundary.rs"]
 mod trust_boundary;

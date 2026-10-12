@@ -108,7 +108,20 @@ fn read_outline(headers: &HeaderMap, body: &[u8]) -> ApiResult<(Outline, Read)> 
     ))
 }
 
-fn read_csv(body: &[u8]) -> ApiResult<Read> {
+fn read_csv(headers: &HeaderMap, body: &[u8]) -> ApiResult<Read> {
+    let media_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if media_type != "text/csv" {
+        return Err(ApiError::UnsupportedMediaType(
+            "CSV must be sent as text/csv".into(),
+        ));
+    }
     let text = std::str::from_utf8(body)
         .map_err(|_| ApiError::BadRequest("CSV body is not valid UTF-8".into()))?;
     let csv = items_from_csv(text).map_err(refused)?;
@@ -173,7 +186,7 @@ pub async fn add_outline_to_project(
     into_existing_project(&state, project_id, read, ItemSource::Outline, query.dry_run).await
 }
 
-#[instrument(skip(state, body))]
+#[instrument(skip(state, headers, body))]
 #[utoipa::path(
     post,
     path = "/api/projects/import-csv",
@@ -188,9 +201,10 @@ pub async fn add_outline_to_project(
 pub async fn create_project_from_csv(
     State(state): State<AppState>,
     Query(query): Query<NewProjectOutlineQuery>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<OutlineResult>> {
-    let read = read_csv(&body)?;
+    let read = read_csv(&headers, &body)?;
     let project = new_project(&query, Default::default())?;
     into_new_project(&state, project, read, ItemSource::CsvImport, query.dry_run).await
 }
@@ -198,7 +212,7 @@ pub async fn create_project_from_csv(
 /// `ItemSource::CsvImport` — a bare CSV carries no provenance of its own, so
 /// every row is untrusted for dispatch purposes, same as the GitHub/Linear
 /// importers.
-#[instrument(skip(state, body))]
+#[instrument(skip(state, headers, body))]
 #[utoipa::path(
     post,
     path = "/api/projects/{id}/import-csv",
@@ -218,9 +232,10 @@ pub async fn import_csv(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Query(query): Query<AddOutlineQuery>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<OutlineResult>> {
-    let read = read_csv(&body)?;
+    let read = read_csv(&headers, &body)?;
     into_existing_project(
         &state,
         project_id,

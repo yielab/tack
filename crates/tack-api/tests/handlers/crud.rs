@@ -362,15 +362,21 @@ type HeaderPair = (&'static str, &'static str);
 
 #[tokio::test]
 async fn restore_rejects_non_sqlite_body() {
-    let cases: Vec<(&str, &[HeaderPair], &str)> = vec![
+    let cases: Vec<(&str, &[HeaderPair], &str, StatusCode)> = vec![
         (
             "with an octet-stream content-type header",
             &[("content-type", "application/octet-stream")],
             "not a sqlite file",
+            StatusCode::BAD_REQUEST,
         ),
-        ("with no content-type header", &[], "this is not a database"),
+        (
+            "with no content-type header",
+            &[],
+            "this is not a database",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        ),
     ];
-    for (name, headers, body) in cases {
+    for (name, headers, body, expected) in cases {
         let (app, _) = common::test_app().await;
         let mut builder = Request::builder().method(Method::POST).uri("/api/restore");
         for (key, value) in headers {
@@ -380,11 +386,11 @@ async fn restore_rejects_non_sqlite_body() {
             .oneshot(builder.body(Body::from(body)).unwrap())
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{name}");
+        assert_eq!(res.status(), expected, "{name}");
         // Unified envelope: { "error": { "status", "message" } } — not a flat string.
         let bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
         let parsed: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(parsed["error"]["status"], 400, "{name}");
+        assert_eq!(parsed["error"]["status"], expected.as_u16(), "{name}");
         assert!(parsed["error"]["message"].is_string(), "{name}");
     }
 }
@@ -1119,8 +1125,8 @@ async fn export_yaml_round_trips_through_import() {
         "imported items: {items}"
     );
     assert_eq!(
-        items["data"][0]["source"], "manual",
-        "the imported item must still be recorded as manual/trusted, not reset to unknown"
+        items["data"][0]["source"], "json_import",
+        "a payload's manual source is an import, recorded as json_import, never trusted"
     );
 }
 
