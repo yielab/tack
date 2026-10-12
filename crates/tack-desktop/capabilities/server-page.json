@@ -1,16 +1,18 @@
 {
   "$schema": "../../../gen/schemas/desktop-schema.json",
   "identifier": "server-page",
-  "description": "The board page, served by the embedded tack server on loopback: it may open a folder or a link with the system's own app, nothing else.",
-  "windows": [
-    "main"
-  ],
+  "description": "The board page, served by the embedded tack server on loopback: it may open a link or one folder with the system's own app, nothing else. The port in the remote URL is a template; the app writes the chosen one at startup.",
+  "local": false,
+  "windows": ["main"],
   "remote": {
-    "urls": [
-      "http://127.0.0.1:*/*"
-    ]
+    "urls": ["http://127.0.0.1:0/*"]
   },
   "permissions": [
-    "shell:allow-open"
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    },
+    "allow-open-folder"
   ]
 }

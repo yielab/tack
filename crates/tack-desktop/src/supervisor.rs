@@ -54,6 +54,10 @@ impl ServerFolders {
 pub struct HealthBody {
     pub status: String,
     pub version: String,
+    /// Echo of the `TACK_LAUNCH_NONCE` the server was started with; absent
+    /// from a server that was not started with one.
+    #[serde(default)]
+    pub launch_nonce: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -72,6 +76,42 @@ pub enum SupervisorError {
         server_version: String,
         bundled_version: String,
     },
+    #[error("the server at this port reports a version ({0:?}) that cannot be read; refusing it")]
+    UnreadableVersion(String),
+}
+
+/// Sixteen random bytes as lowercase hex: the per-launch secret the sidecar
+/// echoes back on `/api/health`, so this app attaches only to the server it
+/// started (or one started with the same nonce), never to whatever else
+/// answers on the port.
+pub fn new_launch_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Whether a health body may be attached to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HealthVerdict {
+    Accept,
+    /// The body carries no nonce, or a different one: not the server this
+    /// launch started.
+    NotOurs,
+    Outdated,
+    UnknownVersion,
+}
+
+/// Pure: the nonce is checked first, so a foreign server is never judged on
+/// its version; then the version, where `Unknown` is refused.
+pub fn judge_health(health: &HealthBody, nonce: &str, bundled_version: &str) -> HealthVerdict {
+    if health.launch_nonce.as_deref() != Some(nonce) {
+        return HealthVerdict::NotOurs;
+    }
+    match check_server_version(&health.version, bundled_version) {
+        VersionCheck::Compatible => HealthVerdict::Accept,
+        VersionCheck::Outdated => HealthVerdict::Outdated,
+        VersionCheck::Unknown => HealthVerdict::UnknownVersion,
+    }
 }
 
 /// How an already-running (attached) server's version compares to the
@@ -81,8 +121,8 @@ pub enum SupervisorError {
 pub enum VersionCheck {
     Compatible,
     Outdated,
-    /// One or both version strings did not parse as semver. Not evidence of
-    /// being outdated -- attaching proceeds rather than refusing on a guess.
+    /// One or both version strings did not parse as semver. [`judge_health`]
+    /// refuses it: a server that cannot say what it is is not attached to.
     Unknown,
 }
 
@@ -182,13 +222,34 @@ async fn port_has_a_listener(port: u16) -> bool {
     .unwrap_or(false)
 }
 
-/// Attaches if a Tack server already answers on `base_url`; otherwise spawns
-/// one through `launcher` and polls until it is healthy or `HEALTH_TIMEOUT`
-/// elapses. `port` is the same port `base_url` names — the caller owns
-/// building both from one source of truth; this function never binds a port
-/// itself, only probes and connects to one. `bundled_version` is this app's
-/// own version; an attach whose server reports an older one is refused
-/// (`OutdatedServer`) before anything else happens with it.
+/// Maps a refused verdict to the error the caller reports.
+fn refusal(
+    verdict: HealthVerdict,
+    health: HealthBody,
+    port: u16,
+    bundled: &str,
+) -> SupervisorError {
+    match verdict {
+        HealthVerdict::NotOurs => SupervisorError::PortOccupiedByOther(port),
+        HealthVerdict::Outdated => SupervisorError::OutdatedServer {
+            server_version: health.version,
+            bundled_version: bundled.to_string(),
+        },
+        HealthVerdict::UnknownVersion | HealthVerdict::Accept => {
+            SupervisorError::UnreadableVersion(health.version)
+        }
+    }
+}
+
+/// Attaches if a Tack server already answers on `base_url` with `nonce`;
+/// otherwise spawns one through `launcher` (handing it `nonce` as
+/// `TACK_LAUNCH_NONCE`) and polls until it answers with that nonce or
+/// `HEALTH_TIMEOUT` elapses. Every health body is judged by [`judge_health`]:
+/// one without the nonce is something else on the port, including one that
+/// bound it between the listener check and the spawn, and is refused. `port`
+/// is the same port `base_url` names — the caller owns building both from
+/// one source of truth; this function never binds a port itself, only probes
+/// and connects to one. `bundled_version` is this app's own version.
 pub async fn attach_or_start<L: SidecarLauncher>(
     client: &reqwest::Client,
     base_url: &str,
@@ -196,14 +257,12 @@ pub async fn attach_or_start<L: SidecarLauncher>(
     launcher: &L,
     folders: &ServerFolders,
     bundled_version: &str,
+    nonce: &str,
 ) -> Result<Outcome<L::Process>, SupervisorError> {
     if let Some(health) = probe_health(client, base_url).await {
-        return match check_server_version(&health.version, bundled_version) {
-            VersionCheck::Outdated => Err(SupervisorError::OutdatedServer {
-                server_version: health.version,
-                bundled_version: bundled_version.to_string(),
-            }),
-            VersionCheck::Compatible | VersionCheck::Unknown => Ok(Outcome::Attached { health }),
+        return match judge_health(&health, nonce, bundled_version) {
+            HealthVerdict::Accept => Ok(Outcome::Attached { health }),
+            verdict => Err(refusal(verdict, health, port, bundled_version)),
         };
     }
 
@@ -211,12 +270,20 @@ pub async fn attach_or_start<L: SidecarLauncher>(
         return Err(SupervisorError::PortOccupiedByOther(port));
     }
 
-    let process = launcher.spawn(&folders.env_vars())?;
+    let mut env = folders.env_vars();
+    env.push(("TACK_LAUNCH_NONCE".to_string(), nonce.to_string()));
+    let process = launcher.spawn(&env)?;
 
     let deadline = tokio::time::Instant::now() + HEALTH_TIMEOUT;
     loop {
         if let Some(health) = probe_health(client, base_url).await {
-            return Ok(Outcome::Started { health, process });
+            return match judge_health(&health, nonce, bundled_version) {
+                HealthVerdict::Accept => Ok(Outcome::Started { health, process }),
+                verdict => {
+                    let _ = process.kill();
+                    Err(refusal(verdict, health, port, bundled_version))
+                }
+            };
         }
         if tokio::time::Instant::now() >= deadline {
             return Err(SupervisorError::HealthTimeout(HEALTH_TIMEOUT));

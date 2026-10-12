@@ -111,9 +111,8 @@ async fn poll_once(client: &reqwest::Client, base_url: &str) -> AgentExecutionSt
     }
 }
 
-/// Builds the tray icon and attaches its menu. Call once from `setup`, after
-/// [`ensure_launch_at_login_default_on_first_run`] so the checkbox's initial
-/// state matches whatever that just decided.
+/// Builds the tray icon and attaches its menu. Call once from `setup`.
+/// *Launch at login* starts unchecked; only the user's toggle turns it on.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, MENU_ID_OPEN, "Open Tack", true, None::<&str>)?;
     let agent_execution_item = MenuItem::with_id(
@@ -243,30 +242,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     });
 
     Ok(())
-}
-
-/// Applies the "on by default" half of decision 3 exactly once: the first
-/// time this app ever runs, launch-at-login is turned on; every later run
-/// leaves whatever the user has it set to alone. The marker
-/// (`.autostart-initialized`, an empty flag file) lives directly under the
-/// app's real per-user data root (`DataPaths::root`), next to settings.json
-/// and the server's own storage/runner/log folders.
-pub fn ensure_launch_at_login_default_on_first_run(app: &AppHandle, data_root: &std::path::Path) {
-    let marker = data_root.join(".autostart-initialized");
-    if marker.exists() {
-        return;
-    }
-    match app.autolaunch().enable() {
-        Ok(()) => {
-            if let Err(err) = std::fs::write(&marker, b"") {
-                tracing::error!(error = %err, "failed to write the autostart first-run marker");
-            }
-            tracing::info!("launch at login enabled by default on first run");
-        }
-        Err(err) => {
-            tracing::error!(error = %err, "failed to enable launch at login by default");
-        }
-    }
 }
 
 #[cfg(test)]
