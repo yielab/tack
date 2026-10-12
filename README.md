@@ -86,10 +86,11 @@ actually did and lets something other than the agent check it.
 
 - **Evidence on every run.** The patch, the commits and the list of files changed, kept
   after the workspace is cleaned up.
-- **An independent verifier.** A runner can run a verifier over that evidence: prill, which
-  it speaks natively, or a program of yours. It writes a merge-readiness pack with a
-  recommendation, the risk, each acceptance criterion with its evidence, and anything it did
-  not check, marked *Not run*. It is off until you turn it on in the runner's configuration.
+- **Verifiable by something other than the agent.** A runner hands that evidence to an
+  independent verifier of your choice: a program of your own, or an external checker such as
+  prill. The verifier writes a merge-readiness pack with a recommendation, the risk, each
+  acceptance criterion with its evidence, and anything it did not check, marked *Not run*. It
+  is off until you turn it on in the runner's configuration.
 - **Branch and pull request.** The runner can push the work as a branch. For a task linked
   to a GitHub issue, Tack opens the pull request and shows its state on the run.
 - **Factory metrics.** Each project has a page showing how often agents needed you, how long
@@ -221,25 +222,21 @@ binary. The [architecture overview](docs/book/src/developer/index.md) has the de
 
 ## Built alongside
 
-Two tools made with Tack that also work on their own:
-
-- **[docket](https://github.com/yielab/docket)** gives a repository a team of coding agents
-  and governs what they may do: roles, policies, approvals and an audit trail, in YAML next to
-  your code. Tack runs it as one of its four agents.
-- **prill** is an independent verifier of agents' changes. It re-runs the change on clean
-  code in a sandbox with no network and writes the merge-readiness pack Tack shows. Tack's
-  runner speaks it natively. It isn't published yet.
+**[docket](https://github.com/yielab/docket)**, made with Tack, also works on its own. It
+gives a repository a team of coding agents and governs what they may do: roles, policies,
+approvals and an audit trail, in YAML next to your code. Tack runs it as one of its four
+agents.
 
 ## Status
 
 Public beta. The project manager and the agent runs are both complete, and the desktop app
 ships for Linux, macOS and Windows. Claude Code and Codex have recorded live end-to-end runs,
-and the whole workflow has run through the UI with docket as the agent and prill as the
-verifier, against a local model. `tack runner doctor` shows what your own machine can run.
+and the whole workflow has run through the UI with docket as the agent and an independent
+verifier checking each run, against a local model. `tack runner doctor` shows what your own machine can run.
 
 ### Known limitations
 
-- No user accounts: one optional shared token, no per-user permissions
+- No user accounts: one shared API token, no per-user permissions
 - One SQLite writer. S3 backup copies snapshots; it isn't live sync
 - No offline mode and no native mobile app
 - Only docket shows a run's steps on its timeline while it works; the other agents show
