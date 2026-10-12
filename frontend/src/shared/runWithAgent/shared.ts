@@ -104,21 +104,21 @@ export interface RunWithAgentFormValues {
  * `shared/execution/api.ts`, itself copied field-for-field from
  * `crates/tack-api/src/handlers/executions.rs`'s `CreateExecution`).
  *
- * The nested `agent_profile_snapshot`/`repository_snapshot`/
- * `permission_policy` objects are untyped (`unknown`) on the wire-boundary
+ * The profile is not sent: the server loads it by `agent_profile_id` and
+ * records what it ran. The nested `repository_snapshot`/`permission_policy`
+ * objects are untyped (`unknown`) on the wire-boundary
  * type: `docs/openapi.json`'s `CreateExecution` schema leaves each as a bare
  * description with no `type`/`properties`, because the real Rust structs one
  * layer deeper (`crates/tack-orch/src/execution/types.rs`) live in a crate
  * that does not derive `ToSchema`. They are NOT arbitrary here, though:
  * their shape is copied field-for-field from those structs:
- *   - `AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds, budgets }`
  *   - `RepositorySnapshot { kind, remote, base_revision, subdirectory }`
  *   - `PermissionPolicy { tools, network, approvals }` — `approvals` is
  *     omitted entirely for `'auto'`, matching the Rust field's own
  *     `skip_serializing_if = "Option::is_none"`: absent means `Auto`, never
  *     a redundant `"auto"` literal sent over the wire
  * A live test against a real server confirmed defaulting
- * `agent_profile_snapshot`/`permission_policy` to `{}` gets a 400 `missing
+ * `permission_policy` to `{}` gets a 400 `missing
  * field \`network\`` — this module's fields exist specifically because that
  * mistake is already documented. `budgets`/`environment`/`metadata` are left
  * at `{}`, which that same test confirmed is genuinely safe to default
@@ -134,15 +134,6 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     requested_harness_kind: values.harnessKind,
     requested_model_provider: values.modelProvider,
     requested_model_id: values.modelId,
-    agent_profile_snapshot: {
-      name: values.agentProfileSnapshot.name,
-      // The profile's own text only: the server appends the item's title,
-      // description and brief, so the client composes nothing.
-      instructions: values.agentProfileSnapshot.instructions,
-      tool_policy: values.agentProfileSnapshot.tool_policy,
-      timeout_seconds: values.timeoutSeconds,
-      budgets: {},
-    },
     repository_snapshot: values.repository && {
       kind: values.repository.kind,
       remote: values.repository.remote,

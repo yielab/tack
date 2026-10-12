@@ -3241,15 +3241,6 @@ export interface components {
         };
         CreateExecution: {
             agent_profile_id: string;
-            /**
-             * @description `tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,
-             *     tool_policy, timeout_seconds, budgets}`) — untyped here because that
-             *     type lives in `tack-orch`, which does not derive `ToSchema` (see
-             *     `RunnerV1ErrorEnvelope`'s doc comment for the same architectural
-             *     reason). Validated against the real nested struct server-side at
-             *     enqueue time.
-             */
-            agent_profile_snapshot: unknown;
             budgets: unknown;
             environment: unknown;
             idempotency_key: string;
@@ -3271,8 +3262,10 @@ export interface components {
             /**
              * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
              *     base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
-             *     from the item's project; a project with no code is `invalid_request`
-             *     (`details.reason = "project_has_no_code"`).
+             *     from the item's project. An explicit one must name the project's own
+             *     repository (`details.reason = "repository_differs_from_project"`) and
+             *     may only add `base_revision` and `subdirectory`; a project with no code
+             *     is `invalid_request` (`details.reason = "project_has_no_code"`).
              */
             repository_snapshot?: unknown;
             requested_harness_kind: string;

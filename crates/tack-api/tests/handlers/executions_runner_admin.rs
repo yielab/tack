@@ -36,8 +36,8 @@ async fn setup() -> (axum::Router, Repository, String) {
                 description: None,
                 project_type: ProjectType::Software,
                 template: None,
-                code_origin: None,
-                repository: None,
+                code_origin: Some(tack_core::models::CodeOrigin::Url),
+                repository: Some("https://example.test/c1.git".into()),
                 default_branch: None,
                 workspace_mode: None,
             },
@@ -197,7 +197,6 @@ fn create_body(item_id: &str) -> String {
         "selector_id":"runner-active",
         "agent_profile_id":"profile-c1",
         "requested_harness_kind":"codex",
-        "agent_profile_snapshot":{"name":"C1","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
         "repository_snapshot":{"kind":"git","remote":"https://example.test/c1.git","base_revision":"abc123","subdirectory":null},
         "permission_policy":{"tools":["shell"],"network":false},
         "timeout_seconds":60,
@@ -1086,7 +1085,8 @@ async fn the_repository_comes_from_the_project_when_omitted() {
         }
     };
 
-    // A project with no code: 400 project_has_no_code.
+    // A project with no code: 400 project_has_no_code, even for an explicit repository.
+    set_project("none", None, "local_branch").await;
     let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
     assert_eq!(err["error"]["code"], "invalid_request");
@@ -1124,14 +1124,92 @@ async fn the_repository_comes_from_the_project_when_omitted() {
         serde_json::Value::Null
     );
 
-    // An explicit snapshot still wins.
+    // An explicit snapshot naming the project's repository may set the revision.
     body["idempotency_key"] = serde_json::json!("explicit-key");
-    body["repository_snapshot"] =
-        serde_json::json!({"kind":"scratch","remote":"","base_revision":"","subdirectory":null});
+    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/p","base_revision":"abc123","subdirectory":"crates"});
     let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["repository"]["kind"], "scratch");
+    assert_eq!(
+        snapshot["repository"]["remote"],
+        "https://example.test/p.git"
+    );
+    assert_eq!(snapshot["repository"]["base_revision"], "abc123");
+    assert_eq!(snapshot["repository"]["subdirectory"], "crates");
+}
+
+#[tokio::test]
+async fn a_create_with_no_snapshot_stores_the_profile_as_the_database_has_it() {
+    let (app, repo, item_id) = setup().await;
+    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    let profile = &snapshot["resolved_agent_profile"];
+    assert_eq!(profile["name"], "C1");
+    assert!(
+        profile["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with("work safely")
+    );
+    assert_eq!(profile["tool_policy"], serde_json::json!({"mode":"safe"}));
+    assert_eq!(profile["timeout_seconds"], 60);
+    assert_eq!(profile["budgets"], serde_json::json!({"tokens":1000}));
+
+    // After the profile is edited the next create records the edited one.
+    let (status, patched) = snd(
+        &app,
+        "PATCH",
+        "/agent-profiles/profile-c1",
+        json!({"name": "C1 edited", "instructions": "edited"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    body["idempotency_key"] = serde_json::json!("after-edit");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["resolved_agent_profile"]["name"], "C1 edited");
+    assert!(
+        snapshot["resolved_agent_profile"]["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with("edited")
+    );
+
+    // An unknown profile is a 404, not an empty snapshot.
+    body["idempotency_key"] = serde_json::json!("no-profile");
+    body["agent_profile_id"] = serde_json::json!("missing");
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{err}");
+    assert_eq!(err["error"]["details"]["reason"], "agent_profile_not_found");
+}
+
+#[tokio::test]
+async fn a_request_that_still_carries_the_profile_snapshot_is_refused() {
+    let (app, _repo, item_id) = setup().await;
+    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    body["agent_profile_snapshot"] = serde_json::Value::Null;
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["field"], "agent_profile_snapshot");
+    assert_eq!(err["error"]["details"]["reason"], "field_removed");
+}
+
+#[tokio::test]
+async fn a_request_with_a_different_repository_is_refused() {
+    let (app, _repo, item_id) = setup().await;
+    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["code"], "invalid_request");
+    assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
+    assert_eq!(
+        err["error"]["details"]["reason"],
+        "repository_differs_from_project"
+    );
 }
 
 #[tokio::test]
@@ -1336,13 +1414,6 @@ async fn agent_context_includes_the_projects_definition_of_done() {
         "selector_id": "runner-active",
         "agent_profile_id": "profile-c1",
         "requested_harness_kind": "codex",
-        "agent_profile_snapshot": {
-            "name": "C1",
-            "instructions": "work safely",
-            "tool_policy": {"mode": "safe"},
-            "timeout_seconds": 60,
-            "budgets": {"tokens": 1000}
-        },
         "repository_snapshot": {
             "kind": "git",
             "remote": "https://example.test/c1.git",

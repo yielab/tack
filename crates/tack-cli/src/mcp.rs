@@ -284,8 +284,6 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             )?;
             let agent_profile_id = require_str(args, "agent_profile_id")?;
             let harness = require_str(args, "harness")?;
-            let agent_profile_snapshot = require_object(args, "agent_profile_snapshot")?;
-            let repository_snapshot = require_object(args, "repository")?;
             let permission_policy = require_object(args, "permission_policy")?;
             let timeout_seconds = require_u64(args, "timeout_seconds")?;
             let idempotency_key = opt_str(args, "idempotency_key");
@@ -300,8 +298,6 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 requested_harness_kind: &harness,
                 requested_model_provider: model_provider.as_deref(),
                 requested_model_id: model_id.as_deref(),
-                agent_profile_snapshot,
-                repository_snapshot,
                 permission_policy,
                 budgets: opt_object_or_empty(args, "budgets"),
                 environment: opt_object_or_empty(args, "environment"),
@@ -357,8 +353,7 @@ fn opt_str(args: &Value, key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// A required JSON-object argument (`agent_profile_snapshot`, `repository`,
-/// `permission_policy` on `create_execution`) — these map onto typed nested
+/// A required JSON-object argument (`permission_policy` on `create_execution`) — these map onto typed nested
 /// snapshot structs server-side with their own required fields (see
 /// `execution.rs`'s module doc), so unlike `opt_object_or_empty` there is no
 /// safe default to fall back to.
@@ -740,14 +735,6 @@ fn tool_specs() -> Value {
                     "fleet_id": { "type": "string", "description": "Fleet id (mutually exclusive with runner_id)" },
                     "agent_profile_id": { "type": "string" },
                     "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code" },
-                    "agent_profile_snapshot": {
-                        "type": "object",
-                        "description": "Resolved agent profile: {name, instructions, tool_policy, timeout_seconds, budgets} — all required, no safe empty default"
-                    },
-                    "repository": {
-                        "type": "object",
-                        "description": "{kind, remote, base_revision, subdirectory?} — kind/remote/base_revision required"
-                    },
                     "permission_policy": {
                         "type": "object",
                         "description": "{network: bool, tools?: [string]} — network required, no safe empty default"
@@ -765,8 +752,6 @@ fn tool_specs() -> Value {
                     "item_id",
                     "agent_profile_id",
                     "harness",
-                    "agent_profile_snapshot",
-                    "repository",
                     "permission_policy",
                     "timeout_seconds"
                 ]

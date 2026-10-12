@@ -100,7 +100,6 @@ export interface CreateExecutionInput {
   push_branch?: boolean;
   requested_model_provider?: string | null;
   requested_model_id?: string | null;
-  agent_profile_snapshot: unknown;
   repository_snapshot: unknown;
   permission_policy: unknown;
   budgets: unknown;

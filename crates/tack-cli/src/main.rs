@@ -594,15 +594,6 @@ struct ExecutionCreateArgs {
     /// Requested opaque model id (omit to allow auto-selection)
     #[arg(long)]
     model_id: Option<String>,
-    /// Resolved agent-profile snapshot, as a JSON object. Required fields:
-    /// name, instructions, tool_policy (object), timeout_seconds, budgets
-    /// (object) — there is no safe empty default for this field.
-    #[arg(long)]
-    agent_profile_snapshot: String,
-    /// Repository/workspace reference, as a JSON object. Required fields:
-    /// kind, remote, base_revision (optional: subdirectory).
-    #[arg(long)]
-    repository: String,
     /// Permission/tool policy, as a JSON object. Required field: network
     /// (bool). Optional: tools (array of strings, default []) — there is no
     /// safe empty default for this field (network has none server-side).
@@ -1126,8 +1117,6 @@ fn main() -> anyhow::Result<()> {
                         harness: args.harness,
                         model_provider: args.model_provider,
                         model_id: args.model_id,
-                        agent_profile_snapshot: args.agent_profile_snapshot,
-                        repository: args.repository,
                         permission_policy: args.permission_policy,
                         budgets: args.budgets,
                         environment: args.environment,
@@ -2233,8 +2222,6 @@ struct ExecutionCreateOpts {
     harness: String,
     model_provider: Option<String>,
     model_id: Option<String>,
-    agent_profile_snapshot: String,
-    repository: String,
     permission_policy: String,
     budgets: Option<String>,
     environment: Option<String>,
@@ -2257,8 +2244,6 @@ fn cmd_execution_create(
         requested_harness_kind: &opts.harness,
         requested_model_provider: opts.model_provider.as_deref(),
         requested_model_id: opts.model_id.as_deref(),
-        agent_profile_snapshot: &opts.agent_profile_snapshot,
-        repository_snapshot: &opts.repository,
         permission_policy: &opts.permission_policy,
         budgets: opts.budgets.as_deref(),
         environment: opts.environment.as_deref(),

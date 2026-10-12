@@ -120,7 +120,7 @@ async fn create_project_and_item(app: &axum::Router) -> String {
         app,
         "POST",
         "/api/projects",
-        json!({"name": "Artifact wiring", "project_type": "software"}),
+        json!({"name": "Artifact wiring", "project_type": "software", "code_origin": "url", "repository": "https://example.test/wiring.git"}),
         &[],
     )
     .await;
@@ -206,8 +206,7 @@ async fn ready_running_attempt(app: &axum::Router, item_id: &str, label: &str) -
             "requested_harness_kind": "codex",
             "requested_model_provider": "openai",
             "requested_model_id": "opaque/model-wiring",
-            "agent_profile_snapshot": {"name": "profile", "instructions": "work safely", "tool_policy": {}, "timeout_seconds": 60, "budgets": {}},
-            "repository_snapshot": {"kind": "git", "remote": "https://example.test/wiring.git", "base_revision": BASE_REVISION, "subdirectory": null},
+                "repository_snapshot": {"kind": "git", "remote": "https://example.test/wiring.git", "base_revision": BASE_REVISION, "subdirectory": null},
             "permission_policy": {"tools": ["shell"], "network": false},
             "timeout_seconds": 60,
             "budgets": {},

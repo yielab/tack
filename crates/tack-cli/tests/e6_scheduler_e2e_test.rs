@@ -245,6 +245,16 @@ fn claim_once(
 fn create_project_and_item(server: &ServerGuard, name: &str) -> (String, String) {
     let project = tack(server, &["init", name, "--type", "software"]);
     let project_id = project["id"].as_str().unwrap().to_owned();
+    let patched = reqwest::blocking::Client::new()
+        .patch(format!("{}/api/projects/{project_id}", server.base_url))
+        .bearer_auth(OPERATOR_TOKEN)
+        .json(&serde_json::json!({
+            "code_origin": "url",
+            "repository": "https://example.test/e6-cli.git",
+        }))
+        .send()
+        .expect("set the project's repository");
+    assert!(patched.status().is_success(), "{}", patched.status());
     let item = tack(server, &["add", "work to run", "-p", &project_id]);
     let item_id = item["id"].as_str().unwrap().to_owned();
     (project_id, item_id)
@@ -263,8 +273,6 @@ fn create_agent_profile(server: &ServerGuard) -> String {
     );
     profile["agent_profile_id"].as_str().unwrap().to_owned()
 }
-
-const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 #[allow(clippy::too_many_arguments)]
 fn create_execution_args(
@@ -288,12 +296,6 @@ fn create_execution_args(
         agent_profile_id.to_string(),
         "--harness".to_string(),
         "codex".to_string(),
-        "--agent-profile-snapshot".to_string(),
-        r#"{"name":"profile","instructions":"work safely","tool_policy":{},"timeout_seconds":60,"budgets":{}}"#.to_string(),
-        "--repository".to_string(),
-        format!(
-            r#"{{"kind":"git","remote":"https://example.test/e6-cli.git","base_revision":"{BASE_REVISION}"}}"#
-        ),
         "--permission-policy".to_string(),
         r#"{"tools":["shell"],"network":false}"#.to_string(),
         "--timeout-seconds".to_string(),

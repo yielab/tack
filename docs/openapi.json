@@ -7782,7 +7782,6 @@
           "selector_id",
           "agent_profile_id",
           "requested_harness_kind",
-          "agent_profile_snapshot",
           "permission_policy",
           "budgets",
           "environment",
@@ -7792,9 +7791,6 @@
         "properties": {
           "agent_profile_id": {
             "type": "string"
-          },
-          "agent_profile_snapshot": {
-            "description": "`tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,\ntool_policy, timeout_seconds, budgets}`) — untyped here because that\ntype lives in `tack-orch`, which does not derive `ToSchema` (see\n`RunnerV1ErrorEnvelope`'s doc comment for the same architectural\nreason). Validated against the real nested struct server-side at\nenqueue time."
           },
           "budgets": {},
           "environment": {},
@@ -7817,7 +7813,7 @@
             "description": "`false` declines the runner's branch push for this run. The runner's own\nconfiguration decides whether a push exists; `true` never enables one."
           },
           "repository_snapshot": {
-            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project; a project with no code is `invalid_request`\n(`details.reason = \"project_has_no_code\"`)."
+            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
           },
           "requested_harness_kind": {
             "type": "string"

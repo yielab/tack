@@ -1089,7 +1089,6 @@ async fn create_execution_rejects_an_unknown_status_map_policy_id() {
     let body = json!({
         "item_id": fx.item_id, "idempotency_key": "bad-policy", "selector_kind": "exact_runner",
         "selector_id": RUNNER_ID, "agent_profile_id": "profile-c2", "requested_harness_kind": "codex",
-        "agent_profile_snapshot": {"name": "P", "instructions": "work", "tool_policy": {}, "timeout_seconds": 60, "budgets": {}},
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/c2.git", "base_revision": "abc123def456abc123def456abc123def456abc", "subdirectory": null},
         "permission_policy": {"tools": [], "network": false},
         "timeout_seconds": 60, "budgets": {}, "environment": {}, "metadata": {},

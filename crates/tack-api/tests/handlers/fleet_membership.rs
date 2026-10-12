@@ -90,7 +90,7 @@ async fn create_project_and_item(app: &axum::Router) -> String {
         app,
         "POST",
         "/api/projects",
-        json!({"name": "H8 fleet membership", "project_type": "software"}),
+        json!({"name": "H8 fleet membership", "project_type": "software", "code_origin": "url", "repository": "https://example.test/h8.git"}),
         &operator_headers(),
     )
     .await;
@@ -171,7 +171,6 @@ fn execution_request_body(
         "requested_harness_kind": "codex",
         "requested_model_provider": "openai",
         "requested_model_id": "opaque/model-h8",
-        "agent_profile_snapshot": {"name": "profile", "instructions": "work safely", "tool_policy": {}, "timeout_seconds": 60, "budgets": {}},
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/h8.git", "base_revision": BASE_REVISION, "subdirectory": null},
         "permission_policy": {"tools": ["shell"], "network": false},
         "timeout_seconds": 60,

@@ -62,22 +62,10 @@ describe('buildCreateExecutionInput', () => {
     expect(input.status_map_policy_id).toBeNull();
   });
 
-  // Pinned against `crates/tack-orch/src/execution/types.rs`'s
-  // `AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds,
-  // budgets }` — exactly the fields E5's handoff found are validated
-  // server-side one layer deeper than `CreateExecution`'s own untyped
-  // `Value`. A missing field here would pass this frontend's own type-check
-  // (the wire type is `unknown`) but fail live, the same way E5's first
-  // draft did with an empty-object default.
-  it('agent_profile_snapshot carries exactly the fields AgentProfileSnapshot requires', () => {
+  it('sends no agent_profile_snapshot: the server loads the profile by id', () => {
     const input = buildCreateExecutionInput(values());
-    const snap = input.agent_profile_snapshot as Record<string, unknown>;
-    expect(Object.keys(snap).sort()).toEqual(['budgets', 'instructions', 'name', 'timeout_seconds', 'tool_policy']);
-    expect(snap.name).toBe('Reviewer');
-    expect(snap.instructions).toBe('Review the diff');
-    expect(snap.tool_policy).toEqual({ read: true });
-    expect(snap.timeout_seconds).toBe(1800);
-    expect(snap.budgets).toEqual({});
+    expect(input).not.toHaveProperty('agent_profile_snapshot');
+    expect(input.agent_profile_id).toBeTruthy();
   });
 
   // Pinned against `RepositorySnapshot { kind, remote, base_revision, subdirectory }`.
