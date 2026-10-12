@@ -14,7 +14,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// Build config from CLI overrides → env vars → ~/.tackrc → defaults.
+    /// Build config from CLI overrides → env vars → ~/.tackrc → the local server's `api-token` file → defaults.
     pub fn load(base_url_override: Option<String>, token_override: Option<String>) -> Self {
         let rc = read_rc_file().unwrap_or_default();
 
@@ -25,7 +25,8 @@ impl Config {
 
         let token = token_override
             .or_else(|| std::env::var("TACK_API_TOKEN").ok())
-            .or(rc.token);
+            .or(rc.token)
+            .or_else(read_server_token_file);
 
         Self { base_url, token }
     }
@@ -55,4 +56,11 @@ fn read_rc_file() -> Option<RcFile> {
     let path = std::path::Path::new(&home).join(".tackrc");
     let content = std::fs::read_to_string(path).ok()?;
     toml::from_str(&content).ok()
+}
+
+/// The token a local `tack serve` keeps in `<data root>/api-token`.
+fn read_server_token_file() -> Option<String> {
+    let path = dirs::data_dir()?.join("tack").join("api-token");
+    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
+    (!token.is_empty()).then_some(token)
 }

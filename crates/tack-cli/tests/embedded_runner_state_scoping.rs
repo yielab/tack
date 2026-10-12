@@ -50,6 +50,7 @@ fn start_server_with_runner(shared_cwd: &Path, root: tempfile::TempDir) -> Serve
         .current_dir(shared_cwd)
         .env("TACK_HOST", "127.0.0.1")
         .env("TACK_PORT", port.to_string())
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .env("TACK_DATABASE_URL", &database_url)
         .env("TACK_STORAGE_DIR", &storage_dir)
         .env_remove("TACK_RUNNER_STATE_DIR")
@@ -72,7 +73,7 @@ fn start_server_with_runner(shared_cwd: &Path, root: tempfile::TempDir) -> Serve
 /// genuinely wedged, never that it was merely slow to spawn, migrate and
 /// bind while the rest of this suite runs alongside it.
 fn wait_for_ready(base_url: &str, child: &mut Child) {
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     let ready = poll_until(Duration::from_secs(30), || {
         if let Some(status) = child.try_wait().expect("poll child status") {
             panic!("tack serve --with-runner exited early during startup: {status}");
@@ -97,7 +98,7 @@ fn wait_for_ready(base_url: &str, child: &mut Child) {
 /// success never approaches this bound — only a busy machine or an actual
 /// regression does.
 fn wait_for_active_runner(base_url: &str) -> Option<String> {
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     poll_until(Duration::from_secs(30), || {
         let response = client
             .get(format!("{base_url}/api/runners"))

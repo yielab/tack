@@ -305,6 +305,38 @@ fn config_save_and_reload() {
     }
 }
 
+// ── the local server's token file is the last place the token is looked for ──
+
+#[test]
+fn token_falls_back_to_the_local_servers_file() {
+    let guard = tempfile::tempdir().expect("temporary directory");
+    // SAFETY: single-threaded test; no concurrent env reads in this process.
+    unsafe {
+        std::env::set_var("HOME", guard.path());
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("TACK_API_TOKEN");
+    }
+    let data_root = dirs::data_dir().expect("data dir").join("tack");
+    assert!(
+        data_root.starts_with(guard.path()),
+        "data root escaped HOME"
+    );
+    std::fs::create_dir_all(&data_root).unwrap();
+    std::fs::write(data_root.join("api-token"), "from-the-server-file").unwrap();
+
+    assert_eq!(
+        Config::load(None, None).token.as_deref(),
+        Some("from-the-server-file")
+    );
+
+    config::save("http://test:9999", Some("from-tackrc")).unwrap();
+    assert_eq!(
+        Config::load(None, None).token.as_deref(),
+        Some("from-tackrc"),
+        "~/.tackrc outranks the server's file"
+    );
+}
+
 // ── start (GET project workflow, then PATCH item to the first in-progress status) ──
 
 #[tokio::test]

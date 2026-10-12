@@ -48,6 +48,10 @@ BIN_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 WORK="$(mktemp -d)"; PORT=${SMOKE_PORT:-3399}
 API="http://127.0.0.1:$PORT"
 PRINCIPAL='x-tack-principal: smoke-operator'
+# Every server this script starts on loopback requires a token; they all
+# inherit this one, and every call to them carries it.
+export TACK_API_TOKEN="smoke-$$-$RANDOM$RANDOM"
+AUTH="Authorization: Bearer $TACK_API_TOKEN"
 SERVER_PID=""; RUNNER_A_PID=""; RUNNER_B_PID=""; STANDALONE_PID=""; NORUNNER_PID=""; FAILED=0
 GATEWAY_PID=""; RUNNER_GW_PID=""; NL2_PID=""
 UNMET=()   # observed release-criteria shortfalls, printed in the release verdict
@@ -89,13 +93,13 @@ wait_for() {
   return 1
 }
 
-attempts_json() { curl -sf -H "$PRINCIPAL" "$API/api/executions/$1/attempts"; }
+attempts_json() { curl -H "$AUTH" -sf -H "$PRINCIPAL" "$API/api/executions/$1/attempts"; }
 
 # Creates one execution request and echoes its request_id (empty on refusal).
 # $1 item  $2 runner  $3 harness kind  $4 provider  $5 model  $6 timeout_s
 # $7 environment JSON object  $8 idempotency key
 create_execution() {
-  curl -sf -X POST "$API/api/executions" -H 'content-type: application/json' -H "$PRINCIPAL" \
+  curl -H "$AUTH" -sf -X POST "$API/api/executions" -H 'content-type: application/json' -H "$PRINCIPAL" \
     -d "$(jq -n \
       --arg item "$1" --arg runner "$2" --arg kind "$3" \
       --arg provider "$4" --arg model "$5" --argjson timeout "$6" \
@@ -184,15 +188,15 @@ step 3 "Start the API server (no agent-fleet backend configured — its absence 
 ( cd "$WORK" && exec env TACK_DATABASE_URL="sqlite:$WORK/smoke.db?mode=rwc" TACK_PORT="$PORT" \
   TACK_STORAGE_DIR="$WORK/storage" "$BIN_DIR/tack" serve >"$WORK/server.log" 2>&1 ) &
 SERVER_PID=$!
-for _ in $(seq 1 40); do curl -sf "$API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
-curl -sf "$API/api/health" >/dev/null && ok "server healthy on $PORT with no agent-fleet backend configured" \
+for _ in $(seq 1 40); do curl -H "$AUTH" -sf "$API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
+curl -H "$AUTH" -sf "$API/api/health" >/dev/null && ok "server healthy on $PORT with no agent-fleet backend configured" \
   || { bad "server never came up"; tail -20 "$WORK/server.log"; exit 1; }
 
 step 4 "Create a project and an item (the plan of record)"
-PROJ=$(curl -sf -X POST "$API/api/projects" -H 'content-type: application/json' \
+PROJ=$(curl -H "$AUTH" -sf -X POST "$API/api/projects" -H 'content-type: application/json' \
   -d '{"name":"smoke","project_type":"software"}' | jq -r '.id // .project.id // empty')
 [ -n "$PROJ" ] && ok "project $PROJ" || bad "could not create project"
-ITEM=$(curl -sf -X POST "$API/api/projects/$PROJ/items" -H 'content-type: application/json' \
+ITEM=$(curl -H "$AUTH" -sf -X POST "$API/api/projects/$PROJ/items" -H 'content-type: application/json' \
   -d '{"title":"smoke item","item_type":"task"}' | jq -r '.id // .item.id // empty')
 [ -n "$ITEM" ] && ok "item $ITEM" || bad "could not create item"
 
@@ -200,7 +204,7 @@ step 5 "Register a pending runner and issue its enrollment token (operator surfa
 # Real contract (docs/openapi.json): POST /api/runners/enrollment, body CreatePendingRunner
 # requires name + total_capacity + available_capacity; the raw token is returned exactly
 # once here and only its SHA-256 hash is stored.
-ENROLL_JSON=$(curl -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
+ENROLL_JSON=$(curl -H "$AUTH" -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
   -d '{"name":"smoke-runner","total_capacity":1,"available_capacity":1}')
 ENROLL=$(jq -r '.enrollment_token // empty' <<<"$ENROLL_JSON")
 RUNNER_ID=$(jq -r '.runner_id // empty' <<<"$ENROLL_JSON")
@@ -217,7 +221,7 @@ mkdir -p "$WORK/runner-state"; chmod 700 "$WORK/runner-state"
     "$BIN_DIR/tack-runner" --api-url "$API" --state-dir "$WORK/runner-state" \
     >"$WORK/runner.log" 2>&1 ) &
 RUNNER_A_PID=$!; disown "$RUNNER_A_PID"
-HEARTBEAT=$(wait_for "curl -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_ID\") | select(.state==\"active\" and .last_heartbeat_at!=null) | .last_heartbeat_at'" 30 || true)
+HEARTBEAT=$(wait_for "curl -H '$AUTH' -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_ID\") | select(.state==\"active\" and .last_heartbeat_at!=null) | .last_heartbeat_at'" 30 || true)
 if [ -n "$HEARTBEAT" ]; then
   ok "runner active, heartbeat at $HEARTBEAT"
 elif grep -qiE "protocol client is not configured|ProtocolUnavailable" "$WORK/runner.log"; then
@@ -229,7 +233,7 @@ else
 fi
 
 # What the scheduler will actually accept: the runner's own enrollment snapshot.
-CAPS=$(curl -sf "$API/api/runners" | jq -c ".data[] | select(.runner_id==\"$RUNNER_ID\") | .capability_snapshot")
+CAPS=$(curl -H "$AUTH" -sf "$API/api/runners" | jq -c ".data[] | select(.runner_id==\"$RUNNER_ID\") | .capability_snapshot")
 printf '   declared model combinations per harness:\n'
 jq -r '.harnesses[]? | "     \(.harness_kind): \([.model_combinations[]? | .model_provider + "/" + (.model_ids | join(","))] | join(" ") | if . == "" then "(none declared)" else . end)"' <<<"$CAPS"
 
@@ -242,7 +246,7 @@ git -C "$SMOKE_REPO" -c user.email=smoke@invalid -c user.name=smoke add README.m
 git -C "$SMOKE_REPO" -c user.email=smoke@invalid -c user.name=smoke commit -qm "smoke fixture"
 SMOKE_REV=$(git -C "$SMOKE_REPO" rev-parse HEAD)
 
-AGENT_PROFILE=$(curl -sf -X POST "$API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
+AGENT_PROFILE=$(curl -H "$AUTH" -sf -X POST "$API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
   -d '{"name":"smoke-profile","instructions":"Print the single word DONE and exit. Do not modify any files."}' \
   | jq -r '.agent_profile_id // empty')
 [ -n "$AGENT_PROFILE" ] && ok "agent profile $AGENT_PROFILE" || bad "could not create agent profile"
@@ -286,11 +290,11 @@ else
   [ -n "$(jq -r '.workspace_id // empty' <<<"$ATT")" ] \
     && ok "isolated workspace $(jq -r '.workspace_id' <<<"$ATT" | head -c 24)… provisioned" \
     || bad "no workspace_id on the attempt"
-  EVENTS=$(curl -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7/attempts/1/events" | jq '.data | length')
+  EVENTS=$(curl -H "$AUTH" -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7/attempts/1/events" | jq '.data | length')
   if [ "${EVENTS:-0}" -gt 0 ]; then ok "event timeline: $EVENTS events"
   else unmet "the runner never submits events or artifacts (engine has no AttemptDataProtocol call site), so a verified artifact and idempotent event timeline cannot be shown from a real runner (server routes are proven only by fake-client tests)"; fi
   ok "no agent-fleet backend was configured anywhere in this run, and execution still ran"
-  REQ7_STATE=$(curl -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7" | jq -r '.state // empty')
+  REQ7_STATE=$(curl -H "$AUTH" -sf -H "$PRINCIPAL" "$API/api/executions/$REQ7" | jq -r '.state // empty')
   if [ "$REQ7_STATE" = "succeeded" ]; then ok "request state propagated to succeeded"
   else note "request state is '$REQ7_STATE' although its attempt succeeded — a known propagation gap, still present"; fi
 fi
@@ -354,14 +358,14 @@ for kind in codex claude-code docket; do
       bad "$kind: request never claimable — the $kind adapter declares no matching model_combinations and no supported model_passthrough attestation for $provider/$model, so the scheduler has no eligible pairing to place (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected)"
       unmet "attempts through $kind: $kind/$provider/$model is not declared schedulable by this runner"
     fi
-    curl -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
+    curl -H "$AUTH" -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
   fi
 done
 
 step 9 "Restart recovery: kill the runner mid-attempt — no silent loss, no blind duplicate"
 # A dedicated runner on shim binaries in BOTH modes: restart mechanics are
 # harness-agnostic and this step kills processes, not model providers.
-ENROLL_B_JSON=$(curl -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
+ENROLL_B_JSON=$(curl -H "$AUTH" -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
   -d '{"name":"smoke-runner-b","total_capacity":1,"available_capacity":1}')
 ENROLL_B=$(jq -r '.enrollment_token // empty' <<<"$ENROLL_B_JSON")
 RUNNER_B=$(jq -r '.runner_id // empty' <<<"$ENROLL_B_JSON")
@@ -373,7 +377,7 @@ start_runner_b() {
   RUNNER_B_PID=$!; disown "$RUNNER_B_PID"
 }
 start_runner_b
-if wait_for "curl -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_B\") | select(.state==\"active\") | .runner_id'" 30 >/dev/null; then
+if wait_for "curl -H '$AUTH' -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_B\") | select(.state==\"active\") | .runner_id'" 30 >/dev/null; then
   ok "second runner $RUNNER_B active"
 else
   bad "second runner never became active"
@@ -432,7 +436,7 @@ else
 fi
 
 touch "$RELEASE_FILE"   # from here on the shim completes instead of hanging
-REQUEUE=$(curl -sf -X POST "$API/api/executions/$REQ9/requeue" -H 'content-type: application/json' -H "$PRINCIPAL" \
+REQUEUE=$(curl -H "$AUTH" -sf -X POST "$API/api/executions/$REQ9/requeue" -H 'content-type: application/json' -H "$PRINCIPAL" \
   -d "{\"recovery_key\":\"smoke-requeue-$$\",\"reason\":\"smoke step 9: operator-confirmed restart recovery\"}" \
   | jq -r '.state // .result // empty')
 note "operator requeue answered: ${REQUEUE:-<no body>}"
@@ -461,14 +465,14 @@ SA_DB_URL="sqlite:$SA_WORK/tack.db?mode=rwc"
     TACK_STORAGE_DIR="$SA_WORK/storage" TACK_RUNNER_STATE_DIR="$SA_WORK/state" \
     "$BIN_DIR/tack" serve --with-runner >"$SA_WORK/server.log" 2>&1 ) &
 STANDALONE_PID=$!
-for _ in $(seq 1 40); do curl -sf "$STANDALONE_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
-if curl -sf "$STANDALONE_API/api/health" >/dev/null; then
+for _ in $(seq 1 40); do curl -H "$AUTH" -sf "$STANDALONE_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
+if curl -H "$AUTH" -sf "$STANDALONE_API/api/health" >/dev/null; then
   ok "standalone 'tack serve --with-runner' up on $STANDALONE_PORT, one process, one command"
 else
   bad "standalone server never came up"; tail -20 "$SA_WORK/server.log" | sed 's/^/   | /'
 fi
 
-SA_RUNNER=$(wait_for "curl -sf '$STANDALONE_API/api/runners' | jq -r '.data[] | select(.state==\"active\" and .last_heartbeat_at!=null) | .runner_id'" 30 || true)
+SA_RUNNER=$(wait_for "curl -H '$AUTH' -sf '$STANDALONE_API/api/runners' | jq -r '.data[] | select(.state==\"active\" and .last_heartbeat_at!=null) | .runner_id'" 30 || true)
 if [ -n "$SA_RUNNER" ]; then
   ok "embedded runner $SA_RUNNER self-provisioned and active — no 'tack runner enroll', no token ever entered"
 else
@@ -476,11 +480,11 @@ else
   tail -20 "$SA_WORK/server.log" | sed 's/^/   | /'
 fi
 
-SA_PROJ=$(curl -sf -X POST "$STANDALONE_API/api/projects" -H 'content-type: application/json' \
+SA_PROJ=$(curl -H "$AUTH" -sf -X POST "$STANDALONE_API/api/projects" -H 'content-type: application/json' \
   -d '{"name":"smoke-standalone","project_type":"software"}' | jq -r '.id // .project.id // empty')
-SA_ITEM=$(curl -sf -X POST "$STANDALONE_API/api/projects/$SA_PROJ/items" -H 'content-type: application/json' \
+SA_ITEM=$(curl -H "$AUTH" -sf -X POST "$STANDALONE_API/api/projects/$SA_PROJ/items" -H 'content-type: application/json' \
   -d '{"title":"standalone smoke item","item_type":"task"}' | jq -r '.id // .item.id // empty')
-SA_PROFILE=$(curl -sf -X POST "$STANDALONE_API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
+SA_PROFILE=$(curl -H "$AUTH" -sf -X POST "$STANDALONE_API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
   -d '{"name":"smoke-standalone-profile","instructions":"Print the single word DONE and exit. Do not modify any files."}' \
   | jq -r '.agent_profile_id // empty')
 if [ -n "$SA_PROJ" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
@@ -529,15 +533,15 @@ NR_WORK="$WORK/norunner"; mkdir -p "$NR_WORK"
     TACK_STORAGE_DIR="$NR_WORK/storage" \
     "$BIN_DIR/tack" serve >"$NR_WORK/server.log" 2>&1 ) &
 NORUNNER_PID=$!
-for _ in $(seq 1 40); do curl -sf "$NORUNNER_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
-if curl -sf "$NORUNNER_API/api/health" >/dev/null; then ok "default server up on $NORUNNER_PORT"
+for _ in $(seq 1 40); do curl -H "$AUTH" -sf "$NORUNNER_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
+if curl -H "$AUTH" -sf "$NORUNNER_API/api/health" >/dev/null; then ok "default server up on $NORUNNER_PORT"
 else bad "default server never came up"; tail -20 "$NR_WORK/server.log" | sed 's/^/   | /'; fi
 
 # A settle window long enough for a wrongly-started self-provisioning runner
 # to have appeared and heartbeat at least once, so absence here is a real
 # absence rather than a race against the check.
 sleep 4
-NR_RUNNERS=$(curl -sf "$NORUNNER_API/api/runners" | jq '.data | length')
+NR_RUNNERS=$(curl -H "$AUTH" -sf "$NORUNNER_API/api/runners" | jq '.data | length')
 if [ "${NR_RUNNERS:-1}" = "0" ]; then
   ok "GET /api/runners is empty under default 'tack serve' — queried directly, not inferred from a log line"
 else
@@ -673,7 +677,7 @@ PYEOF
   TACK_RUNNER_SECRET_VALUE="$GW_KEY" "$BIN_DIR/tack" runner secret set vercel-ai-gateway/default --state-dir "$GW_STATE" >/dev/null 2>&1 \
     || bad "could not restore the correct fake gateway key before the live dispatch"
 
-  ENROLL_GW_JSON=$(curl -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
+  ENROLL_GW_JSON=$(curl -H "$AUTH" -sf -X POST "$API/api/runners/enrollment" -H 'content-type: application/json' \
     -d '{"name":"smoke-runner-gateway","total_capacity":1,"available_capacity":1}')
   ENROLL_GW=$(jq -r '.enrollment_token // empty' <<<"$ENROLL_GW_JSON")
   RUNNER_GW=$(jq -r '.runner_id // empty' <<<"$ENROLL_GW_JSON")
@@ -715,14 +719,14 @@ SHIM
       "$BIN_DIR/tack-runner" --api-url "$API" --state-dir "$GW_STATE" \
       >"$WORK/runner-gateway.log" 2>&1 ) &
   RUNNER_GW_PID=$!; disown "$RUNNER_GW_PID"
-  if wait_for "curl -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_GW\") | select(.state==\"active\" and .last_heartbeat_at!=null) | .runner_id'" 30 >/dev/null; then
+  if wait_for "curl -H '$AUTH' -sf '$API/api/runners' | jq -r '.data[] | select(.runner_id==\"$RUNNER_GW\") | select(.state==\"active\" and .last_heartbeat_at!=null) | .runner_id'" 30 >/dev/null; then
     ok "gateway runner active"
   else
     bad "gateway runner never became active"
     tail -8 "$WORK/runner-gateway.log" | sed 's/^/   | /'
   fi
 
-  GW_CAPS=$(curl -sf "$API/api/runners" | jq -c ".data[] | select(.runner_id==\"$RUNNER_GW\") | .capability_snapshot")
+  GW_CAPS=$(curl -H "$AUTH" -sf "$API/api/runners" | jq -c ".data[] | select(.runner_id==\"$RUNNER_GW\") | .capability_snapshot")
   GW_GOT_MODEL=$(jq -r --arg m "$GW_MODEL" \
     '.harnesses[]? | select(.harness_kind=="claude-code") | .model_combinations[]? | select(.model_provider=="vercel-ai-gateway") | .model_ids[]? | select(.==$m)' \
     <<<"$GW_CAPS" 2>/dev/null | head -1)
@@ -815,7 +819,7 @@ else
 fi
 kill "$NL2_PID" 2>/dev/null; wait "$NL2_PID" 2>/dev/null; NL2_PID=""
 
-LOOPBACK_SECRETS=$(curl -s -o /dev/null -w '%{http_code}' "$API/api/local-runner/secrets")
+LOOPBACK_SECRETS=$(curl -H "$AUTH" -s -o /dev/null -w '%{http_code}' "$API/api/local-runner/secrets")
 if [ "$LOOPBACK_SECRETS" = "200" ]; then
   ok "the identical route is a real 200 on this run's own loopback server — confirms the boundary this step tests is bind mode, not --with-runner"
 else

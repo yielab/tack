@@ -437,3 +437,113 @@ async fn cross_site_writes_are_refused() {
     assert!(post != 403 && post != 421, "configured origin gave {post}");
     server.abort();
 }
+
+/// With no token configured, a loopback server reads or creates `api-token`
+/// beside its database: the API answers 401 to a caller with no credentials,
+/// 200 to the file's value as a Bearer token or as the `tack_session` cookie
+/// that `GET /` sets, the file is owner-only, a second start reuses it, and
+/// the board WebSocket upgrade accepts the cookie from a loopback origin.
+#[tokio::test]
+async fn api_always_has_a_token() {
+    let dir = tempfile::tempdir().expect("data dir");
+    let config_in = |dir: &std::path::Path| AppConfig {
+        database_url: format!("sqlite:{}?mode=rwc", dir.join("tack.db").display()),
+        ..AppConfig::default()
+    };
+    let mut config = config_in(dir.path());
+    config.ensure_api_token().expect("create the token");
+    let file = config.api_token_file().expect("token file");
+    assert_eq!(file, dir.path().join("api-token"));
+    let token = std::fs::read_to_string(&file).expect("token file content");
+    assert_eq!(token.len(), 43, "32 bytes as unpadded base64url: {token}");
+    assert!(
+        token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    );
+    assert_eq!(config.api_token.as_deref(), Some(token.as_str()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "the token file must be owner-only");
+    }
+    let mut second = config_in(dir.path());
+    second.ensure_api_token().expect("reuse the token");
+    assert_eq!(second.api_token.as_deref(), Some(token.as_str()));
+
+    let (app, _) = common::test_app_with_config(config).await;
+    let (address, server) = spawn_real_server(app).await;
+
+    assert_eq!(
+        status_with_headers(address, reqwest::Method::GET, "/api/projects", &[]).await,
+        401
+    );
+    let bearer = format!("Bearer {token}");
+    assert_eq!(
+        status_with_headers(
+            address,
+            reqwest::Method::GET,
+            "/api/projects",
+            &[("authorization", &bearer)]
+        )
+        .await,
+        200
+    );
+
+    let page = reqwest::get(format!("http://{address}/"))
+        .await
+        .expect("GET /");
+    let set_cookie = page
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("GET / sets the session cookie")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        set_cookie,
+        format!("tack_session={token}; Path=/api; HttpOnly; SameSite=Strict")
+    );
+    let cookie = format!("tack_session={token}");
+    assert_eq!(
+        status_with_headers(
+            address,
+            reqwest::Method::GET,
+            "/api/projects",
+            &[("cookie", &cookie)]
+        )
+        .await,
+        200
+    );
+    let wrong = "tack_session=not-the-token";
+    assert_eq!(
+        status_with_headers(
+            address,
+            reqwest::Method::GET,
+            "/api/projects",
+            &[("cookie", wrong)]
+        )
+        .await,
+        401
+    );
+    let cross_site_write = status_with_headers(
+        address,
+        reqwest::Method::POST,
+        "/api/projects",
+        &[("cookie", &cookie), ("sec-fetch-site", "cross-site")],
+    )
+    .await;
+    assert_eq!(
+        cross_site_write, 403,
+        "a cookie does not lift the cross-site check"
+    );
+
+    let project = create_project_via_listener(address, Some(&token), "ws").await;
+    let handshake = format!(
+        "GET /api/projects/{project}/boards/live HTTP/1.1\r\nHost: {address}\r\nOrigin: http://localhost:5173\r\nCookie: {cookie}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: tack.v1\r\n\r\n"
+    );
+    let response = raw_handshake(address, &handshake).await;
+    assert!(response.starts_with("HTTP/1.1 101"), "{response}");
+    server.abort();
+}

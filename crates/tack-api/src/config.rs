@@ -28,8 +28,10 @@ pub struct AppConfig {
     #[serde(default = "default_max_body_size_bytes")]
     pub max_body_size_bytes: usize,
 
-    /// Optional Bearer token. When set, all `/api/*` routes (except `/api/health`)
-    /// require `Authorization: Bearer <token>`. Leave unset for pure-local use.
+    /// Bearer token. When set, all `/api/*` routes (except `/api/health`)
+    /// require `Authorization: Bearer <token>` or the `tack_session` cookie.
+    /// Left unset on a loopback bind, the server reads or creates
+    /// `api-token` beside the database file at start (`ensure_api_token`).
     #[serde(default)]
     pub api_token: Option<String>,
 
@@ -296,6 +298,33 @@ impl AppConfig {
         is_loopback_host(self.host.as_str())
     }
 
+    /// The file that holds the generated API token: `api-token` in the
+    /// directory of the database file. `None` for an in-memory database.
+    pub fn api_token_file(&self) -> Option<std::path::PathBuf> {
+        let db = self.db_file_path()?;
+        let dir = match db.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+            _ => std::path::PathBuf::from("."),
+        };
+        Some(dir.join("api-token"))
+    }
+
+    /// With no token configured on a loopback bind, make the token the file
+    /// `api_token_file` names: read it, or create it (`0600`, 32 random bytes
+    /// as unpadded base64url, no newline). An in-memory database has no
+    /// directory to keep it in, so its token lives only in this process.
+    pub fn ensure_api_token(&mut self) -> anyhow::Result<()> {
+        if self.api_token.as_deref().is_some_and(|t| !t.is_empty()) || !self.binds_loopback() {
+            return Ok(());
+        }
+        let token = match self.api_token_file() {
+            Some(path) => read_or_create_token(&path)?,
+            None => new_token(),
+        };
+        self.api_token = Some(token);
+        Ok(())
+    }
+
     /// Reject a configuration that would expose an unauthenticated API or
     /// send credentials to a malformed configured endpoint.
     pub fn validate_security(&self) -> anyhow::Result<()> {
@@ -479,6 +508,54 @@ impl AppConfig {
             config.allow_unauthenticated_nonloopback = v == "1" || v.eq_ignore_ascii_case("true");
         }
         config
+    }
+}
+
+/// 32 random bytes (two v4 UUIDs) as unpadded base64url.
+fn new_token() -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut bytes = [0u8; 32];
+    bytes[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    bytes[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    let mut out = String::with_capacity(43);
+    for chunk in bytes.chunks(3) {
+        let mut buffer = 0u32;
+        for (i, byte) in chunk.iter().enumerate() {
+            buffer |= u32::from(*byte) << (16 - 8 * i);
+        }
+        for i in 0..=chunk.len() {
+            out.push(ALPHABET[((buffer >> (18 - 6 * i)) & 0x3f) as usize] as char);
+        }
+    }
+    out
+}
+
+fn read_or_create_token(path: &std::path::Path) -> anyhow::Result<String> {
+    use std::io::Write;
+    if let Some(dir) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    match options.open(path) {
+        Ok(mut file) => {
+            let token = new_token();
+            file.write_all(token.as_bytes())?;
+            file.sync_all()?;
+            Ok(token)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let token = std::fs::read_to_string(path)?.trim().to_string();
+            anyhow::ensure!(
+                !token.is_empty(),
+                "{} is empty; delete it and start again",
+                path.display()
+            );
+            Ok(token)
+        }
+        Err(e) => Err(anyhow::Error::new(e).context(format!("creating {}", path.display()))),
     }
 }
 

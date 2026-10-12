@@ -75,3 +75,6 @@ cloudflared.yml
 
 # cargo-mutants output
 mutants.out*/
+
+# The local server writes its API token beside its database.
+api-token

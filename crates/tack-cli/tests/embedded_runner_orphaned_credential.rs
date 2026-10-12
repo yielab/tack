@@ -49,6 +49,7 @@ fn start_server(database_url: &str, storage_dir: &Path) -> ServerGuard {
         .arg("--with-runner")
         .env("TACK_HOST", "127.0.0.1")
         .env("TACK_PORT", port.to_string())
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .env("TACK_DATABASE_URL", database_url)
         .env("TACK_STORAGE_DIR", storage_dir)
         .env_remove("TACK_RUNNER_STATE_DIR")
@@ -105,7 +106,7 @@ fn start_server(database_url: &str, storage_dir: &Path) -> ServerGuard {
 }
 
 fn wait_for_ready(base_url: &str, child: &mut Child) {
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     let ready = poll_until(Duration::from_secs(15), || {
         if let Some(status) = child.try_wait().expect("poll child status") {
             panic!("tack serve --with-runner exited early during startup: {status}");
@@ -130,7 +131,7 @@ fn wait_for_ready(base_url: &str, child: &mut Child) {
 /// this test exists to catch. Generous rather than tight given this machine
 /// runs several agents' builds and test suites concurrently.
 fn wait_for_active_runner(base_url: &str) -> Option<String> {
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     poll_until(Duration::from_secs(30), || {
         let response = client
             .get(format!("{base_url}/api/runners"))

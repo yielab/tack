@@ -71,6 +71,9 @@ fn board_websocket_is_authorized(req: &Request, state: &AppState) -> bool {
     let Some(expected) = state.config.api_token.as_deref() else {
         return true;
     };
+    if session_cookie_matches(req, expected) {
+        return true;
+    }
     let provided = req
         .headers()
         .get_all(header::SEC_WEBSOCKET_PROTOCOL)
@@ -82,6 +85,52 @@ fn board_websocket_is_authorized(req: &Request, state: &AppState) -> bool {
     provided
         .as_deref()
         .is_some_and(|token| constant_time_eq(token, expected.as_bytes()))
+}
+
+/// Name of the cookie the page response sets so a browser reaches `/api`
+/// without holding the token in script.
+pub const SESSION_COOKIE: &str = "tack_session";
+
+/// True when a `Cookie` header carries `tack_session=<expected>`.
+fn session_cookie_matches(req: &Request, expected: &str) -> bool {
+    req.headers()
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().strip_prefix("tack_session="))
+        .any(|value| constant_time_eq(value.as_bytes(), expected.as_bytes()))
+}
+
+/// Middleware for everything outside `/api`: an HTML page answered to a
+/// `GET` that names this server in `Host` also sets the session cookie.
+pub async fn set_session_cookie(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let wanted = req.method() == axum::http::Method::GET
+        && !req.uri().path().starts_with("/api")
+        && req
+            .headers()
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|host| host_is_accepted(&bare_host(host), &state));
+    let mut response = next.run(req).await;
+    let is_html = response.status().is_success()
+        && response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("text/html"));
+    if let (true, true, Some(token)) = (wanted, is_html, state.config.api_token.as_deref())
+        && let Ok(value) = HeaderValue::from_str(&format!(
+            "{SESSION_COOKIE}={token}; Path=/api; HttpOnly; SameSite=Strict"
+        ))
+    {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
 }
 
 /// Decode the unpadded base64url form permitted by a WebSocket subprotocol.
@@ -209,8 +258,9 @@ pub async fn refuse_cross_site(
     Ok(next.run(req).await)
 }
 
-/// Middleware: if `TACK_API_TOKEN` is configured, require a matching
-/// `Authorization: Bearer <token>` header on every request except `/api/health`.
+/// Middleware: if a token is configured, require a matching
+/// `Authorization: Bearer <token>` header or `tack_session` cookie on every
+/// request except `/api/health`.
 ///
 /// Uses a constant-time comparison to prevent timing-oracle attacks. This is
 /// the only credential a request can hold — there is no per-user account to
@@ -252,6 +302,7 @@ pub async fn require_token(
         Some(tok) if constant_time_eq(tok.as_bytes(), expected.as_bytes()) => {
             Ok(next.run(req).await)
         }
+        _ if session_cookie_matches(&req, expected) => Ok(next.run(req).await),
         _ => Err(StatusCode::UNAUTHORIZED),
     }
 }
