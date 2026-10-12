@@ -2,13 +2,45 @@ use axum::Json;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{ErrorKind, Write};
+use std::path::{Component, PathBuf};
 use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::router::AppState;
+
+/// Resolves an attachment's stored path under `storage_dir`, refusing any path
+/// that would leave it: an absolute path, a `..` component, a symlink, or a
+/// resolved location outside the canonical storage directory. A file that is
+/// simply missing resolves to its joined path, so the caller's own read or
+/// remove reports it.
+fn contained_path(storage_dir: &std::path::Path, storage_path: &str) -> Result<PathBuf, ApiError> {
+    let refused = || ApiError::NotFound("Attachment file not found".to_string());
+    let relative = std::path::Path::new(storage_path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(refused());
+    }
+    let candidate = storage_dir.join(relative);
+    match std::fs::symlink_metadata(&candidate) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(refused()),
+        Ok(_) => {
+            let root = std::fs::canonicalize(storage_dir).map_err(|_| refused())?;
+            let resolved = std::fs::canonicalize(&candidate).map_err(|_| refused())?;
+            if resolved.starts_with(&root) {
+                Ok(resolved)
+            } else {
+                Err(refused())
+            }
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(candidate),
+        Err(_) => Err(refused()),
+    }
+}
 
 /// POST /api/items/:id/attachments
 ///
@@ -190,7 +222,7 @@ pub async fn download_attachment(
 
     // Read file from disk
     let storage_base = PathBuf::from(&state.config.storage_dir);
-    let file_path = storage_base.join(&attachment.storage_path);
+    let file_path = contained_path(&storage_base, &attachment.storage_path)?;
 
     let file_data = std::fs::read(&file_path).map_err(|e| {
         warn!(error = %e, path = ?file_path, "Failed to read file");
@@ -208,10 +240,17 @@ pub async fn download_attachment(
     let response = (
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, attachment.mime_type.as_str()),
+            (header::CONTENT_TYPE, "application/octet-stream"),
             (
                 header::CONTENT_DISPOSITION,
-                &format!("attachment; filename=\"{}\"", attachment.filename),
+                &format!(
+                    "attachment; filename=\"{}\"",
+                    // A quote, backslash or control character would end or
+                    // break the quoted string; the name is only a suggestion.
+                    attachment
+                        .filename
+                        .replace(|c: char| c == '"' || c == '\\' || c.is_control(), "_")
+                ),
             ),
             (header::CONTENT_LENGTH, &file_data.len().to_string()),
         ],
@@ -299,7 +338,7 @@ pub async fn delete_attachment(
 
     // Delete file from disk
     let storage_base = PathBuf::from(&state.config.storage_dir);
-    let file_path = storage_base.join(&attachment.storage_path);
+    let file_path = contained_path(&storage_base, &attachment.storage_path)?;
 
     if file_path.exists() {
         std::fs::remove_file(&file_path).map_err(|e| {
