@@ -114,11 +114,14 @@ impl Sandbox {
         if Path::new("/lib64").exists() {
             push(&mut argv, &["--ro-bind", "/lib64", "/lib64"]);
         }
+        // bwrap resolves a relative path against the program's working
+        // directory (the workspace), not the runner's; a storage directory
+        // configured as `./storage` would name nothing there.
         let bind = |argv: &mut Vec<String>, flag: &str, source: &Path, destination: &Path| {
             argv.extend([
                 flag.to_owned(),
-                source.display().to_string(),
-                destination.display().to_string(),
+                absolute(source).display().to_string(),
+                absolute(destination).display().to_string(),
             ]);
         };
         if let Some(home) = &self.home {
@@ -146,10 +149,14 @@ impl Sandbox {
             }
         }
         push(&mut argv, &["--die-with-parent", "--new-session", "--"]);
-        argv.push(program.display().to_string());
+        argv.push(absolute(program).display().to_string());
         argv.extend(args.iter().cloned());
         Some((bwrap.clone(), argv))
     }
+}
+
+fn absolute(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Looks for `bwrap` on `path` and remembers `home`; both are the runner's

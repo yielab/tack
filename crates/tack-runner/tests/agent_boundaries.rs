@@ -455,6 +455,40 @@ fn sandbox_detect_reports_none_without_bwrap_on_path() {
     assert_eq!(sandbox::detect(None, None).kind, sandbox::SandboxKind::None);
 }
 
+#[test]
+fn sandbox_binds_only_absolute_paths() {
+    let dir = root("sandbox-relative");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("directory");
+    let bwrap = bin.join("bwrap");
+    std::fs::write(&bwrap, "#!/bin/sh\n").expect("fake bwrap");
+    std::fs::set_permissions(&bwrap, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+    let home = dir.path().join("home");
+    let found = sandbox::detect(Some(bin.as_os_str()), Some(&home));
+    let (_, argv) = found
+        .wrap(
+            std::path::Path::new("./harness"),
+            &[],
+            std::path::Path::new("./storage/workspace"),
+            std::path::Path::new("./storage/scratch"),
+            &[],
+        )
+        .expect("wrapped");
+    // bwrap resolves a relative path against the workspace it runs in, so a
+    // storage directory configured relative to the runner would name nothing.
+    let paths: Vec<&String> = argv
+        .windows(3)
+        .filter(|w| w[0] == "--bind" || w[0] == "--ro-bind")
+        .flat_map(|w| [&w[1], &w[2]])
+        .chain(argv.iter().skip_while(|a| *a != "--").nth(1))
+        .collect();
+    assert!(!paths.is_empty());
+    for path in paths {
+        assert!(path.starts_with('/'), "{path} is relative in {argv:?}");
+    }
+}
+
 #[tokio::test]
 async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
     let dir = root("sandbox-argv");
