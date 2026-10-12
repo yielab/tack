@@ -144,6 +144,7 @@ what the agent will read for a given item:
 | Param | In | Type | Required | Description |
 |---|---|---|---|---|
 | `id` | path | `string` | yes | Item ID |
+| `profile_id` | query | `string` | no | The agent profile to compose with; the project's default when absent. |
 
 | Status | Meaning | Schema |
 |---|---|---|

@@ -1903,7 +1903,7 @@
         "tags": [
           "items"
         ],
-        "summary": "`GET /api/items/{id}/agent-context` — what the agent will read for a given item:\nthe project's default profile's instructions, the item's title and description,\nthe item's brief when it has one, and the project's definition_of_done when set.",
+        "summary": "`GET /api/items/{id}/agent-context` — what the agent will read for a given item:\nthe profile named by `profile_id` (else the project's default profile)'s instructions, the item's title and description,\nthe item's brief when it has one, and the project's definition_of_done when set.",
         "operationId": "get_item_agent_context",
         "parameters": [
           {
@@ -1914,6 +1914,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "profile_id",
+            "in": "query",
+            "description": "The agent profile to compose with; the project's default when absent.",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
