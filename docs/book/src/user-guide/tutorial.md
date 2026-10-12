@@ -25,7 +25,8 @@ Tack is a single self-contained binary — web UI, REST API, and SQLite engine i
 file. One line installs it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+TAG=v0.1.0-beta.10
+curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack            # starts the server + web UI at http://localhost:3210
 ```
 
@@ -150,14 +151,14 @@ profile, the model and where the agent works — and asks only what you might wa
 - **Profile** — the project's default, or the built-in **Implementer**; this tutorial picks
   *Announcement writer*.
 - **Ask before each action** pauses the agent before each tool call until you answer on the
-  task; **Allow network access** lets it reach the network. Both start off.
+  task; **Web tools** lets it use its own web-fetch and web-search tools. Both start off.
 - **Advanced for this run** is where this run differs from the project: the **Agent** (here
   **Claude Code**), the model (the agent's default is **Supported** for Claude Code), the branch,
   the tools allowed, and the timeout. **Verify the result**, **Push the branch** and **Open a pull
   request** are shown disabled, each with the reason and the setting that turns it on (see
   [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt)).
 
-<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Allow network access unticked; Advanced for this run open with Agent Claude Code, The agent's default (recommended) marked Supported, Branch, Claude Code's tool checkboxes, Allowed tools, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
+<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, The agent's default (recommended) marked Supported, Branch, Claude Code's tool checkboxes, Allowed tools, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
 
 ## 9. Run it and track it
 

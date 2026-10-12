@@ -16,7 +16,8 @@ on the task. A desktop app, or the same binary as a server. One SQLite file, no 
 </p>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+TAG=v0.1.0-beta.10
+curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack serve --with-runner        # then open http://localhost:3210
 ```
 
@@ -165,7 +166,8 @@ board opens in its own window; behind it runs the same `tack serve --with-runner
 desktop, a host other people reach, or automation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+TAG=v0.1.0-beta.10
+curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack serve --with-runner
 ```
 
