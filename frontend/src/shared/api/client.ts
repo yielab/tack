@@ -177,7 +177,7 @@ export async function requestWithHeaders<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(apiUrl(path), { ...init, headers, redirect: 'error' });
+  const res = await fetch(apiUrl(path), { ...init, headers, credentials: 'same-origin', redirect: 'error' });
 
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return { data: undefined as T, headers: res.headers };
@@ -187,7 +187,7 @@ export async function requestWithHeaders<T>(
 /** Fetch a binary payload (downloads, exports, backups). */
 export async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
   const headers = authHeaders(init?.headers);
-  const res = await fetch(apiUrl(path), { ...init, headers, redirect: 'error' });
+  const res = await fetch(apiUrl(path), { ...init, headers, credentials: 'same-origin', redirect: 'error' });
   if (!res.ok) throw await toApiError(res);
   return res.blob();
 }
@@ -198,7 +198,7 @@ export async function requestBlob(path: string, init?: RequestInit): Promise<Blo
  */
 export async function requestForm<T>(path: string, form: FormData): Promise<T> {
   const headers = authHeaders();
-  const res = await fetch(apiUrl(path), { method: 'POST', body: form, headers, redirect: 'error' });
+  const res = await fetch(apiUrl(path), { method: 'POST', body: form, headers, credentials: 'same-origin', redirect: 'error' });
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

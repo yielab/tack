@@ -592,8 +592,6 @@ export async function createExecution(
       requested_harness_kind: 'codex',
       requested_model_provider: 'openai',
       requested_model_id: modelId,
-      agent_profile_snapshot: { name: 'e2e', instructions: 'e2e', tool_policy: {}, timeout_seconds: 3600, budgets: {} },
-      repository_snapshot: { kind: 'git', remote: 'git@example.com:org/repo.git', base_revision: 'main', subdirectory: null },
       permission_policy: { tools: [], network: false },
       budgets: {},
       environment: {},

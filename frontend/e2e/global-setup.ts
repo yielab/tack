@@ -1,4 +1,8 @@
-import { request as pwRequest } from '@playwright/test';
+import { request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { API, SHARED_PROJECT_NAME } from './helpers';
 
 /**
@@ -14,6 +18,29 @@ import { API, SHARED_PROJECT_NAME } from './helpers';
  * configured `globalSetup` (verified against the installed `playwright`
  * package's own task ordering), so the API is already reachable here.
  */
+/**
+ * The server builds an execution's repository from the project, and refuses a
+ * run for a project with no code. Point the shared project at a throwaway git
+ * repository (one commit) so the specs that create executions can.
+ */
+async function giveProjectCode(context: APIRequestContext, projectId: string): Promise<void> {
+  const repo = mkdtempSync(join(tmpdir(), 'tack-e2e-repo-'));
+  const git = (...args: string[]) =>
+    execFileSync(
+      'git',
+      ['-c', 'user.name=e2e', '-c', 'user.email=e2e@example.invalid', '-c', 'commit.gpgsign=false', ...args],
+      { cwd: repo, stdio: 'ignore' },
+    );
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(repo, 'README.md'), 'e2e\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'init');
+  const res = await context.patch(`${API}/projects/${projectId}`, {
+    data: { code_origin: 'folder', repository: repo, workspace_mode: 'clone' },
+  });
+  if (!res.ok()) throw new Error(`global setup: give the shared project code failed: ${res.status()}`);
+}
+
 export default async function globalSetup(): Promise<void> {
   const context = await pwRequest.newContext();
   try {
@@ -23,6 +50,7 @@ export default async function globalSetup(): Promise<void> {
       : undefined;
     if (found) {
       process.env.E2E_SHARED_PROJECT_ID = found.id;
+      await giveProjectCode(context, found.id);
       return;
     }
 
@@ -35,6 +63,7 @@ export default async function globalSetup(): Promise<void> {
     const body = await res.json();
     if (body?.id) {
       process.env.E2E_SHARED_PROJECT_ID = body.id;
+      await giveProjectCode(context, body.id);
       return;
     }
 
@@ -46,6 +75,7 @@ export default async function globalSetup(): Promise<void> {
       : undefined;
     if (!created) throw new Error('global setup: shared project not found by name after create');
     process.env.E2E_SHARED_PROJECT_ID = created.id;
+    await giveProjectCode(context, created.id);
   } finally {
     await context.dispose();
   }

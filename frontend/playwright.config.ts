@@ -37,8 +37,15 @@ const API_PORT = 3399;
 const WEB_PORT = 5199;
 const isCI = !!process.env.CI;
 
-// The test runner (and helpers/api.spec) talk to the API directly on this origin.
-process.env.E2E_API_ORIGIN = process.env.E2E_API_ORIGIN || `http://127.0.0.1:${API_PORT}`;
+// The API's fixed, non-secret token. The browser stores none: the Vite dev proxy
+// presents it as the `tack_session` cookie, the way the real server's cookie
+// signs a browser in.
+const API_TOKEN = 'e2e-api-token';
+
+// The test runner (and helpers/api.spec) reach the API on this origin. It is
+// the SPA's own origin, so those calls pass through the same proxy and carry
+// the same session cookie as the browser; nothing in a spec sets a token.
+process.env.E2E_API_ORIGIN = process.env.E2E_API_ORIGIN || `http://localhost:${WEB_PORT}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -142,6 +149,7 @@ export default defineConfig({
         TACK_DATABASE_URL: 'sqlite:e2e.db?mode=rwc',
         TACK_STORAGE_DIR: './storage-e2e',
         TACK_LOG_LEVEL: 'warn',
+        TACK_API_TOKEN: API_TOKEN,
         // A fixed, non-secret token so `execution-attempt-detail.spec.ts`
         // can prove the real "happy path" decision-resolve flow through the
         // production router. Additive — every other spec is unaffected, since
@@ -172,6 +180,7 @@ export default defineConfig({
       env: {
         VITE_API_URL: '/api', // force same-origin proxy, ignore any .env override
         VITE_PROXY_TARGET: `http://127.0.0.1:${API_PORT}`, // proxy to the isolated e2e API
+        VITE_PROXY_SESSION_TOKEN: API_TOKEN,
       },
     },
   ],

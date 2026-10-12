@@ -141,6 +141,7 @@ describe('shared/api/client', () => {
 
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer secret');
+    expect(fetchMock.mock.calls[0][1]!.credentials).toBe('same-origin');
   });
 
   it('keeps a bearer token only in the current session and never migrates the legacy local value', () => {
@@ -162,6 +163,7 @@ describe('shared/api/client', () => {
 
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.has('Authorization')).toBe(false);
+    expect(fetchMock.mock.calls[0][1]!.credentials).toBe('same-origin');
   });
 
   it('requestBlob returns a Blob and throws ApiError on failure', async () => {
