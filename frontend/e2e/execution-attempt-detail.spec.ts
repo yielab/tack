@@ -367,11 +367,16 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
           started_at: new Date(Date.now() - 60_000).toISOString(),
           ended_at: new Date().toISOString(),
         },
-        usage: null,
+        usage: {
+          tokens_in: { value: null, source: 'not_measured' },
+          tokens_out: { value: null, source: 'not_measured' },
+          duration_ms: { value: null, source: 'not_measured' },
+          cost_usd: { value: null, source: 'not_measured' },
+        },
         final_event_checkpoint: null,
       },
     });
-    expect(completion.ok(), `completion failed: ${completion.status()}`).toBeTruthy();
+    expect(completion.ok(), `completion failed: ${completion.status()} ${await completion.text()}`).toBeTruthy();
 
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
