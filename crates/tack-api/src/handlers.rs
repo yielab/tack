@@ -17,6 +17,7 @@ pub mod metrics;
 pub mod mrp;
 pub mod outline;
 pub mod projects;
+pub mod pull_requests;
 pub mod roles;
 pub mod runner_admin;
 pub mod runner_protocol;

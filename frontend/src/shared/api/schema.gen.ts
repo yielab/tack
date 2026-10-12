@@ -599,7 +599,8 @@ export interface paths {
         /**
          * `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
          *     records the operator's verdict on one attempt. One verdict per attempt: a
-         *     second is `409` with `details.reason = "already_reviewed"`.
+         *     second is `409` with `details.reason = "already_reviewed"`. Accepting an
+         *     attempt that pushed its branch opens its pull request and returns the URL.
          */
         post: operations["review_execution_attempt"];
         delete?: never;
@@ -3058,6 +3059,8 @@ export interface components {
         /** @description An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`. */
         AttemptReview: {
             note?: string | null;
+            /** @description The pull request an accepted attempt opened, when it opened one. */
+            pull_request_url?: string | null;
             reviewed_at: string;
             verdict: string;
         };
@@ -5518,7 +5521,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The recorded review */
+            /** @description The recorded review; an accepted attempt that pushed its branch adds `pull_request_url` */
             200: {
                 headers: {
                     [name: string]: unknown;

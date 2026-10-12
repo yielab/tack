@@ -126,7 +126,8 @@ fn local_runner_routes() -> Router<AppState> {
 /// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
-    let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock);
+    let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock)
+        .with_app_state(state.clone());
     let decision_clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let decision_state =
         decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
