@@ -222,10 +222,14 @@ binary. The [architecture overview](docs/book/src/developer/index.md) has the de
 
 ## Built alongside
 
-**[docket](https://github.com/yielab/docket)**, made with Tack, also works on its own. It
-gives a repository a team of coding agents and governs what they may do: roles, policies,
-approvals and an audit trail, in YAML next to your code. Tack runs it as one of its four
-agents.
+Two tools made with Tack that also work on their own:
+
+- **[docket](https://github.com/yielab/docket)** gives a repository a team of coding agents
+  and governs what they may do: roles, policies, approvals and an audit trail, in YAML next to
+  your code. Tack runs it as one of its four agents.
+- **prill** is an independent verifier of agents' changes. It re-runs the change on clean
+  code in a sandbox with no network and writes a merge-readiness pack. It is one of the
+  verifiers a Tack runner can use. It isn't published yet.
 
 ## Status
 
