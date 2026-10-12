@@ -23,6 +23,7 @@ pub mod locate;
 pub mod opencode;
 pub mod process;
 pub mod redact;
+pub mod sandbox;
 pub mod sha256;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -223,7 +224,10 @@ pub fn discover(
     own_environment: &BTreeMap<String, String>,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
+    let (path, home) = locate::snapshot();
+    let sandbox = sandbox::detect(path.as_deref(), home.as_deref());
     let machine = (
+        &sandbox,
         limits,
         staging_root,
         secrets,
@@ -239,6 +243,7 @@ pub fn discover(
 }
 
 type Machine<'a> = (
+    &'a sandbox::Sandbox,
     &'a process::ProcessLimits,
     &'a Path,
     &'a SecretStore,
@@ -249,7 +254,9 @@ type Machine<'a> = (
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (limits, staging_root, secrets, providers, request_may_reference, own_environment): Machine<'_>,
+    (sandbox, limits, staging_root, secrets, providers, request_may_reference, own_environment): Machine<
+        '_,
+    >,
     grammar: G,
 ) {
     let kind = grammar.descriptor().kind;
@@ -264,6 +271,7 @@ fn install<G: local_process::HarnessGrammar>(
             if registry
                 .register(
                     harness
+                        .with_probed_sandbox(sandbox.clone())
                         .with_providers(providers.clone())
                         .with_environment(request_may_reference.to_vec(), own_environment.clone()),
                 )
@@ -437,6 +445,14 @@ impl HarnessAdapter for AdapterRegistry {
         self.resolve(&kind)
             .ok()?
             .decision_channels(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
+    async fn sandbox(&self, handle: &LocalRunHandle) -> Option<String> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .sandbox(&LocalRunHandle { process_id: inner })
             .await
     }
 

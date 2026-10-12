@@ -156,6 +156,20 @@ fn handle_gateway_request(mut stream: TcpStream, authorized_hits: &AtomicUsize) 
 /// stream-json lines the adapter reads, so the attempt ends `succeeded` with
 /// this version in its `actual_execution`.
 fn install_fake_claude(dir: &Path) -> PathBuf {
+    // A `bwrap` that runs its command as it is: this test reads a file the
+    // fake `claude` writes beside itself, which a real sandbox would hide.
+    let bwrap = dir.join("bwrap");
+    std::fs::write(
+        &bwrap,
+        "#!/bin/sh\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
+    )
+    .expect("write pass-through bwrap");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bwrap, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod pass-through bwrap");
+    }
     let script = dir.join("claude");
     std::fs::write(
         &script,

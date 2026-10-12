@@ -352,6 +352,12 @@ pub trait HarnessAdapter: Send + Sync {
         None
     }
 
+    /// What the run is confined to (`"bwrap"` or `"none"`); `None` for an
+    /// adapter that does not say.
+    async fn sandbox(&self, _handle: &LocalRunHandle) -> Option<String> {
+        None
+    }
+
     /// The steps a running harness reports as it goes, for the attempt's
     /// timeline. `None` for a harness that reports none. Taken once per
     /// handle, like [`Self::decision_channels`].
@@ -596,6 +602,7 @@ where
                     base_revision: Some(workspace.base_revision.clone()),
                     process_id: None,
                     environment_names: Vec::new(),
+                    sandbox: None,
                 },
             )
             .await?;
@@ -645,6 +652,7 @@ where
                     base_revision: Some(spec.workspace.base_revision.clone()),
                     process_id: record.process_id.clone(),
                     environment_names: spec.work.request.environment.keys().cloned().collect(),
+                    sandbox: self.adapter.sandbox(&handle).await,
                 },
             )
             .await

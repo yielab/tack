@@ -165,6 +165,7 @@ fn render(report: &bootstrap::DiscoveryReport) {
             .iter()
             .find(|h| h.harness_kind.as_str() == kind)
         {
+            render_sandbox(capability);
             render_model_info(capability);
         }
         println!();
@@ -250,6 +251,17 @@ fn render_feature(name: &str, value: &CapabilityValue) {
     match &value.reason {
         Some(reason) => println!("  {name:<10} {support:<11} — {reason}"),
         None => println!("  {name:<10} {support}"),
+    }
+}
+
+/// One line: `sandbox: bwrap`, or `sandbox: none (<why>)`.
+fn render_sandbox(capability: &HarnessCapability) {
+    let field = |name: &str| capability.additional.get(name).and_then(|v| v.as_str());
+    match (field("sandbox"), field("sandbox_reason")) {
+        (Some("bwrap"), _) => println!("  sandbox:     bwrap"),
+        (Some(kind), Some(reason)) => println!("  sandbox:     {kind} ({reason})"),
+        (Some(kind), None) => println!("  sandbox:     {kind}"),
+        (None, _) => {}
     }
 }
 

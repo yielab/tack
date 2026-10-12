@@ -21,7 +21,8 @@ use tack_runner::{
             RunContext, RunReport,
         },
         opencode::OpencodeGrammar,
-        process::{ProcessLimits, ProcessResult},
+        process::{ProcessExit, ProcessLimits, ProcessResult},
+        sandbox,
     },
 };
 
@@ -45,6 +46,7 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
+    sandbox_binds: &[],
 };
 
 /// The shared fake harness in `spawn_child` mode: it writes `marker` the
@@ -290,6 +292,7 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
+    sandbox_binds: &[".claude"],
 };
 
 /// Runs the shared fake harness to completion in its default `success` mode.
@@ -388,4 +391,303 @@ fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
             other => panic!("{kind}: expected a rejection, got {other:?}"),
         }
     }
+}
+
+/// The shared fake harness in the given mode; the run succeeds when it exits 0.
+struct ModeGrammar(Vec<(&'static str, String)>);
+
+impl HarnessGrammar for ModeGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        &RUN_FAKE
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        Ok(Invocation {
+            env: self
+                .0
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+            ..Default::default()
+        })
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(
+            matches!(result.exit, ProcessExit::Exited(0)),
+            serde_json::json!({}),
+        )
+    }
+}
+
+fn claude_spec(workspace: PathBuf) -> ExecutionSpec {
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind =
+        tack_orch::execution::HarnessKind::new("claude-code");
+    spec
+}
+
+fn sandboxed_harness<G: HarnessGrammar>(
+    grammar: G,
+    state: &std::path::Path,
+    sandbox: sandbox::Sandbox,
+) -> LocalProcessHarness<G> {
+    LocalProcessHarness::discover(
+        grammar,
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        state.join("staging"),
+        SecretStore::file(state.join("secrets.json")),
+    )
+    .expect("the fake harness script is locatable")
+    .with_sandbox(sandbox)
+}
+
+#[test]
+fn sandbox_detect_reports_none_without_bwrap_on_path() {
+    let empty = root("sandbox-empty-path");
+    let found = sandbox::detect(Some(empty.path().as_os_str()), None);
+    assert_eq!(found.kind, sandbox::SandboxKind::None);
+    assert_eq!(found.reason, "bwrap not on PATH");
+    assert_eq!(sandbox::detect(None, None).kind, sandbox::SandboxKind::None);
+}
+
+#[tokio::test]
+async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
+    let dir = root("sandbox-argv");
+    let state = dir.path().join("state");
+    let home = dir.path().join("home");
+    let bin = dir.path().join("bin");
+    let workspace = dir.path().join("workspace");
+    for path in [&state, &home.join(".claude"), &bin, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    std::fs::write(state.join("token"), "secret").expect("state file");
+    let argv_file = dir.path().join("argv");
+    let bwrap = bin.join("bwrap");
+    std::fs::write(
+        &bwrap,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\n",
+            argv_file.display()
+        ),
+    )
+    .expect("fake bwrap");
+    std::fs::set_permissions(&bwrap, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+
+    let found = sandbox::detect(Some(bin.as_os_str()), Some(&home));
+    assert_eq!(found.kind, sandbox::SandboxKind::Bwrap);
+    let harness = sandboxed_harness(RunGrammar, &state, found);
+    let spec = claude_spec(workspace.clone());
+    let handle = harness.start(&spec).await.expect("the run starts");
+    assert_eq!(
+        harness.sandbox(&handle).await.as_deref(),
+        Some("bwrap"),
+        "the start report names the sandbox"
+    );
+    harness.wait(&handle).await.expect("the run finishes");
+
+    let argv = std::fs::read_to_string(&argv_file).expect("bwrap ran");
+    let args: Vec<&str> = argv.lines().collect();
+    let bound = |source: &std::path::Path| {
+        let source = source.display().to_string();
+        args.windows(3)
+            .any(|w| w[0] == "--bind" && w[1] == source && w[2] == source)
+    };
+    assert!(bound(&workspace), "the workspace is bound: {args:?}");
+    assert!(
+        bound(&home.join(".claude")),
+        "the claude-code bind: {args:?}"
+    );
+    assert!(
+        args.iter()
+            .all(|arg| !arg.contains(state.join("token").to_str().unwrap())
+                && *arg != state.to_str().unwrap()),
+        "the state dir is not bound: {args:?}"
+    );
+    assert!(args.contains(&"--die-with-parent") && args.contains(&"--unshare-pid"));
+    assert_eq!(
+        args.iter()
+            .position(|arg| *arg == "--")
+            .map(|at| args[at + 1]),
+        Some(env!("CARGO_MANIFEST_DIR").to_owned() + "/src/harness/fixtures/fake_harness.sh")
+            .as_deref()
+    );
+}
+
+#[tokio::test]
+async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
+    let (path, _) = tack_runner::harness::locate::snapshot();
+    if sandbox::detect(path.as_deref(), None).kind != sandbox::SandboxKind::Bwrap {
+        println!("skipped: bwrap is not on PATH");
+        return;
+    }
+    let dir = root("sandbox-real");
+    let state = dir.path().join("state");
+    let home = dir.path().join("home");
+    let workspace = dir.path().join("workspace");
+    for path in [&state, &home, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    std::fs::write(state.join("token"), "secret").expect("state file");
+    std::fs::write(workspace.join("visible"), "ok").expect("workspace file");
+    let found = sandbox::detect(path.as_deref(), Some(&home));
+
+    let run = |env: Vec<(&'static str, String)>| {
+        let (found, state, workspace) = (found.clone(), state.clone(), workspace.clone());
+        async move {
+            let harness = sandboxed_harness(ModeGrammar(env), &state, found);
+            let handle = harness
+                .start(&claude_spec(workspace))
+                .await
+                .expect("starts");
+            harness
+                .wait(&handle)
+                .await
+                .expect("finishes")
+                .terminal_state
+        }
+    };
+    let read = |path: &std::path::Path| {
+        vec![
+            ("TACK_FAKE_HARNESS_MODE", "read_relative".to_owned()),
+            ("TACK_FAKE_HARNESS_READ_PATH", path.display().to_string()),
+        ]
+    };
+    assert_eq!(
+        run(read(&workspace.join("visible"))).await,
+        AttemptState::Succeeded,
+        "the sandboxed harness runs and sees the workspace"
+    );
+    assert_eq!(
+        run(read(&state.join("token"))).await,
+        AttemptState::Failed,
+        "the state dir is not visible inside the sandbox"
+    );
+    let written = workspace.join("written");
+    assert_eq!(
+        run(vec![
+            ("TACK_FAKE_HARNESS_MODE", "write_scratch_file".to_owned()),
+            (
+                "TACK_FAKE_HARNESS_SCRATCH_DIR",
+                written.display().to_string()
+            ),
+        ])
+        .await,
+        AttemptState::Succeeded
+    );
+    assert!(written.join("marker").exists(), "the workspace is writable");
+}
+
+struct DescriptorGrammar(&'static HarnessDescriptor);
+
+impl HarnessGrammar for DescriptorGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        self.0
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        Ok(Invocation::default())
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(
+            matches!(result.exit, ProcessExit::Exited(0)),
+            serde_json::json!({}),
+        )
+    }
+}
+
+#[tokio::test]
+async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason() {
+    let dir = root("sandbox-per-harness");
+    let (state, home, bin, workspace) = (
+        dir.path().join("state"),
+        dir.path().join("home"),
+        dir.path().join("bin"),
+        dir.path().join("workspace"),
+    );
+    for path in [&state, &home, &bin, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let executable = |path: &std::path::Path, text: String| {
+        std::fs::write(path, text).expect("script");
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("executable");
+    };
+    let breaks = bin.join("breaks-in-bwrap");
+    executable(&breaks, "#!/bin/sh\necho 1.0.0\n".to_owned());
+    let works = bin.join("works-in-bwrap");
+    executable(&works, "#!/bin/sh\necho 1.0.0\n".to_owned());
+    let log = dir.path().join("bwrap-calls");
+    executable(
+        &bin.join("bwrap"),
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\nwhile [ \"$1\" != -- ]; do shift; done\nshift\ncase \"$1\" in\n  *breaks-in-bwrap) echo 'execvp: No such file or directory' >&2; echo second line >&2; exit 1 ;;\nesac\nexec \"$@\"\n",
+            log = log.display()
+        ),
+    );
+    let broken: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        kind: "breaks-in-bwrap",
+        program: Box::leak(breaks.display().to_string().into_boxed_str()),
+        ..FAKE
+    }));
+    let working: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        kind: "works-in-bwrap",
+        program: Box::leak(works.display().to_string().into_boxed_str()),
+        ..FAKE
+    }));
+    let machine = sandbox::detect(Some(bin.as_os_str()), Some(&home));
+    assert_eq!(machine.kind, sandbox::SandboxKind::Bwrap);
+    let discover = |descriptor: &'static HarnessDescriptor| {
+        LocalProcessHarness::discover(
+            DescriptorGrammar(descriptor),
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+            state.join("staging"),
+            SecretStore::file(state.join("secrets.json")),
+        )
+        .expect("the fake program is locatable")
+        .with_probed_sandbox(machine.clone())
+    };
+    let (broken_harness, working_harness) = (discover(broken), discover(working));
+
+    let broken_report = tack_runner::harness::HarnessProbe::probe(&broken_harness)
+        .await
+        .additional;
+    assert_eq!(broken_report["sandbox"], "none");
+    assert_eq!(
+        broken_report["sandbox_reason"],
+        "breaks-in-bwrap does not start inside bwrap: execvp: No such file or directory"
+    );
+    let working_report = tack_runner::harness::HarnessProbe::probe(&working_harness)
+        .await
+        .additional;
+    assert_eq!(working_report["sandbox"], "bwrap");
+
+    let calls_before = std::fs::read_to_string(&log).expect("bwrap was probed");
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind =
+        tack_orch::execution::HarnessKind::new("breaks-in-bwrap");
+    let handle = broken_harness.start(&spec).await.expect("the run starts");
+    assert_eq!(
+        broken_harness.sandbox(&handle).await.as_deref(),
+        Some("none")
+    );
+    broken_harness
+        .wait(&handle)
+        .await
+        .expect("the run finishes");
+    assert_eq!(
+        std::fs::read_to_string(&log).expect("log"),
+        calls_before,
+        "the unsandboxed spawn did not go through bwrap"
+    );
 }

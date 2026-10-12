@@ -56,7 +56,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("recovery-observation.response.json", 0x01d2_022b_e95f_3987),
     ("refresh.request.json", 0xc418_5ef4_fc72_fcc8),
     ("refresh.response.json", 0x96eb_7891_d95e_45c7),
-    ("start.request.json", 0x79f4_4fb9_4121_ebea),
+    ("start.request.json", 0x801f_130f_eef6_a289),
     ("start.response.json", 0x9f07_b1b7_473e_75a3),
 ];
 

@@ -387,6 +387,9 @@ pub struct StartReport {
     /// the request set. Reported with the running phase so the board can
     /// show them; empty is not sent.
     pub environment_names: Vec<String>,
+    /// What the harness runs inside (`bwrap` or `none`), reported with the
+    /// running phase.
+    pub sandbox: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

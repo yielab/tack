@@ -531,6 +531,7 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
+    sandbox_binds: &[],
 };
 
 struct ConfiguredGrammar;
@@ -592,6 +593,7 @@ async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
         install(
             &mut found,
             (
+                &crate::harness::sandbox::Sandbox::none("test"),
                 &limits,
                 state.path(),
                 &store,

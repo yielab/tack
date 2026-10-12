@@ -529,6 +529,9 @@ impl PullProtocol for HttpPullProtocol {
                 if !report.environment_names.is_empty() {
                     body["environment_names"] = json!(report.environment_names);
                 }
+                if let Some(sandbox) = &report.sandbox {
+                    body["sandbox"] = json!(sandbox);
+                }
                 format!("/attempts/{}/start", report.attempt_id)
             }
         };
