@@ -8861,6 +8861,13 @@
           "created_at": {
             "type": "string"
           },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The composed prompt the agent is given, as stored with the request; null when absent."
+          },
           "item_id": {
             "type": "string"
           },

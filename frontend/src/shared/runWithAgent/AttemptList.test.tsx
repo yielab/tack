@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import AttemptList from './AttemptList';
 import type { AttemptSummary } from '../execution';
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
@@ -385,6 +388,78 @@ describe('AttemptList', () => {
       await flush();
       expect(c.querySelector('[data-testid="agent-steps"]')?.textContent).toContain('Wrote /repo/test.md');
       expect(c.textContent).toContain('The agent had no tools in this run');
+    });
+  });
+  describe('what the agent got', () => {
+    const FENCED = 'work safely\n\n<<<card-text id=abc123>>>\nFix the build\n<<</card-text id=abc123>>>\n';
+    const mockExecution = () =>
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/executions/exec_1')) return Promise.resolve(new Response(JSON.stringify({ request_id: 'exec_1', instructions: FENCED })));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] })));
+      });
+
+    it('shows_the_sandbox_the_variable_names_and_the_workspace', async () => {
+      mockExecution();
+      const c = mount([attempt({ sandbox: 'none', environment_names: ['PATH', 'HOME'], terminal_reason: { workspace_kept_at: '/w/1' } })]);
+      await flush();
+      expect(c.querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe("Not sandboxed: the agent has your user's access to this machine");
+      expect(c.querySelector('[data-testid="agent-got-env"]')?.textContent).toContain('PATH, HOME');
+      expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).toContain('/w/1');
+      expect(mount([attempt({ sandbox: 'bwrap' })]).querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe('Sandboxed with bwrap');
+    });
+
+    it('shows_the_prompt_verbatim_in_a_pre_once_opened', async () => {
+      const spy = mockExecution();
+      const c = mount([attempt()]);
+      expect(c.querySelector('[data-testid="agent-read"]')).toBeNull();
+      const details = c.querySelector('details') as HTMLDetailsElement;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      await flush();
+      await flush();
+      expect(spy).toHaveBeenCalledWith('/api/executions/exec_1', expect.anything());
+      const pre = c.querySelector('pre[data-testid="agent-read"]')!;
+      expect(pre.textContent).toBe(FENCED);
+      expect(pre.textContent).toContain('<<<card-text id=');
+    });
+
+    it('says_what_ended_the_run_in_the_deciding_words', () => {
+      const cases: Array<[unknown, string]> = [
+        [{ reason: 'exit_status', exit: 'Exited(3)', stream: {} }, 'The agent said it succeeded; its process exited with code 3'],
+        [{ reason: 'exit_status', exit: 'Signaled(9)', stream: {} }, 'The agent said it succeeded; its process ended: Signaled(9)'],
+        [{ code: 'tree_changed_after_verification' }, 'The tree changed after it was verified; nothing was pushed'],
+        [{ code: 'repository_config_changed', path: '.git/config' }, "The agent changed the repository's git configuration; nothing was pushed"],
+      ];
+      for (const [terminal_reason, sentence] of cases) {
+        const c = mount([attempt({ state: 'failed', terminal_reason: terminal_reason as AttemptSummary['terminal_reason'] })]);
+        expect(c.textContent).toContain(sentence);
+      }
+    });
+
+    it('opens_the_folder_through_the_desktop_command_and_copies_the_path_elsewhere', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/items/item-1')) return Promise.resolve(new Response(JSON.stringify({ item: { id: 'item-1', project_id: 'project-1' } }), { headers: { ETag: '"1"' } }));
+        if (url.endsWith('/projects/project-1')) return Promise.resolve(new Response(JSON.stringify({ id: 'project-1', workspace_mode: 'local_branch', repository: '/home/alice/app' })));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ artifact_id: 'a1', kind: 'patch', name: 'changes.patch', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-08-06T12:05:00Z' }] })));
+      });
+      (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+      try {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const dispose = render(() => <AttemptList requestId="exec_1" attempts={[attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]} itemId="item-1" />, container);
+        disposers.push(() => { dispose(); container.remove(); });
+        await flush();
+        await flush();
+        await flush();
+        const open = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Open folder') as HTMLButtonElement;
+        open.click();
+        await flush();
+        expect(invoke).toHaveBeenCalledWith('open_folder', { path: '/w/1', repository: '/home/alice/app' });
+      } finally {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+      }
     });
   });
 });

@@ -18,7 +18,10 @@ import {
   readAttemptUsage,
 } from './attemptFormat';
 import ArtifactDownloadPanel, { ArtifactView } from './ArtifactDownloadPanel';
-import { inDesktop, openPath } from './desktop';
+import { invoke } from '@tauri-apps/api/core';
+import { request } from '../api/client';
+import { SANDBOX_TEXT } from '../help/texts';
+import { inDesktop } from './desktop';
 import { describeStep, parseRunLog } from './runLog';
 import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
@@ -101,6 +104,46 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props)
   );
 };
 
+/** What the agent was given: its sandbox, the names of its environment variables, where it
+ *  worked, and (collapsed) the exact prompt it read. */
+const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspace: string | null }> = (props) => {
+  const [opened, setOpened] = createSignal(false);
+  const [instructions] = createResource(
+    () => (opened() ? props.requestId : undefined),
+    async (id) => {
+      try {
+        return (await request<{ instructions?: string | null }>(`/executions/${encodeURIComponent(id)}`)).instructions ?? null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  const sandbox = () => (props.attempt.sandbox === 'bwrap' || props.attempt.sandbox === 'none' ? SANDBOX_TEXT[props.attempt.sandbox] : null);
+  const names = () => props.attempt.environment_names ?? [];
+  return (
+    <section data-testid="agent-got" class="space-y-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+      <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent got</h4>
+      <p data-testid="agent-got-sandbox">{sandbox() ?? 'The runner did not say whether the agent was sandboxed'}</p>
+      <p data-testid="agent-got-env" class="break-all">
+        Environment variables: {names().length > 0 ? names().join(', ') : 'none reported'}
+      </p>
+      <Show when={props.workspace}>
+        {(w) => <p data-testid="agent-got-workspace" class="break-all">Workspace: {w()}</p>}
+      </Show>
+      <details onToggle={(e) => setOpened(e.currentTarget.open)}>
+        <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent read</summary>
+        <Show when={instructions.loading}><p class="text-xs">Loading the prompt…</p></Show>
+        <Show when={instructions()}>
+          {(text) => (
+            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-xs"
+              style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
+          )}
+        </Show>
+      </details>
+    </section>
+  );
+};
+
 /** The row of actions on a terminal attempt: see what it did. */
 const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; itemId?: string }> = (props) => {
   const n = () => props.attempt.attempt_number;
@@ -126,21 +169,29 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
       return null;
     }
   });
-  // A run in the user's own folder keeps no workspace; the project's folder is where the change is.
-  const [projectFolder] = createResource(
-    () => (patch() && typeof reason().workspace_kept_at !== 'string' ? props.itemId : undefined),
+  // The project's repository: where a run in the user's own folder leaves its change, and the
+  // root the desktop app checks a folder against before it opens one.
+  const [project] = createResource(
+    () => (patch() ? props.itemId : undefined),
     async (id) => {
       try {
-        const project = await api.projects.get((await api.items.get(id)).project_id);
-        const own = project.workspace_mode === 'local_branch' || project.workspace_mode === 'in_place';
-        return own && project.repository ? project.repository : null;
+        const p = await api.projects.get((await api.items.get(id)).project_id);
+        return {
+          repository: p.repository ?? null,
+          own: p.workspace_mode === 'local_branch' || p.workspace_mode === 'in_place',
+        };
       } catch {
         return null;
       }
     },
   );
+  const repository = () => project()?.repository ?? null;
   const folder = () =>
-    typeof reason().workspace_kept_at === 'string' ? (reason().workspace_kept_at as string) : (projectFolder() ?? null);
+    typeof reason().workspace_kept_at === 'string'
+      ? (reason().workspace_kept_at as string)
+      : project()?.own
+        ? repository()
+        : null;
   const result = () => (typeof reason().result === 'string' ? (reason().result as string) : null);
   const [steps] = createResource(log, async (l) => {
     try {
@@ -163,10 +214,11 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
       toast.error(`Couldn't copy the ${what.toLowerCase()}: ${text}`);
     }
   };
+  const canOpen = () => inDesktop() && repository() !== null;
   const openFolder = async (path: string) => {
-    if (!inDesktop()) return copy(path, 'Path');
+    if (!canOpen()) return copy(path, 'Path');
     try {
-      await openPath(path);
+      await invoke('open_folder', { path, repository: repository() });
     } catch (err) {
       toast.error(`Couldn't open ${path}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -182,7 +234,7 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
           <Show when={patch() && folder()}>
             {(path) => (
               <Button size="sm" variant="secondary" title={path()} onClick={() => void openFolder(path())}>
-                {inDesktop() ? 'Open folder' : 'Copy path'}
+                {canOpen() ? 'Open folder' : 'Copy path'}
               </Button>
             )}
           </Show>
@@ -195,6 +247,7 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
             <Button size="sm" variant="secondary" onClick={() => setLogOpen(true)}>Log</Button>
           </Show>
         </div>
+        <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
         <AgentReport steps={steps()} result={result()} />
         <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
         <Show when={plan() && props.itemId}>

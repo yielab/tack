@@ -129,6 +129,10 @@ export interface AttemptSummary {
   usage_economics: UsageEconomics;
   /** `null` when no pull request was opened by the run. */
   pull_request: AttemptPullRequest | null;
+  /** Names (never values) of the environment variables the runner gave the harness, as it reported at start. */
+  environment_names?: string[];
+  /** What the harness ran inside, as the runner reported at start; `null` when it did not say. */
+  sandbox?: string | null;
   /** `null` until a person accepts or rejects the attempt's result. */
   review: { verdict: 'accepted' | 'rejected'; note: string | null; reviewed_at: string } | null;
 }

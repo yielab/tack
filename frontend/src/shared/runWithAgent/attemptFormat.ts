@@ -290,6 +290,8 @@ export interface AttemptOutcome {
 export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {
   const reason = (terminalReason && typeof terminalReason === 'object' ? terminalReason : {}) as {
     code?: unknown;
+    reason?: unknown;
+    exit?: unknown;
     message?: unknown;
     artifacts?: unknown;
     workspace_kept_at?: unknown;
@@ -299,6 +301,18 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text = str(reason.message) ?? str(reason.code) ?? 'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
+    if (reason.reason === 'exit_status') {
+      // The harness's own stream said it succeeded; the process exit overruled it.
+      const exit = str(reason.exit) ?? '';
+      const code = /^Exited\((-?\d+)\)$/.exec(exit)?.[1];
+      whyStopped = code !== undefined
+        ? `The agent said it succeeded; its process exited with code ${code}`
+        : `The agent said it succeeded; its process ended: ${exit || 'without an exit status'}`;
+    } else if (reason.code === 'tree_changed_after_verification') {
+      whyStopped = 'The tree changed after it was verified; nothing was pushed';
+    } else if (reason.code === 'repository_config_changed') {
+      whyStopped = "The agent changed the repository's git configuration; nothing was pushed";
+    }
   }
   let badge: AttemptOutcome['badge'] = null;
   if (state === 'succeeded') {

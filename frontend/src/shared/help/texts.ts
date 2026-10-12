@@ -15,3 +15,9 @@ export const HELP = {
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
+
+/** How the runner's sandbox is put in words, wherever a run's sandbox is shown. */
+export const SANDBOX_TEXT = {
+  bwrap: 'Sandboxed with bwrap',
+  none: "Not sandboxed: the agent has your user's access to this machine",
+} as const;
