@@ -202,6 +202,21 @@ fn execution_request_body(
 /// Creates an execution request and claims it, returning the operator-facing
 /// `request_id` and the internal `attempt_id` a direct fixture insert needs.
 async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> (String, String) {
+    let claimed = claim_as_runner(app, item_id, label).await;
+    (claimed.request_id, claimed.attempt_id)
+}
+
+struct ClaimedAs {
+    request_id: String,
+    attempt_id: String,
+    runner_id: String,
+    fencing_token: i64,
+    auth: [(String, String); 1],
+}
+
+/// [`request_and_claim`], keeping what the owning runner needs to report on
+/// the attempt afterward.
+async fn claim_as_runner(app: &axum::Router, item_id: &str, label: &str) -> ClaimedAs {
     let (runner_id, auth_owned) = enroll_runner(app, &format!("{label} runner")).await;
     let auth = headers_ref(&auth_owned);
     let agent_profile_id = create_agent_profile(app, label).await;
@@ -227,7 +242,14 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> (S
     .await;
     assert_eq!(status, StatusCode::OK, "{claimed}");
     let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
-    (request_id, attempt_id)
+    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+    ClaimedAs {
+        request_id,
+        attempt_id,
+        runner_id,
+        fencing_token,
+        auth: auth_owned,
+    }
 }
 
 /// Seeds one `execution_artifacts` manifest row directly — the write path's
@@ -645,4 +667,131 @@ async fn a_reviewed_attempt_clears_needs_review() {
     assert_eq!(review["verdict"], "accepted", "{listed}");
     assert_eq!(review["note"], "looks right", "{listed}");
     assert!(review["reviewed_at"].is_string(), "{listed}");
+}
+
+/// What the runner said at start (`environment_names`, `sandbox`) reads back on
+/// the attempt: names as sent, an absent report as `[]`/null, and a sandbox
+/// outside `bwrap`/`none` as null.
+#[tokio::test]
+async fn the_start_report_reads_back_on_the_attempt() {
+    let cases = [
+        (
+            "kept",
+            json!({"environment_names": ["B", "A", 7, null], "sandbox": "bwrap"}),
+            json!(["B", "A"]),
+            json!("bwrap"),
+        ),
+        ("none", json!({"sandbox": "none"}), json!([]), json!("none")),
+        ("absent", json!({}), json!([]), Value::Null),
+        (
+            "bogus",
+            json!({"environment_names": "A", "sandbox": "rm -rf"}),
+            json!([]),
+            Value::Null,
+        ),
+        (
+            "capped",
+            json!({"environment_names": (0..300).map(|i| format!("V{i}")).collect::<Vec<_>>()}),
+            json!((0..256).map(|i| format!("V{i}")).collect::<Vec<_>>()),
+            Value::Null,
+        ),
+        (
+            "long name dropped",
+            json!({"environment_names": ["A".repeat(129), "B".repeat(128)]}),
+            json!(["B".repeat(128)]),
+            Value::Null,
+        ),
+    ];
+    for (label, extra, names, sandbox) in cases {
+        let (app, _repo, item_id) = setup().await;
+        let claimed = claim_as_runner(&app, &item_id, "start-report").await;
+        let auth = headers_ref(&claimed.auth);
+        let mut base = json!({
+            "protocol_version": 1,
+            "runner_id": claimed.runner_id,
+            "attempt_id": claimed.attempt_id,
+            "fencing_token": claimed.fencing_token,
+            "workspace_id": "ws-1",
+            "base_revision": BASE_REVISION,
+        });
+        let (status, accepted, _) = common::send_with_raw(
+            &app,
+            "POST",
+            &format!("/api/runner/v1/attempts/{}/accept", claimed.attempt_id),
+            base.clone(),
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{label}: {accepted}");
+        base["process_id"] = json!("pid-1");
+        for (key, value) in extra.as_object().unwrap() {
+            base[key] = value.clone();
+        }
+        let (status, started, _) = common::send_with_raw(
+            &app,
+            "POST",
+            &format!("/api/runner/v1/attempts/{}/start", claimed.attempt_id),
+            base,
+            &auth,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{label}: {started}");
+
+        let (_, listed, _) = common::send_with_raw(
+            &app,
+            "GET",
+            &format!("/api/executions/{}/attempts", claimed.request_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(listed["data"][0]["environment_names"], names, "{label}");
+        assert_eq!(listed["data"][0]["sandbox"], sandbox, "{label}");
+    }
+}
+
+/// A harness's `sandbox` and `sandbox_reason`, reported at enrollment, are
+/// returned in the runner's capabilities.
+#[tokio::test]
+async fn a_harness_sandbox_report_shows_in_the_runner_capabilities() {
+    let (app, _repo, _item_id) = setup().await;
+    let (status, pending, _) = common::send_with_raw(
+        &app,
+        "POST",
+        "/api/runners/enrollment",
+        json!({"name": "sandbox runner", "total_capacity": 1, "available_capacity": 1}),
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    let mut capabilities = full_capabilities();
+    capabilities["harnesses"][0]["sandbox"] = json!("none");
+    capabilities["harnesses"][0]["sandbox_reason"] = json!("x");
+    let (status, enrolled, _) = common::send_with_raw(
+        &app,
+        "POST",
+        "/api/runner/v1/enroll",
+        json!({
+            "protocol_version": 1,
+            "enrollment_token": pending["enrollment_token"],
+            "runner_name": "sandbox runner",
+            "runner_version": "0.1.0",
+            "capabilities": capabilities,
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{enrolled}");
+
+    let (_, runners, _) = common::send_with_raw(
+        &app,
+        "GET",
+        "/api/runners",
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    let harness = &runners["data"][0]["capability_snapshot"]["harnesses"][0];
+    assert_eq!(harness["sandbox"], "none", "{runners}");
+    assert_eq!(harness["sandbox_reason"], "x", "{runners}");
 }

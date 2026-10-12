@@ -1116,6 +1116,29 @@ pub async fn start_attempt(
     .await
 }
 
+/// The part of a running-phase start report the server keeps: variable names
+/// (strings of at most 128 characters, 256 at most) and the sandbox, which is
+/// `bwrap` or `none` and nothing else.
+fn start_report(body: &Value) -> Value {
+    let names: Vec<&str> = body
+        .get("environment_names")
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|name| name.chars().count() <= 128)
+                .take(256)
+                .collect()
+        })
+        .unwrap_or_default();
+    let sandbox = body
+        .get("sandbox")
+        .and_then(Value::as_str)
+        .filter(|sandbox| matches!(*sandbox, "bwrap" | "none"));
+    json!({"environment_names": names, "sandbox": sandbox})
+}
+
 async fn transition_attempt(
     state: RunnerProtocolState,
     headers: HeaderMap,
@@ -1160,6 +1183,23 @@ async fn transition_attempt(
         )
         .await
         .map_err(|_| internal_error("Could not record attempt transition"))?;
+
+    if matches!(phase, AttemptTransitionPhase::Running)
+        && matches!(result, AttemptTransitionResult::Applied(_))
+    {
+        let report = start_report(&value);
+        sqlx::query(
+            "UPDATE execution_attempts SET start_report=? \
+             WHERE id=? AND runner_id=? AND fencing_token=?",
+        )
+        .bind(report.to_string())
+        .bind(&attempt_id)
+        .bind(&principal.runner_id)
+        .bind(fencing_token)
+        .execute(state.repo.pool())
+        .await
+        .map_err(|_| internal_error("Could not record the start report"))?;
+    }
 
     match result {
         AttemptTransitionResult::Applied(resp) => Ok(Json(json!({
