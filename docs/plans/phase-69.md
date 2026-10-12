@@ -1,7 +1,8 @@
 # Plan: Phase 69 — the agent reaches only what you gave it
 
 **Status: opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
-(the maintainer's) is done except the GitHub settings; no round dispatched yet — see Status.**
+(the maintainer's) is done except the GitHub settings; Round 1 closed 2026-10-12, Round 2
+dispatched — see Status.**
 Serves ADR 0077 (proposed): every task here executes one or more of its eighteen decisions, and
 the two boundary suites (decision 17) are the proof that they hold. Written against `develop` at
 `722269e8` (the hashes change when the history is rewritten in Wave 0; the trees do not). Every
@@ -706,3 +707,22 @@ the gate on the merge. Pushing and the release are the maintainer's.
   paths left the tree. GitHub-side settings (tag ruleset, `release` environment, required check)
   and the workstation items (the `.env` key, the tunnel, the Claude permissions, the Caddy bind)
   are open and the maintainer's.
+- **Round 1, 2026-10-12:** S1, S2, S3, S4, R1, R2, R4a, H1, T1, C1 merged into `develop`; the gate
+  and the full workspace nextest (1278 passed) green on the merged tree. What the agents found,
+  and what was decided at integration:
+
+  | Found | Decided |
+  |---|---|
+  | The in-process test router sends no `Host`, so S1's 421 broke ~180 tests | the rule stands; `tests/common::with_default_host` stamps `Host: localhost` on a request that has none |
+  | S1's checks sit on the `/api` router only; the runner protocol nest is not covered | accepted: the runner nest has its own token and may be reached on a LAN address |
+  | `validate_outbound_url` did not refuse the metadata address S4's test names | it now refuses link-local and unspecified IP literals, at startup too; loopback stays allowed |
+  | There is no `TerminalReason` enum; a terminal reason is a JSON `code` | R2 emits `repository_config_changed` that way; R3 does the same |
+  | R2 keeps the config fingerprint and the push URL in memory, not in the journal (`journal.rs` was off its list) | R3 persists both beside `base_commit`; a restart until then fails the push closed |
+  | R1's tables reached no production harness until `discover` took them | wired in `bootstrap.rs`; the start report carries `environment_names` (runner-v1 fixture first) |
+  | The server ignores `environment_names` | **open** — the server must store it before F1b shows it |
+  | A project's GitHub token reference is written through the API | it stays on `resolve`, so an `env:` reference there is now refused |
+  | `Content-Disposition` interpolated the uploaded filename unescaped | quotes, backslashes and control characters become `_` |
+  | The desktop CSP cannot carry the chosen port | the server's own CSP covers the board page; the desktop's allows `http://127.0.0.1:*` |
+  | The desktop now refuses a `tack serve` it did not start on its port | intended (decision 15); the changelog says so |
+  | C1: `ci.yml:345-346` installs `@vitest/coverage-v8` floating; `scheduled-audit.yml` and `verify-install-urls.yml` keep the npm cache and checkout credentials; README, quick-start and tutorial one-liners fetch `main/install.sh` | C3 takes the workflows; D1 takes the one-liners |
+
