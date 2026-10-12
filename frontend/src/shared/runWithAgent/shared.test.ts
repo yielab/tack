@@ -27,7 +27,6 @@ function values(overrides: Partial<RunWithAgentFormValues> = {}): RunWithAgentFo
     selectorKind: 'fleet',
     selectorId: 'fleet-1',
     agentProfileId: 'profile-1',
-    agentProfileSnapshot: { name: 'Reviewer', instructions: 'Review the diff', tool_policy: { read: true } },
     harnessKind: 'codex',
     modelProvider: null,
     modelId: null,

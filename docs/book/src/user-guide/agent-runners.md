@@ -321,10 +321,14 @@ it, so nothing is asked twice:
 - **What the agent will read** — the real text it will be given: the profile's instructions,
   the task's title and description, its acceptance criteria, the project's **Definition of
   done**, and anything in the task's collapsed **For the agent** block.
-- **Ask before each action** — off by default. When on, the agent pauses before each action and
+- **Ask before each action** — on when the agent is not sandboxed, off otherwise. When on, the agent pauses before each action and
   waits for your answer (see [Asking before acting](#asking-before-acting)). For an agent that
   cannot pause, the switch is disabled and says why.
-- **Allow network access** — off by default.
+- **Web tools** — off by default. Lets the agent fetch pages and search the web. Off turns those
+  tools off; the agent's shell can still reach the network. Under the switches a line says whether
+  the agent is sandboxed with bwrap or has your user's access to this machine; when it is not
+  sandboxed, **Ask before each action** starts on. See
+  [what the agent can reach](what-the-agent-can-reach.md).
 - **Advanced** — the computer, the agent, the model, the allowed tools, the timeout and the
   after-run steps (verify, push). A step that is not available is never hidden: it is shown
   disabled with the reason beside it, and **Verify the result** and **Push the branch** say

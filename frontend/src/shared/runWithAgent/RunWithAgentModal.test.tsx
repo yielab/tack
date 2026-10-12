@@ -86,6 +86,7 @@ const PROJECT = {
 
 let lastCreateBody: unknown;
 let lastItemPatch: unknown;
+let requestedUrls: string[] = [];
 
 function mockFetch(
   opts: {
@@ -105,6 +106,7 @@ function mockFetch(
   const project = opts.project ?? PROJECT;
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    requestedUrls.push(url);
     if (url.includes('/runner-fleets')) return new Response(JSON.stringify({ protocol_version: 1, data: fleets }), { status: 200 });
     if (url.includes('/agent-profiles') && init?.method === 'POST') {
       const body = JSON.parse(String(init.body));
@@ -224,6 +226,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   lastCreateBody = undefined;
   lastItemPatch = undefined;
+  requestedUrls = [];
 });
 
 describe('RunWithAgentModal', () => {
@@ -307,7 +310,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Run with agent: Fix login bug');
-    for (const section of ['What the agent will read', 'Ask before each action', 'Allow network access', 'Advanced for this run']) {
+    for (const section of ['What the agent will read', 'Ask before each action', 'Web tools', 'Advanced for this run']) {
       expect(dialog.textContent).toContain(section);
     }
   });
@@ -780,6 +783,36 @@ describe('RunWithAgentModal', () => {
     expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(0);
     expect(document.querySelectorAll('[data-prerequisite="deferred"]').length).toBe(3);
     expect(submitButton().disabled).toBe(false);
+  });
+
+  it('the_approvals_default_follows_the_sandbox_and_a_remembered_value_wins', async () => {
+    const sandboxed = (sandbox: string) => runnerRow('runner-7', 'Box', runnerCapabilitySnapshot({
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], decisions: { support: 'supported', reason: null }, sandbox, sandbox_reason: sandbox === 'none' ? 'bwrap not on PATH' : undefined }],
+    }));
+    const ask = () => (document.querySelector('input[name="approvals"]') as HTMLInputElement).checked;
+    const line = () => document.querySelector('[data-testid="sandbox-line"]')?.textContent ?? '';
+    mount({}, { runners: [sandboxed('none')], fleets: [] });
+    await flush(); await flush();
+    expect(ask()).toBe(true);
+    expect(line()).toContain('Not sandboxed: the agent has your user\'s access to this machine');
+    teardown();
+    mount({}, { runners: [sandboxed('bwrap')], fleets: [] });
+    await flush(); await flush();
+    expect(ask()).toBe(false);
+    expect(line()).toContain('Sandboxed with bwrap');
+    teardown();
+    mount({}, { runners: [sandboxed('none')], fleets: [], runSettings: { approvals: 'auto' } });
+    await flush(); await flush();
+    expect(ask()).toBe(false);
+  });
+
+  it('the_request_sends_no_profile_snapshot_and_the_preview_names_the_profile', async () => {
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush(); await flush();
+    submitButton().click();
+    await flush(); await flush();
+    expect(lastCreateBody).not.toHaveProperty('agent_profile_snapshot');
+    expect(requestedUrls.some((u) => u.includes('/agent-context?profile_id=profile-1'))).toBe(true);
   });
 
   it('"Ask me" stays gated by decisionsAttested()', async () => {

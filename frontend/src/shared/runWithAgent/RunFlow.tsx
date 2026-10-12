@@ -67,6 +67,9 @@ export interface RunFlowProps {
   /** The model as the summary line names it. */
   modelLabel: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
+  /** What the chosen agent's sandbox is, in words; null when the runner does not say. */
+  sandboxLine: Accessor<{ text: string; unsandboxed: boolean } | null>;
+  onApprovals: () => void;
   /** The selected runner's own config has a verifier / pushes branches. */
   verifyConfigured: Accessor<boolean>;
   pushConfigured: Accessor<boolean>;
@@ -196,12 +199,20 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             style={{ 'accent-color': 'var(--color-primary-600)' }}
             checked={props.form.approvals === 'ask'}
             disabled={!props.decisionsAttested()}
-            onChange={(e) => props.setForm('approvals', e.currentTarget.checked ? 'ask' : 'auto')}
+            onChange={(e) => { props.onApprovals(); props.setForm('approvals', e.currentTarget.checked ? 'ask' : 'auto'); }}
           />
           Ask before each action
         </label>
         <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
         </div>
+        <Show when={props.sandboxLine()}>
+          {(line) => (
+            <div class="flex items-center gap-2 pl-4 text-xs" data-testid="sandbox-line" style={{ color: 'var(--color-text-tertiary)' }}>
+              <span>{line().text}</span>
+              <HelpHint label="Sandbox" help={HELP.sandbox} />
+            </div>
+          )}
+        </Show>
         <Show when={!props.decisionsAttested()}>
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
@@ -215,9 +226,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             checked={props.form.allowNetwork}
             onChange={(e) => props.setForm('allowNetwork', e.currentTarget.checked)}
           />
-          Allow network access
+          Web tools
         </label>
-        <HelpHint label="Allow network access" help={HELP.allowNetwork} />
+        <HelpHint label="Web tools" help={HELP.webTools} />
         </div>
       </div>
 
