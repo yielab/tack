@@ -218,7 +218,8 @@ async fn capture_bounded_keeps_the_head_and_the_tail_of_the_stream() {
         let stream = lines.concat();
         let total = stream.len() as u64;
         let mut cursor = std::io::Cursor::new(stream.clone().into_bytes());
-        let raw = capture_bounded(&mut cursor, CAP).await;
+        let (_stop, stopped) = tokio::sync::oneshot::channel();
+        let raw = capture_bounded(&mut cursor, CAP, stopped).await;
         let captured = finalize_capture(raw, &SecretMaterial::new());
 
         assert_eq!(captured.total_bytes_seen, total, "{}", row.label);

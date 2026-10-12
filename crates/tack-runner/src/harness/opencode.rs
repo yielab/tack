@@ -122,12 +122,18 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
     let mut tokens_out = 0u64;
     let mut saw_finish = false;
     let mut saw_error = false;
+    let mut terminal_seen = false;
 
     for line in result.stdout.text.lines() {
         let Ok(event) = serde_json::from_str::<Value>(line.trim()) else {
             continue;
         };
-        match event.get("type").and_then(Value::as_str) {
+        let kind = event.get("type").and_then(Value::as_str);
+        if terminal_seen && matches!(kind, Some("step_finish" | "error")) {
+            tracing::debug!(harness = DESCRIPTOR.kind, "terminal_line_ignored");
+            continue;
+        }
+        match kind {
             Some("step_finish") => {
                 saw_finish = true;
                 tokens_in += event
@@ -142,6 +148,7 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
                     .pointer("/part/reason")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
+                terminal_seen = last_reason.as_deref() != Some("tool-calls");
             }
             Some("error") => saw_error = true,
             _ => {}
@@ -394,7 +401,16 @@ impl HarnessGrammar for OpencodeGrammar {
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
-        parse_output(result)
+        let mut report = parse_output(result);
+        if report.succeeded && !matches!(result.exit, ProcessExit::Exited(0)) {
+            report.succeeded = false;
+            report.terminal_reason = serde_json::json!({
+                "reason": "exit_status",
+                "exit": format!("{:?}", result.exit),
+                "stream": report.terminal_reason,
+            });
+        }
+        report
     }
 
     fn capabilities(&self) -> FeatureCapabilities {

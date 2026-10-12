@@ -17,7 +17,7 @@ use crate::harness::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
     },
-    process::ProcessResult,
+    process::{ProcessExit, ProcessResult},
 };
 use crate::provider::Wire;
 
@@ -83,7 +83,7 @@ fn bounded_prefix(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
-/// The last line `docket exec` prints, on success or failure. Every
+/// The line `docket exec` prints last, on success or failure. Every
 /// other stdout line is an NDJSON progress event this adapter does not read.
 #[derive(serde::Deserialize)]
 struct ResultLine {
@@ -208,10 +208,6 @@ fn step(event: &ProgressEvent) -> Option<Progress> {
         kind: kind.to_owned(),
         text: bounded_prefix(&text, STEP_TEXT_CHARS),
     })
-}
-
-fn last_non_empty_line(text: &str) -> Option<&str> {
-    text.lines().rev().find(|line| !line.trim().is_empty())
 }
 
 /// No parseable result line at all: the exit status and a prefix of what
@@ -451,13 +447,18 @@ impl HarnessGrammar for DocketGrammar {
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
-        let Some(line) = last_non_empty_line(&result.stdout.text) else {
+        let mut results = result
+            .stdout
+            .text
+            .lines()
+            .filter_map(|line| serde_json::from_str::<ResultLine>(line.trim()).ok());
+        let Some(parsed) = results.next() else {
             return malformed(result);
         };
-        let Ok(parsed) = serde_json::from_str::<ResultLine>(line.trim()) else {
-            return malformed(result);
-        };
-        RunReport {
+        for _ in results {
+            tracing::debug!(harness = DESCRIPTOR.kind, "terminal_line_ignored");
+        }
+        let mut report = RunReport {
             succeeded: parsed.status == "ok",
             terminal_reason: serde_json::json!({
                 "code": parsed.status,
@@ -480,7 +481,16 @@ impl HarnessGrammar for DocketGrammar {
             duration_ms: None,
             cost_usd: None,
             usage_detail: Default::default(),
+        };
+        if report.succeeded && !matches!(result.exit, ProcessExit::Exited(0)) {
+            report.succeeded = false;
+            report.terminal_reason = serde_json::json!({
+                "reason": "exit_status",
+                "exit": format!("{:?}", result.exit),
+                "stream": report.terminal_reason,
+            });
         }
+        report
     }
 
     fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {

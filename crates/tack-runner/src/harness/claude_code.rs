@@ -194,10 +194,16 @@ fn report_from_exit(result: &ProcessResult) -> RunReport {
             "process terminated by signal with no structured result envelope",
         ),
     };
+    let reason = if matches!(result.exit, ProcessExit::Exited(code) if code != 0) {
+        "exit_status"
+    } else {
+        note
+    };
     RunReport::verdict(
         succeeded,
         serde_json::json!({
-            "reason": note,
+            "reason": reason,
+            "detail": note,
             "exit": format!("{:?}", result.exit),
             "stderr_prefix": bounded_prefix(&result.stderr.text, 500),
         }),
@@ -226,7 +232,8 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
                 init_model = field("model").map(str::to_owned);
                 harness_version = field("claude_code_version").map(str::to_owned);
             }
-            Some("result") => result_line = Some(value),
+            Some("result") if result_line.is_none() => result_line = Some(value),
+            Some("result") => tracing::debug!(harness = DESCRIPTOR.kind, "terminal_line_ignored"),
             _ => {}
         }
     }
@@ -361,7 +368,16 @@ impl HarnessGrammar for ClaudeCodeGrammar {
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
-        parse_run_output(result)
+        let mut report = parse_run_output(result);
+        if report.succeeded && !matches!(result.exit, ProcessExit::Exited(0)) {
+            report.succeeded = false;
+            report.terminal_reason = serde_json::json!({
+                "reason": "exit_status",
+                "exit": format!("{:?}", result.exit),
+                "stream": report.terminal_reason,
+            });
+        }
+        report
     }
 
     fn capabilities(&self) -> FeatureCapabilities {
