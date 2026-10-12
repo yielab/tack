@@ -525,11 +525,9 @@ fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
     })
 }
 
-/// A succeeded completion that pushed its branch, for an item linked to a
-/// GitHub issue, opens one pull request whose body is the rendered pack, and
-/// the attempt list then carries it.
-#[tokio::test]
-async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pack() {
+/// Mounts the fake GitHub for `acme/widgets`; the pull-request POST must be
+/// called exactly `posts` times (checked when the server drops).
+async fn fake_github(posts: u64) -> wiremock::MockServer {
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -552,19 +550,23 @@ async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pac
         .respond_with(ResponseTemplate::new(201).set_body_json(
             json!({"number": 7, "html_url": "https://github.com/acme/widgets/pull/7"}),
         ))
-        .expect(1)
+        .expect(posts)
         .mount(&gh)
         .await;
+    gh
+}
 
-    let root = tempfile::tempdir().unwrap();
-    let (app, repo, item_id, _events) = setup(root.path(), Some(&gh.uri())).await;
+async fn complete_with_pushed_branch(
+    gh: &wiremock::MockServer,
+    root: &std::path::Path,
+) -> (axum::Router, Repository, ClaimedAttempt) {
+    let (app, repo, item_id, _events) = setup(root, Some(&gh.uri())).await;
     repo.set_github_link(item_id.parse().unwrap(), "acme/widgets", 3)
         .await
         .unwrap();
     let attempt = request_and_claim(&app, &item_id, "h2a", None).await;
     accept_and_start(&app, &attempt).await;
     upload_pack(&app, &attempt).await;
-
     let (status, body, _) = common::send_with_raw(
         &app,
         "POST",
@@ -574,20 +576,52 @@ async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pac
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    (app, repo, attempt)
+}
 
-    // The open runs in a spawned task: wait for its record.
-    let mut stored = None;
-    for _ in 0..100 {
-        stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-            .await
-            .unwrap();
-        if stored.is_some() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    let stored = stored.expect("the pull request was recorded");
+async fn review_attempt(
+    app: &axum::Router,
+    attempt: &ClaimedAttempt,
+    verdict: &str,
+) -> (StatusCode, Value) {
+    common::send(
+        app,
+        "POST",
+        &format!("/api/executions/{}/attempts/1/review", attempt.request_id),
+        json!({"verdict": verdict}),
+        &operator_headers(),
+    )
+    .await
+}
+
+/// Completion stores the pack and opens nothing; accepting the attempt opens one
+/// pull request whose body is the rendered pack and returns its URL, a second
+/// accept changes nothing, and the attempt list then carries the pull request.
+#[tokio::test]
+async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_rendered_pack() {
+    let gh = fake_github(1).await;
+    let root = tempfile::tempdir().unwrap();
+    let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
+    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
+        .await
+        .unwrap();
+    assert!(stored.is_none(), "completion opened a pull request");
+    assert!(gh.received_requests().await.unwrap().is_empty());
+
+    let (status, review) = review_attempt(&app, &attempt, "accepted").await;
+    assert_eq!(status, StatusCode::OK, "{review}");
+    assert_eq!(
+        review["pull_request_url"],
+        "https://github.com/acme/widgets/pull/7"
+    );
+    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
+        .await
+        .unwrap()
+        .expect("the pull request was recorded");
     assert_eq!((stored.number, stored.state.as_str()), (7, "open"));
+
+    let (status, _) = review_attempt(&app, &attempt, "accepted").await;
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, attempts) = common::send(
         &app,
@@ -602,6 +636,48 @@ async fn a_pushed_completion_opens_a_pull_request_whose_body_is_the_rendered_pac
         attempts["data"][0]["pull_request"],
         json!({"number": 7, "url": "https://github.com/acme/widgets/pull/7", "state": "open"})
     );
+}
+
+/// Accepting the pack opens the pull request once; when `/review` accept
+/// already opened it, the pack's accept returns that URL and calls GitHub no more.
+#[tokio::test]
+async fn accepting_the_pack_opens_the_pull_request_once() {
+    let gh = fake_github(1).await;
+    let root = tempfile::tempdir().unwrap();
+    let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
+    let base = format!("/api/executions/{}/attempts/1/mrp", attempt.request_id);
+    let (status, review) = review(&app, &base, "accept", "looks right").await;
+    assert_eq!(status, StatusCode::OK, "{review}");
+    assert_eq!(
+        review["pull_request_url"],
+        "https://github.com/acme/widgets/pull/7"
+    );
+    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
+        .await
+        .unwrap();
+    assert!(stored.is_some());
+    let (status, again) = review_attempt(&app, &attempt, "accepted").await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(
+        again["pull_request_url"],
+        "https://github.com/acme/widgets/pull/7"
+    );
+}
+
+/// Rejecting an attempt opens no pull request.
+#[tokio::test]
+async fn rejecting_a_pushed_attempt_opens_no_pull_request() {
+    let gh = fake_github(0).await;
+    let root = tempfile::tempdir().unwrap();
+    let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
+    let (status, review) = review_attempt(&app, &attempt, "rejected").await;
+    assert_eq!(status, StatusCode::OK, "{review}");
+    assert!(review.get("pull_request_url").is_none(), "{review}");
+    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
+        .await
+        .unwrap();
+    assert!(stored.is_none());
+    assert!(gh.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]

@@ -155,7 +155,7 @@ pub async fn mark_viewed(
     ),
     request_body = MrpReviewRequest,
     responses(
-        (status = 200, description = "The recorded review", body = Object),
+        (status = 200, description = "The recorded review; an accepted attempt that pushed its branch adds `pull_request_url`", body = Object),
         (status = 400, description = "Blank reason", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "No pack for this attempt", body = crate::openapi::ErrorEnvelope),
         (status = 409, description = "The pack was already reviewed", body = crate::openapi::ErrorEnvelope),
@@ -165,7 +165,7 @@ pub async fn review_mrp(
     State(state): State<AppState>,
     Path((request_id, attempt_number)): Path<(String, i64)>,
     Json(input): Json<MrpReviewRequest>,
-) -> ApiResult<Json<tack_db::repo::execution::MrpReviewRow>> {
+) -> ApiResult<Json<serde_json::Value>> {
     let reason = input.reason.trim();
     if reason.is_empty() {
         return Err(ApiError::BadRequest("reason is required".into()));
@@ -190,7 +190,22 @@ pub async fn review_mrp(
     if input.verdict == MrpVerdict::Accept {
         apply_mrp_accepted(&state, &request_id).await?;
     }
-    Ok(Json(review))
+    let mut body =
+        serde_json::to_value(&review).map_err(|error| ApiError::Internal(error.into()))?;
+    if input.verdict == MrpVerdict::Accept {
+        let storage =
+            ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
+        if let Some(url) = super::pull_requests::open_pull_request_for_attempt(
+            state.clone(),
+            &storage,
+            &artifact.attempt_id,
+        )
+        .await
+        {
+            body["pull_request_url"] = serde_json::Value::String(url);
+        }
+    }
+    Ok(Json(body))
 }
 
 /// Moves the request's item to the first Done status when the request's

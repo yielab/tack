@@ -411,7 +411,7 @@ POST /api/executions/:request_id/attempts/:attempt_number/mrp/review
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | The recorded review | `object` |
+| 200 | The recorded review; an accepted attempt that pushed its branch adds `pull_request_url` | `object` |
 | 400 | Blank reason | `ErrorEnvelope` |
 | 404 | No pack for this attempt | `ErrorEnvelope` |
 | 409 | The pack was already reviewed | `ErrorEnvelope` |

@@ -311,7 +311,8 @@ pub struct ReviewAttemptRequest {
 
 /// `POST /api/executions/{request_id}/attempts/{attempt_number}/review` —
 /// records the operator's verdict on one attempt. One verdict per attempt: a
-/// second is `409` with `details.reason = "already_reviewed"`.
+/// second is `409` with `details.reason = "already_reviewed"`. Accepting an
+/// attempt that pushed its branch opens its pull request and returns the URL.
 #[utoipa::path(
     post,
     path = "/api/executions/{request_id}/attempts/{attempt_number}/review",
@@ -392,10 +393,21 @@ pub async fn review_execution_attempt(
             json!({"reason": "already_reviewed"}),
         ));
     }
+    let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
+        ("accepted", Some(app)) => {
+            let storage = super::runner_protocol::artifact_storage::ArtifactStorage::new(format!(
+                "{}/execution-artifacts",
+                app.config.storage_dir
+            ));
+            super::pull_requests::open_pull_request_for_attempt(app, &storage, &attempt_id).await
+        }
+        _ => None,
+    };
     Ok(Json(super::executions::AttemptReview {
         verdict: input.verdict,
         note: input.note,
         reviewed_at,
+        pull_request_url,
     }))
 }
 

@@ -1423,7 +1423,7 @@
         },
         "responses": {
           "200": {
-            "description": "The recorded review",
+            "description": "The recorded review; an accepted attempt that pushed its branch adds `pull_request_url`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1522,7 +1522,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`POST /api/executions/{request_id}/attempts/{attempt_number}/review` —\nrecords the operator's verdict on one attempt. One verdict per attempt: a\nsecond is `409` with `details.reason = \"already_reviewed\"`.",
+        "summary": "`POST /api/executions/{request_id}/attempts/{attempt_number}/review` —\nrecords the operator's verdict on one attempt. One verdict per attempt: a\nsecond is `409` with `details.reason = \"already_reviewed\"`. Accepting an\nattempt that pushed its branch opens its pull request and returns the URL.",
         "operationId": "review_execution_attempt",
         "parameters": [
           {
@@ -7115,6 +7115,13 @@
               "string",
               "null"
             ]
+          },
+          "pull_request_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The pull request an accepted attempt opened, when it opened one."
           },
           "reviewed_at": {
             "type": "string"

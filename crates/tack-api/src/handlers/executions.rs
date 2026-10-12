@@ -147,11 +147,24 @@ pub enum ModelProvenanceSchema {
 pub struct OperatorExecutionState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
+    /// The shared API state, when production wires it in: accepting an attempt
+    /// that pushed a branch uses it to open the pull request.
+    pub app: Option<crate::router::AppState>,
 }
 
 impl OperatorExecutionState {
     pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
-        Self { repo, clock }
+        Self {
+            repo,
+            clock,
+            app: None,
+        }
+    }
+
+    /// Hands the shared API state to the review handler.
+    pub fn with_app_state(mut self, app: crate::router::AppState) -> Self {
+        self.app = Some(app);
+        self
     }
 }
 
@@ -517,6 +530,9 @@ pub struct AttemptReview {
     pub verdict: String,
     pub note: Option<String>,
     pub reviewed_at: String,
+    /// The pull request an accepted attempt opened, when it opened one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_request_url: Option<String>,
 }
 
 /// The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
@@ -1402,6 +1418,7 @@ pub async fn list_execution_attempts(
                     verdict,
                     note,
                     reviewed_at,
+                    pull_request_url: None,
                 },
             );
         }
