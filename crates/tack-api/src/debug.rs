@@ -20,11 +20,23 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
         .await
         .unwrap_or(0);
 
-    Json(json!({
+    // Echoed so a client attaching to an already-running server can confirm
+    // that the server is the one it launched.
+    let launch_nonce = std::env::var("TACK_LAUNCH_NONCE").ok();
+
+    Json(health_body(migrations_applied, launch_nonce))
+}
+
+fn health_body(migrations_applied: i64, launch_nonce: Option<String>) -> serde_json::Value {
+    let mut body = json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
         "migrations_applied": migrations_applied,
-    }))
+    });
+    if let Some(nonce) = launch_nonce {
+        body["launch_nonce"] = json!(nonce);
+    }
+    body
 }
 
 /// GET /api/debug/info — System info (only in debug builds)
@@ -103,4 +115,21 @@ async fn get_table_counts(state: &AppState) -> serde_json::Value {
     }
 
     serde_json::Value::Object(counts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::health_body;
+
+    #[test]
+    fn health_body_echoes_launch_nonce_only_when_set() {
+        let set = health_body(3, Some("nonce-abc".to_string()));
+        assert_eq!(set["launch_nonce"], "nonce-abc");
+
+        let unset = health_body(3, None);
+        assert!(
+            unset.get("launch_nonce").is_none(),
+            "launch_nonce must be absent when the variable is unset"
+        );
+    }
 }
