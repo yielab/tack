@@ -839,25 +839,37 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     }
 
     /// Stages the already-redacted stdout and stderr as a `log` artifact.
-    /// Best-effort: a staging failure omits the artifact, never fails the
-    /// attempt.
+    /// The log is written under the staging root, never the workspace, so a
+    /// path the repository committed cannot redirect the write. Best-effort:
+    /// a staging failure omits the artifact, never fails the attempt.
     fn stage_run_log(
         &self,
         spec: &ExecutionSpec,
         result: &ProcessResult,
     ) -> Option<serde_json::Value> {
-        let workspace = &spec.workspace.path;
-        let relative = PathBuf::from(".tack-runner").join(format!("{}-run.log", self.kind()));
-        let absolute = workspace.join(&relative);
-        std::fs::create_dir_all(absolute.parent()?).ok()?;
+        let attempt_id = spec.work.lease.attempt_id.as_str();
+        // Hex-encoded, as the stager does, so an attempt id cannot leave `runs/`.
+        let run_dir = self
+            .staging_root
+            .join("runs")
+            .join(super::artifact::encode_id(attempt_id));
+        std::fs::create_dir_all(&run_dir).ok()?;
+        let name = format!("{}-run.log", self.kind());
         let combined = format!(
             "=== stdout ===\n{}\n=== stderr ===\n{}",
             result.stdout.text, result.stderr.text
         );
-        std::fs::write(&absolute, combined).ok()?;
+        // `create_new` refuses any existing entry, a symlink included, so the
+        // bytes land in a file this attempt created.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(run_dir.join(&name))
+            .ok()?;
+        std::io::Write::write_all(&mut file, combined.as_bytes()).ok()?;
+        drop(file);
         let stager = crate::harness::artifact::ArtifactStager::new(&self.staging_root);
-        let attempt_id = spec.work.lease.attempt_id.as_str();
-        match stager.stage_file(attempt_id, workspace, &relative, "log", "text/plain") {
+        match stager.stage_file(attempt_id, &run_dir, Path::new(&name), "log", "text/plain") {
             Ok(staged) => Some(serde_json::json!({
                 "kind": staged.kind,
                 "name": staged.name,

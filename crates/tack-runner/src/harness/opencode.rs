@@ -16,7 +16,7 @@ use crate::harness::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, capability, policy_capability,
     },
-    process::{ProcessExit, ProcessResult},
+    process::{ProcessExit, ProcessResult, confined_cwd},
 };
 use crate::provider::Wire;
 
@@ -175,16 +175,14 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
     }
 }
 
-/// The working directory `session/new`'s `cwd` names: the same arithmetic
-/// `local_process.rs`'s `prepare` uses for the child's own working directory
-/// (the workspace root, plus `request.repository.subdirectory` when it is
-/// non-empty).
-fn working_directory(run: &RunContext<'_>) -> std::path::PathBuf {
-    let workspace_root = run.spec.workspace.path.clone();
-    match run.spec.work.request.repository.subdirectory.as_deref() {
-        Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
-        _ => workspace_root,
-    }
+/// The working directory `session/new`'s `cwd` names: the workspace root,
+/// plus `request.repository.subdirectory` when it is non-empty, refused when
+/// it escapes the root.
+fn working_directory(run: &RunContext<'_>) -> Result<std::path::PathBuf, HarnessError> {
+    confined_cwd(
+        &run.spec.workspace.path,
+        run.spec.work.request.repository.subdirectory.as_deref(),
+    )
 }
 
 fn line_bytes(value: &Value) -> Vec<u8> {
@@ -303,6 +301,7 @@ impl HarnessGrammar for OpencodeGrammar {
     /// variable set — so Tack cannot honour a promise this CLI itself
     /// breaks (`fixtures/opencode/README.md`).
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        working_directory(run)?;
         let request = &run.spec.work.request;
         let Some(endpoint) = run.endpoint else {
             return Err(rejected(
@@ -504,7 +503,7 @@ impl HarnessGrammar for OpencodeGrammar {
                 "id": 2,
                 "method": "session/new",
                 "params": {
-                    "cwd": working_directory(run).display().to_string(),
+                    "cwd": working_directory(run).ok()?.display().to_string(),
                     "mcpServers": [],
                 },
             })))),

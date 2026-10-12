@@ -134,7 +134,7 @@ impl ArtifactStager {
     }
 }
 
-fn encode_id(value: &str) -> String {
+pub(super) fn encode_id(value: &str) -> String {
     value
         .as_bytes()
         .iter()

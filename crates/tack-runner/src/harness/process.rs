@@ -880,6 +880,28 @@ fn status_to_exit(status: std::process::ExitStatus) -> ProcessExit {
     ProcessExit::Exited(status.code().unwrap_or(-1))
 }
 
+/// The working directory a run's `subdirectory` names inside `root`: `root`
+/// itself when the subdirectory is absent or empty. Both paths are resolved
+/// before the comparison, so a symlink or `..` component cannot lead outside.
+pub fn confined_cwd(
+    root: &std::path::Path,
+    subdirectory: Option<&str>,
+) -> Result<std::path::PathBuf, crate::harness::HarnessError> {
+    let escape = || crate::harness::HarnessError::Rejected {
+        reason: "subdirectory_escapes_workspace".to_owned(),
+    };
+    let joined = match subdirectory {
+        Some(subdirectory) if !subdirectory.is_empty() => root.join(subdirectory),
+        _ => root.to_path_buf(),
+    };
+    let canonical_root = root.canonicalize().map_err(|_| escape())?;
+    let canonical_cwd = joined.canonicalize().map_err(|_| escape())?;
+    if canonical_cwd != canonical_root && !canonical_cwd.starts_with(&canonical_root) {
+        return Err(escape());
+    }
+    Ok(joined)
+}
+
 /// Returns whether a process with this pid currently exists, via `kill(pid,
 /// 0)` (sends no signal; only checks deliverability). Used by tests to prove
 /// a cancelled descendant is actually gone rather than merely unresponsive.

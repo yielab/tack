@@ -14,11 +14,13 @@ use tack_runner::{
         engine::ExecutionSpec,
     },
     harness::{
+        codex::CodexGrammar,
         env_policy,
         local_process::{
             HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-            RunContext,
+            RunContext, RunReport,
         },
+        opencode::OpencodeGrammar,
         process::{ProcessLimits, ProcessResult},
     },
 };
@@ -269,4 +271,121 @@ async fn a_request_references_only_the_store_secrets_the_runner_lists() {
     let started = open.marker.exists();
     open.harness.cancel(&handle).await.expect("cancel");
     assert!(started, "the permitted request started a process");
+}
+
+static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
+    kind: "claude-code",
+    program: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/harness/fixtures/fake_harness.sh"
+    ),
+    wire: tack_runner::provider::Wire::OpenAiResponses,
+    model_selection: ModelSelection::Optional,
+    native_provider: "native",
+    inherited_env: &["PATH"],
+    model_passthrough: "forwarded verbatim",
+    probe_notes: &[],
+    credential_note: "",
+    credential_env: None,
+    observes_served_model: false,
+    reports_process_groups: false,
+    reports_progress: false,
+};
+
+/// Runs the shared fake harness to completion in its default `success` mode.
+struct RunGrammar;
+
+impl HarnessGrammar for RunGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        &RUN_FAKE
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        let value = || {
+            tack_runner::harness::local_process::capability(
+                tack_orch::execution::CapabilitySupport::Unsupported,
+                "not read by this test",
+            )
+        };
+        tack_orch::execution::FeatureCapabilities {
+            cancel: value(),
+            resume: value(),
+            decisions: value(),
+            artifacts: value(),
+            usage: value(),
+            additional: BTreeMap::new(),
+        }
+    }
+
+    fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        Ok(Invocation::default())
+    }
+
+    fn report(&self, _run: &RunContext<'_>, _result: &ProcessResult) -> RunReport {
+        RunReport::verdict(true, serde_json::json!({}))
+    }
+}
+
+#[tokio::test]
+async fn a_run_log_never_follows_a_workspace_symlink() {
+    let dir = root("run-log-symlink");
+    let outside = dir.path().join("outside.txt");
+    std::fs::write(&outside, "untouched").expect("outside file");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join(".tack-runner")).expect("workspace");
+    std::os::unix::fs::symlink(&outside, workspace.join(".tack-runner/claude-code-run.log"))
+        .expect("symlink");
+
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    let harness = LocalProcessHarness::discover(
+        RunGrammar,
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        dir.path().join("staging"),
+        secrets,
+    )
+    .expect("the fake harness script is locatable");
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind =
+        tack_orch::execution::HarnessKind::new("claude-code");
+
+    let handle = harness.start(&spec).await.expect("the run starts");
+    let outcome = harness.wait(&handle).await.expect("the run finishes");
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("outside file"),
+        "untouched",
+        "the run log wrote through the workspace symlink"
+    );
+    assert!(
+        dir.path()
+            .join("staging/runs/617474656d70742d656e76/claude-code-run.log")
+            .exists(),
+        "the run log is not under the state directory"
+    );
+    assert_eq!(outcome.terminal_reason["artifact"]["kind"], "log");
+}
+
+#[test]
+fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
+    let dir = root("subdirectory-escape");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.repository.subdirectory = Some("../..".to_owned());
+    let run = RunContext {
+        spec: &spec,
+        endpoint: None,
+        scratch: dir.path(),
+    };
+    for (kind, result) in [
+        ("codex", CodexGrammar.invocation(&run)),
+        ("opencode", OpencodeGrammar.invocation(&run)),
+    ] {
+        match result {
+            Err(HarnessError::Rejected { reason }) => {
+                assert_eq!(reason, "subdirectory_escapes_workspace", "{kind}")
+            }
+            other => panic!("{kind}: expected a rejection, got {other:?}"),
+        }
+    }
 }

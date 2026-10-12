@@ -12,7 +12,7 @@ use crate::harness::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
         RunContext, RunReport, UsageDetail, capability, policy_capability,
     },
-    process::{CapturedOutput, ProcessExit, ProcessResult},
+    process::{CapturedOutput, ProcessExit, ProcessResult, confined_cwd},
 };
 use crate::provider::Wire;
 
@@ -244,6 +244,10 @@ impl HarnessGrammar for CodexGrammar {
     /// `budgets` have no `exec` flag and are not passed; `capabilities` declares
     /// `permission_policy` advisory for that reason.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        confined_cwd(
+            &run.spec.workspace.path,
+            run.spec.work.request.repository.subdirectory.as_deref(),
+        )?;
         let mut args = Vec::new();
         // `-c` overrides are global flags and must precede the subcommand.
         if let Some(endpoint) = run.endpoint {
@@ -329,10 +333,11 @@ impl HarnessGrammar for CodexGrammar {
 
         if id == Some(1) && value.get("result").is_some() {
             let request = &run.spec.work.request;
-            let workspace_root = &run.spec.workspace.path;
-            let cwd = match request.repository.subdirectory.as_deref() {
-                Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
-                _ => workspace_root.clone(),
+            let Ok(cwd) = confined_cwd(
+                &run.spec.workspace.path,
+                request.repository.subdirectory.as_deref(),
+            ) else {
+                return None;
             };
             let sandbox = sandbox_mode(&request.permission_policy.tools);
             let model = request
