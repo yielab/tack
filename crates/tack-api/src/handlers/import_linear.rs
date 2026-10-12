@@ -105,7 +105,7 @@ struct LinearLabel {
 ///
 /// Fetches issues from Linear's GraphQL API and creates Tack items.
 /// Pagination is cursor-based (50 issues per page).
-#[instrument(skip(state))]
+#[instrument(skip(state, input), fields(team = ?input.team_id))]
 #[utoipa::path(
     post,
     path = "/api/projects/{id}/import-linear",

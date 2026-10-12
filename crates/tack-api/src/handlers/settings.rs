@@ -4,14 +4,20 @@
 //! `app_meta` overrides the `TACK_*` environment default. See
 //! [`effective_backup_config`].
 
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tracing::instrument;
 use validator::Validate;
 
 use crate::config::AppConfig;
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiError;
 use crate::router::AppState;
 
 const BACKUP_KEY: &str = "backup_config";
@@ -167,21 +173,44 @@ fn clean(o: Option<String>) -> Option<String> {
 pub async fn put_backup_settings(
     State(state): State<AppState>,
     Json(input): Json<UpdateBackupSettings>,
-) -> ApiResult<Json<Value>> {
+) -> Result<Response, ApiError> {
     input
         .validate()
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
 
+    let endpoint = clean(input.endpoint);
+    if let Some(url) = &endpoint
+        && let Err(err) = crate::config::validate_outbound_url("endpoint", url)
+    {
+        let envelope = ProtocolErrorEnvelope::new(
+            StableErrorCode::InvalidRequest,
+            err.to_string(),
+            "req_operator_settings",
+            json!({"field": "endpoint"}),
+        );
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::to_value(envelope).expect("envelope serializes")),
+        )
+            .into_response());
+    }
+
     let mut current = load(state.pool()).await;
 
-    current.endpoint = clean(input.endpoint);
+    let endpoint_changed = endpoint != current.endpoint;
+    current.endpoint = endpoint;
     current.bucket = clean(input.bucket);
     current.region = clean(input.region);
     current.access_key = clean(input.access_key);
     // Only replace the secret when a non-blank value is supplied; otherwise keep
     // whatever is stored (the UI sends the field blank when it is unchanged).
+    // A secret stored for one endpoint is never sent to another: moving the
+    // endpoint without supplying a new secret drops the stored one.
+    let mut secret_cleared = false;
     if let Some(secret) = clean(input.secret_key) {
         current.secret_key = Some(secret);
+    } else if endpoint_changed && current.secret_key.take().is_some() {
+        secret_cleared = true;
     }
     current.prefix = clean(input.prefix);
     current.retention = input.retention;
@@ -189,5 +218,9 @@ pub async fn put_backup_settings(
     save(state.pool(), &current).await?;
 
     let cfg = effective_backup_config(&state).await;
-    Ok(Json(public_view(&cfg)))
+    let mut view = public_view(&cfg);
+    if secret_cleared {
+        view["secret_cleared"] = Value::Bool(true);
+    }
+    Ok(Json(view).into_response())
 }
