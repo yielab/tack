@@ -498,7 +498,7 @@ fn validate_origin(origin: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<()> {
     let parsed = reqwest::Url::parse(value)
         .map_err(|_| anyhow::anyhow!("{name} must be an absolute http(s) URL"))?;
     if !matches!(parsed.scheme(), "http" | "https")
@@ -510,12 +510,54 @@ fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<()> {
     {
         anyhow::bail!("{name} must be a credential-free http(s) URL without query or fragment");
     }
+    // Link-local and unspecified addresses (cloud metadata services, "any
+    // host") are never a destination; loopback stays allowed for local
+    // services. Hostnames are not resolved here.
+    let literal = parsed
+        .host_str()
+        .map(|h| h.trim_start_matches('[').trim_end_matches(']'))
+        .and_then(|h| h.parse::<std::net::IpAddr>().ok());
+    let blocked = match literal {
+        Some(std::net::IpAddr::V4(ip)) => ip.is_link_local() || ip.is_unspecified(),
+        Some(std::net::IpAddr::V6(ip)) => {
+            let v4_blocked = ip
+                .to_ipv4_mapped()
+                .is_some_and(|v4| v4.is_link_local() || v4.is_unspecified());
+            v4_blocked || ip.is_unspecified() || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+        None => false,
+    };
+    if blocked {
+        anyhow::bail!("{name} must not be a link-local or unspecified address");
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outbound_url_refuses_link_local_and_unspecified_hosts() {
+        for url in [
+            "http://169.254.169.254",
+            "http://169.254.169.254/latest",
+            "http://0.0.0.0:9000",
+            "http://[::]",
+            "http://[fe80::1]",
+            "http://[::ffff:169.254.169.254]",
+            "http://[::ffff:0.0.0.0]",
+        ] {
+            assert!(validate_outbound_url("x", url).is_err(), "{url}");
+        }
+        for url in [
+            "http://127.0.0.1:9000",
+            "http://[::1]:9000",
+            "https://s3.example.com",
+        ] {
+            assert!(validate_outbound_url("x", url).is_ok(), "{url}");
+        }
+    }
 
     #[test]
     fn unsafe_non_loopback_startup_is_rejected() {

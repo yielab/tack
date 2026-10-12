@@ -62,7 +62,7 @@ struct GhUser {
 ///
 /// Rate-limit note: unauthenticated calls are limited to 60 requests/hour by
 /// GitHub; supplying a `token` raises this to 5 000 req/hour.
-#[instrument(skip(state))]
+#[instrument(skip(state, input), fields(repo = %input.repo))]
 #[utoipa::path(
     post,
     path = "/api/projects/{id}/import-github",
