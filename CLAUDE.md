@@ -36,7 +36,8 @@ A `v0.1.0-beta.10` tag was pushed on 2026-10-12 and withdrawn the same day: a se
 the board answers anyone without a token, a web page can post to it, an agent runs with permissions
 off, and the evidence base is a name the agent can move. ADR 0077 and Phase 69
 (`docs/plans/phase-69.md`, four rounds for Haiku/Sonnet agents, two boundary suites as required
-checks) close that; the release is re-cut as beta.10 when the phase closes. The same day the history
+checks) closed that on 2026-10-12, in `develop` and not yet pushed; the release is re-cut as
+beta.10 by the maintainer, after the GitHub settings in the plan's Wave 0. The same day the history
 was rewritten to drop the `Co-Authored-By: Claude` trailers 159 commits carried — never add one.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 

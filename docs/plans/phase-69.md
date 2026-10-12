@@ -1,8 +1,8 @@
 # Plan: Phase 69 — the agent reaches only what you gave it
 
 **Status: opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
-(the maintainer's) is done except the GitHub settings; Rounds 1 and 2 closed 2026-10-12,
-Round 3 dispatched — see Status.**
+(the maintainer's) is done except the GitHub settings; all four rounds closed 2026-10-12;
+the GitHub settings, the workstation items and the re-cut tag are the maintainer's — see Status.**
 Serves ADR 0077 (proposed): every task here executes one or more of its eighteen decisions, and
 the two boundary suites (decision 17) are the proof that they hold. Written against `develop` at
 `722269e8` (the hashes change when the history is rewritten in Wave 0; the trees do not). Every
@@ -739,4 +739,26 @@ the gate on the merge. Pushing and the release are the maintainer's.
   | A loopback server now always requires a token, so Playwright (served through Vite) gets 401 | F2 fixes the e2e; `smoke.sh` gives its servers a token; `api-token` is git-ignored |
   | The run log path used the raw attempt id | hex-encoded, as the stager's own directories are |
   | The new journal fields are written with the update after spawn | accepted: a crash in that gap leaves a record that pushes nothing |
+- **Rounds 3 and 4, 2026-10-12:** M1, A3, R5, F2, F1a, F1b, C3, D1 merged, with three tasks the
+  integration added: A4 (the server keeps the start report — migration 084), the per-process
+  cache of the sandbox decision, and absolute sandbox bind paths. On the final tree: the gate
+  (with the boundary suites, 62 tests), the workspace nextest (1300 passed), the frontend
+  type-check and vitest (663 passed), and the default Playwright suite on Chromium (55 of 56;
+  the one failure, the agents-page a11y scan catching a toast mid-animation, passed 3 of 3 alone
+  and predates this phase).
+
+  | Found | Decided |
+  |---|---|
+  | The server dropped the start report's `environment_names` and `sandbox` | A4: stored on the attempt (migration 084) and returned by the attempts route |
+  | On this workstation docket (a venv) and Homebrew's opencode do not start inside bwrap | the sandbox is decided per harness by a wrapped version probe; those two run unsandboxed and say why (`tack runner doctor` shows it); claude-code and codex run sandboxed |
+  | That probe ran on every catalog read and made the agents page queue behind it | cached per process under the program, its mtime and the machine's sandbox |
+  | A relative `TACK_STORAGE_DIR` made every sandboxed run fail: bwrap resolves binds from the workspace | every bind path is made absolute; found only by Playwright |
+  | No operator route returned the composed prompt | `GET /api/executions/{id}` returns `instructions` |
+  | A harness that cannot ask (no `decisions` support) still defaults to `auto` when unsandboxed | **open** — the dialog shows the unsandboxed line; whether such a harness should run at all unsandboxed is the maintainer's call |
+  | `regen-generated.sh --locked` would break the script's own purpose (re-resolving a stale lockfile) | not changed; the gate's check is already `--locked` |
+  | Whether `ubuntu-latest` has `bwrap` for the real-bwrap test | unverified until CI runs; the test skips when `bwrap` is absent |
+  | The book's install one-liners name `v0.1.0-beta.10`, which is withdrawn until re-cut | intended: they resolve once the tag exists again |
+
+  Left for the maintainer: push `develop`; the GitHub items of Wave 0 (tag ruleset, `release`
+  environment, `security-boundaries` as a required check); the workstation items; and the tag.
 

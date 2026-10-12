@@ -26,7 +26,15 @@ default, and a finished run hands over what it did for review. Then the first li
 the whole workflow, with docket as the agent and prill as the verifier, and what it found
 (ADR 0075). And a project with all its items from one outline or CSV (ADR 0076).
 
-Upgrading applies migrations 078–083 on first start — new tables and columns only.
+A tag `v0.1.0-beta.10` was pushed on 2026-10-12 and withdrawn the same day: a security audit
+found that the board answered anyone without a token, a web page could post to it, an agent
+ran with permissions off and Tack's own file access, and the evidence was computed from names
+the agent could move. Phase 69 (ADR 0077) closes those before the release is cut again; see
+**Security** below. Two behaviours change for everyone: the API always requires a token
+(the board's page holds it as a cookie it cannot read, the CLI finds it beside the
+database), and a pull request opens when you accept the run, not when it finishes.
+
+Upgrading applies migrations 078–084 on first start — new tables and columns only.
 
 ### Added
 
@@ -143,6 +151,43 @@ Upgrading applies migrations 078–083 on first start — new tables and columns
 - **board:** One item reads "1 item"
 - **deps:** Brace-expansion 2.1.7 clears the npm audit
 - **deps:** The npm lockfile follows the dependency bump's package.json
+
+### Security
+
+- **api:** The server always has a token: on a loopback bind with none configured it creates
+  `api-token` beside its database (0600) and requires it; the board's page receives it as an
+  `HttpOnly`, `SameSite=Strict` cookie, so the browser stores nothing
+- **api:** A request must name this server (`421` otherwise), a state-changing request from
+  another site is refused (`403`), and a raw import, CSV or restore body must state its type
+  (`415`); an imported item is never trusted as `manual`
+- **api:** An attachment is served only from the storage directory and always as a download;
+  import credentials never reach a log; the backup endpoint refuses link-local and metadata
+  addresses, and a new endpoint without a secret clears the stored one
+- **runs:** The server records the agent profile and the repository a run uses; a request can
+  no longer supply its own profile text or point the agent at another path
+- **runs:** The agent's prompt fences the card's title, description, comments and brief as
+  data; the run page shows the prompt the agent read
+- **runner:** A run's environment is the runner's to grant: names that change what a program
+  loads or where it sends traffic are refused, an `env:` reference from a request is refused,
+  and a store secret must be listed in `[secrets] request_may_reference`
+- **runner:** Where Linux has `bwrap`, each harness runs inside it with only the workspace, a
+  scratch home and its own config directory; a harness that cannot start there runs
+  unsandboxed and says why, and the run dialog then asks before each action
+- **runner:** The runner's git runs none of the repository's hooks, filters or monitors; it
+  pushes exactly the verified commit to the URL recorded at the start, and a run that changed
+  the git configuration or moved HEAD after verification pushes nothing
+- **runner:** A harness ends when its process ends, its first verdict stands, and a success
+  claimed by a process that exited non-zero is a failure; the run log is written outside the
+  workspace
+- **mcp:** Every id is checked before it enters a URL, a run started over MCP always asks,
+  and card text comes back fenced
+- **desktop:** The window trusts only its own server's origin and port, opens folders only
+  under the project or the data directory, attaches only to the server it launched, and no
+  longer starts at login until you turn that on
+- **release:** Releases are built with no restored cache, every asset and the container are
+  attested, `SHA256SUMS` is signed, and the installers check the signature when `cosign` or
+  `gh` is present; `serde_yaml` (unmaintained) is replaced by `serde-saphyr`
+- **ci:** The boundary suites are a required job and run in the pre-push gate
 
 ### Documentation
 
