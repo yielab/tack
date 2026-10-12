@@ -190,7 +190,7 @@ file — no separate workflow per tier:
 
 | Tier | Trigger | Jobs |
 |---|---|---|
-| Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security` |
+| Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security`, `security-boundaries` |
 | Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (Chromium only) |
 | Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (all three browsers) |
 
@@ -205,6 +205,7 @@ file — no separate workflow per tier:
 | `mutants` | `cargo-mutants` over `tack-core` and `tack-db`'s repository layer. Report-only: surviving mutants are listed in the job summary and the `mutants-*` artifacts, and never fail the build. Read it when deciding where the next test goes — a survivor is a line a test runs but would not miss |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `embed-spa` | release build with the SPA embedded, binary-size budget |
+| `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'` — the boundary suites; see below |
 | `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
 
 The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
@@ -221,15 +222,36 @@ updated by the repository owner (`gh api`) from the pull-request tier's job list
 
 ### Pre-push hook
 
-`git config core.hooksPath .githooks` activates it. It runs exactly three things:
+`git config core.hooksPath .githooks` activates it. It runs four things:
 `cargo fmt --all --check` for the root workspace **and, separately, for
 `crates/tack-desktop`** (its own workspace, excluded from the root one — nothing else local
-sees that crate at all), `cargo clippy --workspace --all-targets -- -D warnings`, and the
-lockfile freshness check — **not the test suite**, on purpose: a hook that takes a minute is
-a hook people bypass, and the suite is CI's job. The `schema.gen.ts` staleness check only
+sees that crate at all), `cargo clippy --workspace --all-targets -- -D warnings`, the four
+boundary suites below (seconds, once built), and the lockfile freshness check — **not the
+rest of the test suite**, on purpose: a hook that takes a minute is a hook people bypass, and
+the suite is CI's job. The `schema.gen.ts` staleness check only
 runs when `frontend/node_modules` exists, so a checkout that has never run `npm install` gets
 no local protection against schema drift there — CI's `frontend` job still catches it. Run
 `cargo nextest run --workspace` yourself before pushing anything you claim is green.
+
+## The boundary suites are required
+
+Four test binaries are required checks. The CI job `security-boundaries` runs them on every
+push and pull request, and the pre-push gate runs the same filterset after clippy:
+
+```bash
+cargo nextest run --workspace -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+```
+
+- `security` (`crates/tack-api/tests/security.rs`, module `trust_boundary`) is the server's trust
+  boundary: who may call the API, from which origin, and what the browser is allowed to run.
+- `agent_boundaries` (`crates/tack-runner/tests/agent_boundaries.rs`) is the runner's boundary:
+  the sandbox, the environment policy, which secrets a request may name, and the workspace.
+- `h3_checkout` and `crash_matrix` (`crates/tack-runner/tests/`) hold the runner's checkout and
+  crash-recovery rules.
+
+**A rule without a test in one of these suites is not a rule.** A new server rule gets its test
+in `trust_boundary.rs`; a new runner rule gets its test in `agent_boundaries.rs`, named after
+the rule.
 
 ## Coverage
 

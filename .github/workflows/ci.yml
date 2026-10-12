@@ -51,6 +51,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -99,6 +101,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # sqlx 0.9's own `rust-version` is the real floor now: it sits above
       # every other floor the rest of the dependency graph asks for. Bump
       # policy: the MSRV may be raised in a minor release when a dependency or
@@ -147,6 +151,8 @@ jobs:
             args: -p tack-db -f 'crates/tack-db/src/repo/**' -f crates/tack-db/src/repo.rs --shard 3/4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -196,6 +202,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # tack-desktop is deliberately NOT a member of the root workspace: Tauri
       # drags GTK, WebKit and glib into whatever workspace contains it, and the
       # server has to keep building on a machine that has none of them. The
@@ -238,6 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
@@ -282,6 +291,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -322,6 +333,8 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
@@ -340,10 +353,6 @@ jobs:
           git diff --exit-code src/shared/api/schema.gen.ts
       - name: Type check
         run: npm run type-check
-      # --no-save keeps package.json untouched; the provider is CI-only. This
-      # is the one place Vitest runs in CI.
-      - name: Install Vitest coverage provider
-        run: npm install --no-save @vitest/coverage-v8@^4
       - name: Vitest (with coverage thresholds)
         run: >-
           npx vitest run --coverage
@@ -383,6 +392,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -416,6 +427,8 @@ jobs:
     needs: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -484,6 +497,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
@@ -525,6 +540,27 @@ jobs:
           done
           echo "::warning::npm's advisory endpoint is down; the npm audit did not run"
 
+  security-boundaries:
+    name: Security and boundary suites (required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
+        with:
+          tool: nextest
+      # The rules the server and the runner enforce, each with a test. The same
+      # filterset runs in .githooks/pre-push after clippy.
+      - name: Boundary suites
+        run: cargo nextest run --workspace --profile ci --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+
   e2e:
     name: E2E (Playwright)
     # Merge tier: push to develop or main runs Chromium only. Schedule tier:
@@ -543,6 +579,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable

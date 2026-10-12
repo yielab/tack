@@ -26,6 +26,15 @@ cargo fmt --manifest-path crates/tack-desktop/Cargo.toml --all --check
 echo "→ cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings
 
+# The boundary suites are required checks in CI (the security-boundaries job);
+# the same filterset runs here, so a rule's test is never only a CI discovery.
+if ! command -v cargo-nextest >/dev/null 2>&1; then
+  echo "cargo-nextest is missing: cargo install cargo-nextest --locked" >&2
+  exit 1
+fi
+echo "→ cargo nextest run --workspace (boundary suites)"
+cargo nextest run --workspace --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+
 # A merge can leave a derived file describing the tree as it was on one side of
 # it. CI's `openapi_contract` test catches the spec; nothing caught a stale
 # lockfile or a stale TypeScript schema, and both are cheap to check here.
