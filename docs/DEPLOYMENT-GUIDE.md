@@ -48,10 +48,13 @@ gh attestation verify tack --repo yielab/tack   # provenance (optional)
 ### Option B — one-line installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+TAG=v0.1.0-beta.10
+curl --proto '=https' --tlsv1.2 -fsSL \
+  "https://github.com/yielab/tack/releases/download/$TAG/install.sh" \
+  | TACK_VERSION="$TAG" sh
 ```
 
-Resolves the newest release asset for your platform and installs `tack`. It
+Fetches the installer from the release it installs and installs `tack` from that release. It
 verifies the archive against that release's own `SHA256SUMS` before extracting
 anything, and refuses to install on a mismatch — Option A's manual check, done
 for you. Releases before `v0.1.0-beta.7` predate that file; installing one of

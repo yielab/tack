@@ -262,13 +262,6 @@ Content-Type: application/json
   "requested_harness_kind": "claude-code",
   "requested_model_provider": "anthropic",
   "requested_model_id": "claude-sonnet-4-5",
-  "agent_profile_snapshot": {
-    "name": "demo-profile",
-    "instructions": "Print the single word DONE and exit. Do not modify any files.",
-    "tool_policy": {},
-    "timeout_seconds": 120,
-    "budgets": {}
-  },
   "repository_snapshot": {
     "kind": "git",
     "remote": "/path/to/local/repo",

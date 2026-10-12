@@ -172,7 +172,8 @@ tack serve --with-runner
 ```
 
 Or `brew install yielab/tap/tack`. On Windows,
-`irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex` in PowerShell.
+`$tag = 'v0.1.0-beta.10'; $env:TACK_VERSION = $tag; irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex`
+in PowerShell.
 Open **<http://localhost:3210>**. The installer checks every download against the
 release's `SHA256SUMS`. Other ways to install — Homebrew, Scoop, Docker, a release
 archive, or building from source — are in the

@@ -34,7 +34,9 @@ brew install yielab/tap/tack
 **Windows:**
 
 ```powershell
-irm https://raw.githubusercontent.com/yielab/tack/main/install.ps1 | iex
+$tag = 'v0.1.0-beta.10'
+$env:TACK_VERSION = $tag
+irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 ```
 
 Same `TACK_VERSION` and `TACK_SKIP_CHECKSUM` env vars as above, plus `TACK_INSTALL_DIR` (default `%LOCALAPPDATA%\Programs\tack`); it verifies `SHA256SUMS` and adds the install directory to your user `PATH` — open a new terminal afterwards. Or install with Scoop:

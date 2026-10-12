@@ -400,9 +400,10 @@ place against real work.
 real enrolled runner is polling (see [Enrolling a runner](#enrolling-a-runner) below) or
 an embedded one is running (`tack serve --with-runner` — see
 [Standalone mode](#standalone-mode-tack-serve---with-runner) below). `POST
-/api/executions` requires all thirteen fields shown below; the CLI fills in an
+/api/executions` requires the fields shown below; the CLI fills in an
 `idempotency_key` (a fresh UUID) and empty objects for `budgets`/`environment`/`metadata`
-if you omit them, so five of the thirteen are effectively optional in practice.
+if you omit them. The profile and the repository are not sent: the server loads the
+profile by id and builds the repository from the project.
 
 Create an agent profile — its instructions and limits are snapshotted into every
 request created against it:
@@ -429,7 +430,7 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 runr_8fa0dfb9-638f-492d-b278-ee06a789ad04
 ```
 
-Now the full request, all thirteen required fields:
+Now the full request:
 
 ```sh
 tack execution create <ITEM_ID> \
