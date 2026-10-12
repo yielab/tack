@@ -11,11 +11,6 @@ Tack is a project board that runs Claude Code, Codex, opencode or docket on your
 machine, on the subscription you already pay for, and keeps every run, question and change
 on the task. A desktop app, or the same binary as a server. One SQLite file, no account.
 
-> [!WARNING]
-> **Tack is a beta and still in development.** It needs more testing and has not been proven
-> in a production environment. Expect bugs and breaking changes between releases, and keep a
-> backup of your data.
-
 <p align="center">
   <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Starting and Finished" />
 </p>
@@ -28,6 +23,11 @@ tack serve --with-runner        # then open http://localhost:3210
 
 Or download the desktop app from the [releases page](https://github.com/yielab/tack/releases/latest).
 Every other way to install is under [Get started](#get-started).
+
+> [!NOTE]
+> Tack is in public beta. It works end to end, but it hasn't been run in production yet:
+> expect rough edges and breaking changes between releases, and run `tack backup` before
+> you upgrade. [Status](#status) says what has been proven so far.
 
 ## Why Tack
 
@@ -238,11 +238,14 @@ Two tools made with Tack that also work on their own:
 
 ## Status
 
-Public beta, still in development: it needs more testing and has not run in production yet.
-The project manager and the agent runs are both complete, and the desktop app
-ships for Linux, macOS and Windows. Claude Code and Codex have recorded live end-to-end runs,
-and the whole workflow has run through the UI with docket as the agent and an independent
-verifier checking each run, against a local model. `tack runner doctor` shows what your own machine can run.
+Public beta, still in development. The project manager and the agent runs are both
+complete, and the desktop app ships for Linux, macOS and Windows. Claude Code and Codex have
+recorded live end-to-end runs, and the whole workflow has run through the UI with docket as
+the agent and an independent verifier checking each run, against a local model.
+`tack runner doctor` shows what your own machine can run.
+
+What it still needs is wider testing: no team has run it in production yet, so the
+limitations below are the ones known so far, not all there are.
 
 ### Known limitations
 
