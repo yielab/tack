@@ -116,7 +116,8 @@ ADR 0077's table stands in full. Added here, each one line to reverse:
   checked (install cosign or gh to check it)* when neither is.
 - **Dependabot auto-merge needs `update-type == semver-patch` and
   `dependency-type == direct:development`**; everything else waits for a person.
-- **`serde_yaml_ng`** replaces `serde_yaml`; same API, one `use` line per file.
+- **`serde-saphyr`** replaces `serde_yaml`: `serde_yaml_ng`, first chosen, depends on the same
+  `unsafe-libyaml` (found by C2); `to_string`/`from_slice`/`from_str` keep the call sites one line each.
 - **The release is re-cut as `v0.1.0-beta.10`** when this phase closes; the changelog's
   `[0.1.0-beta.10]` section gains this phase and a line saying the tag of 2026-10-12 was
   withdrawn the same day.
@@ -515,7 +516,7 @@ dir; `subdirectory: "../.."` is rejected before spawn for codex and opencode.
 the gate green.
 **Hand-off:** Haiku, one layer, ceiling 60.
 
-### C2 — `serde_yaml` becomes `serde_yaml_ng`
+### C2 — `serde_yaml` becomes `serde-saphyr`
 
 **Decision served:** ADR 0077 decision 16 (the advisory).
 **Files:** `Cargo.toml:56`, every file `rg -l serde_yaml crates` lists, `Cargo.lock`, `deny.toml`
