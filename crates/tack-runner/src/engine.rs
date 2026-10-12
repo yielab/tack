@@ -604,6 +604,10 @@ where
         } else {
             self.workspaces.provision(&workspace, &repository).await?;
         }
+        // Fixed here, before the harness can write anywhere: the commit the
+        // base revision resolved to and where the branch is pushed. They reach
+        // the journal with the update that follows the start.
+        (record.base_commit, record.push_remote) = self.workspaces.provisioned(&workspace).await;
 
         let spec = ExecutionSpec {
             work: work.clone(),
@@ -620,7 +624,9 @@ where
         }
         // What git will read as configuration is fixed here: the harness runs
         // next, and anything it changed in it is not the repository's own.
-        let config_before = crate::client::workspace::git::config_fingerprint(&spec.workspace.path);
+        record.config_before = Some(crate::client::workspace::git::config_fingerprint(
+            &spec.workspace.path,
+        ));
         let handle = self.adapter.start(&spec).await?;
         record.state = JournalState::ProcessObservedRunning;
         record.process_id = Some(handle.process_id.clone());
@@ -696,7 +702,12 @@ where
                 "details": serde_json::Value::Object(evidence.details.clone()),
             });
             if let Some((scratch, staged)) = self
-                .capture_attempt_evidence(&spec, cancelled_reason, serde_json::Value::Null)
+                .capture_attempt_evidence(
+                    &spec,
+                    record.base_commit.as_deref(),
+                    cancelled_reason,
+                    serde_json::Value::Null,
+                )
                 .await
             {
                 for artifact in &staged {
@@ -751,7 +762,7 @@ where
         // diff is still captured for the person to see, but nothing is
         // verified or pushed from a repository the harness reconfigured.
         if let Some(path) = changed_config_path(
-            &config_before,
+            record.config_before.as_deref().unwrap_or_default(),
             &crate::client::workspace::git::config_fingerprint(&spec.workspace.path),
         ) {
             outcome.terminal_state = AttemptState::Failed;
@@ -767,6 +778,7 @@ where
         let evidence_scratch = match self
             .capture_attempt_evidence(
                 &spec,
+                record.base_commit.as_deref(),
                 outcome.terminal_reason.clone(),
                 serde_json::to_value(&outcome.usage).unwrap_or(serde_json::Value::Null),
             )
@@ -777,7 +789,14 @@ where
                     self.verify_attempt(session, &mut record, &spec, &scratch, &mut staged)
                         .await;
                     if let Some(published) = self
-                        .publish_attempt(session, &mut record, &spec, &scratch, &mut staged)
+                        .publish_attempt(
+                            session,
+                            &mut record,
+                            &spec,
+                            &scratch,
+                            &mut staged,
+                            &mut outcome,
+                        )
                         .await
                     {
                         outcome.actual_execution.additional.insert(
@@ -1301,6 +1320,7 @@ where
         spec: &ExecutionSpec,
         scratch: &std::path::Path,
         staged: &mut [serde_json::Value],
+        outcome: &mut HarnessOutcome,
     ) -> Option<crate::evidence::PublishedBranch> {
         // `in_place` never commits or branches in the user's repository.
         if spec
@@ -1355,6 +1375,12 @@ where
             .filter(|evidence| {
                 evidence.captured && evidence.patch.as_ref().is_some_and(|p| p.size_bytes > 0)
             })?;
+        // The commit the capture made, and the `HEAD` it was made on. A run
+        // that recorded neither has nothing that was verified to push.
+        let recorded =
+            std::fs::read_to_string(scratch.join(crate::evidence::CAPTURED_COMMIT_FILE)).ok()?;
+        let mut recorded = recorded.lines();
+        let (captured, head) = (recorded.next()?, recorded.next()?);
         let item = spec.work.request.item_id.as_str();
         let branch = format!(
             "{}{}-a{}",
@@ -1362,19 +1388,16 @@ where
             item.split('-').next().unwrap_or(item),
             spec.work.lease.attempt_number
         );
-        let message = format!(
-            "Tack attempt {} on item {}",
-            record.attempt_id.as_str(),
-            item
-        );
         // A push to a slow remote can outlast the lease; renew it meanwhile,
         // exactly as while the verifier runs.
+        let remote = record.push_remote.clone();
         let publishing = self.workspaces.publish_branch(
             &spec.workspace,
             &branch,
-            &self.git.author,
-            &message,
             push,
+            remote.as_deref(),
+            captured,
+            head,
         );
         tokio::pin!(publishing);
         let mut renewal = tokio::time::interval_at(
@@ -1399,7 +1422,17 @@ where
             }
         };
         let published = match result {
-            Ok(Some(published)) => published,
+            Ok(Some(published)) if published.head_commit == captured => published,
+            // What would be pushed is not what was verified: the attempt
+            // fails, and the evidence says why.
+            Ok(Some(_)) | Err(WorkspaceError::TreeChanged) => {
+                outcome.terminal_state = AttemptState::Failed;
+                outcome.terminal_reason =
+                    serde_json::json!({ "code": "tree_changed_after_verification" });
+                evidence.terminal_reason = outcome.terminal_reason.clone();
+                Self::restage_evidence(&evidence_path, staged, &evidence);
+                return None;
+            }
             Ok(None) => return None,
             Err(error) => {
                 tracing::warn!(
@@ -1420,8 +1453,19 @@ where
         // uncommitted on top of it: the patch is exactly base..head.
         evidence.head_commit = Some(published.head_commit.clone());
         evidence.worktree_dirty = Some(false);
-        let bytes = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
-        let _ = std::fs::write(&evidence_path, &bytes);
+        Self::restage_evidence(&evidence_path, staged, &evidence);
+        Some(published)
+    }
+
+    /// Writes `evidence` over the staged `evidence.json`, keeping the
+    /// manifest entry's size and digest true to the file.
+    fn restage_evidence(
+        evidence_path: &std::path::Path,
+        staged: &mut [serde_json::Value],
+        evidence: &crate::evidence::AttemptEvidence,
+    ) {
+        let bytes = serde_json::to_vec_pretty(evidence).unwrap_or_default();
+        let _ = std::fs::write(evidence_path, &bytes);
         if let Some(entry) = staged
             .iter_mut()
             .find(|entry| entry.get("name").and_then(|name| name.as_str()) == Some("evidence.json"))
@@ -1435,7 +1479,6 @@ where
                 entry["sha256"] = crate::harness::sha256::sha256_hex(&bytes).into();
             }
         }
-        Some(published)
     }
 
     /// Stages the evidence of one attempt, or nothing when no transport is
@@ -1443,6 +1486,7 @@ where
     async fn capture_attempt_evidence(
         &self,
         spec: &ExecutionSpec,
+        base_commit: Option<&str>,
         terminal_reason: serde_json::Value,
         usage: serde_json::Value,
     ) -> Option<(std::path::PathBuf, Vec<serde_json::Value>)> {
@@ -1451,6 +1495,11 @@ where
             .ok()
             .and_then(|value| value.as_str().map(str::to_owned))
             .unwrap_or_default();
+        let message = format!(
+            "Tack attempt {} on item {}",
+            spec.work.lease.attempt_id.as_str(),
+            spec.work.request.item_id.as_str()
+        );
         Some(
             crate::evidence::capture(
                 &self.workspaces,
@@ -1459,6 +1508,8 @@ where
                 terminal_reason,
                 usage,
                 spec.work.request.brief.as_ref(),
+                base_commit,
+                (&self.git.author, &message),
             )
             .await,
         )

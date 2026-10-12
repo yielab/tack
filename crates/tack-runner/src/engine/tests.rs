@@ -2946,27 +2946,36 @@ impl WorktreeProvisioner for SeededGitWorktree {
         Ok(())
     }
 
+    async fn provisioned(&self, workspace: &Workspace) -> (Option<String>, Option<String>) {
+        self.git.provisioned(workspace).await
+    }
+
     async fn capture_evidence(
         &self,
         workspace: &Workspace,
         exclude: &[&str],
+        base_commit: Option<&str>,
+        commit: (&str, &str),
     ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
-        self.git.capture_evidence(workspace, exclude).await
+        self.git
+            .capture_evidence(workspace, exclude, base_commit, commit)
+            .await
     }
 
     async fn publish_branch(
         &self,
         workspace: &Workspace,
         branch: &str,
-        author: &str,
-        message: &str,
         push: bool,
+        remote: Option<&str>,
+        captured: &str,
+        head: &str,
     ) -> Result<Option<crate::evidence::PublishedBranch>, WorkspaceError> {
         if let (true, Some(origin)) = (self.break_origin, &self.origin) {
             std::fs::remove_dir_all(origin).expect("remove origin");
         }
         self.git
-            .publish_branch(workspace, branch, author, message, push)
+            .publish_branch(workspace, branch, push, remote, captured, head)
             .await
     }
 }
@@ -3638,6 +3647,8 @@ impl WorktreeProvisioner for UnreadableWorktree {
         &self,
         _workspace: &Workspace,
         _exclude: &[&str],
+        _base_commit: Option<&str>,
+        _commit: (&str, &str),
     ) -> Result<Option<crate::evidence::GitEvidence>, WorkspaceError> {
         Err(WorkspaceError::Git)
     }

@@ -68,6 +68,9 @@ pub enum WorkspaceError {
     /// by a dead process is not detected: out of scope, remove the file.
     #[error("another attempt is working in this folder")]
     Busy,
+    /// `HEAD` or the index is not what was captured and verified.
+    #[error("the tree changed after it was verified")]
+    TreeChanged,
     #[error("runner workspace operation failed")]
     Io,
 }
@@ -93,30 +96,45 @@ pub trait WorktreeProvisioner: Send + Sync {
         Err(WorkspaceError::WorktreeUnavailable)
     }
 
+    /// What provisioning fixed for `workspace`, read before the harness
+    /// starts: the commit id the base revision resolved to, and the URL the
+    /// branch is pushed to. Either is `None` when this provisioner has none.
+    async fn provisioned(&self, _workspace: &Workspace) -> (Option<String>, Option<String>) {
+        (None, None)
+    }
+
     /// What the attempt changed in `workspace`, read before the workspace is
-    /// deleted. `exclude` names workspace-relative paths that are the runner's
-    /// own, not the harness's. `Ok(None)` is a provisioner with no repository
-    /// to read.
+    /// deleted, as the difference from `base_commit` (the commit id fixed at
+    /// provisioning) to a commit made of the work tree as it stands. That
+    /// commit is `GitEvidence::captured_commit`; `commit` is its author and
+    /// message. `exclude` names workspace-relative paths that are the
+    /// runner's own, not the harness's. `Ok(None)` is a provisioner with no
+    /// repository to read.
     async fn capture_evidence(
         &self,
         _workspace: &Workspace,
         _exclude: &[&str],
+        _base_commit: Option<&str>,
+        _commit: (&str, &str),
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
         Ok(None)
     }
 
-    /// Puts what the attempt left in `workspace` on `branch`, commits it when
-    /// the index holds staged work, and pushes it to the remote the checkout
-    /// was fetched from when `push` is set. A `local_branch` worktree is
-    /// removed here and its branch stays in the user's repository.
-    /// `Ok(None)` is a provisioner with no repository.
+    /// Puts the `captured` commit on `branch` and, when `push` is set, pushes
+    /// exactly that commit to `remote`. It refuses
+    /// ([`WorkspaceError::TreeChanged`]) unless `HEAD` is still `head`, the
+    /// commit it was at when `captured` was made, and the index still holds
+    /// `captured`'s tree. A `local_branch` worktree is removed here and its
+    /// branch stays in the user's repository. `Ok(None)` is a provisioner
+    /// with no repository.
     async fn publish_branch(
         &self,
         _workspace: &Workspace,
         _branch: &str,
-        _author: &str,
-        _message: &str,
         _push: bool,
+        _remote: Option<&str>,
+        _captured: &str,
+        _head: &str,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         Ok(None)
     }
@@ -285,24 +303,33 @@ where
         Ok(())
     }
 
+    pub async fn provisioned(&self, workspace: &Workspace) -> (Option<String>, Option<String>) {
+        self.provisioner.provisioned(workspace).await
+    }
+
     pub async fn capture_evidence(
         &self,
         workspace: &Workspace,
         exclude: &[&str],
+        base_commit: Option<&str>,
+        commit: (&str, &str),
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
-        self.provisioner.capture_evidence(workspace, exclude).await
+        self.provisioner
+            .capture_evidence(workspace, exclude, base_commit, commit)
+            .await
     }
 
     pub async fn publish_branch(
         &self,
         workspace: &Workspace,
         branch: &str,
-        author: &str,
-        message: &str,
         push: bool,
+        remote: Option<&str>,
+        captured: &str,
+        head: &str,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         self.provisioner
-            .publish_branch(workspace, branch, author, message, push)
+            .publish_branch(workspace, branch, push, remote, captured, head)
             .await
     }
 

@@ -151,6 +151,9 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
         last_event_checkpoint: None,
         events_submitted: 0,
         pending_terminal_report: None,
+        base_commit: None,
+        config_before: None,
+        push_remote: None,
     }
 }
 

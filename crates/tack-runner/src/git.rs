@@ -65,7 +65,9 @@ pub struct GitWorktreeProvisioner {
     /// restarted mid-attempt has no baseline and captures nothing.
     baselines: Arc<Mutex<HashMap<String, Baseline>>>,
     /// Where each attempt's branch is pushed: the URL the repository snapshot
-    /// named at provision time, read from nothing the harness can write.
+    /// named at provision time, read from nothing the harness can write. A
+    /// cache between provisioning and [`WorktreeProvisioner::provisioned`];
+    /// the engine keeps the durable copy in the attempt journal.
     remotes: Arc<Mutex<HashMap<String, String>>>,
 }
 
@@ -391,6 +393,8 @@ impl GitWorktreeProvisioner {
         workspace: &Workspace,
         exclude: &[&str],
         scratch: Option<&Path>,
+        base_commit: Option<&str>,
+        commit: (&str, &str),
     ) -> Result<GitEvidence, WorkspaceError> {
         let path = workspace.path.as_path();
         let secrets = SecretMaterial::new();
@@ -405,11 +409,15 @@ impl GitWorktreeProvisioner {
         self.stage_worktree(path, &pathspec, &secrets, index)
             .await?;
 
-        // The checkout was fetched by name into a fresh repository, where a
-        // bare branch name resolves to nothing: diff against the commit it is.
-        let base_commit = self
-            .resolve_revision(path, &workspace.base_revision, &secrets)
-            .await?;
+        // The base is the commit id provisioning recorded. A name is never
+        // looked up again here: the harness can create a branch of any name.
+        let base_commit = match base_commit {
+            Some(base_commit) => base_commit.to_owned(),
+            None => {
+                self.resolve_revision(path, &workspace.base_revision, &secrets)
+                    .await?
+            }
+        };
         let before = if scratch.is_some() {
             match self
                 .baselines
@@ -443,6 +451,43 @@ impl GitWorktreeProvisioner {
                 index,
             )
             .await?;
+        // What is verified and pushed is one commit: the staged tree, on top
+        // of `HEAD` unless nothing is staged. An `in_place` folder is never
+        // committed to.
+        let captured_commit = if scratch.is_some() {
+            String::new()
+        } else {
+            let tree = self.git_ok(path, &["write-tree"], &secrets).await?.stdout;
+            let head_tree = self
+                .git_ok(path, &["rev-parse", "--verify", "HEAD^{tree}"], &secrets)
+                .await?
+                .stdout;
+            if tree == head_tree {
+                head_commit.clone()
+            } else {
+                let [user_name, user_email] = git_identity(commit.0);
+                self.git_ok(
+                    path,
+                    &[
+                        "-c",
+                        &user_name,
+                        "-c",
+                        &user_email,
+                        "-c",
+                        "commit.gpgsign=false",
+                        "commit-tree",
+                        &tree,
+                        "-p",
+                        &head_commit,
+                        "-m",
+                        commit.1,
+                    ],
+                    &secrets,
+                )
+                .await?
+                .stdout
+            }
+        };
         // `stdout` is lossy and trimmed, and a patch must reach the server
         // byte for byte, so git writes it to a file inside `.git` (never part
         // of the diff, deleted with the workspace) and it is read raw.
@@ -456,38 +501,51 @@ impl GitWorktreeProvisioner {
             |scratch| scratch.join("tack-evidence.patch"),
         );
         let output_arg = format!("--output={}", patch_file.display());
-        let mut diff = vec![
-            "diff",
-            "--cached",
+        let mut diff = vec!["diff"];
+        // An `in_place` folder is read from its temporary index; everything
+        // else is the difference between two commits.
+        if scratch.is_some() {
+            diff.push("--cached");
+        }
+        diff.extend([
             "--binary",
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
             &output_arg,
             base,
-            "--",
-        ];
+        ]);
+        if !captured_commit.is_empty() {
+            diff.push(&captured_commit);
+        }
+        diff.push("--");
         diff.extend(pathspec.iter().map(String::as_str));
         self.git_ok_indexed(path, &diff, &secrets, index).await?;
         let mut patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
         let _ = fs::remove_file(&patch_file);
         let truncated = patch.len() > PATCH_CAP_BYTES;
         patch.truncate(PATCH_CAP_BYTES);
-        let mut names = vec![
-            "diff",
-            "--cached",
+        let mut names = vec!["diff"];
+        if scratch.is_some() {
+            names.push("--cached");
+        }
+        names.extend([
             "--no-ext-diff",
             "--no-textconv",
             "--name-status",
             "-z",
             base,
-            "--",
-        ];
+        ]);
+        if !captured_commit.is_empty() {
+            names.push(&captured_commit);
+        }
+        names.push("--");
         names.extend(pathspec.iter().map(String::as_str));
         let listing = self.git_ok_indexed(path, &names, &secrets, index).await?;
         Ok(GitEvidence {
             base_commit,
             head_commit,
+            captured_commit,
             worktree_dirty: !dirty.stdout.is_empty(),
             files: parse_name_status(listing.stdout.as_bytes()),
             patch,
@@ -584,6 +642,7 @@ impl GitWorktreeProvisioner {
         Ok(GitEvidence {
             base_commit: workspace.base_revision.clone(),
             head_commit: String::new(),
+            captured_commit: String::new(),
             worktree_dirty: !files.is_empty(),
             files,
             patch: Vec::new(),
@@ -794,22 +853,43 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         write_checkout_marker(&path.join(CHECKOUT_MARKER), &head)
     }
 
+    async fn provisioned(&self, workspace: &Workspace) -> (Option<String>, Option<String>) {
+        let base_commit = fs::read_to_string(workspace.path.join(CHECKOUT_MARKER))
+            .ok()
+            .map(|marker| marker.trim().to_owned())
+            .filter(|marker| !marker.is_empty());
+        let remote = self.remotes.lock().ok().and_then(|remotes| {
+            remotes
+                .get(workspace.attempt_id.as_str())
+                .cloned()
+                .filter(|remote| !remote.is_empty())
+        });
+        (base_commit, remote)
+    }
+
     async fn capture_evidence(
         &self,
         workspace: &Workspace,
         exclude: &[&str],
+        base_commit: Option<&str>,
+        commit: (&str, &str),
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
         let path = workspace.path.as_path();
         // Every clone and worktree carries the attempt marker; the user's own
         // folder never does, and nothing may be staged in its real index.
         if path.join(ATTEMPT_MARKER).exists() {
-            return self.capture_git(workspace, exclude, None).await.map(Some);
+            return self
+                .capture_git(workspace, exclude, None, base_commit, commit)
+                .await
+                .map(Some);
         }
         if !path.join(".git").exists() {
             return self.capture_snapshot(workspace, exclude).map(Some);
         }
         let scratch = index_scratch(workspace)?;
-        let result = self.capture_git(workspace, exclude, Some(&scratch)).await;
+        let result = self
+            .capture_git(workspace, exclude, Some(&scratch), base_commit, commit)
+            .await;
         let _ = fs::remove_dir_all(&scratch);
         result.map(Some)
     }
@@ -818,9 +898,10 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         &self,
         workspace: &Workspace,
         branch: &str,
-        author: &str,
-        message: &str,
         push: bool,
+        remote: Option<&str>,
+        captured: &str,
+        head: &str,
     ) -> Result<Option<PublishedBranch>, WorkspaceError> {
         let path = workspace.path.as_path();
         let worktree = path.join(".git").is_file();
@@ -828,25 +909,21 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         // It is the one the repository snapshot named, never `origin`: the
         // harness could have rewritten that in the repository's config.
         let remote = if push {
-            self.remotes
-                .lock()
-                .map_err(|_| WorkspaceError::Io)?
-                .get(workspace.attempt_id.as_str())
-                .cloned()
+            remote
                 .filter(|remote| !remote.is_empty())
                 .ok_or(WorkspaceError::Git)?
         } else {
-            String::new()
+            ""
         };
-        let secrets = remote_secrets(&remote);
-        let (name, email) = match author.split_once('<') {
-            Some((name, rest)) => (name.trim(), rest.trim_end_matches('>').trim()),
-            None => (author.trim(), ""),
-        };
-        let (user_name, user_email) = (format!("user.name={name}"), format!("user.email={email}"));
-        self.git_ok(path, &["checkout", "-b", branch], &secrets)
-            .await?;
-        let staged = self
+        let secrets = remote_secrets(remote);
+        // What is pushed is the commit that was verified. If `HEAD` or the
+        // index is no longer what that commit was made from, something kept
+        // working after the capture, and nothing leaves this machine.
+        let current = self
+            .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
+            .await?
+            .stdout;
+        let index = self
             .git(
                 path,
                 &[
@@ -855,40 +932,25 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                     "--no-ext-diff",
                     "--no-textconv",
                     "--quiet",
-                    "HEAD",
+                    captured,
                 ],
                 &secrets,
             )
             .await?;
-        if !staged.success {
-            self.git_ok(
-                path,
-                &[
-                    "-c",
-                    &user_name,
-                    "-c",
-                    &user_email,
-                    "-c",
-                    "commit.gpgsign=false",
-                    "commit",
-                    "--quiet",
-                    "--no-verify",
-                    "-m",
-                    message,
-                ],
-                &secrets,
-            )
-            .await?;
+        if current != head || !index.success {
+            return Err(WorkspaceError::TreeChanged);
         }
-        let head_commit = self
-            .git_ok(path, &["rev-parse", "--verify", "HEAD"], &secrets)
-            .await?
-            .stdout;
+        self.git_ok(
+            path,
+            &["branch", "--no-track", "--", branch, captured],
+            &secrets,
+        )
+        .await?;
         if push {
-            let refspec = format!("{head_commit}:refs/heads/{branch}");
+            let refspec = format!("{captured}:refs/heads/{branch}");
             self.git_ok(
                 path,
-                &["push", "--no-verify", "--", &remote, &refspec],
+                &["push", "--no-verify", "--", remote, &refspec],
                 &secrets,
             )
             .await?;
@@ -915,10 +977,20 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         }
         Ok(Some(PublishedBranch {
             branch: branch.to_owned(),
-            head_commit,
+            head_commit: captured.to_owned(),
             pushed: push,
         }))
     }
+}
+
+/// The `-c` values that give a git command `author` (`Name <email>`) as its
+/// identity.
+fn git_identity(author: &str) -> [String; 2] {
+    let (name, email) = match author.split_once('<') {
+        Some((name, rest)) => (name.trim(), rest.trim_end_matches('>').trim()),
+        None => (author.trim(), ""),
+    };
+    [format!("user.name={name}"), format!("user.email={email}")]
 }
 
 /// Configuration every git invocation carries ahead of its subcommand, so a
