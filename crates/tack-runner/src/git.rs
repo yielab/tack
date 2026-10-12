@@ -64,6 +64,9 @@ pub struct GitWorktreeProvisioner {
     /// attempt, the "before" of the evidence diff. In memory only: a runner
     /// restarted mid-attempt has no baseline and captures nothing.
     baselines: Arc<Mutex<HashMap<String, Baseline>>>,
+    /// Where each attempt's branch is pushed: the URL the repository snapshot
+    /// named at provision time, read from nothing the harness can write.
+    remotes: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Default for GitWorktreeProvisioner {
@@ -78,6 +81,7 @@ impl GitWorktreeProvisioner {
             program: program.into(),
             timeout,
             baselines: Arc::default(),
+            remotes: Arc::default(),
         }
     }
 
@@ -112,8 +116,10 @@ impl GitWorktreeProvisioner {
         let mut command = Command::new(&self.program);
         command
             .current_dir(directory)
+            .args(hardened_git_args())
             .args(args)
             .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_INDEX_FILE")
@@ -188,6 +194,18 @@ impl GitWorktreeProvisioner {
         } else {
             Err(WorkspaceError::Git)
         }
+    }
+
+    pub(crate) fn record_remote(
+        &self,
+        workspace: &Workspace,
+        remote: &str,
+    ) -> Result<(), WorkspaceError> {
+        self.remotes
+            .lock()
+            .map_err(|_| WorkspaceError::Io)?
+            .insert(workspace.attempt_id.as_str().to_owned(), remote.to_owned());
+        Ok(())
     }
 
     /// True when this directory already holds a completed checkout of exactly
@@ -413,7 +431,14 @@ impl GitWorktreeProvisioner {
         let dirty = self
             .git_ok_indexed(
                 path,
-                &["diff", "--cached", "--name-only", "HEAD"],
+                &[
+                    "diff",
+                    "--cached",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--name-only",
+                    "HEAD",
+                ],
                 &secrets,
                 index,
             )
@@ -437,6 +462,7 @@ impl GitWorktreeProvisioner {
             "--binary",
             "--no-color",
             "--no-ext-diff",
+            "--no-textconv",
             &output_arg,
             base,
             "--",
@@ -447,7 +473,16 @@ impl GitWorktreeProvisioner {
         let _ = fs::remove_file(&patch_file);
         let truncated = patch.len() > PATCH_CAP_BYTES;
         patch.truncate(PATCH_CAP_BYTES);
-        let mut names = vec!["diff", "--cached", "--name-status", "-z", base, "--"];
+        let mut names = vec![
+            "diff",
+            "--cached",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-status",
+            "-z",
+            base,
+            "--",
+        ];
         names.extend(pathspec.iter().map(String::as_str));
         let listing = self.git_ok_indexed(path, &names, &secrets, index).await?;
         Ok(GitEvidence {
@@ -618,7 +653,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         }
 
         match repository.workspace_mode {
-            WorkspaceMode::Clone => {}
+            WorkspaceMode::Clone => self.record_remote(workspace, &repository.remote)?,
             WorkspaceMode::InPlace => return Err(WorkspaceError::UnsafePath),
             WorkspaceMode::LocalBranch => {
                 // A worktree of the user's own repository, detached at the
@@ -629,6 +664,16 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                     .as_deref()
                     .filter(|repo| repo.is_dir())
                     .ok_or(WorkspaceError::RepositoryUnreachable)?;
+                let origin = self
+                    .git(repo, &["remote", "get-url", "origin"], &secrets)
+                    .await?;
+                // A repository with no `origin` simply has nowhere to push.
+                let origin = if origin.success {
+                    origin.stdout
+                } else {
+                    String::new()
+                };
+                self.record_remote(workspace, &origin)?;
                 if path.join(CHECKOUT_MARKER).exists() && path.join(".git").is_file() {
                     return Ok(());
                 }
@@ -780,14 +825,16 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         let path = workspace.path.as_path();
         let worktree = path.join(".git").is_file();
         // The remote may embed credentials and git echoes it in its errors.
+        // It is the one the repository snapshot named, never `origin`: the
+        // harness could have rewritten that in the repository's config.
         let remote = if push {
-            self.git_ok(
-                path,
-                &["remote", "get-url", "origin"],
-                &SecretMaterial::new(),
-            )
-            .await?
-            .stdout
+            self.remotes
+                .lock()
+                .map_err(|_| WorkspaceError::Io)?
+                .get(workspace.attempt_id.as_str())
+                .cloned()
+                .filter(|remote| !remote.is_empty())
+                .ok_or(WorkspaceError::Git)?
         } else {
             String::new()
         };
@@ -797,14 +844,21 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             None => (author.trim(), ""),
         };
         let (user_name, user_email) = (format!("user.name={name}"), format!("user.email={email}"));
-        // The harness wrote into this repository, so nothing it left in
-        // `.git/hooks` may run on the operator's side of the push.
-        let hooks = "core.hooksPath=/dev/null";
-
         self.git_ok(path, &["checkout", "-b", branch], &secrets)
             .await?;
         let staged = self
-            .git(path, &["diff", "--cached", "--quiet", "HEAD"], &secrets)
+            .git(
+                path,
+                &[
+                    "diff",
+                    "--cached",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--quiet",
+                    "HEAD",
+                ],
+                &secrets,
+            )
             .await?;
         if !staged.success {
             self.git_ok(
@@ -814,8 +868,6 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                     &user_name,
                     "-c",
                     &user_email,
-                    "-c",
-                    hooks,
                     "-c",
                     "commit.gpgsign=false",
                     "commit",
@@ -833,9 +885,10 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             .await?
             .stdout;
         if push {
+            let refspec = format!("{head_commit}:refs/heads/{branch}");
             self.git_ok(
                 path,
-                &["-c", hooks, "push", "--no-verify", "origin", branch],
+                &["push", "--no-verify", "--", &remote, &refspec],
                 &secrets,
             )
             .await?;
@@ -866,6 +919,57 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             pushed: push,
         }))
     }
+}
+
+/// Configuration every git invocation carries ahead of its subcommand, so a
+/// repository the harness wrote into cannot make git run its code: no hooks,
+/// no filesystem monitor, a plain `ssh`, and no `ext::` transport.
+pub fn hardened_git_args() -> [&'static str; 8] {
+    [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.sshCommand=ssh",
+        "-c",
+        "protocol.ext.allow=never",
+    ]
+}
+
+/// One `path<TAB>sha256` line per git config file the repository at
+/// `workspace` reads: `.git/config` and, in a worktree, the common
+/// directory's config and the worktree's own `config.worktree`. A file that
+/// is absent hashes as empty. Empty when `workspace` holds no git repository.
+pub fn config_fingerprint(workspace: &Path) -> String {
+    let dot_git = workspace.join(".git");
+    let mut files = Vec::new();
+    if dot_git.is_dir() {
+        files.push(dot_git.join("config"));
+        files.push(dot_git.join("config.worktree"));
+    } else if let Ok(pointer) = fs::read_to_string(&dot_git) {
+        let Some(git_dir) = pointer.trim().strip_prefix("gitdir:").map(str::trim) else {
+            return String::new();
+        };
+        let git_dir = workspace.join(git_dir);
+        let common = fs::read_to_string(git_dir.join("commondir"))
+            .map_or_else(|_| git_dir.clone(), |dir| git_dir.join(dir.trim()));
+        files.push(common.join("config"));
+        files.push(git_dir.join("config.worktree"));
+    } else {
+        return String::new();
+    }
+    files
+        .iter()
+        .map(|file| {
+            let bytes = fs::read(file).unwrap_or_default();
+            format!(
+                "{}\t{}\n",
+                file.display(),
+                crate::harness::sha256::sha256_hex(&bytes)
+            )
+        })
+        .collect()
 }
 
 struct GitOutput {

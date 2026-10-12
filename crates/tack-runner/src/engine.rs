@@ -617,6 +617,9 @@ where
             }
             Err(error) => return Err(error.into()),
         }
+        // What git will read as configuration is fixed here: the harness runs
+        // next, and anything it changed in it is not the repository's own.
+        let config_before = crate::client::workspace::git::config_fingerprint(&spec.workspace.path);
         let handle = self.adapter.start(&spec).await?;
         record.state = JournalState::ProcessObservedRunning;
         record.process_id = Some(handle.process_id.clone());
@@ -742,6 +745,19 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
         let mut outcome = outcome.normalize_workspace_facts(&spec.workspace);
+        // A changed git configuration ends the attempt `failed`: the evidence
+        // diff is still captured for the person to see, but nothing is
+        // verified or pushed from a repository the harness reconfigured.
+        if let Some(path) = changed_config_path(
+            &config_before,
+            &crate::client::workspace::git::config_fingerprint(&spec.workspace.path),
+        ) {
+            outcome.terminal_state = AttemptState::Failed;
+            outcome.terminal_reason = serde_json::json!({
+                "code": "repository_config_changed",
+                "path": path,
+            });
+        }
         let mut evidence_failure = None;
         let mut worktree_kept = false;
         // Read what the attempt changed before the workspace is deleted after
@@ -2114,6 +2130,25 @@ where
             JournalState::Quarantined => RecoveryJournalState::Quarantined,
         }
     }
+}
+
+/// The first config file whose line differs between two
+/// [`crate::client::workspace::git::config_fingerprint`]s, or `None` when they agree.
+fn changed_config_path(before: &str, after: &str) -> Option<String> {
+    if before.is_empty() || before == after {
+        return None;
+    }
+    let after_lines: Vec<&str> = after.lines().collect();
+    before
+        .lines()
+        .find(|line| !after_lines.contains(line))
+        .or_else(|| {
+            after_lines
+                .iter()
+                .copied()
+                .find(|line| !before.lines().any(|b| b == *line))
+        })
+        .map(|line| line.split('\t').next().unwrap_or(line).to_owned())
 }
 
 #[cfg(test)]
