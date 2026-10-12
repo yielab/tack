@@ -171,6 +171,7 @@ impl HarnessAdapter for RealProcessAdapter {
 struct FakeProtocol {
     work: Arc<Mutex<Option<ClaimedWork>>>,
     cancellation_requested: bool,
+    completions: Arc<Mutex<Vec<CompletionReport>>>,
 }
 
 impl FakeProtocol {
@@ -178,6 +179,7 @@ impl FakeProtocol {
         Self {
             work: Arc::new(Mutex::new(Some(work))),
             cancellation_requested,
+            completions: Arc::default(),
         }
     }
 }
@@ -249,6 +251,10 @@ impl PullProtocol for FakeProtocol {
         _session: &RunnerSession,
         report: CompletionReport,
     ) -> Result<CompletionResponse, ProtocolClientError> {
+        self.completions
+            .lock()
+            .expect("completions")
+            .push(report.clone());
         Ok(CompletionResponse {
             protocol_version: ProtocolVersion::v1(),
             attempt_id: report.attempt_id,
@@ -658,4 +664,270 @@ impl HarnessAdapter for FailingStartAdapter {
             Ok(RecoveryObservation::ProcessStopped)
         }
     }
+}
+
+/// Does the work of an attempt (writes one file) and, when `reconfigure` is
+/// set, plants what would run the repository's code in the runner: a
+/// `post-checkout` hook and a `core.fsmonitor` script, each of which leaves a
+/// marker file if git ever runs it.
+struct RepositoryWritingAdapter {
+    reconfigure: bool,
+    markers: PathBuf,
+}
+
+#[async_trait]
+impl HarnessAdapter for RepositoryWritingAdapter {
+    async fn validate(
+        &self,
+        _spec: &tack_runner::client::engine::ExecutionSpec,
+    ) -> Result<(), HarnessError> {
+        Ok(())
+    }
+
+    async fn start(
+        &self,
+        spec: &tack_runner::client::engine::ExecutionSpec,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        let workspace = &spec.workspace.path;
+        std::fs::write(workspace.join("work.txt"), "the harness wrote this\n")
+            .map_err(|_| HarnessError::Process)?;
+        if self.reconfigure {
+            let hook = workspace.join(".git/hooks/post-checkout");
+            let monitor = workspace.join(".git/fsmonitor.sh");
+            let marker = |name: &str| self.markers.join(name).display().to_string();
+            std::fs::write(&hook, format!("#!/bin/sh\necho ran > {}\n", marker("hook")))
+                .map_err(|_| HarnessError::Process)?;
+            std::fs::write(
+                &monitor,
+                format!("#!/bin/sh\necho ran > {}\n", marker("fsmonitor")),
+            )
+            .map_err(|_| HarnessError::Process)?;
+            for script in [&hook, &monitor] {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755))
+                    .map_err(|_| HarnessError::Process)?;
+            }
+            run_git(
+                workspace,
+                &["config", "core.fsmonitor", monitor.to_str().expect("utf-8")],
+            );
+        }
+        Ok(LocalRunHandle {
+            process_id: "h3-writer".to_owned(),
+        })
+    }
+
+    async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        Err(HarnessError::Process)
+    }
+
+    async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+        Ok(HarnessOutcome {
+            terminal_state: AttemptState::Succeeded,
+            terminal_reason: serde_json::json!({"code":"completed"}),
+            final_checkpoint: None,
+            actual_execution: actual_execution(),
+            usage: usage(),
+        })
+    }
+
+    async fn reconcile(
+        &self,
+        _journal: &tack_runner::client::AttemptJournal,
+    ) -> Result<RecoveryObservation, HarnessError> {
+        Ok(RecoveryObservation::ProcessStopped)
+    }
+}
+
+/// An evidence channel that takes nothing: evidence capture and the push are
+/// switched on by its presence, and these tests read the bare remote and the
+/// completion report instead.
+struct NoUploads;
+
+#[async_trait]
+impl tack_runner::client::AttemptDataProtocol for NoUploads {
+    async fn submit_events(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::EventBatchReport,
+    ) -> Result<tack_runner::client::EventBatchResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn create_decision(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::DecisionCreateReport,
+    ) -> Result<tack_runner::client::DecisionCreateResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn poll_decisions(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::DecisionPollReport,
+    ) -> Result<tack_runner::client::DecisionPollResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn submit_artifact_manifest(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::ArtifactManifestReport,
+    ) -> Result<Vec<tack_runner::client::ArtifactUploadGrant>, ProtocolClientError> {
+        Ok(Vec::new())
+    }
+
+    async fn put_artifact_content(
+        &self,
+        _session: &RunnerSession,
+        _fencing_token: FencingToken,
+        _grant: &tack_runner::client::ArtifactUploadGrant,
+        _media_type: Option<&str>,
+        _content: Vec<u8>,
+    ) -> Result<(), ProtocolClientError> {
+        Ok(())
+    }
+}
+
+fn bare_clone(source: &Path, into: &Path, name: &str) -> PathBuf {
+    let bare = into.join(name);
+    run_git(
+        into,
+        &[
+            "clone",
+            "--bare",
+            "--quiet",
+            source.to_str().expect("utf-8"),
+            bare.to_str().expect("utf-8"),
+        ],
+    );
+    bare
+}
+
+/// Runs one attempt that writes a file (and, when `reconfigure`, plants hooks
+/// and a config script) against a bare remote that accepts pushes. Returns the
+/// bare remote, the marker directory and the completion the runner reported.
+async fn run_pushing_attempt(
+    label: &str,
+    reconfigure: bool,
+) -> (tempfile::TempDir, PathBuf, PathBuf, CompletionReport) {
+    let (source_dir, commit) = source_repository();
+    let root_dir = temp_root(label);
+    let remote = bare_clone(source_dir.path(), root_dir.path(), "remote.git");
+    let markers = root_dir.path().join("markers");
+    std::fs::create_dir_all(&markers).expect("markers");
+    let protocol = FakeProtocol::new(work(label, &remote, &commit), false);
+    let completions = protocol.completions.clone();
+    let engine = git_engine(
+        protocol,
+        RepositoryWritingAdapter {
+            reconfigure,
+            markers: markers.clone(),
+        },
+        OwnerOnlyJournal::new(root_dir.path().join("journal")),
+        &root_dir.path().join("workspaces"),
+    )
+    .with_data_protocol(Arc::new(NoUploads))
+    .with_git(tack_runner::config::GitConfig {
+        push_branches: true,
+        ..Default::default()
+    });
+    engine
+        .run_once(&session(), claim(label))
+        .await
+        .expect("the attempt runs");
+    let report = completions.lock().expect("completions")[0].clone();
+    (root_dir, remote, markers, report)
+}
+
+fn remote_branches(remote: &Path) -> String {
+    run_git(
+        remote,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "refs/heads/tack",
+        ],
+    )
+}
+
+#[tokio::test]
+async fn a_harness_that_rewrites_git_config_ends_repository_config_changed_and_pushes_nothing() {
+    let (_root, remote, markers, report) = run_pushing_attempt("rcc", true).await;
+    assert!(
+        !markers.join("hook").exists() && !markers.join("fsmonitor").exists(),
+        "git ran code the harness planted in the repository"
+    );
+    assert_eq!(report.terminal_state, AttemptState::Failed);
+    assert_eq!(report.terminal_reason["code"], "repository_config_changed");
+    assert!(
+        report.terminal_reason["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with(".git/config")),
+        "{}",
+        report.terminal_reason
+    );
+    assert_eq!(remote_branches(&remote), "", "nothing may be pushed");
+}
+
+#[tokio::test]
+async fn a_run_that_changes_no_git_config_still_pushes() {
+    let (_root, remote, markers, report) = run_pushing_attempt("noconfig", false).await;
+    assert_eq!(report.terminal_state, AttemptState::Succeeded);
+    assert!(!markers.join("hook").exists());
+    assert_eq!(remote_branches(&remote).lines().count(), 1);
+}
+
+#[tokio::test]
+async fn a_pushurl_the_agent_sets_does_not_redirect_the_push() {
+    let (source_dir, commit) = source_repository();
+    let root_dir = temp_root("pushurl");
+    let remote = bare_clone(source_dir.path(), root_dir.path(), "remote.git");
+    let evil = bare_clone(source_dir.path(), root_dir.path(), "evil.git");
+    let path = root_dir.path().join("attempt-pushurl");
+    std::fs::create_dir_all(&path).expect("attempt directory");
+    std::fs::write(path.join(".tack-attempt"), "attempt-pushurl").expect("marker");
+    let workspace = tack_runner::client::Workspace {
+        attempt_id: AttemptId::new("attempt-pushurl"),
+        id: tack_runner::client::WorkspaceId::new("ws_pushurl"),
+        path,
+        base_revision: commit.clone(),
+    };
+    let provisioner = GitWorktreeProvisioner::new(git_program(), Duration::from_secs(600));
+    let repository = tack_runner::client::RepositorySpec {
+        remote: remote.display().to_string(),
+        base_revision: commit,
+        workspace_mode: tack_runner::client::WorkspaceMode::Clone,
+        repository_path: None,
+    };
+    use tack_runner::client::WorktreeProvisioner;
+    provisioner
+        .provision(&workspace, &repository)
+        .await
+        .expect("checkout");
+    std::fs::write(workspace.path.join("work.txt"), "work\n").expect("write");
+    let evil_url = evil.display().to_string();
+    run_git(
+        &workspace.path,
+        &["config", "remote.origin.pushurl", &evil_url],
+    );
+    run_git(&workspace.path, &["config", "remote.origin.url", &evil_url]);
+    provisioner
+        .capture_evidence(&workspace, &[])
+        .await
+        .expect("evidence");
+    provisioner
+        .publish_branch(
+            &workspace,
+            "tack/abc-a1",
+            "Tack <t@localhost>",
+            "work",
+            true,
+        )
+        .await
+        .expect("published")
+        .expect("a git provisioner publishes");
+    assert_eq!(remote_branches(&remote), "tack/abc-a1");
+    assert_eq!(remote_branches(&evil), "");
 }

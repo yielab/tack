@@ -2923,6 +2923,8 @@ impl WorktreeProvisioner for SeededGitWorktree {
             if !status.success() {
                 return Err(WorkspaceError::Git);
             }
+            self.git
+                .record_remote(workspace, &origin.display().to_string())?;
         }
         Ok(())
     }
@@ -2946,7 +2948,7 @@ impl WorktreeProvisioner for SeededGitWorktree {
         if let (true, Some(origin)) = (self.break_origin, &self.origin) {
             std::fs::remove_dir_all(origin).expect("remove origin");
         }
-        crate::client::workspace::git::GitWorktreeProvisioner::default()
+        self.git
             .publish_branch(workspace, branch, author, message, push)
             .await
     }
