@@ -27,7 +27,7 @@ use crate::handlers::{
     websocket,
 };
 use crate::middleware::{
-    inject_operator_principal, refuse_cross_site, require_host, require_token,
+    inject_operator_principal, refuse_cross_site, require_host, require_token, set_session_cookie,
 };
 use crate::webhook::WebhookClient;
 
@@ -475,7 +475,26 @@ pub fn build_router(state: AppState) -> Router {
     #[cfg(feature = "embed-spa")]
     let outer = outer.fallback(spa::serve_spa);
 
+    // Without the embedded SPA the server still answers `/` with a page, so a
+    // browser pointed at the API alone gets the session cookie and a pointer
+    // to the web UI.
+    #[cfg(not(feature = "embed-spa"))]
+    let outer = outer.route(
+        "/",
+        get(|| async {
+            axum::response::Html(
+                "<!doctype html><title>Tack</title><p>This server has no web UI built in. \
+                 Run the frontend dev server, or use a release build.</p>",
+            )
+        }),
+    );
+
     outer
+        // The page response carries the session cookie (see the middleware).
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            set_session_cookie,
+        ))
         // ── Global body limit (attachments route overrides above) ────────
         .layer(DefaultBodyLimit::max(state.config.max_body_size_bytes))
         // ── Minimal security response headers ────────────────────────────

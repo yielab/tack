@@ -225,6 +225,7 @@ fn start_server(
         .arg("--with-runner")
         .env("TACK_HOST", "127.0.0.1")
         .env("TACK_PORT", port.to_string())
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .env("TACK_DATABASE_URL", database_url)
         .env("TACK_STORAGE_DIR", storage_dir)
         .env_remove("TACK_RUNNER_STATE_DIR")
@@ -248,7 +249,7 @@ fn start_server(
 /// Polls `GET {base_url}/api/health` until it answers success, panicking if
 /// `child` exits first or 30s elapses first — whichever happens sooner.
 fn wait_for_ready(base_url: &str, child: &mut Child) {
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     let ready = poll_until(Duration::from_secs(30), || {
         if let Some(status) = child.try_wait().expect("poll child status") {
             panic!("tack serve --with-runner exited early during startup: {status}");
@@ -580,7 +581,7 @@ fn key_stored_while_running_reaches_next_dispatch() {
         &env.shim_dir,
         &env.gateway_base,
     );
-    let client = reqwest::blocking::Client::new();
+    let client = common::authed_client();
     let base_url = server.base_url.clone();
 
     let runner_before = assert_active_with_no_catalog_fetch(&client, &base_url, &env);

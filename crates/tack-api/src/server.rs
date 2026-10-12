@@ -64,12 +64,19 @@ async fn serve_inner(
     ready_tx: Option<oneshot::Sender<SocketAddr>>,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
 ) -> anyhow::Result<()> {
-    let config = AppConfig::load();
+    let mut config = AppConfig::load();
 
     init_tracing(&config);
 
     // Reject unsafe exposure before opening a database or listener.
     security_preflight(&config)?;
+    config.ensure_api_token()?;
+    if config.api_token.as_deref().is_none_or(str::is_empty) {
+        warn!(
+            host = %config.host,
+            "the API answers anyone: no token is required on this bind"
+        );
+    }
 
     info!(
         version = env!("CARGO_PKG_VERSION"),
