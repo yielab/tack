@@ -100,7 +100,7 @@ attempts_json() { curl -H "$AUTH" -sf -H "$PRINCIPAL" "$API/api/executions/$1/at
 # names the smoke repository before any run is created.
 # $1 project
 set_project_repo() {
-  curl -sf -X PATCH "$API/api/projects/$1" -H 'content-type: application/json' \
+  curl -H "$AUTH" -sf -X PATCH "$API/api/projects/$1" -H 'content-type: application/json' \
     -d "$(jq -n --arg repo "$SMOKE_REPO" '{code_origin:"folder", repository:$repo, workspace_mode:"clone"}')" >/dev/null
 }
 
