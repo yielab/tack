@@ -59,7 +59,7 @@ async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, sqlx::SqliteP
         webhook: None,
         local_runner: None,
     };
-    (build_router(state), pool)
+    (crate::common::with_default_host(build_router(state)), pool)
 }
 
 async fn put_content(

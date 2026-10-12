@@ -589,7 +589,7 @@ async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
         webhook: None,
         local_runner: None,
     };
-    (build_router(state), pool)
+    (crate::common::with_default_host(build_router(state)), pool)
 }
 
 /// A test app whose database has no workspace row at all — `common::test_app`
@@ -614,7 +614,7 @@ async fn setup_without_workspace() -> Router {
         webhook: None,
         local_runner: None,
     };
-    build_router(state)
+    crate::common::with_default_host(build_router(state))
 }
 
 // ─── shared: seeding a builtin template for the delete-rule test ───────────
@@ -647,7 +647,7 @@ async fn setup_with_builtins() -> (Router, sqlx::SqlitePool) {
         webhook: None,
         local_runner: None,
     };
-    (build_router(state), pool)
+    (crate::common::with_default_host(build_router(state)), pool)
 }
 
 /// Any one seeded builtin template's id — which one doesn't matter, the

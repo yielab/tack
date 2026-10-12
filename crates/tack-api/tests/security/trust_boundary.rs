@@ -335,3 +335,105 @@ async fn board_live_handshake_origin_authorization() {
         );
     }
 }
+
+/// Sends `method path` to `address` with the given headers over a real
+/// connection and returns the status code.
+async fn status_with_headers(
+    address: SocketAddr,
+    method: reqwest::Method,
+    path: &str,
+    headers: &[(&str, &str)],
+) -> u16 {
+    let mut request =
+        reqwest::Client::new().request(method.clone(), format!("http://{address}{path}"));
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    if method == reqwest::Method::POST {
+        request = request.json(&serde_json::json!({ "name": "x", "project_type": "software" }));
+    }
+    request.send().await.expect("request").status().as_u16()
+}
+
+/// A request must name this server: only the loopback names, the bind host
+/// and the configured origins are accepted in `Host`.
+#[tokio::test]
+async fn request_must_name_this_server() {
+    let (app, _) = common::test_app().await;
+    let (address, server) = spawn_real_server(app).await;
+    let port = address.port();
+    let cases = [
+        (format!("evil.example:{port}"), 421),
+        (format!("127.0.0.1:{port}"), 200),
+        (format!("localhost:{port}"), 200),
+        (format!("[::1]:{port}"), 200),
+    ];
+    for (host, expected) in cases {
+        let status = status_with_headers(
+            address,
+            reqwest::Method::GET,
+            "/api/health",
+            &[("host", &host)],
+        )
+        .await;
+        assert_eq!(status, expected, "Host: {host}");
+    }
+    server.abort();
+}
+
+/// A state-changing request from another site is refused, a same-machine
+/// origin is not, and a configured public name passes on a non-loopback bind.
+#[tokio::test]
+async fn cross_site_writes_are_refused() {
+    let (app, _) = common::test_app().await;
+    let (address, server) = spawn_real_server(app).await;
+    let port = address.port();
+    let own_origin = format!("http://127.0.0.1:{port}");
+    let cases: [(&str, &str, bool); 3] = [
+        ("sec-fetch-site", "cross-site", true),
+        ("origin", "http://evil.example", true),
+        ("origin", own_origin.as_str(), false),
+    ];
+    for (name, value, refused) in cases {
+        let status = status_with_headers(
+            address,
+            reqwest::Method::POST,
+            "/api/projects",
+            &[(name, value)],
+        )
+        .await;
+        assert_eq!(status == 403, refused, "{name}: {value} gave {status}");
+    }
+    server.abort();
+
+    let config = AppConfig {
+        host: "0.0.0.0".into(),
+        api_token: Some(API_TOKEN.into()),
+        allowed_origins: vec!["http://board.example".into()],
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_config(config).await;
+    let (address, server) = spawn_real_server(app).await;
+    let bearer = format!("Bearer {API_TOKEN}");
+    let get = status_with_headers(
+        address,
+        reqwest::Method::GET,
+        "/api/projects",
+        &[("host", "board.example"), ("authorization", &bearer)],
+    )
+    .await;
+    assert_eq!(get, 200, "the configured name is accepted in Host");
+    let post = status_with_headers(
+        address,
+        reqwest::Method::POST,
+        "/api/projects",
+        &[
+            ("host", "board.example"),
+            ("origin", "http://board.example"),
+            ("authorization", &bearer),
+        ],
+    )
+    .await;
+    assert!(post != 403 && post != 421, "configured origin gave {post}");
+    server.abort();
+}

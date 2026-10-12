@@ -12,6 +12,20 @@ use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+/// An in-process router has no HTTP layer to supply `Host`, so a request
+/// that carries none gets `Host: localhost`; one that has it keeps it.
+#[allow(dead_code)] // only test binaries that build their own router call it
+pub fn with_default_host(router: Router) -> Router {
+    router.layer(axum::middleware::map_request(
+        |mut req: Request<Body>| async move {
+            req.headers_mut()
+                .entry(axum::http::header::HOST)
+                .or_insert(axum::http::HeaderValue::from_static("localhost"));
+            req
+        },
+    ))
+}
+
 /// Build a fully wired Axum router backed by an in-memory SQLite database.
 /// Returns the router and the test workspace ID.
 #[allow(dead_code)] // not every test binary calls the no-config constructor directly
@@ -60,7 +74,7 @@ pub async fn test_app_with_local_runner(
         local_runner,
     };
 
-    (build_router(state), workspace_id)
+    (with_default_host(build_router(state)), workspace_id)
 }
 
 /// Build a test app backed by a file-based SQLite database.
@@ -95,7 +109,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         local_runner: None,
     };
 
-    (build_router(state), workspace_id)
+    (with_default_host(build_router(state)), workspace_id)
 }
 
 /// Create a project via `POST /api/projects`; returns its id. Every duplicate this

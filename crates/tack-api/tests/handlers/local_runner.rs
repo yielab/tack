@@ -432,18 +432,19 @@ async fn harness_verification_reports_the_latest_succeeded_attempt() {
         .unwrap();
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let pool = repo.pool().clone();
-    let app = tack_api::router::build_router(tack_api::AppState {
-        repo,
-        config: AppConfig {
-            host: "127.0.0.1".to_owned(),
-            database_url: "sqlite::memory:".to_owned(),
-            ..AppConfig::default()
-        },
-        workspace_id,
-        broadcast_tx: tx,
-        webhook: None,
-        local_runner: Some(Arc::new(FakeControl::default())),
-    });
+    let app =
+        crate::common::with_default_host(tack_api::router::build_router(tack_api::AppState {
+            repo,
+            config: AppConfig {
+                host: "127.0.0.1".to_owned(),
+                database_url: "sqlite::memory:".to_owned(),
+                ..AppConfig::default()
+            },
+            workspace_id,
+            broadcast_tx: tx,
+            webhook: None,
+            local_runner: Some(Arc::new(FakeControl::default())),
+        }));
     let get = |app: axum::Router| async move {
         let response = app
             .oneshot(
@@ -548,14 +549,15 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     let pool = repo.pool().clone();
     let control = Arc::new(FakeControl::default());
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let app = tack_api::router::build_router(tack_api::AppState {
-        repo,
-        config: loopback_config(),
-        workspace_id,
-        broadcast_tx: tx,
-        webhook: None,
-        local_runner: Some(control.clone()),
-    });
+    let app =
+        crate::common::with_default_host(tack_api::router::build_router(tack_api::AppState {
+            repo,
+            config: loopback_config(),
+            workspace_id,
+            broadcast_tx: tx,
+            webhook: None,
+            local_runner: Some(control.clone()),
+        }));
     let body = serde_json::json!({ "harness_kind": "claude-code" });
 
     // The embedded runner is stopped: nothing to target.
@@ -649,14 +651,15 @@ async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
     *control.runner_id_override.lock().unwrap() = Some(None);
 
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let app = tack_api::router::build_router(tack_api::AppState {
-        repo,
-        config: loopback_config(),
-        workspace_id,
-        broadcast_tx: tx,
-        webhook: None,
-        local_runner: Some(control.clone()),
-    });
+    let app =
+        crate::common::with_default_host(tack_api::router::build_router(tack_api::AppState {
+            repo,
+            config: loopback_config(),
+            workspace_id,
+            broadcast_tx: tx,
+            webhook: None,
+            local_runner: Some(control.clone()),
+        }));
     let body = serde_json::json!({ "harness_kind": "claude-code" });
 
     // Start the runner but with runner_id returning None

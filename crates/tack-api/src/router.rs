@@ -26,7 +26,9 @@ use crate::handlers::{
     mrp, outline, projects, roles, runner_admin, runner_protocol, settings, sprints, templates,
     websocket,
 };
-use crate::middleware::{inject_operator_principal, require_token};
+use crate::middleware::{
+    inject_operator_principal, refuse_cross_site, require_host, require_token,
+};
 use crate::webhook::WebhookClient;
 
 /// Shared application state passed to all handlers.
@@ -438,6 +440,13 @@ pub fn build_router(state: AppState) -> Router {
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
+        // Outside the token check, so a wrong host or a foreign page is
+        // refused before anything about the token is revealed.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            refuse_cross_site,
+        ))
+        .layer(middleware::from_fn_with_state(state.clone(), require_host))
         // ─── Unmatched-route 404 — added after the auth layer above
         // so it is never itself gated behind a token (an unmatched path
         // was never a real route to authenticate against). `nest` below

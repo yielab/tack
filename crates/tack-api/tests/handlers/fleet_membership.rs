@@ -49,7 +49,7 @@ async fn router_for(pool: sqlx::SqlitePool, workspace_id: Uuid) -> axum::Router 
         webhook: None,
         local_runner: None,
     };
-    build_router(state)
+    crate::common::with_default_host(build_router(state))
 }
 
 fn operator_headers() -> Vec<(&'static str, &'static str)> {

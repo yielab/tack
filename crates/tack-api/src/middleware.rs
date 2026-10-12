@@ -6,6 +6,7 @@ use axum::{
 };
 use sha2::{Digest, Sha256};
 
+use crate::error::ApiError;
 use crate::router::AppState;
 
 fn is_public_route(path: &str) -> bool {
@@ -107,6 +108,105 @@ fn decode_base64url(value: &str) -> Option<Vec<u8>> {
         }
     }
     if bits == 6 { None } else { Some(output) }
+}
+
+/// The host part of a `Host` header value or an origin's authority: port
+/// stripped, brackets kept off an IPv6 literal, lowercased.
+fn bare_host(authority: &str) -> String {
+    let host = match authority.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(rest),
+        None => match authority.rsplit_once(':') {
+            Some((host, port))
+                if !host.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                host
+            }
+            _ => authority,
+        },
+    };
+    host.to_ascii_lowercase()
+}
+
+/// True when `host` (already bare) is a name this server answers to: loopback,
+/// the configured bind host, or the host of a configured allowed origin.
+fn host_is_accepted(host: &str, state: &AppState) -> bool {
+    if matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+    if bare_host(&state.config.host) == host {
+        return true;
+    }
+    state.config.allowed_origins.iter().any(|origin| {
+        reqwest::Url::parse(origin)
+            .ok()
+            .and_then(|url| url.host_str().map(bare_host))
+            .is_some_and(|allowed| allowed == host)
+    })
+}
+
+/// Middleware: answer `421` unless the request's `Host` (or `:authority`)
+/// names this server. A page reaching the loopback socket through a name an
+/// attacker controls (DNS rebinding) carries that name here.
+pub async fn require_host(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let authority = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| req.uri().authority().map(|a| a.to_string()));
+    match authority {
+        Some(authority) if host_is_accepted(&bare_host(&authority), &state) => {
+            Ok(next.run(req).await)
+        }
+        _ => Err(ApiError::MisdirectedHost(
+            "this server does not answer to that host name".into(),
+        )),
+    }
+}
+
+/// Middleware: refuse a state-changing request (any method but `GET`, `HEAD`,
+/// `OPTIONS`) that a page on another site sent: `Sec-Fetch-Site: cross-site`,
+/// or an `Origin` that is neither one of this server's own origins nor a
+/// configured allowed origin. `OPTIONS` is left to the CORS layer.
+pub async fn refuse_cross_site(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    if matches!(
+        *req.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    ) {
+        return Ok(next.run(req).await);
+    }
+    let cross_site = req
+        .headers()
+        .get("sec-fetch-site")
+        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site"));
+    let foreign_origin = req.headers().get(header::ORIGIN).is_some_and(|origin| {
+        let Ok(origin) = origin.to_str() else {
+            return true;
+        };
+        if state.config.allowed_origins.iter().any(|a| a == origin) {
+            return false;
+        }
+        match reqwest::Url::parse(origin) {
+            Ok(url) if matches!(url.scheme(), "http" | "https") => !url
+                .host_str()
+                .is_some_and(|host| host_is_accepted(&bare_host(host), &state)),
+            _ => true,
+        }
+    });
+    if cross_site || foreign_origin {
+        return Err(ApiError::CrossSiteRequest(
+            "a page on another site may not change anything here".into(),
+        ));
+    }
+    Ok(next.run(req).await)
 }
 
 /// Middleware: if `TACK_API_TOKEN` is configured, require a matching

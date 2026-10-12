@@ -78,7 +78,7 @@ async fn build_app(
         webhook: None,
         local_runner: None,
     };
-    (build_router(state), pool)
+    (crate::common::with_default_host(build_router(state)), pool)
 }
 
 pub async fn put_content(

@@ -48,7 +48,10 @@ async fn app_with_state() -> (Router, AppState) {
         local_runner: None,
     };
 
-    (build_router(state.clone()), state)
+    (
+        crate::common::with_default_host(build_router(state.clone())),
+        state,
+    )
 }
 
 async fn body_json(res: axum::response::Response) -> Value {
