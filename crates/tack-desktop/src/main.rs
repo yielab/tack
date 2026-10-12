@@ -8,10 +8,12 @@ mod paths;
 mod supervisor;
 mod tray;
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
@@ -108,6 +110,60 @@ enum ServerMode {
 
 struct DesktopState(Mutex<Option<ServerMode>>);
 
+/// The one origin the window may show and the only one granted any command.
+fn board_origin(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
+/// True only for a URL on the board's own origin.
+fn is_board_url(url: &tauri::Url, port: u16) -> bool {
+    url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(port)
+}
+
+/// The capability the board page gets, written from the port the supervisor
+/// chose: the template's remote URL names no real port.
+fn server_page_capability(port: u16) -> String {
+    let mut capability: serde_json::Value =
+        serde_json::from_str(include_str!("../capabilities/server-page.json"))
+            .expect("server-page.json is valid JSON");
+    capability["remote"]["urls"] = serde_json::json!([format!("{}/*", board_origin(port))]);
+    capability.to_string()
+}
+
+/// Canonicalises `path` and returns it only when it is an existing directory
+/// inside the canonical `repository` or the canonical `data_dir`. Symlinks and
+/// `..` resolve before the prefix test, so neither can point outside.
+fn checked_folder(path: &Path, repository: &Path, data_dir: &Path) -> Result<PathBuf, String> {
+    let target = path
+        .canonicalize()
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    if !target.is_dir() {
+        return Err(format!("{} is not a folder", target.display()));
+    }
+    let allowed = [repository, data_dir]
+        .iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .any(|root| target.starts_with(root));
+    if allowed {
+        Ok(target)
+    } else {
+        Err(format!(
+            "{} is outside the project's repository and Tack's data folder",
+            target.display()
+        ))
+    }
+}
+
+/// Opens a folder in the system's file manager: the board's only command.
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle, path: String, repository: String) -> Result<(), String> {
+    let data_dir = DataPaths::resolve().map_err(|e| e.to_string())?.root;
+    let target = checked_folder(Path::new(&path), Path::new(&repository), &data_dir)?;
+    app.opener()
+        .open_path(target.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     // WebKitGTK's DMA-BUF renderer aborts the whole process when it cannot
     // open a GBM/EGL display (NVIDIA's driver, or any driver whose kernel
@@ -134,6 +190,8 @@ fn main() {
         ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![open_folder])
         .manage(DesktopState(Mutex::new(None)))
         .setup(|app| {
             let handle = app.handle().clone();
@@ -152,7 +210,6 @@ fn main() {
             // doing nothing at all.
             let paths = DataPaths::resolve().map_err(|e| e.to_string())?;
 
-            tray::ensure_launch_at_login_default_on_first_run(&handle, &paths.root);
             tray::build(&handle).map_err(|e| e.to_string())?;
 
             tauri::async_runtime::spawn(async move {
@@ -166,7 +223,8 @@ fn main() {
                 .await
                 .expect("ensure_settings must not panic");
                 let port = settings.port;
-                let base_url = format!("http://127.0.0.1:{port}");
+                let base_url = board_origin(port);
+                let nonce = supervisor::new_launch_nonce();
                 let folders = paths.server_folders(settings.database_path.as_deref());
 
                 let client = reqwest::Client::new();
@@ -182,6 +240,7 @@ fn main() {
                     &launcher,
                     &folders,
                     env!("CARGO_PKG_VERSION"),
+                    &nonce,
                 )
                 .await
                 {
@@ -200,11 +259,21 @@ fn main() {
                             *state.0.lock().unwrap() = Some(mode);
                         }
 
+                        // The page reaches `open_folder` and the opener only
+                        // through this capability, which names the chosen
+                        // port and nothing else.
+                        if let Err(err) = handle.add_capability(server_page_capability(port)) {
+                            tracing::error!(error = %err, "failed to grant the board page its capability");
+                            handle.exit(1);
+                            return;
+                        }
+
                         let url = base_url.parse().expect("base_url is a valid URL");
                         if let Err(err) =
                             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
                                 .title("Tack")
                                 .inner_size(1200.0, 800.0)
+                                .on_navigation(move |url| is_board_url(url, port))
                                 .build()
                         {
                             tracing::error!(error = %err, "failed to open the main window");
@@ -284,4 +353,50 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_folder_opens_only_inside_the_repository_or_the_data_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let data = tmp.path().join("data");
+        let outside = tmp.path().join("outside");
+        for dir in [
+            &repo,
+            &data,
+            &outside,
+            &repo.join("src"),
+            &data.join("logs"),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(repo.join("file.txt"), b"x").unwrap();
+
+        let ok = |p: &Path| checked_folder(p, &repo, &data).is_ok();
+        assert!(ok(&repo), "the repository itself");
+        assert!(ok(&repo.join("src")), "inside the repository");
+        assert!(ok(&data.join("logs")), "inside the data dir");
+        assert!(!ok(&outside), "outside both");
+        assert!(
+            !ok(&repo.join("..").join("outside")),
+            "`..` out of the repository"
+        );
+        assert!(!ok(&repo.join("missing")), "does not exist");
+        assert!(!ok(&repo.join("file.txt")), "a file, not a folder");
+        assert!(
+            checked_folder(&outside, Path::new(""), &data).is_err(),
+            "an empty repository grants nothing"
+        );
+
+        #[cfg(unix)]
+        {
+            let link = repo.join("escape");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            assert!(!ok(&link), "a symlink pointing outside");
+        }
+    }
 }

@@ -78,12 +78,15 @@ fn write_fake_sidecar(dir: &std::path::Path, version: &str) -> PathBuf {
     let mut f = std::fs::File::create(&path).unwrap();
     write!(
         f,
-        r#"import http.server, json, sys
+        r#"import http.server, json, os, sys
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/health":
-            body = json.dumps({{"status": "ok", "version": "{version}"}}).encode()
+            payload = {{"status": "ok", "version": "{version}"}}
+            if os.environ.get("TACK_LAUNCH_NONCE"):
+                payload["launch_nonce"] = os.environ["TACK_LAUNCH_NONCE"]
+            body = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -104,6 +107,8 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
     path
 }
 
+const TEST_NONCE: &str = "0123456789abcdef0123456789abcdef";
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -121,14 +126,18 @@ async fn spawn_and_wait_healthy(
     port: u16,
     client: &reqwest::Client,
     base_url: &str,
+    nonce: Option<&str>,
 ) -> Child {
-    let child = Command::new("python3")
+    let mut command = Command::new("python3");
+    command
         .arg(script)
         .arg(port.to_string())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::null());
+    if let Some(nonce) = nonce {
+        command.env("TACK_LAUNCH_NONCE", nonce);
+    }
+    let child = command.spawn().unwrap();
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..50 {
         interval.tick().await;
@@ -168,6 +177,7 @@ async fn spawns_and_becomes_healthy_when_nothing_is_listening() {
         &launcher,
         &folders(tmp.path()),
         "0.0.0-fake",
+        TEST_NONCE,
     )
     .await
     .expect("supervisor should spawn and observe health");
@@ -200,7 +210,8 @@ async fn attaches_without_spawning_when_something_already_answers() {
 
     // The supervisor must attach to this hand-started server, not spawn a
     // second one.
-    let mut hand_started = spawn_and_wait_healthy(&script, port, &client, &base_url).await;
+    let mut hand_started =
+        spawn_and_wait_healthy(&script, port, &client, &base_url, Some(TEST_NONCE)).await;
 
     let launcher = ScriptLauncher {
         script,
@@ -214,6 +225,7 @@ async fn attaches_without_spawning_when_something_already_answers() {
         &launcher,
         &folders(tmp.path()),
         "0.0.0-fake",
+        TEST_NONCE,
     )
     .await
     .expect("supervisor should attach");
@@ -252,6 +264,7 @@ async fn reports_spawn_failure_instead_of_hanging() {
         &launcher,
         &folders(tmp.path()),
         "0.0.0-fake",
+        TEST_NONCE,
     )
     .await
     .expect_err("a poisoned launcher must surface an error, not hang");
@@ -291,6 +304,7 @@ async fn refuses_to_spawn_when_the_port_is_held_by_something_else() {
         &launcher,
         &folders(tmp.path()),
         "0.0.0-fake",
+        TEST_NONCE,
     )
     .await
     .expect_err("a foreign listener on the port must be refused, not spawned into");
@@ -306,7 +320,8 @@ async fn refuses_to_attach_to_a_server_older_than_bundled() {
     let client = reqwest::Client::new();
 
     // A server started by hand, running an older release than this app bundles.
-    let mut hand_started = spawn_and_wait_healthy(&script, port, &client, &base_url).await;
+    let mut hand_started =
+        spawn_and_wait_healthy(&script, port, &client, &base_url, Some(TEST_NONCE)).await;
 
     let launcher = ScriptLauncher {
         script,
@@ -320,6 +335,7 @@ async fn refuses_to_attach_to_a_server_older_than_bundled() {
         &launcher,
         &folders(tmp.path()),
         "0.1.0-beta.7",
+        TEST_NONCE,
     )
     .await
     .expect_err("an attached server older than the bundled version must be refused");
@@ -336,6 +352,67 @@ async fn refuses_to_attach_to_a_server_older_than_bundled() {
     );
     hand_started.kill().unwrap();
     let _ = hand_started.wait();
+}
+
+#[tokio::test]
+async fn refuses_a_server_that_does_not_echo_the_nonce() {
+    let tmp = tempfile::tempdir().unwrap();
+    let script = write_fake_sidecar(tmp.path(), "0.0.0-fake");
+    let port = free_port();
+    let base_url = format!("http://127.0.0.1:{port}");
+    let client = reqwest::Client::new();
+
+    // Something else already answering health on the port, started without
+    // the nonce this launch generated.
+    let mut squatter = spawn_and_wait_healthy(&script, port, &client, &base_url, None).await;
+    let launcher = ScriptLauncher {
+        script,
+        port,
+        fail_next: true, // spawning must never be attempted
+    };
+    let err = attach_or_start(
+        &client,
+        &base_url,
+        port,
+        &launcher,
+        &folders(tmp.path()),
+        "0.0.0-fake",
+        TEST_NONCE,
+    )
+    .await
+    .expect_err("a server without the launch nonce must be refused");
+    assert!(matches!(err, SupervisorError::PortOccupiedByOther(p) if p == port));
+    squatter.kill().unwrap();
+    let _ = squatter.wait();
+}
+
+#[test]
+fn judge_health_attaches_only_to_the_launch_nonce_with_a_readable_version() {
+    let body = |version: &str, nonce: Option<&str>| HealthBody {
+        status: "ok".to_string(),
+        version: version.to_string(),
+        launch_nonce: nonce.map(str::to_string),
+    };
+    let bundled = "0.1.0-beta.7";
+    let rows = [
+        (body("0.1.0-beta.7", Some("n")), HealthVerdict::Accept),
+        (body("0.1.0-beta.7", None), HealthVerdict::NotOurs),
+        (body("0.1.0-beta.7", Some("other")), HealthVerdict::NotOurs),
+        (body("junk", Some("other")), HealthVerdict::NotOurs),
+        (body("0.1.0-beta.1", Some("n")), HealthVerdict::Outdated),
+        (body("junk", Some("n")), HealthVerdict::UnknownVersion),
+    ];
+    for (health, expected) in rows {
+        assert_eq!(judge_health(&health, "n", bundled), expected, "{health:?}");
+    }
+}
+
+#[test]
+fn new_launch_nonce_is_sixteen_random_bytes_in_hex() {
+    let (a, b) = (new_launch_nonce(), new_launch_nonce());
+    assert_eq!(a.len(), 32);
+    assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+    assert_ne!(a, b);
 }
 
 #[test]

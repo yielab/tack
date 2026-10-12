@@ -9,7 +9,10 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' http://127.0.0.1:*; script-src 'self'; object-src 'none'",
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "bundle": {
