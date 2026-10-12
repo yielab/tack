@@ -469,10 +469,33 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         self
     }
 
+    /// The probe below runs the harness twice, and discovery runs on every
+    /// catalog read; the answer only changes with the program or the
+    /// machine's sandbox, so it is kept per process under those.
     fn decide_sandbox(&self, machine: Sandbox) -> Sandbox {
-        let Ok((program, mut args)) = self.locator.resolve() else {
+        static DECIDED: std::sync::OnceLock<
+            std::sync::Mutex<std::collections::HashMap<String, Sandbox>>,
+        > = std::sync::OnceLock::new();
+        let Ok((program, args)) = self.locator.resolve() else {
             return machine;
         };
+        let modified = std::fs::metadata(&program).and_then(|m| m.modified()).ok();
+        let key = format!(
+            "{program:?}|{modified:?}|{args:?}|{machine:?}|{:?}",
+            self.probe_env
+        );
+        let decided = DECIDED.get_or_init(Default::default);
+        if let Some(hit) = decided.lock().ok().and_then(|map| map.get(&key).cloned()) {
+            return hit;
+        }
+        let answer = self.probe_sandbox(machine, program, args);
+        if let Ok(mut map) = decided.lock() {
+            map.insert(key, answer.clone());
+        }
+        answer
+    }
+
+    fn probe_sandbox(&self, machine: Sandbox, program: PathBuf, mut args: Vec<String>) -> Sandbox {
         args.push("--version".to_owned());
         let mut env = self.inherited_env();
         env.extend(self.probe_env.clone());
