@@ -292,6 +292,31 @@ describe('Settings panels', () => {
     }
   });
 
+  it('automation_panel_says_whether_the_default_agent_runs_on_this_computer', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    let docket: unknown = { ...GATEWAY_CATALOG, sandbox: 'none', decisions: { support: 'supported' } };
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([docket])) : base(input, init),
+    );
+    (PROJECT as { default_harness: string | null }).default_harness = 'docket';
+    const line = (container: HTMLElement) => container.querySelector('[data-testid="default-agent-safety"]')?.textContent ?? '';
+    try {
+      const asks = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(line(asks.container)).toContain('Not sandboxed on this computer, so the agent asks before each action');
+      asks.dispose();
+      asks.container.remove();
+      docket = { ...GATEWAY_CATALOG, sandbox: 'none', decisions: { support: 'unsupported' } };
+      const blocked = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(line(blocked.container)).toContain("Doesn't run on this computer: it isn't sandboxed and can't ask before it acts");
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
+    }
+  });
+
   it('automation_panel_shows_the_saved_pair_selected_whichever_provider_it_names', async () => {
     const base = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation((input, init) =>

@@ -43,6 +43,9 @@ pub struct Sandbox {
     /// The runner's `$HOME`, where the scratch home and the shared
     /// directories are bound.
     home: Option<PathBuf>,
+    /// Whether the runner looked for a sandbox, rather than having none
+    /// because it never asked (a test, or before discovery).
+    looked: bool,
 }
 
 impl Sandbox {
@@ -54,6 +57,7 @@ impl Sandbox {
             reason,
             bwrap: None,
             home: self.home.clone(),
+            looked: true,
         }
     }
 
@@ -64,7 +68,15 @@ impl Sandbox {
             reason: reason.to_owned(),
             bwrap: None,
             home: None,
+            looked: false,
         }
+    }
+
+    /// No sandbox because the runner looked and found none, or found one
+    /// this harness cannot start in: the case where an agent must be able to
+    /// ask before it acts.
+    pub fn found_none(&self) -> bool {
+        self.looked && self.kind == SandboxKind::None
     }
 
     /// The `bwrap` command line for `program args…`, or `None` when this
@@ -174,8 +186,12 @@ pub fn detect(path: Option<&OsStr>, home: Option<&Path>) -> Sandbox {
             reason: "bwrap on PATH".to_owned(),
             bwrap: Some(bwrap),
             home: home.map(Path::to_path_buf),
+            looked: true,
         },
-        None => Sandbox::none("bwrap not on PATH"),
+        None => Sandbox {
+            looked: true,
+            ..Sandbox::none("bwrap not on PATH")
+        },
     }
 }
 

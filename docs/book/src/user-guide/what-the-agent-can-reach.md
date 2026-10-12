@@ -52,7 +52,11 @@ you already trust. See [Administration & Security](administration.md).
   by starting it once inside `bwrap`. One that cannot start there (a program installed
   in a virtualenv or under Homebrew, for example) runs without a sandbox, and
   `tack runner doctor` and the run say so. Without `bwrap` the agent has your user's
-  access to the machine, and the start report says `sandbox: none`.
+  access to the machine, and the start report says `sandbox: none`. An agent without a
+  sandbox must be able to ask before it acts, so the run dialog asks by default; one that
+  cannot ask (a docket too old to accept `--answers`, for example) does not run on that
+  machine, and the Agents page, the run dialog and the project's Automation settings say
+  why.
 - **The workspace.** The agent works in a clone or a branch of the project's own
   repository, or in your folder if you chose that. The server takes the repository from
   the project; a request that names a different one is refused. See

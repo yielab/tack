@@ -18,7 +18,7 @@ import {
 } from './shared';
 import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
 import { ACCEPTED_MODELS } from './models';
-import { SANDBOX_TEXT } from '../help/texts';
+import { agentSafety } from '../help/texts';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
@@ -216,13 +216,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   // Where the agent is not sandboxed, it asks first; a value the task remembers or the person
   // picks wins over this default. A fleet is unsandboxed if any of its runners' chosen harness is.
-  const sandboxStates = createMemo(() =>
-    capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind).map((h) => h.sandbox));
-  const unsandboxed = () => sandboxStates().includes('none');
+  const chosenHarnessReports = createMemo(() =>
+    capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind));
+  const unsandboxed = () => chosenHarnessReports().some((h) => h.sandbox === 'none');
   const sandboxLine = (): { text: string; unsandboxed: boolean } | null => {
-    if (unsandboxed()) return { text: SANDBOX_TEXT.none, unsandboxed: true };
-    if (sandboxStates().length > 0 && sandboxStates().every((s) => s === 'bwrap')) return { text: SANDBOX_TEXT.bwrap, unsandboxed: false };
-    return null;
+    const safety = agentSafety(chosenHarnessReports());
+    return safety && { text: safety.text, unsandboxed: safety.tone !== 'ok' };
   };
   const defaultApprovals = (): 'auto' | 'ask' => (unsandboxed() ? 'ask' : 'auto');
   let approvalsChosen = false;

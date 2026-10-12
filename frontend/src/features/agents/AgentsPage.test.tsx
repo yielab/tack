@@ -206,6 +206,31 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('Installed v1.0.3 · uses a provider endpoint (step 3)');
     expect(container.textContent).not.toContain('Not signed in');
   });
+
+  it('each installed agent says whether it is sandboxed, asks first, or does not run here', async () => {
+    const asks = { support: 'supported', reason: null };
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([
+        { ...CLAUDE_INSTALLED, sandbox: 'bwrap', decisions: asks },
+        { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '0.2.0', sandbox: 'none', decisions: asks },
+        {
+          ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.3.0', sandbox: 'none',
+          decisions: { support: 'unsupported', reason: null },
+          probe_error: 'not sandboxed on this machine (bwrap not on PATH) and this agent cannot ask before it acts',
+        },
+      ]),
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const line = (kind: string) => container.querySelector(`[data-testid="agent-safety-${kind}"]`)?.textContent ?? '';
+    expect(line('claude-code')).toBe('Sandboxed: the agent only reaches its workspace');
+    expect(line('codex')).toContain('Not sandboxed on this computer, so the agent asks before each action');
+    expect(line('docket')).toContain("Doesn't run on this computer: it isn't sandboxed and can't ask before it acts");
+    expect(container.textContent).toContain("Installed v0.3.0 · Doesn't run here");
+    expect(container.textContent).not.toContain('Could not check');
+  });
 });
 
 describe('AgentsPage — composition', () => {

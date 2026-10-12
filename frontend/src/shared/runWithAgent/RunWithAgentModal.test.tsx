@@ -794,16 +794,33 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [sandboxed('none')], fleets: [] });
     await flush(); await flush();
     expect(ask()).toBe(true);
-    expect(line()).toContain('Not sandboxed: the agent has your user\'s access to this machine');
+    expect(line()).toContain('Not sandboxed on this computer, so the agent asks before each action');
     teardown();
     mount({}, { runners: [sandboxed('bwrap')], fleets: [] });
     await flush(); await flush();
     expect(ask()).toBe(false);
-    expect(line()).toContain('Sandboxed with bwrap');
+    expect(line()).toContain('Sandboxed: the agent only reaches its workspace');
     teardown();
     mount({}, { runners: [sandboxed('none')], fleets: [], runSettings: { approvals: 'auto' } });
     await flush(); await flush();
     expect(ask()).toBe(false);
+  });
+
+  it('an agent with no sandbox that cannot ask says it does not run here, and Run stays off', async () => {
+    const silent = runnerRow('runner-8', 'Box', runnerCapabilitySnapshot({
+      harnesses: [{
+        ...runnerCapabilitySnapshot().harnesses[0],
+        decisions: { support: 'unsupported', reason: null },
+        sandbox: 'none',
+        sandbox_reason: 'bwrap not on PATH',
+        probe_error: 'not sandboxed on this machine (bwrap not on PATH) and this agent cannot ask before it acts',
+      }],
+    }));
+    mount({}, { runners: [silent], fleets: [] });
+    await flush(); await flush();
+    expect(document.querySelector('[data-testid="sandbox-line"]')?.textContent).toContain("Doesn't run on this computer: it isn't sandboxed and can't ask before it acts");
+    expect(document.querySelectorAll('[data-prerequisite="missing"]').length).toBe(1);
+    expect(submitButton()?.disabled ?? true).toBe(true);
   });
 
   it('the_request_sends_no_profile_snapshot_and_the_preview_names_the_profile', async () => {

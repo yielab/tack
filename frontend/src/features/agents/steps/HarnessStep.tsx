@@ -5,6 +5,7 @@ import type { RunnerSummary } from '../../../shared/execution/api';
 import type { HarnessCapability } from '../../../shared/execution/types';
 import { findHarness, harnessesOf } from '../runnerObservations';
 import { HARNESS_INSTALL_COMMAND, HARNESS_INSTALL_NOTE, HARNESS_LOGIN_COMMAND } from '../constants';
+import { agentSafety } from '../../../shared/help/texts';
 
 export interface HarnessStepProps {
   /** This machine's own active runner row, or `null` when agent execution
@@ -35,6 +36,9 @@ function statusLabel(
   kind: string,
   signedInAt: string | undefined,
 ): { text: string; tone: 'success' | 'neutral' | 'warning' } {
+  if (harness?.installed_version && agentSafety([harness])?.tone === 'blocked') {
+    return { text: `Installed v${harness.installed_version} · Doesn't run here`, tone: 'warning' };
+  }
   if (harness && harness.probe_error === null && harness.installed_version) {
     const installed = `Installed v${harness.installed_version}`;
     if (signedInAt) {
@@ -113,6 +117,17 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                   </Show>
                   <Show when={status().text === 'Could not check'}>
                     <span class="basis-full pl-[52px] font-mono text-[11px]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>
+                  </Show>
+                  <Show when={harness()?.installed_version ? agentSafety([harness()!]) : null}>
+                    {(safety) => (
+                      <span
+                        class="basis-full pl-[52px] text-xs"
+                        data-testid={`agent-safety-${kind.value}`}
+                        style={{ color: safety().tone === 'blocked' ? 'var(--color-danger-600)' : 'var(--color-text-secondary)' }}
+                      >
+                        {safety().text}
+                      </span>
+                    )}
                   </Show>
                 </div>
               );

@@ -11,7 +11,7 @@ export const HELP = {
   profile: { text: 'What the agent is allowed to do and how it is told to work. Implementer changes code; Reviewer and Researcher only read; Planner proposes subtasks.', href: BOOK.automation },
   askBeforeEachAction: { text: 'The agent pauses before every action and waits for your answer under Questions from the agent.', href: BOOK.runDialog },
   webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network.", href: BOOK.runDialog },
-  sandbox: { text: 'Whether the agent runs confined to its workspace or with your user\'s access to this machine.', href: `${BOOK_BASE}user-guide/what-the-agent-can-reach.html` },
+  sandbox: { text: "Where this computer can sandbox an agent, it only reaches its workspace. Without a sandbox an agent has your user's access, so it must be able to ask before it acts; one that can't ask doesn't run.", href: `${BOOK_BASE}user-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
@@ -20,4 +20,28 @@ export const HELP = {
 export const SANDBOX_TEXT = {
   bwrap: 'Sandboxed with bwrap',
   none: "Not sandboxed: the agent has your user's access to this machine",
+} as const;
+
+/** The part of a runner's harness report that says whether the agent may run here. */
+export interface AgentSafetyReport {
+  sandbox?: 'bwrap' | 'none';
+  decisions?: { support: string };
+}
+
+/** Whether an agent runs sandboxed, runs unsandboxed and asks first, or does not run at all —
+ *  the runner refuses an agent with no sandbox that cannot ask (ADR 0077). Across several
+ *  runners the least safe report decides; `null` when no runner says. */
+export function agentSafety(reports: readonly AgentSafetyReport[]): { text: string; tone: 'ok' | 'asks' | 'blocked' } | null {
+  const known = reports.filter((r) => r.sandbox === 'bwrap' || r.sandbox === 'none');
+  if (known.length === 0) return null;
+  const unconfined = known.filter((r) => r.sandbox === 'none');
+  if (unconfined.some((r) => r.decisions?.support !== 'supported')) return { text: SAFETY_TEXT.blocked, tone: 'blocked' };
+  if (unconfined.length > 0) return { text: SAFETY_TEXT.asks, tone: 'asks' };
+  return { text: SAFETY_TEXT.ok, tone: 'ok' };
+}
+
+export const SAFETY_TEXT = {
+  ok: 'Sandboxed: the agent only reaches its workspace',
+  asks: "Not sandboxed on this computer, so the agent asks before each action unless you turn that off",
+  blocked: "Doesn't run on this computer: it isn't sandboxed and can't ask before it acts. Install bubblewrap (Linux), or update the agent to a version that can ask.",
 } as const;

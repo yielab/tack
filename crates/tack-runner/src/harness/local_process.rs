@@ -562,7 +562,26 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     }
 
     /// The rules every harness is held to before anything is spawned.
+    /// Why this harness does not run here at all: an agent without a
+    /// sandbox must be able to ask before it acts (ADR 0077), and this one
+    /// cannot. `None` when it is sandboxed or can ask.
+    fn unconfined_and_cannot_ask(&self) -> Option<String> {
+        let can_ask =
+            || self.grammar.capabilities().decisions.support == CapabilitySupport::Supported;
+        (self.sandbox.found_none() && !can_ask()).then(|| {
+            format!(
+                "not sandboxed on this machine ({}) and this agent cannot ask before it acts, \
+                 so it does not run here; install bubblewrap, or update the agent to a version \
+                 that can ask",
+                self.sandbox.reason
+            )
+        })
+    }
+
     fn check_request(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
+        if let Some(reason) = self.unconfined_and_cannot_ask() {
+            return Err(self.reject(reason));
+        }
         let descriptor = self.grammar.descriptor();
         let request = &spec.work.request;
         let requested = request.requested_harness_kind.as_str();
@@ -1100,6 +1119,13 @@ where
         let descriptor = self.grammar.descriptor();
         let probed_at = DateTime::<Utc>::from(self.clock.now());
         let (installed_version, probe_error, raw_output) = self.detect_version().await;
+        // An installed agent that may not run here says why where a failed
+        // probe would, so nothing schedules it and every page shows the reason.
+        let probe_error = probe_error.or_else(|| {
+            (!installed_version.is_empty())
+                .then(|| self.unconfined_and_cannot_ask())
+                .flatten()
+        });
         if !installed_version.is_empty() {
             *self.probed_version.lock().unwrap() = Some(installed_version.clone());
         }

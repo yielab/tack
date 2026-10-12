@@ -754,7 +754,7 @@ the gate on the merge. Pushing and the release are the maintainer's.
   | That probe ran on every catalog read and made the agents page queue behind it | cached per process under the program, its mtime and the machine's sandbox |
   | A relative `TACK_STORAGE_DIR` made every sandboxed run fail: bwrap resolves binds from the workspace | every bind path is made absolute; found only by Playwright |
   | No operator route returned the composed prompt | `GET /api/executions/{id}` returns `instructions` |
-  | A harness that cannot ask (no `decisions` support) still defaults to `auto` when unsandboxed | **open** — the dialog shows the unsandboxed line; whether such a harness should run at all unsandboxed is the maintainer's call |
+  | A harness that cannot ask (no `decisions` support) still defaults to `auto` when unsandboxed | decided by the maintainer: it does not run. The runner refuses it before spawn and its probe says why, so nothing schedules it; the Agents page, the run dialog and the Automation panel show the rule (ADR 0077 decision 11) |
   | `regen-generated.sh --locked` would break the script's own purpose (re-resolving a stale lockfile) | not changed; the gate's check is already `--locked` |
   | Whether `ubuntu-latest` has `bwrap` for the real-bwrap test | unverified until CI runs; the test skips when `bwrap` is absent |
   | The book's install one-liners name `v0.1.0-beta.10`, which is withdrawn until re-cut | intended: they resolve once the tag exists again |

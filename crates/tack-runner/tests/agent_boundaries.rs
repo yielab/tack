@@ -617,7 +617,8 @@ async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
     assert!(written.join("marker").exists(), "the workspace is writable");
 }
 
-struct DescriptorGrammar(&'static HarnessDescriptor);
+/// The shared fake under `descriptor`, and whether it can ask before it acts.
+struct DescriptorGrammar(&'static HarnessDescriptor, bool);
 
 impl HarnessGrammar for DescriptorGrammar {
     fn descriptor(&self) -> &'static HarnessDescriptor {
@@ -625,7 +626,14 @@ impl HarnessGrammar for DescriptorGrammar {
     }
 
     fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
-        RunGrammar.capabilities()
+        let mut capabilities = RunGrammar.capabilities();
+        if self.1 {
+            capabilities.decisions = tack_runner::harness::local_process::capability(
+                tack_orch::execution::CapabilitySupport::Supported,
+                "asks in this test",
+            );
+        }
+        capabilities
     }
 
     fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
@@ -683,7 +691,7 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
     assert_eq!(machine.kind, sandbox::SandboxKind::Bwrap);
     let discover = |descriptor: &'static HarnessDescriptor| {
         LocalProcessHarness::discover(
-            DescriptorGrammar(descriptor),
+            DescriptorGrammar(descriptor, true),
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
@@ -724,4 +732,63 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
         calls_before,
         "the unsandboxed spawn did not go through bwrap"
     );
+}
+
+#[tokio::test]
+async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
+    let dir = root("unconfined-cannot-ask");
+    let (state, bin, workspace) = (
+        dir.path().join("state"),
+        dir.path().join("bin"),
+        dir.path().join("workspace"),
+    );
+    for path in [&state, &bin, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    let program = bin.join("cannot-ask");
+    std::fs::write(&program, "#!/bin/sh\necho 1.0.0\n").expect("script");
+    std::fs::set_permissions(
+        &program,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .expect("executable");
+    let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        kind: "cannot-ask",
+        program: Box::leak(program.display().to_string().into_boxed_str()),
+        ..FAKE
+    }));
+    // No bwrap on this PATH: the runner looked and found no sandbox.
+    let machine = sandbox::detect(Some(bin.as_os_str()), None);
+    assert_eq!(machine.kind, sandbox::SandboxKind::None);
+    let discover = |can_ask: bool| {
+        LocalProcessHarness::discover(
+            DescriptorGrammar(descriptor, can_ask),
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+            state.join("staging"),
+            SecretStore::file(state.join("secrets.json")),
+        )
+        .expect("the fake program is locatable")
+        .with_probed_sandbox(machine.clone())
+    };
+
+    let asks = tack_runner::harness::HarnessProbe::probe(&discover(true)).await;
+    assert_eq!(
+        asks.probe_error, None,
+        "an agent that can ask runs unsandboxed"
+    );
+
+    let silent = discover(false);
+    let report = tack_runner::harness::HarnessProbe::probe(&silent).await;
+    assert_eq!(report.installed_version, "1.0.0");
+    let reason = report.probe_error.expect("the probe says it may not run");
+    assert!(
+        reason.contains("cannot ask before it acts") && reason.contains("bwrap not on PATH"),
+        "{reason}"
+    );
+    let mut spec = spec(workspace, &[]);
+    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("cannot-ask");
+    match silent.start(&spec).await {
+        Err(HarnessError::Rejected { reason: refused }) => assert_eq!(refused, reason),
+        other => panic!("expected a refusal before spawn, got {other:?}"),
+    }
 }

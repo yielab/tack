@@ -172,7 +172,9 @@ Upgrading applies migrations 078–084 on first start — new tables and columns
   and a store secret must be listed in `[secrets] request_may_reference`
 - **runner:** Where Linux has `bwrap`, each harness runs inside it with only the workspace, a
   scratch home and its own config directory; a harness that cannot start there runs
-  unsandboxed and says why, and the run dialog then asks before each action
+  unsandboxed and says why, and the run dialog then asks before each action; a harness that
+  can neither be sandboxed nor ask does not run, and the Agents page, the run dialog and the
+  project's Automation settings say why
 - **runner:** The runner's git runs none of the repository's hooks, filters or monitors; it
   pushes exactly the verified commit to the URL recorded at the start, and a run that changed
   the git configuration or moved HEAD after verification pushes nothing

@@ -5,7 +5,7 @@ import { ACCEPTED_MODELS } from '../../../shared/runWithAgent/models';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
 import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
-import { HELP } from '../../../shared/help/texts';
+import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
 import type { ModelCombination } from '../../../shared/execution/types';
@@ -13,7 +13,7 @@ import type { UpdateProject } from '../../../shared/types';
 
 /** The part of a runner's reported harness this panel reads. Every field
  *  but the kind is optional: an older runner omits them. */
-interface SnapshotHarness {
+interface SnapshotHarness extends AgentSafetyReport {
   harness_kind: string;
   native_provider?: string;
   model_combinations?: ModelCombination[];
@@ -305,7 +305,7 @@ const AutomationPanel: Component = () => {
 
       <div class={SECTION}>
         <Heading>Agent</Heading>
-        <FieldShell label="Agent">
+        <FieldShell label="Agent" help={HELP.sandbox}>
           <div class="flex flex-wrap gap-2">
             <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
               {(h) => (
@@ -315,6 +315,17 @@ const AutomationPanel: Component = () => {
               )}
             </For>
           </div>
+          <Show when={p()?.default_harness ? agentSafety(defaultHarnessReports()) : null}>
+            {(safety) => (
+              <p
+                class="mt-1.5 text-xs"
+                data-testid="default-agent-safety"
+                style={{ color: safety().tone === 'blocked' ? 'var(--color-danger-600)' : 'var(--color-text-secondary)' }}
+              >
+                {safety().text}
+              </p>
+            )}
+          </Show>
         </FieldShell>
         <FieldShell label="Model" help={HELP.model}>
           <div class="flex flex-col gap-1.5">
