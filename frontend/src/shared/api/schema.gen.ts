@@ -683,7 +683,7 @@ export interface paths {
         };
         /**
          * `GET /api/items/{id}/agent-context` — what the agent will read for a given item:
-         *     the project's default profile's instructions, the item's title and description,
+         *     the profile named by `profile_id` (else the project's default profile)'s instructions, the item's title and description,
          *     the item's brief when it has one, and the project's definition_of_done when set.
          */
         get: operations["get_item_agent_context"];
@@ -5873,7 +5873,10 @@ export interface operations {
     };
     get_item_agent_context: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The agent profile to compose with; the project's default when absent. */
+                profile_id?: string;
+            };
             header?: never;
             path: {
                 /** @description Item ID */
