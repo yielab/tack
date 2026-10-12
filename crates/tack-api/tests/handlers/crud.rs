@@ -1107,7 +1107,7 @@ async fn export_yaml_round_trips_through_import() {
         yaml.contains("project:") && yaml.contains("items:"),
         "got: {yaml}"
     );
-    let parsed: Value = serde_yaml::from_str(&yaml).unwrap();
+    let parsed: Value = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
     assert_eq!(
         parsed["items"][0]["source"], "manual",

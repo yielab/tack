@@ -103,7 +103,7 @@ pub async fn export_project(
                 .into_response())
         }
         "yaml" => {
-            let yaml_data = serde_yaml::to_string(&export_data)
+            let yaml_data = serde_saphyr::to_string(&export_data)
                 .map_err(|e| anyhow::anyhow!("Failed to serialize YAML: {}", e))?;
 
             let filename = format!("{}-export.yaml", project.name.replace(' ', "-"));
@@ -168,7 +168,7 @@ pub(crate) fn structured_body(
         )));
     }
     if media_type != "application/json" {
-        serde_yaml::from_slice(body)
+        serde_saphyr::from_slice(body)
             .map_err(|e| ApiError::BadRequest(format!("Invalid YAML {what}: {e}")))
     } else {
         serde_json::from_slice(body)
