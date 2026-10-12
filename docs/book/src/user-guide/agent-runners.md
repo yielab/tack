@@ -313,7 +313,7 @@ The dialog is a pre-flight, not a form. Everything that belongs to the computer 
 project is already decided and shown read-only, with a **Change** link to the page that owns
 it, so nothing is asked twice:
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Allow network access; and a collapsed Advanced section.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Web tools; and a collapsed Advanced section.">
 
 - **The summary line** — which agent runs it, as which profile, on which model, and where it
   works ("on a new branch of your repo", "in the folder, directly"). Each part links to where
@@ -439,8 +439,6 @@ tack execution create <ITEM_ID> \
   --harness claude-code \
   --model-provider anthropic \
   --model-id claude-sonnet-4-5 \
-  --agent-profile-snapshot '{"name":"demo-profile","instructions":"Print the single word DONE and exit. Do not modify any files.","tool_policy":{},"timeout_seconds":120,"budgets":{}}' \
-  --repository '{"kind":"git","remote":"/path/to/local/repo","base_revision":"ce38796ef4f70db35eeb8d6d8b8e86477e1a883c","subdirectory":null}' \
   --permission-policy '{"tools":[],"network":false}' \
   --timeout-seconds 120
 ```

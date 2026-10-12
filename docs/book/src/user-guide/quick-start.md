@@ -19,10 +19,11 @@ Tack is a single self-contained binary — the web UI, REST API, and SQLite engi
 **One line (Linux / macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+TAG=v0.1.0-beta.10
+curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 ```
 
-Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. Pin a version with `TACK_VERSION=v0.1.0-beta.10`; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
+Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. The line above already names the release it installs (`TAG`); change it to install another; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
 
 **Homebrew (macOS and Linux):**
 
@@ -146,7 +147,7 @@ model name or a repository address.
    (see [Where the agent works](agent-runners.md#where-the-agent-works)).
 3. **Open a task and click Run with agent.** The dialog is one summary line (who runs it,
    in which profile, on which model, where), a section called **What the agent will read**,
-   two switches (**Ask before each action** and **Allow network access**) and **Advanced**.
+   two switches (**Ask before each action** and **Web tools**) and **Advanced**.
    The defaults are the recommended ones: the agent's default model and the **Implementer**
    profile. Click **Run**.
 
@@ -193,7 +194,8 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 
 Using the item id from [First use](#first-use) above, create the execution request
 (swap in your own harness — `codex` or `claude-code` — and whichever model
-it accepts; `workspace_mode` says where the agent works — here a fresh clone, see
+it accepts; the server fills in the repository from the item's project, and the project's
+settings say where the agent works, see
 [Where the agent works](agent-runners.md#where-the-agent-works); see [Choosing a model and a
 provider](agent-runners.md#choosing-a-model-and-a-provider) if unsure):
 
@@ -202,8 +204,6 @@ tack execution create <ITEM_ID> \
   --runner <RUNNER_ID> \
   --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
   --harness claude-code --model-provider anthropic --model-id claude-sonnet-4-5 \
-  --agent-profile-snapshot '{"name":"release-notes","instructions":"Summarize the diff and write docs/CHANGELOG entries.","tool_policy":{},"timeout_seconds":600,"budgets":{}}' \
-  --repository '{"kind":"git","remote":"/path/to/your/repo","base_revision":"<COMMIT_SHA>","subdirectory":null,"workspace_mode":"clone"}' \
   --permission-policy '{"tools":[],"network":false}' \
   --timeout-seconds 600
 ```

@@ -40,7 +40,7 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_EXECUTION_HEALTH_INTERVAL_SECS` | `60` | Interval, in seconds, between execution health-watch checks |
 | `TACK_EXECUTION_DECISION_TOKEN` | _(none)_ | Separate shared secret required to resolve a scoped execution decision via `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`. Distinct from `TACK_API_TOKEN`, **fail-closed when unset** (the route rejects rather than falling back to the operator token). Never logged |
 
-With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, 32 random bytes as unpadded base64url, no newline), and requires that value on every API request. The page the server answers at `/` sets it as `tack_session` (`Path=/api; HttpOnly; SameSite=Strict`), so a browser on the same machine needs nothing else; the CLI looks for it in `<data root>/api-token` (the OS per-user data folder's `tack` directory, the service's data root) after `--token`, `TACK_API_TOKEN` and `~/.tackrc`. A server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1` still allows a non-loopback bind with no token, and logs a warning at each start.
+With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, one line), and requires it on every API request; the page at `/` hands it to the browser as the `tack_session` cookie. The CLI looks for the file in `<data root>/api-token` after `--token`, `TACK_API_TOKEN` and `~/.tackrc`; a server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. See [What the Agent Can Reach](https://yielab.github.io/tack/user-guide/what-the-agent-can-reach.html).
 
 The `tack` CLI client — every subcommand other than `serve` — talks to a running server
 over HTTP and never opens the database. It resolves the server's base URL from
@@ -254,7 +254,7 @@ runs the checks in that image (prill never pulls one; an image pinned by anythin
 digest or an id keeps the decision at `human-review` and puts `image_not_pinned` on the pack; a
 local image's id is `docker image inspect <tag> --format '{{.Id}}'`), `["--no-sandbox"]` runs them on this
 machine. With neither, prill needs a container backend on this machine and the image named
-by `sandbox.image` in the repository's `prill.yaml`, and refuses (`sandbox_unavailable`,
+by `sandbox.image` in the repository's `prill.yaml` (prill reads that file from the attempt's base commit, so an edit the agent made to it is not applied), and refuses (`sandbox_unavailable`,
 `sandbox_image_unset`) otherwise. Anything else prill accepts (`--db`, `--sign`,
 `--config`) goes there too. prill's own `mrp.json` and
 `mrp.md`, and the documents it was given, stay in the attempt's scratch directory under
@@ -307,9 +307,10 @@ unreachable remote) never changes the attempt's outcome: the attempt still compl
 is committed or pushed.
 
 Turn it on only for agents you would trust with your git credentials. The push runs git in the
-attempt's workspace, which the agent could write to while it worked: hooks are disabled, but the
-repository's own git configuration there (an SSH command or a URL rewrite, for example) is
-whatever the agent left.
+attempt's workspace, which the agent could write to while it worked: hooks, fsmonitor, a custom
+SSH command and the `ext::` transport are disabled, the push goes to the URL recorded when the
+workspace was made and sends exactly the commit that was verified, and it is refused if the
+repository's git configuration changed during the run.
 
 As with the verifier, a run request can decline the push for one run but never enable it; asking
 for a push from a runner with `push_branches = false` changes nothing and the attempt records an
@@ -336,6 +337,10 @@ RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
 
 ### Run environment
 
+Where the rules come from and what they protect is on the book page
+[What the Agent Can Reach](https://yielab.github.io/tack/user-guide/what-the-agent-can-reach.html); these are the
+settings.
+
 | Table | Effect |
 |---|---|
 | `[secrets] request_may_reference = ["gw"]` | The `store:` secret names a request's `secret_reference` may name. Empty (the default) means a request may reference none, and an `env:` reference is always refused. |
@@ -343,15 +348,10 @@ RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
 
 ### Harness sandbox
 
-When `bwrap` is on the runner's `PATH`, every harness runs inside it. The agent sees the
-workspace and a scratch home read-write, the directories its harness needs from your home
-(`~/.claude` for claude-code, `~/.codex` for codex), and `/usr`, `/etc`, `/bin` and `/lib*`
-read-only, with a private `/tmp`, `/proc` and `/dev`. It does not see the runner's state
-directory, `~/.tackrc`, `~/.ssh` or the API token file. The network is not restricted: the
-harness still reaches its model. There is nothing to configure. Without `bwrap` the harness runs
-with your user's access to this machine, and says so: `tack doctor` prints `sandbox: bwrap` or
-`sandbox: none (bwrap not on PATH)` for each harness, and the attempt's start report carries the
-same word. A harness installed under your home (a script that needs a runtime there) must be
-reachable from the sandbox; only the program file itself is shared. A harness that cannot start
-inside `bwrap` (its loader or runtime lives where the sandbox does not reach) runs unsandboxed, and
-`tack doctor` and the capability report say why.
+There is nothing to configure. When `bwrap` is on the runner's `PATH`, each harness that can
+start inside it runs inside it, seeing the workspace and a scratch home read-write, the
+directories its harness needs from your home (`~/.claude`, `~/.codex`) and the system
+directories read-only. The network is not restricted. A harness that cannot start inside
+`bwrap` (a program in a virtualenv or under Homebrew, whose loader or runtime lives where the
+sandbox does not reach) runs unsandboxed. `tack runner doctor` prints `sandbox: bwrap` or
+`sandbox: none (<why>)` for each harness, and the attempt's start report carries the same word.
