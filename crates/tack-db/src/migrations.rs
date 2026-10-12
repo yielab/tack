@@ -145,6 +145,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("081_pull_requests", &MIGRATION_081[..]),
         ordinary("082_automation", &MIGRATION_082[..]),
         ordinary("083_plan_source", &MIGRATION_083[..]),
+        ordinary("084_attempt_start_report", &MIGRATION_084[..]),
     ]
 }
 
@@ -1774,3 +1775,7 @@ const MIGRATION_082: [&str; 14] = [
 
 // 083: the plan artifact an item was created from (`source = 'plan'`).
 const MIGRATION_083: [&str; 1] = ["ALTER TABLE items ADD COLUMN source_artifact_id TEXT"];
+
+// 084: what the runner reported when the attempt started running, as JSON
+// `{"environment_names": [...], "sandbox": "bwrap"|"none"|null}`; null until then.
+const MIGRATION_084: [&str; 1] = ["ALTER TABLE execution_attempts ADD COLUMN start_report TEXT"];

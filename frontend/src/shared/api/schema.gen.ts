@@ -3081,6 +3081,11 @@ export interface components {
             completion_id?: string | null;
             created_at: string;
             ended_at?: string | null;
+            /**
+             * @description Names (never values) of the environment variables the runner gave the
+             *     harness, as it reported at start; empty when it reported none.
+             */
+            environment_names: string[];
             event_checkpoint?: string | null;
             /** Format: int64 */
             fencing_token: number;
@@ -3092,6 +3097,11 @@ export interface components {
             request_id: string;
             review?: null | components["schemas"]["AttemptReview"];
             runner_id: string;
+            /**
+             * @description What the harness ran inside, as the runner reported at start: `bwrap`
+             *     or `none`; `null` when it did not say.
+             */
+            sandbox?: string | null;
             started_at?: string | null;
             state: string;
             terminal_reason?: null | components["schemas"]["TerminalReason"];

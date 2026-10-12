@@ -443,6 +443,8 @@ pub struct AttemptListingRow {
     pub ended_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// JSON the runner reported when the attempt started running.
+    pub start_report: Option<String>,
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts/{attempt_number}/events`.
@@ -2706,7 +2708,7 @@ impl Repository {
             "SELECT id, request_id, attempt_number, runner_id, fencing_token, state, \
              lease_issued_at, lease_expires_at, last_heartbeat_at, event_checkpoint, \
              completion_id, workspace_id, base_revision, actual_execution, terminal_reason, \
-             usage, started_at, ended_at, created_at, updated_at FROM execution_attempts \
+             usage, started_at, ended_at, created_at, updated_at, start_report FROM execution_attempts \
              WHERE request_id = ? ORDER BY attempt_number",
         )
         .bind(request_id)
@@ -2735,6 +2737,7 @@ impl Repository {
                 ended_at: row.get("ended_at"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
+                start_report: row.get("start_report"),
             })
             .collect())
     }

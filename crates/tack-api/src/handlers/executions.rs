@@ -491,6 +491,12 @@ pub struct AttemptSummary {
     pub completion_id: Option<String>,
     pub workspace_id: Option<String>,
     pub base_revision: Option<String>,
+    /// Names (never values) of the environment variables the runner gave the
+    /// harness, as it reported at start; empty when it reported none.
+    pub environment_names: Vec<String>,
+    /// What the harness ran inside, as the runner reported at start: `bwrap`
+    /// or `none`; `null` when it did not say.
+    pub sandbox: Option<String>,
     /// `tack_orch::execution::ActualExecution` once the attempt has
     /// reported one, else `null`.
     pub actual_execution: Option<Value>,
@@ -1478,7 +1484,30 @@ pub async fn list_execution_attempts(
                 attempt.ended_at.as_deref().and_then(parse_rfc3339),
                 None,
             );
+            let start_report = attempt
+                .start_report
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+            let environment_names = start_report
+                .as_ref()
+                .and_then(|report| report.get("environment_names"))
+                .and_then(Value::as_array)
+                .map(|names| {
+                    names
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let sandbox = start_report
+                .as_ref()
+                .and_then(|report| report.get("sandbox"))
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             AttemptSummary {
+                environment_names,
+                sandbox,
                 pull_request: pull_requests.remove(&attempt.id),
                 review: reviews.remove(&attempt.id),
                 attempt_id: attempt.id,

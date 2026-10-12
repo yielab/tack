@@ -7152,6 +7152,7 @@
           "state",
           "lease_issued_at",
           "lease_expires_at",
+          "environment_names",
           "created_at",
           "updated_at",
           "usage_economics"
@@ -7187,6 +7188,13 @@
               "string",
               "null"
             ]
+          },
+          "environment_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names (never values) of the environment variables the runner gave the\nharness, as it reported at start; empty when it reported none."
           },
           "event_checkpoint": {
             "type": [
@@ -7248,6 +7256,13 @@
           },
           "runner_id": {
             "type": "string"
+          },
+          "sandbox": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the harness ran inside, as the runner reported at start: `bwrap`\nor `none`; `null` when it did not say."
           },
           "started_at": {
             "type": [
