@@ -1316,7 +1316,16 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     let (root_dir, journal) = fresh_journal("cancel");
     let root = root_dir.path();
     let expected = journal.journal_path(&AttemptId::new("attempt"));
-    let protocol = protocol(work(), true, false);
+    let mut claimed = work();
+    claimed.request.environment.insert(
+        "K".to_owned(),
+        tack_orch::execution::EnvironmentValue {
+            value: Some("secret-looking-value".to_owned()),
+            secret_reference: None,
+            additional: std::collections::BTreeMap::new(),
+        },
+    );
+    let protocol = protocol(claimed, true, false);
     let adapter = adapter(expected);
     let started = Arc::clone(&adapter.start_after_journal);
     let cancellations = Arc::clone(&adapter.cancel_calls);
@@ -1340,6 +1349,14 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     assert_start_reports_carry_journaled_workspace_facts(
         &protocol.reported_starts.lock().expect("fake protocol lock"),
     );
+    // The start event names what the request set, never the values.
+    let starts = protocol.reported_starts.lock().expect("fake protocol lock");
+    let running = starts
+        .iter()
+        .find(|report| report.phase == StartPhase::ProcessObservedRunning)
+        .expect("running report");
+    assert_eq!(running.environment_names, ["K", "RUST_LOG"]);
+    drop(starts);
     assert_single_heartbeat_matches_fixture(&protocol);
     assert_eq!(cancellations.load(Ordering::SeqCst), 1);
     assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);

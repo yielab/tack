@@ -526,6 +526,9 @@ impl PullProtocol for HttpPullProtocol {
                     });
                 };
                 body["process_id"] = json!(process_id);
+                if !report.environment_names.is_empty() {
+                    body["environment_names"] = json!(report.environment_names);
+                }
                 format!("/attempts/{}/start", report.attempt_id)
             }
         };

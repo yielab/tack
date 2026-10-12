@@ -152,6 +152,29 @@ pub struct RunnerConfig {
     pub verify: VerifyConfig,
     /// The `[git]` table: whether a succeeded attempt's branch is pushed.
     pub git: GitConfig,
+    /// The `[secrets]` table.
+    pub secrets: SecretsConfig,
+    /// The `[environment]` table: variables every run gets, whatever its
+    /// request says. A request cannot override one.
+    pub environment: BTreeMap<String, EnvValue>,
+}
+
+/// The `[secrets]` table.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SecretsConfig {
+    /// Secret-store names a request's `secret_reference` may name. Empty
+    /// means a request may reference none.
+    pub request_may_reference: Vec<String>,
+}
+
+/// One `[environment]` entry: a literal `value`, or a `secret_reference`
+/// (`store:<name>` or `env:<VARIABLE>`) resolved once at startup.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvValue {
+    pub value: Option<String>,
+    pub secret_reference: Option<String>,
 }
 
 /// The `[git]` table. Off by default; no environment variable sets it.
@@ -236,6 +259,8 @@ struct FileConfig {
     provider: Option<BTreeMap<String, ProviderFileConfig>>,
     verify: Option<VerifyConfig>,
     git: Option<GitConfig>,
+    secrets: Option<SecretsConfig>,
+    environment: Option<BTreeMap<String, EnvValue>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -281,6 +306,8 @@ impl RunnerConfig {
             providers,
             verify: VerifyConfig::default(),
             git: GitConfig::default(),
+            secrets: SecretsConfig::default(),
+            environment: BTreeMap::new(),
         }
     }
 
@@ -297,6 +324,12 @@ impl RunnerConfig {
             }
             if let Some(git) = file.git {
                 config.git = git;
+            }
+            if let Some(secrets) = file.secrets {
+                config.secrets = secrets;
+            }
+            if let Some(environment) = file.environment {
+                config.environment = environment;
             }
             let providers = file
                 .provider

@@ -80,7 +80,7 @@ fn resolve_env_scheme_reads_the_process_environment() {
 
     assert_eq!(
         store
-            .resolve("env:TACK_SECRETS_TEST_ENV_VALUE")
+            .resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE")
             .expect("resolve")
             .expose(),
         "env-value"
@@ -90,7 +90,7 @@ fn resolve_env_scheme_reads_the_process_environment() {
         std::env::remove_var("TACK_SECRETS_TEST_ENV_VALUE");
     }
     assert!(matches!(
-        store.resolve("env:TACK_SECRETS_TEST_ENV_VALUE"),
+        store.resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE"),
         Err(SecretError::EnvVarNotSet(name)) if name == "TACK_SECRETS_TEST_ENV_VALUE"
     ));
 }

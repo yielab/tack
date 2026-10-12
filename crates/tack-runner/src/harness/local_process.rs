@@ -355,6 +355,10 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     staging_root: PathBuf,
     secrets: SecretStore,
     providers: BTreeMap<String, ProviderConfig>,
+    /// Secret-store names a request's `secret_reference` may name.
+    request_may_reference: Vec<String>,
+    /// The runner's own resolved `[environment]`, given to every run.
+    own_environment: BTreeMap<String, String>,
     probe_timeout: Duration,
     /// Added to the version probe's environment only; tests steer the fake
     /// harness with it.
@@ -410,6 +414,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             staging_root,
             secrets,
             providers: BTreeMap::new(),
+            request_may_reference: Vec::new(),
+            own_environment: BTreeMap::new(),
             probe_timeout: PROBE_TIMEOUT,
             probe_env: BTreeMap::new(),
             probed_version: std::sync::Mutex::new(None),
@@ -422,6 +428,19 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     /// runs against the CLI's own native login.
     pub fn with_providers(mut self, providers: BTreeMap<String, ProviderConfig>) -> Self {
         self.providers = providers;
+        self
+    }
+
+    /// What a run's environment may carry beyond the request's own
+    /// literals: the secret names a request may reference, and the runner's
+    /// own resolved `[environment]`.
+    pub fn with_environment(
+        mut self,
+        request_may_reference: Vec<String>,
+        own_environment: BTreeMap<String, String>,
+    ) -> Self {
+        self.request_may_reference = request_may_reference;
+        self.own_environment = own_environment;
         self
     }
 
@@ -559,6 +578,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         env.extend(super::resolve_environment(
             &self.secrets,
             request,
+            &self.request_may_reference,
+            &self.own_environment,
             &mut secrets,
         )?);
 
