@@ -1,8 +1,8 @@
 # Plan: Phase 69 — the agent reaches only what you gave it
 
 **Status: opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
-(the maintainer's) is done except the GitHub settings; Round 1 closed 2026-10-12, Round 2
-dispatched — see Status.**
+(the maintainer's) is done except the GitHub settings; Rounds 1 and 2 closed 2026-10-12,
+Round 3 dispatched — see Status.**
 Serves ADR 0077 (proposed): every task here executes one or more of its eighteen decisions, and
 the two boundary suites (decision 17) are the proof that they hold. Written against `develop` at
 `722269e8` (the hashes change when the history is rewritten in Wave 0; the trees do not). Every
@@ -726,4 +726,17 @@ the gate on the merge. Pushing and the release are the maintainer's.
   | The desktop CSP cannot carry the chosen port | the server's own CSP covers the board page; the desktop's allows `http://127.0.0.1:*` |
   | The desktop now refuses a `tack serve` it did not start on its port | intended (decision 15); the changelog says so |
   | C1: `ci.yml:345-346` installs `@vitest/coverage-v8` floating; `scheduled-audit.yml` and `verify-install-urls.yml` keep the npm cache and checkout credentials; README, quick-start and tutorial one-liners fetch `main/install.sh` | C3 takes the workflows; D1 takes the one-liners |
+- **Round 2, 2026-10-12:** S5, A1, A2, R3, R4b, C2 merged; the gate, the full workspace nextest
+  (1291 passed), the frontend type-check and vitest (657 passed) green on the merged tree.
+
+  | Found | Decided |
+  |---|---|
+  | `serde_yaml_ng` depends on the same `unsafe-libyaml` | `serde-saphyr` 1.3 instead; ADR decision 16 and the Decided row corrected |
+  | Removing `agent_profile_snapshot` reached the run dialog, the CLI, MCP, "test the agent" and ~13 test files | the server builds the profile from the row plus the request's `timeout_seconds`/`budgets`; "test the agent" enqueues through an unrouted function; the dialog stopped sending the snapshot in the same merge, so `develop` never refused its own board |
+  | A request's repository: the HTTP field is `repository_snapshot` | kept; accepted only when remote and mode equal the project's; it may still choose `base_revision` and `subdirectory` |
+  | The pack review (`mrp/review`) is a second accept path | it opens the pull request too, through the same function and guard |
+  | prill already reads `prill.yaml` at the evidence's `baseCommit`, never the working tree (the audit's row came from `docs/CONFIG.md`) | R3 pins `baseCommit` to the provisioned id; the extra `--config` layer it first added was removed; D1 corrects `docs/CONFIG.md` |
+  | A loopback server now always requires a token, so Playwright (served through Vite) gets 401 | F2 fixes the e2e; `smoke.sh` gives its servers a token; `api-token` is git-ignored |
+  | The run log path used the raw attempt id | hex-encoded, as the stager's own directories are |
+  | The new journal fields are written with the update after spawn | accepted: a crash in that gap leaves a record that pushes nothing |
 
