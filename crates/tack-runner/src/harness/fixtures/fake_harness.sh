@@ -40,7 +40,8 @@
 #   spawn_detached Starts `sleep TACK_FAKE_HARNESS_SLEEP_SECONDS` in its own
 #                  session (`setsid`), so neither the caller's process group
 #                  nor a group-wide signal reaches it, prints
-#                  `process_started <pgid>` to stdout (omitted when
+#                  `process_started <pgid>` to stdout once the sleeper leads
+#                  its own group (omitted when
 #                  TACK_FAKE_HARNESS_ANNOUNCE=0) and only then writes the
 #                  sleeper's pid to TACK_FAKE_HARNESS_PIDFILE, then waits on
 #                  it. For tests of a harness that announces a process group of
@@ -141,6 +142,13 @@ case "$mode" in
   spawn_detached)
     setsid sleep "${TACK_FAKE_HARNESS_SLEEP_SECONDS:-3600}" &
     child_pid=$!
+    # Until the child has run setsid it is still in this script's group, and
+    # a cancel that lands then kills it there. Report it only once it leads
+    # its own group.
+    while kill -0 "$child_pid" 2>/dev/null &&
+      [ "$(ps -o pgid= -p "$child_pid" | tr -d ' ')" != "$child_pid" ]; do
+      sleep 0.01
+    done
     if [ "${TACK_FAKE_HARNESS_ANNOUNCE:-1}" = 1 ]; then
       echo "process_started $child_pid"
     fi
