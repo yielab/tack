@@ -913,21 +913,388 @@ async fn a_pushurl_the_agent_sets_does_not_redirect_the_push() {
         &["config", "remote.origin.pushurl", &evil_url],
     );
     run_git(&workspace.path, &["config", "remote.origin.url", &evil_url]);
-    provisioner
-        .capture_evidence(&workspace, &[])
+    let evidence = provisioner
+        .capture_evidence(&workspace, &[], None, ("Tack <t@localhost>", "work"))
         .await
-        .expect("evidence");
+        .expect("evidence")
+        .expect("a git provisioner captures");
     provisioner
         .publish_branch(
             &workspace,
             "tack/abc-a1",
-            "Tack <t@localhost>",
-            "work",
             true,
+            Some(&remote.display().to_string()),
+            &evidence.captured_commit,
+            &evidence.head_commit,
         )
         .await
         .expect("published")
         .expect("a git provisioner publishes");
     assert_eq!(remote_branches(&remote), "tack/abc-a1");
     assert_eq!(remote_branches(&evil), "");
+}
+
+/// An evidence channel that keeps what the runner uploads, by artifact name.
+#[derive(Clone, Default)]
+struct RecordedUploads {
+    names: Arc<Mutex<std::collections::HashMap<String, String>>>,
+    contents: Arc<Mutex<std::collections::HashMap<String, Vec<u8>>>>,
+}
+
+impl RecordedUploads {
+    fn named(&self, name: &str) -> Option<Vec<u8>> {
+        let names = self.names.lock().expect("names");
+        let id = names.iter().find(|(_, value)| *value == name)?.0.clone();
+        self.contents.lock().expect("contents").get(&id).cloned()
+    }
+}
+
+#[async_trait]
+impl tack_runner::client::AttemptDataProtocol for RecordedUploads {
+    async fn submit_events(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::EventBatchReport,
+    ) -> Result<tack_runner::client::EventBatchResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn create_decision(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::DecisionCreateReport,
+    ) -> Result<tack_runner::client::DecisionCreateResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn poll_decisions(
+        &self,
+        _session: &RunnerSession,
+        _report: tack_runner::client::DecisionPollReport,
+    ) -> Result<tack_runner::client::DecisionPollResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
+    async fn submit_artifact_manifest(
+        &self,
+        _session: &RunnerSession,
+        report: tack_runner::client::ArtifactManifestReport,
+    ) -> Result<Vec<tack_runner::client::ArtifactUploadGrant>, ProtocolClientError> {
+        let mut names = self.names.lock().expect("names");
+        Ok(report
+            .artifacts
+            .into_iter()
+            .map(|item| {
+                names.insert(item.artifact_id.clone(), item.name);
+                tack_runner::client::ArtifactUploadGrant {
+                    artifact_id: item.artifact_id,
+                    state: "pending".to_owned(),
+                    method: "PUT".to_owned(),
+                    path: "/unused".to_owned(),
+                    expires_at: None,
+                }
+            })
+            .collect())
+    }
+
+    async fn put_artifact_content(
+        &self,
+        _session: &RunnerSession,
+        _fencing_token: FencingToken,
+        grant: &tack_runner::client::ArtifactUploadGrant,
+        _media_type: Option<&str>,
+        content: Vec<u8>,
+    ) -> Result<(), ProtocolClientError> {
+        self.contents
+            .lock()
+            .expect("contents")
+            .insert(grant.artifact_id.clone(), content);
+        Ok(())
+    }
+}
+
+/// What the fake harness does to the workspace before it reports success.
+#[derive(Clone, Copy)]
+enum Work {
+    /// Moves onto a local branch called `main` and commits `work.txt` there.
+    CommitOnMain,
+    /// Leaves `work.txt` uncommitted.
+    WriteFile,
+    /// Rewrites `prill.yaml` and the files that decide how the work is checked.
+    EditChecks,
+}
+
+struct WorkAdapter(Work);
+
+#[async_trait]
+impl HarnessAdapter for WorkAdapter {
+    async fn validate(
+        &self,
+        _spec: &tack_runner::client::engine::ExecutionSpec,
+    ) -> Result<(), HarnessError> {
+        Ok(())
+    }
+
+    async fn start(
+        &self,
+        spec: &tack_runner::client::engine::ExecutionSpec,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        let workspace = &spec.workspace.path;
+        let write = |name: &str, text: &str| {
+            let path = workspace.join(name);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            std::fs::write(path, text).expect("write");
+        };
+        match self.0 {
+            Work::CommitOnMain => {
+                run_git(workspace, &["checkout", "--quiet", "-b", "main"]);
+                write("work.txt", "committed on a branch the agent named main\n");
+                run_git(workspace, &["add", "work.txt"]);
+                run_git(
+                    workspace,
+                    &[
+                        "-c",
+                        "user.name=agent",
+                        "-c",
+                        "user.email=agent@example.invalid",
+                        "commit",
+                        "--quiet",
+                        "-m",
+                        "agent work",
+                    ],
+                );
+            }
+            Work::WriteFile => write("work.txt", "the harness wrote this\n"),
+            Work::EditChecks => {
+                write("prill.yaml", "sandbox:\n  image: evil\n");
+                write("package.json", "{\"scripts\":{\"test\":\"true\"}}\n");
+                write(".github/workflows/ci.yml", "on: push\n");
+            }
+        }
+        Ok(LocalRunHandle {
+            process_id: "h3-work".to_owned(),
+        })
+    }
+
+    async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        Err(HarnessError::Process)
+    }
+
+    async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+        Ok(HarnessOutcome {
+            terminal_state: AttemptState::Succeeded,
+            terminal_reason: serde_json::json!({"code":"completed"}),
+            final_checkpoint: None,
+            actual_execution: actual_execution(),
+            usage: usage(),
+        })
+    }
+
+    async fn reconcile(
+        &self,
+        _journal: &tack_runner::client::AttemptJournal,
+    ) -> Result<RecoveryObservation, HarnessError> {
+        Ok(RecoveryObservation::ProcessStopped)
+    }
+}
+
+struct Ran {
+    _root: tempfile::TempDir,
+    remote: PathBuf,
+    base: String,
+    uploads: RecordedUploads,
+    report: CompletionReport,
+}
+
+/// One pushing attempt against a bare remote whose `main` also holds
+/// `committed` (path, text) pairs. `by_name` asks for the base as `main`
+/// rather than as the commit id. `verify` is the runner's `[verify]` table.
+async fn run_work(
+    label: &str,
+    work_done: Work,
+    committed: &[(&str, &str)],
+    by_name: bool,
+    verify: impl FnOnce(&Path) -> Option<tack_runner::config::VerifyConfig>,
+) -> Ran {
+    let (source_dir, _) = source_repository();
+    for (name, text) in committed {
+        let path = source_dir.path().join(name);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+        std::fs::write(path, text).expect("write");
+    }
+    run_git(source_dir.path(), &["add", "."]);
+    run_git(
+        source_dir.path(),
+        &["commit", "--quiet", "--allow-empty", "-m", "checks"],
+    );
+    let commit = run_git(source_dir.path(), &["rev-parse", "HEAD"]);
+    let root_dir = temp_root(label);
+    let remote = bare_clone(source_dir.path(), root_dir.path(), "remote.git");
+    let revision = if by_name { "main" } else { commit.as_str() };
+    let protocol = FakeProtocol::new(work(label, &remote, revision), false);
+    let completions = protocol.completions.clone();
+    let uploads = RecordedUploads::default();
+    let mut engine = git_engine(
+        protocol,
+        WorkAdapter(work_done),
+        OwnerOnlyJournal::new(root_dir.path().join("journal")),
+        &root_dir.path().join("workspaces"),
+    )
+    .with_data_protocol(Arc::new(uploads.clone()))
+    .with_git(tack_runner::config::GitConfig {
+        push_branches: true,
+        ..Default::default()
+    });
+    if let Some(config) = verify(root_dir.path()) {
+        engine = engine.with_verify(
+            config,
+            tack_runner::harness::process::ProcessLimits::new(
+                1 << 20,
+                1 << 20,
+                Duration::from_secs(60),
+            ),
+        );
+    }
+    engine
+        .run_once(&session(), claim(label))
+        .await
+        .expect("the attempt runs");
+    let report = completions.lock().expect("completions")[0].clone();
+    Ran {
+        _root: root_dir,
+        remote,
+        base: commit,
+        uploads,
+        report,
+    }
+}
+
+fn script(directory: &Path, name: &str, text: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = directory.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{text}")).expect("script");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    path
+}
+
+fn verifier(
+    kind: tack_runner::config::VerifyKind,
+    program: &Path,
+) -> tack_runner::config::VerifyConfig {
+    tack_runner::config::VerifyConfig {
+        enabled: true,
+        kind,
+        program: program.display().to_string(),
+        args: Vec::new(),
+        timeout_seconds: 60,
+    }
+}
+
+#[tokio::test]
+async fn a_branch_the_agent_names_like_the_base_does_not_move_the_evidence_base() {
+    let ran = run_work("samename", Work::CommitOnMain, &[], true, |_| None).await;
+    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    let branch = remote_branches(&ran.remote);
+    assert_eq!(branch.lines().count(), 1, "the work is pushed");
+    assert_eq!(
+        run_git(&ran.remote, &["diff", "--name-only", &ran.base, &branch]),
+        "work.txt"
+    );
+    let patch = ran.uploads.named("changes.patch").expect("a patch");
+    assert!(String::from_utf8_lossy(&patch).contains("work.txt"));
+}
+
+#[tokio::test]
+async fn a_tree_that_moves_after_verification_is_never_pushed() {
+    let ran = run_work("amended", Work::WriteFile, &[], false, |root| {
+        let pack = std::fs::canonicalize(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/contracts/mrp-v1/fixtures/ready.json"
+        ))
+        .expect("fixture");
+        // The pack is written first; then the agent's lingering process
+        // rewrites HEAD, as a process the harness left behind could.
+        let program = script(
+            root,
+            "verify.sh",
+            &format!(
+                "cp {} \"$6\"\ncd \"$4\" && git -c user.name=agent -c user.email=agent@example.invalid commit --quiet --amend --allow-empty -m moved\n",
+                pack.display()
+            ),
+        );
+        Some(verifier(tack_runner::config::VerifyKind::Command, &program))
+    })
+    .await;
+    assert_eq!(ran.report.terminal_state, AttemptState::Failed);
+    assert_eq!(
+        ran.report.terminal_reason["code"],
+        "tree_changed_after_verification"
+    );
+    assert_eq!(remote_branches(&ran.remote), "", "nothing may be pushed");
+}
+
+/// A prill that records the configuration it was handed and prints an empty pack.
+fn recording_prill(root: &Path) -> tack_runner::config::VerifyConfig {
+    let program = script(
+        root,
+        "prill.sh",
+        &format!(
+            "while [ $# -gt 0 ]; do\n  if [ \"$1\" = --evidence ]; then cp \"$2\" {}; fi\n  shift\ndone\necho '{{}}'\n",
+            root.join("received-evidence").display()
+        ),
+    );
+    verifier(tack_runner::config::VerifyKind::Prill, &program)
+}
+
+#[tokio::test]
+async fn prill_reads_the_configuration_of_the_base_commit_not_the_agents() {
+    let base_config = "sandbox:\n  image: registry.example/verify@sha256:base\n";
+    let root = std::sync::Mutex::new(PathBuf::new());
+    let ran = run_work(
+        "prillconfig",
+        Work::EditChecks,
+        &[("prill.yaml", base_config)],
+        false,
+        |dir| {
+            *root.lock().expect("root") = dir.to_path_buf();
+            Some(recording_prill(dir))
+        },
+    )
+    .await;
+    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    // prill reads `prill.yaml` at the commit the evidence names: that commit
+    // must be the pinned base, whose file is the base's, not the agent's edit.
+    let received: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.lock().expect("root").join("received-evidence"))
+            .expect("prill was handed the evidence"),
+    )
+    .expect("json");
+    assert_eq!(received["baseCommit"], ran.base.as_str());
+    let at_base = run_git(&ran.remote, &["show", &format!("{}:prill.yaml", ran.base)]);
+    assert_eq!(at_base.trim_end(), base_config.trim_end());
+}
+
+#[tokio::test]
+async fn a_change_to_how_the_work_is_checked_is_named_in_the_pack() {
+    let ran = run_work("checkedfiles", Work::EditChecks, &[], false, |dir| {
+        Some(recording_prill(dir))
+    })
+    .await;
+    let pack: serde_json::Value =
+        serde_json::from_slice(&ran.uploads.named("mrp.json").expect("a pack")).expect("json");
+    let reasons: Vec<String> = pack["risk"]["reasons"]
+        .as_array()
+        .expect("reasons")
+        .iter()
+        .map(|reason| reason.as_str().unwrap_or_default().to_owned())
+        .collect();
+    let section = "The agent changed how it is checked";
+    for path in ["package.json", ".github/workflows/ci.yml"] {
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.starts_with(section) && reason.contains(path)),
+            "{path} is missing from {reasons:?}"
+        );
+    }
 }

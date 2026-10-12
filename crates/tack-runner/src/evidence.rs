@@ -12,6 +12,8 @@
 //! `evidence.json`, with `captured: false` and a reason, and never changes the
 //! attempt's outcome.
 
+pub mod checked_files;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -52,6 +54,12 @@ pub struct GitEvidence {
     /// The commit `base_revision` resolved to in the checkout.
     pub base_commit: String,
     pub head_commit: String,
+    /// The commit the work tree amounts to: `head_commit` when nothing is
+    /// staged on top of it, otherwise a commit of the staged tree whose parent
+    /// it is. The patch is `base_commit..captured_commit`, the verifier
+    /// reads it, and publishing pushes it. Empty without a repository to
+    /// commit to.
+    pub captured_commit: String,
     /// The staged diff against `HEAD` is non-empty: the harness left work
     /// that it did not commit.
     pub worktree_dirty: bool,
@@ -108,6 +116,10 @@ pub const PLAN_FILE: &str = "tack-plan.json";
 /// [`PLAN_FILE`] exists but does not parse; the engine reads it into the
 /// `attempt.plan_invalid` event.
 pub const PLAN_INVALID_FILE: &str = "plan-invalid.txt";
+/// Written beside `src/` in the scratch directory (never staged) when the
+/// capture made a commit of the work: two lines, the commit that was verified
+/// and the `HEAD` it was made on. The verifier and the publish read it.
+pub const CAPTURED_COMMIT_FILE: &str = "captured-commit.txt";
 
 /// `tack-plan.json`, the shape pinned by `docs/contracts/plan-v1/`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +149,10 @@ pub const EVIDENCE_REASON_NO_REPOSITORY: &str = "this worktree provisioner reads
 /// directory holding the staged files (the caller removes it once they are
 /// uploaded) and one JSON object per staged artifact, in the shape
 /// `terminal_reason.artifact` already has.
+///
+/// `base_commit` is the commit id fixed at provisioning, and `commit` the
+/// author and message of the commit the capture makes of the work.
+#[allow(clippy::too_many_arguments)]
 pub async fn capture<P: WorktreeProvisioner>(
     workspaces: &WorkspaceManager<P>,
     workspace: &Workspace,
@@ -144,10 +160,12 @@ pub async fn capture<P: WorktreeProvisioner>(
     terminal_reason: serde_json::Value,
     usage: serde_json::Value,
     brief: Option<&serde_json::Value>,
+    base_commit: Option<&str>,
+    commit: (&str, &str),
 ) -> (PathBuf, Vec<serde_json::Value>) {
     let attempt_id = workspace.attempt_id.as_str();
     let (git, reason) = match workspaces
-        .capture_evidence(workspace, &[RUNNER_DIR, PLAN_FILE])
+        .capture_evidence(workspace, &[RUNNER_DIR, PLAN_FILE], base_commit, commit)
         .await
     {
         Ok(Some(git)) => (Some(git), None),
@@ -209,6 +227,12 @@ pub async fn capture<P: WorktreeProvisioner>(
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700));
+    }
+    if let Some(git) = git.as_ref().filter(|git| !git.captured_commit.is_empty()) {
+        let _ = fs::write(
+            scratch.join(CAPTURED_COMMIT_FILE),
+            format!("{}\n{}\n", git.captured_commit, git.head_commit),
+        );
     }
     let stager = ArtifactStager::new(scratch.join("staged"));
     let mut stage = |name: &str, kind: &str, media_type: &str, bytes: &[u8]| {

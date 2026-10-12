@@ -55,6 +55,8 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
         serde_json::json!({"code": "completed"}),
         serde_json::Value::Null,
         None,
+        None,
+        ("Tack <t@localhost>", "work"),
     )
     .await;
 
@@ -129,6 +131,8 @@ async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
             serde_json::json!({"code": "completed"}),
             serde_json::Value::Null,
             None,
+            None,
+            ("Tack <t@localhost>", "work"),
         )
     };
 

@@ -92,19 +92,30 @@ pub(super) async fn run(
     fs::create_dir_all(&out_dir)
         .map_err(|_| failure(None, "prill's output directory could not be created"))?;
 
-    let head_commit = snapshot(
-        Path::new("git"),
-        &workspace.path,
-        &out_dir.join("index"),
-        workspace.attempt_id.as_str(),
-    )
-    .await
-    .map_err(|reason| {
-        failure(
-            None,
-            format!("the workspace could not be snapshotted: {reason}"),
+    // The commit the capture made of the work is the one verified. Only a
+    // workspace that was not captured by the runner (no such file) is
+    // snapshotted here.
+    let head_commit = match fs::read_to_string(
+        evidence
+            .parent()
+            .unwrap_or(evidence)
+            .join(crate::evidence::CAPTURED_COMMIT_FILE),
+    ) {
+        Ok(recorded) => recorded.lines().next().unwrap_or_default().to_owned(),
+        Err(_) => snapshot(
+            Path::new("git"),
+            &workspace.path,
+            &out_dir.join("index"),
+            workspace.attempt_id.as_str(),
         )
-    })?;
+        .await
+        .map_err(|reason| {
+            failure(
+                None,
+                format!("the workspace could not be snapshotted: {reason}"),
+            )
+        })?,
+    };
 
     let evidence_document = out_dir.join("attempt-evidence.json");
     write_document(
@@ -136,6 +147,9 @@ pub(super) async fn run(
         out_dir.display().to_string(),
         "--json".to_owned(),
     ]);
+    // prill reads its configuration from the commit `baseCommit` names in the
+    // evidence document, which is the id fixed at provisioning, so a
+    // `prill.yaml` the agent edited is never the one it applies.
     args.extend(config.args.iter().cloned());
 
     let result = spawn_verifier(config, limits, workspace, args).await?;
@@ -636,11 +650,17 @@ pub(super) fn pack(
         rationale.push_str(" — ");
         rationale.push_str(&reasons.join("; "));
     }
+    let checked = tack
+        .files
+        .iter()
+        .filter(|file| crate::evidence::checked_files::matches(&file.path))
+        .map(|file| format!("{}: {}", crate::evidence::checked_files::SECTION, file.path));
     let risk_reasons = reasons
         .iter()
         .cloned()
         .chain(flags)
         .chain(signals)
+        .chain(checked)
         .collect();
 
     MergeReadinessPack {

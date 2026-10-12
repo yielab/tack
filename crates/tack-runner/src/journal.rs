@@ -76,6 +76,19 @@ pub struct AttemptJournal {
     /// Absent in old journals; present only after exact terminal payload fsync.
     #[serde(default)]
     pub pending_terminal_report: Option<PendingTerminalReport>,
+    /// The commit the base revision resolved to when the checkout was made.
+    /// Absent in old journals: nothing is captured against a base nobody
+    /// recorded.
+    #[serde(default)]
+    pub base_commit: Option<String>,
+    /// The git configuration fingerprint taken before the harness started.
+    /// Absent in old journals: the run is then not pushed.
+    #[serde(default)]
+    pub config_before: Option<String>,
+    /// Where the branch is pushed: the URL the repository snapshot named at
+    /// provisioning. Absent in old journals: the run is then not pushed.
+    #[serde(default)]
+    pub push_remote: Option<String>,
 }
 
 impl AttemptJournal {
@@ -90,6 +103,9 @@ impl AttemptJournal {
             last_event_checkpoint: None,
             events_submitted: 0,
             pending_terminal_report: None,
+            base_commit: None,
+            config_before: None,
+            push_remote: None,
         }
     }
 }

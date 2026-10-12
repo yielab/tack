@@ -726,18 +726,28 @@ async fn a_dirty_workspace_is_committed_and_pushed_to_origin() {
         .await
         .expect("checkout from the bare origin");
     fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
-    provisioner
-        .capture_evidence(&workspace, &[])
+    let evidence = provisioner
+        .capture_evidence(
+            &workspace,
+            &[],
+            None,
+            (
+                "Tack Runner <tack-runner@localhost>",
+                "Add work (attempt attempt-push)",
+            ),
+        )
         .await
-        .expect("evidence stages the work");
+        .expect("evidence stages the work")
+        .expect("a git provisioner captures");
 
     let published = provisioner
         .publish_branch(
             &workspace,
             "tack/abc12345-a1",
-            "Tack Runner <tack-runner@localhost>",
-            "Add work (attempt attempt-push)",
             true,
+            Some(&origin.display().to_string()),
+            &evidence.captured_commit,
+            &evidence.head_commit,
         )
         .await
         .expect("the branch is published")
@@ -785,7 +795,7 @@ async fn evidence_is_captured_when_the_base_is_a_branch_name() {
         fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
 
         let evidence = provisioner
-            .capture_evidence(&workspace, &[])
+            .capture_evidence(&workspace, &[], None, ("Tack <t@localhost>", "work"))
             .await
             .unwrap_or_else(|error| panic!("{label}: captured: false ({error:?})"))
             .expect("a git provisioner reads the repository");
@@ -810,7 +820,7 @@ async fn a_scratch_workspace_captures_the_file_the_harness_wrote() {
     fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
 
     let evidence = provisioner
-        .capture_evidence(&workspace, &[])
+        .capture_evidence(&workspace, &[], None, ("Tack <t@localhost>", "work"))
         .await
         .expect("captured")
         .expect("a git provisioner reads the repository");
@@ -839,7 +849,15 @@ async fn local_branch_leaves_the_branch_in_the_users_repo() {
         .expect("a worktree of the user's repository");
     fs::write(workspace.path.join("work.txt"), "the harness wrote this\n").expect("write");
     let evidence = provisioner
-        .capture_evidence(&workspace, &[])
+        .capture_evidence(
+            &workspace,
+            &[],
+            None,
+            (
+                "Tack Runner <tack-runner@localhost>",
+                "Add work (attempt attempt-local)",
+            ),
+        )
         .await
         .expect("evidence is read in the worktree")
         .expect("a git provisioner captures");
@@ -849,9 +867,10 @@ async fn local_branch_leaves_the_branch_in_the_users_repo() {
         .publish_branch(
             &workspace,
             "tack/abc12345-a1",
-            "Tack Runner <tack-runner@localhost>",
-            "Add work (attempt attempt-local)",
             false,
+            None,
+            &evidence.captured_commit,
+            &evidence.head_commit,
         )
         .await
         .expect("the branch is published")
@@ -928,7 +947,7 @@ async fn in_place_never_touches_the_users_index() {
     fs::write(folder.join("work.txt"), "the harness wrote this\n").expect("write");
 
     let evidence = provisioner
-        .capture_evidence(&workspace, &[])
+        .capture_evidence(&workspace, &[], None, ("Tack <t@localhost>", "work"))
         .await
         .expect("captured")
         .expect("a git provisioner reads the repository");
@@ -987,7 +1006,12 @@ async fn in_place_reports_only_the_harness_delta_on_an_already_dirty_file() {
     fs::remove_dir_all(folder.join(".tack-runner")).expect("remove");
 
     let evidence = provisioner
-        .capture_evidence(&workspace, &[".tack-runner"])
+        .capture_evidence(
+            &workspace,
+            &[".tack-runner"],
+            None,
+            ("Tack <t@localhost>", "work"),
+        )
         .await
         .expect("captured")
         .expect("evidence");
@@ -1025,7 +1049,7 @@ async fn in_place_without_git_yields_a_snapshot_diff() {
     fs::remove_file(folder.join("gone.txt")).expect("remove");
 
     let evidence = provisioner
-        .capture_evidence(&workspace, &[])
+        .capture_evidence(&workspace, &[], None, ("Tack <t@localhost>", "work"))
         .await
         .expect("captured")
         .expect("a snapshot is evidence");
