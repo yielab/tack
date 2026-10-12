@@ -57,11 +57,19 @@ pub async fn build_runtime(
     // that otherwise cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
     let secrets = SecretStore::open(&config.secret_store_path());
+    let own_environment = secrets
+        .resolve_own_environment(&config.environment)
+        .map_err(|error| {
+            tracing::warn!(%error, "the [environment] table could not be resolved");
+            RunnerError::Config(crate::ConfigError::Invalid)
+        })?;
     let (adapters, _) = crate::harness::discover(
         &limits.harness_process,
         &staging_root,
         &secrets,
         &config.providers,
+        &config.secrets.request_may_reference,
+        &own_environment,
     );
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     crate::provider::attach_catalog(&mut capabilities, &config.providers, &secrets, &SystemClock)
@@ -157,8 +165,14 @@ pub async fn probe(
     secrets: &SecretStore,
     providers: &BTreeMap<String, crate::config::ProviderConfig>,
 ) -> DiscoveryReport {
-    let (adapters, missing_harnesses) =
-        crate::harness::discover(process_limits, staging_root, secrets, providers);
+    let (adapters, missing_harnesses) = crate::harness::discover(
+        process_limits,
+        staging_root,
+        secrets,
+        providers,
+        &[],
+        &BTreeMap::new(),
+    );
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     let provider_catalog =
         crate::provider::attach_catalog(&mut capabilities, providers, secrets, &SystemClock).await;

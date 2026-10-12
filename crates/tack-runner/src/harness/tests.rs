@@ -510,3 +510,116 @@ fn every_descriptor_is_found_by_its_kind() {
     }
     assert!(super::descriptor("no-such-harness").is_none());
 }
+
+static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDescriptor {
+    kind: "configured-fake",
+    program: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/harness/fixtures/fake_harness.sh"
+    ),
+    wire: crate::provider::Wire::OpenAiResponses,
+    model_selection: local_process::ModelSelection::Optional,
+    native_provider: "native",
+    inherited_env: &["PATH"],
+    model_passthrough: "forwarded verbatim",
+    probe_notes: &[],
+    credential_note: "",
+    credential_env: None,
+    observes_served_model: false,
+    reports_process_groups: false,
+    reports_progress: false,
+};
+
+struct ConfiguredGrammar;
+
+impl local_process::HarnessGrammar for ConfiguredGrammar {
+    fn descriptor(&self) -> &'static local_process::HarnessDescriptor {
+        &CONFIGURED
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        let advisory = || local_process::capability(CapabilitySupport::Advisory, "test");
+        tack_orch::execution::FeatureCapabilities {
+            cancel: advisory(),
+            resume: advisory(),
+            decisions: advisory(),
+            artifacts: advisory(),
+            usage: advisory(),
+            additional: BTreeMap::new(),
+        }
+    }
+
+    fn invocation(
+        &self,
+        _run: &local_process::RunContext<'_>,
+    ) -> Result<local_process::Invocation, HarnessError> {
+        Ok(local_process::Invocation::default())
+    }
+
+    fn report(
+        &self,
+        _run: &local_process::RunContext<'_>,
+        _result: &process::ProcessResult,
+    ) -> local_process::RunReport {
+        unreachable!("the attempt is cancelled, never waited on")
+    }
+}
+
+/// The `[secrets]` table of a runner configuration file is what a
+/// discovered harness lets a request reference.
+#[tokio::test]
+async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
+    let state = test_support::scratch("configured-allow-list");
+    let store = test_support::secret_store(state.path());
+    store.set("gw", "gateway-key").expect("store a secret");
+    let limits =
+        process::ProcessLimits::new(1_000_000, 1_000_000, std::time::Duration::from_secs(60));
+    let providers = BTreeMap::new();
+
+    for (file, allowed) in [
+        ("", false),
+        ("[secrets]\nrequest_may_reference = [\"gw\"]\n", true),
+    ] {
+        let config = crate::RunnerConfig::from_sources(crate::RunnerConfigSources {
+            file_toml: Some(file),
+            ..Default::default()
+        })
+        .expect("configuration");
+        let mut found = (AdapterRegistry::new(), BTreeMap::new());
+        install(
+            &mut found,
+            (
+                &limits,
+                state.path(),
+                &store,
+                &providers,
+                &config.secrets.request_may_reference,
+                &BTreeMap::new(),
+            ),
+            ConfiguredGrammar,
+        );
+        let (registry, missing) = found;
+        assert!(missing.is_empty(), "{missing:?}");
+
+        let workspace = state.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let mut request = test_support::spec(CONFIGURED.kind, &workspace);
+        test_support::set_secret_reference(&mut request, "K", "store:gw");
+        match registry.start(&request).await {
+            Ok(handle) => {
+                assert!(
+                    allowed,
+                    "the empty configuration let a request reference gw"
+                );
+                registry.cancel(&handle).await.expect("cancel");
+            }
+            Err(error) => {
+                assert!(!allowed, "{error:?}");
+                assert!(
+                    matches!(&error, HarnessError::Rejected { reason } if reason == "secret_reference_not_allowed: gw"),
+                    "{error:?}"
+                );
+            }
+        }
+    }
+}

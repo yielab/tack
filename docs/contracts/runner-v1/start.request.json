@@ -5,5 +5,6 @@
   "fencing_token": 7,
   "workspace_id": "ws_01J0000000000000000000000001",
   "base_revision": "0123456789abcdef0123456789abcdef01234567",
-  "process_id": "40213"
+  "process_id": "40213",
+  "environment_names": ["K"]
 }

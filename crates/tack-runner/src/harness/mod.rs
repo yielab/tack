@@ -15,6 +15,7 @@ pub mod artifact;
 pub mod claude_code;
 pub mod codex;
 pub mod docket;
+pub mod env_policy;
 pub mod event_sink;
 pub mod fixtures;
 pub mod local_process;
@@ -74,23 +75,48 @@ impl ModelObservationSource {
 
 /// Resolves `request.environment` into concrete `NAME=value` pairs, called
 /// from both `validate` (fail pre-spawn) and `start` (build the real
-/// environment). A literal `value` is used as-is; a `secret_reference`
-/// resolves through `store`; either way it is registered with `secrets` so
-/// it is redacted if it surfaces in captured output. An unresolvable
+/// environment). A request may not set a name [`env_policy`] denies, may
+/// not reference an `env:` secret, and may reference a `store:` secret only
+/// when `request_may_reference` lists it. A literal `value` is used as-is;
+/// a permitted `secret_reference` resolves through `store`; either way it is
+/// registered with `secrets` so it is redacted if it surfaces in captured
+/// output. `own` is the runner's own resolved `[environment]`; it is
+/// applied last, so a request cannot override it. An unresolvable
 /// reference fails typed, naming only the reference.
 pub(crate) fn resolve_environment(
     store: &SecretStore,
     request: &ExecutionRequestSnapshot,
+    request_may_reference: &[String],
+    own: &BTreeMap<String, String>,
     secrets: &mut redact::SecretMaterial,
 ) -> Result<BTreeMap<String, String>, HarnessError> {
     let mut resolved = BTreeMap::new();
     for (name, value) in &request.environment {
+        if let Some(reason) = env_policy::refuse(name) {
+            return Err(HarnessError::Rejected {
+                reason: format!("environment_name_refused: {name} ({reason})"),
+            });
+        }
         match (&value.value, &value.secret_reference) {
             (Some(literal), _) => {
                 secrets.register(literal.clone());
                 resolved.insert(name.clone(), literal.clone());
             }
             (None, Some(reference)) => {
+                if reference.starts_with("env:") {
+                    return Err(HarnessError::Rejected {
+                        reason: "secret_reference_scheme_refused".to_owned(),
+                    });
+                }
+                let secret_name = reference.strip_prefix("store:").unwrap_or(reference);
+                if !request_may_reference
+                    .iter()
+                    .any(|allowed| allowed == secret_name)
+                {
+                    return Err(HarnessError::Rejected {
+                        reason: format!("secret_reference_not_allowed: {secret_name}"),
+                    });
+                }
                 let secret = store.resolve(reference).map_err(|error| {
                     tracing::warn!(
                         name = %name,
@@ -108,6 +134,10 @@ pub(crate) fn resolve_environment(
             }
             (None, None) => {}
         }
+    }
+    for (name, value) in own {
+        secrets.register(value.clone());
+        resolved.insert(name.clone(), value.clone());
     }
     Ok(resolved)
 }
@@ -189,9 +219,18 @@ pub fn discover(
     staging_root: &Path,
     secrets: &SecretStore,
     providers: &BTreeMap<String, crate::config::ProviderConfig>,
+    request_may_reference: &[String],
+    own_environment: &BTreeMap<String, String>,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
-    let machine = (limits, staging_root, secrets, providers);
+    let machine = (
+        limits,
+        staging_root,
+        secrets,
+        providers,
+        request_may_reference,
+        own_environment,
+    );
     install(&mut found, machine, codex::CodexGrammar);
     install(&mut found, machine, claude_code::ClaudeCodeGrammar);
     install(&mut found, machine, docket::DocketGrammar);
@@ -204,11 +243,13 @@ type Machine<'a> = (
     &'a Path,
     &'a SecretStore,
     &'a BTreeMap<String, crate::config::ProviderConfig>,
+    &'a [String],
+    &'a BTreeMap<String, String>,
 );
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (limits, staging_root, secrets, providers): Machine<'_>,
+    (limits, staging_root, secrets, providers, request_may_reference, own_environment): Machine<'_>,
     grammar: G,
 ) {
     let kind = grammar.descriptor().kind;
@@ -221,7 +262,11 @@ fn install<G: local_process::HarnessGrammar>(
     match harness {
         Ok(harness) => {
             if registry
-                .register(harness.with_providers(providers.clone()))
+                .register(
+                    harness
+                        .with_providers(providers.clone())
+                        .with_environment(request_may_reference.to_vec(), own_environment.clone()),
+                )
                 .is_err()
             {
                 tracing::warn!(harness = kind, "rejected at registration");

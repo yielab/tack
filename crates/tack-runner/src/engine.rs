@@ -595,6 +595,7 @@ where
                     workspace_id: Some(workspace.id.clone()),
                     base_revision: Some(workspace.base_revision.clone()),
                     process_id: None,
+                    environment_names: Vec::new(),
                 },
             )
             .await?;
@@ -637,6 +638,7 @@ where
                     workspace_id: Some(spec.workspace.id.clone()),
                     base_revision: Some(spec.workspace.base_revision.clone()),
                     process_id: record.process_id.clone(),
+                    environment_names: spec.work.request.environment.keys().cloned().collect(),
                 },
             )
             .await

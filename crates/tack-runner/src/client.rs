@@ -383,6 +383,10 @@ pub struct StartReport {
     pub base_revision: Option<String>,
     /// Present only after a local process has been observed running.
     pub process_id: Option<String>,
+    /// The names, sorted and never the values, of the environment variables
+    /// the request set. Reported with the running phase so the board can
+    /// show them; empty is not sent.
+    pub environment_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

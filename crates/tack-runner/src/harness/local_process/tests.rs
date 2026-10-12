@@ -172,6 +172,7 @@ type Harness = LocalProcessHarness<TestGrammar, FixedClock>;
 
 fn harness_with(grammar: TestGrammar, locator: BinaryLocator, state: &Path) -> Harness {
     harness_for(grammar, locator, state)
+        .with_environment(vec!["requested".into(), "absent".into()], BTreeMap::new())
 }
 
 fn harness(state: &Path) -> Harness {

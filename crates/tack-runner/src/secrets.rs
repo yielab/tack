@@ -114,6 +114,8 @@ pub enum SecretError {
     EnvVarNotSet(String),
     #[error("secret_reference {0:?} is not a store:<name> or env:<VARIABLE> reference")]
     InvalidReference(String),
+    #[error("secret_reference {0:?} uses a scheme a request may not use")]
+    SchemeNotAllowed(String),
     #[error("secret store I/O failed")]
     Io,
     #[error("secret store backend failed: {0}")]
@@ -341,12 +343,23 @@ impl SecretStore {
         }
     }
 
-    /// Resolves a `secret_reference` string. `store:<name>` (the default
-    /// scheme when none is given, so the frozen contract fixture's bare
-    /// name stays valid) reads from this store; `env:<VARIABLE>` reads the
-    /// runner process's own environment at spawn time — the path for a
-    /// systemd-started runner with no keychain and no wish to keep a file.
+    /// Resolves a `secret_reference` that came from a request. `store:<name>`
+    /// (the default scheme when none is given, so the frozen contract
+    /// fixture's bare name stays valid) reads from this store. `env:` is
+    /// refused: a request must not read the runner process's own
+    /// environment.
     pub fn resolve(&self, reference: &str) -> Result<SecretValue, SecretError> {
+        if reference.starts_with("env:") {
+            return Err(SecretError::SchemeNotAllowed(reference.to_owned()));
+        }
+        self.resolve_own(reference)
+    }
+
+    /// Resolves a reference the runner's own configuration wrote. As
+    /// [`Self::resolve`], and `env:<VARIABLE>` reads the runner process's
+    /// own environment at spawn time — the path for a systemd-started
+    /// runner with no keychain and no wish to keep a file.
+    pub fn resolve_own(&self, reference: &str) -> Result<SecretValue, SecretError> {
         if let Some(variable) = reference.strip_prefix("env:") {
             return std::env::var(variable)
                 .map(SecretValue::new)
@@ -357,6 +370,27 @@ impl SecretStore {
             return Err(SecretError::InvalidReference(reference.to_owned()));
         }
         self.get(name)
+    }
+
+    /// Resolves the runner's own `[environment]` table once, at startup.
+    pub fn resolve_own_environment(
+        &self,
+        environment: &BTreeMap<String, crate::config::EnvValue>,
+    ) -> Result<BTreeMap<String, String>, SecretError> {
+        let mut resolved = BTreeMap::new();
+        for (name, entry) in environment {
+            match (&entry.value, &entry.secret_reference) {
+                (Some(literal), _) => {
+                    resolved.insert(name.clone(), literal.clone());
+                }
+                (None, Some(reference)) => {
+                    let secret = self.resolve_own(reference)?;
+                    resolved.insert(name.clone(), secret.expose().to_owned());
+                }
+                (None, None) => {}
+            }
+        }
+        Ok(resolved)
     }
 }
 

@@ -208,7 +208,7 @@ fn resolve_credential(
     if config.secret.trim().is_empty() && !provider.requires_credential() {
         return Ok(None);
     }
-    secrets.resolve(&config.secret).map(Some)
+    secrets.resolve_own(&config.secret).map(Some)
 }
 
 /// Whether a harness adapter must record the model for `requested_provider`
