@@ -35,6 +35,10 @@ async fn health_response_contains_version_and_migration_count() {
         json["migrations_applied"].as_i64().unwrap_or(0) > 0,
         "migrations_applied must be positive"
     );
+    assert!(
+        json.get("launch_nonce").is_none(),
+        "launch_nonce must be absent when TACK_LAUNCH_NONCE is unset"
+    );
 }
 
 // ─── API token ───────────────────────────────────────────────────────
