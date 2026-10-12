@@ -11,8 +11,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use tack_core::models::{
-    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemBrief, Project, Sprint,
-    UpdateProject, UpsertItemBrief,
+    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemBrief, ItemSource, Project,
+    Sprint, UpdateProject, UpsertItemBrief,
 };
 
 use crate::error::ApiError;
@@ -154,11 +154,20 @@ pub(crate) fn structured_body(
     body: &[u8],
     what: &str,
 ) -> Result<serde_json::Value, ApiError> {
-    let is_yaml = headers
+    let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("yaml"));
-    if is_yaml {
+        .unwrap_or("");
+    let media_type = content_type.split(';').next().unwrap_or("").trim();
+    if !matches!(
+        media_type,
+        "application/json" | "application/yaml" | "application/x-yaml" | "text/yaml"
+    ) {
+        return Err(ApiError::UnsupportedMediaType(format!(
+            "{what} must be sent as application/json, application/yaml, application/x-yaml or text/yaml"
+        )));
+    }
+    if media_type != "application/json" {
         serde_yaml::from_slice(body)
             .map_err(|e| ApiError::BadRequest(format!("Invalid YAML {what}: {e}")))
     } else {
@@ -304,7 +313,13 @@ async fn run_import(
         // payload that omits it, deserializes `item.source` to
         // `ItemSource::Unknown` (untrusted) via `Item`'s `#[serde(default)]`,
         // never to `Manual` — so a payload can't claim trust it never had
-        // just by leaving the field out.
+        // just by leaving the field out. A payload that claims `manual` is
+        // an import like any other and lands as `json_import`.
+        let source = if item.source == ItemSource::Manual {
+            ItemSource::JsonImport
+        } else {
+            item.source.clone()
+        };
         let new = state
             .repo
             .create_item_with_source(
@@ -324,7 +339,7 @@ async fn run_import(
                     assignee: item.assignee.clone(),
                     source_artifact_id: item.source_artifact_id.clone(),
                 },
-                item.source.clone(),
+                source,
             )
             .await
             .map_err(|e| anyhow::anyhow!(e))?;

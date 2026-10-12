@@ -2,7 +2,7 @@ use axum::{
     Json,
     body::Bytes,
     extract::State,
-    http::{StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     response::Response,
 };
 use serde::Deserialize;
@@ -83,7 +83,7 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
 ///
 /// The file is written as `<db-path>.restore`. On the next server startup,
 /// `main.rs` applies the staged restore automatically.
-#[instrument(skip(state, body))]
+#[instrument(skip(state, headers, body))]
 #[utoipa::path(
     post,
     path = "/api/restore",
@@ -97,8 +97,25 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
 )]
 pub async fn post_restore(
     State(state): State<AppState>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
+    let media_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if !matches!(
+        media_type,
+        "application/vnd.sqlite3" | "application/octet-stream"
+    ) {
+        return Err(ApiError::UnsupportedMediaType(
+            "a restore must be sent as application/vnd.sqlite3 or application/octet-stream".into(),
+        ));
+    }
     const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
     if body.len() < 16 || &body[..16] != SQLITE_MAGIC {
         return Err(ApiError::BadRequest(

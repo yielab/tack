@@ -33,6 +33,11 @@ pub enum ApiError {
     #[error("{0}")]
     CrossSiteRequest(String),
 
+    /// A request body whose `Content-Type` this route does not accept
+    /// (`unsupported_media_type`).
+    #[error("{0}")]
+    UnsupportedMediaType(String),
+
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 
@@ -56,6 +61,9 @@ impl IntoResponse for ApiError {
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             ApiError::MisdirectedHost(msg) => (StatusCode::MISDIRECTED_REQUEST, msg.clone()),
             ApiError::CrossSiteRequest(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            ApiError::UnsupportedMediaType(msg) => {
+                (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg.clone())
+            }
             ApiError::Core(err) => match err {
                 CoreError::ItemNotFound(_)
                 | CoreError::ProjectNotFound(_)
@@ -100,6 +108,7 @@ impl IntoResponse for ApiError {
         let code = match &self {
             ApiError::MisdirectedHost(_) => Some("misdirected_host"),
             ApiError::CrossSiteRequest(_) => Some("cross_site_request"),
+            ApiError::UnsupportedMediaType(_) => Some("unsupported_media_type"),
             _ => None,
         };
         let mut error_body = json!({
