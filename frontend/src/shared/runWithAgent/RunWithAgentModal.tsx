@@ -47,10 +47,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const open = () => (props.isOpen ? 'open' : undefined);
   const [project] = createResource(() => (props.isOpen ? props.projectId : undefined), (id) => api.projects.get(id));
   const [item] = createResource(() => (props.isOpen ? props.itemId : undefined), (id) => api.items.get(id));
-  const [agentContext] = createResource(
-    () => (props.isOpen ? props.itemId : undefined),
-    (id) => api.briefs.agentContext(id).then((r) => r.text, () => undefined),
-  );
   const [fleets] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
   const [agentProfiles, { refetch: refetchAgentProfiles }] = createResource(open, () => agentProfilesApi.list().then((r) => r.data.data));
   const [liveRunners] = createResource(open, () => runnersApi.list().then((r) => r.data.data));
@@ -72,6 +68,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [form, setForm] = createStore<RunForm>(initialForm());
   // Set only by a click on a profile pill: an auto-selected profile is not remembered.
   const [profilePicked, setProfilePicked] = createSignal(false);
+  const [agentContext] = createResource(
+    () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
+    ({ id, profileId }) => api.briefs.agentContext(id, profileId || undefined).then((r) => r.text, () => undefined),
+  );
 
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
@@ -195,7 +195,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (typeof saved.timeout_seconds === 'number') setForm('timeoutSeconds', saved.timeout_seconds);
     if (Array.isArray(saved.tools)) setForm('toolsText', saved.tools.join(', '));
     if (typeof saved.network === 'boolean') setForm('allowNetwork', saved.network);
-    if (saved.approvals === 'auto' || saved.approvals === 'ask') setForm('approvals', saved.approvals);
+    if (saved.approvals === 'auto' || saved.approvals === 'ask') { approvalsChosen = true; setForm('approvals', saved.approvals); }
     if (typeof saved.verify === 'boolean') setForm('verify', saved.verify);
     if (typeof saved.model_id === 'string') {
       const id = saved.model_id;
@@ -213,6 +213,20 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const verifyConfigured = createMemo(() => capabilities().some((c) => c.verify_configured === true));
   const pushConfigured = createMemo(() => capabilities().some((c) => c.push_configured === true));
 
+  // Where the agent is not sandboxed, it asks first; a value the task remembers or the person
+  // picks wins over this default. A fleet is unsandboxed if any of its runners' chosen harness is.
+  const sandboxStates = createMemo(() =>
+    capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind).map((h) => h.sandbox));
+  const unsandboxed = () => sandboxStates().includes('none');
+  const sandboxLine = (): { text: string; unsandboxed: boolean } | null => {
+    if (unsandboxed()) return { text: 'Not sandboxed: the agent has your user\'s access to this machine', unsandboxed: true };
+    if (sandboxStates().length > 0 && sandboxStates().every((s) => s === 'bwrap')) return { text: 'Sandboxed with bwrap', unsandboxed: false };
+    return null;
+  };
+  const defaultApprovals = (): 'auto' | 'ask' => (unsandboxed() ? 'ask' : 'auto');
+  let approvalsChosen = false;
+  createEffect(() => { if (props.isOpen) approvalsChosen = false; });
+  createEffect(() => { if (!approvalsChosen) setForm('approvals', defaultApprovals()); });
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
   const nativeProvider = () => targetHarnessCapability()?.native_provider;
@@ -285,13 +299,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const canSubmit = createMemo(() => project()?.code_origin !== 'none' && structuralErrors().length === 0 && combinationGate().allowed && !missingRow() && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
-    const profile = selectedAgentProfile();
     return {
       itemId: props.itemId,
       selectorKind: form.selectorKind,
       selectorId: form.selectorId.trim(),
       agentProfileId: form.agentProfileId,
-      agentProfileSnapshot: { name: profile?.name ?? '', instructions: profile?.instructions ?? '', tool_policy: profile?.tool_policy ?? {} },
       harnessKind: form.harnessKind,
       modelProvider: modelProvider(),
       modelId: modelId(),
@@ -324,7 +336,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (form.timeoutSeconds !== d.timeoutSeconds) diff.timeout_seconds = form.timeoutSeconds;
     if (typedTools().length > 0) diff.tools = typedTools();
     if (form.allowNetwork !== d.allowNetwork) diff.network = form.allowNetwork;
-    if (form.approvals !== d.approvals) diff.approvals = form.approvals;
+    if (form.approvals !== defaultApprovals()) diff.approvals = form.approvals;
     if (form.verify !== d.verify) diff.verify = form.verify;
     return diff;
   };
@@ -417,6 +429,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => modelId() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}
+            sandboxLine={sandboxLine}
+            onApprovals={() => { approvalsChosen = true; }}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}
             errors={structuralErrors}

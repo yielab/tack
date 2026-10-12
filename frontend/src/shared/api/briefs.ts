@@ -12,7 +12,9 @@ export const briefs = {
   get: (itemId: string) => request<ItemBrief>(`/items/${itemId}/brief`),
 
   /** What the agent will read for this item: the text the server composes for a run. */
-  agentContext: (itemId: string) => request<components['schemas']['AgentContextResponse']>(`/items/${itemId}/agent-context`),
+  agentContext: (itemId: string, profileId?: string) =>
+    request<components['schemas']['AgentContextResponse']>(
+      `/items/${itemId}/agent-context${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ''}`),
 
   /** Create or replace the brief in one write. */
   put: (itemId: string, data: UpsertItemBrief) =>

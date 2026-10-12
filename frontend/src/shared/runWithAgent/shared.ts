@@ -61,19 +61,14 @@ export const HARNESS_KINDS: ReadonlyArray<{ value: string; label: string }> = [
 
 /**
  * Everything the modal collects from an operator, in a shape independent of
- * any particular form widget. `agentProfileSnapshot` deliberately carries
- * only `name`/`instructions`/`tool_policy` — the fields copied verbatim from
- * the chosen `AgentProfileSummary` (`shared/execution/api.ts`) — because
- * `timeout_seconds`/`budgets` are collected once at the top level of the form
- * and folded in by {@link buildCreateExecutionInput}, not duplicated as a
- * second set of inputs.
+ * any particular form widget. The profile travels by id only: the server
+ * loads it and records what the run used.
  */
 export interface RunWithAgentFormValues {
   itemId: string;
   selectorKind: 'fleet' | 'exact_runner';
   selectorId: string;
   agentProfileId: string;
-  agentProfileSnapshot: { name: string; instructions: string; tool_policy: unknown };
   harnessKind: string;
   /** `null`/`null` together mean "auto — let the runner decide" (III.1.2:
    *  "requested model-provider and opaque model id, each nullable when

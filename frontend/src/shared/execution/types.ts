@@ -173,6 +173,10 @@ export interface HarnessCapability {
    * runners omit it.
    */
   providers?: string[];
+  /** How the runner confines this harness: `"bwrap"` or `"none"`. Optional: older runners omit it. */
+  sandbox?: 'bwrap' | 'none';
+  /** Why the harness is not sandboxed, when `sandbox` is `"none"`. */
+  sandbox_reason?: string;
 }
 
 export interface CapabilityLimits {

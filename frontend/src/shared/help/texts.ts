@@ -1,4 +1,4 @@
-import { BOOK } from './routes';
+import { BOOK, BOOK_BASE } from './routes';
 import type { FieldHelp } from '../ui/Field';
 
 /** One sentence per field, shown as the `(?)` title and popover. */
@@ -10,7 +10,8 @@ export const HELP = {
   definitionOfDone: { text: 'Appended to what the agent reads on every run of this project', href: BOOK.automation },
   profile: { text: 'What the agent is allowed to do and how it is told to work. Implementer changes code; Reviewer and Researcher only read; Planner proposes subtasks.', href: BOOK.automation },
   askBeforeEachAction: { text: 'The agent pauses before every action and waits for your answer under Questions from the agent.', href: BOOK.runDialog },
-  allowNetwork: { text: 'Lets the agent fetch pages and search. Off is safer; some tasks need it.', href: BOOK.runDialog },
+  webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network.", href: BOOK.runDialog },
+  sandbox: { text: 'Whether the agent runs confined to its workspace or with your user\'s access to this machine.', href: `${BOOK_BASE}user-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
