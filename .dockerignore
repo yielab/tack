@@ -1,0 +1,7 @@
+target/
+*.db*
+tack.toml
+.env
+cloudflared.yml
+logs/
+node_modules/

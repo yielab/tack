@@ -1,11 +1,12 @@
 name: Dependabot auto-merge
 
-# Enables GitHub auto-merge for low-risk Dependabot PRs (semver minor + patch,
-# including the grouped cargo/npm updates). The PR still has to pass every
-# required status check before it actually merges — auto-merge only queues it.
+# Enables GitHub auto-merge only for Dependabot patch updates to direct
+# development dependencies. The PR still has to pass every required status
+# check before it actually merges — auto-merge only queues it.
 #
-# MAJOR version bumps are intentionally NOT auto-merged: they fall through this
-# workflow and wait for a human to review and merge them.
+# Everything else (minor and major bumps, runtime dependencies, indirect
+# dependencies, GitHub Actions) falls through this workflow and waits for a
+# human to review and merge it.
 
 on: pull_request
 
@@ -24,10 +25,10 @@ jobs:
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
-      - name: Enable auto-merge for minor & patch updates
+      - name: Enable auto-merge for patch updates to direct dev dependencies
         if: >-
-          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
-          steps.meta.outputs.update-type == 'version-update:semver-minor'
+          steps.meta.outputs.update-type == 'version-update:semver-patch' &&
+          steps.meta.outputs.dependency-type == 'direct:development'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

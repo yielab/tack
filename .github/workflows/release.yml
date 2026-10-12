@@ -48,7 +48,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Full history, so `origin/main` exists for the ancestry check below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Verify versions match
         run: |
           set -euo pipefail
@@ -63,6 +67,12 @@ jobs:
             echo "ERROR: tag $GITHUB_REF_NAME does not match workspace version $CARGO_VERSION"
             exit 1
           fi
+          # A release is cut from main: a tag on any other line of history
+          # (a branch, a fork's commit) never ships.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "ERROR: tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
 
   test:
     name: Test suite
@@ -70,10 +80,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Install nextest (prebuilt)
         uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
@@ -87,10 +98,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Install cargo-cyclonedx
         uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
@@ -100,8 +112,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -155,6 +165,8 @@ jobs:
             archive: zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # `GITHUB_REF_NAME` is a clean tag ("v0.1.0-beta.7") on every real release
       # trigger (a tag push) but is the branch name on a `workflow_dispatch` dry
@@ -168,8 +180,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
         run: |
@@ -189,9 +199,6 @@ jobs:
       - name: Add the target to the pinned toolchain
         run: rustup target add ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Install musl tools
         if: contains(matrix.target, '-linux-musl')
@@ -360,12 +367,12 @@ jobs:
             bundles: msi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
         run: |
@@ -385,12 +392,6 @@ jobs:
       - name: Add the target to the pinned toolchain
         run: rustup target add ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: |
-            .
-            crates/tack-desktop
-          key: ${{ matrix.platform }}
 
       # Same packages as ci.yml's `desktop` job, on the same runner image already
       # verified to install them cleanly.
@@ -402,7 +403,7 @@ jobs:
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version '^2' --locked
+        run: cargo install tauri-cli --version 2.12.0 --locked
 
       - name: Build tack sidecar
         run: cargo build --release --target ${{ matrix.target }} -p tack-cli --features embed-spa
@@ -494,6 +495,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Install git-cliff (prebuilt)
         uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
@@ -545,24 +547,36 @@ jobs:
           echo "----- SHA256SUMS -----"
           cat SHA256SUMS
 
-      - name: Attest build provenance for release binaries
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Keyless: the signing identity is this workflow's OIDC token, which the
+      # installers check with `cosign verify-blob`.
+      - name: Sign SHA256SUMS
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+
+      - name: Attest build provenance for the release assets
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.dmg
+            dist/*.msi
+            dist/*.cdx.json
+            dist/SHA256SUMS
 
       - name: Create release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          # install.sh/install.ps1 ride along so every release carries a
-          # pinned copy of the installer it shipped with. The docs' one-liner
-          # fetches the script from `main`, which moves; anyone who wants the
-          # exact installer a given tag was tested with fetches it from that
-          # release instead. They come straight from the repo checked out
-          # above, not from dist/, and SHA256SUMS below stays archive-only
-          # rather than growing a second verification story for two small
-          # scripts.
+          # install.sh/install.ps1 ride along so every release carries the
+          # installer it shipped with; the docs' one-liner fetches the script
+          # from the tag being installed. They come straight from the repo
+          # checked out above, not from dist/. SHA256SUMS.sigstore.json (in
+          # dist/) is the signature the installers check SHA256SUMS against.
           files: |
             dist/*
             install.sh
@@ -590,6 +604,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.ref_name }}
+          persist-credentials: false
 
       # Rewrites packaging/homebrew/tack.rb's version and three sha256 lines
       # from this tag's own SHA256SUMS — needs only python3 and curl, both on
@@ -679,8 +694,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write        # OIDC token for provenance signing
+      attestations: write    # write build-provenance attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -714,9 +733,17 @@ jobs:
       # manifest would need the Dockerfile to select the Rust target from
       # $TARGETARCH first.
       - name: Build and push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
           platforms: linux/amd64
           tags: ${{ steps.tags.outputs.tags }}
+
+      - name: Attest the image's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

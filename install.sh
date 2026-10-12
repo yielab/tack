@@ -1,13 +1,23 @@
 #!/bin/sh
-# Tack installer — downloads the latest release binary for your platform.
+# Tack installer — downloads a release binary for your platform.
 #
-#   curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+# Fetch the installer from the release you are installing, not from a branch
+# that moves, and name that release:
+#
+#   TAG=v0.1.0-beta.10
+#   curl --proto '=https' --tlsv1.2 -fsSL \
+#     "https://github.com/yielab/tack/releases/download/$TAG/install.sh" \
+#     | TACK_VERSION="$TAG" sh
 #
 # Options (environment variables):
 #   TACK_INSTALL_DIR   target directory (default: $HOME/.local/bin)
-#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.9 (default: newest)
-#   TACK_SKIP_CHECKSUM set to 1 to skip SHA256SUMS verification (only needed
-#                      for v0.1.0-beta.6 and earlier, which predate the file)
+#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.10 (default: newest)
+#   TACK_SKIP_CHECKSUM set to 1 to skip the SHA256SUMS and signature checks
+#                      (only needed for v0.1.0-beta.6 and earlier, which
+#                      predate the file)
+#
+# After the checksum matches, the signature on SHA256SUMS is checked with
+# cosign, or with an authenticated gh, whichever is on PATH.
 #
 # Installs the single `tack` binary (server + CLI, web UI embedded). No Docker,
 # no database server — run `tack` and open http://localhost:3210.
@@ -18,102 +28,13 @@
 set -eu
 
 REPO="yielab/tack"
-INSTALL_DIR="${TACK_INSTALL_DIR:-$HOME/.local/bin}"
-VERSION="${TACK_VERSION:-}"
 API="https://api.github.com/repos/$REPO/releases"
-
-# Tags are published as `v0.1.0-beta.9`; accept the bare version too rather
-# than failing with "no asset for 0.1.0-beta.9", which reads like the release
-# is missing when only the prefix is.
-case "$VERSION" in
-  ""|v*) ;;
-  *) VERSION="v$VERSION" ;;
-esac
+CERT_IDENTITY_REGEXP="^https://github.com/$REPO/"
+CERT_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
 err() { printf 'tack-install: %s\n' "$1" >&2; exit 1; }
 
-# ── Detect platform (must match the release workflow's matrix labels) ──────────
-os="$(uname -s)"
-arch="$(uname -m)"
-case "$os" in
-  Linux)  os_tag="linux" ;;
-  Darwin) os_tag="macos" ;;
-  *) err "unsupported OS '$os'. Build from source: https://github.com/$REPO" ;;
-esac
-case "$arch" in
-  x86_64|amd64)  arch_tag="x86_64" ;;
-  arm64|aarch64) arch_tag="aarch64" ;;
-  *) err "unsupported architecture '$arch'. Build from source: https://github.com/$REPO" ;;
-esac
-platform="${os_tag}-${arch_tag}"
-
-# Only these are published as prebuilt binaries (see release.yml matrix).
-case "$platform" in
-  linux-x86_64|linux-aarch64|macos-aarch64|macos-x86_64) ;;
-  *) err "no prebuilt binary for '$platform' yet. Build from source: https://github.com/$REPO" ;;
-esac
-
-# ── Fetch tool ────────────────────────────────────────────────────────────────
-if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL "$1"; }
-  download() { curl -fSL "$1" -o "$2"; }
-elif command -v wget >/dev/null 2>&1; then
-  fetch() { wget -qO- "$1"; }
-  download() { wget -qO "$2" "$1"; }
-else
-  err "need curl or wget to download"
-fi
-
-# ── Resolve the download URL from the GitHub API ──────────────────────────────
-# Newest releases first; this includes pre-releases (the beta tags), which
-# /releases/latest deliberately excludes.
-suffix="-${platform}.tar.gz"
-echo "Looking up the newest tack release for ${platform}…"
-urls="$(fetch "$API?per_page=100" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/')" \
-  || err "could not query the releases API"
-
-# Every release also publishes a `tack-runner-<tag>-<platform>.tar.gz` archive,
-# ending in this same platform suffix, and the releases API lists it before
-# the `tack-<tag>-<platform>.tar.gz` one this installer actually wants. A bare
-# suffix match would pick it first, download it, then fail below — that
-# archive holds a binary named `tack-runner`, never one named `tack`.
-# Excluded explicitly; this script installs the board binary only.
-if [ -n "$VERSION" ]; then
-  url="$(printf '%s\n' "$urls" | grep "/download/$VERSION/" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
-  if [ -z "$url" ]; then
-    # linux-aarch64 joined the release matrix after v0.1.0-beta.9 — a version
-    # older than that will never have this asset, which reads like a bug
-    # unless the message says so.
-    if [ "$platform" = "linux-aarch64" ]; then
-      err "no asset for $VERSION on $platform. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pick a newer tag, or build from source: https://github.com/$REPO"
-    fi
-    err "no asset for $VERSION on $platform"
-  fi
-else
-  url="$(printf '%s\n' "$urls" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
-  if [ -z "$url" ]; then
-    if [ "$platform" = "linux-aarch64" ]; then
-      err "no published $platform asset found. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pass TACK_VERSION to pick a newer tag, or build from source: https://github.com/$REPO"
-    fi
-    err "no published $platform asset found"
-  fi
-fi
-
-asset="$(basename "$url")"
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-
-printf 'Downloading %s …\n' "$asset"
-download "$url" "$tmp/$asset" || err "download failed: $url"
-
-# ── Verify the archive against the release's own SHA256SUMS ───────────────────
-# release.yml publishes SHA256SUMS beside the archives and its own comment
-# tells consumers to verify with it — this is that consumer, and the one most
-# people use, since it is what the README's one-liner runs. Fail closed: a
-# mismatch, a missing line, an unreachable checksum file or no way to compute
-# a digest all stop the install rather than executing an unverified binary.
-# TACK_SKIP_CHECKSUM=1 is the deliberate way out, needed only for
-# v0.1.0-beta.6 and earlier, which predate the file.
+# Digest of a file with whichever tool the system has.
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | cut -d' ' -f1
@@ -126,48 +47,175 @@ sha256_of() {
   fi
 }
 
-if [ "${TACK_SKIP_CHECKSUM:-0}" = 1 ]; then
-  printf 'Skipping checksum verification (TACK_SKIP_CHECKSUM=1).\n' >&2
-else
-  # Same release, same directory: .../download/<tag>/<asset> -> .../SHA256SUMS
-  sums_url="${url%/*}/SHA256SUMS"
-  fetch "$sums_url" > "$tmp/SHA256SUMS" 2>/dev/null \
-    || err "could not fetch $sums_url — releases before v0.1.0-beta.7 have no
+# Checks the signature release.yml made over SHA256SUMS. Called once the
+# archive matched its line in that file, so a verified file means a verified
+# archive. A failed check stops the install.
+verify_signature() {
+  sums="$1"; bundle="$2"; archive="$3"
+  if command -v cosign >/dev/null 2>&1; then
+    cosign verify-blob \
+      --bundle "$bundle" \
+      --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
+      --certificate-oidc-issuer "$CERT_OIDC_ISSUER" \
+      "$sums" >/dev/null 2>&1 \
+      || err "the signature on SHA256SUMS does not verify (cosign). Not installing."
+    printf 'Signature on SHA256SUMS verified with cosign.\n'
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh attestation verify "$archive" --repo "$REPO" >/dev/null 2>&1 \
+      || err "the build attestation for $(basename "$archive") does not verify (gh). Not installing."
+    printf 'Build attestation verified with gh.\n'
+  else
+    printf 'checksum verified; signature not checked (install cosign or gh to check it)\n'
+  fi
+}
+
+main() {
+  INSTALL_DIR="${TACK_INSTALL_DIR:-$HOME/.local/bin}"
+  VERSION="${TACK_VERSION:-}"
+
+  # Tags are published as `v0.1.0-beta.9`; accept the bare version too rather
+  # than failing with "no asset for 0.1.0-beta.9", which reads like the release
+  # is missing when only the prefix is.
+  case "$VERSION" in
+    ""|v*) ;;
+    *) VERSION="v$VERSION" ;;
+  esac
+
+  # ── Detect platform (must match the release workflow's matrix labels) ────────
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os" in
+    Linux)  os_tag="linux" ;;
+    Darwin) os_tag="macos" ;;
+    *) err "unsupported OS '$os'. Build from source: https://github.com/$REPO" ;;
+  esac
+  case "$arch" in
+    x86_64|amd64)  arch_tag="x86_64" ;;
+    arm64|aarch64) arch_tag="aarch64" ;;
+    *) err "unsupported architecture '$arch'. Build from source: https://github.com/$REPO" ;;
+  esac
+  platform="${os_tag}-${arch_tag}"
+
+  # Only these are published as prebuilt binaries (see release.yml matrix).
+  case "$platform" in
+    linux-x86_64|linux-aarch64|macos-aarch64|macos-x86_64) ;;
+    *) err "no prebuilt binary for '$platform' yet. Build from source: https://github.com/$REPO" ;;
+  esac
+
+  # ── Fetch tool (HTTPS only, TLS 1.2 or newer) ──────────────────────────────
+  if command -v curl >/dev/null 2>&1; then
+    fetch() { curl --proto '=https' --tlsv1.2 -fsSL "$1"; }
+    download() { curl --proto '=https' --tlsv1.2 -fSL "$1" -o "$2"; }
+  elif command -v wget >/dev/null 2>&1; then
+    fetch() { wget --https-only --secure-protocol=TLSv1_2 -qO- "$1"; }
+    download() { wget --https-only --secure-protocol=TLSv1_2 -qO "$2" "$1"; }
+  else
+    err "need curl or wget to download"
+  fi
+
+  # ── Resolve the download URL from the GitHub API ────────────────────────────
+  # Newest releases first; this includes pre-releases (the beta tags), which
+  # /releases/latest deliberately excludes.
+  suffix="-${platform}.tar.gz"
+  echo "Looking up the newest tack release for ${platform}…"
+  urls="$(fetch "$API?per_page=100" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)"/\1/')" \
+    || err "could not query the releases API"
+
+  # Every release also publishes a `tack-runner-<tag>-<platform>.tar.gz` archive,
+  # ending in this same platform suffix, and the releases API lists it before
+  # the `tack-<tag>-<platform>.tar.gz` one this installer actually wants. A bare
+  # suffix match would pick it first, download it, then fail below — that
+  # archive holds a binary named `tack-runner`, never one named `tack`.
+  # Excluded explicitly; this script installs the board binary only.
+  if [ -n "$VERSION" ]; then
+    url="$(printf '%s\n' "$urls" | grep "/download/$VERSION/" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
+    if [ -z "$url" ]; then
+      # linux-aarch64 joined the release matrix after v0.1.0-beta.9 — a version
+      # older than that will never have this asset, which reads like a bug
+      # unless the message says so.
+      if [ "$platform" = "linux-aarch64" ]; then
+        err "no asset for $VERSION on $platform. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pick a newer tag, or build from source: https://github.com/$REPO"
+      fi
+      err "no asset for $VERSION on $platform"
+    fi
+  else
+    url="$(printf '%s\n' "$urls" | grep -- "$suffix" | grep -v '/tack-runner-' | head -n 1 || true)"
+    if [ -z "$url" ]; then
+      if [ "$platform" = "linux-aarch64" ]; then
+        err "no published $platform asset found. Linux ARM64 builds start with the release after v0.1.0-beta.9 — pass TACK_VERSION to pick a newer tag, or build from source: https://github.com/$REPO"
+      fi
+      err "no published $platform asset found"
+    fi
+  fi
+
+  asset="$(basename "$url")"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+
+  printf 'Downloading %s …\n' "$asset"
+  download "$url" "$tmp/$asset" || err "download failed: $url"
+
+  # ── Verify the archive against the release's own SHA256SUMS ─────────────────
+  # release.yml publishes SHA256SUMS beside the archives and its own comment
+  # tells consumers to verify with it — this is that consumer, and the one most
+  # people use. Fail closed: a mismatch, a missing line, an unreachable
+  # checksum file or no way to compute a digest all stop the install rather
+  # than executing an unverified binary. TACK_SKIP_CHECKSUM=1 is the deliberate
+  # way out, needed only for v0.1.0-beta.6 and earlier, which predate the file.
+  if [ "${TACK_SKIP_CHECKSUM:-0}" = 1 ]; then
+    printf 'Skipping checksum verification (TACK_SKIP_CHECKSUM=1).\n' >&2
+  else
+    # Same release, same directory: .../download/<tag>/<asset> -> .../SHA256SUMS
+    sums_url="${url%/*}/SHA256SUMS"
+    fetch "$sums_url" > "$tmp/SHA256SUMS" 2>/dev/null \
+      || err "could not fetch $sums_url — releases before v0.1.0-beta.7 have no
        checksum file; re-run with TACK_SKIP_CHECKSUM=1 to install without it"
 
-  # `sha256sum` writes "<digest>  <name>"; the binary-mode form prefixes the
-  # name with "*". Match the whole field rather than a substring, so one
-  # asset name can never be satisfied by another's line.
-  expected="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS")"
-  [ -n "$expected" ] || err "SHA256SUMS has no entry for $asset"
+    # `sha256sum` writes "<digest>  <name>"; the binary-mode form prefixes the
+    # name with "*". Match the whole field rather than a substring, so one
+    # asset name can never be satisfied by another's line.
+    expected="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS")"
+    [ -n "$expected" ] || err "SHA256SUMS has no entry for $asset"
 
-  actual="$(sha256_of "$tmp/$asset")" \
-    || err "need sha256sum, shasum or openssl to verify the download; re-run
+    actual="$(sha256_of "$tmp/$asset")" \
+      || err "need sha256sum, shasum or openssl to verify the download; re-run
        with TACK_SKIP_CHECKSUM=1 to install without verifying"
 
-  [ "$actual" = "$expected" ] || err "checksum mismatch for $asset
+    [ "$actual" = "$expected" ] || err "checksum mismatch for $asset
        expected $expected
        got      $actual
        The download does not match what the release published. Not installing."
 
-  printf 'Checksum verified against the release SHA256SUMS.\n'
-fi
+    printf 'Checksum verified against the release SHA256SUMS.\n'
 
-# ── Extract & install ─────────────────────────────────────────────────────────
-tar xzf "$tmp/$asset" -C "$tmp" || err "extract failed"
-bin="$(find "$tmp" -name tack -type f | head -n 1)"
-[ -n "$bin" ] || err "no 'tack' binary found in archive"
+    # The signature on SHA256SUMS. Releases cut before checksums were signed
+    # have no bundle; those get a notice, not a failure, so they stay installable.
+    bundle_url="${url%/*}/SHA256SUMS.sigstore.json"
+    if fetch "$bundle_url" > "$tmp/SHA256SUMS.sigstore.json" 2>/dev/null; then
+      verify_signature "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.sigstore.json" "$tmp/$asset"
+    else
+      printf 'checksum verified; signature not checked (this release has no signature)\n'
+    fi
+  fi
 
-mkdir -p "$INSTALL_DIR"
-install -m 0755 "$bin" "$INSTALL_DIR/tack" 2>/dev/null || {
-  cp "$bin" "$INSTALL_DIR/tack" && chmod 0755 "$INSTALL_DIR/tack"
+  # ── Extract & install ───────────────────────────────────────────────────────
+  tar xzf "$tmp/$asset" -C "$tmp" || err "extract failed"
+  bin="$(find "$tmp" -name tack -type f | head -n 1)"
+  [ -n "$bin" ] || err "no 'tack' binary found in archive"
+
+  mkdir -p "$INSTALL_DIR"
+  install -m 0755 "$bin" "$INSTALL_DIR/tack" 2>/dev/null || {
+    cp "$bin" "$INSTALL_DIR/tack" && chmod 0755 "$INSTALL_DIR/tack"
+  }
+
+  printf '\nInstalled tack to %s/tack\n' "$INSTALL_DIR"
+  # SC2016: the literal $PATH below is intentional — it's instructional text for the user.
+  # shellcheck disable=SC2016
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *) printf 'Note: %s is not on your PATH. Add it:\n  export PATH="%s:$PATH"\n' "$INSTALL_DIR" "$INSTALL_DIR" ;;
+  esac
+  printf 'Run "tack" and open http://localhost:3210\n'
 }
 
-printf '\nInstalled tack to %s/tack\n' "$INSTALL_DIR"
-# SC2016: the literal $PATH below is intentional — it's instructional text for the user.
-# shellcheck disable=SC2016
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *) printf 'Note: %s is not on your PATH. Add it:\n  export PATH="%s:$PATH"\n' "$INSTALL_DIR" "$INSTALL_DIR" ;;
-esac
-printf 'Run "tack" and open http://localhost:3210\n'
+main "$@"
