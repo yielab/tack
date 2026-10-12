@@ -37,7 +37,7 @@ use thiserror::Error;
 use tokio::{
     io::AsyncReadExt,
     process::{Child, Command},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     time,
 };
 
@@ -280,10 +280,14 @@ impl SupervisedProcess {
         let stdout_cap = limits.max_stdout_bytes;
         let stderr_cap = limits.max_stderr_bytes;
 
-        let stdout_task =
-            tokio::spawn(async move { capture_bounded(&mut stdout_pipe, stdout_cap).await });
-        let stderr_task =
-            tokio::spawn(async move { capture_bounded(&mut stderr_pipe, stderr_cap).await });
+        let (stdout_stop, stdout_stopped) = oneshot::channel();
+        let (stderr_stop, stderr_stopped) = oneshot::channel();
+        let mut stdout_task = tokio::spawn(async move {
+            capture_bounded(&mut stdout_pipe, stdout_cap, stdout_stopped).await
+        });
+        let mut stderr_task = tokio::spawn(async move {
+            capture_bounded(&mut stderr_pipe, stderr_cap, stderr_stopped).await
+        });
 
         let exit = match time::timeout(limits.timeout, self.child.wait()).await {
             Ok(Ok(status)) => status_to_exit(status),
@@ -293,9 +297,27 @@ impl SupervisedProcess {
                 ProcessExit::TimedOut
             }
         };
+        let readers_until = time::Instant::now() + READER_GRACE;
+        if exit != ProcessExit::TimedOut {
+            reap_group(self.pid, limits.termination_grace).await;
+        }
 
-        let stdout_raw = stdout_task.await.map_err(|_| ProcessError::Io)?;
-        let stderr_raw = stderr_task.await.map_err(|_| ProcessError::Io)?;
+        let stdout_raw = match time::timeout_at(readers_until, &mut stdout_task).await {
+            Ok(raw) => raw,
+            Err(_) => {
+                let _ = stdout_stop.send(());
+                stdout_task.await
+            }
+        }
+        .map_err(|_| ProcessError::Io)?;
+        let stderr_raw = match time::timeout_at(readers_until, &mut stderr_task).await {
+            Ok(raw) => raw,
+            Err(_) => {
+                let _ = stderr_stop.send(());
+                stderr_task.await
+            }
+        }
+        .map_err(|_| ProcessError::Io)?;
         Ok(ProcessResult {
             exit,
             stdout: finalize_capture(stdout_raw, secrets),
@@ -346,8 +368,11 @@ impl SupervisedProcess {
         let stdout_pipe = self.child.stdout.take().ok_or(ProcessError::Io)?;
         let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::Io)?;
         let stderr_cap = limits.max_stderr_bytes;
-        let stderr_task =
-            tokio::spawn(async move { capture_bounded(&mut stderr_pipe, stderr_cap).await });
+        let (stderr_stop, stderr_stopped) = oneshot::channel();
+        let mut stderr_task = tokio::spawn(async move {
+            capture_bounded(&mut stderr_pipe, stderr_cap, stderr_stopped).await
+        });
+        let (stdout_stop, mut stdout_stopped) = oneshot::channel::<()>();
 
         let stdout_cap = limits.max_stdout_bytes;
         let groups = Arc::clone(&self.groups);
@@ -356,9 +381,35 @@ impl SupervisedProcess {
             let mut accumulator = BoundedAccumulator::new(stdout_cap);
             let mut reader = BufReader::new(stdout_pipe);
             let mut raw_line = Vec::new();
+            let mut stopping = false;
+            let mut partial = false;
             loop {
-                raw_line.clear();
-                let Ok(n) = reader.read_until(b'\n', &mut raw_line).await else {
+                if !partial {
+                    raw_line.clear();
+                }
+                partial = false;
+                // Once told to stop, only what is already buffered is read.
+                let read = if stopping {
+                    match time::timeout(
+                        Duration::from_millis(50),
+                        reader.read_until(b'\n', &mut raw_line),
+                    )
+                    .await
+                    {
+                        Ok(read) => read,
+                        Err(_) => break,
+                    }
+                } else {
+                    tokio::select! {
+                        read = reader.read_until(b'\n', &mut raw_line) => read,
+                        _ = &mut stdout_stopped => {
+                            stopping = true;
+                            partial = true;
+                            continue;
+                        }
+                    }
+                };
+                let Ok(n) = read else {
                     break;
                 };
                 if n == 0 {
@@ -460,16 +511,34 @@ impl SupervisedProcess {
                 }
             }
         };
+        let readers_until = time::Instant::now() + READER_GRACE;
         let mut groups = ProcessGroups::default();
         if exit == ProcessExit::TimedOut {
             kill_tree(self.pid, &mut self.child, limits.termination_grace).await?;
             groups = kill_groups(self.live_groups(), limits.termination_grace).await;
+        } else {
+            reap_group(self.pid, limits.termination_grace).await;
         }
         if stdout_raw.is_none() {
-            stdout_raw = Some((&mut read_and_drive).await);
+            stdout_raw = Some(
+                match time::timeout_at(readers_until, &mut read_and_drive).await {
+                    Ok(raw) => raw,
+                    Err(_) => {
+                        let _ = stdout_stop.send(());
+                        (&mut read_and_drive).await
+                    }
+                },
+            );
         }
 
-        let stderr_raw = stderr_task.await.map_err(|_| ProcessError::Io)?;
+        let stderr_raw = match time::timeout_at(readers_until, &mut stderr_task).await {
+            Ok(raw) => raw,
+            Err(_) => {
+                let _ = stderr_stop.send(());
+                stderr_task.await
+            }
+        }
+        .map_err(|_| ProcessError::Io)?;
         Ok(ProcessResult {
             exit,
             stdout: finalize_capture(
@@ -605,6 +674,33 @@ async fn wait_until_gone(mut groups: BTreeSet<u32>, within: Duration) -> BTreeSe
     }
 }
 
+/// How long the stdout/stderr readers get after the harness's `wait` returns
+/// before they are told to stop.
+const READER_GRACE: Duration = Duration::from_secs(1);
+
+/// The harness has exited: whatever is left in its process group goes too
+/// (SIGTERM, then SIGKILL after `grace`). The group outlives its leader for
+/// as long as any member does, so the leader's pid still names it. The
+/// harness runs in the runner's own session, which is never signalled.
+async fn reap_group(pid: u32, grace: Duration) {
+    #[cfg(unix)]
+    {
+        if !unix::group_alive(pid) {
+            return;
+        }
+        let _ = unix::signal_group(pid, unix::SIGTERM);
+        let alive = wait_until_gone(BTreeSet::from([pid]), grace).await;
+        if !alive.is_empty() {
+            let _ = unix::signal_group(pid, unix::SIGKILL);
+            let _ = wait_until_gone(alive, Duration::from_secs(5)).await;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (pid, grace);
+    }
+}
+
 async fn kill_tree(
     pid: u32,
     child: &mut Child,
@@ -689,14 +785,31 @@ impl BoundedAccumulator {
 /// stream that never exceeds `cap` fills `head` then `tail` without either
 /// ever dropping anything, so the two concatenate back into the whole,
 /// contiguous stream.
-async fn capture_bounded(pipe: &mut (impl tokio::io::AsyncRead + Unpin), cap: usize) -> RawCapture {
+///
+/// `stop` ends the read early (a descendant outside the harness's group can
+/// hold the pipe open past the harness's own exit): what is already buffered
+/// is still read, then the pipe is dropped.
+async fn capture_bounded(
+    pipe: &mut (impl tokio::io::AsyncRead + Unpin),
+    cap: usize,
+    mut stop: oneshot::Receiver<()>,
+) -> RawCapture {
     let mut accumulator = BoundedAccumulator::new(cap);
     let mut chunk = [0u8; 32 * 1024];
     loop {
-        match pipe.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(n) => accumulator.push(&chunk[..n]),
-            Err(_) => break,
+        tokio::select! {
+            read = pipe.read(&mut chunk) => match read {
+                Ok(0) | Err(_) => break,
+                Ok(n) => accumulator.push(&chunk[..n]),
+            },
+            _ = &mut stop => {
+                while let Ok(Ok(n @ 1..)) =
+                    time::timeout(Duration::from_millis(50), pipe.read(&mut chunk)).await
+                {
+                    accumulator.push(&chunk[..n]);
+                }
+                break;
+            }
         }
     }
     accumulator.finish()

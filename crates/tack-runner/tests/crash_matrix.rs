@@ -993,3 +993,150 @@ async fn cancel_cannot_reach_a_detached_group_nobody_announced() {
         serde_json::json!({"tracked": 0, "killed": 0, "survived": 0})
     );
 }
+
+// ---- a harness ends when its process ends -----------------------------------
+
+/// `/bin/sh -c <script>` behind the real Claude Code grammar's reading of the
+/// transcript, so what the process prints and how it exits is the whole input.
+struct ShellGrammar {
+    script: &'static str,
+    pidfile: std::path::PathBuf,
+}
+
+static SHELL: tack_runner::harness::local_process::HarnessDescriptor =
+    tack_runner::harness::local_process::HarnessDescriptor {
+        kind: "shell-fake",
+        program: "/bin/sh",
+        wire: tack_runner::provider::Wire::OpenAiResponses,
+        model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
+        native_provider: "native",
+        inherited_env: &["PATH"],
+        model_passthrough: "forwarded verbatim",
+        probe_notes: &[],
+        credential_note: "",
+        credential_env: None,
+        observes_served_model: false,
+        reports_process_groups: false,
+        reports_progress: false,
+    };
+
+impl tack_runner::harness::local_process::HarnessGrammar for ShellGrammar {
+    fn descriptor(&self) -> &'static tack_runner::harness::local_process::HarnessDescriptor {
+        &SHELL
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        tack_runner::harness::local_process::HarnessGrammar::capabilities(
+            &tack_runner::harness::claude_code::ClaudeCodeGrammar,
+        )
+    }
+
+    fn invocation(
+        &self,
+        _run: &tack_runner::harness::local_process::RunContext<'_>,
+    ) -> Result<tack_runner::harness::local_process::Invocation, HarnessError> {
+        Ok(tack_runner::harness::local_process::Invocation {
+            args: vec!["-c".to_owned(), self.script.to_owned()],
+            env: [(
+                "TACK_FAKE_PIDFILE".to_owned(),
+                self.pidfile.display().to_string(),
+            )]
+            .into(),
+            ..Default::default()
+        })
+    }
+
+    fn report(
+        &self,
+        run: &tack_runner::harness::local_process::RunContext<'_>,
+        result: &tack_runner::harness::process::ProcessResult,
+    ) -> tack_runner::harness::local_process::RunReport {
+        tack_runner::harness::local_process::HarnessGrammar::report(
+            &tack_runner::harness::claude_code::ClaudeCodeGrammar,
+            run,
+            result,
+        )
+    }
+}
+
+/// Starts the shell script as an attempt and waits for it, returning the
+/// outcome and the pid the script wrote to its pidfile, if it did.
+async fn run_shell_harness(script: &'static str) -> (HarnessOutcome, Option<u32>) {
+    use tack_runner::client::engine::ExecutionSpec;
+    use tack_runner::harness::local_process::LocalProcessHarness;
+    use tack_runner::harness::process::ProcessLimits;
+
+    let dir = root("shell");
+    let pidfile = dir.path().join("child.pid");
+    let harness = LocalProcessHarness::discover(
+        ShellGrammar {
+            script,
+            pidfile: pidfile.clone(),
+        },
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        dir.path().join("staging"),
+        tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+    )
+    .expect("/bin/sh is locatable");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let mut work = work();
+    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(SHELL.kind);
+    let spec = ExecutionSpec {
+        work,
+        workspace: Workspace {
+            attempt_id: AttemptId::new("attempt-crash"),
+            id: WorkspaceId::new("ws_shell"),
+            path: workspace,
+            base_revision: "0123456789abcdef".into(),
+        },
+    };
+    let handle = harness.start(&spec).await.expect("start");
+    let outcome = harness.wait(&handle).await.expect("wait");
+    let child = std::fs::read_to_string(&pidfile)
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok());
+    (outcome, child)
+}
+
+/// The harness exits 1; a child it left behind holds stdout open and would
+/// print a success line two seconds later.
+#[tokio::test]
+async fn a_child_outliving_a_failed_harness_is_killed_and_cannot_claim_success() {
+    let started = std::time::Instant::now();
+    let (outcome, child) = run_shell_harness(
+        r#"(sleep 2; printf '%s\n' '{"type":"result","is_error":false}') &
+echo $! > "$TACK_FAKE_PIDFILE"
+exit 1"#,
+    )
+    .await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["reason"], "exit_status");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the attempt must end with the harness, not with the child's stdout"
+    );
+    let child = child.expect("the harness wrote its child's pid");
+    assert!(
+        gone_within(child, Duration::from_secs(6)).await,
+        "the child must be dead within the grace"
+    );
+}
+
+#[tokio::test]
+async fn the_first_terminal_line_decides_and_a_later_one_is_ignored() {
+    let rows = [
+        (
+            r#"printf '%s\n' '{"type":"result","is_error":true}' '{"type":"result","is_error":false}'"#,
+            AttemptState::Failed,
+        ),
+        (
+            r#"printf '%s\n' '{"type":"result","is_error":false}'"#,
+            AttemptState::Succeeded,
+        ),
+    ];
+    for (script, expected) in rows {
+        let (outcome, _) = run_shell_harness(script).await;
+        assert_eq!(outcome.terminal_state, expected, "{script}");
+    }
+}

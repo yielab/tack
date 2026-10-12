@@ -419,8 +419,11 @@ fn output_with_no_json_falls_back_to_the_exit_status() {
     for (exit, stdout, succeeded) in rows {
         let report = read(exit, stdout);
         assert_eq!(report.succeeded, succeeded, "{exit:?}");
-        let reason = report.terminal_reason["reason"].as_str().expect("reason");
-        assert!(reason.contains("no structured result envelope"), "{reason}");
+        let detail = report.terminal_reason["detail"].as_str().expect("detail");
+        assert!(detail.contains("no structured result envelope"), "{detail}");
+        if matches!(exit, ProcessExit::Exited(7)) {
+            assert_eq!(report.terminal_reason["reason"], "exit_status");
+        }
         assert_eq!((report.observed_model, report.tokens_in), (None, None));
     }
 }
