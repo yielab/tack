@@ -107,7 +107,7 @@ pub enum IneligibleReason {
         error: String,
     },
     /// The request names no model and this candidate's matched harness
-    /// reports `model_selection: required`: it will not pick one itself.
+    /// reports `requires_model`: it will not pick one itself.
     ModelNotNamed {
         harness: HarnessKind,
     },

@@ -339,7 +339,12 @@ impl HarnessProbe for FakeProbe {
                 .expect("fixture timestamp")
                 .into(),
             decisions: None,
-            model_selection: None,
+            requires_model: false,
+            requires_model_reason: None,
+            models: None,
+            default_model: None,
+            sign_in: None,
+            docs: None,
             additional: Default::default(),
         }
     }
@@ -518,6 +523,9 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 struct ConfiguredGrammar;
@@ -611,4 +619,45 @@ async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
             }
         }
     }
+}
+
+/// A listing that fails is reported where the models would be; the probe
+/// still finds the agent installed, signed in and with its default model.
+#[tokio::test]
+async fn a_failed_model_listing_leaves_the_probe_whole() {
+    let fixtures = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/harness/fixtures/opencode/1.18.30"
+    );
+    let state = test_support::scratch("probe-failed-listing");
+    let body = format!(
+        "case \"$1\" in\n  --version) echo 'opencode 1.18.30';;\n  auth) cat {fixtures}/auth-list.txt;;\n  \
+         models) echo 'boom' >&2; exit 1;;\n  debug) cat {fixtures}/debug-config.json;;\nesac"
+    );
+    let harness = test_support::harness_for(
+        opencode::OpencodeGrammar,
+        test_support::script(state.path(), &body),
+        state.path(),
+    );
+
+    let probe = HarnessProbe::probe(&harness).await;
+
+    assert_eq!(probe.probe_error, None);
+    assert_eq!(probe.installed_version, "1.18.30");
+    let models = probe.models.expect("models are reported");
+    assert_eq!(models.source, tack_orch::execution::ModelListSource::None);
+    assert!(models.ids.is_empty());
+    assert!(
+        models.reason.as_deref().unwrap_or("").contains("status 1"),
+        "{models:?}"
+    );
+    assert_eq!(
+        probe.sign_in.expect("sign-in is reported").state,
+        tack_orch::execution::SignInState::SignedIn
+    );
+    assert_eq!(
+        probe.default_model.as_deref(),
+        Some("opencode/claude-sonnet-5")
+    );
+    assert!(!probe.requires_model);
 }

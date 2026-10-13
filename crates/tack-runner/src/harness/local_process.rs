@@ -26,8 +26,9 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_orch::execution::{
-    ActualExecution, CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, ModelSelectionReport, Usage,
+    ActualExecution, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
+    HarnessCapability, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
+    ModelListSource, ModelsReport, SignInReport, SignInState, Usage,
     WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::mpsc;
@@ -51,7 +52,8 @@ use crate::{
 
 /// `request_timeout_seconds_max` in `docs/contracts/runner-v1/limits.json`.
 const MAX_TIMEOUT_SECONDS: u64 = 86_400;
-const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the version probe, and each readiness command, may run.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 /// Whether a request may leave the model to the harness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelSelection {
@@ -60,6 +62,88 @@ pub enum ModelSelection {
     Explicit(&'static str),
     Optional,
 }
+
+/// What one readiness command did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandOutcome {
+    Ran {
+        code: i32,
+        stdout: String,
+        stderr: String,
+    },
+    /// Still running at the timeout, and killed.
+    TimedOut,
+    /// Could not be started or read.
+    Failed(String),
+}
+
+/// What a harness's own commands said about its login and its models.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Readiness {
+    pub sign_in: SignInReport,
+    pub models: ModelsReport,
+    pub default_model: Option<String>,
+    /// Overrides the descriptor's `model_selection` when the agent's own
+    /// configuration decides whether a request must name a model.
+    pub requires_model: Option<bool>,
+}
+
+/// Runs a harness's own subcommands for a readiness check: as the runner's
+/// user, with only `HOME` and `PATH`, never inside a sandbox.
+pub struct ReadinessShell {
+    program: PathBuf,
+    prefix_args: Vec<String>,
+    env: BTreeMap<String, String>,
+    timeout: Duration,
+}
+
+impl ReadinessShell {
+    pub async fn run(&self, args: &[&str]) -> CommandOutcome {
+        let mut all = self.prefix_args.clone();
+        all.extend(args.iter().map(|arg| (*arg).to_owned()));
+        #[allow(clippy::disallowed_methods)]
+        let neutral_dir = std::env::temp_dir();
+        let spec = ProcessSpec {
+            program: self.program.clone(),
+            args: all,
+            env: self.env.clone(),
+            stdin: None,
+            working_directory: neutral_dir.clone(),
+            workspace_root: neutral_dir,
+            keep_stdin_open: false,
+        };
+        // A model catalog can run to hundreds of kilobytes.
+        let limits = ProcessLimits::new(8 * 1024 * 1024, 64 * 1024, self.timeout);
+        let process = match spec.spawn().await {
+            Ok(process) => process,
+            Err(error) => return CommandOutcome::Failed(format!("could not be started: {error}")),
+        };
+        match process
+            .wait_with_capture(&limits, &SecretMaterial::new())
+            .await
+        {
+            Ok(result) => match result.exit {
+                ProcessExit::Exited(code) => CommandOutcome::Ran {
+                    code,
+                    stdout: result.stdout.text,
+                    stderr: result.stderr.text,
+                },
+                ProcessExit::TimedOut => CommandOutcome::TimedOut,
+                #[cfg(unix)]
+                ProcessExit::Signaled(signal) => {
+                    CommandOutcome::Failed(format!("was terminated by signal {signal}"))
+                }
+            },
+            Err(error) => CommandOutcome::Failed(format!("failed: {error}")),
+        }
+    }
+}
+
+/// A harness's readiness check, over its own commands.
+pub type ReadinessCheck =
+    for<'a> fn(
+        &'a ReadinessShell,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Readiness> + Send + 'a>>;
 
 /// Everything about a harness CLI that is data rather than behaviour.
 #[derive(Debug)]
@@ -91,6 +175,12 @@ pub struct HarnessDescriptor {
     /// session, its settings) when it runs inside a sandbox. A CLI that
     /// keeps all its state in the scratch home names none.
     pub sandbox_binds: &'static [&'static str],
+    /// Asks the installed CLI whether it is signed in and which models it
+    /// offers. `None` reports both as not checked.
+    pub readiness: Option<ReadinessCheck>,
+    /// The CLI's own documentation pages.
+    pub models_docs: &'static str,
+    pub sign_in_docs: &'static str,
 }
 
 /// What the grammar is given to build a command line.
@@ -1033,6 +1123,47 @@ where
         if let Some(raw) = raw_output {
             additional.insert("raw_version_output".to_owned(), serde_json::json!(raw));
         }
+        let readiness = match (&probe_error, descriptor.readiness, self.locator.resolve()) {
+            (None, Some(check), Ok((program, prefix_args))) if !installed_version.is_empty() => {
+                let mut env: BTreeMap<String, String> = ["HOME", "PATH"]
+                    .into_iter()
+                    .filter_map(|name| Some((name.to_owned(), std::env::var(name).ok()?)))
+                    .collect();
+                env.extend(self.probe_env.clone());
+                let shell = ReadinessShell {
+                    program,
+                    prefix_args,
+                    env,
+                    timeout: self.probe_timeout,
+                };
+                Some(check(&shell).await)
+            }
+            _ => None,
+        };
+        let not_checked = "not asked: the agent is not installed or its probe failed".to_owned();
+        let (sign_in, models, default_model, requires_override) = match readiness {
+            Some(r) => (r.sign_in, r.models, r.default_model, r.requires_model),
+            None => (
+                SignInReport {
+                    state: SignInState::Unknown,
+                    detail: not_checked.clone(),
+                    command: None,
+                },
+                ModelsReport {
+                    source: ModelListSource::None,
+                    ids: Vec::new(),
+                    reason: Some(not_checked),
+                },
+                None,
+                None,
+            ),
+        };
+        let (requires_model, requires_model_reason) = match descriptor.model_selection {
+            ModelSelection::Explicit(reason) if requires_override != Some(false) => {
+                (true, Some(reason.to_owned()))
+            }
+            _ => (requires_override == Some(true), None),
+        };
         HarnessCapability {
             harness_kind: DomainHarnessKind::new(descriptor.kind),
             installed_version,
@@ -1042,9 +1173,14 @@ where
             // divergent claim — `declared_capabilities` below reuses the
             // exact same call.
             decisions: Some(self.grammar.capabilities().decisions),
-            model_selection: Some(match descriptor.model_selection {
-                ModelSelection::Optional => ModelSelectionReport::Optional,
-                ModelSelection::Explicit(_) => ModelSelectionReport::Required,
+            requires_model,
+            requires_model_reason,
+            models: Some(models),
+            default_model,
+            sign_in: Some(sign_in),
+            docs: Some(DocsLinks {
+                models: descriptor.models_docs.to_owned(),
+                sign_in: descriptor.sign_in_docs.to_owned(),
             }),
             additional,
         }

@@ -29,7 +29,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
   // The test run names no model, and the scheduler refuses that for an agent
   // that reports it needs one: the request would wait with nothing to run it.
   const harnessKind = () =>
-    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind) && installed(kind)?.model_selection !== 'required');
+    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind) && !installed(kind)?.requires_model);
   const needsModelKind = () => HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind));
   const itemId = createMemo(() => {
     const id = requestId();

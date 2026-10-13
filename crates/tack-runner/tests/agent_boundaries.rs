@@ -45,6 +45,9 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 /// The shared fake harness in `spawn_child` mode: it writes `marker` the
@@ -286,6 +289,9 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 /// Runs the shared fake harness to completion in its default `success` mode.
@@ -842,6 +848,9 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
         reports_process_groups: real.reports_process_groups,
         reports_progress: real.reports_progress,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     }))
 }
 

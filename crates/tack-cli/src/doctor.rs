@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use tack_orch::execution::{
-    CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
-    ModelSelectionReport,
+    CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability, ModelListSource,
+    SignInState,
 };
 use tack_runner::{
     RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
@@ -168,7 +168,9 @@ fn render(report: &bootstrap::DiscoveryReport) {
             .find(|h| h.harness_kind.as_str() == kind)
         {
             render_sandbox(capability);
-            render_model_info(capability);
+            for line in readiness_lines(capability) {
+                println!("{line}");
+            }
         }
         if let Some(declared) = report.declared.get(kind) {
             for line in declared_lines(declared) {
@@ -256,13 +258,67 @@ fn render_sandbox(capability: &HarnessCapability) {
     }
 }
 
-fn render_model_info(capability: &HarnessCapability) {
-    let needs = match capability.model_selection {
-        Some(ModelSelectionReport::Required) => "the request must name one",
-        Some(ModelSelectionReport::Optional) => "the agent chooses when none is named",
-        None => "(not reported)",
+/// The `signed in:` and `models:` lines of one harness.
+fn readiness_lines(capability: &HarnessCapability) -> Vec<String> {
+    const SHOWN: usize = 5;
+    let signed_in = match &capability.sign_in {
+        Some(sign_in) => {
+            let command = sign_in
+                .command
+                .as_deref()
+                .map(|command| format!(" — run `{command}`"))
+                .unwrap_or_default();
+            match sign_in.state {
+                SignInState::SignedIn => format!("yes ({})", sign_in.detail),
+                SignInState::SignedOut => format!("no ({}){command}", sign_in.detail),
+                SignInState::Unknown => format!("unknown ({})", sign_in.detail),
+            }
+        }
+        None => "(not reported)".to_owned(),
     };
-    println!("  model:       {needs}");
+    let needs = if capability.requires_model {
+        "a request must name one"
+    } else {
+        "the agent chooses when none is named"
+    };
+    let models = match &capability.models {
+        Some(models) if models.source == ModelListSource::None => format!(
+            "none listed ({}); {needs}",
+            models.reason.as_deref().unwrap_or("no reason given")
+        ),
+        Some(models) => {
+            let source = match models.source {
+                ModelListSource::Listed => "listed",
+                _ => "suggested",
+            };
+            let more = models.ids.len().saturating_sub(SHOWN);
+            let tail = if more > 0 {
+                format!(", and {more} more")
+            } else {
+                String::new()
+            };
+            let default = capability
+                .default_model
+                .as_deref()
+                .map(|model| format!("; default {model}"))
+                .unwrap_or_default();
+            format!(
+                "{source}: {}{tail}{default}; {needs}",
+                models
+                    .ids
+                    .iter()
+                    .take(SHOWN)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        None => format!("(not reported); {needs}"),
+    };
+    vec![
+        format!("  signed in:   {signed_in}"),
+        format!("  models:      {models}"),
+    ]
 }
 
 fn support_label(support: CapabilitySupport) -> &'static str {

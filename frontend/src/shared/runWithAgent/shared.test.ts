@@ -117,7 +117,7 @@ describe('generateIdempotencyKey', () => {
 function capsWith(harness: {
   harness_kind: string;
   probe_error: string | null;
-  model_selection?: 'optional' | 'required';
+  requires_model?: boolean;
 }): RunnerCapabilities[] {
   return [
     {
@@ -131,7 +131,7 @@ function capsWith(harness: {
           installed_version: '1.0.0',
           probe_error: harness.probe_error,
           probed_at: '2026-08-06T12:00:00Z',
-          ...(harness.model_selection ? { model_selection: harness.model_selection } : {}),
+          ...(harness.requires_model === undefined ? {} : { requires_model: harness.requires_model }),
         },
       ],
       features: {
@@ -150,12 +150,12 @@ describe('gateHarnessModelSelection', () => {
   const base = { harness_kind: 'codex', probe_error: null };
 
   it('a run with a model is allowed and names it', () => {
-    const gate = gateHarnessModelSelection(capsWith({ ...base, model_selection: 'required' }), 'codex', 'gpt-5-codex');
+    const gate = gateHarnessModelSelection(capsWith({ ...base, requires_model: true }), 'codex', 'gpt-5-codex');
     expect(gate).toMatchObject({ allowed: true, reason: 'Runs on gpt-5-codex' });
   });
 
   it('a run with no model is allowed when the harness picks its own, or an older runner omits the field', () => {
-    expect(gateHarnessModelSelection(capsWith({ ...base, model_selection: 'optional' }), 'codex', null)).toMatchObject({
+    expect(gateHarnessModelSelection(capsWith({ ...base, requires_model: false }), 'codex', null)).toMatchObject({
       allowed: true,
       reason: "Uses the agent's own model",
     });
@@ -163,13 +163,13 @@ describe('gateHarnessModelSelection', () => {
   });
 
   it('a run with no model is blocked, naming the agent, when every runner reporting it needs one', () => {
-    const gate = gateHarnessModelSelection(capsWith({ ...base, model_selection: 'required' }), 'codex', null);
+    const gate = gateHarnessModelSelection(capsWith({ ...base, requires_model: true }), 'codex', null);
     expect(gate.allowed).toBe(false);
     expect(gate.reason).toContain('codex needs a model named');
   });
 
   it('the block carries a fix to project settings when a href is given', () => {
-    const gate = gateHarnessModelSelection(capsWith({ ...base, model_selection: 'required' }), 'codex', null, '/projects/p1/settings?tab=automation');
+    const gate = gateHarnessModelSelection(capsWith({ ...base, requires_model: true }), 'codex', null, '/projects/p1/settings?tab=automation');
     expect(gate.fix).toEqual({ label: 'Set a default model for this project', href: '/projects/p1/settings?tab=automation' });
   });
 

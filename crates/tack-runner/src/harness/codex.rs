@@ -15,6 +15,8 @@ use crate::harness::{
     process::{CapturedOutput, ProcessExit, ProcessResult, confined_cwd},
 };
 
+mod readiness;
+
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "codex",
     program: "codex",
@@ -33,6 +35,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".codex"],
+    readiness: Some(readiness::check),
+    models_docs: "https://developers.openai.com/codex/models",
+    sign_in_docs: "https://developers.openai.com/codex/auth",
 };
 
 pub struct CodexGrammar;

@@ -846,6 +846,9 @@ static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
         reports_process_groups: true,
         reports_progress: false,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     };
 
 static DETACHING_PROGRESS: tack_runner::harness::local_process::HarnessDescriptor =
@@ -862,6 +865,9 @@ static DETACHING_PROGRESS: tack_runner::harness::local_process::HarnessDescripto
         reports_process_groups: true,
         reports_progress: true,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     };
 
 impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
@@ -1137,6 +1143,9 @@ static SHELL: tack_runner::harness::local_process::HarnessDescriptor =
         reports_process_groups: false,
         reports_progress: false,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     };
 
 impl tack_runner::harness::local_process::HarnessGrammar for ShellGrammar {

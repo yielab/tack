@@ -74,7 +74,7 @@ fn full_capabilities() -> Value {
             "installed_version": "1.2.3",
             "probe_error": null,
             "probed_at": now,
-            "model_selection": "required",
+            "requires_model": true,
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},

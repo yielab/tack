@@ -118,7 +118,7 @@ function runnerWith(harnesses: unknown[]) {
   };
 }
 
-const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', model_selection: 'optional' };
+const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', requires_model: false };
 
 describe('AgentsPage — this computer only', () => {
   it('the_test_run_needs_no_fields', async () => {
@@ -146,7 +146,7 @@ describe('AgentsPage — this computer only', () => {
   it('the_test_run_is_refused_with_a_reason_when_every_installed_agent_needs_a_model', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,
-      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3', model_selection: 'required' }]),
+      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3', requires_model: true }]),
     });
     const { container } = mount();
     await flush();
@@ -159,7 +159,7 @@ describe('AgentsPage — this computer only', () => {
   it('the_test_run_stays_disabled_when_only_docket_is_installed_because_it_needs_a_model', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,
-      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', model_selection: 'required' }]),
+      '/api/runners': runnerWith([{ ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', requires_model: true }]),
     });
     const { container } = mount();
     await flush();
@@ -193,8 +193,8 @@ describe('AgentsPage — this computer only', () => {
     mockFetch({
       '/api/local-runner': RUNNING,
       '/api/runners': runnerWith([
-        { ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', model_selection: 'required' },
-        { ...CLAUDE_INSTALLED, harness_kind: 'opencode', installed_version: '1.0.3', model_selection: 'required' },
+        { ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', requires_model: true },
+        { ...CLAUDE_INSTALLED, harness_kind: 'opencode', installed_version: '1.0.3', requires_model: true },
       ]),
       '/api/local-runner/harness-verification': { harnesses: { docket: '2026-10-09T10:00:00Z' } },
     });

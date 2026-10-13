@@ -13,9 +13,7 @@ use chrono::{DateTime, Duration, Utc};
 use super::types::{
     IneligibleReason, RunnerCandidate, RunnerState, SchedulingRequest, Selection, SelectionOutcome,
 };
-use crate::execution::{
-    Approvals, CapabilitySupport, HarnessKind, ModelSelectionReport, RunnerId, RunnerSelector,
-};
+use crate::execution::{Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
 
 /// Configurable thresholds the pure selection functions read but never
 /// invent internally.
@@ -143,14 +141,9 @@ fn evaluate_candidate(
         }
     }
 
-    // A harness that reports `required` will not pick a model itself, so a
+    // A harness that reports `requires_model` will not pick a model itself, so a
     // request naming none cannot run on it.
-    if request.requested_model.is_none()
-        && matches!(
-            harness.model_selection,
-            Some(ModelSelectionReport::Required)
-        )
-    {
+    if request.requested_model.is_none() && harness.requires_model {
         return Err(IneligibleReason::ModelNotNamed {
             harness: request.requested_harness_kind.clone(),
         });

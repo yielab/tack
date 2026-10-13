@@ -1,5 +1,5 @@
 use super::*;
-use tack_orch::execution::HarnessKind;
+use tack_orch::execution::{HarnessKind, ModelListSource, ModelsReport, SignInReport};
 
 fn fixed_timestamp() -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
@@ -14,7 +14,12 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
         probe_error: probe_error.map(str::to_owned),
         probed_at: fixed_timestamp(),
         decisions: None,
-        model_selection: None,
+        requires_model: false,
+        requires_model_reason: None,
+        models: None,
+        default_model: None,
+        sign_in: None,
+        docs: None,
         additional: Default::default(),
     }
 }
@@ -114,7 +119,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
 #[test]
 fn render_does_not_panic_on_a_populated_report() {
     let mut with_models = capability("codex", "1.18.0", None);
-    with_models.model_selection = Some(ModelSelectionReport::Required);
+    with_models.requires_model = true;
 
     render(&sample_discovery_report(vec![with_models]));
 }
@@ -157,5 +162,103 @@ fn declared_lines_state_artifacts_and_policy_per_harness() {
     ];
     for (declared, expected) in rows {
         assert_eq!(declared_lines(&declared), expected);
+    }
+}
+
+/// A harness prints one `signed in:` and one `models:` line, whatever it
+/// could and could not read.
+#[test]
+fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
+    let ids = |names: &[&str]| names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    let sign_in = |state, detail: &str, command: Option<&str>| {
+        Some(SignInReport {
+            state,
+            detail: detail.to_owned(),
+            command: command.map(str::to_owned),
+        })
+    };
+    let models = |source, names: &[&str], reason: Option<&str>| {
+        Some(ModelsReport {
+            source,
+            ids: ids(names),
+            reason: reason.map(str::to_owned),
+        })
+    };
+    type Row = (
+        &'static str,
+        Option<SignInReport>,
+        Option<ModelsReport>,
+        Option<&'static str>,
+        bool,
+        [&'static str; 2],
+    );
+    let rows: [Row; 5] = [
+        (
+            "signed in with a long list and a default",
+            sign_in(SignInState::SignedIn, "claude.ai", Some("claude")),
+            models(
+                ModelListSource::Listed,
+                &["a", "b", "c", "d", "e", "f", "g"],
+                None,
+            ),
+            Some("a"),
+            true,
+            [
+                "  signed in:   yes (claude.ai)",
+                "  models:      listed: a, b, c, d, e, and 2 more; default a; a request must name one",
+            ],
+        ),
+        (
+            "signed out names the command",
+            sign_in(SignInState::SignedOut, "Not logged in", Some("codex login")),
+            models(ModelListSource::Suggested, &["sonnet"], None),
+            None,
+            false,
+            [
+                "  signed in:   no (Not logged in) — run `codex login`",
+                "  models:      suggested: sonnet; the agent chooses when none is named",
+            ],
+        ),
+        (
+            "unknown sign-in, no models",
+            sign_in(SignInState::Unknown, "read elsewhere", None),
+            models(ModelListSource::None, &[], Some("docket lists none")),
+            None,
+            true,
+            [
+                "  signed in:   unknown (read elsewhere)",
+                "  models:      none listed (docket lists none); a request must name one",
+            ],
+        ),
+        (
+            "a list that failed",
+            sign_in(SignInState::SignedIn, "ok", None),
+            models(ModelListSource::None, &[], None),
+            None,
+            false,
+            [
+                "  signed in:   yes (ok)",
+                "  models:      none listed (no reason given); the agent chooses when none is named",
+            ],
+        ),
+        (
+            "a runner that said nothing",
+            None,
+            None,
+            None,
+            false,
+            [
+                "  signed in:   (not reported)",
+                "  models:      (not reported); the agent chooses when none is named",
+            ],
+        ),
+    ];
+    for (name, sign_in, models, default, requires, expected) in rows {
+        let mut cap = capability("codex", "1", None);
+        cap.sign_in = sign_in;
+        cap.models = models;
+        cap.default_model = default.map(str::to_owned);
+        cap.requires_model = requires;
+        assert_eq!(readiness_lines(&cap), expected, "{name}");
     }
 }

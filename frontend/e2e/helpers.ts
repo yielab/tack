@@ -344,7 +344,7 @@ function capabilities() {
         installed_version: '1.0.0',
         probe_error: null,
         probed_at: now,
-        model_selection: 'required',
+        requires_model: true,
       },
     ],
     features: {},

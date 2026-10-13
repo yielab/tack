@@ -69,19 +69,70 @@ pub struct HarnessCapability {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decisions: Option<CapabilityValue>,
     /// Whether a request must name a model for this harness, or may leave
-    /// the choice to it. `None` means the runner did not say.
+    /// the choice to it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub requires_model: bool,
+    /// Why a request must name a model; present only when it must.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_selection: Option<ModelSelectionReport>,
+    pub requires_model_reason: Option<String>,
+    /// The models the agent offers. `None` means the runner did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models: Option<ModelsReport>,
+    /// The model the agent itself would use, only when the agent names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Whether the agent is signed in. `None` means the runner did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_in: Option<SignInReport>,
+    /// Where the agent's own documentation covers its models and its login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs: Option<DocsLinks>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
-/// Whether a harness needs the request to name its model.
+/// Where a harness's model ids came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ModelSelectionReport {
-    Optional,
-    Required,
+pub enum ModelListSource {
+    /// Asked of the agent itself.
+    Listed,
+    /// Names Tack suggests because the agent cannot list its own.
+    Suggested,
+    /// No ids; `reason` says why.
+    None,
+}
+
+/// The models a harness offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelsReport {
+    pub source: ModelListSource,
+    pub ids: Vec<String>,
+    pub reason: Option<String>,
+}
+
+/// Whether a harness has a login it can run with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignInState {
+    SignedIn,
+    SignedOut,
+    Unknown,
+}
+
+/// A harness's login state, and the command that fixes a missing one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInReport {
+    pub state: SignInState,
+    pub detail: String,
+    pub command: Option<String>,
+}
+
+/// The agent's own documentation pages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocsLinks {
+    pub models: String,
+    pub sign_in: String,
 }
 
 /// Maximum payload values the runner says it can handle.
