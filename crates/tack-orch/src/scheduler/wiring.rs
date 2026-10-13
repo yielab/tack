@@ -5,10 +5,13 @@
 //! [`choose_request_for_runner`] is the one entry point: the claim handler
 //! calls it with a live `&Repository`, gets back the request id (if any) to
 //! claim, and passes that into `claim_execution_idempotent_with_snapshot` —
-//! the only thing that actually grants a fenced lease. This module never
-//! writes to the database; every query here is a plain `SELECT` (`tack-db`
-//! cannot depend on `tack-orch`, so the scheduler can't run inside the claim
-//! transaction itself — see `RequestSelection`'s doc in `tack-db`).
+//! the only thing that actually grants a fenced lease. Its queries are plain
+//! `SELECT`s (`tack-db` cannot depend on `tack-orch`, so the scheduler can't
+//! run inside the claim transaction itself — see `RequestSelection`'s doc in
+//! `tack-db`), with one exception: a request the poll finds unclaimable gets
+//! the reason written to its row, and is failed once it has waited longer
+//! than [`SchedulingPolicy::unclaimable_fail_after`]. Selecting a request
+//! clears the reason inside the claim transaction itself.
 //!
 //! Papers over two schema gaps: no `priority` column on `execution_requests`
 //! yet ([`priority_from_metadata`]), and no cross-runner fleet concurrency
@@ -22,7 +25,8 @@ use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForSchedul
 
 use super::select::{SchedulingPolicy, select_runner};
 use super::types::{
-    ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest, SelectionOutcome,
+    IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
+    SelectionOutcome,
 };
 use crate::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RequestedModelId,
@@ -135,6 +139,155 @@ fn build_scheduling_request(
     })
 }
 
+/// The terminal code of a request failed for want of a runner.
+const NO_RUNNER_CAN_CLAIM: &str = "no_runner_can_claim";
+
+/// The `(code, sentence)` an ineligible candidate is recorded under: the code
+/// is the variant's snake_case name, the sentence is what an operator reads.
+fn describe_ineligible(reason: &IneligibleReason) -> (&'static str, String) {
+    match reason {
+        IneligibleReason::NotRequestedRunner => (
+            "not_requested_runner",
+            "the request names a different runner".to_string(),
+        ),
+        IneligibleReason::NotFleetMember { fleet_id } => (
+            "not_fleet_member",
+            format!("the runner is not a member of fleet {fleet_id}"),
+        ),
+        IneligibleReason::RunnerNotActive { .. } => {
+            ("runner_not_active", "the runner is not active".to_string())
+        }
+        IneligibleReason::HeartbeatStale { .. } => (
+            "heartbeat_stale",
+            "the runner has not sent a heartbeat recently".to_string(),
+        ),
+        IneligibleReason::NoAvailableCapacity { total } => (
+            "no_available_capacity",
+            format!("the runner has no free capacity (it runs {total} at a time)"),
+        ),
+        IneligibleReason::MissingLabel { key, expected, .. } => (
+            "missing_label",
+            format!("the runner lacks the label {key}={expected}"),
+        ),
+        IneligibleReason::HarnessNotDeclared { harness } => (
+            "harness_not_declared",
+            format!("the runner does not offer {}", harness.as_str()),
+        ),
+        IneligibleReason::HarnessProbeError { harness, error } => (
+            "harness_probe_error",
+            format!(
+                "{} failed its check on the runner: {error}",
+                harness.as_str()
+            ),
+        ),
+        IneligibleReason::ModelCombinationNotDeclared {
+            harness,
+            provider,
+            model_id,
+        } => (
+            "model_combination_not_declared",
+            format!(
+                "the runner does not offer {} with the model {provider}/{model_id}",
+                harness.as_str()
+            ),
+        ),
+        IneligibleReason::AutoSelectNotVerified { harness } => (
+            "auto_select_not_verified",
+            format!("{} needs a model named", harness.as_str()),
+        ),
+        IneligibleReason::DecisionsNotSupported { harness } => (
+            "decisions_not_supported",
+            format!(
+                "{} on the runner cannot stop to ask for a decision",
+                harness.as_str()
+            ),
+        ),
+    }
+}
+
+/// What a poll that left `outcome`'s request unselected writes to its row.
+/// `None` for a selection, and for a poll whose only reason is that the
+/// polling runner is not the one (or not in the fleet) the request names:
+/// that says nothing about whether the request can be claimed. The `bool` is
+/// whether the wait could end by itself (every reason is a runner with no
+/// free capacity): a runner that could take the request restarts the clock,
+/// so it is never grounds for failing it.
+fn waiting_note(outcome: &SelectionOutcome) -> Option<(String, String, bool)> {
+    match outcome {
+        SelectionOutcome::Selected(_) => None,
+        SelectionOutcome::UnknownRunner { .. } => Some((
+            "unknown_runner".to_string(),
+            "the runner the request names is not known".to_string(),
+            false,
+        )),
+        SelectionOutcome::NoEligibleRunner { reasons } => {
+            let reasons: Vec<_> = reasons
+                .iter()
+                .filter(|(_, reason)| {
+                    !matches!(
+                        reason,
+                        IneligibleReason::NotRequestedRunner
+                            | IneligibleReason::NotFleetMember { .. }
+                    )
+                })
+                .collect();
+            if reasons.is_empty() {
+                return None;
+            }
+            let described: Vec<(&str, String)> = reasons
+                .iter()
+                .map(|(_, reason)| describe_ineligible(reason))
+                .collect();
+            let transient = reasons
+                .iter()
+                .all(|(_, reason)| matches!(reason, IneligibleReason::NoAvailableCapacity { .. }));
+            let code = described.first().map_or("no_eligible_runner", |d| d.0);
+            let sentence = described
+                .iter()
+                .map(|d| d.1.as_str())
+                .collect::<Vec<_>>()
+                .join("; ");
+            Some((code.to_string(), sentence, transient))
+        }
+    }
+}
+
+/// Writes what a poll found about every request it left unselected, and fails
+/// the ones that have waited past the policy. A request no poll has reached
+/// has no `waiting_since` and is never failed for that alone.
+async fn record_waiting(
+    repo: &Repository,
+    queued: &[QueuedRequestForScheduling],
+    outcomes: &[(String, SelectionOutcome)],
+    now: DateTime<Utc>,
+    policy: &SchedulingPolicy,
+) -> Result<(), sqlx::Error> {
+    for (request_id, outcome) in outcomes {
+        let Some((code, sentence, transient)) = waiting_note(outcome) else {
+            continue;
+        };
+        let waiting_since = queued
+            .iter()
+            .find(|row| &row.id == request_id)
+            .and_then(|row| row.waiting_since.as_deref())
+            .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+            .map(|value| value.with_timezone(&Utc));
+        let overdue = !transient
+            && policy.unclaimable_fail_after > chrono::Duration::zero()
+            && waiting_since.is_some_and(|since| now - since > policy.unclaimable_fail_after);
+        if overdue
+            && repo
+                .fail_unclaimable_request(request_id, NO_RUNNER_CAN_CLAIM, &sentence, now)
+                .await?
+        {
+            continue;
+        }
+        repo.record_request_waiting(request_id, &code, &sentence, !transient, now)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Fetches this runner's own scheduling state plus every request it is
 /// selector-eligible for, runs the pure scheduler, and returns the single
 /// request id (if any) this runner should attempt to claim.
@@ -212,22 +365,25 @@ pub async fn choose_request_for_runner(
         .filter_map(|row| build_scheduling_request(row, now))
         .collect();
 
-    if requests.len() == 1 {
+    let outcomes: Vec<(ExecutionRequestId, SelectionOutcome)> = if requests.len() == 1 {
         // Avoid `batch::schedule`'s capacity-ledger machinery — built for
         // many requests sharing many runners — for the overwhelmingly common
         // single-candidate poll.
-        return Ok(
-            match select_runner(&requests[0], &[candidate], now, policy) {
-                SelectionOutcome::Selected(_) => Some(requests[0].request_id.as_str().to_string()),
-                SelectionOutcome::NoEligibleRunner { .. }
-                | SelectionOutcome::UnknownRunner { .. } => None,
-            },
-        );
-    }
+        vec![(
+            requests[0].request_id.clone(),
+            select_runner(&requests[0], &[candidate], now, policy),
+        )]
+    } else {
+        super::batch::schedule(&requests, &[candidate], now, policy)
+    };
 
-    let outcomes = super::batch::schedule(&requests, &[candidate], now, policy);
+    let outcomes: Vec<(String, SelectionOutcome)> = outcomes
+        .into_iter()
+        .map(|(request_id, outcome)| (request_id.into_inner(), outcome))
+        .collect();
+    record_waiting(repo, &queued, &outcomes, now, policy).await?;
     Ok(outcomes.into_iter().find_map(|(request_id, outcome)| {
-        matches!(outcome, SelectionOutcome::Selected(_)).then(|| request_id.into_inner())
+        matches!(outcome, SelectionOutcome::Selected(_)).then_some(request_id)
     }))
 }
 
@@ -305,6 +461,7 @@ mod tests {
             created_at: "2026-08-10T00:00:00Z".into(),
             metadata: "{}".into(),
             permission_policy: "{}".into(),
+            waiting_since: None,
         };
         assert!(build_scheduling_request(&row, Utc::now()).is_none());
     }
@@ -321,7 +478,56 @@ mod tests {
             created_at: "2026-08-10T00:00:00Z".into(),
             metadata: "{}".into(),
             permission_policy: "{}".into(),
+            waiting_since: None,
         };
         assert!(build_scheduling_request(&row, Utc::now()).is_none());
+    }
+
+    #[test]
+    fn every_ineligible_reason_reads_as_a_sentence_not_its_name() {
+        use crate::execution::HarnessKind;
+        let harness = || HarnessKind::new("codex");
+        let reasons = vec![
+            IneligibleReason::NotRequestedRunner,
+            IneligibleReason::NotFleetMember {
+                fleet_id: "fleet-a".into(),
+            },
+            IneligibleReason::RunnerNotActive {
+                state: RunnerState::Revoked,
+            },
+            IneligibleReason::HeartbeatStale {
+                last_heartbeat_at: None,
+                max_age: chrono::Duration::seconds(60),
+            },
+            IneligibleReason::NoAvailableCapacity { total: 2 },
+            IneligibleReason::MissingLabel {
+                key: "gpu".into(),
+                expected: "yes".into(),
+                actual: None,
+            },
+            IneligibleReason::HarnessNotDeclared { harness: harness() },
+            IneligibleReason::HarnessProbeError {
+                harness: harness(),
+                error: "not installed".into(),
+            },
+            IneligibleReason::ModelCombinationNotDeclared {
+                harness: harness(),
+                provider: "openai".into(),
+                model_id: "m".into(),
+            },
+            IneligibleReason::AutoSelectNotVerified { harness: harness() },
+            IneligibleReason::DecisionsNotSupported { harness: harness() },
+        ];
+        for reason in reasons {
+            let (code, sentence) = describe_ineligible(&reason);
+            let debug = format!("{reason:?}");
+            let variant = debug.split([' ', '{']).next().unwrap_or_default();
+            assert!(!sentence.is_empty(), "{variant}: empty sentence");
+            assert!(
+                !sentence.contains(variant),
+                "{variant}: the sentence repeats the enum's name: {sentence}"
+            );
+            assert!(!code.is_empty(), "{variant}: empty code");
+        }
     }
 }

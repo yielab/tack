@@ -3606,6 +3606,10 @@ export interface components {
             protocol_version: number;
             request_id: string;
             state: string;
+            /** @description Why no runner has claimed this request yet, as a plain sentence; null once claimed. */
+            waiting_reason?: string | null;
+            /** @description When a runner's poll first found the request unclaimable; null once claimed. */
+            waiting_since?: string | null;
         };
         ExecutionListResponse: {
             data: components["schemas"]["ExecutionSummary"][];
@@ -3624,6 +3628,10 @@ export interface components {
             item_id: string;
             request_id: string;
             state: string;
+            /** @description Why no runner has claimed this request yet, as a plain sentence; null once claimed. */
+            waiting_reason?: string | null;
+            /** @description When a runner's poll first found the request unclaimable; null once claimed. */
+            waiting_since?: string | null;
         };
         FactoryMetrics: {
             /** Format: int64 */
