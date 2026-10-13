@@ -1,0 +1,8 @@
+captured
+codex debug models
+env: the maintainer's own HOME and PATH
+2026-10-13
+
+Refreshes the catalog with the person's own login (not billed). Exit status 0. Entries with visibility list are the ones Codex offers; hide entries are internal.
+
+Trimmed: each entry keeps slug, display_name, description, visibility, default_reasoning_level and priority; the rest (prompts, tool schemas, ~300 KB) was dropped. The parser must ignore fields it does not read.

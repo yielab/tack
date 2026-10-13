@@ -1,0 +1,9 @@
+home       /tmp/scratch-home
+data       /tmp/scratch-home/.local/share/opencode
+bin        /tmp/scratch-home/.cache/opencode/bin
+log        /tmp/scratch-home/.local/share/opencode/log
+repos      /tmp/scratch-home/.local/share/opencode/repos
+cache      /tmp/scratch-home/.cache/opencode
+config     /tmp/scratch-home/.config/opencode
+state      /tmp/scratch-home/.local/state/opencode
+tmp        /tmp/opencode

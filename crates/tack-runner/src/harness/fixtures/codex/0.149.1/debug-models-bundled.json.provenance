@@ -1,0 +1,8 @@
+captured
+codex debug models --bundled
+env: the maintainer's own HOME and PATH
+2026-10-13
+
+The catalog bundled in the binary, no refresh, no network. Exit status 0.
+
+Trimmed: each entry keeps slug, display_name, description, visibility, default_reasoning_level and priority; the rest (prompts, tool schemas, ~300 KB) was dropped. The parser must ignore fields it does not read.

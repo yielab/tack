@@ -1,0 +1,6 @@
+captured
+opencode auth list
+env: the maintainer's own HOME and PATH
+2026-10-13
+
+ANSI colour codes stripped. Names each stored credential and its kind; prints no value.

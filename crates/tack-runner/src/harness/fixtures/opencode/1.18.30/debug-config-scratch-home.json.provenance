@@ -1,0 +1,6 @@
+captured
+opencode debug config
+env: HOME=<empty scratch dir>, PATH
+2026-10-13
+
+No config: no provider, no model.

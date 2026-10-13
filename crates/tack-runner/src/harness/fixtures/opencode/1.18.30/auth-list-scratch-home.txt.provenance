@@ -1,0 +1,6 @@
+captured
+opencode auth list
+env: HOME=<empty scratch dir>, PATH
+2026-10-13
+
+ANSI colour codes stripped. No stored credential.

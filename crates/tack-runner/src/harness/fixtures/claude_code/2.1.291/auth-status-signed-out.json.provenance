@@ -1,0 +1,6 @@
+captured
+claude auth status
+env: HOME=<empty scratch dir>, PATH
+2026-10-13
+
+A scratch HOME with no login. Exit status 1. The scratch path is rewritten to /tmp/scratch-home.

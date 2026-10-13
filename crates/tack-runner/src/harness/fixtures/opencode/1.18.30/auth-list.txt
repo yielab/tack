@@ -1,0 +1,9 @@
+
+┌  Credentials ~/.local/share/opencode/auth.json
+│
+●  Anthropic oauth
+│
+●  OpenCode api
+│
+└  2 credentials
+

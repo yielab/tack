@@ -1,0 +1,6 @@
+captured
+codex login status
+env: CODEX_HOME=<empty scratch dir>, HOME, PATH
+2026-10-13
+
+No login in that CODEX_HOME. Exit status 1.

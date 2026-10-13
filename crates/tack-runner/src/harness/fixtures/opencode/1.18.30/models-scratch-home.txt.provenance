@@ -1,0 +1,6 @@
+captured
+opencode models
+env: HOME=<empty scratch dir>, PATH
+2026-10-13
+
+No login and no config: opencode still lists its free opencode/* models (7 lines). A person with no login can run these, so no login is not the same as no model.

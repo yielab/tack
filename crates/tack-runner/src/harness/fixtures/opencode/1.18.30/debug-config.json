@@ -1,0 +1,189 @@
+{
+ "$schema": "https://opencode.ai/config.json",
+ "model": "opencode/claude-sonnet-5",
+ "small_model": "llamacpp/qwen3.6-35b-uncensored",
+ "default_agent": "local",
+ "autoupdate": false,
+ "instructions": [
+  "<trimmed>"
+ ],
+ "compaction": {
+  "auto": true,
+  "prune": true
+ },
+ "permission": {
+  "webfetch": "ask",
+  "external_directory": "allow",
+  "list": "allow",
+  "glob": "allow",
+  "grep": "allow",
+  "websearch": "ask",
+  "read": {
+   "*": "allow",
+   "**/.env": "deny",
+   "**/.env.*": "deny",
+   "**/*.pem": "deny",
+   "**/*.key": "deny",
+   "**/id_rsa*": "deny",
+   "**/id_ed25519*": "deny",
+   "**/.ssh/**": "deny",
+   "**/.aws/credentials": "deny",
+   "**/auth.json": "deny"
+  },
+  "edit": {
+   "*": "ask",
+   "**/.env": "deny",
+   "**/.env.*": "deny",
+   "**/.ssh/**": "deny",
+   "**/*.pem": "deny",
+   "**/*.key": "deny"
+  },
+  "bash": {
+   "*": "ask",
+   "ls*": "allow",
+   "cat *": "allow",
+   "head *": "allow",
+   "tail *": "allow",
+   "wc *": "allow",
+   "rg *": "allow",
+   "fd *": "allow",
+   "which *": "allow",
+   "git status*": "allow",
+   "git diff*": "allow",
+   "git log*": "allow",
+   "git show*": "allow",
+   "git branch*": "allow",
+   "git remote*": "allow",
+   "git stash list*": "allow",
+   "gh pr view*": "allow",
+   "gh pr list*": "allow",
+   "gh issue view*": "allow",
+   "gh issue list*": "allow",
+   "rm -rf /": "deny",
+   "rm -rf /*": "deny",
+   "rm -rf ~*": "deny",
+   "git push --force*": "deny",
+   "git push -f*": "deny",
+   "git reset --hard*": "ask",
+   "git clean -fd*": "ask",
+   "sudo *": "ask",
+   "curl * | sh": "deny",
+   "curl * | bash": "deny"
+  },
+  "task": "deny"
+ },
+ "provider": {
+  "llamacpp": {
+   "npm": "@ai-sdk/openai-compatible",
+   "name": "llama.cpp (local)",
+   "options": {
+    "baseURL": "http://127.0.0.1:8081/v1"
+   },
+   "models": {
+    "qwen3.6-35b-uncensored": {
+     "name": "Qwen3.6 35B A3B Uncensored (local)",
+     "limit": {
+      "context": 32768,
+      "output": 8192
+     },
+     "options": {
+      "temperature": 0.6,
+      "top_p": 0.95
+     }
+    }
+   }
+  }
+ },
+ "agent": {
+  "Sisyphus - ultraworker": {
+   "description": "<trimmed>"
+  },
+  "Hephaestus - Deep Agent": {
+   "description": "<trimmed>"
+  },
+  "Prometheus - Plan Builder": {
+   "description": "<trimmed>"
+  }
+ },
+ "plugin": [
+  "oh-my-openagent@latest"
+ ],
+ "plugin_origins": [
+  {
+   "spec": "oh-my-openagent@latest",
+   "source": "/home/person/.config/opencode",
+   "scope": "global"
+  }
+ ],
+ "mode": {},
+ "command": {
+  "playwright": {
+   "description": "<trimmed>"
+  },
+  "frontend": {
+   "description": "<trimmed>"
+  },
+  "git-master": {
+   "description": "<trimmed>"
+  }
+ },
+ "username": "person",
+ "tools": {
+  "grep_app_*": false,
+  "LspHover": false,
+  "LspCodeActions": false,
+  "LspCodeActionResolve": false,
+  "task_*": false,
+  "teammate": false
+ },
+ "mcp": {
+  "websearch": {
+   "type": "remote",
+   "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+   "enabled": true,
+   "oauth": false
+  },
+  "context7": {
+   "type": "remote",
+   "url": "https://mcp.context7.com/mcp",
+   "enabled": true,
+   "oauth": false
+  },
+  "grep_app": {
+   "type": "remote",
+   "url": "https://mcp.grep.app",
+   "enabled": true,
+   "oauth": false
+  },
+  "lsp": {
+   "type": "local",
+   "command": [
+    "/home/person/.nvm/versions/node/v22.17.1/bin/node",
+    "/home/person/.cache/opencode/packages/oh-my-openagent@latest/node_modules/oh-my-openagent/packages/lsp-daemon/dist/cli.js",
+    "mcp"
+   ],
+   "enabled": true,
+   "environment": {
+    "LSP_TOOLS_MCP_PROJECT_CONFIG": "/home/person/Sites/objetivosMios/crates/tack-runner/src/harness/fixtures/.opencode/lsp.json:/home/person/Sites/objetivosMios/crates/tack-runner/src/harness/fixtures/.omo/lsp.json:/home/person/Sites/objetivosMios/crates/tack-runner/src/harness/fixtures/.omo/lsp-client.json",
+    "LSP_TOOLS_MCP_USER_CONFIG": "/home/person/.config/opencode/lsp.json",
+    "LSP_TOOLS_MCP_INSTALL_DECISIONS": "/home/person/.config/opencode/lsp-install-decisions.json"
+   }
+  },
+  "codegraph": {
+   "type": "local",
+   "command": [
+    "/home/person/.omo/codegraph/bin/codegraph",
+    "serve",
+    "--mcp"
+   ],
+   "enabled": true,
+   "environment": {
+    "CODEGRAPH_INSTALL_DIR": "/home/person/.omo/codegraph",
+    "CODEGRAPH_NO_DOWNLOAD": "1",
+    "CODEGRAPH_TELEMETRY": "0",
+    "DO_NOT_TRACK": "1"
+   }
+  }
+ },
+ "skills": "<trimmed>"
+}

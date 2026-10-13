@@ -1,0 +1,6 @@
+captured
+opencode debug paths
+env: HOME=<empty scratch dir>, PATH
+2026-10-13
+
+The scratch path rewritten to /tmp/scratch-home.
