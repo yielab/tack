@@ -277,7 +277,7 @@ Redact emails, org ids and every key value. No agent runs these commands.
    |---|---|---|---|
    | claude-code | `claude auth status` (`loggedIn`; detail `authMethod`; command `claude`) | suggested `sonnet`, `opus`, `haiku`; no default | false |
    | codex | `codex login status`; command `codex login` | `codex debug models` entries with `visibility: list`, falling back to `--bundled`; no default | false |
-   | opencode | signed in when `opencode auth list` names a credential or `opencode debug config` names a provider; command `opencode auth login` | `opencode models`, listed; `default_model` is the config's `model` | true when the config has no `model` |
+   | opencode | signed in when `opencode auth list` names a credential or `opencode debug config` names a provider; otherwise signed out with the detail "No login: only opencode's free models are available" (with no login it still lists its free `opencode/*` models, `models-scratch-home.txt`); command `opencode auth login` | `opencode models`, listed; `default_model` is the config's `model` | true when the config has no `model` |
    | docket | unknown, "Tack reads docket's sign-in from docket 0.2.0-beta.5" | none | true |
 
 3. Probe rules:
