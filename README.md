@@ -128,7 +128,8 @@ every step. The whole loop, recorded:
   runs code and never holds a model credential.
 - A **runner** lives where your code is. It takes tasks from the board, prepares a copy of
   the code and starts the agent.
-- The **agent** does the work: Claude Code, Codex, opencode or docket.
+- The **agent** does the work: Claude Code, Codex or opencode, or docket, which runs a
+  governed team of agents.
 - The **desktop app** runs the board and a runner together on your computer. As a server,
   one board can serve a team, with runners on other machines
   ([Enrolling a runner](https://yielab.github.io/tack/user-guide/agent-runners.html#enrolling-a-runner)).
