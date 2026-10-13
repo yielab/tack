@@ -103,19 +103,17 @@ command, exactly as you would to use it by hand. Tack then finds it.
 By default **nothing here executes anything** — the server is a full project manager with agent
 execution off. Open the **Agents** page from the sidebar. Step 1 is the one switch that matters:
 
-<img src="../screenshots/tutorial/07-agents-off.png" width="98%" alt="The Agents page with execution off: step 1 'Agent execution on this machine' shows a Stopped badge, 'Off since this server started' and a Turn on button; step 2 says to turn execution on to see what is installed; step 3 Provider explains logins and offers the Vercel AI Gateway key; the Test run section begins below.">
+<img src="../screenshots/tutorial/07-agents-off.png" width="98%" alt="The Agents page with execution off: step 1 'Agent execution on this machine' shows a Stopped badge, 'Off since this server started' and a Turn on button; step 2 says to turn execution on to see what is installed; step 3 Sign in waits on step 2; the Test run section begins below.">
 
 Click **Turn on**. This starts an embedded runner inside the same server process — no restart, no
 second binary. Step 2 lists the agents it found on this machine with their installed versions;
-this machine has Codex and Claude Code, and the tutorial uses Claude Code. Tack cannot see an
-agent's own login, so each reads **Not signed in** with its sign-in command until a run with that
-agent succeeds here, and then **Signed in** with the date. Docket and OpenCode have no login of
-their own that Tack uses, so an installed one reads **uses a provider endpoint (step 3)** instead;
-an agent that isn't installed shows how to install it. **Run test** at the bottom runs the
-agent once to prove it. If you'd rather not use the agent's own subscription, paste a Vercel AI
-Gateway key under **Provider** instead:
+this machine has Codex and Claude Code, and the tutorial uses Claude Code. Step 3 is **Sign in**,
+one row per installed agent. Each asks the agent itself, so a row reads **Signed in**, or **Not
+signed in. Run `<command>` in a terminal.** with a link to that agent's own documentation; Tack
+holds no model key and never signs in for you. **Run test** at the bottom runs the agent once to
+prove it:
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1 and Claude Code v2.1.291 both installed, each 'Not signed in' with its sign-in command and a Re-check button; the Provider step with the Vercel AI Gateway key; the Test run section with a Run test button; and a collapsed Advanced section.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1 and Claude Code v2.1.291 both installed, the Sign in step with one row per installed agent, saying Signed in or giving the command to run; the Test run section with a Run test button; and a collapsed Advanced section.">
 
 ## 7. Set up the project's agent
 
@@ -124,10 +122,12 @@ code is, how the agent works on it (on a new branch of your repo, or in the fold
 what happens when a run finishes, and the **Agent** section — which agent, which model, and the
 default profile:
 
-<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings: agent choices Claude Code, Codex, docket and opencode; Model set to 'The agent's default (recommended)', with Specific model waiting on an agent; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
+<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings: agent choices Claude Code, Codex, docket and opencode; the Model field set to Agent's default; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
 
-**The agent's default** is the recommended model: the agent uses whatever model it uses on its
-own. This tutorial leaves the agent unchosen and picks it per run in step 8. It points the
+The **Model** field offers **Agent's default** (recommended: the agent uses whatever model it
+uses on its own), the models the agent listed or suggested, and **Another model…**, a text field
+for a name in the agent's own spelling. A line under it says where the list came from, or how to
+name a model, with a link to that agent's own documentation; Tack never checks a typed name. This tutorial leaves the agent unchosen and picks it per run in step 8. It points the
 project's **Where the code is** at a local git repository.
 
 An **agent profile** is the agent's standing orders: a name, the instructions sent with every
@@ -153,12 +153,12 @@ profile, the model and where the agent works — and asks only what you might wa
 - **Ask before each action** pauses the agent before each tool call until you answer on the
   task; **Web tools** lets it use its own web-fetch and web-search tools. Both start off.
 - **Advanced for this run** is where this run differs from the project: the **Agent** (here
-  **Claude Code**), the model (the agent's default is **Supported** for Claude Code), the branch,
+  **Claude Code**), the model (the same field as in the project's settings; **Agent's default** works for Claude Code), the branch,
   the tools allowed, and the timeout. **Verify the result**, **Push the branch** and **Open a pull
   request** are shown disabled, each with the reason and the setting that turns it on (see
   [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt)).
 
-<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, The agent's default (recommended) marked Supported, Branch, Claude Code's tool checkboxes, Allowed tools, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
+<img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default model · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, the Model field set to Agent's default, Branch, Claude Code's tool checkboxes, Allowed tools, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
 
 ## 9. Run it and track it
 

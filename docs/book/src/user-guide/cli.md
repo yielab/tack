@@ -220,10 +220,9 @@ tack restore /safe/place/tack.db
 Create, inspect, cancel and recover agent-fleet execution requests — the CLI form of
 `POST /api/executions` and friends. See [Running an item with an
 agent](agent-runners.md#running-an-item-with-an-agent) for a full worked example
-reaching a completed attempt, and [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider) for what belongs in
-`--model-provider`/`--model-id` (they may be omitted; see that section for what fills
-them in when you do).
+reaching a completed attempt, and [Choosing a
+model](agent-runners.md#choosing-a-model) for what belongs in `--model <name>` (the agent's
+own spelling of a model; omit it and the project's default, or the agent's own, is used).
 
 ```text
 $ tack execution --help
@@ -297,28 +296,44 @@ Tack runner doctor — harness discovery for this machine
 codex
   status:      present
   version:     0.149.1
-  credentials: Codex authenticates itself (its own CLI login flow or an API key it reads from its own environment/config — see `codex --help`). Tack never reads, stores, or forwards it. This adapter forwards no ambient host environment into an actual run: only entries explicitly set on the execution request's own `environment` field ever reach the codex process.
-  model_combinations: (none reported)
-  model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model and rejects specs without an explicit model pre-spawn; model validity is established by the Codex CLI at run time, so operator-specified opaque models are accepted without the probe claiming any model list
+  credentials: Codex signs in with its own login; Tack holds no model credential.
+  sandbox:     bwrap
+  signed in:   yes (Logged in using ChatGPT)
+  models:      listed: gpt-5.6-terra, ...; the agent chooses when none is named
+  artifacts:         ...
+  permission policy: ...
 
 claude-code
   status:      present
-  version:     2.1.252
-  credentials: Claude Code authenticates itself: typically an OAuth session under $HOME/.claude established by its own login flow, or an API key it reads from its own environment. Tack never reads, stores, or forwards it. This adapter forwards only HOME and PATH from the runner process's own environment, so the installed CLI can find its existing session; anything else must come through the execution request's own `environment` field.
-  model_combinations: (none reported)
-  model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model; the CLI validates it at run time (an invalid model returns is_error:true), so operator-specified opaque models are accepted without the probe claiming any model list
+  version:     2.1.291
+  credentials: Claude Code signs in with its own login; Tack holds no model credential.
+  sandbox:     bwrap
+  signed in:   yes (claude.ai)
+  models:      suggested: sonnet, opus, haiku; the agent chooses when none is named
+  artifacts:         ...
+  permission policy: ...
 
-Runner-wide capabilities (apply identically to every harness above):
+Runner-wide summary (what the runner as a whole can do; artifacts and permission policy differ per harness, above):
   cancel     advisory    — a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability
   resume     unsupported — no resumable session contract
   decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
   artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
   usage      advisory    — usage is reported only when a harness emits it
 
-Tack does not proxy model providers. Each harness above authenticates itself using its own login/credential mechanism; Tack never reads, stores, or forwards what it finds. See docs/adr/0050-runner-control-plane.md and docs/adr/0058-standalone-single-binary-runner.md.
+Secret store (resolves `secret_reference` environment entries):
+  backend: keychain
+  ...
 
 verify: disabled
 ```
+
+Each agent prints a `signed in:` line and a `models:` line, read from the agent's own offline
+commands (for example `claude auth status` and `codex login status`). A signed-out agent names
+its own command: `signed in:   no (Not logged in) — run `codex login``. The `models:` line says
+whether the list was `listed` by the agent or `suggested` from its documentation, shows the first
+five, and ends with whether a request must name a model. Tack holds no model credential, so there
+is no provider section. docket needs docket 0.2.0-beta.5 or later; an older one reads as not
+running here.
 
 The last line is the runner's `[verify]` table as this machine would read it: `disabled`, or
 `enabled` with the program, its arguments and timeout, and whether the program was found on
@@ -341,16 +356,17 @@ Options:
 ```
 
 `tack runner secret set|list|remove` manages this machine's runner-local secret
-store — the provider keys a harness's environment can reference via
-`secret_reference` (see [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider)). It needs no server and
+store — the values a harness's `[environment]` entries can reference via
+`secret_reference` (see [Local credential
+handling](agent-runners.md#local-credential-handling)). Model logins are not kept here: each
+agent uses its own. It needs no server and
 enrolls nothing; it reads and writes the same on-disk/keychain state a real
 `tack-runner` process would.
 
 ```sh
-tack runner secret set vercel-ai-gateway/default   # value read from stdin or TACK_RUNNER_SECRET_VALUE
+tack runner secret set build/token   # value read from stdin or TACK_RUNNER_SECRET_VALUE
 tack runner secret list
-tack runner secret remove vercel-ai-gateway/default
+tack runner secret remove build/token
 ```
 
 `set` never accepts the value as a command-line argument — only from
@@ -414,16 +430,14 @@ root-owned deployment instead of a per-user one, see the systemd unit in
 ## Fleet
 
 Manage runner fleets — a named group of runners sharing an optional concurrency limit
-and a default model policy (see [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider)). Adding a runner *to* a
+and a default policy. Adding a runner *to* a
 fleet has no CLI subcommand yet. Do it from the Agents page in the web UI (each fleet's
 roster has an add/remove control), or directly against the API: `POST
 /api/runner-fleets/{fleet_id}/members` adds a runner, `DELETE
 /api/runner-fleets/{fleet_id}/members/{runner_id}` removes one.
 
 ```sh
-tack fleet create "opus-fleet" \
-  --policy '{"default_model":{"provider":"anthropic","model_id":"claude-opus-4-1"}}'
+tack fleet create "opus-fleet" --concurrency-limit 2
 ```
 
 ```text
@@ -438,8 +452,8 @@ tack fleet list --json
 ```json
 [
   {
-    "concurrency_limit": null,
-    "default_policy": { "default_model": { "model_id": "claude-opus-4-1", "provider": "anthropic" } },
+    "concurrency_limit": 2,
+    "default_policy": {},
     "fleet_id": "fleet_64ab2a19-9e38-4820-a8c7-1fa78e435767",
     "name": "opus-fleet"
   }
@@ -451,15 +465,11 @@ tack fleet list --json
 ## Agent Profiles
 
 Reusable instructions, tool policy and limits, snapshotted into an execution request at
-creation time — later edits to the profile never change history already recorded. A
-`{"default_model": {...}}` object inside `--limits` is the second tier of the model
-precedence; see [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider).
+creation time — later edits to the profile never change history already recorded.
 
 ```sh
 tack agent-profile create "sonnet-profile" \
-  --instructions "Print the single word DONE and exit. Do not modify any files." \
-  --limits '{"default_model":{"provider":"anthropic","model_id":"claude-sonnet-4-5"}}'
+  --instructions "Print the single word DONE and exit. Do not modify any files."
 ```
 
 ```text

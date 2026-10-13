@@ -413,9 +413,9 @@ layer and not re-proved through a browser. The suite, in `frontend/e2e/`:
 | `smoke.spec.ts` | Every primary surface renders without a blank screen or a page error |
 | `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists |
 | `run-with-agent.spec.ts` | "Run with agent" from the board, the item and the sprint: required fields block submit, a run is created and shows up without navigation, the project's model default is sent unchanged |
-| `scheduler-e2e.spec.ts` | A request made in the UI is claimed by a runner and the UI shows it live; a model no runner attests is blocked in the form |
+| `scheduler-e2e.spec.ts` | A request made in the UI is claimed by a runner and the UI shows it live |
 | `execution-attempt-detail.spec.ts` | An attempt's events, decisions and artifacts: a pending decision resolves through the UI, an artifact downloads, a poll tick never discards typed input |
-| `agents-page.spec.ts`, `execution-toggle.spec.ts`, `provider-key-panel.spec.ts` | Turning agent execution on and off, the installed agents it reveals, a test run reaching the timeline, and a saved provider key that never reaches the DOM |
+| `agents-page.spec.ts`, `execution-toggle.spec.ts` | Turning agent execution on and off, the installed agents it reveals, a test run reaching the timeline |
 | `board-websocket-subprotocol.spec.ts` | A real browser WebSocket offering `tack.v1` stays connected and receives a board event — only a browser enforces that handshake rule |
 | `a11y.spec.ts` | WCAG 2.0/2.1 A & AA scans via axe-core — new violations fail CI |
 | `api.spec.ts` | Wire-contract checks: health shape, hardening headers, response envelopes, 404s |

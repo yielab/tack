@@ -45,8 +45,7 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runner:** The agent works on a new `tack/<task>` branch of your repository (a worktree;
   the branch stays), in your folder itself (nothing is deleted, the evidence is read-only), or
   in a clone for another computer
-- **runs:** The agent's own model is the default; no model or provider has to be typed, and
-  the provider is derived from the agent
+- **runs:** The agent's own model is the default; no model has to be typed
 - **profiles:** Four built-in agent profiles — Implementer, Reviewer, Researcher, Planner —
   each with its tools, edited in a form
 - **items:** A task is a description plus acceptance criteria, with what only the agent needs
@@ -64,8 +63,6 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runner:** prill is the runner's native verifier (`[verify] kind = "prill"`, the default):
   the runner hands prill the attempt's work and documents and translates its pack into
   `mrp-v1`; `kind = "command"` keeps the old contract
-- **runner:** An OpenAI-compatible server, such as a local llama.cpp, is a provider endpoint
-  for docket and opencode (`[provider.openai_compatible]`), its models read from the server
 - **cli:** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`) gives the
   embedded runner the same configuration file `tack runner start --config` reads
 - **runs:** A running agent's steps appear on its timeline as it takes them — each call to the
@@ -105,8 +102,6 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runs:** A queued run says why it waits, on the card and the run page ("Waiting: codex needs a
   model named", "Waiting: no runner is online"); one that no runner polling for it can take for
   30 minutes fails with that reason, while a runner that could take it but is busy keeps it waiting
-- **settings:** **Automation** offers **Through the gateway** beside the agent's own login when a
-  runner reports a gateway key, and says why it is unavailable when none does
 - **runner:** `tack runner doctor` prints each harness's artifacts and permission policy
 
 ### Changed
@@ -117,8 +112,6 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runs:** docket's question names what it would allow and why: *Allow bash to run
   "sh -c '…'"? docket's policy: 'sh' is not on the curated allowlist.*, followed by the
   agent's own reason when it gave one, instead of a call id
-- **automation:** The default-model list merges the models runners measured with each agent's
-  known models, so docket can have a default model
 - **api:** `POST /api/projects` takes the project's folder, workspace mode and default branch
   in the one request
 - **api:** The server fills a run's repository from its project; the MCP tool and the CLI may
@@ -126,6 +119,39 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runs:** Tokens in counts the cache, and a run records its model calls and the models it used
 - **runs:** claude-code loads no MCP server, not even the account's own connectors
 - **runner:** docket runs through `docket exec`
+- **runs:** A run's model is one optional string in the agent's own spelling (`sonnet`,
+  `gpt-5.6-terra`, `anthropic/claude-sonnet-4-5`); none means the agent's default. The default is
+  the request's model, else the project's default model when the run uses the project's default
+  agent, else the agent's own. Changing the project's default agent clears its default model.
+  `tack execution create --model <name>` and MCP `create_execution` take it as `model`; the
+  scheduler matches the agent, not the model, and a request that names none waits only for an
+  agent that requires one
+- **agents:** Step 3 of the Agents page is **Sign in**: one row per installed agent, from the
+  agent's own offline check, saying **Signed in**, or **Not signed in. Run `<command>` in a
+  terminal.** with a link to that agent's documentation. `tack runner doctor` prints a `signed in:`
+  and a `models:` line per agent; the agent lists its models (Codex, opencode) or Tack suggests
+  the aliases its documentation names (Claude Code)
+- **runs:** The run dialog and the project's Automation tab share one model field: **Agent's
+  default**, the models the agent listed or suggested, and **Another model…** for a typed name,
+  which Tack never validates, with a link to that agent's documentation on naming models
+- **runner:** opencode runs from its own login: a scratch `HOME` with its own `auth.json` and the
+  `provider`, `model` and `small_model` of its config, and nothing else of it (`--pure`)
+- **runner:** docket needs docket 0.2.0-beta.5 or later (contract 1.2), which reads your own
+  `docket setup`; an older docket does not run
+- **runner:** The prill verifier's evidence names the model that generated the work and no
+  longer a provider family
+
+### Removed
+
+- **runner:** Tack no longer holds a model key, endpoint or catalog: the provider module, the
+  `[provider.*]` tables, the `TACK_RUNNER_PROVIDER_*` variables, the gateway key on the Agents
+  page and the catalog in `tack runner doctor` are gone. A config with a `[provider.*]` table is
+  refused, naming the table. `tack runner secret` stays for `[environment]` and
+  `secret_reference`. An agent's key that lives only in a shell variable does not reach it; use the
+  agent's own login or config file
+- **runs:** The **Through** choice in the run dialog and the Automation tab, the agent-profile
+  and fleet default models, and the route that called an agent signed in because a past run of
+  its kind had succeeded
 
 ### Fixed
 

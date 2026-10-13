@@ -25,8 +25,7 @@ reason shown. Phases 66–68 and the work below ship together as `v0.1.0-beta.10
 tagged. Phase-65's
 Wave 0 publish list is the user's.
 ADR 0074's follow-ups found by the first live docket + prill run (2026-10-10) are in ADR 0075 and
-landed the same day: prill is the runner's native verifier, `[provider.openai_compatible]`
-reaches docket and opencode, a run that asks reads `waiting_decision`, the request follows its
+landed the same day: prill is the runner's native verifier, a run that asks reads `waiting_decision`, the request follows its
 attempt, the embedded runner takes `--runner-config`. The second run (2026-10-11, ADR 0075
 decisions 10–14) put a running agent's steps on its timeline (docket only so far), gave every runner
 event its own sequence, and made docket's question name the command. `scripts/docket-prill-e2e.sh`
@@ -42,6 +41,8 @@ was rewritten to drop the `Co-Authored-By: Claude` trailers 159 commits carried 
 Phase 70 (`docs/plans/phase-70.md`, closed 2026-10-12) finished the follow-ups earlier phases wrote
 down: a queued run says why it waits and fails after 30 minutes no runner can take it, the doctor
 prints per-harness lines, the real-`bwrap` test is required in CI.
+Phase 71 (`docs/plans/phase-71.md`, ADR 0078) removed the provider layer: Tack holds no model key, endpoint
+or catalog; each agent signs in with its own tools and a run names its model as one string.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

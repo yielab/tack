@@ -4,6 +4,8 @@
 Amends ADR 0072 (onboarding), ADR 0069 (the brief's place in the UI) and ADR 0071 (where a
 run's work ends up). The plan is `docs/plans/phase-67.md`.
 
+**Partly superseded 2026-10-13 by ADR 0078:** decision 1's optional gateway key. The rest stands.
+
 **Decide:** that Tack separates three things it mixes today — *this computer can run agents*,
 *this project has code here and the agent works on it this way*, and *run this task now* —
 and that a person who knows nothing about runners, harnesses or model providers can install
