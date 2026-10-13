@@ -146,6 +146,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("082_automation", &MIGRATION_082[..]),
         ordinary("083_plan_source", &MIGRATION_083[..]),
         ordinary("084_attempt_start_report", &MIGRATION_084[..]),
+        ordinary("085_request_waiting", &MIGRATION_085[..]),
     ]
 }
 
@@ -1779,3 +1780,12 @@ const MIGRATION_083: [&str; 1] = ["ALTER TABLE items ADD COLUMN source_artifact_
 // 084: what the runner reported when the attempt started running, as JSON
 // `{"environment_names": [...], "sandbox": "bwrap"|"none"|null}`; null until then.
 const MIGRATION_084: [&str; 1] = ["ALTER TABLE execution_attempts ADD COLUMN start_report TEXT"];
+
+// 085: why a queued request has not been claimed, as the last runner that polled saw it.
+// `waiting_since` is when a poll first found it unclaimable; selecting it clears all three.
+// A request failed for want of a runner keeps its terminal code in `waiting_code`.
+const MIGRATION_085: [&str; 3] = [
+    "ALTER TABLE execution_requests ADD COLUMN waiting_code TEXT",
+    "ALTER TABLE execution_requests ADD COLUMN waiting_reason TEXT",
+    "ALTER TABLE execution_requests ADD COLUMN waiting_since TEXT",
+];

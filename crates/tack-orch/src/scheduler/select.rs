@@ -36,6 +36,10 @@ pub struct SchedulingPolicy {
     /// A candidate whose `last_heartbeat_at` is older than this (relative to
     /// the caller's `now`), or absent, is [`IneligibleReason::HeartbeatStale`].
     pub max_heartbeat_age: Duration,
+    /// A queued request that a claim poll has found unclaimable for longer
+    /// than this is failed with `no_runner_can_claim`. `Duration::zero()`
+    /// never fails one.
+    pub unclaimable_fail_after: Duration,
 }
 
 impl Default for SchedulingPolicy {
@@ -49,6 +53,7 @@ impl Default for SchedulingPolicy {
     fn default() -> Self {
         Self {
             max_heartbeat_age: Duration::seconds(60),
+            unclaimable_fail_after: Duration::minutes(30),
         }
     }
 }

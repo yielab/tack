@@ -365,6 +365,8 @@ pub struct QueuedRequestForScheduling {
     /// caller reads an `approvals` key from this the same lenient way it
     /// reads `priority` off `metadata`.
     pub permission_policy: String,
+    /// When a claim poll first found this request unclaimable; `None` until one has.
+    pub waiting_since: Option<String>,
 }
 
 /// A fleet's configured concurrency ceiling alongside its current, observed
@@ -417,6 +419,8 @@ pub struct ExecutionListingRow {
     pub state: String,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
+    pub waiting_reason: Option<String>,
+    pub waiting_since: Option<String>,
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts` — every column
@@ -2395,7 +2399,7 @@ impl Repository {
             return Ok(None);
         };
         let request_id: String = request.get("id");
-        if sqlx::query("UPDATE execution_requests SET state='leased',updated_at=? WHERE id=? AND state='queued'").bind(&now_s).bind(&request_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
+        if sqlx::query("UPDATE execution_requests SET state='leased',waiting_code=NULL,waiting_reason=NULL,waiting_since=NULL,updated_at=? WHERE id=? AND state='queued'").bind(&now_s).bind(&request_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
         let n: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(attempt_number),0)+1 FROM execution_attempts WHERE request_id=?",
         )
@@ -2473,7 +2477,7 @@ impl Repository {
         let rows = sqlx::query(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
              requested_model_provider, requested_model_id, created_at, metadata, \
-             permission_policy \
+             permission_policy, waiting_since \
              FROM execution_requests WHERE state='queued' AND \
              ((selector_kind='exact_runner' AND selector_id=?) OR \
              (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m \
@@ -2495,8 +2499,44 @@ impl Repository {
                 created_at: row.get("created_at"),
                 metadata: row.get("metadata"),
                 permission_policy: row.get("permission_policy"),
+                waiting_since: row.get("waiting_since"),
             })
             .collect())
+    }
+
+    /// Records why a poll left this queued request unselected: the code and
+    /// the plain sentence, the latest poll's word replacing the last one's.
+    /// While `blocking`, `waiting_since` is set the first time and kept after
+    /// that; a reason that is not blocking (a runner that could take it once
+    /// it has room) clears it, so the clock only runs while no runner can.
+    pub async fn record_request_waiting(
+        &self,
+        request_id: &str,
+        code: &str,
+        reason: &str,
+        blocking: bool,
+        now: DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state='queued'")
+            .bind(code).bind(reason).bind(blocking).bind(now.to_rfc3339()).bind(request_id)
+            .execute(self.pool()).await?;
+        Ok(())
+    }
+
+    /// Fails a queued request no runner could claim: `state` becomes `failed`,
+    /// `waiting_code` holds the terminal code and `waiting_reason` the message.
+    /// `false` when the request was claimed or cancelled first.
+    pub async fn fail_unclaimable_request(
+        &self,
+        request_id: &str,
+        code: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool, sqlx::Error> {
+        let updated = sqlx::query("UPDATE execution_requests SET state='failed',waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state='queued'")
+            .bind(code).bind(reason).bind(now.to_rfc3339()).bind(request_id)
+            .execute(self.pool()).await?;
+        Ok(updated.rows_affected() == 1)
     }
 
     /// Read-only scheduling input: `fleet_id`'s configured
@@ -2628,14 +2668,14 @@ impl Repository {
     ) -> Result<Vec<ExecutionListingRow>, sqlx::Error> {
         let rows = match item_id {
             Some(item_id) => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
                     .bind(item_id)
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
             }
             None => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM execution_requests ORDER BY created_at DESC LIMIT ?")
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
@@ -2649,6 +2689,8 @@ impl Repository {
                 state: row.get("state"),
                 cancellation_requested_at: row.get("cancellation_requested_at"),
                 created_at: row.get("created_at"),
+                waiting_reason: row.get("waiting_reason"),
+                waiting_since: row.get("waiting_since"),
             })
             .collect())
     }
@@ -2673,8 +2715,8 @@ impl Repository {
         }
         let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!(
-            "SELECT id, item_id, state, cancellation_requested_at, created_at FROM ( \
-                 SELECT id, item_id, state, cancellation_requested_at, created_at, \
+            "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM ( \
+                 SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, \
                         ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY created_at DESC, id DESC) AS rn \
                  FROM execution_requests WHERE item_id IN ({placeholders}) \
              ) WHERE rn = 1"
@@ -2692,6 +2734,8 @@ impl Repository {
                 state: row.get("state"),
                 cancellation_requested_at: row.get("cancellation_requested_at"),
                 created_at: row.get("created_at"),
+                waiting_reason: row.get("waiting_reason"),
+                waiting_since: row.get("waiting_since"),
             })
             .collect())
     }

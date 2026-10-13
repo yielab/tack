@@ -10,7 +10,7 @@
 
 use chrono::Utc;
 use tack_db::Repository;
-use tack_db::repo::execution::{NewExecutionRequest, NewRunner};
+use tack_db::repo::execution::{NewExecutionRequest, NewRunner, RequestSelection};
 use tack_orch::scheduler::wiring::choose_request_for_runner;
 use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner as choose};
 
@@ -493,4 +493,178 @@ async fn stale_capability_report_rejects_despite_no_heartbeat() {
     .await
     .expect("no db error");
     assert_eq!(chosen, None);
+}
+
+async fn waiting_row(
+    repo: &Repository,
+    id: &str,
+) -> (String, Option<String>, Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT state, waiting_code, waiting_reason, waiting_since FROM execution_requests WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(repo.pool())
+    .await
+    .expect("request row")
+}
+
+async fn refresh_heartbeat(repo: &Repository, runner_id: &str, at: chrono::DateTime<Utc>) {
+    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
+        .bind(at.to_rfc3339())
+        .bind(runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("refresh heartbeat");
+}
+
+#[tokio::test]
+async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
+    let (repo, item_id) = setup_repo().await;
+    let now = Utc::now();
+    setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "req",
+        "runner-a",
+        "opaque/not-offered",
+        "{}",
+        now,
+    )
+    .await;
+    assert_eq!(
+        waiting_row(&repo, "req").await,
+        ("queued".into(), None, None, None),
+        "a request no runner polled carries nothing"
+    );
+
+    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+        .await
+        .expect("no db error");
+    assert_eq!(chosen, None);
+    let (state, code, reason, since) = waiting_row(&repo, "req").await;
+    assert_eq!(state, "queued");
+    assert_eq!(code.as_deref(), Some("model_combination_not_declared"));
+    assert!(reason.is_some_and(|r| r.contains("opaque/not-offered")));
+    assert_eq!(since, Some(now.to_rfc3339()));
+
+    // The same request, made claimable, is selected and all three clear.
+    sqlx::query("UPDATE execution_requests SET requested_model_id = ? WHERE id = 'req'")
+        .bind(ALPHA_MODEL)
+        .execute(repo.pool())
+        .await
+        .expect("make claimable");
+    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+        .await
+        .expect("no db error");
+    assert_eq!(chosen.as_deref(), Some("req"));
+    repo.claim_execution_idempotent_with_snapshot(
+        "runner-a",
+        "claim",
+        "attempt",
+        chrono::Duration::seconds(60),
+        &FixedClock(now),
+        RequestSelection::Scheduled(chosen.as_deref()),
+    )
+    .await
+    .expect("no db error")
+    .expect("claimed");
+    assert_eq!(
+        waiting_row(&repo, "req").await,
+        ("leased".into(), None, None, None)
+    );
+}
+
+#[tokio::test]
+async fn a_request_unclaimable_past_the_setting_fails_with_no_runner_can_claim() {
+    // (case, fail_after minutes, expected state after the late poll)
+    for (case, minutes, expected) in [("default", 30, "failed"), ("zero never fails", 0, "queued")]
+    {
+        let (repo, item_id) = setup_repo().await;
+        let now = Utc::now();
+        setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
+        enqueue_for_runner(
+            &repo,
+            &item_id,
+            "req",
+            "runner-a",
+            "opaque/not-offered",
+            "{}",
+            now,
+        )
+        .await;
+        let policy = SchedulingPolicy {
+            unclaimable_fail_after: chrono::Duration::minutes(minutes),
+            ..SchedulingPolicy::default()
+        };
+
+        choose_request_for_runner(&repo, "runner-a", now, &policy)
+            .await
+            .expect("no db error");
+        let later = now + chrono::Duration::minutes(31);
+        refresh_heartbeat(&repo, "runner-a", later).await;
+        choose_request_for_runner(&repo, "runner-a", later, &policy)
+            .await
+            .expect("no db error");
+
+        let (state, code, reason, since) = waiting_row(&repo, "req").await;
+        assert_eq!(state, expected, "case: {case}");
+        assert!(reason.is_some(), "case: {case}");
+        assert!(since.is_some(), "case: {case}");
+        if expected == "failed" {
+            assert_eq!(code.as_deref(), Some("no_runner_can_claim"), "case: {case}");
+        }
+    }
+}
+
+/// A poll by a runner the request does not name says nothing about whether it
+/// can be claimed, and a runner that could take it once it has room restarts
+/// the clock: neither may fail a request.
+#[tokio::test]
+async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
+    // Another runner polls a request that names runner-a: nothing is written,
+    // however long it goes on.
+    let (repo, item_id) = setup_repo().await;
+    let now = Utc::now();
+    setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
+    setup_codex_runner(&repo, "runner-b", 1, 1, Some(0), now).await;
+    enqueue_for_runner(&repo, &item_id, "req", "runner-a", ALPHA_MODEL, "{}", now).await;
+    for at in [now, now + chrono::Duration::minutes(31)] {
+        refresh_heartbeat(&repo, "runner-b", at).await;
+        let chosen = choose_request_for_runner(&repo, "runner-b", at, &SchedulingPolicy::default())
+            .await
+            .expect("no db error");
+        assert_eq!(chosen, None);
+    }
+    assert_eq!(
+        waiting_row(&repo, "req").await,
+        ("queued".into(), None, None, None),
+        "a runner the request does not name proves nothing"
+    );
+
+    // The runner it names is busy: the reason is shown, the clock is cleared,
+    // and an overdue clock from an earlier blocking poll does not fail it.
+    let (repo, item_id) = setup_repo().await;
+    setup_codex_runner(&repo, "runner-a", 1, 0, Some(0), now).await;
+    enqueue_for_runner(&repo, &item_id, "req", "runner-a", ALPHA_MODEL, "{}", now).await;
+    sqlx::query("UPDATE execution_requests SET waiting_code = 'harness_not_declared', waiting_since = ? WHERE id = 'req'")
+        .bind((now - chrono::Duration::minutes(60)).to_rfc3339())
+        .execute(repo.pool())
+        .await
+        .expect("an earlier blocking poll");
+    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+        .await
+        .expect("no db error");
+    assert_eq!(chosen, None);
+    let (state, code, reason, since) = waiting_row(&repo, "req").await;
+    assert_eq!(
+        state, "queued",
+        "a busy runner that could take it never fails it"
+    );
+    assert_eq!(code.as_deref(), Some("no_available_capacity"));
+    assert!(reason.is_some());
+    assert_eq!(
+        since, None,
+        "a runner that could take it restarts the clock"
+    );
 }

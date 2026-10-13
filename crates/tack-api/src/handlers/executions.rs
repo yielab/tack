@@ -352,6 +352,10 @@ pub struct ExecutionSummary {
     pub state: String,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
+    /// Why no runner has claimed this request yet, as a plain sentence; null once claimed.
+    pub waiting_reason: Option<String>,
+    /// When a runner's poll first found the request unclaimable; null once claimed.
+    pub waiting_since: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -474,6 +478,10 @@ pub struct ExecutionDetailResponse {
     pub created_at: String,
     /// The composed prompt the agent is given, as stored with the request; null when absent.
     pub instructions: Option<String>,
+    /// Why no runner has claimed this request yet, as a plain sentence; null once claimed.
+    pub waiting_reason: Option<String>,
+    /// When a runner's poll first found the request unclaimable; null once claimed.
+    pub waiting_since: Option<String>,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -1312,6 +1320,8 @@ pub async fn list_executions(
             state: row.state,
             cancellation_requested_at: row.cancellation_requested_at,
             created_at: row.created_at,
+            waiting_reason: row.waiting_reason,
+            waiting_since: row.waiting_since,
         })
         .collect();
     Ok(Json(ExecutionListResponse {
@@ -1334,7 +1344,7 @@ pub async fn get_execution(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
-    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
+    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
         .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1359,6 +1369,8 @@ pub async fn get_execution(
         cancellation_requested_at: row.get("cancellation_requested_at"),
         created_at: row.get("created_at"),
         instructions: row.get("instructions"),
+        waiting_reason: row.get("waiting_reason"),
+        waiting_since: row.get("waiting_since"),
     }))
 }
 
