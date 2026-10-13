@@ -1,4 +1,4 @@
-//! opencode's own claims: its refusal and how its event stream becomes a
+//! opencode's own claims: how its event stream becomes a
 //! report. Fixtures are captured transcripts under `fixtures/opencode/`. The
 //! lifecycle is proved in `local_process/tests.rs`.
 
@@ -24,29 +24,13 @@ fn opencode_declares_decisions_supported_over_acp() {
     assert!(reason.contains("session/request_permission"), "{reason}");
 }
 
-/// Every request is refused: opencode needs its own login, which this
-/// runner does not pass.
-#[test]
-fn every_request_is_refused_until_opencode_can_sign_in() {
-    let state = scratch("opencode-refusals");
-    let request = networked(state.path());
-    let run = RunContext {
-        spec: &request,
-        scratch: state.path(),
-    };
-    let error = OpencodeGrammar.invocation(&run).expect_err("rejected");
-    assert!(
-        matches!(&error, HarnessError::Rejected { reason } if reason.contains("needs its own login")),
-        "{error:?}"
-    );
-}
-
 fn read(stdout: &str, exit: ProcessExit) -> RunReport {
     let state = scratch("opencode-report");
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     OpencodeGrammar.report(&run, &finished(exit, stdout))
 }
@@ -137,6 +121,7 @@ fn an_ask_request_becomes_an_acp_conversation() {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
 
     let framed = OpencodeGrammar.prompt("do it".to_owned(), true);

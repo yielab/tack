@@ -321,6 +321,8 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             args,
             env,
             stdin_stays_open: ask,
+
+            ..Default::default()
         })
     }
 

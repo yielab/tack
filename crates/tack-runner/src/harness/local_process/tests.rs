@@ -72,6 +72,8 @@ impl HarnessGrammar for TestGrammar {
             args: vec!["run".to_owned()],
             env,
             stdin_stays_open: self.ask,
+
+            ..Default::default()
         })
     }
 
