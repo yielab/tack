@@ -36,15 +36,10 @@ file. It requires no account.
 
 - **To use Tack:** Linux, macOS or Windows.
 - **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
-  on the same computer (the documentation calls these *harnesses*). Tack has no agent of
-  its own: it hands the task to that program, which reads and edits files and runs
-  commands. The program also needs a model, in one of two ways:
-  - **Its own subscription.** Claude Code or Codex, signed in with your plan, which
-    includes its models. Tack never sees that login.
-  - **An API key set in Tack's runner,** for a model gateway or an OpenAI-compatible
-    server, including one running local models. The runner passes the key to the installed
-    program: Claude Code and Codex can use one, and opencode and docket work only this way.
-    A key without one of these programs doesn't run a task.
+  on the same computer and signed in with its own tools (the documentation calls these
+  *harnesses*). Tack has no agent of its own: it hands the task to that program, which
+  reads and edits files, runs commands and uses whatever model you set it up with. Tack
+  holds no model key. docket needs version 0.2.0-beta.5 or later.
 
   [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says
   what each one supports.
@@ -106,8 +101,8 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 <img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: what the agent will read, the profile, Ask before each action, Web tools, and the agent and model for this run." />
 
-**Agents** in the sidebar shows which agents Tack found on this computer and runs a
-test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.
+**Agents** in the sidebar shows which agents Tack found on this computer, whether each
+one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.
 
 ## Features
 
