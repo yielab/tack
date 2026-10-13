@@ -26,10 +26,9 @@ use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
 const RUNNER_CREDENTIAL: &str = "raw-test-runner-credential";
-/// The explicit model every `enqueue_request()` call requests, matching
-/// `full_capabilities()`'s declared combination — see the scheduler
-/// wiring note on both functions.
-const REQUESTED_MODEL_PROVIDER: &str = "openai";
+/// The model every `enqueue_request()` call names, which the `codex` that
+/// `full_capabilities()` declares needs — see the scheduler wiring note on
+/// both functions.
 const REQUESTED_MODEL_ID: &str = "opaque/model-c2";
 
 // ---------------------------------------------------------------------
@@ -131,7 +130,7 @@ impl Fixture {
         let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
         let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
         // `tack_orch::scheduler` is wired into the real claim path, so
-        // `RUNNER_ID` must declare a real harness/model combination — an
+        // `RUNNER_ID` must declare a real harness — an
         // empty `"{}"` snapshot would make every claim in this file
         // eligibility-reject before ever reaching the fencing/idempotency/
         // replay behavior these tests actually exist to prove.
@@ -486,10 +485,9 @@ async fn enqueue_request(
         "agent_profile_id": agent_profile_id,
         "resolved_agent_profile": {"name":"C2 Profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
         "requested_harness_kind": "codex",
-        // Explicit, matching `full_capabilities()`'s declared combination —
-        // see `REQUESTED_MODEL_PROVIDER`/`REQUESTED_MODEL_ID`'s doc comment.
-        "requested_model_provider": REQUESTED_MODEL_PROVIDER,
-        "requested_model_id": REQUESTED_MODEL_ID,
+        // Named, because the `codex` `full_capabilities()` declares needs one —
+        // see `REQUESTED_MODEL_ID`'s doc comment.
+        "requested_model": REQUESTED_MODEL_ID,
         "repository": {"kind":"git","remote":"https://example.test/c2.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory": Value::Null},
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
@@ -513,8 +511,7 @@ async fn enqueue_request(
             agent_profile_id: Some(agent_profile_id),
             agent_profile_snapshot: &field_str("resolved_agent_profile"),
             requested_harness_kind: Some("codex"),
-            requested_model_provider: Some(REQUESTED_MODEL_PROVIDER),
-            requested_model_id: Some(REQUESTED_MODEL_ID),
+            requested_model: Some(REQUESTED_MODEL_ID),
             repository_snapshot: &field_str("repository"),
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
@@ -540,8 +537,8 @@ fn one_event(event_id: &str, sequence: i64, occurred_at: DateTime<Utc>, payload:
     }])
 }
 
-/// `harnesses` declares "codex"/"openai"/`REQUESTED_MODEL_ID` — every
-/// `enqueue_request()` call in this file requests exactly that pair (see
+/// `harnesses` declares "codex", which needs a model named — every
+/// `enqueue_request()` call in this file names `REQUESTED_MODEL_ID` (see
 /// its own doc comment) so the real scheduler finds this
 /// runner eligible, the same way a real runner's declared capabilities
 /// would need to match a real request for a claim to succeed.
@@ -555,11 +552,7 @@ fn full_capabilities(reported_at: DateTime<Utc>, total: i64, available: i64) -> 
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": reported_at.to_rfc3339(),
-            "model_combinations": [{
-                "model_provider": REQUESTED_MODEL_PROVIDER,
-                "model_ids": [REQUESTED_MODEL_ID],
-                "discovery": "reported"
-            }]
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -613,9 +606,7 @@ fn completion_body(
         "actual_execution": {
             "harness_kind": "codex",
             "harness_version": "1.2.3",
-            "model_provider": "openai",
-            "model_id": "opaque/model-alpha",
-            "model_observation_source": "harness_reported",
+            "model": "opaque/model-alpha", "model_source": "reported",
             "capability_snapshot": {
                 "cancel": {"support": "supported", "reason": null},
                 "resume": {"support": "unsupported", "reason": "no resumable session contract"},

@@ -10,27 +10,7 @@
       "installed_version": "1.2.3",
       "probe_error": null,
       "probed_at": "2026-08-06T11:59:55Z",
-      "native_provider": "openai",
-      "providers": ["openai"],
-      "model_selection": "required",
-      "model_combinations": [
-        {
-          "model_provider": "openai",
-          "model_ids": ["opaque/model-alpha", "opaque:model-beta"],
-          "discovery": "reported",
-          "model_metadata": {
-            "opaque/model-alpha": {
-              "context_window": 400000,
-              "price": {"input": "0.000002", "output": "0.000008"},
-              "modality": {"input": ["text"], "output": ["text"]}
-            }
-          }
-        }
-      ],
-      "model_passthrough": {
-        "support": "supported",
-        "reason": "the adapter forwards the operator-specified model id verbatim; the harness validates it at run time"
-      }
+      "model_selection": "required"
     }
   ],
   "features": {

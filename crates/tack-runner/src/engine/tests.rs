@@ -588,9 +588,7 @@ fn actual_execution() -> tack_orch::execution::ActualExecution {
         r#"{
             "harness_kind":"fake",
             "harness_version":"1.0.0",
-            "model_provider":"test-provider",
-            "model_id":"test-model",
-            "model_observation_source":"harness_reported",
+            "model": "test-model", "model_source": "reported",
             "capability_snapshot":{
                 "cancel":{"support":"supported","reason":null},
                 "resume":{"support":"unsupported","reason":"no resume"},
@@ -879,10 +877,7 @@ fn persisted_prepared_record(root: &Path, journal: &OwnerOnlyJournal) -> Attempt
 fn claimed_work_preserves_snapshots_and_rejects_divergent_facts() {
     let work = work();
     assert_eq!(
-        work.request
-            .requested_model_id
-            .as_ref()
-            .map(|id| id.as_str()),
+        work.request.requested_model.as_deref(),
         Some("opaque/model-alpha")
     );
     assert_eq!(
@@ -1523,12 +1518,11 @@ fn single_completion_report(protocol: &FakeProtocol) -> CompletionReport {
 
 /// A rejection at `validate` never spawns a process, so the reported
 /// `ActualExecution` carries only what the *request* asked for
-/// (attested, never confirmed) and no harness-observed fact.
+/// (never confirmed) and no harness-observed fact.
 fn assert_pre_spawn_rejection_actual_execution(actual: &tack_orch::execution::ActualExecution) {
     assert_eq!(actual.harness_version, "");
-    assert_eq!(actual.model_provider.as_str(), "openai");
-    assert_eq!(actual.model_id.as_str(), "opaque/model-alpha");
-    assert_eq!(actual.model_observation_source, "requested_not_confirmed");
+    assert_eq!(actual.model.as_deref(), Some("opaque/model-alpha"));
+    assert_eq!(actual.model_source, "requested");
     assert_eq!(actual.workspace_id.as_str(), "ws_617474656d7074");
 }
 

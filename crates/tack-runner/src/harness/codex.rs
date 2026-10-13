@@ -19,15 +19,10 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "codex",
     program: "codex",
     model_selection: ModelSelection::Explicit(
-        "the served model is not available on codex-cli 0.149.1 (measured 2026-09-20): no \
-         line of `exec --json` names which model answered, so the model that ran could not \
-         be recorded; requested_model_provider and requested_model_id are both required",
+        "no line of `exec --json` on codex-cli 0.149.1 (measured 2026-09-20) names which model \
+         answered, so the request must name the model for one to be recorded",
     ),
-    native_provider: "openai",
     inherited_env: &[],
-    model_passthrough: "requested_model_id is forwarded verbatim via --model and a request \
-                        without one is rejected before spawn; the Codex CLI validates the model \
-                        at run time, so no model list is claimed",
     probe_notes: &[(
         "served_model",
         "measured against codex-cli 0.149.1, 2026-09-20: no line of `exec --json` names the \
@@ -35,11 +30,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
          the `--model` flag back, so it is not available",
     )],
     credential_note: "Codex signs in with its own login; Tack holds no model credential.",
-    // Measured against codex-cli 0.149.1, 2026-09-20: no line of `exec
-    // --json` ever names a served model distinct from the requested one —
-    // the only model-shaped line is a `type:"error"` item echoing the
-    // `--model` flag back.
-    observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".codex"],
@@ -131,10 +121,19 @@ fn app_server_report(result: &ProcessResult) -> Option<RunReport> {
     let mut rpc_error: Option<String> = None;
     let mut tokens_in: Option<u64> = None;
     let mut tokens_out: Option<u64> = None;
+    let mut observed_model: Option<String> = None;
     for line in result.stdout.text.lines() {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
         };
+        if event.get("id").and_then(serde_json::Value::as_u64) == Some(2)
+            && let Some(model) = event
+                .pointer("/result/model")
+                .and_then(serde_json::Value::as_str)
+                .filter(|model| !model.is_empty())
+        {
+            observed_model = Some(model.to_owned());
+        }
         if matches!(
             event.get("id").and_then(serde_json::Value::as_u64),
             Some(2) | Some(3)
@@ -197,7 +196,7 @@ fn app_server_report(result: &ProcessResult) -> Option<RunReport> {
             "stderr": describe_capture(&result.stderr),
         }),
         harness_version: None,
-        observed_model: None,
+        observed_model,
         tokens_in,
         tokens_out,
         duration_ms: None,
@@ -244,16 +243,17 @@ impl HarnessGrammar for CodexGrammar {
                 ..Invocation::default()
             });
         }
-        let model = run.spec.work.request.requested_model_id.as_ref();
+        let model = run.spec.work.request.requested_model.as_ref();
         let sandbox = sandbox_mode(&run.spec.work.request.permission_policy.tools);
         args.extend([
             "exec".to_owned(),
             "--json".to_owned(),
             "--sandbox".to_owned(),
             sandbox.to_owned(),
-            "--model".to_owned(),
         ]);
-        args.push(model.map_or_else(String::new, |model| model.as_str().to_owned()));
+        if let Some(model) = model {
+            args.extend(["--model".to_owned(), model.clone()]);
+        }
         Ok(Invocation {
             args,
             ..Invocation::default()
@@ -299,10 +299,6 @@ impl HarnessGrammar for CodexGrammar {
                 return None;
             };
             let sandbox = sandbox_mode(&request.permission_policy.tools);
-            let model = request
-                .requested_model_id
-                .as_ref()
-                .map_or_else(String::new, |model| model.as_str().to_owned());
             let mut params = serde_json::Map::new();
             params.insert(
                 "cwd".to_owned(),
@@ -310,7 +306,9 @@ impl HarnessGrammar for CodexGrammar {
             );
             params.insert("approvalPolicy".to_owned(), serde_json::json!("on-request"));
             params.insert("sandbox".to_owned(), serde_json::json!(sandbox));
-            params.insert("model".to_owned(), serde_json::json!(model));
+            if let Some(model) = &request.requested_model {
+                params.insert("model".to_owned(), serde_json::json!(model));
+            }
             let reply = serde_json::json!({"id": 2, "method": "thread/start", "params": params});
             return Some(StreamSignal::Reply(
                 serde_json::to_vec(&reply).unwrap_or_default(),
@@ -453,7 +451,8 @@ impl HarnessGrammar for CodexGrammar {
             harness_version: None,
             // The served model is not named anywhere in `exec --json`'s
             // stream (measured against codex-cli 0.149.1, 2026-09-20; see
-            // `fixtures/codex/README.md`), so nothing is read for it here.
+            // `fixtures/codex/README.md`), so nothing is read for it here;
+            // an `app-server` run reads it from its `thread/start` result.
             observed_model: None,
             tokens_in,
             tokens_out,

@@ -94,8 +94,7 @@ fn tack_evidence(attempt_id: &str, base_commit: &str, usage: Value) -> AttemptEv
 fn measured_usage() -> Value {
     json!({
         "harness_version": "0.9.1",
-        "model_provider": "anthropic",
-        "model_id": "claude-x",
+        "model": "claude-x",
         "tokens_in": {"source": "measured", "value": 1200},
         "tokens_out": {"source": "measured", "value": 340},
         "duration_ms": {"source": "measured", "value": 12500},
@@ -122,7 +121,7 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
             "harness": {"name": "codex", "version": "0.9.1"},
             "baseCommit": "a".repeat(40),
             "headCommit": head,
-            "generator": {"model": "claude-x", "family": "anthropic"},
+            "generator": {"model": "claude-x"},
             "usage": {"inputTokens": 1200, "outputTokens": 340, "durationS": 12.5},
         })
     );
@@ -131,7 +130,7 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
     // never with a zero or an empty string.
     let unmeasured = json!({
         "harness_version": "",
-        "model_id": "",
+        "model": "",
         "tokens_in": {"source": "not_measured", "value": null},
         "tokens_out": {"source": "not_measured", "value": null},
     });

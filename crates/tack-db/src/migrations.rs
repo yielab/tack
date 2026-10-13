@@ -147,6 +147,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("083_plan_source", &MIGRATION_083[..]),
         ordinary("084_attempt_start_report", &MIGRATION_084[..]),
         ordinary("085_request_waiting", &MIGRATION_085[..]),
+        ordinary("086_one_model_string", &MIGRATION_086[..]),
     ]
 }
 
@@ -1788,4 +1789,32 @@ const MIGRATION_085: [&str; 3] = [
     "ALTER TABLE execution_requests ADD COLUMN waiting_code TEXT",
     "ALTER TABLE execution_requests ADD COLUMN waiting_reason TEXT",
     "ALTER TABLE execution_requests ADD COLUMN waiting_since TEXT",
+];
+
+// 086: a model is one string. A request's `requested_model` takes the old model id and the
+// provider is dropped; the stored request snapshot and each attempt's `actual_execution` get
+// the same keys (`model`, and `model_source` of `reported`, `requested` or `agent_default`).
+// A project's `default_model` becomes the bare string of an `explicit` default (`auto` and
+// none become NULL), and an item's `run_settings` carries `model` for the old pair.
+const MIGRATION_086: [&str; 8] = [
+    "ALTER TABLE execution_requests ADD COLUMN requested_model TEXT",
+    "UPDATE execution_requests SET requested_model = requested_model_id",
+    "UPDATE execution_requests SET request_snapshot = json_remove(json_set(request_snapshot, '$.requested_model', json_extract(request_snapshot, '$.requested_model_id')), '$.requested_model_provider', '$.requested_model_id')
+        WHERE json_valid(request_snapshot) AND json_type(request_snapshot) = 'object'",
+    "ALTER TABLE execution_requests DROP COLUMN requested_model_provider",
+    "ALTER TABLE execution_requests DROP COLUMN requested_model_id",
+    "UPDATE execution_attempts SET actual_execution = json_remove(json_set(actual_execution,
+            '$.model', CASE WHEN json_extract(actual_execution, '$.model_observation_source') = 'not_observed' THEN NULL ELSE json_extract(actual_execution, '$.model_id') END,
+            '$.model_source', CASE
+                WHEN json_extract(actual_execution, '$.model_observation_source') = 'harness_reported' THEN 'reported'
+                WHEN json_extract(actual_execution, '$.model_observation_source') = 'not_observed' OR json_extract(actual_execution, '$.model_id') IS NULL THEN 'agent_default'
+                ELSE 'requested' END),
+            '$.model_provider', '$.model_id', '$.model_observation_source')
+        WHERE actual_execution IS NOT NULL AND json_valid(actual_execution) AND json_type(actual_execution) = 'object'",
+    "UPDATE projects SET default_model = CASE
+            WHEN json_valid(default_model) AND json_extract(default_model, '$.kind') = 'explicit' THEN json_extract(default_model, '$.model_id')
+            ELSE NULL END
+        WHERE default_model IS NOT NULL",
+    "UPDATE items SET run_settings = json_remove(CASE WHEN json_extract(run_settings, '$.model_id') IS NOT NULL THEN json_set(run_settings, '$.model', json_extract(run_settings, '$.model_id')) ELSE run_settings END, '$.model_provider', '$.model_id')
+        WHERE run_settings IS NOT NULL AND json_valid(run_settings) AND json_type(run_settings) = 'object'",
 ];

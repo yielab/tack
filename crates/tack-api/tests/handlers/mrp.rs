@@ -120,11 +120,7 @@ fn full_capabilities() -> Value {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now,
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": ["opaque/model-e2"],
-                "discovery": "reported"
-            }],
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -204,8 +200,7 @@ fn execution_request_body(
         "selector_id": runner_id,
         "agent_profile_id": agent_profile_id,
         "requested_harness_kind": "codex",
-        "requested_model_provider": "openai",
-        "requested_model_id": "opaque/model-e2",
+        "requested_model": "opaque/model-e2",
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/e2.git", "base_revision": BASE_REVISION, "subdirectory": null},
         "permission_policy": {"tools": ["shell"], "network": false},
         "timeout_seconds": 60,
@@ -500,9 +495,7 @@ fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
         "actual_execution": {
             "harness_kind": "codex",
             "harness_version": "1.0.0",
-            "model_provider": "openai",
-            "model_id": "opaque/model-e2",
-            "model_observation_source": "harness_reported",
+            "model": "opaque/model-e2", "model_source": "reported",
             "capability_snapshot": {
                 "cancel": {"support": "supported", "reason": null},
                 "resume": {"support": "unsupported", "reason": "no resumable session contract"},

@@ -63,27 +63,6 @@ opaque_id!(
     HarnessKind,
     "An opaque harness kind selected by the scheduler."
 );
-opaque_id!(ModelProvider, "An opaque model provider identifier.");
-opaque_id!(
-    ModelId,
-    "An opaque model identifier; never inspect or split it."
-);
-opaque_id!(
-    RequestedModelProvider,
-    "The provider requested by the scheduler; distinct from the observed provider."
-);
-opaque_id!(
-    RequestedModelId,
-    "The opaque model requested by the scheduler; distinct from the observed model."
-);
-opaque_id!(
-    ActualModelProvider,
-    "The provider actually observed during an attempt; distinct from the request."
-);
-opaque_id!(
-    ActualModelId,
-    "The opaque model actually observed during an attempt; distinct from the request."
-);
 
 /// The single protocol version this domain understands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -359,8 +338,9 @@ pub struct ExecutionRequestSnapshot {
     pub agent_profile_id: AgentProfileId,
     pub resolved_agent_profile: AgentProfileSnapshot,
     pub requested_harness_kind: HarnessKind,
-    pub requested_model_provider: Option<RequestedModelProvider>,
-    pub requested_model_id: Option<RequestedModelId>,
+    /// The one opaque model string the agent is asked to use, passed to it
+    /// verbatim; `None` leaves the choice to the agent.
+    pub requested_model: Option<String>,
     pub repository: RepositorySnapshot,
     pub permission_policy: PermissionPolicy,
     pub timeout_seconds: u64,
@@ -441,9 +421,11 @@ pub struct Usage {
 pub struct ActualExecution {
     pub harness_kind: HarnessKind,
     pub harness_version: String,
-    pub model_provider: ActualModelProvider,
-    pub model_id: ActualModelId,
-    pub model_observation_source: String,
+    /// The model the attempt ran on, when anything named one.
+    pub model: Option<String>,
+    /// Who named `model`: `reported` (the agent's own output), `requested`
+    /// (only the request) or `agent_default` (neither).
+    pub model_source: String,
     pub capability_snapshot: FeatureCapabilities,
     pub workspace_id: WorkspaceId,
     pub base_revision: String,

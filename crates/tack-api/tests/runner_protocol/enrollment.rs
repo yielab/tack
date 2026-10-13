@@ -27,8 +27,6 @@ use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
 const RUNNER_CREDENTIAL: &str = "raw-test-runner-credential";
-const REQUESTED_MODEL_PROVIDER: &str = "openai";
-const REQUESTED_MODEL_ID: &str = "opaque/model-c2";
 
 #[derive(Clone)]
 struct FakeClock(Arc<Mutex<DateTime<Utc>>>);
@@ -136,11 +134,7 @@ fn full_capabilities(reported_at: DateTime<Utc>, total: i64, available: i64) -> 
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": reported_at.to_rfc3339(),
-            "model_combinations": [{
-                "model_provider": REQUESTED_MODEL_PROVIDER,
-                "model_ids": [REQUESTED_MODEL_ID],
-                "discovery": "reported"
-            }]
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},

@@ -13,3 +13,5 @@ mod bridge_tables_dropped;
 mod factory_loop_tables;
 #[path = "migrations/item_source_migration.rs"]
 mod item_source_migration;
+#[path = "migrations/one_model_string.rs"]
+mod one_model_string;

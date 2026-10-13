@@ -21,7 +21,6 @@ use tack_db::{
 };
 use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
 use tack_orch::model_policy::wiring::resolve_request_model_policy;
-use tack_orch::scheduler::types::ModelSelector;
 use tack_orch::usage_provenance::derive_attempt_facts;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -116,29 +115,18 @@ pub struct UsageEconomicsSchema {
 
 /// Documents `tack_orch::usage_provenance::ModelProvenance` —
 /// `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
-/// has not yet reported `actual_execution`). A tagged union carrying every
-/// observed fact, never coalesced into a bare boolean "matched" flag, so a
-/// caller (the frontend's rendering) can show both sides of a mismatch.
+/// has not yet reported `actual_execution`). Both model strings are carried
+/// in full, never reconciled, so a caller can show a request and a served
+/// model that differ.
 #[derive(Debug, Serialize, ToSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ModelProvenanceSchema {
-    /// The attempt ran on exactly the requested provider/model.
-    Matched { provider: String, model_id: String },
-    /// The request allowed auto-selection (no explicit provider/model was
-    /// ever resolved for it) and the attempt observed a concrete choice.
-    AutoSelectObserved {
-        actual_provider: String,
-        actual_model_id: String,
-    },
-    /// The attempt ran on a provider and/or model different from what was
-    /// explicitly requested. Both sides are always carried in full, never
-    /// silently reconciled.
-    Mismatched {
-        requested_provider: String,
-        requested_model_id: String,
-        actual_provider: String,
-        actual_model_id: String,
-    },
+pub struct ModelProvenanceSchema {
+    /// The model the request named; `null` when it named none.
+    pub requested: Option<String>,
+    /// The model the attempt ran on; `null` when nothing named one.
+    pub served: Option<String>,
+    /// Who named `served`: `reported` (the agent's own output), `requested`
+    /// (only the request) or `agent_default` (neither).
+    pub source: String,
 }
 
 /// State for the operator execution router — constructed from the shared
@@ -288,10 +276,11 @@ pub struct CreateExecution {
     pub selector_id: String,
     pub agent_profile_id: String,
     pub requested_harness_kind: String,
+    /// The one model string the agent is asked to use, passed verbatim.
+    /// Absent, the project's default model applies when this run's agent is
+    /// the project's default agent; otherwise the agent chooses.
     #[serde(default)]
-    pub requested_model_provider: Option<String>,
-    #[serde(default)]
-    pub requested_model_id: Option<String>,
+    pub requested_model: Option<String>,
     /// Removed: the server records the profile it loads by `agent_profile_id`.
     /// A request that still carries the key is refused (`field_removed`).
     #[serde(default, deserialize_with = "present", skip_serializing)]
@@ -1002,46 +991,24 @@ pub(crate) async fn enqueue_resolved(
             json!({"field": "selector_kind"}),
         ));
     }
-    // `resolve_request_model_policy` resolves the model via request
-    // override → agent-profile default → project default → fleet default →
-    // auto-select. Only resolve when the client expressed no explicit
-    // choice: an explicit `requested_model_provider`/`requested_model_id`
-    // pair is itself the highest-precedence tier
-    // (`ModelPolicyTier::RequestOverride`) and must never be overridden by
-    // a lower tier's default.
-    let (resolved_model_provider, resolved_model_id) =
-        if input.requested_model_provider.is_none() && input.requested_model_id.is_none() {
-            let fleet_id = (input.selector_kind == "fleet").then_some(input.selector_id.as_str());
-            let project_id = item.project_id.to_string();
-            let resolved = resolve_request_model_policy(
-                &state.repo,
-                Some(input.agent_profile_id.as_str()),
-                Some(project_id.as_str()),
-                fleet_id,
-                None,
-            )
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not resolve model policy",
-                    json!({}),
-                )
-            })?;
-            match resolved.selector {
-                ModelSelector::AutoSelect => (None, None),
-                ModelSelector::Explicit { provider, model_id } => (
-                    Some(provider.as_str().to_string()),
-                    Some(model_id.as_str().to_string()),
-                ),
-            }
-        } else {
-            (
-                input.requested_model_provider.clone(),
-                input.requested_model_id.clone(),
-            )
-        };
+    // The request's own model is used as is; only a request naming none
+    // reads the project's default model.
+    let resolved_model = resolve_request_model_policy(
+        &state.repo,
+        item.project_id,
+        &input.requested_harness_kind,
+        input.requested_model.as_deref(),
+    )
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not resolve model policy",
+            json!({}),
+        )
+    })?
+    .model;
     let stored_snapshot_text = existing_snapshot.clone();
     let (request_id, created_at) = match existing_snapshot {
         Some(snapshot) => {
@@ -1137,8 +1104,7 @@ pub(crate) async fn enqueue_resolved(
         "agent_profile_id": input.agent_profile_id,
         "resolved_agent_profile": agent_profile_snapshot,
         "requested_harness_kind": input.requested_harness_kind,
-        "requested_model_provider": resolved_model_provider.clone(),
-        "requested_model_id": resolved_model_id.clone(),
+        "requested_model": resolved_model.clone(),
         "repository": repository_snapshot,
         "permission_policy": input.permission_policy,
         "timeout_seconds": input.timeout_seconds,
@@ -1216,8 +1182,7 @@ pub(crate) async fn enqueue_resolved(
                 agent_profile_id: Some(&input.agent_profile_id),
                 agent_profile_snapshot: &agent_profile_snapshot,
                 requested_harness_kind: Some(&input.requested_harness_kind),
-                requested_model_provider: resolved_model_provider.as_deref(),
-                requested_model_id: resolved_model_id.as_deref(),
+                requested_model: resolved_model.as_deref(),
                 repository_snapshot: &repository_snapshot,
                 permission_policy: &permission_policy,
                 timeout_seconds: Some(timeout_seconds),
@@ -1449,25 +1414,23 @@ pub async fn list_execution_attempts(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<AttemptListResponse>, (StatusCode, Json<Value>)> {
-    // Also carries `requested_model_provider`/`requested_model_id` —
+    // Also carries `requested_model` —
     // `derive_attempt_facts` needs the *requested* side of provenance,
     // which lives on `execution_requests`, not on any one attempt row.
     // Same not-found semantics as a plain `EXISTS(...)` check, one query
     // instead of two.
-    let request_row = sqlx::query(
-        "SELECT requested_model_provider, requested_model_id FROM execution_requests WHERE id = ?",
-    )
-    .bind(&request_id)
-    .fetch_optional(state.repo.pool())
-    .await
-    .map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not verify execution",
-            json!({}),
-        )
-    })?;
+    let request_row = sqlx::query("SELECT requested_model FROM execution_requests WHERE id = ?")
+        .bind(&request_id)
+        .fetch_optional(state.repo.pool())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not verify execution",
+                json!({}),
+            )
+        })?;
     let Some(request_row) = request_row else {
         return Err(error(
             StatusCode::NOT_FOUND,
@@ -1476,8 +1439,7 @@ pub async fn list_execution_attempts(
             json!({"resource": "execution_request"}),
         ));
     };
-    let requested_model_provider: Option<String> = request_row.get("requested_model_provider");
-    let requested_model_id: Option<String> = request_row.get("requested_model_id");
+    let requested_model: Option<String> = request_row.get("requested_model");
     let attempts = state
         .repo
         .list_attempts_for_request(&request_id)
@@ -1544,8 +1506,7 @@ pub async fn list_execution_attempts(
             // here — `runner_time_cost.cost_usd_estimated` stays honestly
             // `not_measured`, never a fabricated rate.
             let facts = derive_attempt_facts(
-                requested_model_provider.as_deref(),
-                requested_model_id.as_deref(),
+                requested_model.as_deref(),
                 attempt.actual_execution.as_deref(),
                 attempt.usage.as_deref(),
                 attempt.started_at.as_deref().and_then(parse_rfc3339),

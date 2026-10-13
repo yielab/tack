@@ -44,31 +44,25 @@ pub use crate::client::engine::{
 };
 pub use crate::client::{AttemptJournal, DecisionAnswer, DecisionOption, RecoveryObservation};
 
-/// A closed vocabulary for `ActualExecution.model_observation_source`, a
-/// bare `String` on the wire. Two independently implemented adapters
-/// converged on the same three meanings (`codex.rs`'s
-/// `"requested_not_confirmed"`, `claude_code.rs`'s `"harness_reported"`/
-/// `"not_observed"`); this enum centralizes the three literals so a future
-/// adapter cannot invent an incompatible fourth string.
+/// A closed vocabulary for `ActualExecution.model_source`, a bare `String`
+/// on the wire: who named the model an attempt ran on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelObservationSource {
-    /// The value was read directly from the harness's own output (e.g.
-    /// Claude Code's `system`/`init` event `model` field).
-    HarnessReported,
-    /// The value echoes the operator's request; the harness gave no
-    /// independent confirmation it actually used it.
-    RequestedNotConfirmed,
-    /// Neither an observation nor a request value exists to report (only
-    /// reachable by an adapter that permits auto-selection at all).
-    NotObserved,
+pub enum ModelSource {
+    /// The agent's own output named it (docket's `model.served`, claude-code's
+    /// init line, codex's `thread/start` result).
+    Reported,
+    /// Only the request named it; the agent gave no confirmation.
+    Requested,
+    /// Neither the agent nor the request named one: the agent chose.
+    AgentDefault,
 }
 
-impl ModelObservationSource {
+impl ModelSource {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::HarnessReported => "harness_reported",
-            Self::RequestedNotConfirmed => "requested_not_confirmed",
-            Self::NotObserved => "not_observed",
+            Self::Reported => "reported",
+            Self::Requested => "requested",
+            Self::AgentDefault => "agent_default",
         }
     }
 }

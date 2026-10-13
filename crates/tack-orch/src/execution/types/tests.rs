@@ -29,15 +29,6 @@ fn assert_round_trips<T: serde::de::DeserializeOwned + Serialize>(value: serde_j
 }
 
 #[test]
-fn model_id_types_are_distinct_so_swaps_fail_to_compile() {
-    fn takes_requested(_model: Option<RequestedModelId>) {}
-    fn takes_actual(_model: ActualModelId) {}
-
-    takes_requested(Some(RequestedModelId::new("opaque/model-alpha")));
-    takes_actual(ActualModelId::new("opaque/model-alpha"));
-}
-
-#[test]
 fn protocol_rejects_non_v1() {
     assert!(serde_json::from_str::<ProtocolVersion>("2").is_err());
 }

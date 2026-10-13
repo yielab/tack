@@ -299,8 +299,7 @@ fn actual_execution() -> tack_orch::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake", "harness_version":"1.0.0",
-            "model_provider":"test-provider", "model_id":"test-model",
-            "model_observation_source":"harness_reported",
+            "model": "test-model", "model_source": "reported",
             "capability_snapshot":{
                 "cancel":{"support":"supported","reason":null},
                 "resume":{"support":"unsupported","reason":"no resume"},

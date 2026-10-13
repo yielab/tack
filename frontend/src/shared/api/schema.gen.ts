@@ -3244,8 +3244,12 @@ export interface components {
              */
             repository_snapshot?: unknown;
             requested_harness_kind: string;
-            requested_model_id?: string | null;
-            requested_model_provider?: string | null;
+            /**
+             * @description The one model string the agent is asked to use, passed verbatim.
+             *     Absent, the project's default model applies when this run's agent is
+             *     the project's default agent; otherwise the agent chooses.
+             */
+            requested_model?: string | null;
             selector_id: string;
             selector_kind: string;
             /**
@@ -3851,27 +3855,20 @@ export interface components {
         /**
          * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
          *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
-         *     has not yet reported `actual_execution`). A tagged union carrying every
-         *     observed fact, never coalesced into a bare boolean "matched" flag, so a
-         *     caller (the frontend's rendering) can show both sides of a mismatch.
+         *     has not yet reported `actual_execution`). Both model strings are carried
+         *     in full, never reconciled, so a caller can show a request and a served
+         *     model that differ.
          */
         ModelProvenanceSchema: {
-            /** @enum {string} */
-            kind: "matched";
-            model_id: string;
-            provider: string;
-        } | {
-            actual_model_id: string;
-            actual_provider: string;
-            /** @enum {string} */
-            kind: "auto_select_observed";
-        } | {
-            actual_model_id: string;
-            actual_provider: string;
-            /** @enum {string} */
-            kind: "mismatched";
-            requested_model_id: string;
-            requested_provider: string;
+            /** @description The model the request named; `null` when it named none. */
+            requested?: string | null;
+            /** @description The model the attempt ran on; `null` when nothing named one. */
+            served?: string | null;
+            /**
+             * @description Who named `served`: `reported` (the agent's own output), `requested`
+             *     (only the request) or `agent_default` (neither).
+             */
+            source: string;
         };
         MrpResponse: {
             /** @description The parsed Merge-Readiness Pack (`docs/contracts/mrp-v1/`). */
@@ -4014,7 +4011,11 @@ export interface components {
             created_at: string;
             default_branch?: string | null;
             default_harness?: string | null;
-            default_model?: null | components["schemas"]["ProjectModelDefault"];
+            /**
+             * @description The model a run uses when it names none and its agent is this
+             *     project's `default_harness`; changing the default agent clears it.
+             */
+            default_model?: string | null;
             default_profile_id?: string | null;
             definition_of_done?: string | null;
             description?: string | null;
@@ -4041,25 +4042,6 @@ export interface components {
             /** Format: uuid */
             workspace_id: string;
             workspace_mode: components["schemas"]["WorkspaceMode"];
-        };
-        /**
-         * @description A project's own opinion on which model its executions should use — the
-         *     `Project` tier in `tack-orch::model_policy`'s precedence walk, between the
-         *     agent-profile and fleet defaults. Absent (`None` on `Project`) means "no
-         *     opinion" and falls through to the fleet tier; `Auto` is a distinct, real
-         *     choice that stops the walk at this tier instead of falling through.
-         *     Because the API deserializes a request body directly into this enum, a
-         *     malformed shape is rejected before any handler or database write runs —
-         *     there is no second, tolerant parse of an opaque blob at read time.
-         */
-        ProjectModelDefault: {
-            /** @enum {string} */
-            kind: "auto";
-        } | {
-            /** @enum {string} */
-            kind: "explicit";
-            model_id: string;
-            provider: string;
         };
         ProjectTemplate: {
             /** Format: date-time */
@@ -4185,8 +4167,7 @@ export interface components {
             approvals?: string | null;
             branch?: string | null;
             harness?: string | null;
-            model_id?: string | null;
-            model_provider?: string | null;
+            model?: string | null;
             network?: boolean | null;
             push?: boolean | null;
             /** Format: int64 */
@@ -4428,7 +4409,8 @@ export interface components {
             code_origin?: null | components["schemas"]["CodeOrigin"];
             default_branch?: string | null;
             default_harness?: string | null;
-            default_model?: null | components["schemas"]["ProjectModelDefault"];
+            /** @description Omitted leaves it untouched; JSON `null` clears it. */
+            default_model?: string | null;
             default_profile_id?: string | null;
             definition_of_done?: string | null;
             description?: string | null;

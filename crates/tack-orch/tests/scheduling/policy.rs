@@ -1,18 +1,17 @@
 //! Proves `tack_orch::model_policy::wiring::resolve_request_model_policy` against a real
-//! `tack_db::Repository`: precedence across request override > agent profile > project >
-//! fleet tiers, and the load-bearing safety claim that a resolved-but-undeclared model can
-//! never be leased — the unmodified claim path (`scheduler::wiring` +
-//! `claim_execution_idempotent_with_snapshot`) rejects it before any `execution_attempts`
-//! row, fencing token, or capacity change is committed. Assertions check the database
-//! directly (row counts, request state, runner capacity), not just return values.
+//! `tack_db::Repository`: the request's model, else the project's default model for the
+//! project's default agent, else none; and the load-bearing safety claim that a run needing a
+//! model but given none can never be leased — the unmodified claim path (`scheduler::wiring` +
+//! `claim_execution_idempotent_with_snapshot`) rejects it before any `execution_attempts` row,
+//! fencing token, or capacity change is committed. Assertions check the database directly (row
+//! counts, request state, runner capacity), not just return values.
 
 use chrono::{Duration as ChronoDuration, Utc};
-use tack_core::models::{ProjectModelDefault, UpdateProject};
+use tack_core::models::UpdateProject;
 use tack_db::Repository;
 use tack_db::repo::execution::{NewExecutionRequest, NewRunner, RequestSelection};
 use tack_orch::model_policy::wiring::resolve_request_model_policy;
 use tack_orch::model_policy::{ModelPolicyTier, ResolvedModelPolicy};
-use tack_orch::scheduler::types::ModelSelector;
 use tack_orch::scheduler::wiring::choose_request_for_runner;
 use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner as choose};
 use uuid::Uuid;
@@ -48,24 +47,13 @@ async fn register_active_runner(
         .expect("set heartbeat");
 }
 
-async fn create_fleet_with_default_model(
-    repo: &Repository,
-    fleet_id: &str,
-    default_model_provider: &str,
-    default_model_id: &str,
-    now: chrono::DateTime<Utc>,
-) {
-    let default_policy = serde_json::json!({
-        "default_model": {"provider": default_model_provider, "model_id": default_model_id}
-    })
-    .to_string();
+async fn create_fleet(repo: &Repository, fleet_id: &str, now: chrono::DateTime<Utc>) {
     sqlx::query(
         "INSERT INTO agent_fleets (id, name, concurrency_limit, default_policy, created_at, updated_at) \
-         VALUES (?, ?, NULL, ?, ?, ?)",
+         VALUES (?, ?, NULL, '{}', ?, ?)",
     )
     .bind(fleet_id)
     .bind(format!("fleet-{fleet_id}"))
-    .bind(default_policy)
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(repo.pool())
@@ -98,8 +86,7 @@ async fn enqueue_via_fleet(
     idempotency_key: &str,
     fleet_id: &str,
     harness: &str,
-    model_provider: Option<&str>,
-    model_id: Option<&str>,
+    model: Option<&str>,
     created_at: chrono::DateTime<Utc>,
 ) {
     let selector = serde_json::json!({"kind":"fleet","fleet_id":fleet_id});
@@ -116,8 +103,7 @@ async fn enqueue_via_fleet(
             "tool_policy": {}, "budgets": {}, "timeout_seconds": 60
         },
         "requested_harness_kind": harness,
-        "requested_model_provider": model_provider,
-        "requested_model_id": model_id,
+        "requested_model": model,
         "repository": {
             "kind": "git", "remote": "https://example.test/f3.git",
             "base_revision": "abc123def456abc123def456abc123def456abc", "subdirectory": null
@@ -140,8 +126,7 @@ async fn enqueue_via_fleet(
             agent_profile_id: Some("profile-1"),
             agent_profile_snapshot: r#"{"name":"profile","instructions":"work safely","tool_policy":{},"budgets":{},"timeout_seconds":60}"#,
             requested_harness_kind: Some(harness),
-            requested_model_provider: model_provider,
-            requested_model_id: model_id,
+            requested_model: model,
             repository_snapshot: r#"{"kind":"git","remote":"https://example.test/f3.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory":null}"#,
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
@@ -182,174 +167,128 @@ async fn runner_available_capacity(repo: &Repository, runner_id: &str) -> i64 {
 }
 
 // ---------------------------------------------------------------------
-// Precedence resolution against real `agent_profiles`/`agent_fleets` rows
+// Resolution against a real `projects` row
 // ---------------------------------------------------------------------
 
-#[tokio::test]
-async fn fleet_tier_reads_the_real_default_policy_column() {
-    let (repo, _item_id) = setup_repo().await;
-    let now = Utc::now();
-    create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
-
-    let resolved = resolve_request_model_policy(&repo, None, None, Some("fleet-a"), None)
-        .await
-        .expect("no db error");
-    assert_eq!(
-        resolved,
-        ResolvedModelPolicy {
-            selector: ModelSelector::Explicit {
-                provider: tack_orch::execution::RequestedModelProvider::new("openai"),
-                model_id: tack_orch::execution::RequestedModelId::new("opaque/model-alpha"),
-            },
-            source: Some(ModelPolicyTier::Fleet),
-        }
-    );
-}
-
-#[tokio::test]
-async fn project_tier_reads_the_real_default_model_column() {
-    let (repo, item_id) = setup_repo().await;
-    let item = repo
-        .get_item(Uuid::parse_str(&item_id).unwrap())
+async fn project_of(repo: &Repository, item_id: &str) -> Uuid {
+    repo.get_item(Uuid::parse_str(item_id).unwrap())
         .await
         .expect("no db error")
-        .expect("item exists");
+        .expect("item exists")
+        .project_id
+}
+
+async fn set_project_default(
+    repo: &Repository,
+    project_id: Uuid,
+    harness: Option<&str>,
+    model: Option<&str>,
+) {
     repo.update_project(
-        item.project_id,
+        project_id,
         UpdateProject {
-            name: None,
-            description: None,
-            vocabulary: None,
-            workflow: None,
-            default_model: Some(ProjectModelDefault::Explicit {
-                provider: "openai".into(),
-                model_id: "opaque/model-alpha".into(),
-            }),
-            github_token_ref: None,
-            archived: None,
+            default_harness: Some(harness.map(str::to_owned)),
+            default_model: Some(model.map(str::to_owned)),
             ..Default::default()
         },
     )
     .await
     .expect("set project default");
-
-    let resolved =
-        resolve_request_model_policy(&repo, None, Some(&item.project_id.to_string()), None, None)
-            .await
-            .expect("no db error");
-    assert_eq!(
-        resolved,
-        ResolvedModelPolicy {
-            selector: ModelSelector::Explicit {
-                provider: tack_orch::execution::RequestedModelProvider::new("openai"),
-                model_id: tack_orch::execution::RequestedModelId::new("opaque/model-alpha"),
-            },
-            source: Some(ModelPolicyTier::Project),
-        }
-    );
 }
 
 #[tokio::test]
-async fn an_agent_profile_default_beats_a_fleet_default() {
-    let (repo, _item_id) = setup_repo().await;
-    let now = Utc::now();
-    // The agent profile from `setup_repo` (`profile-1`) starts with `limits:
-    // "{}"` (no opinion) — overwrite it directly with a real default so this
-    // test exercises the actual `agent_profiles.limits` column, matching how
-    // an operator would configure it via `POST /api/agent-profiles`.
-    sqlx::query("UPDATE agent_profiles SET limits = ? WHERE id = 'profile-1'")
-        .bind(r#"{"default_model":{"provider":"anthropic","model_id":"opaque/sonnet"}}"#)
-        .execute(repo.pool())
-        .await
-        .expect("set profile default");
-    create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
+async fn the_project_default_model_applies_only_to_the_projects_default_agent() {
+    let (repo, item_id) = setup_repo().await;
+    let project_id = project_of(&repo, &item_id).await;
+    set_project_default(&repo, project_id, Some("codex"), Some("opaque/model-alpha")).await;
 
-    let resolved =
-        resolve_request_model_policy(&repo, Some("profile-1"), None, Some("fleet-a"), None)
-            .await
-            .expect("no db error");
-    assert_eq!(resolved.source, Some(ModelPolicyTier::AgentProfile));
-    assert_eq!(
-        resolved.selector,
-        ModelSelector::Explicit {
-            provider: tack_orch::execution::RequestedModelProvider::new("anthropic"),
-            model_id: tack_orch::execution::RequestedModelId::new("opaque/sonnet"),
-        }
-    );
-}
-
-#[tokio::test]
-async fn a_request_override_beats_every_other_tier() {
-    let (repo, _item_id) = setup_repo().await;
-    let now = Utc::now();
-    sqlx::query("UPDATE agent_profiles SET limits = ? WHERE id = 'profile-1'")
-        .bind(r#"{"default_model":{"provider":"anthropic","model_id":"opaque/sonnet"}}"#)
-        .execute(repo.pool())
-        .await
-        .expect("set profile default");
-    create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
-
-    let override_selector = ModelSelector::Explicit {
-        provider: tack_orch::execution::RequestedModelProvider::new("openai"),
-        model_id: tack_orch::execution::RequestedModelId::new("opaque/override-model"),
-    };
-    let resolved = resolve_request_model_policy(
-        &repo,
-        Some("profile-1"),
-        None,
-        Some("fleet-a"),
-        Some(override_selector.clone()),
-    )
-    .await
-    .expect("no db error");
-    assert_eq!(resolved.source, Some(ModelPolicyTier::RequestOverride));
-    assert_eq!(resolved.selector, override_selector);
-}
-
-#[tokio::test]
-async fn no_tier_configured_resolves_to_auto_select() {
-    let (repo, _item_id) = setup_repo().await;
-    let resolved = resolve_request_model_policy(&repo, Some("profile-1"), None, None, None)
+    let same_agent = resolve_request_model_policy(&repo, project_id, "codex", None)
         .await
         .expect("no db error");
-    assert_eq!(resolved.source, None);
-    assert_eq!(resolved.selector, ModelSelector::AutoSelect);
+    assert_eq!(
+        same_agent,
+        ResolvedModelPolicy {
+            model: Some("opaque/model-alpha".into()),
+            source: Some(ModelPolicyTier::ProjectDefault),
+        }
+    );
+
+    let other_agent = resolve_request_model_policy(&repo, project_id, "claude-code", None)
+        .await
+        .expect("no db error");
+    assert_eq!(other_agent.model, None);
+    assert_eq!(other_agent.source, None);
+
+    let named = resolve_request_model_policy(&repo, project_id, "codex", Some("opaque/named"))
+        .await
+        .expect("no db error");
+    assert_eq!(named.model.as_deref(), Some("opaque/named"));
+    assert_eq!(named.source, Some(ModelPolicyTier::Request));
+}
+
+#[tokio::test]
+async fn updating_the_default_agent_clears_the_default_model() {
+    let (repo, item_id) = setup_repo().await;
+    let project_id = project_of(&repo, &item_id).await;
+    set_project_default(&repo, project_id, Some("codex"), Some("opaque/model-alpha")).await;
+
+    // The same agent again keeps the model.
+    repo.update_project(
+        project_id,
+        UpdateProject {
+            default_harness: Some(Some("codex".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("same agent");
+    let project = repo.get_project(project_id).await.unwrap().unwrap();
+    assert_eq!(project.default_model.as_deref(), Some("opaque/model-alpha"));
+
+    // A different one starts without it.
+    repo.update_project(
+        project_id,
+        UpdateProject {
+            default_harness: Some(Some("claude-code".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("other agent");
+    let project = repo.get_project(project_id).await.unwrap().unwrap();
+    assert_eq!(project.default_model, None);
 }
 
 // ---------------------------------------------------------------------
-// The load-bearing safety claim: unavailable choice never leases
+// The load-bearing safety claim: a run that needs a model and has none never leases
 // ---------------------------------------------------------------------
 
-/// Full pipeline for the safety claim below: resolves the fleet's configured
-/// default model, persists it on the queued request exactly as a wired
+/// Full pipeline for the safety claim below: resolves the project's default
+/// model for `codex`, persists it on the queued request exactly as a wired
 /// `POST /executions` handler would, then runs it through the real,
-/// unmodified claim path — proving `configured_model_id` is either leased
-/// end-to-end or rejected before any state is written, depending on whether
-/// `runner-a` (the only registered runner) declares it. Absence is asserted
-/// directly against the database (row counts, request state, runner
-/// capacity), not just a function's return value.
-async fn assert_fleet_default_model_outcome(
+/// unmodified claim path — proving the request is either leased end-to-end
+/// or rejected before any state is written, depending on whether any model
+/// was named (the only registered runner reports `codex` as needing one).
+/// Absence is asserted directly against the database (row counts, request
+/// state, runner capacity), not just a function's return value.
+async fn assert_default_model_outcome(
     request_id: &str,
-    configured_model_id: &str,
+    project_default_model: Option<&str>,
     expect_leased: bool,
 ) {
     let (repo, item_id) = setup_repo().await;
     let now = Utc::now();
+    let project_id = project_of(&repo, &item_id).await;
+    set_project_default(&repo, project_id, Some("codex"), project_default_model).await;
 
     register_active_runner(&repo, "runner-a", &codex_capability_snapshot(now), now).await;
-    create_fleet_with_default_model(&repo, "fleet-a", "openai", configured_model_id, now).await;
+    create_fleet(&repo, "fleet-a", now).await;
     add_fleet_member(&repo, "fleet-a", "runner-a", now).await;
 
-    let resolved = resolve_request_model_policy(&repo, None, None, Some("fleet-a"), None)
+    let resolved = resolve_request_model_policy(&repo, project_id, "codex", None)
         .await
         .expect("resolve model policy");
-    let (provider, model_id) = match &resolved.selector {
-        ModelSelector::Explicit { provider, model_id } => {
-            (provider.as_str().to_string(), model_id.as_str().to_string())
-        }
-        ModelSelector::AutoSelect => panic!("expected the fleet default to resolve explicitly"),
-    };
-    assert_eq!(model_id, configured_model_id);
+    assert_eq!(resolved.model.as_deref(), project_default_model);
 
     let key = format!("{request_id}-key");
     enqueue_via_fleet(
@@ -359,12 +298,10 @@ async fn assert_fleet_default_model_outcome(
         &key,
         "fleet-a",
         "codex",
-        Some(&provider),
-        Some(&model_id),
+        resolved.model.as_deref(),
         now,
     )
     .await;
-
     let expected = expect_leased.then_some(request_id);
     let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
         .await
@@ -417,15 +354,15 @@ async fn assert_fleet_default_model_outcome(
 }
 
 #[tokio::test]
-async fn an_undeclared_fleet_default_model_never_leases() {
-    assert_fleet_default_model_outcome("req-unavailable", "opaque/UNAVAILABLE-model", false).await;
+async fn a_run_with_no_model_for_an_agent_that_needs_one_never_leases() {
+    assert_default_model_outcome("req-no-model", None, false).await;
 }
 
 /// Positive control for the test above, proving its assertions are
 /// load-bearing rather than vacuously true (e.g. because claiming never
 /// works in this harness for an unrelated reason): identical pipeline, but
-/// the fleet's configured default is a model the runner does declare.
+/// the project's default model gives the run one.
 #[tokio::test]
-async fn a_declared_fleet_default_model_leases_successfully() {
-    assert_fleet_default_model_outcome("req-available", "opaque/model-alpha", true).await;
+async fn a_run_given_a_model_by_the_project_default_leases_successfully() {
+    assert_default_model_outcome("req-with-model", Some("opaque/model-alpha"), true).await;
 }

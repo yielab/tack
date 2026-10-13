@@ -375,14 +375,8 @@ pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Val
     if let Some(version) = non_empty(&usage["harness_version"]) {
         document["harness"]["version"] = json!(version);
     }
-    if let Some(model) = non_empty(&usage["model_id"]) {
-        let mut generator = json!({ "model": model });
-        // prill compares the judge by declared family; the provider the
-        // runner recorded is the nearest fact the evidence has.
-        if let Some(provider) = non_empty(&usage["model_provider"]) {
-            generator["family"] = json!(provider);
-        }
-        document["generator"] = generator;
+    if let Some(model) = non_empty(&usage["model"]) {
+        document["generator"] = json!({ "model": model });
     }
     let tokens_in = measured(&usage["tokens_in"]).and_then(Value::as_u64);
     let tokens_out = measured(&usage["tokens_out"]).and_then(Value::as_u64);

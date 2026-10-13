@@ -13,18 +13,16 @@ mod types;
 // field `RunnerCapabilities::limits`, so downstream crates can name it.
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
-    FeatureCapabilities, HarnessCapability, ModelCombination, ModelMetadata, ModelSelectionReport,
-    RunnerCapabilities,
+    FeatureCapabilities, HarnessCapability, ModelSelectionReport, RunnerCapabilities,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{
-    ActualExecution, ActualModelId, ActualModelProvider, AgentProfileId, AgentProfileSnapshot,
-    Approvals, ArtifactId, AttemptId, AttemptSnapshot, CancellationRequestId, Checkpoint,
-    ClaimRequestId, CompletionId, DecisionId, EnvironmentValue, EventId, ExecutionError,
-    ExecutionRequestId, ExecutionRequestSnapshot, ExecutionState, FencingToken, HarnessKind,
-    IdempotencyKey, ItemId, Measurement, MeasurementSource, ModelId, ModelProvider,
-    PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion, RecoveryDetails,
-    RecoveryDisposition, RecoveryJournalState, RecoveryKey, RecoveryObservation,
-    RecoveryObservationRequest, RecoveryObservationResponse, RepositorySnapshot, RequestedModelId,
-    RequestedModelProvider, RunnerId, RunnerSelector, StableErrorCode, Usage, WorkspaceId,
+    ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, ArtifactId, AttemptId,
+    AttemptSnapshot, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId, DecisionId,
+    EnvironmentValue, EventId, ExecutionError, ExecutionRequestId, ExecutionRequestSnapshot,
+    ExecutionState, FencingToken, HarnessKind, IdempotencyKey, ItemId, Measurement,
+    MeasurementSource, PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion,
+    RecoveryDetails, RecoveryDisposition, RecoveryJournalState, RecoveryKey, RecoveryObservation,
+    RecoveryObservationRequest, RecoveryObservationResponse, RepositorySnapshot, RunnerId,
+    RunnerSelector, StableErrorCode, Usage, WorkspaceId,
 };

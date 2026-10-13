@@ -5,11 +5,10 @@
 
 use super::*;
 use crate::harness::test_support::{finished, spec};
-use tack_orch::execution::{Approvals, RequestedModelProvider};
+use tack_orch::execution::Approvals;
 
-fn request(provider: Option<&str>, tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
+fn request(tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, std::path::Path::new("/unused"));
-    request.work.request.requested_model_provider = provider.map(RequestedModelProvider::new);
     request.work.request.permission_policy.tools = tools.iter().map(|t| t.to_string()).collect();
     request.work.request.permission_policy.network = network;
     request
@@ -22,27 +21,17 @@ fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, Harnes
     })
 }
 
-/// `(provider, tools, network allowed) -> accepted`. A native family is
-/// matched case-insensitively.
+/// `(tools, network allowed) -> accepted`.
 #[test]
-fn a_request_is_refused_for_its_provider_or_its_policy() {
-    let rows: [(Option<&str>, &[&str], bool, bool); 8] = [
-        (None, &["Read"], true, true),
-        (Some("anthropic"), &[], true, true),
-        (Some("BEDROCK"), &[], true, true),
-        (Some("Vertex"), &[], true, true),
-        (Some("gateway"), &[], true, false),
-        (Some("openai"), &[], true, false),
-        (None, &["WebFetch"], false, false),
-        (None, &["WebFetch"], true, true),
+fn a_request_is_refused_for_its_policy() {
+    let rows: [(&[&str], bool, bool); 3] = [
+        (&["Read"], true, true),
+        (&["WebFetch"], false, false),
+        (&["WebFetch"], true, true),
     ];
-    for (provider, tools, network, accepted) in rows {
-        let outcome = invocation(&request(provider, tools, network));
-        assert_eq!(
-            outcome.is_ok(),
-            accepted,
-            "{provider:?} {tools:?} network={network}"
-        );
+    for (tools, network, accepted) in rows {
+        let outcome = invocation(&request(tools, network));
+        assert_eq!(outcome.is_ok(), accepted, "{tools:?} network={network}");
         if let Err(error) = outcome {
             assert!(matches!(error, HarnessError::Rejected { .. }));
         }
@@ -54,7 +43,7 @@ fn a_request_is_refused_for_its_provider_or_its_policy() {
 #[test]
 fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
     let args = |tools: &[&str], network: bool| {
-        invocation(&request(Some("anthropic"), tools, network))
+        invocation(&request(tools, network))
             .expect("invocation")
             .args
     };
@@ -80,7 +69,7 @@ fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
 
 #[test]
 fn no_mcp_server_loads_not_even_the_accounts_claude_ai_connectors() {
-    let invocation = invocation(&request(None, &["Read"], true)).expect("invocation");
+    let invocation = invocation(&request(&["Read"], true)).expect("invocation");
     assert!(
         invocation
             .args
@@ -99,7 +88,7 @@ fn no_mcp_server_loads_not_even_the_accounts_claude_ai_connectors() {
 
 #[test]
 fn the_policy_model_and_budget_reach_the_command_line() {
-    let mut spec = request(Some("anthropic"), &["Read", "Edit"], true);
+    let mut spec = request(&["Read", "Edit"], true);
     spec.work.request.budgets = serde_json::json!({"cost_usd": 1.5});
     let args = invocation(&spec).expect("invocation").args;
 
@@ -114,7 +103,7 @@ fn the_policy_model_and_budget_reach_the_command_line() {
     assert_eq!(value_of("--setting-sources"), "");
 
     spec.work.request.budgets = serde_json::json!({"cost_usd": null});
-    spec.work.request.requested_model_id = None;
+    spec.work.request.requested_model = None;
     let args = invocation(&spec).expect("invocation").args;
     assert!(
         !args
@@ -124,10 +113,10 @@ fn the_policy_model_and_budget_reach_the_command_line() {
 
     // `approvals` absent, or explicit `auto`, produces byte-for-byte the
     // same command line this adapter has always produced.
-    let baseline = invocation(&request(Some("anthropic"), &["Read"], true))
+    let baseline = invocation(&request(&["Read"], true))
         .expect("invocation")
         .args;
-    let mut explicit_auto = request(Some("anthropic"), &["Read"], true);
+    let mut explicit_auto = request(&["Read"], true);
     explicit_auto.work.request.permission_policy.approvals = Some(Approvals::Auto);
     let with_auto = invocation(&explicit_auto).expect("invocation").args;
     assert_eq!(with_auto, baseline);
@@ -139,7 +128,7 @@ fn the_policy_model_and_budget_reach_the_command_line() {
 /// `claude`, and sets `stdin_stays_open` so the core keeps the pipe open.
 #[test]
 fn an_ask_request_keeps_stdin_open_and_asks_the_host() {
-    let mut spec = request(Some("anthropic"), &["Read"], true);
+    let mut spec = request(&["Read"], true);
     spec.work.request.permission_policy.approvals = Some(Approvals::Ask);
     let built = invocation(&spec).expect("invocation");
 
@@ -164,7 +153,7 @@ fn an_ask_request_keeps_stdin_open_and_asks_the_host() {
 /// over. Any other captured line means nothing here.
 #[test]
 fn a_permission_request_line_becomes_a_question() {
-    let spec = request(Some("anthropic"), &["Bash"], true);
+    let spec = request(&["Bash"], true);
     let run = RunContext {
         spec: &spec,
         scratch: std::path::Path::new("unused"),
@@ -269,7 +258,7 @@ fn an_answer_becomes_a_control_response() {
 }
 
 fn read(exit: ProcessExit, stdout: &str) -> RunReport {
-    let spec = request(None, &[], true);
+    let spec = request(&[], true);
     let run = RunContext {
         spec: &spec,
         scratch: std::path::Path::new("unused"),

@@ -24,17 +24,12 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "docket",
     program: "docket",
     model_selection: ModelSelection::Explicit(
-        "docket exec refuses to run without --model, so a request with no explicit \
-         requested_model_provider and requested_model_id is rejected before spawn",
+        "docket exec refuses to run without --model, so a request naming no model is \
+         rejected before spawn",
     ),
-    native_provider: "docket",
     inherited_env: &["PATH"],
-    model_passthrough: "requested_model_id is forwarded verbatim after the requested provider, \
-                        joined as <provider>/<model id> for --model; docket validates the \
-                        result at run time, so no model list is claimed",
     probe_notes: &[],
     credential_note: "docket signs in with its own login; Tack holds no model credential.",
-    observes_served_model: true,
     reports_process_groups: true,
     reports_progress: true,
     sandbox_binds: &[],
@@ -306,14 +301,11 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         )));
     }
 
-    let provider = request
-        .requested_model_provider
-        .as_ref()
-        .map_or(String::new(), |provider| provider.as_str().to_owned());
-    let model_id = request
-        .requested_model_id
-        .as_ref()
-        .map_or(String::new(), |model| model.as_str().to_owned());
+    let model_args: Vec<String> = request
+        .requested_model
+        .iter()
+        .flat_map(|model| ["--model".to_owned(), model.clone()])
+        .collect();
     let workspace_root = &run.spec.workspace.path;
     let docket_home = run.scratch.join("docket-home");
 
@@ -402,11 +394,10 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
             &workspace_root.display().to_string(),
             "--task-file",
             &task_file,
-            "--model",
-            &format!("{provider}/{model_id}"),
         ]
         .map(str::to_owned)
         .into_iter()
+        .chain(model_args)
         .chain(if recipe.is_some() {
             Vec::new()
         } else {

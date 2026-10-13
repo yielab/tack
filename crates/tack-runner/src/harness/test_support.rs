@@ -71,7 +71,7 @@ pub fn script(dir: &Path, body: &str) -> BinaryLocator {
 }
 
 /// The contract's own claimed request, retargeted at `kind` and `workspace`.
-/// It asks for `openai` / `opaque/model-alpha`, tools `shell`/`filesystem`,
+/// It asks for `opaque/model-alpha`, tools `shell`/`filesystem`,
 /// network denied.
 pub fn spec(kind: &str, workspace: &Path) -> ExecutionSpec {
     let claim: serde_json::Value = serde_json::from_str(include_str!(

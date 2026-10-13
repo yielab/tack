@@ -32,7 +32,9 @@ pub struct Project {
     pub project_type: ProjectType,
     pub vocabulary: VocabularyMap,
     pub workflow: WorkflowConfig,
-    pub default_model: Option<ProjectModelDefault>,
+    /// The model a run uses when it names none and its agent is this
+    /// project's `default_harness`; changing the default agent clears it.
+    pub default_model: Option<String>,
     /// A `store:<name>` or `env:<VAR>` reference to a secret holding this
     /// project's own GitHub token — never the token value itself (see
     /// `tack_runner::secrets::SecretStore::resolve`). Resolved only
@@ -98,22 +100,6 @@ impl std::fmt::Display for WorkspaceMode {
     }
 }
 
-/// A project's own opinion on which model its executions should use — the
-/// `Project` tier in `tack-orch::model_policy`'s precedence walk, between the
-/// agent-profile and fleet defaults. Absent (`None` on `Project`) means "no
-/// opinion" and falls through to the fleet tier; `Auto` is a distinct, real
-/// choice that stops the walk at this tier instead of falling through.
-/// Because the API deserializes a request body directly into this enum, a
-/// malformed shape is rejected before any handler or database write runs —
-/// there is no second, tolerant parse of an opaque blob at read time.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum ProjectModelDefault {
-    Auto,
-    Explicit { provider: String, model_id: String },
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -163,9 +149,7 @@ pub struct RunSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_id: Option<String>,
+    pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -577,7 +561,9 @@ pub struct UpdateProject {
     pub description: Option<String>,
     pub vocabulary: Option<VocabularyMap>,
     pub workflow: Option<WorkflowConfig>,
-    pub default_model: Option<ProjectModelDefault>,
+    /// Omitted leaves it untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub default_model: Option<Option<String>>,
     /// A plain `Option<String>`, not a double-`Option`, like every other
     /// optional field on this DTO: an absent key leaves the stored
     /// reference untouched. Since there is no `null` to spell "clear" with

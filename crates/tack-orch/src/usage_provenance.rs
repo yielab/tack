@@ -1,8 +1,8 @@
 //! Requested-vs-actual model provenance and honest, provenance-separated
 //! usage economics. Two independent pure concerns, neither performing I/O:
-//! [`compare_model_provenance`] surfaces the request's resolved model (or
-//! auto-select) against the attempt's observation, visible, never silently
-//! reconciled; [`build_usage_economics`] keeps runner-observed wall-clock
+//! [`model_provenance`] surfaces the model the request named next to the one
+//! the attempt reports, visible, never silently reconciled;
+//! [`build_usage_economics`] keeps runner-observed wall-clock
 //! time cost structurally separate from the harness's self-reported
 //! token/dollar usage, never summed into one opaque number.
 //!
@@ -12,69 +12,24 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::execution::{
-    ActualExecution, ActualModelId, ActualModelProvider, Measurement, MeasurementSource,
-    RequestedModelId, RequestedModelProvider, Usage,
-};
+use crate::execution::{ActualExecution, Measurement, MeasurementSource, Usage};
 
-/// What an execution request asked for vs. what an attempt actually ran on.
-/// All three variants carry the full observed facts — never coalesced into a
-/// bare boolean "matched" flag — so a caller can show both sides of a
-/// mismatch rather than just "something changed."
+/// What an execution request asked for vs. what an attempt ran on: both
+/// model strings in full, and who named the served one (`reported`,
+/// `requested` or `agent_default`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ModelProvenance {
-    /// The attempt ran on exactly the requested provider/model.
-    Matched { provider: String, model_id: String },
-    /// No explicit provider/model was ever resolved for the request
-    /// (auto-select) and the attempt observed a concrete choice — distinct
-    /// from both [`Self::Matched`] (nothing to match against) and
-    /// [`Self::Mismatched`] (nothing was contradicted).
-    AutoSelectObserved {
-        actual_provider: String,
-        actual_model_id: String,
-    },
-    /// The attempt ran on a different provider and/or model than requested.
-    Mismatched {
-        requested_provider: String,
-        requested_model_id: String,
-        actual_provider: String,
-        actual_model_id: String,
-    },
+pub struct ModelProvenance {
+    pub requested: Option<String>,
+    pub served: Option<String>,
+    pub source: String,
 }
 
-/// Compares a resolved request (`None` for auto-select) against an
-/// attempt's actually-observed model, via `.as_str()` rather than unwrapping
-/// into a shared type — the *requested*
-/// ([`RequestedModelProvider`]/[`RequestedModelId`]) and *actual*
-/// ([`ActualModelProvider`]/[`ActualModelId`]) namespaces stay textually
-/// distinct throughout, as `crate::scheduler::select::evaluate_candidate`
-/// already does for requested-vs-declared.
-pub fn compare_model_provenance(
-    requested: Option<(&RequestedModelProvider, &RequestedModelId)>,
-    actual_provider: &ActualModelProvider,
-    actual_model_id: &ActualModelId,
-) -> ModelProvenance {
-    match requested {
-        None => ModelProvenance::AutoSelectObserved {
-            actual_provider: actual_provider.as_str().to_string(),
-            actual_model_id: actual_model_id.as_str().to_string(),
-        },
-        Some((provider, model_id))
-            if provider.as_str() == actual_provider.as_str()
-                && model_id.as_str() == actual_model_id.as_str() =>
-        {
-            ModelProvenance::Matched {
-                provider: actual_provider.as_str().to_string(),
-                model_id: actual_model_id.as_str().to_string(),
-            }
-        }
-        Some((provider, model_id)) => ModelProvenance::Mismatched {
-            requested_provider: provider.as_str().to_string(),
-            requested_model_id: model_id.as_str().to_string(),
-            actual_provider: actual_provider.as_str().to_string(),
-            actual_model_id: actual_model_id.as_str().to_string(),
-        },
+/// Pairs the request's model with the attempt's reported one, unmodified.
+pub fn model_provenance(requested: Option<&str>, actual: &ActualExecution) -> ModelProvenance {
+    ModelProvenance {
+        requested: requested.map(str::to_owned),
+        served: actual.model.clone(),
+        source: actual.model_source.clone(),
     }
 }
 
@@ -172,8 +127,7 @@ pub fn build_usage_economics(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptFacts {
     /// `None` only when the attempt has not yet reported `actual_execution`
-    /// (still in flight) — distinct from a comparison result, which always
-    /// has a matched/auto/mismatched answer once actual data exists.
+    /// (still in flight).
     pub model_provenance: Option<ModelProvenance>,
     pub usage_economics: UsageEconomics,
 }
@@ -183,8 +137,7 @@ pub struct AttemptFacts {
 /// yet reported," never a panic.
 #[allow(clippy::too_many_arguments)]
 pub fn derive_attempt_facts(
-    requested_provider: Option<&str>,
-    requested_model_id: Option<&str>,
+    requested_model: Option<&str>,
     actual_execution_json: Option<&str>,
     usage_json: Option<&str>,
     started_at: Option<DateTime<Utc>>,
@@ -195,22 +148,9 @@ pub fn derive_attempt_facts(
         actual_execution_json.and_then(|raw| serde_json::from_str(raw).ok());
     let usage: Option<Usage> = usage_json.and_then(|raw| serde_json::from_str(raw).ok());
 
-    let model_provenance = actual.as_ref().map(|actual| {
-        let requested = match (requested_provider, requested_model_id) {
-            (Some(provider), Some(model_id)) => Some((
-                RequestedModelProvider::new(provider),
-                RequestedModelId::new(model_id),
-            )),
-            _ => None,
-        };
-        compare_model_provenance(
-            requested
-                .as_ref()
-                .map(|(provider, model_id)| (provider, model_id)),
-            &actual.model_provider,
-            &actual.model_id,
-        )
-    });
+    let model_provenance = actual
+        .as_ref()
+        .map(|actual| model_provenance(requested_model, actual));
 
     AttemptFacts {
         model_provenance,

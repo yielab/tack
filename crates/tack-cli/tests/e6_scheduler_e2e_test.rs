@@ -146,11 +146,11 @@ fn tack_allow_failure(server: &ServerGuard, args: &[&str]) -> (bool, String, Str
     )
 }
 
-/// A minimal, valid runner-v1 capability report declaring `codex`/
-/// `openai`/`model_id`. Used for the runner-protocol HTTP calls this test
+/// A minimal, valid runner-v1 capability report declaring `codex`, which
+/// needs a model named. Used for the runner-protocol HTTP calls this test
 /// makes directly (the CLI has no runner-protocol commands — see this
 /// file's module doc).
-fn capabilities(model_id: &str) -> Value {
+fn capabilities() -> Value {
     let now = chrono::Utc::now().to_rfc3339();
     serde_json::json!({
         "reported_at": now,
@@ -161,11 +161,7 @@ fn capabilities(model_id: &str) -> Value {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now,
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": [model_id],
-                "discovery": "reported"
-            }]
+            "model_selection": "required"
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800}
@@ -181,7 +177,6 @@ fn enroll_runner_via_cli_and_protocol(
     server: &ServerGuard,
     name: &str,
     capacity: i64,
-    model_id: &str,
 ) -> (String, String) {
     let pending = tack(
         server,
@@ -206,7 +201,7 @@ fn enroll_runner_via_cli_and_protocol(
             "enrollment_token": raw_token,
             "runner_name": name,
             "runner_version": "0.1.0",
-            "capabilities": capabilities(model_id),
+            "capabilities": capabilities(),
         }))
         .send()
         .expect("enroll HTTP call")
@@ -281,8 +276,7 @@ fn create_execution_args(
     selector_flag: &str,
     selector_value: &str,
     idempotency_key: &str,
-    model_provider: Option<&str>,
-    model_id: Option<&str>,
+    model: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![
         "execution".to_string(),
@@ -301,13 +295,9 @@ fn create_execution_args(
         "--timeout-seconds".to_string(),
         "60".to_string(),
     ];
-    if let Some(provider) = model_provider {
-        args.push("--model-provider".to_string());
-        args.push(provider.to_string());
-    }
-    if let Some(id) = model_id {
-        args.push("--model-id".to_string());
-        args.push(id.to_string());
+    if let Some(model) = model {
+        args.push("--model".to_string());
+        args.push(model.to_string());
     }
     args
 }
@@ -320,8 +310,7 @@ fn create_execution_via_cli(
     selector_flag: &str,
     selector_value: &str,
     idempotency_key: &str,
-    model_provider: Option<&str>,
-    model_id: Option<&str>,
+    model: Option<&str>,
 ) -> Value {
     let args = create_execution_args(
         item_id,
@@ -329,23 +318,21 @@ fn create_execution_via_cli(
         selector_flag,
         selector_value,
         idempotency_key,
-        model_provider,
-        model_id,
+        model,
     );
     let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
     tack(server, &args_ref)
 }
 
-/// A queued request for an exact runner, on the "openai" provider — the
-/// shape every scheduler-behavior test below needs, differing only in
-/// which model id the runner declared vs. the request asks for.
+/// A queued request for an exact runner — the shape every scheduler-behavior
+/// test below needs, differing only in the model the request names.
 fn queue_request_for_runner(
     server: &ServerGuard,
     item_id: &str,
     agent_profile_id: &str,
     runner_id: &str,
     idempotency_key: &str,
-    model_id: &str,
+    model: Option<&str>,
 ) -> Value {
     create_execution_via_cli(
         server,
@@ -354,8 +341,7 @@ fn queue_request_for_runner(
         "runner",
         runner_id,
         idempotency_key,
-        Some("openai"),
-        Some(model_id),
+        model,
     )
 }
 
@@ -370,8 +356,7 @@ fn eligible_runner_claims_request_and_cli_sees_it_leased() {
     let server = start_server();
     let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI healthy");
     let agent_profile_id = create_agent_profile(&server);
-    let (runner_id, credential) =
-        enroll_runner_via_cli_and_protocol(&server, "healthy-runner", 1, "opaque/model-healthy");
+    let (runner_id, credential) = enroll_runner_via_cli_and_protocol(&server, "healthy-runner", 1);
 
     let created = queue_request_for_runner(
         &server,
@@ -379,7 +364,7 @@ fn eligible_runner_claims_request_and_cli_sees_it_leased() {
         &agent_profile_id,
         &runner_id,
         "healthy-key",
-        "opaque/model-healthy",
+        Some("opaque/model-healthy"),
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     assert_eq!(created["state"], "queued");
@@ -409,12 +394,8 @@ fn a_saturated_runner_leaves_a_second_request_queued() {
     let server = start_server();
     let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI saturation");
     let agent_profile_id = create_agent_profile(&server);
-    let (runner_id, credential) = enroll_runner_via_cli_and_protocol(
-        &server,
-        "saturated-runner",
-        1,
-        "opaque/model-saturated",
-    );
+    let (runner_id, credential) =
+        enroll_runner_via_cli_and_protocol(&server, "saturated-runner", 1);
     let queue_and_claim = |key: &str, claim_id: &str| {
         let created = queue_request_for_runner(
             &server,
@@ -422,7 +403,7 @@ fn a_saturated_runner_leaves_a_second_request_queued() {
             &agent_profile_id,
             &runner_id,
             key,
-            "opaque/model-saturated",
+            Some("opaque/model-saturated"),
         );
         let request_id = created["request_id"].as_str().unwrap().to_owned();
         let claimed = claim_once(&server, &runner_id, &credential, claim_id);
@@ -457,9 +438,9 @@ fn exact_runner_selector_excludes_every_other_runner() {
     let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI exact runner");
     let agent_profile_id = create_agent_profile(&server);
     let (target_runner_id, _target_credential) =
-        enroll_runner_via_cli_and_protocol(&server, "exact-target", 1, "opaque/model-exact");
+        enroll_runner_via_cli_and_protocol(&server, "exact-target", 1);
     let (_other_runner_id, other_credential) =
-        enroll_runner_via_cli_and_protocol(&server, "exact-bystander", 1, "opaque/model-exact");
+        enroll_runner_via_cli_and_protocol(&server, "exact-bystander", 1);
 
     let created = queue_request_for_runner(
         &server,
@@ -467,7 +448,7 @@ fn exact_runner_selector_excludes_every_other_runner() {
         &agent_profile_id,
         &target_runner_id,
         "exact-runner-key",
-        "opaque/model-exact",
+        Some("opaque/model-exact"),
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
@@ -490,30 +471,25 @@ fn exact_runner_selector_excludes_every_other_runner() {
 }
 
 // =======================================================================
-// 4. Unsupported model — a request naming a model the runner never
-//    declared must never be claimed, proving the scheduler's harness/model
-//    eligibility gate is real, not decorative.
+// 4. No model named — a request naming no model for an agent that needs
+//    one must never be claimed, proving the scheduler's model gate is real,
+//    not decorative.
 // =======================================================================
 
 #[test]
-fn a_request_for_an_undeclared_model_is_never_claimed() {
+fn a_request_naming_no_model_for_an_agent_that_needs_one_is_never_claimed() {
     let server = start_server();
-    let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI unsupported model");
+    let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI no model");
     let agent_profile_id = create_agent_profile(&server);
-    let (runner_id, credential) = enroll_runner_via_cli_and_protocol(
-        &server,
-        "unsupported-model-runner",
-        1,
-        "opaque/model-declared",
-    );
+    let (runner_id, credential) = enroll_runner_via_cli_and_protocol(&server, "no-model-runner", 1);
 
     let created = queue_request_for_runner(
         &server,
         &item_id,
         &agent_profile_id,
         &runner_id,
-        "unsupported-model-key",
-        "opaque/model-not-declared-by-any-runner",
+        "no-model-key",
+        None,
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     assert_eq!(
@@ -523,18 +499,19 @@ fn a_request_for_an_undeclared_model_is_never_claimed() {
          rejection happens at claim time"
     );
 
-    let claimed = claim_once(&server, &runner_id, &credential, "unsupported-model-claim");
+    let claimed = claim_once(&server, &runner_id, &credential, "no-model-claim");
     assert_eq!(
         claimed, None,
-        "a runner that never declared this model must never be handed the request"
+        "a runner whose agent needs a model must never be handed a request that names none"
     );
 
     let fetched = tack(&server, &["execution", "get", &request_id]);
     assert_eq!(
         fetched["state"], "queued",
-        "an unsupported model combination must leave the request visibly queued forever, \
+        "a request with no model must stay visibly queued, \
          not silently disappear or falsely report progress"
     );
+    assert_eq!(fetched["waiting_reason"], "codex needs a model named");
 }
 
 // =======================================================================
@@ -549,7 +526,7 @@ fn changed_payload_replay_returns_idempotency_conflict() {
     let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI conflict");
     let agent_profile_id = create_agent_profile(&server);
     let (runner_id, _credential) =
-        enroll_runner_via_cli_and_protocol(&server, "conflict-runner", 1, "opaque/model-conflict");
+        enroll_runner_via_cli_and_protocol(&server, "conflict-runner", 1);
 
     let _first = queue_request_for_runner(
         &server,
@@ -557,7 +534,7 @@ fn changed_payload_replay_returns_idempotency_conflict() {
         &agent_profile_id,
         &runner_id,
         "conflict-key",
-        "opaque/model-conflict",
+        Some("opaque/model-conflict"),
     );
 
     // Same idempotency key, different requested model — must be a named,
@@ -569,7 +546,6 @@ fn changed_payload_replay_returns_idempotency_conflict() {
         "runner",
         &runner_id,
         "conflict-key",
-        Some("openai"),
         Some("opaque/model-a-different-one"),
     );
     let replay_args_ref: Vec<&str> = replay_args.iter().map(String::as_str).collect();

@@ -122,11 +122,7 @@ fn full_capabilities() -> Value {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now,
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": ["opaque/model-c8"],
-                "discovery": "reported"
-            }],
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -205,8 +201,7 @@ fn execution_request_body(
         "selector_id": runner_id,
         "agent_profile_id": agent_profile_id,
         "requested_harness_kind": "codex",
-        "requested_model_provider": "openai",
-        "requested_model_id": "opaque/model-c8",
+        "requested_model": "opaque/model-c8",
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/c8.git", "base_revision": BASE_REVISION, "subdirectory": null},
         "permission_policy": {"tools": ["shell"], "network": false},
         "timeout_seconds": 60,

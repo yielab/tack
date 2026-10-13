@@ -84,7 +84,7 @@ fresh `HOME`, zero spend), the fixtures in `2.1.273/` are that session's own
 - Resolving `secret_reference`-only environment entries: no secret-store client exists in
   this crate yet. Such entries are skipped with a `tracing::warn!` (name only).
 - Enumerating installed/available models ahead of a real invocation: the CLI has no
-  `list-models`-style command, so the probe reports zero `model_combinations` rather than an
+  `list-models`-style command, so the probe lists none rather than an
   unverified static alias list.
 - Actually exercising the Bedrock/Vertex/Foundry provider paths: doing so needs real cloud
   credentials this adapter does not fabricate or request.

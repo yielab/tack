@@ -333,8 +333,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             }
             let timeout_seconds = require_u64(args, "timeout_seconds")?;
             let idempotency_key = opt_str(args, "idempotency_key");
-            let model_provider = opt_str(args, "model_provider");
-            let model_id = opt_str(args, "model_id");
+            let model = opt_str(args, "model");
             let status_map_policy_id = opt_str(args, "status_map_policy_id");
 
             let values = execution::CreateExecutionValues {
@@ -342,8 +341,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 idempotency_key: idempotency_key.as_deref(),
                 agent_profile_id: &agent_profile_id,
                 requested_harness_kind: &harness,
-                requested_model_provider: model_provider.as_deref(),
-                requested_model_id: model_id.as_deref(),
+                requested_model: model.as_deref(),
                 // Fixed: a run over MCP always asks before each action, with no network.
                 permission_policy: json!({ "approvals": "ask", "network": false }),
                 budgets: opt_object_or_empty(args, "budgets"),
@@ -807,8 +805,7 @@ fn tool_specs() -> Value {
                     "agent_profile_id": { "type": "string" },
                     "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code" },
                     "timeout_seconds": { "type": "integer" },
-                    "model_provider": { "type": "string", "description": "Omit to allow auto-selection" },
-                    "model_id": { "type": "string", "description": "Omit to allow auto-selection" },
+                    "model": { "type": "string", "description": "The model to run, passed to the agent as given. Omit to use the project's default for its default agent, else the agent's own choice" },
                     "budgets": { "type": "object", "description": "Default: {}" },
                     "metadata": { "type": "object", "description": "Default: {}" },
                     "status_map_policy_id": { "type": "string", "enum": ["done_on_success", "done_on_mrp_accepted"], "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched" },

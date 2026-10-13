@@ -1942,7 +1942,7 @@ where
     /// is settled this way; a process or recovery failure keeps propagating.
     ///
     /// The report says nothing ran, in the contract's own vocabulary: no
-    /// harness version observed, the model marked never confirmed, every
+    /// harness version observed, the model marked as requested, or the agent's own default, every
     /// feature `unsupported`, every usage figure `not_measured`.
     async fn fail_before_spawn(
         &self,
@@ -1967,20 +1967,9 @@ where
                 additional: BTreeMap::new(),
             }
         }
-        let (model_provider, model_id, model_observation_source) = match (
-            request.requested_model_provider.as_ref(),
-            request.requested_model_id.as_ref(),
-        ) {
-            (Some(provider), Some(model)) => (
-                provider.as_str().to_owned(),
-                model.as_str().to_owned(),
-                crate::harness::ModelObservationSource::RequestedNotConfirmed,
-            ),
-            _ => (
-                "unknown".to_owned(),
-                "unknown".to_owned(),
-                crate::harness::ModelObservationSource::NotObserved,
-            ),
+        let (model, model_source) = match request.requested_model.as_ref() {
+            Some(model) => (Some(model.clone()), crate::harness::ModelSource::Requested),
+            None => (None, crate::harness::ModelSource::AgentDefault),
         };
 
         let report = CompletionReport {
@@ -2002,9 +1991,8 @@ where
             actual_execution: domain::ActualExecution {
                 harness_kind: request.requested_harness_kind.clone(),
                 harness_version: String::new(),
-                model_provider: domain::ActualModelProvider::new(model_provider),
-                model_id: domain::ActualModelId::new(model_id),
-                model_observation_source: model_observation_source.as_str().to_owned(),
+                model,
+                model_source: model_source.as_str().to_owned(),
                 capability_snapshot: domain::FeatureCapabilities {
                     cancel: unexercised(),
                     resume: unexercised(),

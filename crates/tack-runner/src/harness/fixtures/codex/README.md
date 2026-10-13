@@ -135,9 +135,8 @@ provider's `env_key` were set to an obviously fake value.
 3. Whether/how Codex reports which model it actually used is still unverified — now measured
    as *absent*, not merely unmeasured: none of `exec --json`'s own line types ever name a
    served model (see "Measured" above). Rather than fabricate an "observed" model,
-   `ActualExecution`'s `model_provider`/`model_id` echo the **requested** selection with
-   `model_observation_source = "requested_not_confirmed"` — a value not present in any frozen
-   fixture, which only exemplifies `"harness_reported"`.
+   `ActualExecution`'s `model` echoes the **requested** model with
+   `model_source = "requested"`; `"reported"` is for a model the agent's own output named.
 4. Session resume is still unverified. `exec --json`'s usage output and `exec`'s own
    sandbox/approval flags are no longer unverified (see "Measured" above and the
    `0.149.1/exec-*` fixtures); the decision/approval protocol observed on `codex app-server`
@@ -147,7 +146,7 @@ provider's `env_key` were set to an obviously fake value.
    exec`, which this adapter still drives for every other request, never asks under any flag
    measured.
 5. Codex's real model-discovery mechanism (if any) is unverified, so
-   `HarnessCapability::model_combinations` is always empty — never a hardcoded list.
+   the probe lists no models — never a hardcoded list.
 6. `permission_policy.tools` now selects `--sandbox` (see "Measured" above); what remains a
    documented guess, not a fact, is how the OS-level sandbox actually contains a real
    `workspace-write` process across every tool a request might grant — only the two
@@ -163,16 +162,11 @@ provider's `env_key` were set to an obviously fake value.
    (`codex::DESCRIPTOR.inherited_env` is empty). Whether its tool commands find a user's
    toolchain that way has not been measured with a live run.
 
-## Why `ActualExecution.model_provider`/`model_id` are non-nullable but this adapter cannot
-   always fill them honestly
+## Why a request must name its model for this adapter
 
-`ExecutionRequestSnapshot.requested_model_provider`/`requested_model_id` are `Option<...>` —
-nullable when auto-selection is allowed. `ActualExecution.model_provider`/`model_id` are
-**not** `Option`. Because this adapter has no verified way to observe which model an
-auto-selected Codex run actually used (finding 3 above), it cannot honestly fill a
-non-nullable field for that case without fabricating a value — exactly the kind of hidden
-fake success this codebase forbids. Rather than guess, `validate` rejects a spec with no
-explicit `requested_model_provider`/`requested_model_id` pre-spawn
-(`ModelSelection::Explicit` in `codex::DESCRIPTOR`). This is a real, falsifying observation about the frozen
-contract — non-nullable fields this adapter cannot always honestly fill — not something this
-adapter resolves unilaterally.
+`ExecutionRequestSnapshot.requested_model` and `ActualExecution.model` are both `Option<String>`.
+`exec --json` never names the model that answered (finding 3 above), so for an `exec` run the
+recorded model is the requested one, with source `requested`; an `app-server` run reads it from
+the `thread/start` result and records `reported`. `validate` rejects a spec with no
+`requested_model` pre-spawn (`ModelSelection::Explicit` in `codex::DESCRIPTOR`), so an `exec`
+run never has to record a model nobody named.

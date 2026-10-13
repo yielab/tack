@@ -16,7 +16,7 @@ use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner as choose
 
 use crate::support::{FixedClock, codex_capability_snapshot, setup_repo};
 
-const ALPHA_MODEL: &str = "opaque/model-alpha";
+const ALPHA_MODEL: Option<&str> = Some("opaque/model-alpha");
 
 /// Registers a runner and sets its heartbeat `heartbeat_offset_secs` away
 /// from `now` (negative for stale), or leaves it `NULL` (`None`) to mirror a
@@ -55,7 +55,7 @@ async fn setup_runner(
     }
 }
 
-/// `setup_runner` with the standard `codex` + `openai/opaque/model-alpha` snapshot.
+/// `setup_runner` with the standard `codex` snapshot.
 async fn setup_codex_runner(
     repo: &Repository,
     id: &str,
@@ -122,8 +122,7 @@ async fn enqueue(
     selector_kind: &str,
     selector_id: &str,
     harness: &str,
-    model_provider: Option<&str>,
-    model_id: Option<&str>,
+    model: Option<&str>,
     metadata: &str,
     created_at: chrono::DateTime<Utc>,
 ) {
@@ -145,8 +144,7 @@ async fn enqueue(
             "tool_policy": {}, "budgets": {}, "timeout_seconds": 60
         },
         "requested_harness_kind": harness,
-        "requested_model_provider": model_provider,
-        "requested_model_id": model_id,
+        "requested_model": model,
         "repository": {
             "kind": "git", "remote": "https://example.test/wiring.git",
             "base_revision": "abc123def456abc123def456abc123def456abc", "subdirectory": null
@@ -169,8 +167,7 @@ async fn enqueue(
             agent_profile_id: Some("profile-1"),
             agent_profile_snapshot: r#"{"name":"profile","instructions":"work safely","tool_policy":{},"budgets":{},"timeout_seconds":60}"#,
             requested_harness_kind: Some(harness),
-            requested_model_provider: model_provider,
-            requested_model_id: model_id,
+            requested_model: model,
             repository_snapshot: r#"{"kind":"git","remote":"https://example.test/wiring.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory":null}"#,
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
@@ -186,13 +183,13 @@ async fn enqueue(
     .expect("enqueue");
 }
 
-/// `enqueue` with the standard `codex`/`openai` harness, targeting one runner directly.
+/// `enqueue` with the standard `codex` harness, targeting one runner directly.
 async fn enqueue_for_runner(
     repo: &Repository,
     item_id: &str,
     request_id: &str,
     runner_id: &str,
-    model_id: &str,
+    model: Option<&str>,
     metadata: &str,
     created_at: chrono::DateTime<Utc>,
 ) {
@@ -205,37 +202,26 @@ async fn enqueue_for_runner(
         "exact_runner",
         runner_id,
         "codex",
-        Some("openai"),
-        Some(model_id),
+        model,
         metadata,
         created_at,
     )
     .await;
 }
 
-/// `enqueue` with the standard `codex`/`openai` harness, targeting a fleet selector.
+/// `enqueue` with the standard `codex` harness, targeting a fleet selector.
 async fn enqueue_for_fleet(
     repo: &Repository,
     item_id: &str,
     request_id: &str,
     fleet_id: &str,
-    model_id: &str,
+    model: Option<&str>,
     metadata: &str,
     created_at: chrono::DateTime<Utc>,
 ) {
     let key = format!("{request_id}-key");
     enqueue(
-        repo,
-        item_id,
-        request_id,
-        &key,
-        "fleet",
-        fleet_id,
-        "codex",
-        Some("openai"),
-        Some(model_id),
-        metadata,
-        created_at,
+        repo, item_id, request_id, &key, "fleet", fleet_id, "codex", model, metadata, created_at,
     )
     .await;
 }
@@ -250,7 +236,7 @@ async fn assert_eligibility(
     available: i64,
     capability: &str,
     heartbeat_offset_secs: i64,
-    model_id: &str,
+    model: Option<&str>,
     expect_chosen: bool,
 ) {
     let (repo, item_id) = setup_repo().await;
@@ -265,7 +251,7 @@ async fn assert_eligibility(
         now,
     )
     .await;
-    enqueue_for_runner(&repo, &item_id, "req", "runner", model_id, "{}", now).await;
+    enqueue_for_runner(&repo, &item_id, "req", "runner", model, "{}", now).await;
 
     let chosen = choose_request_for_runner(&repo, "runner", now, &SchedulingPolicy::default())
         .await
@@ -276,10 +262,8 @@ async fn assert_eligibility(
 #[tokio::test]
 async fn eligibility_needs_capability_capacity_and_fresh_heartbeat() {
     let codex = codex_capability_snapshot(Utc::now());
-    let bad_model = "opaque/model-that-does-not-exist";
-
     assert_eligibility("match", 1, 1, &codex, 0, ALPHA_MODEL, true).await;
-    assert_eligibility("model_mismatch", 1, 1, &codex, 0, bad_model, false).await;
+    assert_eligibility("no_model_named", 1, 1, &codex, 0, None, false).await;
     assert_eligibility("no_harness", 1, 1, "{}", 0, ALPHA_MODEL, false).await;
     assert_eligibility("zero_capacity", 1, 0, &codex, 0, ALPHA_MODEL, false).await;
     assert_eligibility("stale_heartbeat", 1, 1, &codex, -600, ALPHA_MODEL, false).await;
@@ -522,16 +506,7 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
     let (repo, item_id) = setup_repo().await;
     let now = Utc::now();
     setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
-    enqueue_for_runner(
-        &repo,
-        &item_id,
-        "req",
-        "runner-a",
-        "opaque/not-offered",
-        "{}",
-        now,
-    )
-    .await;
+    enqueue_for_runner(&repo, &item_id, "req", "runner-a", None, "{}", now).await;
     assert_eq!(
         waiting_row(&repo, "req").await,
         ("queued".into(), None, None, None),
@@ -544,13 +519,13 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
     assert_eq!(chosen, None);
     let (state, code, reason, since) = waiting_row(&repo, "req").await;
     assert_eq!(state, "queued");
-    assert_eq!(code.as_deref(), Some("model_combination_not_declared"));
-    assert!(reason.is_some_and(|r| r.contains("opaque/not-offered")));
+    assert_eq!(code.as_deref(), Some("model_not_named"));
+    assert_eq!(reason.as_deref(), Some("codex needs a model named"));
     assert_eq!(since, Some(now.to_rfc3339()));
 
     // The same request, made claimable, is selected and all three clear.
-    sqlx::query("UPDATE execution_requests SET requested_model_id = ? WHERE id = 'req'")
-        .bind(ALPHA_MODEL)
+    sqlx::query("UPDATE execution_requests SET requested_model = ? WHERE id = 'req'")
+        .bind("opaque/model-alpha")
         .execute(repo.pool())
         .await
         .expect("make claimable");
@@ -583,16 +558,7 @@ async fn a_request_unclaimable_past_the_setting_fails_with_no_runner_can_claim()
         let (repo, item_id) = setup_repo().await;
         let now = Utc::now();
         setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
-        enqueue_for_runner(
-            &repo,
-            &item_id,
-            "req",
-            "runner-a",
-            "opaque/not-offered",
-            "{}",
-            now,
-        )
-        .await;
+        enqueue_for_runner(&repo, &item_id, "req", "runner-a", None, "{}", now).await;
         let policy = SchedulingPolicy {
             unclaimable_fail_after: chrono::Duration::minutes(minutes),
             ..SchedulingPolicy::default()

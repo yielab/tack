@@ -24,8 +24,7 @@
       "budgets": {"tokens": 200000, "cost_usd": null}
     },
     "requested_harness_kind": "codex",
-    "requested_model_provider": "openai",
-    "requested_model_id": "opaque/model-alpha",
+    "requested_model": "opaque/model-alpha",
     "repository": {
       "kind": "git",
       "remote": "https://example.invalid/org/repo.git",

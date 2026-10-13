@@ -167,7 +167,7 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
     // new shape here.
     let request_snapshot: &'static str = Box::leak(
         format!(
-            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model_provider":null,"requested_model_id":null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
+            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
         )
         .into_boxed_str(),
     );
@@ -182,8 +182,7 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
         agent_profile_id: Some(PROFILE_ID),
         agent_profile_snapshot: r#"{"name":"P","instructions":"work","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{}}"#,
         requested_harness_kind: Some("codex"),
-        requested_model_provider: None,
-        requested_model_id: None,
+        requested_model: None,
         repository_snapshot: r#"{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}"#,
         permission_policy: r#"{"tools":[],"network":false}"#,
         timeout_seconds: Some(60),

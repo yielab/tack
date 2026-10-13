@@ -74,9 +74,8 @@ fn actual_execution(tag: &str) -> tack_orch::execution::ActualExecution {
     serde_json::from_value(serde_json::json!({
         "harness_kind": tag,
         "harness_version": "1.0.0",
-        "model_provider": "test-provider",
-        "model_id": "test-model",
-        "model_observation_source": "harness_reported",
+        "model": "test-model",
+        "model_source": "reported",
         "capability_snapshot": {
             "cancel": {"support": "supported", "reason": null},
             "resume": {"support": "unsupported", "reason": "no resume"},
@@ -339,15 +338,7 @@ impl HarnessProbe for FakeProbe {
             probed_at: chrono::DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
                 .expect("fixture timestamp")
                 .into(),
-            model_combinations: Vec::new(),
-            // Deliberately un-attested: the fake probe stands in
-            // for the runner so scheduler tests can cover the
-            // "no attestation" path; the real adapters each attest
-            // explicitly.
-            model_passthrough: None,
             decisions: None,
-            native_provider: String::new(),
-            providers: Vec::new(),
             model_selection: None,
             additional: Default::default(),
         }
@@ -521,12 +512,9 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
         "/src/harness/fixtures/fake_harness.sh"
     ),
     model_selection: local_process::ModelSelection::Optional,
-    native_provider: "native",
     inherited_env: &["PATH"],
-    model_passthrough: "forwarded verbatim",
     probe_notes: &[],
     credential_note: "",
-    observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
