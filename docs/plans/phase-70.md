@@ -1,7 +1,8 @@
 # Plan: Phase 70 — what is still open before the re-cut
 
-**Status: opened 2026-10-12, after Phase 69 closed. No ADR: every task here is a follow-up an
-earlier phase found and wrote down, and the decisions it needs are in "Decided" below.**
+**Status: opened and closed 2026-10-12, after Phase 69 closed. No ADR: every task here is a
+follow-up an earlier phase found and wrote down, and the decisions it needs are in "Decided"
+below. Every task is merged into `develop`; see Status.**
 Written against `develop` at `1800b139`. Re-run `rg -n` before trusting a line number.
 
 What this phase builds, in one paragraph. A request no runner can claim stops sitting in Queued
@@ -195,3 +196,27 @@ names Phase 70.
 ## Status
 
 Opened 2026-10-12. Each merge is a `--no-ff` into `develop` with the gate on the merge.
+
+- **Before Round 1:** CI on `develop` was red on five `quinn-proto` advisories published the
+  same day (RUSTSEC-2026-0338 to 0342); `quinn-proto` 0.11.19 in both lockfiles clears them. The
+  Windows install check had failed on a rate-limited GitHub API call and passed on a re-run.
+- **Rounds 1 and 2, 2026-10-12:** Q1, K1, K2, K3, C4, G1 and Q2 merged. On the merged tree
+  before Q2 and C4, the workspace nextest passed 1311 tests; each later merge passed the gate.
+
+  | Found | Decided |
+  |---|---|
+  | The agents' isolated worktrees were cut from `main`, not `develop` | the integrator cuts each task's worktree from `develop` and the agent works only there |
+  | There is no sweep that expires requests (`execution_retention.rs` only purges) | the claim path fails an overdue request; the plan's Q1 was corrected before dispatch |
+  | Migrations are Rust constants in `crates/tack-db/src/migrations.rs`, not files | migration 085 lives there |
+  | A request that was never leased has no attempt, so no event stream to fail through | the failed request keeps `no_runner_can_claim` in `waiting_code` and the sentence in `waiting_reason`; the item follows its latest request; a request-level event is not added |
+  | A busy runner that could take the request did not restart the clock, and a poll by a runner the request does not name wrote "the request names a different runner" and could fail it | integration: a capacity-only reason clears `waiting_since`; `NotRequestedRunner` and `NotFleetMember` write nothing; a test covers both |
+  | The 30-minute window is a field of `SchedulingPolicy`; no server setting overrides it yet | accepted: the default holds; a setting is a follow-up when someone needs another value |
+  | "No runner is online" needed runner presence neither surface loads | integration: the API decides it at read time for a queued request with no reason (no active runner with a heartbeat inside the scheduler's window); never stored |
+  | K1: docket takes the line-reading wait, which already stopped announced groups on a timeout; the plain wait cannot see an announcement | the gap was stale; a test pins docket's path, and another keeps every harness that announces groups on that path |
+  | K2: the probe sends no per-harness artifacts or permission policy | `DiscoveryReport` carries each harness's declared capabilities for the doctor only; no wire change |
+  | K3: serde's message quotes the stored value | the warning names the item and the error's kind and position, never the message |
+  | K3: `runner_id()` already returned the enrolled id | the test stays as the regression test K4 lacked; it fails when `runner_id()` returns the configured name |
+  | C4: whether `apt-get install bubblewrap` and the AppArmor sysctl work on `ubuntu-latest` | unverified until CI runs on the pushed branch |
+
+  Left for the maintainer: push `develop` and watch the `security-boundaries` job run the real
+  `bwrap` test; everything Phase 69 left open.

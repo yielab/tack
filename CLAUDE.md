@@ -39,6 +39,9 @@ off, and the evidence base is a name the agent can move. ADR 0077 and Phase 69
 checks) closed that on 2026-10-12, in `develop` and not yet pushed; the release is re-cut as
 beta.10 by the maintainer, after the GitHub settings in the plan's Wave 0. The same day the history
 was rewritten to drop the `Co-Authored-By: Claude` trailers 159 commits carried — never add one.
+Phase 70 (`docs/plans/phase-70.md`, closed 2026-10-12) finished the follow-ups earlier phases wrote
+down: a queued run says why it waits and fails after 30 minutes no runner can take it, the doctor
+prints per-harness lines, the real-`bwrap` test is required in CI.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

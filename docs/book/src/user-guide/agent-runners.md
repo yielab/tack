@@ -675,8 +675,10 @@ optional, the request goes to the runner without a model and the agent uses its 
 Today that is true for `claude-code`.
 
 `codex`, `opencode` and `docket` still need a model named. A request for one of them with no
-model in any tier stays `queued` rather than being guessed at, so give those agents a model in
-one of the tiers above (for `codex` and `opencode`, **Other…** in the dialog).
+model in any tier is not guessed at: it waits, and the card says why ("Waiting: codex needs a
+model named"). If no runner that polls can take it for 30 minutes, it fails with that reason. A
+runner that could take it but is busy restarts the clock. Give those agents a model in one of the
+tiers above (for `codex` and `opencode`, **Other…** in the dialog).
 
 ### What a runner will actually accept
 
@@ -1157,13 +1159,6 @@ These are documented rather than papered over, per this project's
 
 - **`execution_requests` has no real `priority` column.** A `metadata`-convention
   stopgap exists, documented as non-binding.
-- **A docket run that times out is not cancelled.** Cancelling stops every process group docket
-  announced; a timeout stops only docket's main process group, so a command docket started in its
-  own group can outlive the attempt.
-- **`tack runner doctor` does not print each harness's `artifacts` and `permission_policy`
-  support** in its readable output; for docket those are decided when the runner starts.
-- **The branch push runs git in the attempt's workspace**, which the agent could have
-  reconfigured while it worked. Hooks are disabled; see `docs/CONFIG.md`.
 - **Only docket reports a run's steps while it works.** codex, claude-code and opencode show
   their steps in the log only; their timelines fill once their tool lines are read from
   captured output of the real binaries.

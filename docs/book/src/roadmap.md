@@ -91,7 +91,7 @@ want of a verify command; a docket run that times out, rather than being cancell
 only its main process group; the branch push runs git in a workspace the agent could have
 reconfigured; on a docket that accepts a policy, a request must name docket's own tools; and
 `tack runner doctor` does not yet print each harness's `artifacts` and `permission_policy`
-lines. Opening a pull request as a choice in the "Run with agent" dialog is shown disabled:
+lines. Phase 69 closed the push (hardened git, a pinned push URL); Phase 70 the timeout and the doctor items. Opening a pull request as a choice in the "Run with agent" dialog is shown disabled:
 a pull request is opened for a pushed branch whose item is linked to a GitHub issue.
 
 ---
@@ -192,7 +192,8 @@ in a suite CI requires.
 
 ## Phase 70 — what is still open before the re-cut
 
-**Status:** opened 2026-10-12. No ADR: every task is a follow-up an earlier phase wrote down.
+**Status:** opened and closed 2026-10-12; every task merged into `develop`. No ADR: every task
+is a follow-up an earlier phase wrote down.
 **Plan:** [`docs/plans/phase-70.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-70.md).
 Ships with Phase 69 as the re-cut `v0.1.0-beta.10`.
 

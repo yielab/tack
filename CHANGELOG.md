@@ -30,11 +30,12 @@ A tag `v0.1.0-beta.10` was pushed on 2026-10-12 and withdrawn the same day: a se
 found that the board answered anyone without a token, a web page could post to it, an agent
 ran with permissions off and Tack's own file access, and the evidence was computed from names
 the agent could move. Phase 69 (ADR 0077) closes those before the release is cut again; see
-**Security** below. Two behaviours change for everyone: the API always requires a token
+**Security** below. Phase 70 then finished what earlier phases had written down, the weightiest
+a run that waited in Queued without a word. Two behaviours change for everyone: the API always requires a token
 (the board's page holds it as a cookie it cannot read, the CLI finds it beside the
 database), and a pull request opens when you accept the run, not when it finishes.
 
-Upgrading applies migrations 078–084 on first start — new tables and columns only.
+Upgrading applies migrations 078–085 on first start — new tables and columns only.
 
 ### Added
 
@@ -101,6 +102,12 @@ Upgrading applies migrations 078–084 on first start — new tables and columns
 - **runner:** Docket can ask before acting when it supports answers
 - **runner:** Pass the caller's limits and policy to docket and read back the files it wrote
 - **runner:** Run a docket recipe from the agent profile; the guide's docket rows match the code
+- **runs:** A queued run says why it waits, on the card and the run page ("Waiting: codex needs a
+  model named", "Waiting: no runner is online"); one that no runner polling for it can take for
+  30 minutes fails with that reason, while a runner that could take it but is busy keeps it waiting
+- **settings:** **Automation** offers **Through the gateway** beside the agent's own login when a
+  runner reports a gateway key, and says why it is unavailable when none does
+- **runner:** `tack runner doctor` prints each harness's artifacts and permission policy
 
 ### Changed
 
@@ -151,6 +158,9 @@ Upgrading applies migrations 078–084 on first start — new tables and columns
 - **board:** One item reads "1 item"
 - **deps:** Brace-expansion 2.1.7 clears the npm audit
 - **deps:** The npm lockfile follows the dependency bump's package.json
+- **deps:** `quinn-proto` 0.11.19 clears RUSTSEC-2026-0338 to 0342
+- **items:** A stored run setting that no longer fits is logged with its item instead of
+  silently read as none
 
 ### Security
 
@@ -190,6 +200,9 @@ Upgrading applies migrations 078–084 on first start — new tables and columns
   attested, `SHA256SUMS` is signed, and the installers check the signature when `cosign` or
   `gh` is present; `serde_yaml` (unmaintained) is replaced by `serde-saphyr`
 - **ci:** The boundary suites are a required job and run in the pre-push gate
+- **ci:** The real-`bwrap` sandbox test runs in CI and fails there instead of skipping when
+  `bwrap` is missing; a test keeps every harness that announces process groups on the wait that
+  stops them at a timeout
 
 ### Documentation
 
