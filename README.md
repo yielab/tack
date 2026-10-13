@@ -129,19 +129,11 @@ machines. See the [architecture](https://yielab.github.io/tack/developer/index.h
 
 ## Security
 
-Tack starts the agent on your computer, with your user's permissions. What it may
-do is set first by the agent's own permission settings, then by what you give
-Tack: the folder a project points at and the credentials the runner holds. The API
-requires a token.
+Tack starts the agent on your computer, with your user's permissions. What it may do is
+set first by the agent's own permission settings, then by what you give Tack: the folder a
+project points at and the credentials the runner holds. The API requires a token.
 [What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) explains
 each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability.
-
-## Status
-
-Tack is in public beta: it still changes between releases and hasn't been used in
-production. Back up your data with `tack backup` before you upgrade. The
-[changelog](CHANGELOG.md) lists what each release changed, and the
-[roadmap](https://yielab.github.io/tack/roadmap.html) what comes next.
 
 ## Documentation
 
@@ -153,6 +145,7 @@ production. Back up your data with `tack backup` before you upgrade. The
 | Move data in and out | [Import and export](https://yielab.github.io/tack/user-guide/import-export.html) · [Backup and restore](https://yielab.github.io/tack/user-guide/backup-restore.html) |
 | Use Tack from the terminal or other tools | [CLI](https://yielab.github.io/tack/user-guide/cli.html) · [API](https://yielab.github.io/tack/developer/api-reference.html) · [MCP](docs/MCP.md) |
 | Configure or run a server | [Configuration](https://yielab.github.io/tack/user-guide/configuration.html) · [Architecture](https://yielab.github.io/tack/developer/index.html) |
+| See what changed and what's next | [Changelog](CHANGELOG.md) · [Roadmap](https://yielab.github.io/tack/roadmap.html) |
 
 ## Built alongside
 
