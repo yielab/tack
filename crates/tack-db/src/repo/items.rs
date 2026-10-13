@@ -1,6 +1,6 @@
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 use uuid::Uuid;
 
 use tack_core::CoreError;
@@ -913,9 +913,22 @@ impl ItemRow {
             // comment for why that's the safe direction.
             source: self.source.parse().unwrap_or_default(),
             source_artifact_id: self.source_artifact_id,
-            run_settings: self
-                .run_settings
-                .and_then(|s| serde_json::from_str(&s).ok()),
+            run_settings: self.run_settings.and_then(|s| {
+                serde_json::from_str(&s)
+                    .map_err(|error| {
+                        // The item id and where the serde error is, never its message:
+                        // serde quotes the offending value ("invalid type: string
+                        // \"ten\""), and the stored value stays out of the log.
+                        warn!(
+                            item_id = %self.id,
+                            kind = ?error.classify(),
+                            line = error.line(),
+                            column = error.column(),
+                            "stored run_settings no longer fit; reading as none"
+                        );
+                    })
+                    .ok()
+            }),
             needs_review: self.needs_review,
             started_at: self.started_at.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
@@ -1080,4 +1093,96 @@ async fn insert_item(
         created_at: now,
         updated_at: now,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Level, Metadata, Subscriber};
+
+    use super::*;
+
+    /// Records every event as `(level, rendered fields)`; just enough of a
+    /// subscriber to see what `into_item` logs, without a new dependency.
+    struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
+
+    struct Render(String);
+
+    impl Visit for Render {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.0.push_str(&format!("{}={:?} ", field.name(), value));
+        }
+    }
+
+    impl Subscriber for Capture {
+        fn enabled(&self, _: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            let mut render = Render(String::new());
+            event.record(&mut render);
+            self.0
+                .lock()
+                .unwrap()
+                .push((*event.metadata().level(), render.0));
+        }
+        fn enter(&self, _: &Id) {}
+        fn exit(&self, _: &Id) {}
+    }
+
+    fn row(run_settings: Option<&str>) -> ItemRow {
+        ItemRow {
+            id: Uuid::new_v4().to_string(),
+            project_id: Uuid::new_v4().to_string(),
+            parent_id: None,
+            title: "t".to_owned(),
+            description: None,
+            item_type: "task".to_owned(),
+            status: "todo".to_owned(),
+            priority: "medium".to_owned(),
+            estimate: None,
+            estimate_unit: "\"points\"".to_owned(),
+            tags: "[]".to_owned(),
+            sort_order: 0,
+            sprint_id: None,
+            assignee: None,
+            due_date: None,
+            source: "human".to_owned(),
+            source_artifact_id: None,
+            run_settings: run_settings.map(str::to_owned),
+            needs_review: false,
+            started_at: None,
+            completed_at: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn a_stored_run_setting_that_no_longer_fits_reads_none_and_warns_with_the_item_id() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let row = row(Some(r#"{"timeout_seconds": "ten"}"#));
+        let id = row.id.clone();
+
+        let item = tracing::subscriber::with_default(Capture(events.clone()), || row.into_item());
+
+        assert!(item.run_settings.is_none());
+        let events = events.lock().unwrap();
+        let warns: Vec<_> = events.iter().filter(|(l, _)| *l == Level::WARN).collect();
+        assert_eq!(warns.len(), 1, "exactly one warn: {events:?}");
+        assert!(warns[0].1.contains(&id), "names the item: {}", warns[0].1);
+        assert!(
+            !warns[0].1.contains("ten"),
+            "never the stored value: {}",
+            warns[0].1
+        );
+    }
 }
