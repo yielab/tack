@@ -193,7 +193,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── lib.rs       Module declarations, OrchError
 │   │       ├── execution/   Lifecycle validation, fencing/idempotency types
 │   │       ├── scheduler/   Deterministic runner selection
-│   │       ├── model_policy/ Deterministic model-selection precedence
+│   │       ├── model_policy/ Which model a run asks for
 │   │       ├── execution_retention.rs Cancellable retention sweep
 │   │       ├── execution_observability.rs Fleet health snapshots
 │   │       └── usage_provenance.rs Requested-vs-actual model + usage economics

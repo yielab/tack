@@ -13,7 +13,7 @@ maintenance schedule — through fully configurable vocabulary and workflow colu
 any item that's agent-eligible to a real coding-agent run instead of just tracking it. No
 accounts. No cloud. No subscriptions. One binary, one SQLite file.
 
-<img src="screenshots/agents.png" width="98%" alt="The Agents page after a real test run: agent execution running, Codex and Claude Code both installed, Claude Code signed in as of that run, the optional gateway key, and the test run itself — what the agent did and said, and its tokens.">
+<img src="screenshots/agents.png" width="98%" alt="The Agents page after a real test run: agent execution running, Codex and Claude Code both installed, whether each one is signed in, and the test run itself — what the agent did and said, and its tokens.">
 
 ## The board and the runner
 

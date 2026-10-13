@@ -95,20 +95,20 @@ set_project_repo() {
     -d "$(jq -n --arg repo "$SMOKE_REPO" '{code_origin:"folder", repository:$repo, workspace_mode:"clone"}')" >/dev/null
 }
 
-# $1 item  $2 runner  $3 harness kind  $4 provider  $5 model  $6 timeout_s
-# $7 environment JSON object  $8 idempotency key
+# $1 item  $2 runner  $3 harness kind  $4 model (empty: the agent's own default)
+# $5 timeout_s  $6 environment JSON object  $7 idempotency key
 create_execution() {
   curl -H "$AUTH" -sf -X POST "$API/api/executions" -H 'content-type: application/json' -H "$PRINCIPAL" \
     -d "$(jq -n \
       --arg item "$1" --arg runner "$2" --arg kind "$3" \
-      --arg provider "$4" --arg model "$5" --argjson timeout "$6" \
-      --argjson env "$7" --arg idem "$8" \
+      --arg model "$4" --argjson timeout "$5" \
+      --argjson env "$6" --arg idem "$7" \
       --arg profile "$AGENT_PROFILE" --arg remote "$SMOKE_REPO" --arg rev "$SMOKE_REV" \
       '{item_id:$item, idempotency_key:$idem,
         selector_kind:"exact_runner", selector_id:$runner,
         agent_profile_id:$profile,
         requested_harness_kind:$kind,
-        requested_model_provider:$provider, requested_model_id:$model,
+        requested_model:(if $model == "" then null else $model end),
         repository_snapshot:{kind:"git", remote:$remote, base_revision:$rev, subdirectory:null},
         permission_policy:{tools:[], network:false},
         budgets:{}, environment:$env, metadata:{}, timeout_seconds:$timeout}')" \
@@ -230,8 +230,8 @@ fi
 
 # What the scheduler will actually accept: the runner's own enrollment snapshot.
 CAPS=$(curl -H "$AUTH" -sf "$API/api/runners" | jq -c ".data[] | select(.runner_id==\"$RUNNER_ID\") | .capability_snapshot")
-printf '   declared model combinations per harness:\n'
-jq -r '.harnesses[]? | "     \(.harness_kind): \([.model_combinations[]? | .model_provider + "/" + (.model_ids | join(","))] | join(" ") | if . == "" then "(none declared)" else . end)"' <<<"$CAPS"
+printf '   what each harness reports:\n'
+jq -r '.harnesses[]? | "     \(.harness_kind): requires a model: \(.requires_model // false); models: \(.models.source // "not reported"); signed in: \(.sign_in.state // "not reported")"' <<<"$CAPS"
 
 step 7 "Claim -> checkout -> harness -> completion, through production routes"
 # The repository under test is created here: a real git repo at a pinned commit.
@@ -248,31 +248,29 @@ AGENT_PROFILE=$(curl -H "$AUTH" -sf -X POST "$API/api/agent-profiles" -H 'conten
   | jq -r '.agent_profile_id // empty')
 [ -n "$AGENT_PROFILE" ] && ok "agent profile $AGENT_PROFILE" || bad "could not create agent profile"
 
-# codex is the step-7 harness under test. Neither adapter declares real
-# model_combinations (both attest model_passthrough:supported instead — see
-# step 6's own printed declarations), so the pairing is not read from the
-# runner's CAPS; it is supplied directly, exactly as step 8 already does for
-# both harnesses. Fake mode uses a placeholder pairing (passthrough accepts
-# any explicit provider/model pre-spawn). Neither harness offers a free or
-# local model, so live mode requires an explicit SMOKE_LIVE_MODEL=provider/model
-# — never a silent default that would bill a real vendor without the
-# operator's say-so.
+# codex is the step-7 harness under test. A run names its model as one string
+# in the agent's own spelling, or none for the agent's own default. Fake mode
+# names a placeholder the fake accepts. Live mode bills the agent's own
+# account, so it runs only with an explicit SMOKE_LIVE_MODEL (a model name, or
+# "default" for the agent's own default) — never a silent default.
 S7_KIND=codex
+S7_READY=1
 if [ "$LIVE" = 1 ]; then
-  if [ -n "${SMOKE_LIVE_MODEL:-}" ]; then
-    S7_PROVIDER="${SMOKE_LIVE_MODEL%%/*}"; S7_MODEL="${SMOKE_LIVE_MODEL#*/}"
-  else
-    S7_PROVIDER=""; S7_MODEL=""
-  fi
+  case "${SMOKE_LIVE_MODEL:-}" in
+    "") S7_READY=0; S7_MODEL="" ;;
+    default) S7_MODEL="" ;;
+    *) S7_MODEL="$SMOKE_LIVE_MODEL" ;;
+  esac
 else
-  S7_PROVIDER=openai; S7_MODEL=gpt-5-codex
+  S7_MODEL=gpt-5-codex
 fi
 S7_TIMEOUT=120; [ "$LIVE" = 1 ] && S7_TIMEOUT=300
-if [ -z "$S7_PROVIDER" ]; then
-  bad "neither harness offers a free or local model option — set SMOKE_LIVE_MODEL=provider/model to run step 7 live (this will be billed)"
+if [ "$S7_READY" = 0 ]; then
+  bad "live mode bills the agent's own account — set SMOKE_LIVE_MODEL to a model name, or to 'default', to run step 7 live"
 else
-  note "pairing under test: $S7_KIND $S7_PROVIDER/$S7_MODEL"
-  REQ7=$(create_execution "$ITEM" "$RUNNER_ID" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" "$S7_TIMEOUT" '{}' "smoke-s7-$$")
+  S7_LABEL="$S7_MODEL"; [ -n "$S7_LABEL" ] || S7_LABEL="the agent's own default"
+  note "under test: $S7_KIND, model $S7_LABEL"
+  REQ7=$(create_execution "$ITEM" "$RUNNER_ID" "$S7_KIND" "$S7_MODEL" "$S7_TIMEOUT" '{}' "smoke-s7-$$")
   [ -n "$REQ7" ] && ok "execution request $REQ7 queued" || bad "execution request refused"
   STATE=$(wait_for "attempts_json '$REQ7' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\" or .state==\"needs_operator\" or .state==\"lost\" or .state==\"cancelled\") | .state'" "$((S7_TIMEOUT + 30))" || true)
   ATT=$(attempts_json "$REQ7" | jq -c '.data[0] // {}')
@@ -299,21 +297,18 @@ fi
 step 8 "The same neutral request through each harness kind, per kind, never rounded up"
 # opencode (the fourth harness kind) needs an npm install and network per attempt, so it has no small shim here.
 printf '   %-12s not covered in fake mode — installs an npm package per attempt and needs network; no small shim can stand in for it\n' "opencode:"
-declare -A S8_PROVIDER=( [codex]=openai [claude-code]=anthropic [docket]=docket )
-declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=claude-sonnet-4-5 [docket]=smoke-model )
-declare -A S8_BINARY=( [codex]=codex [claude-code]=claude [docket]=docket )
-declare -A S8_ENV=( [codex]='{}' [claude-code]='{}' [docket]='{"DOCKET_LLM_BASE_URL":{"value":"http://127.0.0.1:1","secret_reference":null}}' )  # docket needs this env key to spawn at all
-for kind in codex claude-code docket; do
+# docket runs only from its contract 1.2 (docket 0.2.0-beta.5), which reads its own setup; the shim here predates it.
+printf '   %-12s not covered in fake mode — needs docket 0.2.0-beta.5, which reads its own setup\n' "docket:"
+declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=sonnet )
+declare -A S8_BINARY=( [codex]=codex [claude-code]=claude )
+for kind in codex claude-code; do
   bin="${S8_BINARY[$kind]}"
   if [ "$LIVE" = 1 ] && ! command -v "$bin" >/dev/null 2>&1; then
     printf '   %-12s ABSENT — not installed, not claimed, not counted\n' "$kind:"
     continue
   fi
-  # Every one of these probes declares no models BY DESIGN (each adapter
-  # refuses to invent a list) and relies on model_passthrough:supported
-  # instead, which is exactly what this step must surface.
-  provider="${S8_PROVIDER[$kind]}"; model="${S8_MODEL[$kind]}"
-  REQ=$(create_execution "$ITEM" "$RUNNER_ID" "$kind" "$provider" "$model" 120 "${S8_ENV[$kind]}" "smoke-s8-$kind-$$")
+  model="${S8_MODEL[$kind]}"
+  REQ=$(create_execution "$ITEM" "$RUNNER_ID" "$kind" "$model" 120 '{}' "smoke-s8-$kind-$$")
   if [ -z "$REQ" ]; then bad "$kind: execution request refused outright"; continue; fi
   GOT=$(wait_for "attempts_json '$REQ' | jq -r '.data[0].attempt_id // empty'" 20 || true)  # an idle runner re-polls only every retry_after_ms (5s)
   if [ -n "$GOT" ]; then
@@ -341,19 +336,12 @@ for kind in codex claude-code docket; do
     # how this step's old canned text went stale in the first place.
     HARNESS_CAP=$(jq -c --arg k "$kind" '.harnesses[]? | select(.harness_kind==$k) // {}' <<<"$CAPS")
     PROBE_ERROR=$(jq -r '.probe_error // empty' <<<"$HARNESS_CAP")
-    PASSTHROUGH=$(jq -r '.model_passthrough.support // "none"' <<<"$HARNESS_CAP")
-    DECLARED=$(jq -r --arg p "$provider" --arg m "$model" \
-      '([.model_combinations[]? | select(.model_provider==$p) | .model_ids[]? | select(.==$m)] | length) > 0' \
-      <<<"$HARNESS_CAP")
     if [ -n "$PROBE_ERROR" ]; then
-      bad "$kind: request never claimable — this runner's own probe of the $kind binary failed ($PROBE_ERROR), so the scheduler will not place any $kind work on it regardless of model declarations (crates/tack-api/src/handlers/runner_protocol.rs HarnessProbeError, checked before model eligibility)"
-      unmet "attempts through $kind: $kind is unschedulable on this runner because its probe failed, not because of a model policy"
-    elif [ "$DECLARED" = "true" ] || [ "$PASSTHROUGH" = "supported" ]; then
-      bad "$kind: request was never claimed even though the runner declares $provider/$model schedulable (declared=$DECLARED, model_passthrough=$PASSTHROUGH) — the runner most likely had no free capacity at the time; step 8 shares this runner with whatever step 7 left it doing"
-      unmet "attempts through $kind: $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
+      bad "$kind: request never claimable — this runner's own probe of the $kind binary failed ($PROBE_ERROR), so the scheduler places no $kind work on it"
+      unmet "attempts through $kind: $kind is unschedulable on this runner because its probe failed"
     else
-      bad "$kind: request never claimable — the $kind adapter declares no matching model_combinations and no supported model_passthrough attestation for $provider/$model, so the scheduler has no eligible pairing to place (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected)"
-      unmet "attempts through $kind: $kind/$provider/$model is not declared schedulable by this runner"
+      bad "$kind: request was never claimed although this runner reports $kind runnable — the runner most likely had no free capacity at the time; step 8 shares this runner with whatever step 7 left it doing"
+      unmet "attempts through $kind: $kind was runnable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
     fi
     curl -H "$AUTH" -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
   fi
@@ -491,11 +479,9 @@ else
 fi
 
 if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
-  # Reuses step 7's already-resolved pairing (same reasoning: neither adapter
-  # declares real model_combinations to read from, and neither offers a free
-  # or local model, so live mode needs an explicit SMOKE_LIVE_MODEL).
-  if [ -z "$S7_PROVIDER" ]; then
-    bad "neither harness offers a free or local model option — set SMOKE_LIVE_MODEL=provider/model to run step 10 live"
+  # Reuses step 7's model (live mode needs an explicit SMOKE_LIVE_MODEL).
+  if [ "$S7_READY" = 0 ]; then
+    bad "live mode bills the agent's own account — set SMOKE_LIVE_MODEL to a model name, or to 'default', to run step 10 live"
   else
     # create_execution/attempts_json read $API (and create_execution reads
     # $AGENT_PROFILE) as globals; swap them to the standalone server for this
@@ -504,7 +490,7 @@ if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
     ORIGINAL_API="$API"; ORIGINAL_PROFILE="$AGENT_PROFILE"
     API="$STANDALONE_API"; AGENT_PROFILE="$SA_PROFILE"
     set_project_repo "$SA_PROJ" || bad "could not set the standalone project's repository"
-    REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" 120 '{}' "smoke-s10-$$")
+    REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" "$S7_KIND" "$S7_MODEL" 120 '{}' "smoke-s10-$$")
     if [ -n "$REQ10" ]; then
       ok "standalone execution request $REQ10 queued against the self-provisioned runner"
       ST10=$(wait_for "attempts_json '$REQ10' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\" or .state==\"needs_operator\" or .state==\"lost\" or .state==\"cancelled\") | .state'" 150 || true)

@@ -110,7 +110,7 @@ operation.
 | `list_executions` | read | — | `GET /api/executions` |
 | `get_execution` | read | `request_id`* | `GET /api/executions/{id}` |
 | `cancel_execution` | write | `request_id`* | `POST /api/executions/{id}/cancel` |
-| `create_execution` | write | `item_id`*, one of `runner_id`/`fleet_id`*, `agent_profile_id`*, `harness`*, `timeout_seconds`*, `model_provider`, `model_id`, `budgets`, `metadata`, `status_map_policy_id`, `idempotency_key` | `POST /api/executions` |
+| `create_execution` | write | `item_id`*, one of `runner_id`/`fleet_id`*, `agent_profile_id`*, `harness`*, `timeout_seconds`*, `model` (the agent's own spelling; omit it for the agent's default), `budgets`, `metadata`, `status_map_policy_id`, `idempotency_key` | `POST /api/executions` |
 
 `create_execution` always starts a run that asks the person before every action, with network access off and the default tool set. The request sends `permission_policy: {approvals: "ask", network: false}`; an agent cannot choose another policy. `environment`, `repository` and `agent_profile_snapshot` are refused with `unknown argument`. The server fills the repository from the item's project (its folder, default branch and workspace mode, set under Settings → Automation).
 
