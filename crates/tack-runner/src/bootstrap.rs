@@ -150,6 +150,10 @@ pub struct DiscoveryReport {
     /// `config_key`. A reached fetch already lives in `capabilities`; this
     /// is the typed reason for every other outcome.
     pub provider_catalog: BTreeMap<String, crate::provider::CatalogStatus>,
+    /// What each registered harness declares per feature, keyed by kind —
+    /// the values the runner-wide summary cannot state because they differ
+    /// per harness. Not sent to the server.
+    pub declared: BTreeMap<String, tack_orch::execution::FeatureCapabilities>,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
@@ -176,11 +180,13 @@ pub async fn probe(
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
     let provider_catalog =
         crate::provider::attach_catalog(&mut capabilities, providers, secrets, &SystemClock).await;
+    let declared = adapters.declared_capabilities();
     DiscoveryReport {
         capabilities,
         missing_harnesses,
         secret_backend: secrets.backend(),
         provider_catalog,
+        declared,
     }
 }
 

@@ -11,7 +11,9 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use tack_orch::execution::{CapabilitySupport, CapabilityValue, HarnessCapability};
+use tack_orch::execution::{
+    CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
+};
 use tack_runner::{
     RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
 };
@@ -168,10 +170,17 @@ fn render(report: &bootstrap::DiscoveryReport) {
             render_sandbox(capability);
             render_model_info(capability);
         }
+        if let Some(declared) = report.declared.get(kind) {
+            for line in declared_lines(declared) {
+                println!("{line}");
+            }
+        }
         println!();
     }
 
-    println!("Runner-wide capabilities (apply identically to every harness above):");
+    println!(
+        "Runner-wide summary (what the runner as a whole can do; artifacts and permission policy differ per harness, above):"
+    );
     render_feature("cancel", &capabilities.features.cancel);
     render_feature("resume", &capabilities.features.resume);
     render_feature("decisions", &capabilities.features.decisions);
@@ -252,6 +261,42 @@ fn render_feature(name: &str, value: &CapabilityValue) {
         Some(reason) => println!("  {name:<10} {support:<11} — {reason}"),
         None => println!("  {name:<10} {support}"),
     }
+}
+
+/// The two features that differ per harness, as printed under its block:
+/// what it keeps and whether its tool list and network flag are enforced.
+fn declared_lines(declared: &FeatureCapabilities) -> Vec<String> {
+    let line = |name: &str, support: CapabilitySupport, reason: &str| {
+        let label = match support {
+            CapabilitySupport::Unsupported => "not supported",
+            other => support_label(other),
+        };
+        format!("  {name:<18} {label} — {reason}")
+    };
+    let artifacts = &declared.artifacts;
+    let policy = declared
+        .additional
+        .get("permission_policy")
+        .and_then(|v| serde_json::from_value::<CapabilityValue>(v.clone()).ok());
+    vec![
+        line(
+            "artifacts:",
+            artifacts.support,
+            artifacts.reason.as_deref().unwrap_or("no reason given"),
+        ),
+        match policy {
+            Some(p) => line(
+                "permission policy:",
+                p.support,
+                p.reason.as_deref().unwrap_or("no reason given"),
+            ),
+            None => line(
+                "permission policy:",
+                CapabilitySupport::Unsupported,
+                "this harness declares no policy",
+            ),
+        },
+    ]
 }
 
 /// One line: `sandbox: bwrap`, or `sandbox: none (<why>)`.
