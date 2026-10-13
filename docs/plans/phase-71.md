@@ -419,3 +419,11 @@ Redact emails, org ids and every key value. No agent runs these commands.
 ## Status
 
 Opened 2026-10-13.
+
+- **Round 0** (`742c0f28`): fixtures captured from claude 2.1.291, codex 0.149.1 and opencode 1.18.30.
+- **Round 1:**
+  - F1 merged in `bee9b2cc`, A in `3b40816e`. On the merge: the gate is green, nextest is 1244/1244, vitest is 664/664.
+  - Neither agent wrote its tests RED first.
+  - A's integrator fix: an old `[provider]` table now fails with `ConfigError::ProviderTable`. The error names the key and never the parser text, because that text can echo an enrolment credential. `wiremock` left `tack-runner`'s dev-dependencies.
+  - A's finding: docket cannot get a base URL through the runner at all now. `env_policy` refuses `*_BASE_URL` in a request, and the grammar reads only the request's environment. So A deleted the two docket real-binary tests that drove a fake model server; E brings them back on contract 1.2.
+  - Strings left for B/B2/G: `scripts/docket-prill-e2e.sh` (E), `crates/tack-api/tests/handlers/attempt_lists.rs:572`, `crates/tack-orch/src/execution/capabilities/tests.rs:69`, `frontend/e2e/helpers.ts:615-618`, `frontend/e2e/docket-prill.spec.ts:531,552`, `frontend/src/shared/execution/types.ts:172`, `frontend/src/shared/runWithAgent/AttemptList.test.tsx:116`.
