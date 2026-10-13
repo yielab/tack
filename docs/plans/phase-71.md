@@ -440,3 +440,9 @@ Opened 2026-10-13.
   - C added `requires_model` (omitted when false), `requires_model_reason`, `models {source, ids, reason}`, `default_model`, `sign_in {state, detail, command}` and `docs {models, sign_in}`. The capability is opaque in OpenAPI, so the frontend types are hand-written.
   - C, integrator fix: codex's descriptor became `Optional`, as decision 2 says. The old reason, that no model could be recorded, no longer holds: `model_source` records `agent_default`.
   - Neither agent wrote its tests RED first.
+- **Round 4 and G:**
+  - G merged in `81849047`, F2 in `3ce424c5`. On F2's branch: the gate is green, vitest is 602/602, Playwright is 54/54 with one worker, and screenshot capture is 11/11.
+  - The integrator added opencode and docket shims to Playwright's `PATH`. Since C, the probe runs each agent's sign-in and model commands, and the e2e server found the real opencode and docket installed on the machine and read the operator's own login. The two specs that still typed into the old "Specific model" control now use "Another model…".
+  - The integrator also fixed `scripts/smoke.sh`. It sent the old model pair, and its shims counted the probe's checks as runs. Its step 9 had been blind since Phase 69's sandbox: the shim's run markers and release file sat in the sandbox's private `/tmp`, so it counted 0 runs and the requeued attempt hung. The runners now get a HOME whose `~/.codex` holds both. Fake mode: SMOKE PASSED.
+  - Left for the maintainer, because these are live, billed recordings against a release build: the tutorial screenshots `07-agents-off`/`08-agents-on` and the book's `agents.png`, which still show the old "Provider" step.
+  - Only E is open. It waits on docket 0.2.0-beta.5.
