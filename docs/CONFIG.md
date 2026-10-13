@@ -32,7 +32,7 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only. Values below 60 are raised to 60 with a warning — a tighter loop copies the database more often than it can change |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
-| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs — the same gate `tack serve --with-runner` sets; either satisfies it. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. Read into `AppConfig::local_runner_enable`; a `PUT /api/local-runner` from the UI (ADR 0061 decisions 2 and 6) overrides it at runtime in `app_meta` — see [Embedded runner](#embedded-runner-tack-serve---with-runner) below. Off by default and refused outright (never silently downgraded) on a non-loopback bind |
+| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs — the same gate `tack serve --with-runner` sets; either satisfies it. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. Read into `AppConfig::local_runner_enable`; a `PUT /api/local-runner` from the UI (ADR 0061 decision 6) overrides it at runtime in `app_meta` — see [Embedded runner](#embedded-runner-tack-serve---with-runner) below. Off by default and refused outright (never silently downgraded) on a non-loopback bind |
 | `TACK_EXECUTION_RETENTION_ENABLE` | `false` | Enables the execution-domain retention sweep. **Off by default** (`crates/tack-api/src/config.rs#default_execution_retention_enable`) — this sweep deletes rows **and on-disk blobs**, so data deletion must be an explicit operator opt-in. Covers four things, across two runtime tasks: (a) replay/idempotency bookkeeping and (b) terminal `execution_events` purge (`tack-orch`), plus (c) `execution_artifacts` rows **and their `TACK_STORAGE_DIR/execution-artifacts` blobs** and (d) overdue-decision expiry (`pending` → `expired`). Artifact blobs are typically the largest consumer in this domain. Decision expiry deliberately shares this one gate rather than running always-on — a test pins that posture so changing it is a reviewed diff |
 | `TACK_EXECUTION_RETENTION_DAYS` | `90` | Days of history kept before the sweep purges it — applies to all four categories above (replay/idempotency bookkeeping, terminal `execution_events`, `execution_artifacts` rows and blobs, and decision expiry deadlines) |
 | `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Interval, in seconds, between execution-retention sweeps |
@@ -61,14 +61,6 @@ in that order):
 | `TACK_RUNNER_ID` | Runner identity once enrolled |
 | `TACK_RUNNER_STATE_DIR` | Owner-only directory for the journal and credential |
 | `TACK_RUNNER_SECRET_VALUE` | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable — the store keeps it (OS keychain, or an owner-only file where none answers within `PLATFORM_STORE_TIMEOUT`; `tack runner doctor` reports which backend a given boot picked) |
-| `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED` | Turns on the `vercel_ai_gateway` provider endpoint (`[provider.vercel_ai_gateway]` in the TOML config). `1` or `true` (case-insensitive) enable it; default `false`. Off by default — this points a harness at a network endpoint and needs a credential, so it is a deliberate opt-in, never a fallback the runner takes on its own |
-| `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET` | Secret-store entry name the provider's credential is resolved from. Default `vercel-ai-gateway/default` — `SecretStore::resolve` does not append `/default` on its own, so a bare `vercel-ai-gateway` here resolves nothing |
-| `TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL` | **Test-only, not a real deployment knob.** `scripts/smoke.sh` step 13's only intended setter. When set to a loopback URL (`http://127.0.0.1:*`, `http://localhost:*`, or `http://[::1]:*`), rebases the catalog fetch and both per-harness endpoints under it instead of the real `ai-gateway.vercel.sh`, so a smoke run can prove key → catalog → spawn → actual-model against a local fake shim with a fake key, never a real vendor call. **This redirects wherever `fetch_catalog`'s `bearer_auth` sends the resolved credential** — it is not inert with respect to the secret, only with respect to whether the real vendor is ever reached. A non-loopback value is ignored outright (treated as unset), a cheap guard against an accidental redirect of a real key to a non-loopback host; it is not a defense against a process whose environment an attacker already controls, since that attacker could read the same credential directly out of the secret store this same process has open. Unset in every real deployment |
-| `TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED` | Turns on Anthropic's own API as a provider endpoint (`[provider.anthropic]` in the TOML config) — a runner-held key pointed at `api.anthropic.com` directly, distinct from claude-code's own subscription login. Same on/off convention and off-by-default posture as the Vercel entry above |
-| `TACK_RUNNER_PROVIDER_ANTHROPIC_SECRET` | Secret-store entry name this provider's credential is resolved from. Default `anthropic/default` |
-| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_ENABLED` | Turns on an OpenAI-compatible server as a provider endpoint (`[provider.openai_compatible]` in the TOML config): llama.cpp, LM Studio, vLLM, Ollama or a hosted router, reached by the Chat Completions harnesses (`docket`, `opencode`). Same on/off convention and off-by-default posture as the entries above |
-| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_BASE_URL` | The server root, e.g. `http://127.0.0.1:8081` — the runner appends `/v1` for the harness and `/v1/models` for the catalog (a value already ending in `/v1` is not doubled). Required when the provider is enabled; a runner whose config enables it without one refuses to start, naming this variable |
-| `TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_SECRET` | Secret-store entry name the server's credential is resolved from. **Optional**, with no default: unset or empty means the server checks no credential, no `Authorization` header is sent and no credential variable is injected into the run |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
 structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not
@@ -92,13 +84,11 @@ enroll` call, no token to copy anywhere.
   `127.0.0.1`/`localhost`/an equivalent loopback address); this is a startup error, never
   a silent downgrade to a runner-less server, because an embedded runner executes
   arbitrary coding-agent processes on the host serving the UI.
-- **UI toggle (ADR 0061 decisions 2 and 6).** `GET`/`PUT /api/local-runner` let a
+- **UI toggle (ADR 0061 decision 6).** `GET`/`PUT /api/local-runner` let a
   loopback-only UI turn the embedded runner on/off after `tack serve` is already up, with
   no restart — a `PUT` persists the choice to `app_meta` (overriding
   `TACK_LOCAL_RUNNER_ENABLE` from then on) and starts or stops the runner
-  task to match. `PUT`/`GET`/`DELETE /api/local-runner/secrets(/{name})` hand the runner
-  a provider key the same way — write-only, never echoed, stored in whichever backend
-  `tack runner secret set` would have used. Every one of these routes is absent (a plain
+  task to match. Both routes is absent (a plain
   404, not a gate that refuses) on any non-loopback bind, or when the process embedding
   the server never wired an embedded runner in at all (a bare library caller of
   `tack_api::serve()`).
@@ -110,9 +100,9 @@ enroll` call, no token to copy anywhere.
 - **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`)
   names the TOML file the embedded runner loads — the same file `tack runner start --config`
   reads, with the same precedence (file, then environment, then the state directory this
-  server scopes for it). It is the only way to give the embedded runner a `[verify]`, `[git]`
-  or `[provider.<name>]` table, since those have no environment variable. Without it the
-  embedded runner runs on defaults: no verifier, no branch push, no configured endpoint.
+  server scopes for it). It is the only way to give the embedded runner a `[verify]` or `[git]`
+  table, since those have no environment variable. Without it the
+  embedded runner runs on defaults: no verifier and no branch push.
 - **State directory.** Defaults to `<TACK_STORAGE_DIR>/runner` — scoped to the same
   configuration as the database, so a server started against a different
   `TACK_DATABASE_URL` (paired, as every other per-install artifact in this crate already
@@ -127,46 +117,32 @@ enroll` call, no token to copy anywhere.
   enrolled state moved there automatically, once, the first time the new directory is
   found missing and the old one is not — never the reverse, and never once the new
   directory already exists.
-- **Vendor/provider credentials — Tack is never a model gateway.** Each harness
-  authenticates itself using its own mechanism; Tack does not read, store, forward, or
-  proxy any of it, embedded or standalone. `tack runner doctor` reports exactly what
-  this machine's own harnesses declare — run it yourself rather than trusting a stale
-  copy in this file. The two harnesses with a login of their own, mirrored from a real `tack runner
-  doctor` run on a machine with both installed — the harness vocabulary itself is open
-  (a runner may report any kind string); `docket` and `opencode` always need a configured
-  endpoint and are described in the book's [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness):
+- **Agent logins — Tack holds no model key.** Each agent signs in and reaches its model
+  with its own tools. Tack has no model key, endpoint or catalog; it does not read, store,
+  forward or proxy what an agent finds, embedded or standalone. There is no `[provider.*]`
+  table: a runner whose config has one refuses to start and names the table. The runner's
+  secret store (`tack runner secret set|list|remove`) stays, for `[environment]` entries and
+  `secret_reference`. `tack runner doctor` reports, per agent, whether it is signed in and which
+  models it offers; run it rather than trusting a copy here.
 
-  | Harness | How it authenticates | Gateway-routed variant (`[provider.vercel_ai_gateway]`) |
-  |---|---|---|
-  | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. | When a request's provider names the configured endpoint: per-invocation `-c model_provider=…`/`model_providers.<key>.*` flags plus `AI_GATEWAY_API_KEY` in the spawned environment — never a write to `~/.codex/config.toml`. A request for a direct model receives none of it. |
-  | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (plus a defensive empty `ANTHROPIC_API_KEY`) in the spawned environment, only when the request's provider names the configured endpoint. A request for a direct model receives none of it. |
+  | Agent | Sign in with | Where the login lives | What the sandbox binds |
+  |---|---|---|---|
+  | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
+  | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
+  | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch `HOME`, with the `provider`, `model` and `small_model` keys copied from `opencode debug config`. Its MCP servers, plugins and permissions do not reach the run |
+  | docket | `docket setup` ([docket](https://github.com/yielab/docket)) | docket's own setup | What docket's setup report names, read-only. Needs docket 0.2.0-beta.5 or later; an older docket does not run |
 
-  `docket` and `opencode` reach a model only through an endpoint the runner is configured
-  with: the gateway above, or any OpenAI-compatible server (llama.cpp, LM Studio, vLLM, Ollama,
-  OpenRouter) named in `[provider.openai_compatible]` — see below. Their own vendor logins are
-  out of scope for these adapters. No `TACK_*` variable
-  on the **API server** names a model provider or endpoint, and the API server itself
-  never holds, forwards, or proxies a provider credential. The **runner** is not under
-  that restriction: it may hold a provider key in its own owner-only state directory, and
-  a loopback-only, embedded-runner-only route hands one to that store without the key
-  ever touching `tack.db`, a log line, or the operator API otherwise — see
-  [`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0061-provider-credentials-at-the-runner-boundary.md)
-  for what a runner may hold, how a key reaches it, and how a gateway's model catalog is
-  fetched. See [`docs/adr/0050-runner-control-plane.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0050-runner-control-plane.md)
-  ("the Tack API never starts a coding harness and never becomes a model proxy") and
+  The runner forwards no new environment variables into a run. A key that lives only in a
+  shell variable does not reach an agent: use the agent's own login or config file.
+  The model a run uses is one optional string in the agent's own spelling, chosen per request
+  or per project; see [Choosing a
+  model](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-model). No
+  `TACK_*` variable names a model, provider or endpoint, and the API server never holds a
+  model credential. See
+  [`docs/adr/0050-runner-control-plane.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0050-runner-control-plane.md)
+  and
   [`docs/adr/0058-standalone-single-binary-runner.md`](https://github.com/yielab/tack/blob/develop/docs/adr/0058-standalone-single-binary-runner.md)
-  ("Vendor credentials remain outside Tack") for the decisions this one bounds.
-- **Model selection is a separate question from credentials, and it is answered.**
-  Which `(provider, model_id)` reaches the harness for a given execution request is
-  resolved server-side through a four-tier precedence (request override →
-  agent-profile default → project default (`projects.default_model`, set from the
-  Agents page or `PATCH /api/projects/{id}`) → fleet default →
-  auto-select), live-verified end to end and fully documented in [Choosing a model and
-  a provider](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-model-and-a-provider) —
-  including why an auto-select request accepts today but never schedules. No `TACK_*`
-  variable is involved on either side of this: routing the choice and holding the
-  credential are different operations, and this file's table above has no row for a
-  model provider or endpoint by design.
+  ("Vendor credentials remain outside Tack").
 - **Log visibility.** The embedded runner's own log lines (self-provisioning,
   enrollment, claim, completion — anything logged by `tack_runner::*` or by the `tack`
   binary's own `local_runner`/`local_enrollment` modules) do **not** appear under
@@ -191,27 +167,6 @@ enroll` call, no token to copy anywhere.
   `tack_api::handlers::runner_protocol`'s own `runner enrolled runner_id=...` line) are
   visible either way, since `tack_api` is already in the default filter — only the
   *runner's own* log lines were missing.
-
-## An OpenAI-compatible endpoint (`[provider.openai_compatible]`)
-
-Any server that speaks OpenAI Chat Completions can stand behind the `docket` and `opencode`
-harnesses — a local llama.cpp, LM Studio, vLLM or Ollama, or a hosted router. It is the one
-provider whose endpoint is configuration rather than vendor data:
-
-```toml
-[provider.openai_compatible]
-enabled = true
-base_url = "http://127.0.0.1:8081"   # the server root; the runner appends /v1
-secret = ""                           # optional: a secret-store entry, or empty for a server with no credential
-```
-
-At start the runner reads the server's catalog (`GET <base_url>/v1/models`) and reports every
-id it lists as a `openai-compatible / <id>` combination for docket and opencode, so the run
-dialog, the project's Automation settings and `tack runner doctor` all show them. A request
-that names the provider `openai-compatible` reaches `<base_url>/v1`; the harness's credential
-variable (`DOCKET_LLM_API_KEY` for docket, `OPENAI_API_KEY` through opencode's config) is
-injected only when `secret` names one. `codex` and `claude-code` speak other wires and are never
-routed here.
 
 ## Runner verifier (`[verify]`)
 

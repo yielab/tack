@@ -2,7 +2,7 @@
 
 Tack can hand a board item to a coding agent — codex, Claude Code, docket or
 opencode — and track what it did as first-class project history: requested vs. actual
-harness/model, a fenced execution attempt, an event timeline, decisions the agent needs
+harness and model, a fenced execution attempt, an event timeline, decisions the agent needs
 answered, and verified artifacts it produced. This page is the operator's guide to that
 surface: which harness to pick, running the `tack-runner` binary, enrolling and revoking
 runners, where credentials and workspaces live, what a runner can honestly promise (the
@@ -11,9 +11,9 @@ capability matrix), and how version compatibility and network exposure work.
 If you only want to press **Run with agent** on a project that has a folder, you do not
 need most of this page: see [Running an item with an agent](#running-an-item-with-an-agent)
 and [Where the agent works](#where-the-agent-works). The question every new user asks next —
-*which agent, which model, and where do I put the key* — has a direct answer below, not a
+*which agent, which model, and how do I sign in* — has a direct answer below, not a
 negation: see [Choosing a harness](#choosing-a-harness) and
-[Choosing a model and a provider](#choosing-a-model-and-a-provider). The four ways to
+[Choosing a model](#choosing-a-model). The four ways to
 turn a board item into a completed attempt are in
 [Running an item with an agent](#running-an-item-with-an-agent), before the operational
 detail (enrollment, credentials, recovery) that follows it.
@@ -83,8 +83,7 @@ run against.
 | **Agent profile** | Reusable instructions + tool policy + limits, snapshotted into the request at creation time so later edits to the profile never change history. |
 | **Harness** | The coding-agent CLI a runner can launch: `codex`, `claude-code`, `docket` or `opencode` — see [Choosing a harness](#choosing-a-harness). The wire value is an opaque string, so a runner may report a kind this build has no bundled adapter for. |
 
-`Harness` ≠ `ModelProvider` ≠ `ModelId`, and `Item` ≠ `ExecutionRequest` ≠
-`ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
+`Item` ≠ `ExecutionRequest` ≠ `ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
 see `docs/contracts/runner-v1/protocol.json`.
 
 ### What the harness receives
@@ -104,15 +103,15 @@ harness with its title and description.
 
 Tack drives a coding-agent CLI — it never runs a model itself. Four are supported today:
 `codex`, `claude-code`, `docket` and `opencode`. Pick one by what it needs installed, how
-it reaches a model, and how far it lets Tack steer it — the rest of this page assumes
+how you sign in to it, and how far it lets Tack steer it — the rest of this page assumes
 you've already picked one.
 
-| Harness | Install | Reaches a model through | What it measures | Pauses to ask you | Honours the permission policy | Can't |
+| Harness | Install | Signs in with | What it measures | Pauses to ask you | Honours the permission policy | Can't |
 |---|---|---|---|---|---|---|
-| `codex` | The official Codex CLI, e.g. `npm install -g @openai/codex` | Its own login (ChatGPT/API-key session) needs no Tack configuration. A Tack-configured Vercel AI Gateway key also reaches it, over the OpenAI Responses wire — Anthropic's own API doesn't serve that wire, so it's never an option here. | Tokens, read from the run's own terminal line (`exec --json`'s `turn.completed`). Cost is never measured: no such field exists in the output. The model that actually served the request is never confirmed — Tack records the one you requested, tagged `requested_not_confirmed`. | **Yes** — over `codex app-server`, and only when the request's permission policy sets `approvals` to `ask` and a command needs to escalate beyond the sandbox | Advisory — your tool list picks codex's sandbox mode (a write-capable tool grants `--sandbox workspace-write`, otherwise `--sandbox read-only`); your network flag and budget never reach it | Resume a session, report a cost, confirm which model served a request, or honour a network deny or a budget |
-| `claude-code` | `npm install -g @anthropic-ai/claude-code` | Its own login (a Claude subscription or its own API key) needs no Tack configuration. A Tack-configured endpoint can be Anthropic's own API directly, or the Vercel AI Gateway — both over the Anthropic Messages wire. | Tokens in (prompt-cache reads and writes included) and out, model calls, every model the run used, and cost, from the run's own result line — advisory, because the cost is Claude Code's own estimate at list price, not your bill. The served model is confirmed from its own session-start line on a direct connection; routed through the gateway, it's recorded `requested_not_confirmed` instead, since a gateway can still substitute a model underneath it. | **Yes** — before every tool call, when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
-| `docket` | From the [docket project](https://github.com/yielab/docket), following its own install instructions | Always needs a Tack-configured endpoint — the Vercel AI Gateway, or any OpenAI-compatible server the runner is pointed at (`[provider.openai_compatible]`: llama.cpp, LM Studio, vLLM, Ollama) — over the OpenAI Chat Completions wire; Anthropic's own API doesn't serve that wire either. It has no login of its own that this adapter uses. | Tokens, genuinely read from its result line, and a served model that's a real observation of the endpoint's own response — never downgraded to `requested_not_confirmed`, even behind a gateway. Cost is never measured: the installed version always reports it `null`. A recipe run has no single turn to read a served model from, so none is recorded for it. When the installed docket reports the files a run wrote, they appear in the attempt's result (paths under `.tack-runner/` are left out). | **Yes, when the installed docket accepts answers** — `tack runner doctor --json` shows it as `decisions: supported` under docket. Then, when the request's permission policy sets `approvals` to `ask`, docket pauses before each tool call its own policy gates and waits for your answer; a call its policy allows runs without a question. A docket that doesn't accept answers refuses a gated call immediately instead | Depends on the installed docket. When it accepts a policy, your tool list and network flag reach it as a policy blocking every docket tool you don't allow, and your token budget reaches it as its own limit — except on a recipe run, which takes no token limit. A docket without those flags is passed none of them and applies only its own policy engine | Resume, report a cost, take a token budget on a recipe run, or run a recipe with an Implementer step (Tack passes no verify command, so that step fails) |
-| `opencode` | `brew install opencode` | Always needs a Tack-configured endpoint — its own vendor logins are out of scope for this adapter — the Vercel AI Gateway or an OpenAI-compatible server (`[provider.openai_compatible]`), over the same OpenAI Chat Completions wire as docket. | Tokens, summed across every step of the run. The served model is never confirmed — every run is recorded `requested_not_confirmed`, because nothing in its output names what actually answered. Cost is never measured for a model it doesn't recognize. | **Yes** — but only over `opencode acp`, and only when the request's permission policy sets `approvals` to `ask`: each granted tool then pauses on its own request until answered | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Confirm which model served a request, or run at all against a request that denies network — see below |
+| `codex` | Its own install, see [Codex](https://developers.openai.com/codex/auth) | `codex login`, Codex's own login. Tack holds no model key; the sandbox binds `~/.codex`. A model comes from Codex's own default or the one you name. | Tokens, read from the run's own terminal line (`exec --json`'s `turn.completed`). Cost is never measured: no such field exists in the output. Under `exec` the model that served the request is never confirmed — Tack records the one you requested (`requested`), or `agent_default` when none was named; under `codex app-server` it is read from Codex (`reported`). | **Yes** — over `codex app-server`, and only when the request's permission policy sets `approvals` to `ask` and a command needs to escalate beyond the sandbox | Advisory — your tool list picks codex's sandbox mode (a write-capable tool grants `--sandbox workspace-write`, otherwise `--sandbox read-only`); your network flag and budget never reach it | Resume a session, report a cost, confirm which model served a request, or honour a network deny or a budget |
+| `claude-code` | Its own install, see [Claude Code](https://code.claude.com/docs/en/authentication) | `claude`, Claude Code's own login (a Claude subscription or its own API key). The sandbox binds `~/.claude`. | Tokens in (prompt-cache reads and writes included) and out, model calls, every model the run used, and cost, from the run's own result line — advisory, because the cost is Claude Code's own estimate at list price, not your bill. The served model is read from its own session-start line and recorded as `reported`. | **Yes** — before every tool call, when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
+| `docket` | Its own install, see the [docket project](https://github.com/yielab/docket) | `docket setup`, docket's own setup, which `docket exec` reads. Needs docket 0.2.0-beta.5 or later (contract 1.2); an older docket does not run. | Tokens, genuinely read from its result line, and a served model that's a real observation of its own response, recorded as `reported`. Cost is never measured: the installed version always reports it `null`. A recipe run has no single turn to read a served model from, so none is recorded for it. When the installed docket reports the files a run wrote, they appear in the attempt's result (paths under `.tack-runner/` are left out). | **Yes, when the installed docket accepts answers** — `tack runner doctor --json` shows it as `decisions: supported` under docket. Then, when the request's permission policy sets `approvals` to `ask`, docket pauses before each tool call its own policy gates and waits for your answer; a call its policy allows runs without a question. A docket that doesn't accept answers refuses a gated call immediately instead | Depends on the installed docket. When it accepts a policy, your tool list and network flag reach it as a policy blocking every docket tool you don't allow, and your token budget reaches it as its own limit — except on a recipe run, which takes no token limit. A docket without those flags is passed none of them and applies only its own policy engine | Resume, report a cost, take a token budget on a recipe run, or run a recipe with an Implementer step (Tack passes no verify command, so that step fails) |
+| `opencode` | Its own install, see [opencode](https://opencode.ai/docs/providers/) | `opencode auth login`, opencode's own login. A run gets its own `auth.json` and the `provider`, `model` and `small_model` from `opencode debug config`, in a scratch `HOME`; nothing else of its config (MCP servers, plugins, permissions) reaches it. | Tokens, summed across every step of the run. The served model is never confirmed — nothing in its output names what actually answered, so a run records the requested model (`requested`), or `agent_default` when none was named. Cost is never measured for a model it doesn't recognize. | **Yes** — but only over `opencode acp`, and only when the request's permission policy sets `approvals` to `ask`: each granted tool then pauses on its own request until answered | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Confirm which model served a request, or run at all against a request that denies network — see below |
 
 A few things above are easy to trip over:
 
@@ -121,15 +120,14 @@ A few things above are easy to trip over:
   installs about 220 MB before it does anything else. Because Tack can't make opencode
   keep a promise the CLI itself breaks, a request whose permission policy denies network
   is rejected before opencode ever spawns.
-- **docket reads its key from one fixed variable.** Whatever provider you configure,
-  Tack injects its resolved credential under `DOCKET_LLM_API_KEY` — docket never sees a
-  provider-named variable. An OpenAI-compatible server with no credential (`secret` left
-  empty) injects nothing, and docket runs without the variable.
+- **docket needs docket 0.2.0-beta.5 or later.** That release speaks contract 1.2, in which
+  `docket exec` reads the endpoint, credential and default model from your own `docket setup`.
+  An older docket does not run here; the Agents page and `tack runner doctor` say so. A key that
+  lives only in a shell variable does not reach any agent, because the runner forwards no new
+  environment variables: use the agent's own login or config file.
 - **docket is asked what it can do when the runner starts.** Tack asks the installed docket
-  which harness contract it speaks (1.0 or 1.1) and which optional flags it accepts, using calls
-  docket refuses before doing any work: no model is called and nothing is written. Tack never
-  reads docket's version number to decide anything, because an install's version string can be
-  stale while its code is current. What it found is what everything below follows from, and
+  which harness contract it speaks (this build needs 1.2) and which optional flags it accepts, using calls
+  docket refuses before doing any work: no model is called and nothing is written. What it found is what everything below follows from, and
   `tack runner doctor` prints docket's version and, with `--json`, its `decisions` entry, which
   names the contract it negotiated.
 - **docket gets your limits, policy and a list of the files it wrote, when it can take them.**
@@ -214,27 +212,28 @@ Run `tack runner doctor` on the machine that will actually run the harness befor
 trusting anything above about your own install — it probes every harness this build has
 an adapter for, with no runner enrollment and nothing written to the board. For each
 harness it prints whether the binary was found and its version, one line on how it
-authenticates, and whether it accepts an operator-chosen model verbatim
-(`model_passthrough`) or only a declared list (`model_combinations`). Condensed from a
-real run on a machine with all four installed:
+signs in, whether it is signed in (`signed in:`, from the agent's own offline check) and which
+models it offers (`models:`, listed by the agent or suggested from its documentation). Shape of
+the output, with the versions measured on one machine:
 
 ```text
 codex
   status:      present
   version:     0.149.1
-  credentials: Codex authenticates itself (its own CLI login, or an API key it reads
-               from its own config)...
-  model_combinations: (none reported)
-  model_passthrough: supported — requested_model_id is forwarded verbatim via --model...
+  credentials: Codex signs in with its own login; Tack holds no model credential.
+  sandbox:     bwrap
+  signed in:   yes (Logged in using ChatGPT)
+  models:      listed: gpt-5.6-terra, ...; the agent chooses when none is named
 
 claude-code
   status:      present
-  version:     2.1.273
+  version:     2.1.291
   ...
+  signed in:   yes (claude.ai)
+  models:      suggested: sonnet, opus, haiku; the agent chooses when none is named
 
 docket
   status:      present
-  version:     0.2.0b1
   ...
 
 opencode
@@ -242,7 +241,7 @@ opencode
   version:     1.18.30
   ...
 
-Runner-wide capabilities (apply identically to every harness above):
+Runner-wide summary (what the runner as a whole can do; artifacts and permission policy differ per harness, above):
   cancel     advisory    — a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability
   resume     unsupported — no resumable session contract
   decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
@@ -253,20 +252,16 @@ Secret store (resolves `secret_reference` environment entries):
   backend: keychain
   ...
 
-Provider endpoint (vercel_ai_gateway):
-  reaches: codex, claude-code, docket, opencode
-  status:  not configured
-
-Provider endpoint (anthropic):
-  reaches: claude-code
-  status:  not configured
-
 verify: disabled
 ```
 
 The last line reports the runner's verifier: `disabled`, or `enabled` with the program, whether
 it was found on `PATH`, its arguments and its timeout. See
 [After a succeeded attempt](#after-a-succeeded-attempt).
+
+A signed-out agent names its own command, for example `signed in:   no (Not logged in) — run
+`codex login``; the `models:` line ends with whether a request must name a model. Tack never
+validates a model name: the agent checks it when the run starts.
 
 A harness absent from your machine prints `status: absent` and names every directory it
 searched, instead of the fields above — see
@@ -281,9 +276,8 @@ snapshot at claim time, not in this enrollment-time summary. Reading `decisions:
 supported` here does not mean every harness can pause; see the table above for which
 one actually does.
 
-How a provider's endpoint and credential are configured — the `TACK_RUNNER_PROVIDER_*`
-variables, which secret-store entry each one reads, and the embedded runner's own key
-field — is the single authority in `docs/CONFIG.md`, not restated here.
+Where each agent's login lives and what the sandbox binds is in `docs/CONFIG.md`, under
+"Agent logins".
 
 ---
 
@@ -438,8 +432,7 @@ tack execution create <ITEM_ID> \
   --runner runr_8fa0dfb9-638f-492d-b278-ee06a789ad04 \
   --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
   --harness claude-code \
-  --model-provider anthropic \
-  --model-id claude-sonnet-4-5 \
+  --model sonnet \
   --permission-policy '{"tools":[],"network":false}' \
   --timeout-seconds 120
 ```
@@ -481,9 +474,8 @@ curl -s http://127.0.0.1:3210/api/executions/exec_0fe7252989.../attempts | jq '.
   "workspace_id": "ws_6174745f66656137353238662d383533622d346333632d613264362d643163663162393034653438",
   "actual_execution": {
     "harness_kind": "claude-code",
-    "model_provider": "anthropic",
-    "model_id": "unknown",
-    "model_observation_source": "not_observed"
+    "model": "sonnet",
+    "model_source": "requested"
   },
   "terminal_reason": {
     "exit": "Exited(0)",
@@ -493,13 +485,11 @@ curl -s http://127.0.0.1:3210/api/executions/exec_0fe7252989.../attempts | jq '.
 }
 ```
 
-Two things in that real output are worth reading closely rather than past: `model_id`
-came back `"unknown"` with source `not_observed` — the stand-in binary used for this
-page never echoes a model id the way a real harness does, and Tack reports that
-honestly rather than assuming the requested id was actually the one that ran (the same
-"not measured, never a fabricated value" rule as
-[usage economics](#usage-economics-and-not-measured), applied to model identity instead
-of cost). And `terminal_reason.reason` came from an *inferred* exit code, not a
+Two things in that output are worth reading closely rather than past: `model_source` is
+`requested` — the stand-in binary used for this page never names the model that answered the
+way a real harness does, so Tack records the one you asked for and says that is all it knows,
+rather than presenting it as confirmed (`reported` means the agent named it; `agent_default`
+means nobody did). And `terminal_reason.reason` came from an *inferred* exit code, not a
 structured result — a real harness's own structured output, when it produces one, is
 read instead; see [What actually runs today](#what-actually-runs-today).
 
@@ -508,16 +498,16 @@ read instead; see [What actually runs today](#what-actually-runs-today).
 The **Agents** page (`/agents`) is about this computer only. It does not hold anything that
 belongs to a project.
 
-<img src="../screenshots/agents.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and when each last ran here, a paragraph about logins and the optional gateway key, and a Run test button.">
+<img src="../screenshots/agents.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and when each last ran here, a Sign in step with one row per installed agent, and a Run test button.">
 
 - **Agents are on or off.** One switch for this computer. Turning it on starts the embedded
   runner without a restart (see [Standalone mode](#standalone-mode-tack-serve---with-runner)).
 - **Which agents are installed**, and when each last ran here. Tack looks where a terminal
   would (see [Where Tack looks for a harness binary](#where-tack-looks-for-a-harness-binary)).
-- **Logins and the optional gateway key.** An agent that you are already signed in to in your
-  terminal needs nothing from Tack. If you would rather not rely on that login, you can paste a
-  Vercel AI Gateway key; it lives in this computer's own secret store and never in the board's
-  database (see [Local credential handling](#local-credential-handling)).
+- **Sign in.** One row per installed agent, from the agent itself: "Signed in", or "Not signed
+  in. Run `<command>` in a terminal." with a link to that agent's own documentation, or the
+  agent's own detail when it cannot say. Tack holds no model key; each agent signs in and reaches
+  its model with its own tools (see [Local credential handling](#local-credential-handling)).
 - **Run test.** One button that checks that an installed agent starts and answers on this
   computer. It names no model, so it uses an agent that runs with its own default (Claude Code
   today); when every installed agent needs a model named, the button is disabled and says so.
@@ -550,10 +540,11 @@ project (this tab) or the task (the dialog). The dialog shows project values rea
 - **Definition of done** — one text the agent reads on every run of this project.
 - **Agent** — which installed agent a new run uses. Each pill is an agent a runner on this
   computer reports.
-- **Model** — **The agent's default (recommended)**, or **Specific model**: an id from the
-  short list measured for that agent, sent with the provider the agent speaks natively. An
-  agent with no measured list yet (codex, opencode) keeps its default here; the dialog's
-  **Other…** is where you type an id for one run.
+- **Model** — the same field as in the dialog: **Agent's default** (when the agent does not
+  require a model), the models the agent listed or suggested, and **Another model…**, a text
+  field. A line under it says where the list came from, or how to name a model, with a link
+  "How <agent> names models". Changing the project's agent clears the model, because a model name
+  belongs to one agent.
 
 ## Where the agent works
 
@@ -594,120 +585,61 @@ when it is created, so editing it later never changes the history of an earlier 
 
 ---
 
-## Choosing a model and a provider
+## Choosing a model
 
-**You usually choose nothing.** The default is **the agent's default (recommended)**: the
-model the agent itself uses when you run it in a terminal. Tack passes no model and no provider
-and the agent decides. If you want a specific model, pick one from the short list the dialog
-offers for that agent. For `claude-code` the list is the model ids that were measured to work.
-`codex` and `opencode` offer **Other…** only, where you type the model id. You never type a
-provider: it is the agent's own, or the gateway when you have set a gateway key.
+**You usually choose nothing.** The default is **Agent's default**: the model the agent itself
+uses when you run it in a terminal. Tack passes no model and the agent decides.
 
-The rest of this section is the precedence behind that, for anyone driving Tack from the CLI
-or the API. Two rules sit next to each other, on purpose, because conflating them is what causes
-confusion: **the board never holds a provider
-credential** — no `TACK_*` variable configures a vendor API key, and the API server
-itself never proxies a model call (ADR 0050, ADR 0058) — and **the runner can hold
-one**, on its own machine, in its own secret store, and use it to reach a model
-provider on the board's behalf. The two statements are about different halves of the
-product: see [Local credential handling](#local-credential-handling) below and
-`docs/CONFIG.md`'s "Embedded runner" section, "Vendor/provider credentials" bullet, for
-exactly where a credential may and may not live (ADR 0061 draws that line and bounds it).
+A run's model is one optional string, in the agent's own spelling: `sonnet` for Claude Code,
+`gpt-5.6-terra` for Codex, `anthropic/claude-sonnet-4-5` or `local/qwen` for opencode. Tack
+passes it to the agent through the agent's own flag and never parses it. Tack holds no model key,
+endpoint or catalog; the agent reaches its model with its own login (see [Local credential
+handling](#local-credential-handling)).
 
-Separately, and independently of where a credential lives, **Tack routes the model
-choice**: which `(provider, model_id)` pair reaches the harness for a given request is
-resolved server-side, deterministically, before the request is ever offered to a
-runner. Routing a choice and holding a secret are different things — this section's
-four-tier precedence below is the routing rule; the runner-side gateway path (the
-fastest UI-only route to a working key) is in
-[Local credential handling](#local-credential-handling).
+The **model field** in the run dialog and the project's Automation tab shows:
 
-### The four-tier precedence
+- **Agent's default**, when the agent does not require a model;
+- the models the agent listed, or the ones its documentation suggests;
+- **Another model…**, a text field for any name.
 
-`crates/tack-orch/src/model_policy` resolves a request's model in this order, most
-specific first, stopping at the first tier that has a value:
+A line under it says where the list came from ("From Codex on this computer") or, when the agent
+cannot list its models, how to name one, with a link "How <agent> names models". Tack never
+validates a typed name; the agent checks it when the run starts.
 
-1. **Request override** — `requested_model_provider`/`requested_model_id` on the
-   request itself (`--model-provider`/`--model-id` on the CLI, the `POST
-   /api/executions` body fields of the same name). Set by an explicit CLI flag, a raw
-   API caller, or the dialog's model picker when you pick a specific model instead of the
-   agent's default.
-2. **Agent-profile default** — a `{"default_model": {"provider": "...", "model_id":
-   "..."}}` object inside the agent profile's own `limits` field (`POST
-   /api/agent-profiles --limits '...'` or `tack agent-profile create --limits '...'`).
-   Live-verified: creating a profile with this default and a request that omits
-   `--model-provider`/`--model-id` entirely still resolves and completes:
-   ```sh
-   tack agent-profile create "sonnet-profile" \
-     --instructions "..." \
-     --limits '{"default_model":{"provider":"anthropic","model_id":"claude-sonnet-4-5"}}'
-   # then tack execution create <item> --agent-profile ap_6e5649b8... --harness claude-code ... (no --model-provider/--model-id)
-   ```
-   the resulting attempt's `actual_execution.model_provider` came back `"anthropic"` —
-   resolved server-side from the profile, never supplied on the request.
-3. **Project default** — `projects.default_model` (migration 062), the same
-   `{"default_model": {"provider": ..., "model_id": ...}}` (or literal `"auto"`)
-   convention as the other tiers, set with `PATCH /api/projects/{id}`.
-   `resolve_request_model_policy` reads it as this tier
-   (`crates/tack-orch/src/model_policy/wiring.rs`).
-4. **Fleet default** — the same `{"default_model": {...}}` convention, inside
-   `agent_fleets.default_policy` (`tack fleet create --policy '...'`). Applies only to a
-   request that targets the fleet itself (`selector_kind: "fleet"`) — an
-   `exact_runner`-targeted request never consults any fleet's policy, since it never
-   names one. Live-verified the same way as tier 2: a fleet created with
-   `--policy '{"default_model":{"provider":"anthropic","model_id":"claude-opus-4-1"}}'`,
-   a request targeting `--fleet <that fleet>` with an agent profile that has no default
-   of its own, resolved to `actual_execution.model_provider: "anthropic"`.
-5. **The agent's default** — what happens when every tier above is empty. This is not a
-   fallback that quietly picks something: see the next section.
-
-All four tiers are resolved once, server-side, at request-creation time
-(`crates/tack-api/src/handlers/executions.rs`, immediately before the request is
-stored) — only when the caller supplied neither `requested_model_provider` nor
-`requested_model_id`; an explicit pair (even a deliberately wrong one) is never
-second-guessed by a lower tier.
-
-### When no model is named: the agent's default
-
-A request created with no model in any tier above is valid for an agent that reports it needs
-no model. The scheduler asks the agent's own adapter, and when the adapter says its model is
-optional, the request goes to the runner without a model and the agent uses its own default.
-Today that is true for `claude-code`.
-
-`codex`, `opencode` and `docket` still need a model named. A request for one of them with no
-model in any tier is not guessed at: it waits, and the card says why ("Waiting: codex needs a
-model named"). If no runner that polls can take it for 30 minutes, it fails with that reason. A
-runner that could take it but is busy restarts the clock. Give those agents a model in one of the
-tiers above (for `codex` and `opencode`, **Other…** in the dialog).
-
-### What a runner will actually accept
-
-An explicit `(provider, model_id)` pair is eligible to schedule when either the target
-harness's capability snapshot **declares** that exact pairing in `model_combinations`,
-or the harness attests `model_passthrough: supported` (the adapter forwards the
-operator's opaque model id verbatim and the harness validates it at its own run time).
-`model_passthrough: advisory` is treated as unverified and rejected exactly like
-`unsupported` — a capability claim below `supported` is not load-bearing
-(`crates/tack-orch/src/scheduler/select.rs`). Run `tack runner doctor` on the actual
-runner host to see this for real rather than trusting a stale copy of this page — the
-full command and its unabridged output are in the [CLI reference](cli.md#runner), and
-what the rest of its output means is in
-[Choosing a harness](#choosing-a-harness). Condensed from a real run on a machine with
-all four harnesses installed:
-
-| Harness | `model_combinations` | `model_passthrough` |
+| Agent | Models it offers here | Its documentation |
 |---|---|---|
-| `codex` | (none reported) | supported |
-| `claude-code` | (none reported) | supported |
-| `docket` | (none reported) | supported |
-| `opencode` | (none reported) | supported |
+| Claude Code | Suggested: `sonnet`, `opus`, `haiku` | [Model configuration](https://code.claude.com/docs/en/model-config) |
+| Codex | The entries `codex debug models` lists | [Codex models](https://developers.openai.com/codex/models) |
+| opencode | `opencode models`, from the providers you signed in to; with no login, only opencode's free models | [Models](https://opencode.ai/docs/models/) |
+| docket | None listed; type a name | [docket](https://github.com/yielab/docket) |
 
-None of the four has a `list-models` command to probe, so every one declares zero
-combinations and relies entirely on passthrough — any operator-specified model is accepted
-pre-spawn and only the harness itself validates it at run time. A harness that can
-enumerate its own installed/configured models would declare them instead and refuse
-passthrough — rejecting an undeclared model before any process spawns rather than after
-— but no adapter in this tree does that today.
+### Which model a run gets
+
+In order, stopping at the first that has a value:
+
+1. **The request's model** — `--model <name>` on `tack execution create`, `model` on MCP
+   `create_execution`, `requested_model` in the `POST /api/executions` body, or the dialog's
+   model field.
+2. **The project's default model**, when the run uses the project's default agent. It is set in
+   **Settings → Automation** or with `PATCH /api/projects/{id}`. Changing the project's default
+   agent clears it.
+3. **The agent's own default.**
+
+The attempt records `actual_execution.model` with a `model_source`: `reported` when the agent
+named the model that answered, `requested` when it only echoed the request, `agent_default` when
+none was named and the agent did not say.
+
+### When no model is named
+
+A request with no model is valid for an agent that does not require one: Claude Code and Codex
+use their own default, and so does opencode when its own config names a default model. docket
+requires a model, and so does opencode when its config has none. The scheduler matches the
+agent, not the model: a request for such an agent that names no model waits, and the card says
+why ("Waiting: docket needs a model named"). If no runner that polls can take it for 30 minutes,
+it fails with that reason. A runner that could take it but is busy restarts the clock.
+
+`tack runner doctor` prints, per agent, whether it is signed in and which models it offers; run
+it on the machine that will run the agent rather than trusting a copy of this page.
 
 ---
 
@@ -791,8 +723,8 @@ Everything above assumes two processes: an operator running `tack serve`, and a
 separate `tack-runner` process enrolled against it by hand. `tack serve --with-runner`
 (or `TACK_LOCAL_RUNNER_ENABLE=1`) collapses that to one binary and one command — the
 common case of one developer running an agent against their own board. It is off by
-default; the full configuration reference (gate, state directory, provider-credential
-story per harness) is `docs/CONFIG.md`, section "Embedded runner". This section covers
+default; the full configuration reference (gate, state directory, the login of each
+agent) is `docs/CONFIG.md`, section "Embedded runner". This section covers
 what changes about the enrollment/credential story above when you use it.
 
 - **Not a shortcut.** The embedded runner runs as a task inside the server's own
@@ -869,18 +801,19 @@ confirm it — install the harness anywhere on that list, or make sure it is on 
   print `[REDACTED]` — this is structural, not a logging convention that a future
   `println!` could bypass by accident (`crates/tack-runner/src/config.rs`).
 - The runner's on-disk state directory (`TACK_RUNNER_STATE_DIR`, default
-  `.tack-runner`) holds the attempt journal (below) and, since ADR 0061, a
-  **runner-local secret store** for a configured provider's key — the platform
-  keychain where one answers, an owner-only file otherwise, never `app_meta` or any
-  other server-visible table. Set a value with `tack runner secret set <name>`
-  (reads `TACK_RUNNER_SECRET_VALUE` or, failing that, stdin — never a CLI argument,
-  which `/proc` would make world-readable), or, when the runner is embedded in the
-  same process as the board (`tack serve --with-runner`), from the **Agents** page's
-  own key field. A harness's own vendor login (Claude Max, `codex login`, ...) needs
-  none of this — it is still the runner operator's own local environment, unmanaged by
-  Tack either way. In every case, **Tack's API and database never see, store, or
-  forward a credential value** — only the runner's own store resolves one, at spawn
-  time, into the one subprocess that needs it.
+  `.tack-runner`) holds the attempt journal (below) and a **runner-local secret store** for the
+  values `[environment]` entries and `secret_reference` name — the platform keychain where one
+  answers, an owner-only file otherwise, never `app_meta` or any other server-visible table. Set a
+  value with `tack runner secret set <name>` (reads `TACK_RUNNER_SECRET_VALUE` or, failing that,
+  stdin — never a CLI argument, which `/proc` would make world-readable).
+- **Tack holds no model key.** Each agent signs in with its own command — `claude`,
+  `codex login`, `opencode auth login`, `docket setup` — and reaches its model with its own tools.
+  Claude Code and Codex read their own login and settings; opencode runs with a scratch `HOME`
+  that gets its own `auth.json` and only the `provider`, `model` and `small_model` of its config;
+  docket reads your `docket setup`. The runner forwards no new environment variables, so a key
+  that lives only in a shell variable does not reach an agent. **Tack's API and database never
+  see, store, or forward a model credential.** The per-agent table is in `docs/CONFIG.md`, under
+  "Agent logins".
 - Logs never carry the credential value. Redaction is tested with a positive control:
   the redaction tests capture real `tracing` output and assert the secret marker
   never appears **and** that an id does appear, ruling out "the capture rig just
@@ -1203,6 +1136,6 @@ or embedded) at a real server and watch it enroll, claim, and complete real work
 
 The whole workflow through the browser is proven by hand with `scripts/docket-prill-e2e.sh`:
 it builds Tack from the checkout, runs docket and prill from their own source trees against a
-local OpenAI-compatible model, and drives a project, its runner, its settings, a bug, a
+local model, and drives a project, its runner, its settings, a bug, a
 feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a
 screenshot per step. It makes real model calls, so CI never runs it.

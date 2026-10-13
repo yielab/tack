@@ -131,15 +131,17 @@ to get one. The two paths below are alternatives, not sequential steps: pick the
 path if a server is already running (no restart needed), or the CLI path if you're
 starting fresh from a terminal.
 
-**The UI-first path.** Three things, in order. None of them asks you for a provider, a
-model name or a repository address.
+**The UI-first path.** Three things, in order. None of them asks you for a model name or a
+repository address.
 
 1. **Turn agents on for this computer.** Open the **Agents** page from the sidebar
    (`/agents`) and click **Turn on**. This starts an embedded runner in this same process,
    on this loopback bind, with no restart and no second binary. The page then lists which
    agents are installed here (`claude`, `codex`, `opencode`, `docket`) and when each last
-   ran on this computer. If an agent is installed and you are already signed in to it in
-   your terminal, there is nothing else to set. The page is about this computer only; see
+   ran on this computer. Step 3, **Sign in**, says for each installed agent whether it is signed
+   in, or "Not signed in. Run `<command>` in a terminal." with a link to that agent's own
+   documentation; sign in with the agent's own command, then there is nothing else to set. The
+   page is about this computer only; see
    [Agents on this computer](agent-runners.md#agents-on-this-computer). Everything about
    *your project* lives in the project's settings instead.
 2. **Make sure the project knows where its code is.** If you answered **Does this project
@@ -150,8 +152,9 @@ model name or a repository address.
 3. **Open a task and click Run with agent.** The dialog is one summary line (who runs it,
    in which profile, on which model, where), a section called **What the agent will read**,
    two switches (**Ask before each action** and **Web tools**) and **Advanced**.
-   The defaults are the recommended ones: the agent's default model and the **Implementer**
-   profile. Click **Run**.
+   The defaults are the recommended ones: **Agent's default** in the model field and the
+   **Implementer** profile. To name a model, pick one the agent listed or choose **Another
+   model…** and type it in the agent's own spelling. Click **Run**.
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
 
@@ -195,17 +198,17 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 ```
 
 Using the item id from [First use](#first-use) above, create the execution request
-(swap in your own harness — `codex` or `claude-code` — and whichever model
-it accepts; the server fills in the repository from the item's project, and the project's
+(swap in your own harness — `codex` or `claude-code`; `--model` takes the model's name in
+that agent's own spelling and may be left out; the server fills in the repository from the item's project, and the project's
 settings say where the agent works, see
-[Where the agent works](agent-runners.md#where-the-agent-works); see [Choosing a model and a
-provider](agent-runners.md#choosing-a-model-and-a-provider) if unsure):
+[Where the agent works](agent-runners.md#where-the-agent-works); see [Choosing a
+model](agent-runners.md#choosing-a-model) if unsure):
 
 ```sh
 tack execution create <ITEM_ID> \
   --runner <RUNNER_ID> \
   --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
-  --harness claude-code --model-provider anthropic --model-id claude-sonnet-4-5 \
+  --harness claude-code --model sonnet \
   --permission-policy '{"tools":[],"network":false}' \
   --timeout-seconds 600
 ```

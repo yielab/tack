@@ -1,6 +1,7 @@
 # ADR 0050: Tack-owned scheduling and runner-owned execution
 
 - Status: accepted
+- **Partly superseded 2026-10-13 by ADR 0078:** decisions on model use: requested and actual harness, provider and model are no longer distinct fields (one model string now), and "no Tack model gateway" becomes literally true. The rest stands.
 - Date: 2026-08-06
 - Baseline: `1d71785` (`chore: preserve unreleased Part II baseline`)
 - Contract: `docs/contracts/runner-v1/`

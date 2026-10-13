@@ -1,5 +1,7 @@
 # ADR 0063: A harness is credentialed one of two ways, and a provider is a module
 
+**Partly superseded 2026-10-13 by ADR 0078:** decisions 1–7 (two credential modes, the provider trait, the catalog and its metadata). The subscription mode is now the only mode, and it is the agent's business.
+
 **Decide:** approve that every harness on a runner is credentialed in exactly one of two
 modes. Either it uses **the person's own subscription** — it logs in by itself, Tack holds
 no credential, the plan decides which models exist and there is no per-attempt cost — or it

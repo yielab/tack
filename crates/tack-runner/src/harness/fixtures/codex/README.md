@@ -51,21 +51,14 @@ provider's `env_key` were set to an obviously fake value.
 
 ## Measured
 
-- Non-interactive execution is `codex exec --json --model <requested model id>` with the
+- Non-interactive execution is `codex exec --json`, with `--model <requested model>` when the request names one, and the
   agent profile's instructions piped over **stdin**, never argv, for the same
   `ps`/`/proc` exposure reason `../process.rs` documents — confirmed against the real
-  binary, including with a provider pointed at a different endpoint via per-invocation `-c`
-  overrides (`model_provider=...`, `model_providers.<key>.*`): the request genuinely reached
-  that endpoint rather than Codex's built-in OpenAI provider, and no `~/.codex/config.toml`
-  was written (`CodexGrammar::invocation`).
+  binary; no `~/.codex/config.toml` is written (`CodexGrammar::invocation`).
 - Version detection invokes `codex --version`, exit code 0; the real CLI prefixes the
   version with a program-name token rather than printing it bare, so detection scans for a
   strict `X.Y[.Z]` numeric token anywhere in the output rather than requiring the whole line
   to be one (`local_process::parse_version`, shared by every harness).
-- On the installed binary (0.149.1), `model_providers.<key>.wire_api="responses"` is
-  already the effective default for a per-invocation `-c` provider override — the adapter
-  sets it explicitly anyway, defensively, matching the vendor's own documented shape
-  (`CodexGrammar::invocation`).
 - **Usage is in the output, and is now read.** `exec --json`'s terminal `turn.completed`
   line carries a real `usage` object — `input_tokens`, `cached_input_tokens`,
   `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens` — every one of
@@ -162,11 +155,11 @@ provider's `env_key` were set to an obviously fake value.
    (`codex::DESCRIPTOR.inherited_env` is empty). Whether its tool commands find a user's
    toolchain that way has not been measured with a live run.
 
-## Why a request must name its model for this adapter
+## A request may name no model
 
 `ExecutionRequestSnapshot.requested_model` and `ActualExecution.model` are both `Option<String>`.
-`exec --json` never names the model that answered (finding 3 above), so for an `exec` run the
-recorded model is the requested one, with source `requested`; an `app-server` run reads it from
-the `thread/start` result and records `reported`. `validate` rejects a spec with no
-`requested_model` pre-spawn (`ModelSelection::Explicit` in `codex::DESCRIPTOR`), so an `exec`
-run never has to record a model nobody named.
+Codex runs on its own default model when a request names none (`ModelSelection::Optional` in
+`codex::DESCRIPTOR`). `exec --json` never names the model that answered (finding 3 above), so for
+an `exec` run the recorded model is the requested one with source `requested`, or none with
+source `agent_default`; an `app-server` run reads it from the `thread/start` result and records
+`reported`.

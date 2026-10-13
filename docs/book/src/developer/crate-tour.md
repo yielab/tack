@@ -250,8 +250,8 @@ literal non-secret value or an opaque reference the runner resolves locally.
 ### `scheduler/`
 
 The deterministic fleet scheduler: given a candidate set of runners (health,
-capacity, labels, declared harness and model support) and a request (exact runner or
-fleet selector, required harness, optional provider/model, priority), it decides
+capacity, labels, declared harnesses and whether each needs a model named) and a request
+(exact runner or fleet selector, required harness, optional model, priority), it decides
 which runner gets the work, or a typed reason none qualify. Two entry points:
 `select::select_runner` for one request against a candidate pool, and `batch::schedule`
 for several requests sharing one pool, ordered by priority then FIFO fairness. Both
@@ -265,14 +265,11 @@ production caller is the `claim` handler in `tack-api`'s runner protocol.
 
 ### `model_policy/`
 
-Deterministic model-selection precedence: request override → agent-profile default →
-project default → fleet default → nothing configured, meaning auto-select.
-`resolve_model_policy` is pure; `wiring` is the `tack-db`-backed caller that fetches
-each tier's configured default and hands the result in, mirroring the scheduler's own
-pure-core/live-wiring split. Every resolved value is still a *request*, whichever tier
-supplied it — intersecting it against a runner's declared capability is the
-scheduler's job, not this module's; and a resolved value is never conflated with the
-*actual* model an attempt reports back, which `usage_provenance` compares separately.
+Which model a run asks for: the request's own, otherwise the project's default model when
+the run uses the project's default agent, otherwise none, which leaves the choice to the
+agent's own default. A model is one string in the agent's own spelling; Tack never
+checks it against a list, and the agent refuses one it does not know when the run starts.
+`wiring` is the `tack-db`-backed caller that reads the project's default.
 
 ### `execution_retention.rs` and `execution_observability.rs`
 
@@ -464,8 +461,7 @@ event (`attempt.verify_failed`, `attempt.push_failed`) and the attempt still com
 The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
 cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
 `local_process.rs` — the one lifecycle every local CLI harness shares: locating the
-binary, the version probe, the request policy, environment and secrets, provider
-injection, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
+binary, the version probe, the request policy, environment and secrets, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
 `HarnessDescriptor` (data) and a four-method `HarnessGrammar` (its command line, how its
 output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. Reading output, a grammar may report a line as a step (`StreamSignal::Progress`); a harness whose descriptor sets `reports_progress` is read line by line on every run, and the engine sends its steps as runner events every two seconds and when the run ends — docket's grammar is the only one that reports any yet. Every runner event takes the attempt's next sequence, counted in the journal (`events_submitted`), because the server keeps one event per sequence. docket's contract and flags are probed when the runner starts, never assumed from its version. Adding one is a module
 plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness

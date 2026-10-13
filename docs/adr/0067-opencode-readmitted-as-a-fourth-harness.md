@@ -1,5 +1,7 @@
 # ADR 0067: opencode is readmitted as a fourth harness, on the shared core, with its one limitation typed
 
+**Partly superseded 2026-10-13 by ADR 0078:** decisions 2, 4 and 10 (opencode's injected provider, its config replacing the person's, its own logins out of scope). The rest stands.
+
 **Decide:** approve readmitting `opencode` as a harness kind — **not** by restoring the
 2 555-line adapter ADR 0063 removed, but as a grammar on the shared harness core that
 Part IX card IX-M5 extracts. Approve that it speaks the OpenAI Chat Completions wire

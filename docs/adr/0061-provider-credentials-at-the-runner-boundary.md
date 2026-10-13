@@ -1,5 +1,7 @@
 # ADR 0061: Where a model provider's API key lives, and who's allowed to touch it
 
+**Partly superseded 2026-10-13 by ADR 0078:** decisions 1–5 (a provider key held by the runner, the route that hands it one, the runner fetching the catalog, the gateway's own name, the console/UI table as applied to keys). Decision 6 (the UI switch that starts the embedded runner) stands.
+
 **Decide:** approve six rules about the coding-agent "runner" component — the small
 worker that lives on your own machine and actually launches Claude Code / Codex /
 OpenCode. In short: a provider's API key (like a Vercel AI Gateway key) is allowed to

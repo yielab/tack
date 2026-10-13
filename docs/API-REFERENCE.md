@@ -260,8 +260,7 @@ Content-Type: application/json
   "selector_id": "runr_8fa0dfb9-638f-492d-b278-ee06a789ad04",
   "agent_profile_id": "ap_91b4ea76-9f1a-4725-8a58-21a57d92572c",
   "requested_harness_kind": "claude-code",
-  "requested_model_provider": "anthropic",
-  "requested_model_id": "claude-sonnet-4-5",
+  "requested_model": "sonnet",
   "repository_snapshot": {
     "kind": "git",
     "remote": "/path/to/local/repo",

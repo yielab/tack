@@ -6,6 +6,8 @@ Amends ADR 0074 (a run a normal person can start) and ADR 0071 (where a run's wo
 The test that found everything here is `frontend/e2e/docket-prill.spec.ts`, run through
 `scripts/docket-prill-e2e.sh`.
 
+**Partly superseded 2026-10-13 by ADR 0078:** decisions 3 and 7 (`[provider.openai_compatible]`, the Automation panel's `{provider, model_id}`). The rest stands.
+
 **Decide:** that Tack treats **docket** and **opencode** as first-class harnesses everywhere it
 lists harnesses, speaks **prill** as its verifier natively, lets a runner point those two
 harnesses at any OpenAI-compatible endpoint, reports a run that is asking a question as

@@ -6,9 +6,13 @@
 
 **Tack is delivered through Phase 64.** That covers the project-management core, the
 harness-agnostic runner fleet, the single-binary embedded runner, adoption and
-distribution, agent onboarding and provider choice, the desktop app with its background
+distribution, agent onboarding, the desktop app with its background
 service, and the codebase cleanup that retired the Docket control-plane bridge
 (`ControlPlane`, `tack orch`, the Fleet/Approvals/Economics/Provision screens).
+
+The agent brings its own model: Tack holds no model key, endpoint or catalog. Each agent signs in
+and reaches its model with its own tools, and a run names its model as one string in that agent's
+own spelling, or none.
 
 **Phase 64 closed on 2026-09-19.** Its plan and its chapter of this file are archived; what
 it left open is in Phase 65.
@@ -104,7 +108,7 @@ a pull request is opened for a pushed branch whose item is linked to a GitHub is
 
 A manual run of the Phase 66 build produced fourteen findings; three lost or hid work. After this phase
 a project is created knowing where its code is, and the agent works on a new branch of that
-folder, in the folder itself, or in a clone for another computer. No model or provider is
+folder, in the folder itself, or in a clone for another computer. No model is
 asked for: the agent's own is the default. Four built-in profiles (Implementer, Reviewer,
 Researcher, Planner) carry their tools. A task is a description plus acceptance criteria,
 with what only the agent needs collapsed. The dialog is a pre-flight that shows what the
@@ -159,7 +163,7 @@ its timeline as it takes them, and docket's question says which command it would
 
 | Run | What lands |
 |---|---|
-| 1 | docket and opencode everywhere; prill spoken natively; `[provider.openai_compatible]`; `waiting_decision` while a question is open; the request follows its attempt; `tack serve --runner-config`; the Automation model list; one request to create a project; the `mrp-v1` schema. |
+| 1 | docket and opencode everywhere; prill spoken natively; `waiting_decision` while a question is open; the request follows its attempt; `tack serve --runner-config`; the Automation model list; one request to create a project; the `mrp-v1` schema. |
 | 2 | A running agent's steps on its timeline (docket first); one sequence per runner event; docket's question names the command; the e2e pins prill's image by id; a refresh keeps an opened attempt open. |
 
 Next here: codex, claude-code and opencode report their steps too, once their tool lines are
@@ -202,12 +206,11 @@ and after half an hour of nobody being able to take it, it fails with that reaso
 settles what the book still lists as known gaps: a test decides whether a docket run that times
 out leaves a process behind, `tack runner doctor` says per harness what it keeps and whether it
 can ask, a run setting that no longer fits is logged, the embedded runner's id is tested against
-a real enrolment, the real-`bwrap` boundary test stops skipping in CI, and the Automation panel
-offers "Through the gateway" when a gateway key is set.
+a real enrolment, and the real-`bwrap` boundary test stops skipping in CI.
 
 | Round | What lands | Who |
 |---|---|---|
-| 1 | Why a request waits, recorded and timed out; the docket timeout test; per-harness doctor lines; the run-setting warning and the real runner-id test; `bwrap` in CI; the gateway choice in Automation. | Sonnet, Haiku |
+| 1 | Why a request waits, recorded and timed out; the docket timeout test; per-harness doctor lines; the run-setting warning and the real runner-id test; `bwrap` in CI. | Sonnet, Haiku |
 | 2 | The card and the run page say why a request waits. | Sonnet |
 
 ---
@@ -219,7 +222,7 @@ offers "Through the gateway" when a gateway key is set.
   (33–38), the Agnostic Control Plane (39–49), and the Harness-Agnostic Runner Fleet
   (50–57).
 - [Phases 58–63](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/boards/roadmap-phases-58-63.md) — standalone
-  single-binary packaging, the first public release, agent onboarding & provider UX,
+  single-binary packaging, the first public release, agent onboarding,
   the desktop app and background service, and human maintainability.
 
 ---
