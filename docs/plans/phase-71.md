@@ -433,3 +433,10 @@ Opened 2026-10-13.
   - The integrator deleted the e2e test of an undeclared model, since there is no such rule now, and made two specs type the model through "Other…".
   - The verifier's evidence never carried the agent's version or model: `Usage` has neither, and prill read them from it. `HarnessOutcome::evidence_usage` now adds both, and a unit test covers it.
   - B2's finding for F2: the Automation panel has no "Other…", so it cannot set a default model for an agent that lists none.
+- **Round 3:**
+  - D merged in `029124f8`, C in `c650d33d`. On the merges: the gate is green, nextest is 1225/1225, vitest is 592/592.
+  - D, integrator fix: opencode's invocation located `opencode` on `PATH` again instead of using the binary the harness's locator resolved. In a test whose locator points at a fake, that ran the real opencode against the real `HOME`. `RunContext` now carries `program`, and the spawn path passes the located binary.
+  - D's own additions: `Invocation.secrets` (registered for redaction) and `Invocation.shared_files` (a single-file bind under `bwrap`, a symlink unsandboxed).
+  - C added `requires_model` (omitted when false), `requires_model_reason`, `models {source, ids, reason}`, `default_model`, `sign_in {state, detail, command}` and `docs {models, sign_in}`. The capability is opaque in OpenAPI, so the frontend types are hand-written.
+  - C, integrator fix: codex's descriptor became `Optional`, as decision 2 says. The old reason, that no model could be recorded, no longer holds: `model_source` records `agent_default`.
+  - Neither agent wrote its tests RED first.
