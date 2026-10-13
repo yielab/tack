@@ -1,6 +1,6 @@
 # ADR 0076: a project and its items from one outline or CSV
 
-**Status: PROPOSED 2026-10-11; executed in `develop` the same day.**
+**Status: ACCEPTED 2026-10-12 (proposed 2026-10-11); executed in `develop` on 2026-10-11.**
 
 **Decide:** that Tack creates a project and many items — or adds many items to a project — from
 one file in one request: an **outline** (JSON or YAML) or a **CSV**, through the same rules. An

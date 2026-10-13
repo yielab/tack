@@ -1,6 +1,6 @@
 # ADR 0077: the agent reaches only what you gave it
 
-**Status: PROPOSED 2026-10-12. Executed by Phase 69 (`docs/plans/phase-69.md`).**
+**Status: ACCEPTED 2026-10-12 (the maintainer: "add a phase that implements every improvement"); executed the same day by Phase 69 (`docs/plans/phase-69.md`).**
 
 **Decide:** that nothing can read Tack's data or start a run on your machine except you, and that
 an agent Tack runs cannot reach your credentials, approve its own work, or change what Tack

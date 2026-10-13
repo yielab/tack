@@ -169,8 +169,9 @@ captured from the real binaries.
 
 ## Phase 69 — the agent reaches only what you gave it
 
-**Status:** opened 2026-10-12; Wave 0 (the maintainer's) done the same day, no round dispatched.
-**ADR:** 0077 (proposed). **Plan:** [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md).
+**Status:** opened and closed 2026-10-12; all four rounds merged into `develop`. The GitHub settings of
+Wave 0 and the re-cut tag are the maintainer's.
+**ADR:** 0077 (accepted). **Plan:** [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md).
 Ships as the re-cut `v0.1.0-beta.10`; the tag of 2026-10-12 was withdrawn the same day.
 
 A security audit on 2026-10-12 found no planted code and no leaked secret, and found four
@@ -186,6 +187,27 @@ in a suite CI requires.
 | 2 | The API always has a token the browser cannot read; the server records the profile and the repository; the pull request opens when you accept; the evidence is the base you chose and the tree that was verified; the run log leaves the workspace; `serde_yaml` is replaced. | Sonnet, Haiku |
 | 3 | A run started over MCP always asks; untrusted text is fenced and the prompt you see is the prompt that runs; the agent is sandboxed with `bwrap` where Linux has it; the browser holds the cookie. | Sonnet, Haiku |
 | 4 | The dialog and the run page tell the truth (sandboxed or not, "Web tools", what the agent got and read); the two boundary suites become required checks; `SECURITY.md` and the book say what the agent can reach. | Sonnet, Haiku |
+
+---
+
+## Phase 70 — what is still open before the re-cut
+
+**Status:** opened 2026-10-12. No ADR: every task is a follow-up an earlier phase wrote down.
+**Plan:** [`docs/plans/phase-70.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-70.md).
+Ships with Phase 69 as the re-cut `v0.1.0-beta.10`.
+
+A request no runner can claim stops sitting in Queued without a word: the card says why it waits,
+and after half an hour of nobody being able to take it, it fails with that reason. The rest
+settles what the book still lists as known gaps: a test decides whether a docket run that times
+out leaves a process behind, `tack runner doctor` says per harness what it keeps and whether it
+can ask, a run setting that no longer fits is logged, the embedded runner's id is tested against
+a real enrolment, the real-`bwrap` boundary test stops skipping in CI, and the Automation panel
+offers "Through the gateway" when a gateway key is set.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | Why a request waits, recorded and timed out; the docket timeout test; per-harness doctor lines; the run-setting warning and the real runner-id test; `bwrap` in CI; the gateway choice in Automation. | Sonnet, Haiku |
+| 2 | The card and the run page say why a request waits. | Sonnet |
 
 ---
 
