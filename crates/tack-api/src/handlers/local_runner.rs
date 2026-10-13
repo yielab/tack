@@ -375,31 +375,6 @@ pub async fn init_local_runner_folder(
     Ok(Json(json!({ "path": input.path })))
 }
 
-/// GET /api/local-runner/harness-verification — per harness kind, when its
-/// latest succeeded attempt ended. A kind with no succeeded attempt is absent.
-#[instrument(skip(state))]
-#[utoipa::path(
-    get,
-    path = "/api/local-runner/harness-verification",
-    tag = "local-runner",
-    responses((status = 200, description = "Harness kind to the ended_at of its latest succeeded attempt", body = serde_json::Value)),
-)]
-pub async fn get_harness_verification(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT json_extract(actual_execution, '$.harness_kind') AS kind, MAX(ended_at) AS ended_at \
-         FROM execution_attempts \
-         WHERE state = 'succeeded' AND actual_execution IS NOT NULL AND ended_at IS NOT NULL \
-         GROUP BY kind HAVING kind IS NOT NULL",
-    )
-    .fetch_all(state.pool())
-    .await?;
-    let harnesses: serde_json::Map<String, Value> = rows
-        .into_iter()
-        .map(|(k, t)| (k, Value::String(t)))
-        .collect();
-    Ok(Json(json!({ "harnesses": harnesses })))
-}
-
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TestRun {
     pub harness_kind: String,

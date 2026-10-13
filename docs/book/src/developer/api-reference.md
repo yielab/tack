@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (93 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (92 paths, 127 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1743,14 +1743,6 @@ what is at `path`; writes nothing.
 | 200 | Whether the path exists, is a directory, and its git facts | `FolderCheck` |
 | 400 | The path is not absolute | — |
 | 409 | The embedded runner is not configured | — |
-
-#### `GET /api/local-runner/harness-verification`
-
-per harness kind, when its
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Harness kind to the ended_at of its latest succeeded attempt | — |
 
 #### `POST /api/local-runner/init-folder`
 

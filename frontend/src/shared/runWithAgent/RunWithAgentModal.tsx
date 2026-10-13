@@ -1,5 +1,5 @@
 import { createStore } from 'solid-js/store';
-import { type Component, createSignal, createResource, createMemo, createEffect, Show, untrack } from 'solid-js';
+import { type Component, createSignal, createResource, createMemo, createEffect, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Modal } from '../ui';
 import { toast } from '../ui/toast';
@@ -16,14 +16,13 @@ import {
   isDecisionsAttested, profileToolsFor,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
-import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
-import { ACCEPTED_MODELS } from './models';
+import RunFlow from './RunFlow';
+import { summarizeModels } from './models';
 import { agentSafety } from '../help/texts';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
-  modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '',
-  customModelId: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
+  model: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
   branch: '',
   idempotencyKey: generateIdempotencyKey(),
   verify: true, pushBranch: true,
@@ -155,28 +154,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // The project's default model applies only to runs of the project's default agent.
   const projectDefaultLabel = createMemo(() => resolveRunModel(null, form.harnessKind, project()));
 
-  createEffect(() => {
-    if (!props.isOpen || form.modelModeInitialized || project.loading) return;
-    setForm('modelMode', projectDefaultLabel() ? 'project' : 'auto');
-    setForm('modelModeInitialized', true);
-  });
-
   const targetHarnessCapability = createMemo(() =>
     targetCapabilities().flatMap((c) => c.harnesses).find((h) => h.harness_kind === form.harnessKind));
-  const staticModels = createMemo(() => [...(ACCEPTED_MODELS[form.harnessKind] ?? [])]);
-  // A harness that needs a model opens on "Specific model", unless the project already names one.
-  // The harness can change after that (the project's default lands once runners load), so a
-  // "Specific model" nobody filled in goes back to the default when the new harness needs none.
-  createEffect(() => {
-    const required = targetHarnessCapability()?.requires_model === true && !projectDefaultLabel();
-    const fallback = projectDefaultLabel() ? 'project' : 'auto';
-    untrack(() => {
-      if (required) setForm('modelMode', 'choose');
-      else if (form.modelMode === 'choose' && form.chooseIndex === '') setForm('modelMode', fallback);
-      else if (form.modelMode === 'project' && !projectDefaultLabel()) setForm('modelMode', 'auto');
-      else if (form.modelMode === 'auto' && form.modelModeInitialized && projectDefaultLabel()) setForm('modelMode', 'project');
-    });
-  });
+  // The reports of the chosen agent across the runners the run may land on.
+  const chosenHarnessReports = createMemo(() =>
+    capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind));
+  const modelsReport = createMemo(() => summarizeModels(chosenHarnessReports()));
   // Start from the project's values, then overlay what this task remembered.
   createEffect(() => {
     if (!props.isOpen || settingsApplied || project.loading || item.loading || liveRunners.loading || agentProfiles.loading) return;
@@ -195,13 +178,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (typeof saved.network === 'boolean') setForm('allowNetwork', saved.network);
     if (saved.approvals === 'auto' || saved.approvals === 'ask') { approvalsChosen = true; setForm('approvals', saved.approvals); }
     if (typeof saved.verify === 'boolean') setForm('verify', saved.verify);
-    if (typeof saved.model === 'string') {
-      const id = saved.model;
-      setForm('modelModeInitialized', true);
-      setForm('modelMode', 'choose');
-      if (ACCEPTED_MODELS[form.harnessKind]?.includes(id)) setForm('chooseIndex', STATIC_MODEL_PREFIX + id);
-      else { setForm('chooseIndex', CUSTOM_MODEL_VALUE); setForm('customModelId', id); }
-    }
+    if (typeof saved.model === 'string') setForm('model', saved.model);
   });
 
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
@@ -211,8 +188,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   // Where the agent is not sandboxed, it asks first; a value the task remembers or the person
   // picks wins over this default. A fleet is unsandboxed if any of its runners' chosen harness is.
-  const chosenHarnessReports = createMemo(() =>
-    capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind));
   const unsandboxed = () => chosenHarnessReports().some((h) => h.sandbox === 'none');
   const sandboxLine = (): { text: string; unsandboxed: boolean } | null => {
     const safety = agentSafety(chosenHarnessReports());
@@ -225,12 +200,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
   /** What this form asks for; `null` names none, and the server fills the project's default. */
-  const requestedModel = (): string | null => {
-    if (form.modelMode !== 'choose') return null;
-    if (form.chooseIndex === CUSTOM_MODEL_VALUE) return form.customModelId.trim() || null;
-    if (form.chooseIndex.startsWith(STATIC_MODEL_PREFIX)) return form.chooseIndex.slice(STATIC_MODEL_PREFIX.length);
-    return null;
-  };
+  const requestedModel = (): string | null => form.model.trim() || null;
   const runModel = () => resolveRunModel(requestedModel(), form.harnessKind, project());
 
   const modelGate = createMemo(() =>
@@ -241,8 +211,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!form.selectorId.trim()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Choose a profile.');
     if (!form.harnessKind) errors.push('Select an agent.');
-    if (form.modelMode === 'choose' && form.chooseIndex === '') errors.push('Select a model, or use the agent\'s default.');
-    if (form.modelMode === 'choose' && form.chooseIndex === CUSTOM_MODEL_VALUE && !form.customModelId.trim()) errors.push('Enter a model id, or pick one from the list.');
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
     return errors;
   });
@@ -291,7 +259,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (form.harnessKind !== (p?.default_harness || d.harnessKind)) diff.harness = form.harnessKind;
     const savedProfile = item.error === undefined && typeof item()?.run_settings?.agent_profile_id === 'string';
     if (form.agentProfileId && (profilePicked() || savedProfile)) diff.agent_profile_id = form.agentProfileId;
-    if (form.modelMode === 'choose' && requestedModel()) diff.model = requestedModel();
+    if (requestedModel()) diff.model = requestedModel();
     const branch = form.branch.trim();
     if (branch && branch !== p?.default_branch) diff.branch = branch;
     if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
@@ -380,13 +348,13 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             createDefaultProfile={createDefaultProfile}
             harnessOptions={harnessOptions}
             projectDefaultLabel={projectDefaultLabel}
-            staticModels={staticModels}
+            harnessReports={chosenHarnessReports}
             gate={modelGate}
             project={project}
             agentContext={() => agentContext()}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
-            modelLabel={() => runModel() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
+            modelLabel={() => runModel() ?? (modelsReport().requiresModel ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}
             sandboxLine={sandboxLine}
             onApprovals={() => { approvalsChosen = true; }}

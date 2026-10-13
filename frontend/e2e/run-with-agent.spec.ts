@@ -130,11 +130,10 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   await modal.getByRole('button', { name: profileName, exact: true }).click();
 
   // An explicit model choice, typed by hand: the fixture's codex needs a model
-  // named and has no measured list, so "Other…" is the way to name one.
+  // named and lists none, so "Another model…" is the way to name one.
   await modal.getByText('Advanced for this run').click();
-  await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Other…' });
-  await modal.getByLabel('Model id').fill('opaque/model-alpha');
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
+  await modal.getByLabel('Model name').fill('opaque/model-alpha');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
   const runButton = modal.getByRole('button', { name: 'Run', exact: true });
@@ -273,8 +272,8 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
 
   let modal = await openModal();
   await expect(modal.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
-  // The one sentence that replaces Run opens "Advanced for this run", where the model is chosen.
-  await modal.getByRole('button', { name: 'Choose a model for this run' }).click();
+  // The row that replaces Run says why, and "Advanced for this run" opens on the model.
+  await expect(modal.locator('[data-prerequisite="missing"]')).toContainText('needs a model');
   await modal.getByRole('link', { name: 'Set a default model for this project' }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=automation`));
 

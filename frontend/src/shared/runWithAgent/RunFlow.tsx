@@ -2,18 +2,15 @@ import { type Accessor, type Component, For, Show, createSignal } from 'solid-js
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
 import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
+import type { HarnessCapability } from '../execution/types';
+import ModelField from './ModelField';
+import { summarizeModels } from './models';
 import { HELP } from '../help/texts';
 import type { AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { gateHarnessModelSelection } from './shared';
-import RadioRow from './RadioRow';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
-
-/** "Other…": a model id typed by hand. */
-export const CUSTOM_MODEL_VALUE = '__custom__';
-/** Prefix of a Select value naming an id from the measured list. */
-export const STATIC_MODEL_PREFIX = 'static:';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
  *  lists (docs/plans/measurements/tools-claude-code.md). The rest of that list depends on
@@ -51,8 +48,8 @@ export interface RunFlowProps {
   createDefaultProfile: () => void;
   harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   projectDefaultLabel: Accessor<string | null | undefined>;
-  /** Model ids measured to work with this harness. */
-  staticModels: Accessor<string[]>;
+  /** Every runner's report of the chosen agent: its models, its default, its documentation. */
+  harnessReports: Accessor<HarnessCapability[]>;
   gate: Accessor<ReturnType<typeof gateHarnessModelSelection>>;
   project: Accessor<Project | undefined>;
   /** What the agent will read, from `GET /items/{id}/agent-context`. */
@@ -103,11 +100,14 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     const rank = (p: AgentProfileSummary) => { const i = KIND_ORDER.indexOf(p.kind ?? 'custom'); return i < 0 ? KIND_ORDER.length : i; };
     return [...props.profiles()].sort((a, b) => rank(a) - rank(b));
   };
-  const blocker = (): { text: string; href?: string } | undefined => {
+  const blocker = (): { text: string; href: string } | undefined => {
     if (props.project()?.code_origin === 'none') return { text: "Choose where this project's code is →", href: automation() };
     if (props.rows.runner() === 'missing') return { text: 'Turn on agent execution →', href: '/agents' };
-    if (!props.gate().allowed || (props.form.modelMode === 'choose' && props.form.chooseIndex === '')) return { text: 'Choose a model for this run' };
   };
+  const models = () => summarizeModels(props.harnessReports());
+  // Only an agent that must be told a model blocks the run here; the dialog says so in place of Run.
+  const modelBlocked = () => models().requiresModel && !props.gate().allowed;
+  const modelReason = () => models().requiresModelReason ?? props.gate().reason;
 
   return (
     <>
@@ -228,7 +228,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </div>
       </div>
 
-      <details open={advanced()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
+      <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>Advanced for this run</summary>
         <div class="mt-3 space-y-3">
           <Select
@@ -237,34 +237,17 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             onInput={(e) => props.setForm('harnessKind', e.currentTarget.value)}
             options={props.harnessOptions().map((h) => ({ value: h.value, label: h.label }))}
           />
-          <div class="flex flex-col gap-2">
-            <RadioRow name="model-mode" checked={props.form.modelMode !== 'choose'} onChange={() => props.setForm('modelMode', props.projectDefaultLabel() ? 'project' : 'auto')}>
-              The agent's default (recommended)
-            </RadioRow>
-            <Show when={props.projectDefaultLabel()}>
-              {(label) => (
-                <p class="pl-7 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Project default — {label()}</p>
-              )}
-            </Show>
-            <RadioRow name="model-mode" checked={props.form.modelMode === 'choose'} onChange={() => props.setForm('modelMode', 'choose')}>
-              Specific model
-            </RadioRow>
-          </div>
-          <Show when={props.form.modelMode === 'choose'}>
-            <Select
-              label="Model"
-              help={HELP.model}
-              value={props.form.chooseIndex}
-              onInput={(e) => props.setForm('chooseIndex', e.currentTarget.value)}
-              options={[
-                { value: '', label: 'Select a model' },
-                ...props.staticModels().map((id) => ({ value: `${STATIC_MODEL_PREFIX}${id}`, label: id })),
-                { value: CUSTOM_MODEL_VALUE, label: 'Other…' },
-              ]}
-            />
-            <Show when={props.form.chooseIndex === CUSTOM_MODEL_VALUE}>
-              <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
-            </Show>
+          <ModelField
+            agentLabel={props.harnessLabel()}
+            reports={props.harnessReports()}
+            value={props.form.model}
+            onChange={(model) => props.setForm('model', model)}
+            onType={(model) => props.setForm('model', model)}
+          />
+          <Show when={props.form.model.trim() === '' ? props.projectDefaultLabel() : null}>
+            {(label) => (
+              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Project default — {label()}</p>
+            )}
           </Show>
           <ModelGateNote gate={props.gate()} />
           <Field
@@ -340,22 +323,20 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <Show
           when={blocker()}
           fallback={
-            <Button type="submit" loading={props.submitting()} disabled={!props.canSubmit()}>
-              Run
-            </Button>
+            <Show
+              when={modelBlocked()}
+              fallback={
+                <Button type="submit" loading={props.submitting()} disabled={!props.canSubmit()}>
+                  Run
+                </Button>
+              }
+            >
+              <Prerequisite state="missing" label={modelReason()} />
+            </Show>
           }
         >
           {(b) => (
-            <Show
-              when={b().href}
-              fallback={
-                <button type="button" class="text-sm font-semibold hover:underline" style={LINK} onClick={() => setAdvanced(true)}>
-                  {b().text}
-                </button>
-              }
-            >
-              {(href) => <A href={href()} class="text-sm font-semibold hover:underline" style={LINK}>{b().text}</A>}
-            </Show>
+            <A href={b().href} class="text-sm font-semibold hover:underline" style={LINK}>{b().text}</A>
           )}
         </Show>
       </div>

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake `opencode` binary for the e2e webServer's PATH — see ./claude's header.
+# It shadows a real opencode installed on the machine running the suite, so
+# the embedded runner's probe, and the sign-in and model checks it runs, never
+# reach the operator's own install or login. Every command prints the version.
+echo "9.9.3"
+exit 0

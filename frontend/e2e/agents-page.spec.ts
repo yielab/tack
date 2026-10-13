@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('turning agent execution on reveals both agents installed at the shim\'s own version, not signed in, and enables the test run', async ({
+test('turning agent execution on reveals both agents installed at the shim\'s own version, says it cannot read their sign-in, and enables the test run', async ({
   page,
   executionToggleLock,
 }) => {
@@ -48,9 +48,14 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   await expect(page.getByText('Installed v9.9.1')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Installed v9.9.2')).toBeVisible();
 
-  // The fake shims never ran a test, so neither agent is signed in.
-  await expect(page.getByText('Not signed in').first()).toBeVisible();
-  await expect(page.getByText('Not signed in')).toHaveCount(2);
+  // The fake shims print only a version for any command, so the runner cannot read
+  // a sign-in from them: each agent's row says so and links to its own sign-in page.
+  for (const [kind, label] of [['codex', 'Codex'], ['claude-code', 'Claude Code']]) {
+    const row = page.getByTestId(`sign-in-${kind}`);
+    await expect(row).toHaveAttribute('data-sign-in', 'unknown');
+    await expect(row.getByRole('link', { name: `How to sign in to ${label}` })).toBeVisible();
+  }
+  await expect(page.getByText('Signed in', { exact: true })).toHaveCount(0);
 
   // The embedded ExecutionTimeline (rendered right below "Run test") shows
   // the same request/attempt lifecycle the hero item does, via the shared

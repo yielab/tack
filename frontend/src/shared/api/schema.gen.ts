@@ -925,26 +925,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/local-runner/harness-verification": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * GET /api/local-runner/harness-verification — per harness kind, when its
-         *     latest succeeded attempt ended. A kind with no succeeded attempt is absent.
-         */
-        get: operations["get_harness_verification"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/local-runner/init-folder": {
         parameters: {
             query?: never;
@@ -6608,26 +6588,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    get_harness_verification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Harness kind to the ended_at of its latest succeeded attempt */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
             };
         };
     };

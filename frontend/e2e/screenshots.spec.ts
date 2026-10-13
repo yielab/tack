@@ -107,8 +107,6 @@ async function startRun(
       agent_profile_id: profileId,
       requested_harness_kind: 'claude-code',
       requested_model: RUNNER_MODEL,
-      agent_profile_snapshot: { name: 'Implementer', instructions: 'Implement the item to its brief.', tool_policy: {}, timeout_seconds: 3600, budgets: {} },
-      repository_snapshot: { kind: 'git', remote: 'git@github.com:acme/launch.git', base_revision: 'main', subdirectory: null },
       permission_policy: { tools: [], network: false },
       budgets: {},
       environment: {},
@@ -117,7 +115,7 @@ async function startRun(
       status_map_policy_id: null,
     },
   });
-  expect(res.ok(), `create execution: ${res.status()}`).toBeTruthy();
+  expect(res.ok(), `create execution: ${res.status()} ${await res.text()}`).toBeTruthy();
   const lease = await claimOnceWithLease(request, runner.runnerId, runner.credential, `screenshots-claim-${itemId}`);
   expect(lease, 'the runner claims the request it was named for').not.toBeNull();
   await acceptAndStartAttempt(request, runner.runnerId, runner.credential, lease!.attemptId, lease!.fencingToken);
@@ -153,6 +151,7 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
   expect(implementer, 'the built-in Implementer profile exists').toBeTruthy();
   const profileId = (implementer!.agent_profile_id ?? implementer!.id) as string;
   await setProjectDefaultModel(request, projectId, 'claude-code', RUNNER_MODEL);
+  await setProjectFolder(request, projectId);
 
   const runner = await enrollConfiguredRunner(request);
   const auth = { authorization: `Bearer ${runner.credential}` };

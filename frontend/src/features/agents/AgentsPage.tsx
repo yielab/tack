@@ -3,6 +3,7 @@ import { runnersApi } from '../../shared/execution';
 import { localRunnerApi, isLocalRunnerUnavailable } from './api';
 import ExecutionToggle from './ExecutionToggle';
 import HarnessStep from './steps/HarnessStep';
+import SignInStep, { allSignedIn } from './steps/SignInStep';
 import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
 import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isThisMachineRunner } from './runnerObservations';
@@ -68,7 +69,7 @@ const StepRow: Component<{ number: number; state: StepState; last?: boolean; chi
 };
 
 /**
- * The Agents page — two numbered, API-observed steps on this computer, a one-button test run, plus an Advanced section for running
+ * The Agents page — three numbered, API-observed steps on this computer, a one-button test run, plus an Advanced section for running
  * agents on other machines. Composes `ExecutionToggle`
  * (which independently fetches and owns its own state) with the harness
  * and test-run steps, and the `runnerFleet/`
@@ -99,7 +100,6 @@ const AgentsPage: Component = () => {
     pollHandle = setInterval(() => {
       void refetchRunners();
       void refetchLocalRunnerStatus();
-      void refetchVerification();
     }, RUNNERS_POLL_MS);
   });
   onCleanup(() => {
@@ -118,15 +118,12 @@ const AgentsPage: Component = () => {
     }
   };
 
-  const [verification, { refetch: refetchVerification }] = createResource(() => localRunnerApi.harnessVerification());
-
   // Each marker reads the same observations its step already renders —
   // nothing here is a separate notion of progress.
-  // An errored resource throws when read; a failed read means "nobody is signed in".
-  const signedIn = () => (verification.error ? {} : (verification()?.harnesses ?? {}));
   const stepDone = (): boolean[] => [
     localRunnerStatus.error === undefined && localRunnerStatus()?.state === 'running',
     harnessesOf(thisMachineRunner()).some((h) => h.probe_error === null && !!h.installed_version),
+    allSignedIn(thisMachineRunner()),
   ];
   const stepState = (index: number): StepState => {
     const done = stepDone();
@@ -163,8 +160,12 @@ const AgentsPage: Component = () => {
           <ExecutionToggle />
         </StepRow>
 
-        <StepRow number={2} state={stepState(1)} last>
-          <HarnessStep thisMachineRunner={thisMachineRunner()} onRecheck={() => void recheck()} rechecking={rechecking()} verification={signedIn()} />
+        <StepRow number={2} state={stepState(1)}>
+          <HarnessStep thisMachineRunner={thisMachineRunner()} onRecheck={() => void recheck()} rechecking={rechecking()} />
+        </StepRow>
+
+        <StepRow number={3} state={stepState(2)} last>
+          <SignInStep thisMachineRunner={thisMachineRunner()} />
         </StepRow>
       </div>
 
