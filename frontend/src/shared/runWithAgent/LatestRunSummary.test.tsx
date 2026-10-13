@@ -25,10 +25,10 @@ const ATTEMPT = {
   pull_request: null, review: null,
 };
 
-function mount(executions: unknown[], onOpen = () => {}) {
+function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT]) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: [ATTEMPT] }), { status: 200 });
+    if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: attempts }), { status: 200 });
     if (url.includes('/executions')) return new Response(JSON.stringify({ protocol_version: 1, data: executions }), { status: 200 });
     return new Response('{}', { status: 200 });
   }) as typeof fetch);
@@ -77,5 +77,26 @@ describe('LatestRunSummary', () => {
     const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what the agent did')!;
     open.click();
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('a queued run says why it waits and for how long; a capacity wait has no duration; a request that failed for want of a runner shows the reason as its failure', async () => {
+    const waiting = { ...RUN, state: 'queued', waiting_reason: 'No runner has the model it asks for.', waiting_since: new Date(Date.now() - 5 * 60_000).toISOString() };
+    let c = mount([waiting], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run-waiting"]')!.textContent).toContain('Waiting: No runner has the model it asks for.');
+    expect(c.querySelector('[data-testid="latest-run-waiting"]')!.textContent).toContain('5m ago');
+
+    while (disposers.length) disposers.pop()!();
+    vi.restoreAllMocks();
+    c = mount([{ ...waiting, waiting_reason: 'Every runner is busy.', waiting_since: null }], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run-waiting"]')!.textContent).toBe('Waiting: Every runner is busy.');
+
+    while (disposers.length) disposers.pop()!();
+    vi.restoreAllMocks();
+    c = mount([{ ...waiting, state: 'failed' }], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run-waiting"]')).toBeNull();
+    expect(c.querySelector('[data-testid="latest-run-failure"]')!.textContent).toBe('No runner has the model it asks for.');
   });
 });

@@ -71,6 +71,8 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (u.models.length > 0) parts.push(u.models[0]);
     return parts.length > 0 ? parts.join(' · ') : null;
   };
+  const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
+  const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
   const working = () => {
     const state = attempt()?.state ?? latest()?.state;
     if (state === 'waiting_decision') return 'The agent is waiting for your answer.';
@@ -91,7 +93,30 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
           </div>
           <Show
             when={finished()}
-            fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{working()}</p>}
+            fallback={
+              <Show
+                when={failedReason()}
+                fallback={
+                  <Show
+                    when={waitingReason()}
+                    fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{working()}</p>}
+                  >
+                    {(why) => (
+                      <p data-testid="latest-run-waiting" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                        Waiting: {why()}
+                        <Show when={latest()?.waiting_since}>
+                          {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+                        </Show>
+                      </p>
+                    )}
+                  </Show>
+                }
+              >
+                {(why) => (
+                  <p data-testid="latest-run-failure" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>
+                )}
+              </Show>
+            }
           >
             <Show when={said()}>
               {(text) => (

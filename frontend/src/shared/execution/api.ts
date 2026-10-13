@@ -74,6 +74,12 @@ export interface ExecutionSummary {
   state: string;
   cancellation_requested_at: string | null;
   created_at: string;
+  /** Why no runner has claimed the request, as a plain sentence; null once
+   *  claimed. On a request that failed for want of a runner it is the failure. */
+  waiting_reason?: string | null;
+  /** When a runner's poll first found the request unclaimable (RFC 3339); null
+   *  for a capacity wait and once claimed. */
+  waiting_since?: string | null;
 }
 
 export interface ExecutionListResult {
@@ -194,6 +200,8 @@ export const executionsApi = {
       state: data.state,
       cancellation_requested_at: data.cancellation_requested_at,
       created_at: data.created_at,
+      waiting_reason: data.waiting_reason,
+      waiting_since: data.waiting_since,
     };
     return { data: summary, headers };
   },

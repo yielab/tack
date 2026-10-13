@@ -186,6 +186,24 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
         </Show>
       </div>
 
+      <Show when={state() === 'queued' && summary()?.waiting_reason}>
+        {(why) => (
+          <p data-testid="run-waiting" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            Waiting: {why()}
+            <Show when={summary()?.waiting_since}>
+              {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+            </Show>
+          </p>
+        )}
+      </Show>
+      <Show when={state() === 'failed' && summary()?.waiting_reason}>
+        {(why) => (
+          <p data-testid="run-failure-reason" class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+            {why()}
+          </p>
+        )}
+      </Show>
+
       <Show when={props.record.error}>
         {(err) => (
           <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
