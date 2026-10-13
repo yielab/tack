@@ -109,11 +109,11 @@ const runnersWith = (harnesses: unknown[]) =>
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   );
 
-const GATEWAY_CATALOG = {
+const DOCKET_CATALOG = {
   harness_kind: 'docket',
   native_provider: 'docket',
   model_combinations: [
-    { model_provider: 'vercel-ai-gateway', model_ids: ['anthropic/claude-sonnet-4-5', 'openai/gpt-5'], discovery: 'probed' },
+    { model_provider: 'openai-compatible', model_ids: ['anthropic/claude-sonnet-4-5', 'openai/gpt-5'], discovery: 'probed' },
   ],
 };
 
@@ -267,10 +267,10 @@ describe('Settings panels', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it('automation_panel_offers_a_docket_gateway_catalog_as_provider_model_pairs_and_saves_the_pair', async () => {
+  it('automation_panel_offers_a_docket_catalog_as_provider_model_pairs_and_saves_the_pair', async () => {
     const base = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([GATEWAY_CATALOG])) : base(input, init),
+      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([DOCKET_CATALOG])) : base(input, init),
     );
     (PROJECT as { default_harness: string | null }).default_harness = 'docket';
     try {
@@ -279,13 +279,13 @@ describe('Settings panels', () => {
       await flush();
       Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
       await flush();
-      expect(modelLabels(container)).toEqual(['vercel-ai-gateway / anthropic/claude-sonnet-4-5', 'vercel-ai-gateway / openai/gpt-5']);
+      expect(modelLabels(container)).toEqual(['openai-compatible / anthropic/claude-sonnet-4-5', 'openai-compatible / openai/gpt-5']);
       expect(container.textContent).not.toContain('No model ids are measured for this agent yet');
-      chooseModel(container, 'vercel-ai-gateway / anthropic/claude-sonnet-4-5');
+      chooseModel(container, 'openai-compatible / anthropic/claude-sonnet-4-5');
       await flush();
       await flush();
       expect(lastModelPatch()).toEqual({
-        default_model: { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'anthropic/claude-sonnet-4-5' },
+        default_model: { kind: 'explicit', provider: 'openai-compatible', model_id: 'anthropic/claude-sonnet-4-5' },
       });
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
@@ -294,7 +294,7 @@ describe('Settings panels', () => {
 
   it('automation_panel_says_whether_the_default_agent_runs_on_this_computer', async () => {
     const base = fetchMock.getMockImplementation()!;
-    let docket: unknown = { ...GATEWAY_CATALOG, sandbox: 'none', decisions: { support: 'supported' } };
+    let docket: unknown = { ...DOCKET_CATALOG, sandbox: 'none', decisions: { support: 'supported' } };
     fetchMock.mockImplementation((input, init) =>
       String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([docket])) : base(input, init),
     );
@@ -307,7 +307,7 @@ describe('Settings panels', () => {
       expect(line(asks.container)).toContain('Not sandboxed on this computer, so the agent asks before each action');
       asks.dispose();
       asks.container.remove();
-      docket = { ...GATEWAY_CATALOG, sandbox: 'none', decisions: { support: 'unsupported' } };
+      docket = { ...DOCKET_CATALOG, sandbox: 'none', decisions: { support: 'unsupported' } };
       const blocked = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -320,17 +320,17 @@ describe('Settings panels', () => {
   it('automation_panel_shows_the_saved_pair_selected_whichever_provider_it_names', async () => {
     const base = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([GATEWAY_CATALOG])) : base(input, init),
+      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([DOCKET_CATALOG])) : base(input, init),
     );
     const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
     mutable.default_harness = 'docket';
-    mutable.default_model = { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'openai/gpt-5' };
+    mutable.default_model = { kind: 'explicit', provider: 'openai-compatible', model_id: 'openai/gpt-5' };
     try {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
-      expect(model.selectedOptions[0]?.textContent).toBe('vercel-ai-gateway / openai/gpt-5');
+      expect(model.selectedOptions[0]?.textContent).toBe('openai-compatible / openai/gpt-5');
     } finally {
       mutable.default_harness = null;
       mutable.default_model = undefined;
@@ -376,41 +376,22 @@ describe('Settings panels', () => {
     }
   });
 
-  it('automation_panel_offers_through_the_gateway_only_when_a_runner_reports_a_gateway_key', async () => {
+  it('automation_panel_offers_no_through_control_even_when_a_runner_lists_a_second_provider', async () => {
     (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
     const base = fetchMock.getMockImplementation()!;
-    const runnerWith = (providers: string[]) =>
-      fetchMock.mockImplementation((input, init) =>
-        String(input).endsWith('/api/runners')
-          ? Promise.resolve(runnersWith([{ harness_kind: 'claude-code', native_provider: 'anthropic', providers }]))
-          : base(input, init),
-      );
+    fetchMock.mockImplementation((input, init) =>
+      String(input).endsWith('/api/runners')
+        ? Promise.resolve(runnersWith([{ harness_kind: 'claude-code', native_provider: 'anthropic', providers: ['openai-compatible'] }]))
+        : base(input, init),
+    );
     try {
-      runnerWith([]);
-      let view = mount(() => <AutomationPanel />);
+      const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      Array.from(view.container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
       await flush();
-      expect(view.container.querySelector<HTMLSelectElement>('select[aria-label="Through"]')!.disabled).toBe(true);
-      expect(view.container.textContent).toContain('add a gateway key on the Agents page');
-      document.body.innerHTML = '';
-
-      runnerWith(['vercel-ai-gateway']);
-      view = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      Array.from(view.container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
-      await flush();
-      const through = view.container.querySelector<HTMLSelectElement>('select[aria-label="Through"]')!;
-      expect(through.disabled).toBe(false);
-      through.value = 'vercel-ai-gateway';
-      through.dispatchEvent(new Event('change', { bubbles: true }));
-      await flush();
-      chooseModel(view.container, 'vercel-ai-gateway / claude-opus-5-5');
-      await flush();
-      await flush();
-      expect(lastModelPatch()).toMatchObject({ default_model: { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'claude-opus-5-5' } });
+      expect(container.querySelector('select[aria-label="Through"]')).toBeNull();
+      expect(container.textContent).not.toContain('Through');
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }

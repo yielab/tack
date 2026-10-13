@@ -22,7 +22,7 @@ import { agentSafety } from '../help/texts';
 
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
-  modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '', viaGateway: false,
+  modelMode: 'auto' as 'project' | 'choose' | 'auto', modelModeInitialized: false, chooseIndex: '',
   customModelId: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
   branch: '',
   idempotencyKey: generateIdempotencyKey(),
@@ -230,24 +230,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
   const nativeProvider = () => targetHarnessCapability()?.native_provider;
-  const gatewayProvider = () => targetHarnessCapability()?.providers?.find((p) => p !== nativeProvider());
-  /** The provider is the harness's own, or the gateway's when chosen; never typed. */
-  const derivedProvider = (): string | null =>
-    (form.viaGateway ? gatewayProvider() : undefined) ?? nativeProvider() ?? null;
-  /** The configured providers a harness can be routed through, in words. */
-  const PROVIDER_LABELS: Record<string, string> = {
-    'vercel-ai-gateway': 'Vercel AI Gateway',
-    'openai-compatible': 'OpenAI-compatible endpoint',
-  };
-  const throughOptions = createMemo(() => {
-    const native = nativeProvider();
-    const gateway = gatewayProvider();
-    if (!native || !gateway) return [];
-    return [
-      { value: native, label: native.charAt(0).toUpperCase() + native.slice(1) },
-      { value: gateway, label: PROVIDER_LABELS[gateway] ?? gateway },
-    ];
-  });
+  /** The provider is the harness's own; never typed. */
+  const derivedProvider = (): string | null => nativeProvider() ?? null;
 
   const modelPart = (key: 'provider' | 'id'): string | null => {
     if (form.modelMode === 'project') return projectDefaultModelPair(project()?.default_model ?? null)[key];
@@ -419,8 +403,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             harnessOptions={harnessOptions}
             projectDefaultLabel={projectDefaultLabel}
             modelCombos={modelCombos}
-            throughOptions={throughOptions}
-            through={derivedProvider}
             staticModels={staticModels}
             gate={combinationGate}
             project={project}

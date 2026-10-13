@@ -29,8 +29,8 @@ export interface HarnessStepProps {
  *  harness in `HARNESS_KINDS`, so a missing entry only happens against an
  *  older or fake snapshot that never ran the probe. An installed harness
  *  with no vendor login of its own (no `HARNESS_LOGIN_COMMAND` entry) is
- *  never "not signed in": it authenticates through the endpoint step 3
- *  configures, so its row says that instead of naming a command. */
+ *  never "not signed in", so its row says it can't run yet instead of naming
+ *  a command. */
 function statusLabel(
   harness: HarnessCapability | undefined,
   kind: string,
@@ -46,7 +46,7 @@ function statusLabel(
     }
     const login = HARNESS_LOGIN_COMMAND[kind];
     if (!login) {
-      return { text: `${installed} · uses a provider endpoint (step 3)`, tone: 'neutral' };
+      return { text: `${installed} · Can't run yet on this computer`, tone: 'neutral' };
     }
     return { text: `${installed} · Not signed in — run \`${login}\` once in a terminal`, tone: 'neutral' };
   }

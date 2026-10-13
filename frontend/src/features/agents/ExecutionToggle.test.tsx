@@ -15,7 +15,6 @@ const STOPPED_STATUS = {
   enabled: false,
   state: 'stopped',
   since: null,
-  catalog: { status: 'not_configured' },
 };
 
 function mockFetch(initial: Record<string, unknown>, opts: { status?: number } = {}) {

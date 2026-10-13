@@ -1,8 +1,5 @@
 // Every console-step command string these steps introduce, in one place —
 // so a docs page can cite this file instead of a string embedded in JSX.
-// `ProviderKeyPanel.tsx` still holds its own command string inline
-// (`tack runner secret set {name}`) — this file does not re-export it, only
-// the ones these steps add.
 
 /** Per-harness vendor install command, shown when step 2's probe reports the
  *  binary absent from `PATH`. Verified against the vendor's own published
@@ -25,12 +22,11 @@ export const HARNESS_INSTALL_NOTE: Readonly<Record<string, string>> = {
   docket: 'From the docket project, following its own install instructions.',
 };
 
-/** Per-harness vendor login command — step 3's "use the agent's own login"
+/** Per-harness vendor login command — the "use the agent's own login"
  *  path. Each is the harness's own CLI entry point; Tack never touches
  *  vendor credentials (ADR 0050/0058), so this is the whole of what Tack can
  *  tell the operator to run. A harness absent here (docket, opencode) has no
- *  login of its own that Tack's adapter uses: it reaches a model only through
- *  the endpoint step 3 configures. */
+ *  login of its own that Tack's adapter uses. */
 export const HARNESS_LOGIN_COMMAND: Readonly<Record<string, string>> = {
   'claude-code': 'claude',
   codex: 'codex login',
