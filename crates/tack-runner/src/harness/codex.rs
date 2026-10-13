@@ -20,10 +20,7 @@ mod readiness;
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "codex",
     program: "codex",
-    model_selection: ModelSelection::Explicit(
-        "no line of `exec --json` on codex-cli 0.149.1 (measured 2026-09-20) names which model \
-         answered, so the request must name the model for one to be recorded",
-    ),
+    model_selection: ModelSelection::Optional,
     inherited_env: &[],
     probe_notes: &[(
         "served_model",

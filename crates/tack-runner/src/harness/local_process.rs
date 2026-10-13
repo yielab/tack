@@ -192,6 +192,10 @@ pub struct RunContext<'a> {
     /// `cancel` has finished with it. It exists before the grammar runs, so
     /// a grammar may write a file here.
     pub scratch: &'a Path,
+    /// The binary this spawn runs, as the harness's own locator resolved
+    /// it, for a grammar that must ask that same binary something first.
+    /// `None` outside a spawn (reporting, cancelling).
+    pub program: Option<&'a Path>,
 }
 
 /// The harness-specific part of a spawn.
@@ -204,6 +208,12 @@ pub struct Invocation {
     /// keeps stdin open and drives `signal`/`answer` on this CLI's stdout
     /// instead of running it to exit and closing the pipe.
     pub stdin_stays_open: bool,
+    /// Values to strip from everything the run produces.
+    pub secrets: Vec<String>,
+    /// Files of the person's, `(source, destination)`, that the run reads
+    /// and writes in place: bound into the sandbox at the destination, or
+    /// linked there when there is none.
+    pub shared_files: Vec<(PathBuf, PathBuf)>,
 }
 
 /// What a finished process's output says happened.
@@ -568,6 +578,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &scratch,
             &scratch,
             descriptor.sandbox_binds,
+            &[],
         );
         let decided = match wrapped {
             None => machine,
@@ -727,11 +738,13 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         let invocation = self.grammar.invocation(&RunContext {
             spec,
             scratch: &scratch,
+            program: Some(&program),
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
         let prompt = request.resolved_agent_profile.instructions.clone();
         secrets.register(prompt.clone());
+        secrets.register_all(invocation.secrets);
         let stdin_stays_open = invocation.stdin_stays_open;
         let stdin = self.grammar.prompt(prompt, stdin_stays_open);
 
@@ -740,16 +753,29 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
             _ => workspace_root.clone(),
         };
-        let (program, args) = self
-            .sandbox
-            .wrap(
-                &program,
-                &args,
-                &workspace_root,
-                &scratch,
-                self.grammar.descriptor().sandbox_binds,
-            )
-            .unwrap_or((program, args));
+        for (_, destination) in &invocation.shared_files {
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).map_err(|_| HarnessError::Process)?;
+            }
+        }
+        let (program, args) = match self.sandbox.wrap(
+            &program,
+            &args,
+            &workspace_root,
+            &scratch,
+            self.grammar.descriptor().sandbox_binds,
+            &invocation.shared_files,
+        ) {
+            Some(wrapped) => wrapped,
+            None => {
+                #[cfg(unix)]
+                for (source, destination) in &invocation.shared_files {
+                    std::os::unix::fs::symlink(source, destination)
+                        .map_err(|_| HarnessError::Process)?;
+                }
+                (program, args)
+            }
+        };
         let process_spec = ProcessSpec {
             program,
             args,
@@ -894,6 +920,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &RunContext {
                 spec: &running.spec,
                 scratch: &running.scratch,
+                program: None,
             },
             result,
         );
@@ -1297,6 +1324,7 @@ where
         let run_context = RunContext {
             spec: &running.record.spec,
             scratch: &running.record.scratch,
+            program: None,
         };
         let (observation, process_outcome, groups) = match running
             .process
@@ -1357,6 +1385,7 @@ where
             let run_context = RunContext {
                 spec: &record.spec,
                 scratch: &record.scratch,
+                program: None,
             };
             process
                 .wait_with_capture_and_questions(

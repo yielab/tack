@@ -414,6 +414,7 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
         .collect(),
         env,
         stdin_stays_open: ask,
+        ..Default::default()
     })
 }
 

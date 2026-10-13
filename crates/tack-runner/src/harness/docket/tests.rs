@@ -22,6 +22,7 @@ fn a_request_becomes_a_harness_run_command() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
     assert_eq!(
@@ -56,6 +57,7 @@ fn a_request_naming_no_model_passes_no_model_flag() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
     assert!(
@@ -72,6 +74,7 @@ fn a_request_naming_no_base_url_is_refused() {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     let error =
         invocation(&DocketFeatures::default(), &run).expect_err("no request-level base url");
@@ -86,6 +89,7 @@ fn contract_1_1_passes_the_task_as_a_file() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let features = DocketFeatures {
         contract: Contract::V1_1,
@@ -203,6 +207,7 @@ fn process_lines_become_group_signals() {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/cancelled-process.ndjson")
         .lines()
@@ -246,6 +251,7 @@ fn ask_drives_the_answer_channel_only_where_docket_offers_it() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let invocation = invocation(features, &run).expect("invocation");
         assert_eq!(invocation.stdin_stays_open, asks, "{approvals:?}");
@@ -269,6 +275,7 @@ fn an_approval_request_becomes_a_question_and_its_answer_is_one_line() {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/asked-answered.ndjson")
         .lines()
@@ -405,6 +412,7 @@ fn limits_and_policy_are_passed_only_where_probed() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let args = |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
     assert_eq!(
@@ -451,6 +459,7 @@ fn limits_and_policy_are_passed_only_where_probed() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let args = invocation(&everything, &run).expect("args").args;
         assert!(!args.contains(&"--max-tokens".to_owned()), "{args:?}");
@@ -468,6 +477,7 @@ fn limits_and_policy_are_passed_only_where_probed() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let error = invocation(&everything, &run).expect_err("refused");
         assert!(
@@ -483,6 +493,7 @@ fn limits_and_policy_are_passed_only_where_probed() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let error = invocation(&everything, &run).expect_err("refused");
     assert!(
@@ -514,6 +525,7 @@ fn recipe_is_passed_only_when_probed_and_specified() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let all = |features: &DocketFeatures| invocation(features, &run).expect("args").args;
         // docket refuses `--recipe` with `--agent-id` or `--max-tokens`, so a
@@ -548,6 +560,7 @@ fn recipe_is_passed_only_when_probed_and_specified() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let args =
             |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
@@ -561,6 +574,7 @@ fn recipe_is_passed_only_when_probed_and_specified() {
         let run = RunContext {
             spec: &request,
             scratch: scratch_dir.path(),
+            program: None,
         };
         let args =
             |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
@@ -582,6 +596,7 @@ fn the_real_docket_is_negotiated_not_assumed() {
     let run = RunContext {
         spec: &request,
         scratch: scratch_dir.path(),
+        program: None,
     };
     let args = invocation(&found, &run).expect("invocation").args;
     assert_eq!(
@@ -636,6 +651,7 @@ fn read(stdout: &str) -> RunReport {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     DocketGrammar.report(
         &run,
@@ -783,6 +799,7 @@ fn refused_calls_failed_model_calls_and_other_tools_are_steps() {
     let run = RunContext {
         spec: &request,
         scratch: state.path(),
+        program: None,
     };
     let line = |event_type: &str, payload: serde_json::Value| {
         serde_json::json!({
