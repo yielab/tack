@@ -10,18 +10,12 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
 const FLEET = { fleet_id: 'fleet-1', name: 'Primary Fleet', concurrency_limit: 5, default_policy: null };
-/** Carries a `default_model` convention matching `RUNNER`'s own declared
- *  `codex`/`openai`/`opaque/model-alpha` combination below, so an Auto
- *  submission through this profile resolves to a real, supported pair —
- *  most tests in this file need that to be true to submit at all, since an
- *  Auto request that resolves to nothing is blocked before it ever reaches
- *  the wire (`shared.ts#gateHarnessModelSelection`). */
 const PROFILE = {
   agent_profile_id: 'profile-1',
   name: 'Reviewer',
   instructions: 'Review the diff',
   tool_policy: { read: true },
-  limits: { default_model: { provider: 'openai', model_id: 'opaque/model-alpha' } },
+  limits: null,
 };
 /** A second profile — with only one candidate, `RunWithAgentModal` auto-selects
  *  it (the same "an unambiguous single choice needs no picker" reasoning the
@@ -29,8 +23,8 @@ const PROFILE = {
  *  needs at least two to keep that a real, unresolved choice. */
 const PROFILE_2 = { agent_profile_id: 'profile-2', name: 'Fixer', instructions: 'Fix the bug', tool_policy: {}, limits: null };
 
-/** One active runner reporting `codex`/`openai`/`opaque/model-alpha`, with no
- *  `model_passthrough` attestation — the common shape most tests start from. */
+/** One active runner reporting `codex`, which does not say whether it needs a model —
+ *  the common shape most tests start from. */
 function runnerCapabilitySnapshot(overrides: Record<string, unknown> = {}) {
   return {
     harnesses: [
@@ -39,7 +33,6 @@ function runnerCapabilitySnapshot(overrides: Record<string, unknown> = {}) {
         installed_version: '1.0.0',
         probe_error: null,
         probed_at: '2026-08-06T12:00:00Z',
-        model_combinations: [{ model_provider: 'openai', model_ids: ['opaque/model-alpha'], discovery: 'reported' }],
       },
     ],
     concurrency: { total: 1, available: 1 },
@@ -274,7 +267,7 @@ describe('RunWithAgentModal', () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{
         harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        model_combinations: [], native_provider: 'anthropic', providers: ['anthropic'], model_selection: 'optional',
+        model_selection: 'optional',
       }],
     }));
     mount({}, { runners: [claude], fleets: [], agentContext: 'Fix login bug\n\nThe brief.' });
@@ -409,17 +402,25 @@ describe('RunWithAgentModal', () => {
     });
   });
 
-  it('with a project model default configured, "Project default — …" is offered and selected automatically', async () => {
-    mount({}, { runners: [RUNNER], fleets: [], project: { id: 'project-1', name: 'P', default_model: { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' } } });
+  it('with a project model default for the default agent, "Project default — …" is offered, selected, and applied', async () => {
+    mount({}, { runners: [RUNNER], fleets: [], project: { id: 'project-1', name: 'P', default_harness: 'codex', default_model: 'opaque/model-alpha' } });
+    await flush();
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('Project default — openai / opaque/model-alpha');
+    expect(dialog.textContent).toContain('Project default — opaque/model-alpha');
     expect(modelModeRadio(0).checked).toBe(true);
-    await flush();
     submitButton().click();
     await flush();
     await flush();
-    expect(lastCreateBody).toMatchObject({ requested_model_provider: 'openai', requested_model_id: 'opaque/model-alpha' });
+    // The request names none: the server fills the project's default.
+    expect(lastCreateBody).toMatchObject({ requested_model: null });
+  });
+
+  it('a project model default is not offered for an agent other than the project\'s default agent', async () => {
+    mount({}, { runners: [RUNNER], fleets: [], project: { id: 'project-1', name: 'P', default_harness: 'claude-code', default_model: 'claude-opus-5-5' } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[role="dialog"]')!.textContent).not.toContain('Project default —');
   });
 
   it('with no project model default, "Auto" is selected and no "Project default" option is offered', async () => {
@@ -430,57 +431,38 @@ describe('RunWithAgentModal', () => {
     expect(modelModeRadio(0).checked).toBe(true); // "The agent's default", the first of two radios
   });
 
-  it('with no default model configured at any tier, Auto is blocked and names the fix, with a link to set one', async () => {
-    // PROFILE_2 carries no `default_model` convention, and this mount's
-    // project/fleets carry none either — the "every tier absent" state the
-    // scheduler's AutoSelectNotVerified rejects unconditionally.
-    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE_2] });
+  it('an agent that needs a model, with none named, is blocked and names the fix, with a link to set one', async () => {
+    const needs = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
+      harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', model_selection: 'required',
+    }] }));
+    mount({}, { runners: [needs], fleets: [], agentProfiles: [PROFILE_2] });
     await flush();
     await flush();
-    expect(modelModeRadio(0).checked).toBe(true); // the agent's default, with no project opinion
+    expect(modelModeRadio(1).checked).toBe(true); // an agent that needs a model opens on "Specific model"
+    modelModeRadio(0).click();
+    await flush();
     expect(submitButton()).toBeUndefined();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Unsupported');
-    expect(dialog.textContent).toMatch(/no agent profile, project, or fleet default model is configured/i);
+    expect(dialog.textContent).toContain('codex needs a model named');
     const fixLink = [...dialog.querySelectorAll('a')].find((a) => a.textContent === 'Set a default model for this project');
     expect(fixLink).toBeTruthy();
     expect(fixLink!.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
   });
 
-  it('with the project pinned explicitly to Auto, the same request is blocked with a distinct, tier-naming reason', async () => {
-    mount(
-      {},
-      {
-        runners: [RUNNER],
-        fleets: [],
-        agentProfiles: [PROFILE_2],
-        project: { id: 'project-1', name: 'P', default_model: { kind: 'auto' } },
-      },
-    );
+  it('"Specific model" lists the measured ids for the agent, and picking one enables submit', async () => {
+    const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+      harnesses: [{ harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', model_selection: 'required' }],
+    }));
+    mount({}, { runners: [claude], fleets: [] });
     await flush();
     await flush();
-    expect(submitButton()).toBeUndefined();
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toMatch(/project is explicitly set to auto/i);
-    expect([...dialog.querySelectorAll('button')].some((b) => b.textContent === 'Choose a model for this run')).toBe(true);
-  });
-
-  it('"Choose…" lists the target\'s own reported model combinations, and picking one is real, gate-supported data', async () => {
-    mount({}, { runners: [RUNNER], fleets: [] });
+    const labels = [...select('Model').options].map((o) => o.textContent);
+    expect(labels).toContain('claude-sonnet-5-5');
+    setSelect(select('Model'), 'static:claude-sonnet-5-5');
     await flush();
-    modelModeRadio(1).click(); // "Specific model"
-    await flush();
-    const modelSelect = select('Model');
-    const labels = [...modelSelect.options].map((o) => o.textContent);
-    expect(labels.some((l) => l?.includes('openai / opaque/model-alpha'))).toBe(true);
-    setSelect(modelSelect, '0');
-    await flush();
-    // The "Choose…" list is built from the same live runner data the gate
-    // itself reads (`targetCapabilities()` feeds both) — every option it
-    // offers already passes `gateHarnessModelSelection` by construction, so
-    // picking one enables submit with no separate capabilities override.
     expect(submitButton().disabled).toBe(false);
-    expect(document.body.textContent).toContain('Supported');
+    expect(document.body.textContent).toContain('Runs on claude-sonnet-5-5');
   });
 
   it('"Other…" ends the model list and reveals the model id field', async () => {
@@ -490,26 +472,6 @@ describe('RunWithAgentModal', () => {
     await flush();
     expect([...select('Model').options].map((o) => o.textContent).pop()).toBe('Other…');
 
-    disposers.pop()!();
-    document.body.innerHTML = '';
-    const passthroughRunner = runnerRow('runner-2', 'Passthrough box', runnerCapabilitySnapshot({
-      harnesses: [
-        {
-          harness_kind: 'codex',
-          installed_version: '1.0.0',
-          probe_error: null,
-          probed_at: '2026-08-06T12:00:00Z',
-          model_combinations: [],
-          model_passthrough: { support: 'supported', reason: 'forwards the model id verbatim' },
-        },
-      ],
-    }));
-    mount({}, { runners: [passthroughRunner], fleets: [] });
-    await flush();
-    modelModeRadio(1).click();
-    await flush();
-    const options = [...select('Model').options].map((o) => o.textContent);
-    expect(options).toContain('Other…');
     setSelect(select('Model'), '__custom__');
     await flush();
     expect(field('Model id')).toBeTruthy();
@@ -519,10 +481,10 @@ describe('RunWithAgentModal', () => {
     const claude = (model_selection?: string, extra: Record<string, unknown> = {}) => runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{
         harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        model_combinations: [], native_provider: 'anthropic', providers: ['anthropic'], ...(model_selection ? { model_selection } : {}), ...extra,
+        ...(model_selection ? { model_selection } : {}), ...extra,
       }],
     }));
-    // optional: opens on the agent's default, Run is enabled with no model chosen, and null/null is sent.
+    // optional: opens on the agent's default, Run is enabled with no model chosen, and no model is sent.
     mount({}, { runners: [claude('optional')], fleets: [] });
     await flush();
     await flush();
@@ -532,10 +494,10 @@ describe('RunWithAgentModal', () => {
     submitButton().click();
     await flush();
     await flush();
-    expect(lastCreateBody).toMatchObject({ requested_model_provider: null, requested_model_id: null });
+    expect(lastCreateBody).toMatchObject({ requested_model: null });
     teardown();
-    // required: opens on "Specific model" with the measured list; a listed id goes out with the derived provider.
-    mount({}, { runners: [claude('required', { model_passthrough: { support: 'supported', reason: null } })], fleets: [] });
+    // required: opens on "Specific model" with the measured list; a listed id goes out as the one model string.
+    mount({}, { runners: [claude('required')], fleets: [] });
     await flush();
     expect(modelModeRadio(1).checked).toBe(true);
     const options = [...select('Model').options].map((o) => o.textContent);
@@ -546,14 +508,14 @@ describe('RunWithAgentModal', () => {
     submitButton().click();
     await flush();
     await flush();
-    expect(lastCreateBody).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'claude-sonnet-5-5' });
+    expect(lastCreateBody).toMatchObject({ requested_model: 'claude-sonnet-5-5' });
   });
 
   it('the_project_default_harness_that_needs_no_model_is_not_left_on_specific_model', async () => {
     // The form starts on codex (required) until the project's claude-code (optional) lands.
     const harness = (harness_kind: string, model_selection: string) => ({
       harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-      model_combinations: [], native_provider: harness_kind === 'codex' ? 'openai' : 'anthropic', model_selection,
+      model_selection,
     });
     const row = runnerRow('runner-4', 'Box', runnerCapabilitySnapshot({ harnesses: [harness('codex', 'required'), harness('claude-code', 'optional')] }));
     mount({}, { runners: [row], fleets: [], project: { ...PROJECT, default_harness: 'claude-code' }, itemDelayMs: 10 });
@@ -572,7 +534,7 @@ describe('RunWithAgentModal', () => {
   it('a_harness_that_needs_a_model_says_so_where_run_was', async () => {
     const codex = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
       harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-      model_combinations: [], native_provider: 'openai', model_selection: 'required',
+      model_selection: 'required',
     }] }));
     mount({}, { runners: [codex], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
     await flush();
@@ -585,74 +547,22 @@ describe('RunWithAgentModal', () => {
     expect((document.querySelectorAll('details')[1] as HTMLDetailsElement).open).toBe(true);
   });
 
-  it('the_provider_comes_from_the_harness', async () => {
-    const harness = (providers: string[]) => ({
-      harness_kind: 'codex',
-      installed_version: '1.0.0',
-      probe_error: null,
-      probed_at: '2026-08-06T12:00:00Z',
-      model_combinations: [],
-      model_passthrough: { support: 'supported', reason: 'forwards the model id verbatim' },
-      native_provider: 'anthropic',
-      providers,
-    });
-    const submitCustom = async (providers: string[]) => {
-      const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot({ harnesses: [harness(providers)] }));
-      mount({}, { runners: [row], fleets: [] });
-      await flush();
-      modelModeRadio(1).click();
-      await flush();
-      setSelect(select('Model'), '__custom__');
-      await flush();
-      setField(field('Model id'), 'opaque/typed');
-      await flush();
-      expect(document.body.textContent).not.toMatch(/Provider/);
-      expect(document.body.textContent).not.toContain('Through');
-      submitButton().click();
-      await flush();
-      await flush();
-      return lastCreateBody as Record<string, unknown>;
-    };
-
-    expect(await submitCustom(['anthropic'])).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'opaque/typed' });
-    teardown();
-    expect(await submitCustom(['anthropic', 'openai-compatible'])).toMatchObject({ requested_model_provider: 'anthropic' });
-  });
-
-  it('proves the gate is load-bearing: injecting a real supported combination allows submit', async () => {
-    const caps: RunnerCapabilities[] = [
-      {
-        runner_version: '0.1.0',
-        reported_at: '2026-08-06T12:00:00Z',
-        labels: {},
-        concurrency: { total: 1, available: 1 },
-        harnesses: [
-          {
-            harness_kind: 'codex',
-            installed_version: '1.0.0',
-            probe_error: null,
-            probed_at: '2026-08-06T12:00:00Z',
-            model_combinations: [{ model_provider: 'openai', model_ids: ['opaque/model-alpha'], discovery: 'reported' }],
-          },
-        ],
-        features: {
-          cancel: { support: 'advisory', reason: null },
-          resume: { support: 'unsupported', reason: null },
-          decisions: { support: 'supported', reason: null },
-          artifacts: { support: 'supported', reason: null },
-          usage: { support: 'advisory', reason: null },
-        },
-        limits: { event_payload_bytes_max: 1024, artifact_content_bytes_max: 1024 },
-      },
-    ];
-    mount({ capabilities: () => caps }, { runners: [RUNNER], fleets: [] });
+  it('a typed model id goes out as the one model string, with no provider anywhere', async () => {
+    const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot());
+    mount({}, { runners: [row], fleets: [] });
     await flush();
     modelModeRadio(1).click();
     await flush();
-    setSelect(select('Model'), '0');
+    setSelect(select('Model'), '__custom__');
     await flush();
-    expect(submitButton().disabled).toBe(false);
-    expect(document.body.textContent).toContain('Supported');
+    setField(field('Model id'), 'opaque/typed');
+    await flush();
+    expect(document.body.textContent).not.toMatch(/Provider/);
+    expect(document.body.textContent).not.toContain('Through');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_model: 'opaque/typed' });
   });
 
   it('submitting posts the exact CreateExecutionInput shape, closes, and calls onCreated', async () => {
@@ -671,8 +581,7 @@ describe('RunWithAgentModal', () => {
       selector_id: 'runner-1',
       agent_profile_id: 'profile-1',
       requested_harness_kind: 'codex',
-      requested_model_provider: null,
-      requested_model_id: null,
+      requested_model: null,
       permission_policy: { tools: [], network: false },
     });
     expect(lastCreateBody).not.toHaveProperty('repository_snapshot');
@@ -765,7 +674,7 @@ describe('RunWithAgentModal', () => {
   });
 
   it('Run is disabled with one missing row and enabled with only deferred ones', async () => {
-    const project = { id: 'project-1', name: 'P', default_model: { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' } };
+    const project = { id: 'project-1', name: 'P', default_model: 'opaque/model-alpha' };
     mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [], project });
     await flush();
     await flush();
@@ -869,7 +778,7 @@ describe('RunWithAgentModal', () => {
 
   it('a docket-only runner offers docket under its label, so a docket runner can be run from the dialog', async () => {
     const docketOnly = runnerRow('runner-7', 'Docket only', runnerCapabilitySnapshot({
-      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'docket', native_provider: 'docket' }],
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'docket' }],
     }));
     mount({}, { runners: [docketOnly], fleets: [] });
     await flush();
@@ -881,7 +790,7 @@ describe('RunWithAgentModal', () => {
 
   it('a reported harness outside HARNESS_KINDS is offered under its wire name', async () => {
     const unknownOnly = runnerRow('runner-8', 'Unknown only', runnerCapabilitySnapshot({
-      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'prill', native_provider: 'prill' }],
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'prill' }],
     }));
     mount({}, { runners: [unknownOnly], fleets: [] });
     await flush();

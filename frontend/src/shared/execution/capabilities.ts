@@ -1,4 +1,4 @@
-// Pure capability-selector logic: what harness/provider/model combinations
+// Pure capability-selector logic: what harnesses and features
 // are actually usable, driven by real runner-reported capability data, not
 // assumptions.
 //
@@ -7,8 +7,8 @@
 // or where the snapshots came from, the same "pure selection, never grants
 // the authoritative lease" split `crates/tack-orch/src/scheduler` draws
 // server-side, applied to the frontend's read-side equivalent: a component
-// decides whether to let an operator pick a harness/provider/model
-// combination, never whether to actually grant a lease.
+// decides whether to let an operator pick a harness,
+// never whether to actually grant a lease.
 //
 // `GET /runners` feeds these functions today via `RunWithAgentModal.tsx`'s
 // `runnerSummaryToCapabilities` adapter (see `types.ts`'s `RunnerCapabilities`
@@ -23,7 +23,7 @@
 // capability data available'`, never a structural zero indistinguishable
 // from "checked, and it's unsupported."
 
-import type { CapabilitySupport, CapabilityValue, FeatureCapabilities, ModelCombination, RunnerCapabilities } from './types';
+import type { CapabilitySupport, CapabilityValue, FeatureCapabilities, RunnerCapabilities } from './types';
 
 /** What a gated control needs to render itself. `reason` stays nullable
  *  because `CapabilityValue.reason` is genuinely `null` on the wire when a
@@ -109,137 +109,6 @@ export function harnessProbeStatus(
     }
   }
   return { probed: sawClean, lastError: sawClean ? null : lastError };
-}
-
-/** One provider/model-id combination merged across every reporting runner,
- *  with how many distinct runners reported it — the shape a picker needs to
- *  render "openai / opaque/model-alpha (2 runners)". */
-export interface AggregatedModelCombination {
-  model_provider: string;
-  model_id: string;
-  supportingRunnerCount: number;
-}
-
-/** Every provider/model-id pair reported for `harnessKind` across all
- *  snapshots, deduplicated and counted. Harness reports with a
- *  `probe_error` are excluded — a failed probe's `model_combinations` (if
- *  any were stale-cached) are not trustworthy evidence of what's usable
- *  right now. */
-export function listModelCombinationsForHarness(
-  snapshots: RunnerCapabilities[],
-  harnessKind: string,
-): AggregatedModelCombination[] {
-  const counts = new Map<string, AggregatedModelCombination>();
-  for (const snapshot of snapshots) {
-    for (const harness of snapshot.harnesses) {
-      if (harness.harness_kind !== harnessKind || harness.probe_error !== null) continue;
-      for (const combo of harness.model_combinations as ModelCombination[]) {
-        for (const modelId of combo.model_ids) {
-          const key = `${combo.model_provider} ${modelId}`;
-          const existing = counts.get(key);
-          if (existing) existing.supportingRunnerCount += 1;
-          else {
-            counts.set(key, {
-              model_provider: combo.model_provider,
-              model_id: modelId,
-              supportingRunnerCount: 1,
-            });
-          }
-        }
-      }
-    }
-  }
-  // Plain string comparison, not `localeCompare` — model ids are opaque
-  // (`types.ts`'s `ModelCombination` doc comment: "never inspect or split
-  // it"), so locale-aware collation (which can treat punctuation like `/`
-  // vs `:` inconsistently across environments) is both meaningless for
-  // these values and a source of non-deterministic ordering across ICU
-  // data versions. A stable, codepoint-based sort keeps this function's
-  // output reproducible everywhere it runs.
-  return [...counts.values()].sort((a, b) => {
-    if (a.model_provider !== b.model_provider) return a.model_provider < b.model_provider ? -1 : 1;
-    if (a.model_id !== b.model_id) return a.model_id < b.model_id ? -1 : 1;
-    return 0;
-  });
-}
-
-export interface CombinationAvailability {
-  supported: boolean;
-  reason: string;
-  supportingRunnerCount: number;
-}
-
-/**
- * The single function a "Run with agent" submit gate needs: is this
- * exact harness/provider/model combination usable right now, across every
- * runner capability snapshot the caller has. Always returns a typed reason,
- * whether supported or not — never a bare boolean.
- *
- * Mirrors `crates/tack-orch/src/scheduler/select.rs`'s `evaluate_candidate`
- * exactly: a pairing counts as supported when a runner either declares it in
- * `model_combinations`, OR attests `model_passthrough: supported` for that
- * harness — the scheduler's own arm is `!declared && !passthrough`, checked
- * with no regard to which provider/model was actually requested, because a
- * passthrough harness forwards whatever it's given and validates it itself
- * at run time. `'advisory'` and an absent attestation both mean "not
- * attested" and reject exactly like `'unsupported'`, same as the scheduler.
- */
-export function isCombinationSupported(
-  snapshots: RunnerCapabilities[],
-  harnessKind: string,
-  modelProvider: string,
-  modelId: string,
-): CombinationAvailability {
-  if (snapshots.length === 0) {
-    return { supported: false, reason: NO_DATA_REASON, supportingRunnerCount: 0 };
-  }
-  let harnessSeen = false;
-  let providerSeen = false;
-  let declaredSupportingRunnerCount = 0;
-  let passthroughOnlySupportingRunnerCount = 0;
-  for (const snapshot of snapshots) {
-    for (const harness of snapshot.harnesses) {
-      if (harness.harness_kind !== harnessKind) continue;
-      harnessSeen = true;
-      if (harness.probe_error !== null) continue;
-      let declaredHere = false;
-      for (const combo of harness.model_combinations) {
-        if (combo.model_provider !== modelProvider) continue;
-        providerSeen = true;
-        if (combo.model_ids.includes(modelId)) declaredHere = true;
-      }
-      // Counted once per reporting harness, never both ways for the same
-      // report — a runner is either supporting evidence or it isn't, exactly
-      // the per-candidate `declared || passthrough` the scheduler evaluates.
-      if (declaredHere) declaredSupportingRunnerCount += 1;
-      else if (harness.model_passthrough?.support === 'supported') passthroughOnlySupportingRunnerCount += 1;
-    }
-  }
-  const supportingRunnerCount = declaredSupportingRunnerCount + passthroughOnlySupportingRunnerCount;
-  if (supportingRunnerCount > 0) {
-    const noun = supportingRunnerCount === 1 ? 'runner' : 'runners';
-    const verb = supportingRunnerCount === 1 ? 'reports' : 'report';
-    const reason =
-      declaredSupportingRunnerCount > 0
-        ? `${supportingRunnerCount} ${noun} ${verb} this combination`
-        : `${supportingRunnerCount} ${noun} ${verb} this harness forwards an operator-chosen model verbatim (model passthrough)`;
-    return { supported: true, reason, supportingRunnerCount };
-  }
-  if (!harnessSeen) {
-    return { supported: false, reason: 'no runner reports this harness', supportingRunnerCount: 0 };
-  }
-  if (!providerSeen) {
-    return {
-      supported: false,
-      reason: 'no runner reports this model provider for this harness',
-      supportingRunnerCount: 0,
-    };
-  }
-  return {
-    supported: false,
-    reason: 'no runner reports this model id for this harness/provider',
-    supportingRunnerCount: 0,
-  };
 }
 
 export type { CapabilitySupport };

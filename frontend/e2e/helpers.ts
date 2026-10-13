@@ -136,11 +136,12 @@ export async function createFreshProject(request: APIRequestContext, name: strin
 export async function setProjectDefaultModel(
   request: APIRequestContext,
   projectId: string,
-  provider: string,
+  harness: string,
   modelId: string,
 ): Promise<void> {
+  // The model belongs to the default agent: changing the agent clears it, so both go in one write.
   const res = await request.patch(`${API}/projects/${projectId}`, {
-    data: { default_model: { kind: 'explicit', provider, model_id: modelId } },
+    data: { default_harness: harness, default_model: modelId },
   });
   expect(res.ok(), `set project default model failed: ${res.status()}`).toBeTruthy();
 }
@@ -323,15 +324,15 @@ export async function createAgentProfile(request: APIRequestContext, name: strin
 }
 
 /**
- * A minimal, valid runner-v1 capability report declaring `codex`/`openai`/
- * `modelId` — for the direct runner-protocol HTTP calls
+ * A minimal, valid runner-v1 capability report declaring a `codex` that needs
+ * a model named — for the direct runner-protocol HTTP calls
  * {@link enrollRunner}/{@link claimOnce} make. There is no CLI/UI surface
  * for the runner side of the protocol (enroll/refresh/claim are
  * `tack-runner`'s job, a different binary/actor than the operator UI these
  * specs otherwise drive) — these two helpers speak it directly, as a real
  * runner would.
  */
-function capabilities(modelId: string) {
+function capabilities() {
   const now = new Date().toISOString();
   return {
     reported_at: now,
@@ -343,7 +344,7 @@ function capabilities(modelId: string) {
         installed_version: '1.0.0',
         probe_error: null,
         probed_at: now,
-        model_combinations: [{ model_provider: 'openai', model_ids: [modelId], discovery: 'reported' }],
+        model_selection: 'required',
       },
     ],
     features: {},
@@ -360,7 +361,7 @@ function capabilities(modelId: string) {
 export async function enrollRunner(
   request: APIRequestContext,
   name: string,
-  modelId: string,
+  _modelId: string,
   capacity = 1,
 ): Promise<{ runnerId: string; credential: string }> {
   const pendingRes = await request.post(`${API}/runners/enrollment`, {
@@ -375,7 +376,7 @@ export async function enrollRunner(
       enrollment_token: pending.enrollment_token,
       runner_name: name,
       runner_version: '0.1.0',
-      capabilities: capabilities(modelId),
+      capabilities: capabilities(),
     },
   });
   expect(enrollRes.ok(), `runner enroll failed: ${enrollRes.status()}`).toBeTruthy();
@@ -590,8 +591,7 @@ export async function createExecution(
       selector_id: runnerId,
       agent_profile_id: profileId,
       requested_harness_kind: 'codex',
-      requested_model_provider: 'openai',
-      requested_model_id: modelId,
+      requested_model: modelId,
       permission_policy: { tools: [], network: false },
       budgets: {},
       environment: {},
@@ -612,21 +612,16 @@ export async function createExecution(
 // started, and that server holds exactly one `EmbeddedRunnerControl`, whose
 // `enabled`/running-or-stopped state lives behind one `tokio::sync::Mutex`
 // (`crates/tack-cli/src/local_runner.rs`) — not one per test, one for the
-// whole process's lifetime. `execution-toggle.spec.ts`, `provider-key-panel
-// .spec.ts`, and `agents-page.spec.ts`'s first test each flip that switch or
-// force a real network probe that holds its lock for the round trip
-// (`put_local_runner_secret`'s `catalog()` call, `crates/tack-api/src/
-// handlers/local_runner.rs`) — `fullyParallel: true` gives Playwright no
-// reason to run any two of them apart, so without something coordinating
-// them, one test's "Turn on" can observe a sibling's "Turn off" landing
-// mid-wait, or simply time out because a sibling is holding the server-side
-// lock for a real HTTP round trip. Neither is a bug in the assertion; both
-// are the same shared resource, contended.
+// whole process's lifetime. `fullyParallel: true` gives Playwright no
+// reason to run two specs that flip that switch apart, so without something
+// coordinating them, one test's "Turn on" can observe a sibling's "Turn off"
+// landing mid-wait. Neither is a bug in the assertion; both are the same
+// shared resource, contended.
 //
-// **Any test — in these three files or a later one — whose assertions read
+// **Any test whose assertions read
 // or set `enabled`/`state`/the "Turn on"/"Turn off" label, or whose own
 // request needs the embedded runner's control lock unshared for its
-// duration (a provider-key save, an on/off round trip), must hold
+// duration (an on/off round trip), must hold
 // `executionToggleLock` for its entire body.** Request it like any other
 // fixture:
 //

@@ -16,10 +16,8 @@
 //
 // `GET /runners` exists (`runnersApi.list()` below) and is wired into
 // `RunWithAgentModal.tsx`'s live capability fetch (see that file's own
-// comment on why: with no live data, a *specific* model choice was
-// unconditionally hard-blocked at every real call site — the only request
-// shape a real operator could ever submit through the UI was `Auto`, which
-// the scheduler (`tack_orch::scheduler`) always rejects too). Two gaps
+// comment on why: the gate needs the harnesses a target really reports).
+// Two gaps
 // remain open, requested from a future owner:
 //   - `GET /runner-fleets/{id}` (single fleet + roster) — only
 //     `POST`/`GET` (list) exist; `RunnerSummary.fleet_ids` (via `GET
@@ -104,8 +102,8 @@ export interface CreateExecutionInput {
   verify?: boolean;
   /** `false` declines the runner's branch push for this run; never enables one. */
   push_branch?: boolean;
-  requested_model_provider?: string | null;
-  requested_model_id?: string | null;
+  /** The one model string the agent is asked to use, passed verbatim; absent, the project default or the agent's own. */
+  requested_model?: string | null;
   repository_snapshot: unknown;
   permission_policy: unknown;
   budgets: unknown;

@@ -129,20 +129,12 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
 
   await modal.getByRole('button', { name: profileName, exact: true }).click();
 
-  // An explicit, real, matching model choice — never left on whatever the
-  // shared `getOrCreateProject` project's own default model happens to be.
-  // The shared project's identity is stable and nothing in this suite ever
-  // writes a `default_model` onto it (`getOrCreateProject`'s own doc
-  // comment; `createFreshProject`'s doc comment on why every write goes
-  // there instead), but this test's own claim is about what *it* set up,
-  // not about the shared project's ambient state either way. Selecting the
-  // target's own declared combination directly (`enrollRunner`'s fixture
-  // reports exactly one, so it is always index "0") ties the assertion to
-  // this test's own runner, the same way every project-touching test in
-  // `scheduler-e2e.spec.ts` already does.
+  // An explicit model choice, typed by hand: the fixture's codex needs a model
+  // named and has no measured list, so "Other…" is the way to name one.
   await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Other…' });
+  await modal.getByLabel('Model id').fill('opaque/model-alpha');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
   const runButton = modal.getByRole('button', { name: 'Run', exact: true });
@@ -183,14 +175,12 @@ test('the run form submits the project\'s configured model default, byte for byt
   const itemId = await createFreshItem(request, projectId, `RWA project-default item ${Date.now()}`);
   const profileName = `RWA project-default profile ${Date.now()}`;
   const profileId = await createAgentProfile(request, profileName);
-  // The one runner reports the exact combination the project will default
-  // to — required for the submit gate (`shared.ts#gateHarnessModelSelection`)
-  // to allow it through.
   const runnerName = `RWA project-default runner ${Date.now()}`;
   const { runnerId } = await enrollRunner(request, runnerName, 'opaque/model-alpha');
 
+  // The model belongs to the project's default agent, which is the runner's codex.
   const patchRes = await request.patch(`${API}/projects/${projectId}`, {
-    data: { default_model: { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' } },
+    data: { default_harness: 'codex', default_model: 'opaque/model-alpha' },
   });
   expect(patchRes.ok(), `project default_model patch failed: ${patchRes.status()}`).toBeTruthy();
 
@@ -215,7 +205,7 @@ test('the run form submits the project\'s configured model default, byte for byt
   // comment); either way `selector_kind`/`selector_id` below prove it
   // resolved to this test's own runner, by name, never a free-typed id.
   await modal.getByText('Advanced for this run').click();
-  await expect(modal.getByText('Project default — openai / opaque/model-alpha')).toBeVisible();
+  await expect(modal.getByText('Project default — opaque/model-alpha')).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
   await modal.getByRole('button', { name: profileName, exact: true }).click();
@@ -224,8 +214,8 @@ test('the run form submits the project\'s configured model default, byte for byt
   await expect(modal).toBeHidden();
 
   expect(capturedBody, 'no POST /api/executions was captured').toBeDefined();
-  expect(capturedBody?.requested_model_provider).toBe('openai');
-  expect(capturedBody?.requested_model_id).toBe('opaque/model-alpha');
+  // The request names no model: the server fills in the project's default.
+  expect(capturedBody?.requested_model).toBeNull();
   expect(capturedBody?.selector_kind).toBe('exact_runner');
   expect(capturedBody?.selector_id).toBe(runnerId);
   expect(capturedBody?.agent_profile_id).toBe(profileId);
@@ -289,7 +279,7 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/settings\\?tab=automation`));
 
   // The fix itself is the settings panel's own save; the API write is the same one it makes.
-  await setProjectDefaultModel(request, projectId, 'openai', 'opaque/model-alpha');
+  await setProjectDefaultModel(request, projectId, 'codex', 'opaque/model-alpha');
   await page.goBack();
   modal = await openModal();
   await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();

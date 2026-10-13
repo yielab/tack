@@ -274,14 +274,12 @@ test('item detail Execution tab (with a real request) has no accessibility viola
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
   await modal.getByRole('button', { name: profileName, exact: true }).click();
-  // A specific, matching model choice: with no default model configured
-  // anywhere (agent profile / project / fleet), the live-capability gate
-  // refuses to submit an unresolved "Auto" request — it would queue
-  // forever. The target declares exactly one combination (`enrollRunner`'s
-  // fixed capability shape), so it is always index "0".
+  // The fixture's codex needs a model named and lists none, so the model is
+  // typed by hand ("Other…"); without one the dialog has no Run button.
   await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption('__custom__');
+  await modal.getByLabel('Model id').fill('opaque/model-a11y');
   await modal.getByRole('button', { name: 'Run', exact: true }).click();
   await expect(modal).toBeHidden();
 

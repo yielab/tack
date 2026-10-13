@@ -30,7 +30,6 @@ export type StatusCategory = Schemas['StatusCategory'];
 export type WorkflowStatus = Schemas['StatusDef'];
 export type UpdateProject = Schemas['UpdateProject'];
 export type CreateProject = Schemas['CreateProject'];
-export type ProjectModelDefault = Schemas['ProjectModelDefault'];
 
 // ─── Items ─────────────────────────────────────────────────────────────────
 

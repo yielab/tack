@@ -309,6 +309,24 @@ pub struct HarnessOutcome {
 }
 
 impl HarnessOutcome {
+    /// The usage the evidence carries: the measured counters, plus the
+    /// agent's version and the model it ran, which the verifier reads from
+    /// the same place.
+    pub fn evidence_usage(&self) -> serde_json::Value {
+        let mut usage = serde_json::to_value(&self.usage).unwrap_or(serde_json::Value::Null);
+        if let Some(object) = usage.as_object_mut() {
+            object.insert(
+                "harness_version".to_owned(),
+                serde_json::json!(self.actual_execution.harness_version),
+            );
+            object.insert(
+                "model".to_owned(),
+                serde_json::json!(self.actual_execution.model),
+            );
+        }
+        usage
+    }
+
     /// Workspace ownership belongs to the engine, not a harness adapter. Normalize
     /// the adapter outcome before it is projected into the transport report so the
     /// report has exactly one source for actual execution and usage facts.
@@ -788,7 +806,7 @@ where
                 &spec,
                 record.base_commit.as_deref(),
                 outcome.terminal_reason.clone(),
-                serde_json::to_value(&outcome.usage).unwrap_or(serde_json::Value::Null),
+                outcome.evidence_usage(),
             )
             .await
         {

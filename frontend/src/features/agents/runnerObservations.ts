@@ -15,7 +15,7 @@
 // an explicit field should replace this, not stack on top of it.
 
 import type { RunnerSummary } from '../../shared/execution/api';
-import type { HarnessCapability, ModelCombination, RunnerCapabilities } from '../../shared/execution/types';
+import type { HarnessCapability, RunnerCapabilities } from '../../shared/execution/types';
 
 export const LOCAL_RUNNER_NAME_PREFIX = 'local-';
 
@@ -58,54 +58,4 @@ export function findHarness(
   harnessKind: string,
 ): HarnessCapability | undefined {
   return harnesses.find((h) => h.harness_kind === harnessKind);
-}
-
-/** Step 4's model picker source: the union of `(model_provider, model_id)`
- *  pairs every active runner's every harness has actually reported,
- *  deduplicated. Empty today for both in-tree harnesses — neither CLI has a
- *  list-models command (`HarnessCapability.model_discovery_note`) — which
- *  is why the picker also needs the free-text fallback
- *  `anyHarnessAttestsPassthrough` gates. */
-export function unionModelCombinations(runners: readonly RunnerSummary[]): ModelCombination[] {
-  const seen = new Map<string, ModelCombination>();
-  for (const runner of runners) {
-    if (runner.state !== 'active') continue;
-    for (const harness of harnessesOf(runner)) {
-      for (const combo of harness.model_combinations ?? []) {
-        const key = `${combo.model_provider} ${combo.model_ids.slice().sort().join(',')}`;
-        if (!seen.has(key)) seen.set(key, combo);
-      }
-    }
-  }
-  return [...seen.values()];
-}
-
-/** Whether any active runner's any harness attests that it forwards an
- *  operator-specified model id verbatim (`model_passthrough.support ===
- *  'supported'`) — the gate for step 4's "type a model id" free-text
- *  fallback and step 5's own model field, mirroring
- *  `shared/runWithAgent/shared.ts#gateHarnessModelSelection`'s reading of
- *  the same field (that function gates a specific harness at run time; this
- *  gates the picker's affordance at configuration time). */
-export function anyHarnessAttestsPassthrough(runners: readonly RunnerSummary[]): boolean {
-  return runners
-    .filter((r) => r.state === 'active')
-    .some((r) => harnessesOf(r).some((h) => h.model_passthrough?.support === 'supported'));
-}
-
-/** The first active runner with at least one harness the probe reports
- *  installed (`probe_error === null`), this machine's own preferred first —
- *  step 5's "which runner runs the test" has no picker in the card, so this
- *  is the one auto-selection rule it needs. `null` when nothing qualifies:
- *  step 5 renders that honestly rather than guessing a runner id. */
-export function pickTestRunTarget(
-  runners: readonly RunnerSummary[],
-): { runner: RunnerSummary; harness: HarnessCapability } | null {
-  const active = runners.filter((r) => r.state === 'active');
-  const ordered = [...active].sort((a, b) => (isThisMachineRunner(b) ? 1 : 0) - (isThisMachineRunner(a) ? 1 : 0));
-  for (const runner of ordered) {
-    const harness = harnessesOf(runner).find((h) => h.probe_error === null && h.installed_version);
-    if (harness) return { runner, harness };
-  }
-  return null;
 }

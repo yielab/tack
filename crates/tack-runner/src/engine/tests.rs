@@ -3893,3 +3893,22 @@ async fn reported_steps_reach_the_timeline_in_order_before_the_terminal_event() 
         );
     }
 }
+
+/// The verifier reads the agent's version and model from the evidence's usage,
+/// beside the measured counters.
+#[test]
+fn the_evidence_usage_names_the_agent_version_and_model() {
+    let mut actual = actual_execution();
+    actual.model = Some("claude-x".to_owned());
+    let outcome = HarnessOutcome {
+        terminal_state: AttemptState::Succeeded,
+        terminal_reason: serde_json::json!({}),
+        final_checkpoint: None,
+        actual_execution: actual,
+        usage: usage(),
+    };
+    let evidence = outcome.evidence_usage();
+    assert_eq!(evidence["model"], "claude-x");
+    assert_eq!(evidence["harness_version"], "1.0.0");
+    assert!(evidence.get("tokens_in").is_some());
+}

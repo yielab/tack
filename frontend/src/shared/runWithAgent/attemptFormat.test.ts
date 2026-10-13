@@ -106,32 +106,29 @@ describe('describeModelProvenance', () => {
     expect(d.detail).not.toContain(NOT_MEASURED_TEXT);
   });
 
-  it('matched renders a success tone and names the real provider/model', () => {
-    const d = describeModelProvenance({ kind: 'matched', provider: 'openai', model_id: 'opaque/model-alpha' }, 'observed');
+  it('reported and equal to the request renders a success tone and names the model', () => {
+    const d = describeModelProvenance({ requested: 'opaque/model-alpha', served: 'opaque/model-alpha', source: 'reported' });
     expect(d.tone).toBe('success');
-    expect(d.detail).toContain('openai');
     expect(d.detail).toContain('opaque/model-alpha');
   });
 
-  it('auto_select_observed renders an info tone', () => {
-    const d = describeModelProvenance({ kind: 'auto_select_observed', actual_provider: 'anthropic', actual_model_id: 'opaque/model-beta' });
+  it('a model nobody requested but the agent reported renders an info tone', () => {
+    const d = describeModelProvenance({ requested: null, served: 'opaque/model-beta', source: 'reported' });
     expect(d.tone).toBe('info');
-    expect(d.detail).toContain('anthropic');
+    expect(d.detail).toContain('opaque/model-beta');
   });
 
-  it('mismatched shows both requested and actual values, never silently reconciled, with a warning tone', () => {
-    const d = describeModelProvenance({
-      kind: 'mismatched',
-      requested_provider: 'openai',
-      requested_model_id: 'opaque/model-alpha',
-      actual_provider: 'anthropic',
-      actual_model_id: 'opaque/model-beta',
-    });
+  it('a different reported model shows both strings, never silently reconciled, with a warning tone', () => {
+    const d = describeModelProvenance({ requested: 'opaque/model-alpha', served: 'opaque/model-beta', source: 'reported' });
     expect(d.tone).toBe('warning');
-    expect(d.detail).toContain('openai');
     expect(d.detail).toContain('opaque/model-alpha');
-    expect(d.detail).toContain('anthropic');
     expect(d.detail).toContain('opaque/model-beta');
+  });
+
+  it('no served model reads as the agent default', () => {
+    const d = describeModelProvenance({ requested: null, served: null, source: 'agent_default' });
+    expect(d.label).toBe('Agent default');
+    expect(d.tone).toBe('neutral');
   });
 });
 
@@ -152,12 +149,10 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     expect(describeAttemptOutcome('running', null).whyStopped).toBeNull();
   });
 
-  it('matched is produced only for an observation; requested_not_confirmed is neutral and says so', () => {
-    const matched = { kind: 'matched' as const, provider: 'claude', model_id: 'claude-sonnet-5-5' };
-    expect(describeModelProvenance(matched, 'confirmed_from_output').label).toBe('Matched request');
-    const d = describeModelProvenance(matched, 'requested_not_confirmed');
+  it('a requested-only model is neutral and says it was not confirmed', () => {
+    const d = describeModelProvenance({ requested: 'claude-sonnet-5-5', served: 'claude-sonnet-5-5', source: 'requested' });
     expect(d.label).not.toBe('Matched request');
-    expect(d.detail).toBe('Requested claude / claude-sonnet-5-5 (not confirmed by the run)');
+    expect(d.detail).toBe('Requested claude-sonnet-5-5 (not confirmed by the run)');
     expect(d.tone).toBe('neutral');
   });
 

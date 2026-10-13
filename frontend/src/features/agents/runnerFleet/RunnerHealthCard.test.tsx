@@ -36,7 +36,6 @@ const fullySupportedCapabilities: RunnerCapabilities = {
       installed_version: '2.1.0',
       probe_error: null,
       probed_at: '2026-08-01T00:00:00Z',
-      model_combinations: [{ model_provider: 'anthropic', model_ids: ['opaque-1'], discovery: 'probed' }],
     },
   ],
   features: {
@@ -210,7 +209,6 @@ describe('RunnerHealthCard — harness display', () => {
           installed_version: '0.9.0',
           probe_error: 'binary not found on PATH',
           probed_at: '2026-08-01T00:00:00Z',
-          model_combinations: [],
         },
       ],
     };

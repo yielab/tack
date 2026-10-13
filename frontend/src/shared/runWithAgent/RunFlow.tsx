@@ -3,7 +3,7 @@ import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
 import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
 import { HELP } from '../help/texts';
-import type { AgentProfileSummary, AggregatedModelCombination } from '../execution';
+import type { AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { gateHarnessModelSelection } from './shared';
 import RadioRow from './RadioRow';
@@ -12,7 +12,7 @@ import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 
 /** "Other…": a model id typed by hand. */
 export const CUSTOM_MODEL_VALUE = '__custom__';
-/** Prefix of a Select value naming an id from the measured list rather than a reported combination. */
+/** Prefix of a Select value naming an id from the measured list. */
 export const STATIC_MODEL_PREFIX = 'static:';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
@@ -51,8 +51,7 @@ export interface RunFlowProps {
   createDefaultProfile: () => void;
   harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   projectDefaultLabel: Accessor<string | null | undefined>;
-  modelCombos: Accessor<AggregatedModelCombination[]>;
-  /** Measured ids for this harness that the runner did not already report. */
+  /** Model ids measured to work with this harness. */
   staticModels: Accessor<string[]>;
   gate: Accessor<ReturnType<typeof gateHarnessModelSelection>>;
   project: Accessor<Project | undefined>;
@@ -259,10 +258,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               onInput={(e) => props.setForm('chooseIndex', e.currentTarget.value)}
               options={[
                 { value: '', label: 'Select a model' },
-                ...props.modelCombos().map((c, i) => ({
-                  value: String(i),
-                  label: `${c.model_provider} / ${c.model_id} (${c.supportingRunnerCount} runner${c.supportingRunnerCount === 1 ? '' : 's'})`,
-                })),
                 ...props.staticModels().map((id) => ({ value: `${STATIC_MODEL_PREFIX}${id}`, label: id })),
                 { value: CUSTOM_MODEL_VALUE, label: 'Other…' },
               ]}
@@ -271,7 +266,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               <Field label="Model id" value={props.form.customModelId} onInput={(e) => props.setForm('customModelId', e.currentTarget.value)} />
             </Show>
           </Show>
-          <CombinationGateNote gate={props.gate()} />
+          <ModelGateNote gate={props.gate()} />
           <Field
             label="Branch"
             value={props.form.branch}
@@ -368,12 +363,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
   );
 };
 
-const CombinationGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
+const ModelGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
   <div class="space-y-1.5">
-    <p class="flex items-start gap-2 text-xs" style={{ color: props.gate.advisory ? 'var(--color-warning-700)' : props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
+    <p class="flex items-start gap-2 text-xs" style={{ color: props.gate.allowed ? 'var(--color-success-700)' : 'var(--color-danger-600)' }}>
       <Show when={!props.gate.allowed}><Badge tone="danger">Unsupported</Badge></Show>
-      <Show when={props.gate.allowed && props.gate.advisory}><Badge tone="warning">Unverified</Badge></Show>
-      <Show when={props.gate.allowed && !props.gate.advisory}><Badge tone="success">Supported</Badge></Show>
+      <Show when={props.gate.allowed}><Badge tone="success">Supported</Badge></Show>
       <span class="pt-0.5">{props.gate.reason}</span>
     </p>
     <Show when={props.gate.fix}>

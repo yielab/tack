@@ -43,8 +43,6 @@ const NO_KEYCHAIN = process.env.DOCKET_PRILL_NO_KEYCHAIN || 'unix:path=/nonexist
 
 const PROJECT_NAME = 'Calculator';
 const RUNNER_NAME = 'workstation-docket-prill';
-/** The wire name of `[provider.openai_compatible]`, the endpoint the script configures. */
-const ENDPOINT_PROVIDER = 'openai-compatible';
 
 /** The three kinds of work, each with what prill can check by itself. */
 const ITEMS = {
@@ -178,11 +176,15 @@ interface RunnerRow {
   name: string;
   state: string;
   capability_snapshot?: {
-    harnesses?: Array<{
-      harness_kind: string;
-      model_combinations?: Array<{ model_provider: string; model_ids: string[] }>;
-    }>;
+    harnesses?: Array<{ harness_kind: string }>;
   };
+}
+/** The first model the configured OpenAI-compatible endpoint serves. */
+async function endpointModel(): Promise<string> {
+  const res = await fetch(`${MODEL_BASE_URL}/v1/models`);
+  const ids = ((await res.json()) as { data?: Array<{ id: string }> }).data ?? [];
+  expect(ids.length, `the endpoint at ${MODEL_BASE_URL} serves a model`).toBeGreaterThan(0);
+  return ids[0].id;
 }
 async function runners(): Promise<RunnerRow[]> {
   return ((await apiFetch('/runners')) as { data: RunnerRow[] }).data;
@@ -333,7 +335,7 @@ async function runFromBoard(page: Page, key: ItemKey, options: { ask?: boolean; 
   await expect(modal.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
   await modal.getByText('Advanced for this run').click();
   await modal.getByLabel('Agent', { exact: true }).selectOption('docket');
-  await expect(modal.getByText(`Project default — ${ENDPOINT_PROVIDER} / ${modelId}`)).toBeVisible();
+  await expect(modal.getByText(`Project default — ${modelId}`)).toBeVisible();
   // prill is this runner's verifier: the switch is live and on, not deferred.
   const verify = modal.getByLabel('Verify the result');
   await expect(verify).toBeEnabled();
@@ -527,9 +529,7 @@ test.describe.serial('docket runs, prill verifies', () => {
     const mine = (await runners()).find((r) => r.runner_id === runnerId)!;
     const docket = mine.capability_snapshot?.harnesses?.find((h) => h.harness_kind === 'docket');
     expect(docket, 'the runner reports docket').toBeTruthy();
-    const combo = docket!.model_combinations?.find((c) => c.model_provider === ENDPOINT_PROVIDER);
-    expect(combo?.model_ids.length, 'the endpoint\'s catalog was read through the OpenAI-compatible provider').toBeGreaterThan(0);
-    modelId = combo!.model_ids[0];
+    modelId = await endpointModel();
     summary.runner = { runnerId, name: RUNNER_NAME, modelId };
     await page.waitForTimeout(4500);
     await shot(page.getByText('Runners enrolled or revoked this session', { exact: true }).locator('xpath=..'), 'runners-this-session');
@@ -538,23 +538,21 @@ test.describe.serial('docket runs, prill verifies', () => {
   test('03 the project\'s agent settings: a branch of the folder, docket, the model', async ({ page }) => {
     await ensureProject();
     await ensureRunner();
-    if (!modelId) {
-      const mine = (await runners()).find((r) => r.runner_id === runnerId)!;
-      modelId = mine.capability_snapshot!.harnesses!.find((h) => h.harness_kind === 'docket')!.model_combinations!.find((c) => c.model_provider === ENDPOINT_PROVIDER)!.model_ids[0];
-    }
+    if (!modelId) modelId = await endpointModel();
     await page.goto(`${BASE}/projects/${projectId}/settings?tab=automation`);
     await waitForApp(page);
     await expect(page.getByRole('heading', { name: 'Where the code is' })).toBeVisible();
     await expect(page.getByLabel('An existing folder on this computer')).toBeChecked();
     await page.getByLabel('On a new branch of your repo (recommended)').check();
     await page.getByRole('button', { name: 'docket', exact: true }).click();
-    // The model list merges what the runner measured: the endpoint's own
-    // catalog shows up as `openai-compatible / <id>` and is chosen here.
-    await page.getByLabel('Specific model').check();
-    await page.getByRole('combobox', { name: 'Model' }).selectOption({ label: `${ENDPOINT_PROVIDER} / ${modelId}` });
-    await expect
-      .poll(async () => ((await apiFetch(`/projects/${projectId}`)) as { default_model: unknown }).default_model, { timeout: 10_000 })
-      .toEqual({ kind: 'explicit', provider: ENDPOINT_PROVIDER, model_id: modelId });
+    // The panel lists no model ids for docket (the endpoint's catalog is its own), so the
+    // default model, which belongs to the agent just chosen, is written to the API directly.
+    await expect.poll(async () => ((await apiFetch(`/projects/${projectId}`)) as { default_harness: string | null }).default_harness, { timeout: 10_000 }).toBe('docket');
+    await apiFetch(`/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ default_model: modelId }),
+    });
     await page.reload();
     await waitForApp(page);
     await expect(page.getByRole('button', { name: 'docket', exact: true })).toHaveAttribute('aria-pressed', 'true');

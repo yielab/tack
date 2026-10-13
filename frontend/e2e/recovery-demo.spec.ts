@@ -172,10 +172,8 @@ test('recovery demo', async ({ page }) => {
   await page.waitForTimeout(2000);
 
   // ── Scene 2: dispatch to the enrolled runner (see header: not through the
-  // "Run with agent" dialog — Codex/Claude Code declare no model_combinations
-  // and the dialog has no free-text override, so neither "Auto" nor "Choose
-  // a model" can ever produce a claimable request for them; a real gap, not
-  // a recording shortcut) ─────────────────────────────────────────────────
+  // "Run with agent" dialog — the recording drives the runner protocol
+  // directly so the scene does not depend on the dialog's model list) ─────────────────────────────────────────────────
   const body = {
     item_id: item.id,
     idempotency_key: `recovery-demo-${Date.now()}`,
@@ -183,8 +181,7 @@ test('recovery demo', async ({ page }) => {
     selector_id: runnerId,
     agent_profile_id: profile,
     requested_harness_kind: 'codex',
-    requested_model_provider: 'fake',
-    requested_model_id: 'demo-model',
+    requested_model: 'demo-model',
     agent_profile_snapshot: {
       name: 'demo-profile',
       instructions: 'Print the single word DONE and exit. Do not modify any files.',

@@ -186,7 +186,7 @@ test.beforeAll(async () => {
   await apiFetch(`/projects/${projectId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-sonnet-5-5' } }),
+    body: JSON.stringify({ default_harness: 'claude-code', default_model: 'claude-sonnet-5-5' }),
   });
 
   const profile = (await apiFetch('/agent-profiles', {
@@ -426,8 +426,7 @@ test('attempt screenshot', async ({ page }) => {
       selector_id: embeddedRunnerId,
       agent_profile_id: agentProfileId,
       requested_harness_kind: 'claude-code',
-      requested_model_provider: 'anthropic',
-      requested_model_id: 'claude-sonnet-5-5',
+      requested_model: 'claude-sonnet-5-5',
       agent_profile_snapshot: {
         name: PROFILE_NAME,
         instructions: PROFILE_INSTRUCTIONS,

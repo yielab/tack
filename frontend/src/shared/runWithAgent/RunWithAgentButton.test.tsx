@@ -23,7 +23,7 @@ function ParamsProbe() {
  *  specifically about it (that state is `RunWithAgentModal.test.tsx`'s own
  *  concern, not this button/chip's). */
 const RUNNER_CAPS = {
-  harnesses: [{ harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', model_combinations: [] }],
+  harnesses: [{ harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z' }],
   concurrency: { total: 1, available: 1 },
   limits: { event_payload_bytes_max: 1024, artifact_content_bytes_max: 1024 },
   features: {},
