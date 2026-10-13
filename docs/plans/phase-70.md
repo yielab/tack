@@ -63,24 +63,23 @@ A rule you add gets its test in trust_boundary.rs (server) or agent_boundaries.r
 ### Q1 — a request no runner can claim says why, and fails after half an hour
 
 **Files:** a new migration in `crates/tack-db/migrations/`; the execution-request repository in
-`crates/tack-db/src/repo/` (the file that owns `execution_requests`); `crates/tack-orch/src/scheduler/wiring.rs`
-and the sweep that already expires leases or requests in `crates/tack-orch/src/` (find it with
-`rg -n 'expire|sweep' crates/tack-orch/src`); the server setting beside the scheduler's existing
+`crates/tack-db/src/repo/execution.rs`; `crates/tack-orch/src/scheduler/wiring.rs`; the server setting beside the scheduler's existing
 ones; the request and item-run response types in `crates/tack-api/src/`; the regenerated
 `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` (via `./scripts/regen-generated.sh`);
 tests beside the files they test.
 **Do:** add `waiting_code`, `waiting_reason`, `waiting_since` (nullable) to the request row. When
 a claim poll leaves a queued request unselected, write the reason from `NoEligibleRunner.reasons`
 or `UnknownRunner` as a plain sentence and its code, and set `waiting_since` if it was null; when
-the request is selected, clear all three. A sweep fails a request whose `waiting_since` is older
-than the setting (default 30 minutes, `0` = never) with terminal code `no_runner_can_claim` and the
+the request is selected, clear all three. There is no sweep that expires requests
+(`execution_retention.rs` only purges), so the claim path decides: a request it finds ineligible
+whose `waiting_since` is older than the setting is failed there (default 30 minutes, `0` = never) with terminal code `no_runner_can_claim` and the
 reason as message, through the same path any other request failure takes, so its events and the
 item's status follow. A request with no `waiting_since` (no runner ever polled) is not failed.
 Return `waiting_reason` and `waiting_since` on the request and on the item's latest run.
 **Test (RED first):** a request needing a model no runner offers, polled by one runner: the row
 carries the sentence and a `waiting_since`; the same request later selected has all three cleared;
-with the clock 31 minutes on, the sweep fails it with `no_runner_can_claim`; with the setting `0`,
-it does not; a request no runner polled is never failed by the sweep. One table test maps every
+with the clock 31 minutes on, the next poll fails it with `no_runner_can_claim`; with the setting `0`,
+it does not; a request no runner polled is never failed. One table test maps every
 `IneligibleReason` variant to a non-empty sentence that is not its `Debug` name.
 **Done when:** those pass; `cargo nextest run --workspace -E 'package(tack-orch) + package(tack-db) + package(tack-api)'` green; the regenerated files staged; the gate green.
 **Hand-off:** Sonnet, two layers (db + orch, with the API fields), ceiling 150.
