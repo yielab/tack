@@ -39,8 +39,7 @@ account.
 
   [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says what each
   one supports.
-- **Optional:** git, so the agent works on a branch instead of in your folder, and, on
-  Linux, `bubblewrap`, so the harness runs in a sandbox.
+- **Optional:** git, so the agent works on a branch instead of directly in your folder.
 
 ## Install
 
@@ -121,34 +120,21 @@ run, and the **runner**, which takes tasks from the board and starts the harness
 code is. The desktop app runs both. A server can serve a team, with runners on other
 machines. See the [architecture](https://yielab.github.io/tack/developer/index.html).
 
-## How agents run
+## Security
 
-The runner starts the harness with the permissions of the user running it. On Linux with
-`bubblewrap`, the harness runs in a sandbox limited to the task's working copy, its own
-settings folder and read-only system files. On macOS and Windows, or when a harness can't
-start in the sandbox, it runs with your user's access; Tack then asks before each action by
-default, and doesn't run a harness that can't ask. Network access is not restricted.
-
-What an agent can reach also depends on your configuration: the folder a project points at,
-the credentials and environment variables you give the runner, and whether the server is
-reachable from other machines. The API requires a token. Read
-[What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) and
-[SECURITY.md](SECURITY.md) before you change those defaults.
+Tack starts the harness on your computer, with your user's permissions. What the agent may
+do is set first by the harness and its own permission settings, then by what you give
+Tack: the folder a project points at and the credentials the runner holds. The API
+requires a token.
+[What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) explains
+each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Status
 
-Public beta. The features above are implemented and tested, but they are still changing
-between releases, and Tack hasn't been used in production. Back up your data with
-`tack backup` before you upgrade. Known limitations:
-
-- No user accounts: one shared API token, no per-user permissions
-- One database writer; backups to S3 are snapshots, not live sync
-- No offline mode and no mobile app
-- Only docket shows an agent's steps on the task while it works; the others show them in
-  the run's log
-- Release builds aren't code-signed yet
-
-The [roadmap](https://yielab.github.io/tack/roadmap.html) has what's next.
+Tack is in public beta: it still changes between releases and hasn't been used in
+production. Back up your data with `tack backup` before you upgrade. The
+[changelog](CHANGELOG.md) lists what each release changed, and the
+[roadmap](https://yielab.github.io/tack/roadmap.html) what comes next.
 
 ## Documentation
 

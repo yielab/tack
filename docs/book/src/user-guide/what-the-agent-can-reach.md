@@ -44,7 +44,13 @@ you already trust. See [Administration & Security](administration.md).
   the runner's own environment (`env:`). It can name a `store:` secret only if you
   listed that name under `[secrets] request_may_reference` in the runner's config; the
   default list is empty. The attempt records the names (never the values) the agent got.
-- **The sandbox.** Where `bwrap` is installed, each harness runs inside it. The agent
+- **The harness's own permissions.** Each harness enforces what the agent may do itself:
+  Codex through its sandbox modes, Claude Code through its permission mode and allowed
+  tools, opencode through its permission settings, docket through its policy. Tack passes
+  the run's tool list and approvals to each one; how far each honours them is in
+  [Choosing a harness](agent-runners.md#choosing-a-harness).
+- **Tack's sandbox on Linux.** On top of that, where `bwrap` is installed, the runner
+  starts each harness inside it. The agent
   sees the workspace and a scratch home, the folders its harness keeps under your home
   (`~/.claude`, `~/.codex`), and the system directories read-only. It does not see the
   runner's state, `~/.tackrc`, `~/.ssh` or the token file. The network is not
