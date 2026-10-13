@@ -1,4 +1,6 @@
-# Tack — plan the work, hand it to your coding agent, check what it did
+# Tack
+
+**A project board that can run its tasks with a coding agent.**
 
 <p align="center">
   <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Starting and Finished" />
@@ -10,157 +12,141 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status: beta"></a>
 </p>
 
-Tack is an open-source project board, with columns, tasks and sprints, that can hand a task
-to an AI coding agent such as Claude Code or Codex. The agent works on your code, on your
-computer, and everything it did comes back to the task: what it changed, what it asked you
-and how many tokens it used. You read the result and decide whether it goes in.
+Tack is an open-source project manager with boards, lists, timelines and sprints. It can
+also hand a task to a coding harness on your computer, such as Claude Code or Codex. The
+harness works on a branch of your repository, and its changes, questions and token usage
+are saved on the task. You accept or reject the change.
 
-Coding agents write code well, but their work lives in a terminal session that is gone when
-it ends. Tack gives that work a place: the plan it came from, a record that stays, and a
-review before anything reaches your code.
-
-**Yours, on your machine.** Tack is a desktop app, or a single program you run as a server,
-with all its data in one SQLite file. There is no account and no cloud service. The agent
-signs in with its own login or a key you choose, and Tack never sees that credential.
+Tack runs locally, as a desktop app or as a server, with its data in one SQLite file and no
+account.
 
 [Website](https://yielab.com/tack) · [Documentation](https://yielab.github.io/tack/) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) · [Releases](https://github.com/yielab/tack/releases/latest) · [Changelog](CHANGELOG.md)
 
 > [!NOTE]
-> Tack is in public beta. It works end to end, but it hasn't been run in production yet:
-> expect rough edges and breaking changes between releases, and run `tack backup` before
-> you upgrade. [Status](#status) says what has been proven so far.
+> Tack is in public beta. See [Status](#status) before you rely on it.
+
+## Requirements
+
+- **To use Tack:** Linux, macOS or Windows.
+- **To run tasks with an agent:** a coding harness installed on the same computer, and a
+  model for it. In Tack, the harness that works on a task is called its *agent*. There are
+  two ways to give it a model:
+  - **The harness's own subscription.** Claude Code or Codex, signed in with your plan,
+    which includes its models.
+  - **An API key set in Tack's runner.** Claude Code and Codex can use one, and opencode and
+    docket work only this way: a model gateway, or an OpenAI-compatible server, including
+    one running local models.
+
+  [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says what each
+  one supports.
+- **Optional:** git, so the agent works on a branch instead of in your folder, and, on
+  Linux, `bubblewrap`, so the harness runs in a sandbox.
 
 ## Install
 
-**The desktop app** is the easiest way in. Download it from the [releases page](https://github.com/yielab/tack/releases/latest):
+### Desktop app
 
-| System | File |
-| --- | --- |
-| Linux (x86_64) | `.AppImage` or `.deb` |
-| macOS (Apple Silicon and Intel) | `.dmg` |
-| Windows | `.msi` |
+Download it from the [releases page](https://github.com/yielab/tack/releases/latest). It runs the board and the agent runner
+together.
 
-The app isn't code-signed yet. On macOS, right-click it and choose **Open** the first time;
-on Windows, choose **More info → Run anyway**.
+Release builds aren't code-signed yet, so macOS and Windows show a warning the first time
+you open the app. Each release publishes `SHA256SUMS` and build attestations to check a
+download against.
 
-**From the command line**, for a server or if you prefer the terminal. It installs the same
-program, which serves the same app in your browser:
+### Command line
+
+The same program, served in your browser. Use it on a server, or if you prefer the terminal.
+
+**macOS and Linux**
 
 ```bash
-# Linux / macOS
+brew install yielab/tap/tack
+```
+
+Or with the install script, which checks the download against the release's checksums:
+
+```bash
 TAG=v0.1.0-beta.10
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 ```
 
+**Windows (PowerShell)**
+
 ```powershell
-# Windows PowerShell
 $tag = 'v0.1.0-beta.10'; $env:TACK_VERSION = $tag; irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 ```
 
-Or `brew install yielab/tap/tack`. The installers check every download against the
-release's checksums. Scoop, Docker, a release archive and building from source are in the
-[Quick Start](https://yielab.github.io/tack/user-guide/quick-start.html).
+Then start it and open <http://localhost:3210>:
+
+```bash
+tack serve --with-runner    # --with-runner lets agents run on this computer
+```
+
+Scoop, Docker and building from source are in the [Quick Start](https://yielab.github.io/tack/user-guide/quick-start.html).
 
 ## Quick start
 
-**Before you start: install a coding agent.** Tack doesn't include one. It uses the agent
-already on your computer, signed in the same way you would sign in to use it by hand. For
-example:
+**1. Create a project** and choose the folder where its code is.
 
-```bash
-npm install -g @anthropic-ai/claude-code && claude    # Claude Code: sign in when it asks
-npm install -g @openai/codex && codex login           # Codex
-```
+<img src="docs/screenshots/tutorial/02-new-project.png" width="70%" alt="The Create New Project dialog: a name, a description, the question 'Does this project have code?', and the project type." />
 
-The [list of supported agents](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says
-what each one needs. Without an agent, Tack still works as a complete project board.
+**2. Add a task** and write its acceptance criteria: what must be true when it's done.
 
-1. **Open Tack.** Start the desktop app, or run `tack serve --with-runner` and open
-   <http://localhost:3210>.
-2. **Check that Tack finds your agent.** Open **Agents** in the sidebar. It lists the agents
-   installed on this computer; **Run test** runs one once to prove it works.
-3. **Create a project.** Click **New Project**, give it a name, and under *Does this project
-   have code?* choose the folder with your code. You decide whether the agent works on a new
-   branch, leaving your folder as it is, or directly in the folder.
-4. **Add a task and say what "done" means.** Click **+** in a column and give the task a
-   title. Open it and add its **acceptance criteria**, one line for each thing that must be
-   true when it's finished. The agent reads them along with the description.
-5. **Run it.** Click ▶ **Run with agent**, then **Run**. The card shows the run's progress
-   live; open it to follow along or to answer the agent if it asks something.
-6. **Review the result.** When the agent has changed files, the task is marked **Needs your
-   review**. Read the changes, then **Accept** or **Reject** them.
+<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Run with agent button, the description, three acceptance criteria and an Add check button." />
 
-The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) follows this same path with a screenshot at
-every step. The whole loop, recorded:
+**3. Run it with an agent** and review the result on the task.
 
-<p align="center">
-  <img src="docs/screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project pointed at a folder on this computer, a task added with two acceptance criteria, Run with agent with Claude Code, the card's chip and the Execution tab following the run to 'Finished — needs your review', Accept, what the agent did, and the files from the run" />
-</p>
+<img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: what the agent will read, the profile, Ask before each action, Web tools, and the agent and model for this run." />
 
-## What you get
+**Agents** in the sidebar shows which harnesses Tack found on this computer and runs a
+test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.
 
-- **A complete project board.** Board, list, table, calendar and timeline views; Scrum,
-  Kanban or phases; dependencies between tasks; and your own words for *Task* or *Sprint*.
-  It's useful even with no agent at all.
-- **A record of every run.** Progress while it works, the agent's questions, the changes,
-  the files it produced and the tokens it used, kept on the task after the run ends.
-- **A review before anything is merged.** A run that changed files waits for you. An
-  independent verifier, a program of yours or a tool such as prill, can check the work
-  against the acceptance criteria first, and the result can go out as a branch and a pull
-  request.
-- **An agent that asks first.** Turn on *Ask before each action* and the agent stops before
-  each step, showing its options, their risks and what it recommends.
-- **Runs that survive a crash.** If Tack or the agent stops halfway, the run is neither lost
-  nor started again behind your back. Tack waits for you to decide.
-- **Access from your own tools.** A command-line client, a REST API, an MCP server for AI
-  assistants, and two-way sync with GitHub issues.
+## Features
 
-## How it fits together
+- **Project management.** Board, list, table, calendar and timeline views; Scrum, Kanban
+  or phases; dependencies; and your own names for *Task* or *Sprint*. All of it works
+  without an agent.
+- **Agent runs.** Progress shows on the task while the agent works. With *Ask before each
+  action*, it waits for your answer on the task. A run that changed files waits for your
+  review.
+- **Verification and delivery.** A verifier of your choice, a program of your own or a tool
+  such as prill, can check the change against the acceptance criteria. The runner can push
+  the work as a branch and, for a task linked to a GitHub issue, Tack opens the pull request.
+- **Recovery.** A run interrupted by a crash isn't lost or started again. It waits for
+  your decision.
+- **Integrations.** A CLI, a REST API, an MCP server and two-way sync with GitHub issues.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/two-components-dark.svg">
-    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, docket, or opencode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
-  </picture>
-</p>
+Tack has two parts: the **board**, which stores projects, tasks and the record of every
+run, and the **runner**, which takes tasks from the board and starts the harness where the
+code is. The desktop app runs both. A server can serve a team, with runners on other
+machines. See the [architecture](https://yielab.github.io/tack/developer/index.html).
 
-- The **board** holds your projects and tasks and keeps the record of every run. It never
-  runs code and never holds a model credential.
-- A **runner** lives where your code is. It takes tasks from the board, prepares a copy of
-  the code and starts the agent.
-- The **agent** does the work: Claude Code, Codex or opencode, or docket, which runs a
-  governed team of agents.
-- The **desktop app** runs the board and a runner together on your computer. As a server,
-  one board can serve a team, with runners on other machines
-  ([Enrolling a runner](https://yielab.github.io/tack/user-guide/agent-runners.html#enrolling-a-runner)).
+## How agents run
 
-## Security
+The runner starts the harness with the permissions of the user running it. On Linux with
+`bubblewrap`, the harness runs in a sandbox limited to the task's working copy, its own
+settings folder and read-only system files. On macOS and Windows, or when a harness can't
+start in the sandbox, it runs with your user's access; Tack then asks before each action by
+default, and doesn't run a harness that can't ask. Network access is not restricted.
 
-An agent can do what its environment allows. On Linux with `bubblewrap` installed, Tack
-runs each agent in a sandbox where it can change only its working copy and can't see your
-SSH keys or Tack's own data. An agent without a sandbox must be able to ask you before it
-acts, or it doesn't run. The board's API needs a token, and the board never holds a model
-credential.
-
-Read [What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) and
-[SECURITY.md](SECURITY.md) before you let other people or machines reach your Tack.
+What an agent can reach also depends on your configuration: the folder a project points at,
+the credentials and environment variables you give the runner, and whether the server is
+reachable from other machines. The API requires a token. Read
+[What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) and
+[SECURITY.md](SECURITY.md) before you change those defaults.
 
 ## Status
 
-Tack is in public beta and still in development. The project board and the agent runs are
-complete, and the desktop app ships for Linux, macOS and Windows. Claude Code and Codex have
-completed real end-to-end runs, and the whole workflow has run through the app with docket
-as the agent and an independent verifier checking each run.
-
-It still needs wider testing: no team has run it in production yet, so these are the
-limitations known so far, not all there are.
+Public beta. The features above are implemented and tested, but they are still changing
+between releases, and Tack hasn't been used in production. Back up your data with
+`tack backup` before you upgrade. Known limitations:
 
 - No user accounts: one shared API token, no per-user permissions
 - One database writer; backups to S3 are snapshots, not live sync
 - No offline mode and no mobile app
-- Only docket shows an agent's steps on the task while it works; the other agents show them
-  in the run's log
-- The app and the binaries aren't code-signed yet
+- Only docket shows an agent's steps on the task while it works; the others show them in
+  the run's log
+- Release builds aren't code-signed yet
 
 The [roadmap](https://yielab.github.io/tack/roadmap.html) has what's next.
 
@@ -169,7 +155,7 @@ The [roadmap](https://yielab.github.io/tack/roadmap.html) has what's next.
 | Goal | Start here |
 | --- | --- |
 | Install and run a first task | [Quick Start](https://yielab.github.io/tack/user-guide/quick-start.html) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) |
-| Set up agents, logins and models | [Agent runners](https://yielab.github.io/tack/user-guide/agent-runners.html) |
+| Set up harnesses, logins and models | [Agent runners](https://yielab.github.io/tack/user-guide/agent-runners.html) |
 | Organize work on the board | [Items](https://yielab.github.io/tack/user-guide/items.html) · [Views](https://yielab.github.io/tack/user-guide/views.html) · [Workflows](https://yielab.github.io/tack/user-guide/workflows.html) |
 | Move data in and out | [Import and export](https://yielab.github.io/tack/user-guide/import-export.html) · [Backup and restore](https://yielab.github.io/tack/user-guide/backup-restore.html) |
 | Use Tack from the terminal or other tools | [CLI](https://yielab.github.io/tack/user-guide/cli.html) · [API](https://yielab.github.io/tack/developer/api-reference.html) · [MCP](docs/MCP.md) |
@@ -178,11 +164,11 @@ The [roadmap](https://yielab.github.io/tack/roadmap.html) has what's next.
 ## Built alongside
 
 - **[docket](https://github.com/yielab/docket)** gives a repository a team of coding agents
-  and governs what they may do: roles, policies, approvals and an audit trail, in YAML next to
-  your code. Tack can run it as the agent on a task.
+  and governs what they may do: roles, policies, approvals and an audit trail. Tack can run
+  it as the harness on a task.
 - **prill** is an independent verifier of agents' changes. It re-runs the change on clean
-  code in a sandbox with no network and writes a merge-readiness report. It is one of the
-  verifiers a Tack runner can use. It isn't published yet.
+  code in a sandbox with no network and writes a merge-readiness report. It isn't published
+  yet.
 
 ## Development
 
