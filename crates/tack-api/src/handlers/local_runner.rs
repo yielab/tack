@@ -1,12 +1,5 @@
-//! Turns the embedded runner on/off from the UI and lets a UI-only user hand
-//! it a provider key — ADR 0061 decisions 2 and 6.
-//!
-//! Before this, the embedded runner started only from a boot-time flag
-//! (`tack serve --with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) and a provider
-//! key could only be set on the runner's own machine via the console
-//! (`tack runner secret set`). Both remain true — this module adds a second
-//! way to reach the exact same on/off gate and the exact same secret
-//! store, from the UI, when the operator and the runner share a machine.
+//! Turns the embedded runner on/off from the UI, when the operator and the
+//! runner share a machine.
 //!
 //! **This crate never depends on `tack-runner`** (`CLAUDE.md`'s crate map).
 //! [`LocalRunnerControl`] is the seam: a trait this crate defines and calls,
@@ -20,17 +13,13 @@
 //! Follows the Cloud Backup / Orchestration precedent in `handlers/
 //! settings.rs` for the persisted on/off flag: an `app_meta`-stored value
 //! overrides the env/CLI-flag default, computed fresh on every read, never
-//! cached. Unlike those two, the *secret* half of this module never touches
-//! `app_meta` at all — a value handed to [`LocalRunnerControl::set_secret`]
-//! goes straight to wherever the concrete implementation's own store lives
-//! (the runner's OS keychain or its owner-only file) and this crate never
-//! learns which.
+//! cached.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -100,35 +89,6 @@ pub struct RuntimeStatus {
     pub since: Option<DateTime<Utc>>,
 }
 
-/// What asking the runner's own configured provider for its model catalog
-/// produced. Deliberately not the real provider crate's own catalog-status
-/// type — this crate never depends on `tack-runner`; the concrete
-/// [`LocalRunnerControl`] translates its real type into this one at the
-/// boundary, the same way `AppState::local_runner` itself crosses it.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum CatalogSnapshot {
-    NotConfigured,
-    SecretUnresolved,
-    Unreachable {
-        http_status: Option<u16>,
-    },
-    Configured {
-        model_count: usize,
-        checked_at: DateTime<Utc>,
-    },
-}
-
-/// One stored secret's name and when it was last set — never its value.
-#[derive(Debug, Clone, Serialize)]
-pub struct SecretMeta {
-    pub name: String,
-    /// `None` when the name is present in the store but this process has no
-    /// record of when it was set (e.g. it was written by `tack runner
-    /// secret set` before this UI ever ran) — never a fabricated timestamp.
-    pub set_at: Option<DateTime<Utc>>,
-}
-
 /// Every variant names an operation and, where the backend gave one, its own
 /// reason — never a secret value. Safe to log or fold into an [`ApiError`].
 #[derive(Debug, thiserror::Error)]
@@ -166,30 +126,6 @@ pub trait LocalRunnerControl: Send + Sync {
     /// The enrolled runner's id once the runner has registered, `None` before.
     async fn runner_id(&self) -> Option<String>;
 
-    /// Names and set-at timestamps of every stored secret. Never values.
-    async fn list_secrets(&self) -> Vec<SecretMeta>;
-
-    /// Stores `value` under `name`, overwriting any existing entry. A
-    /// freshly configured provider's catalog is visible on the very next
-    /// [`LocalRunnerControl::catalog`] call. If the runner is running and
-    /// `name` is the entry a configured provider resolves its credential
-    /// from, the runner is restarted before this returns: it received its
-    /// configuration by value when it was spawned, so the only way the
-    /// next dispatch can use this key is a runner that booted with it. A
-    /// restart that fails leaves the runner stopped and returns the error,
-    /// never a runner that still serves the old configuration.
-    async fn set_secret(&self, name: &str, value: &str) -> Result<(), LocalRunnerControlError>;
-
-    /// Removes the secret named `name`. Not an error if it was already
-    /// absent (matches `rm -f`). Restarts a running runner under the same
-    /// rule as [`LocalRunnerControl::set_secret`], in the other direction.
-    async fn remove_secret(&self, name: &str) -> Result<(), LocalRunnerControlError>;
-
-    /// What the configured provider's catalog looks like right now.
-    /// Computed fresh on every call, never cached, so there is nothing to
-    /// invalidate.
-    async fn catalog(&self) -> CatalogSnapshot;
-
     /// Read-only resolution of a stored `secret_reference`
     /// (`store:<name>` or `env:<VARIABLE>`, see
     /// `tack_runner::secrets::SecretStore::resolve`) for the server's own
@@ -214,12 +150,8 @@ fn runtime_state_str(state: RuntimeState) -> &'static str {
     }
 }
 
-fn catalog_json(catalog: &CatalogSnapshot) -> Value {
-    serde_json::to_value(catalog).unwrap_or(Value::Null)
-}
-
 /// GET /api/local-runner — the persisted preference, the live runtime
-/// state, and the current provider catalog. Only mounted on a loopback bind
+/// state. Only mounted on a loopback bind
 /// with a control actually wired in — see `router.rs`'s `local_runner_routes`.
 #[instrument(skip(state))]
 #[utoipa::path(
@@ -227,19 +159,17 @@ fn catalog_json(catalog: &CatalogSnapshot) -> Value {
     path = "/api/local-runner",
     tag = "local-runner",
     responses(
-        (status = 200, description = "Embedded-runner preference, runtime state, and provider catalog", body = serde_json::Value),
+        (status = 200, description = "Embedded-runner preference and runtime state", body = serde_json::Value),
     ),
 )]
 pub async fn get_local_runner(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let control = require_control(&state)?;
     let enabled = effective_local_runner_enabled(&state).await;
     let status = control.status().await;
-    let catalog = control.catalog().await;
     Ok(Json(json!({
         "enabled": enabled,
         "state": runtime_state_str(status.state),
         "since": status.since,
-        "catalog": catalog_json(&catalog),
     })))
 }
 
@@ -279,72 +209,6 @@ pub async fn put_local_runner(
         control.stop().await;
     }
 
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// GET /api/local-runner/secrets — names and set-at timestamps only.
-#[instrument(skip(state))]
-#[utoipa::path(
-    get,
-    path = "/api/local-runner/secrets",
-    tag = "local-runner",
-    responses((status = 200, description = "Stored secret names and set-at timestamps, never values", body = serde_json::Value)),
-)]
-pub async fn list_local_runner_secrets(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let control = require_control(&state)?;
-    let secrets = control.list_secrets().await;
-    Ok(Json(json!({
-        "data": secrets
-            .into_iter()
-            .map(|s| json!({ "name": s.name, "set_at": s.set_at }))
-            .collect::<Vec<_>>(),
-    })))
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct SetLocalRunnerSecret {
-    pub value: String,
-}
-
-/// PUT /api/local-runner/secrets/{name} — store a value. Never echoes it
-/// back, not even as a hash: the response carries nothing but a status code.
-#[instrument(skip(state, input))]
-#[utoipa::path(
-    put,
-    path = "/api/local-runner/secrets/{name}",
-    tag = "local-runner",
-    request_body = SetLocalRunnerSecret,
-    responses((status = 204, description = "Stored; the value is never echoed back")),
-)]
-pub async fn put_local_runner_secret(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-    Json(input): Json<SetLocalRunnerSecret>,
-) -> ApiResult<StatusCode> {
-    let control = require_control(&state)?;
-    control.set_secret(&name, &input.value).await?;
-    // `catalog()` always computes fresh (see its own doc comment), so
-    // calling it here — even though this route discards the result — is
-    // what makes "set a key" and "the catalog reflects it" happen inside
-    // one request, rather than leaving it to whichever GET happens next.
-    let _ = control.catalog().await;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// DELETE /api/local-runner/secrets/{name} — not an error if already absent.
-#[instrument(skip(state))]
-#[utoipa::path(
-    delete,
-    path = "/api/local-runner/secrets/{name}",
-    tag = "local-runner",
-    responses((status = 204, description = "Removed (or already absent)")),
-)]
-pub async fn delete_local_runner_secret(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> ApiResult<StatusCode> {
-    let control = require_control(&state)?;
-    control.remove_secret(&name).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

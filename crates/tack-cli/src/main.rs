@@ -49,7 +49,7 @@ enum Commands {
         with_runner: bool,
         /// A TOML configuration file for the embedded runner — the same file
         /// `tack runner start --config` reads, which is the only place its
-        /// `[verify]`, `[git]` and `[provider.<name>]` tables can be set.
+        /// `[verify]`, `[git]`, `[secrets]` and `[environment]` tables can be set.
         /// Also settable via TACK_LOCAL_RUNNER_CONFIG.
         #[arg(long, value_name = "PATH")]
         runner_config: Option<PathBuf>,
@@ -773,7 +773,7 @@ enum RunnerAction {
         #[arg(long)]
         json: bool,
     },
-    /// Manage this machine's runner-local secret store — the provider keys
+    /// Manage this machine's runner-local secret store — the secrets
     /// a harness's environment can reference via `secret_reference` without
     /// ever putting them in a request body, a log line, or the board's own
     /// database.
@@ -785,7 +785,7 @@ enum RunnerAction {
 
 #[derive(Subcommand)]
 enum SecretAction {
-    /// Store a secret under `name` (e.g. `vercel-ai-gateway/default`). The
+    /// Store a secret under `name` . The
     /// value is read from TACK_RUNNER_SECRET_VALUE or, if unset, from
     /// stdin — never from argv.
     Set {

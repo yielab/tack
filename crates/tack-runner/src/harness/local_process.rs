@@ -4,7 +4,7 @@
 //! [`LocalProcessHarness<G>`] owns everything that does not depend on which
 //! CLI is running: locating the binary, the version probe, the request
 //! policy every harness is held to, environment and secret resolution,
-//! provider-endpoint injection, spawn, capture limits, cancellation,
+//! spawn, capture limits, cancellation,
 //! reconciliation after a restart, log staging and the assembly of the
 //! [`HarnessOutcome`].
 //!
@@ -35,7 +35,6 @@ use tokio::sync::mpsc;
 use crate::{
     Clock,
     client::AttemptState,
-    config::ProviderConfig,
     harness::{
         AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, ExecutionSpec,
         HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
@@ -47,7 +46,6 @@ use crate::{
         redact::SecretMaterial,
         sandbox::{self, Sandbox},
     },
-    provider::{ProviderEndpoint, Wire},
     secrets::SecretStore,
 };
 
@@ -75,15 +73,12 @@ pub struct HarnessDescriptor {
     /// The executable searched for on `PATH` and the well-known install
     /// locations in [`crate::harness::locate`].
     pub program: &'static str,
-    /// The one model wire this CLI speaks; selects which configured
-    /// provider endpoints can reach it.
-    pub wire: Wire,
     pub model_selection: ModelSelection,
     /// The provider recorded when a request names none.
     pub native_provider: &'static str,
     /// Names copied from the runner's own environment into every spawn.
-    /// The child's environment is otherwise exactly what the request and
-    /// the provider injection put there.
+    /// The child's environment is otherwise exactly what the request puts
+    /// there.
     pub inherited_env: &'static [&'static str],
     /// Why a requested model id is accepted without a model list.
     pub model_passthrough: &'static str,
@@ -91,17 +86,8 @@ pub struct HarnessDescriptor {
     pub probe_notes: &'static [(&'static str, &'static str)],
     /// Where this CLI's own credential lives, for `tack runner doctor`.
     pub credential_note: &'static str,
-    /// The variable name this CLI reads a configured endpoint's credential
-    /// from, when it differs from the endpoint's own `credential_env_var`
-    /// (e.g. docket always reads `DOCKET_LLM_API_KEY`, never the
-    /// provider's name for it). `None` keeps the provider's own name.
-    pub credential_env: Option<&'static str>,
-    /// Whether this CLI's own reported model comes from the endpoint's
-    /// response body rather than an echo of what was configured. When
-    /// true, a report's `observed_model` is recorded `harness_reported`
-    /// even behind a gateway that could otherwise substitute a model —
-    /// the gateway downgrade in [`LocalProcessHarness::outcome`] exists
-    /// for a CLI that only ever echoes its own request.
+    /// Whether this CLI's own reported model comes from the response body
+    /// rather than an echo of what was configured.
     pub observes_served_model: bool,
     /// Whether this CLI announces each process group its own tools start
     /// (`StreamSignal::ProcessStarted`/`ProcessExited`), so a cancellation
@@ -121,10 +107,6 @@ pub struct HarnessDescriptor {
 /// What the grammar is given to build a command line.
 pub struct RunContext<'a> {
     pub spec: &'a ExecutionSpec,
-    /// The configured provider endpoint the request named, or `None` when
-    /// the CLI runs against its own native login. The core injects the
-    /// credential variable itself; the grammar only points the CLI at it.
-    pub endpoint: Option<&'a ProviderEndpoint>,
     /// A directory this attempt owns, outside the workspace, for whatever
     /// state the CLI itself needs between spawn and exit (a home directory,
     /// a cache). The core computes the path and removes it once `wait` or
@@ -239,8 +221,8 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// `run` is what the grammar needs to build the handshake's requests
     /// from a reply: the prompt text is
     /// `run.spec.work.request.resolved_agent_profile.instructions`, the
-    /// workspace is `run.spec.workspace.path`, and the endpoint and scratch
-    /// dir are its own fields.
+    /// workspace is `run.spec.workspace.path`, and the scratch dir is its
+    /// own field.
     fn signal(&self, _run: &RunContext<'_>, _line: &str) -> Option<StreamSignal> {
         None
     }
@@ -337,7 +319,6 @@ struct RunRecord {
     limits: ProcessLimits,
     started_at: DateTime<Utc>,
     spec: ExecutionSpec,
-    endpoint: Option<ProviderEndpoint>,
     scratch: PathBuf,
     /// The process-facing half of an interactive run's channels: the ends
     /// `wait`'s interactive read loop sends a question out on and receives
@@ -361,7 +342,6 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     limits: ProcessLimits,
     staging_root: PathBuf,
     secrets: SecretStore,
-    providers: BTreeMap<String, ProviderConfig>,
     /// Secret-store names a request's `secret_reference` may name.
     request_may_reference: Vec<String>,
     /// The runner's own resolved `[environment]`, given to every run.
@@ -422,7 +402,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             limits,
             staging_root,
             secrets,
-            providers: BTreeMap::new(),
             request_may_reference: Vec::new(),
             own_environment: BTreeMap::new(),
             sandbox: Sandbox::none("not detected"),
@@ -432,13 +411,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
         }
-    }
-
-    /// The provider endpoints a request may name. Empty means every request
-    /// runs against the CLI's own native login.
-    pub fn with_providers(mut self, providers: BTreeMap<String, ProviderConfig>) -> Self {
-        self.providers = providers;
-        self
     }
 
     /// What a run's environment may carry beyond the request's own
@@ -599,25 +571,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         Ok(())
     }
 
-    fn resolve_endpoint(
-        &self,
-        spec: &ExecutionSpec,
-    ) -> Result<Option<ProviderEndpoint>, HarnessError> {
-        let provider = spec
-            .work
-            .request
-            .requested_model_provider
-            .as_ref()
-            .map_or("", |provider| provider.as_str());
-        crate::provider::resolve_endpoint(
-            &self.providers,
-            &self.secrets,
-            provider,
-            self.grammar.descriptor().wire,
-        )
-        .map_err(|error| self.reject(error.to_string()))
-    }
-
     fn inherited_env(&self) -> BTreeMap<String, String> {
         self.grammar
             .descriptor()
@@ -672,16 +625,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     fn prepare(
         &self,
         spec: &ExecutionSpec,
-    ) -> Result<
-        (
-            ProcessSpec,
-            SecretMaterial,
-            Option<ProviderEndpoint>,
-            PathBuf,
-            bool,
-        ),
-        HarnessError,
-    > {
+    ) -> Result<(ProcessSpec, SecretMaterial, PathBuf, bool), HarnessError> {
         self.check_request(spec)?;
         let (program, mut args) = self
             .locator
@@ -699,33 +643,14 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &mut secrets,
         )?);
 
-        let endpoint = self.resolve_endpoint(spec)?;
         let scratch = self.scratch_dir(spec);
         std::fs::create_dir_all(&scratch).map_err(|_| HarnessError::Process)?;
         let invocation = self.grammar.invocation(&RunContext {
             spec,
-            endpoint: endpoint.as_ref(),
             scratch: &scratch,
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
-        // An endpoint with no credential (an OpenAI-compatible server that
-        // checks none) sets no credential variable at all, so the CLI sees
-        // exactly what it would with the variable unset — never an empty
-        // string it might send as an empty bearer token.
-        if let Some(endpoint) = &endpoint
-            && let Some(credential) = &endpoint.credential
-        {
-            let credential = credential.expose().to_owned();
-            secrets.register(credential.clone());
-            let credential_var = self
-                .grammar
-                .descriptor()
-                .credential_env
-                .map_or_else(|| endpoint.credential_env_var.clone(), str::to_owned);
-            env.insert(credential_var, credential);
-        }
-
         let prompt = request.resolved_agent_profile.instructions.clone();
         secrets.register(prompt.clone());
         let stdin_stays_open = invocation.stdin_stays_open;
@@ -755,7 +680,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             workspace_root,
             keep_stdin_open: stdin_stays_open,
         };
-        Ok((process_spec, secrets, endpoint, scratch, stdin_stays_open))
+        Ok((process_spec, secrets, scratch, stdin_stays_open))
     }
 
     /// Runs `<program> --version`. Probing cannot fail: every way it goes
@@ -889,7 +814,6 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         let report = self.grammar.report(
             &RunContext {
                 spec: &running.spec,
-                endpoint: running.endpoint.as_ref(),
                 scratch: &running.scratch,
             },
             result,
@@ -907,19 +831,9 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             |provider| provider.as_str().trim().to_ascii_lowercase(),
         );
         let requested_model = request.requested_model_id.as_ref().map(|id| id.as_str());
-        // A configured endpoint answers after the CLI has already printed
-        // the model it was asked for, so what the CLI reports is then a
-        // request, not an observation — unless the CLI's own report is
-        // itself the endpoint's answer (`observes_served_model`), which is
-        // an observation regardless of what sits behind the endpoint.
         let (model_id, source) = match (report.observed_model, requested_model) {
             (Some(model), _) if descriptor.observes_served_model => {
                 (model, ModelObservationSource::HarnessReported)
-            }
-            (Some(model), _)
-                if crate::provider::requires_unconfirmed_model_recording(&provider) =>
-            {
-                (model, ModelObservationSource::RequestedNotConfirmed)
             }
             (Some(model), _) => (model, ModelObservationSource::HarnessReported),
             (None, Some(model)) => (
@@ -1166,16 +1080,7 @@ where
                 ModelSelection::Optional => ModelSelectionReport::Optional,
                 ModelSelection::Explicit(_) => ModelSelectionReport::Required,
             }),
-            providers: crate::provider::registry()
-                .into_iter()
-                .filter(|provider| {
-                    self.providers
-                        .get(provider.config_key())
-                        .is_some_and(|config| config.enabled)
-                        && provider.serves(descriptor.wire)
-                })
-                .map(|provider| provider.wire_name().to_owned())
-                .collect(),
+            providers: Vec::new(),
             additional,
         }
     }
@@ -1202,7 +1107,7 @@ where
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
-        let (process_spec, secrets, endpoint, scratch, stdin_stays_open) =
+        let (process_spec, secrets, scratch, stdin_stays_open) =
             self.prepare(spec).inspect_err(|_| {
                 let _ = std::fs::remove_dir_all(self.scratch_dir(spec));
             })?;
@@ -1246,7 +1151,6 @@ where
                     limits: self.run_limits(spec),
                     started_at: DateTime::<Utc>::from(self.clock.now()),
                     spec: spec.clone(),
-                    endpoint,
                     scratch,
                     interactive,
                     progress: progress_tx,
@@ -1291,7 +1195,6 @@ where
         let pid = running.process.pid();
         let run_context = RunContext {
             spec: &running.record.spec,
-            endpoint: running.record.endpoint.as_ref(),
             scratch: &running.record.scratch,
         };
         let (observation, process_outcome, groups) = match running
@@ -1352,7 +1255,6 @@ where
         let result = if questions.is_some() || progress.is_some() {
             let run_context = RunContext {
                 spec: &record.spec,
-                endpoint: record.endpoint.as_ref(),
                 scratch: &record.scratch,
             };
             process

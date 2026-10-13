@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 use tack_orch::execution::{
     AgentProfileSnapshot, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     ExecutionState, HarnessKind as DomainHarnessKindType, PermissionPolicy, RepositorySnapshot,
-    RequestedModelId, RequestedModelProvider, RunnerSelector,
+    RequestedModelProvider, RunnerSelector,
 };
 use tack_runner::{
     client::{
@@ -21,12 +21,8 @@ use tack_runner::{
         HarnessAdapter, RunnerId, Timestamp, Workspace, WorkspaceId as ClientWorkspaceId,
         engine::ExecutionSpec,
     },
-    config::{
-        DEFAULT_VERCEL_AI_GATEWAY_SECRET, ProviderConfig, VERCEL_AI_GATEWAY_CONFIG_KEY,
-        VERCEL_AI_GATEWAY_PROVIDER,
-    },
     harness::{
-        HarnessProbe, ModelObservationSource,
+        HarnessProbe,
         artifact::ArtifactStager,
         claude_code::{ClaudeCodeAdapter, ClaudeCodeGrammar},
         process::ProcessLimits,
@@ -158,28 +154,6 @@ fn spec_with(
     }
 }
 
-fn gateway_providers() -> BTreeMap<String, ProviderConfig> {
-    BTreeMap::from([(
-        VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        ProviderConfig {
-            enabled: true,
-            secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
-            base_url: None,
-        },
-    )])
-}
-
-/// The real runner-local secret store: the platform keychain, or its
-/// owner-only file fallback — whichever this machine actually has.
-fn runner_state_secret_store() -> SecretStore {
-    let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
-        });
-    SecretStore::open(&state_dir.join("secrets.json"))
-}
-
 fn git_init(workspace: &std::path::Path) {
     std::process::Command::new("git")
         .args(["init", "-q"])
@@ -309,159 +283,4 @@ async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
     );
 
     std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
-}
-
-/// Live proof of the provider endpoint path, not the direct one above:
-/// resolves the real runner-local secret store for a `vercel_ai_gateway`
-/// entry, points a real `claude` binary at it, and records what the CLI
-/// reported. Gated identically to the test above (a real invocation is
-/// billed), plus a clean skip when no store entry exists at all — this
-/// test never fabricates one.
-#[tokio::test]
-#[ignore = "opt-in: requires a real `claude` binary on PATH, a `vercel_ai_gateway` entry in \
-            this machine's secret store, *and* TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real \
-            invocation is billed); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest \
-            run --workspace --run-ignored ignored-only -E 'binary(live_claude_code)'"]
-async fn live_claude_code_through_the_configured_provider_when_opted_in() {
-    if !opted_in() {
-        eprintln!(
-            "skipping live claude-code gateway test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 to \
-             opt in (a real invocation is billed)"
-        );
-        return;
-    }
-    let state = temp_workspace("live-state");
-    let Ok(adapter) = discover(runner_state_secret_store(), state.path()) else {
-        eprintln!("skipping live claude-code gateway test: no `claude` binary discoverable");
-        return;
-    };
-    let adapter = adapter.with_providers(gateway_providers());
-
-    let workspace_dir = temp_workspace("live-gateway");
-    let workspace = workspace_dir.path();
-    git_init(workspace);
-    let mut spec = spec_with(
-        Some(VERCEL_AI_GATEWAY_PROVIDER),
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    spec.work.request.requested_model_id = Some(RequestedModelId::new("anthropic/claude-opus-4.6"));
-    spec.work.request.resolved_agent_profile.instructions = "Say exactly: ok".to_string();
-
-    if let Err(error) = adapter.validate(&spec).await {
-        eprintln!(
-            "skipping live claude-code gateway test: no configured provider entry to \
-             validate against ({error})"
-        );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
-        return;
-    }
-    let handle = adapter
-        .start(&spec)
-        .await
-        .expect("start a live gateway-routed process");
-    let outcome = adapter
-        .wait(&handle)
-        .await
-        .expect("wait for a live gateway-routed process");
-
-    eprintln!(
-        "live claude-code (gateway) outcome: terminal_state={:?} model_provider={} \
-         model_id={} model_observation_source={} terminal_reason={}",
-        outcome.terminal_state,
-        outcome.actual_execution.model_provider.as_str(),
-        outcome.actual_execution.model_id.as_str(),
-        outcome.actual_execution.model_observation_source,
-        outcome.terminal_reason
-    );
-
-    // Holds regardless of whether the configured credential is itself
-    // valid, and regardless of which of two honest outcomes this
-    // specific run hits: a `result` line arriving before the request
-    // timeout (`requested_not_confirmed`) or the process being killed
-    // mid-retry-storm with no such line ever seen (`not_observed`) — a
-    // real invalid-key run measured exponential retry delays that make
-    // the latter the far likelier case within any test-sized timeout.
-    // The one claim that must never hold for a gateway-routed run is
-    // `harness_reported`: this line is emitted before any network call
-    // reaches the gateway, so it can never be treated as confirmation
-    // the gateway actually served it. A successful completion
-    // additionally needs a working credential, which this test does not
-    // assert on: that requires a separately run, deliberately billed
-    // proof against a real credential.
-    assert_ne!(
-        outcome.actual_execution.model_observation_source,
-        ModelObservationSource::HarnessReported.as_str(),
-        "a gateway-routed run must never claim harness_reported"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
-}
-
-/// The live counterpart to the fake-shim provider-endpoint guard tests
-/// in `harness::claude_code`'s own unit tests: with the configured
-/// provider enabled *and* genuinely working (a real, billed gateway
-/// completion is proven by the test above), a direct-model request
-/// against the same adapter must still never reach the gateway. Never
-/// bills anything itself — a direct request with no ambient login on
-/// this machine fails in milliseconds ("Not logged in"), which is the
-/// point: if it had instead reached the gateway, it would have
-/// succeeded, exactly like the test above.
-#[tokio::test]
-#[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
-            TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 \
-            cargo nextest run --workspace --run-ignored ignored-only \
-            -E 'binary(live_claude_code)'"]
-async fn live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in() {
-    if !opted_in() {
-        eprintln!(
-            "skipping live claude-code direct-guard test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 \
-             to opt in"
-        );
-        return;
-    }
-    let state = temp_workspace("live-state");
-    let Ok(adapter) = discover(runner_state_secret_store(), state.path()) else {
-        eprintln!("skipping live claude-code direct-guard test: no `claude` binary discoverable");
-        return;
-    };
-    let adapter = adapter.with_providers(gateway_providers());
-
-    let workspace_dir = temp_workspace("live-direct-guard");
-    let workspace = workspace_dir.path();
-    git_init(workspace);
-    // No requested_model_provider at all: the direct/subscription path.
-    let spec = spec_with(None, &[], true, BTreeMap::new(), workspace.to_path_buf());
-
-    adapter
-        .validate(&spec)
-        .await
-        .expect("a direct request validates even with the provider configured");
-    let handle = adapter
-        .start(&spec)
-        .await
-        .expect("start a direct-model process");
-    let outcome = adapter
-        .wait(&handle)
-        .await
-        .expect("wait for a direct-model process");
-
-    eprintln!(
-        "live claude-code (direct, provider configured but unused) outcome: \
-         terminal_state={:?} terminal_reason={}",
-        outcome.terminal_state, outcome.terminal_reason
-    );
-
-    // The decisive check: the gateway's own distinctive error shape
-    // ("authentication_failed"/"api_retry") must never appear on a
-    // direct request, proving it never reached ai-gateway.vercel.sh.
-    let serialized = outcome.terminal_reason.to_string();
-    assert!(
-        !serialized.contains("authentication_failed") && !serialized.contains("api_retry"),
-        "a direct request must never show the gateway's own error shape: {serialized}"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }

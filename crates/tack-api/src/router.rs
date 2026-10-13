@@ -71,7 +71,7 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
 }
 
 /// Embedded-runner control routes (ADR 0061 decisions 2 and 6) — turn the
-/// in-process runner on/off and hand it a provider secret. Callers merge
+/// in-process runner on/off. Callers merge
 /// this only when both a [`LocalRunnerControl`] was actually wired into
 /// `AppState` and the server is bound to loopback
 /// (`build_router`'s `local_runner_available` check) — never merged at all
@@ -86,10 +86,6 @@ fn local_runner_routes() -> Router<AppState> {
             get(local_runner::get_local_runner).put(local_runner::put_local_runner),
         )
         .route(
-            "/local-runner/secrets",
-            get(local_runner::list_local_runner_secrets),
-        )
-        .route(
             "/local-runner/check-folder",
             post(local_runner::check_local_runner_folder),
         )
@@ -101,11 +97,6 @@ fn local_runner_routes() -> Router<AppState> {
         .route(
             "/local-runner/harness-verification",
             get(local_runner::get_harness_verification),
-        )
-        .route(
-            "/local-runner/secrets/{name}",
-            put(local_runner::put_local_runner_secret)
-                .delete(local_runner::delete_local_runner_secret),
         )
 }
 

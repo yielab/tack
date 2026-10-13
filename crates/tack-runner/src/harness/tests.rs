@@ -520,14 +520,12 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
         env!("CARGO_MANIFEST_DIR"),
         "/src/harness/fixtures/fake_harness.sh"
     ),
-    wire: crate::provider::Wire::OpenAiResponses,
     model_selection: local_process::ModelSelection::Optional,
     native_provider: "native",
     inherited_env: &["PATH"],
     model_passthrough: "forwarded verbatim",
     probe_notes: &[],
     credential_note: "",
-    credential_env: None,
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
@@ -578,7 +576,6 @@ async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
     store.set("gw", "gateway-key").expect("store a secret");
     let limits =
         process::ProcessLimits::new(1_000_000, 1_000_000, std::time::Duration::from_secs(60));
-    let providers = BTreeMap::new();
 
     for (file, allowed) in [
         ("", false),
@@ -597,7 +594,6 @@ async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
                 &limits,
                 state.path(),
                 &store,
-                &providers,
                 &config.secrets.request_may_reference,
                 &BTreeMap::new(),
             ),

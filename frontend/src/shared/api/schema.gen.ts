@@ -890,7 +890,7 @@ export interface paths {
         };
         /**
          * GET /api/local-runner — the persisted preference, the live runtime
-         *     state, and the current provider catalog. Only mounted on a loopback bind
+         *     state. Only mounted on a loopback bind
          *     with a control actually wired in — see `router.rs`'s `local_runner_routes`.
          */
         get: operations["get_local_runner"];
@@ -960,44 +960,6 @@ export interface paths {
          */
         post: operations["init_local_runner_folder"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/local-runner/secrets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** GET /api/local-runner/secrets — names and set-at timestamps only. */
-        get: operations["list_local_runner_secrets"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/local-runner/secrets/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * PUT /api/local-runner/secrets/{name} — store a value. Never echoes it
-         *     back, not even as a hash: the response carries nothing but a status code.
-         */
-        put: operations["put_local_runner_secret"];
-        post?: never;
-        /** DELETE /api/local-runner/secrets/{name} — not an error if already absent. */
-        delete: operations["delete_local_runner_secret"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4337,9 +4299,6 @@ export interface components {
             field_id: string;
             value: unknown;
         };
-        SetLocalRunnerSecret: {
-            value: string;
-        };
         Sprint: {
             /** Format: date-time */
             created_at: string;
@@ -6599,7 +6558,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Embedded-runner preference, runtime state, and provider catalog */
+            /** @description Embedded-runner preference and runtime state */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6721,66 +6680,6 @@ export interface operations {
             };
             /** @description The path exists and is not an empty directory, or the embedded runner is not configured */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_local_runner_secrets: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stored secret names and set-at timestamps, never values */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    put_local_runner_secret: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetLocalRunnerSecret"];
-            };
-        };
-        responses: {
-            /** @description Stored; the value is never echoed back */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_local_runner_secret: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Removed (or already absent) */
-            204: {
                 headers: {
                     [name: string]: unknown;
                 };

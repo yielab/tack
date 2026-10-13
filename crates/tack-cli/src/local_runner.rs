@@ -21,7 +21,6 @@
 //! call the same [`EmbeddedRunnerControl::start`]: one code path in, never a
 //! boot-time one and a UI-triggered one.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -29,10 +28,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use tack_api::{
-    CatalogSnapshot, LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
-    SecretMeta,
-};
+use tack_api::{LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus};
 use tack_runner::{
     ConfigError, ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
     RunnerError, Shutdown, ShutdownHandle,
@@ -120,7 +116,7 @@ fn migrate_legacy_state_dir(new_dir: &Path) {
 /// The variable `tack serve --runner-config` sets, naming the TOML file the
 /// embedded runner loads — the same file `tack runner start --config` reads.
 /// Without it the embedded runner has defaults only, which leaves its
-/// `[verify]`, `[git]` and `[provider.<name>]` tables unset: those have no
+/// `[verify]`, `[git]`, `[secrets]` and `[environment]` tables unset: those have no
 /// environment equivalent.
 pub const RUNNER_CONFIG_ENV: &str = "TACK_LOCAL_RUNNER_CONFIG";
 
@@ -158,7 +154,6 @@ pub fn run_standalone(
             runner_id,
             state_dir,
             enrollment_credential: enrollment_token.map(EnrollmentCredential::new),
-            ..ConfigOverrides::default()
         },
         config_path.as_deref(),
     )?;
@@ -245,60 +240,6 @@ async fn ensure_runner_credential(
     Ok(())
 }
 
-/// Where [`EmbeddedRunnerControl`] remembers which secret names it has set
-/// and when — never a value, and deliberately *not* inside
-/// `SecretStore`'s own file/keychain entries: `tack-runner`'s `SecretStore`
-/// tracks no timestamp at all, and it stores one entry per credential name
-/// with no room for metadata alongside it. A name present in the real store
-/// but absent here (set by `tack runner secret set` before this UI ever
-/// ran) reports `set_at: None` rather than a fabricated time.
-fn secret_meta_path(state_dir: &Path) -> PathBuf {
-    state_dir.join("secret_meta.json")
-}
-
-fn load_secret_meta(state_dir: &Path) -> HashMap<String, DateTime<Utc>> {
-    std::fs::read(secret_meta_path(state_dir))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
-}
-
-/// Best-effort: a failure to persist this sidecar loses only "since when"
-/// display metadata, never the secret itself (already durably written to
-/// the real store by the caller before this runs).
-fn save_secret_meta(state_dir: &Path, meta: &HashMap<String, DateTime<Utc>>) {
-    let Ok(json) = serde_json::to_vec(meta) else {
-        return;
-    };
-    if let Err(error) = std::fs::write(secret_meta_path(state_dir), json) {
-        tracing::warn!(%error, "failed to persist local-runner secret metadata (non-fatal)");
-    }
-}
-
-/// Narrows the per-provider catalog map to the single status this response
-/// carries — the panel it feeds is one provider's key field, so no entry for
-/// it reads the same as unconfigured. Per-model price/context-window counts
-/// stop here on purpose: they'd go on the wire, and the capability type has
-/// nowhere to carry per-model metadata yet.
-fn map_catalog_status(status: Option<&tack_runner::provider::CatalogStatus>) -> CatalogSnapshot {
-    use tack_runner::provider::CatalogStatus;
-    match status {
-        None | Some(CatalogStatus::NotConfigured) => CatalogSnapshot::NotConfigured,
-        Some(CatalogStatus::SecretUnresolved) => CatalogSnapshot::SecretUnresolved,
-        Some(CatalogStatus::Unreachable { status }) => CatalogSnapshot::Unreachable {
-            http_status: *status,
-        },
-        Some(CatalogStatus::Configured {
-            model_count,
-            checked_at,
-            ..
-        }) => CatalogSnapshot::Configured {
-            model_count: *model_count,
-            checked_at: *checked_at,
-        },
-    }
-}
-
 struct Running {
     shutdown_handle: ShutdownHandle,
     runner_task: JoinHandle<Result<(), RunnerError>>,
@@ -312,14 +253,6 @@ struct State {
     bound_addr: Option<SocketAddr>,
     runner_config: RunnerConfig,
     running: Option<Running>,
-    secret_meta: HashMap<String, DateTime<Utc>>,
-    /// Whether `providers[vercel_ai_gateway].enabled` reads `true` only
-    /// because `set_secret` flipped it as a convenience, not because the
-    /// operator's own config already said so. Set only at the instant
-    /// `set_secret` flips `false` → `true`; cleared only by `remove_secret`
-    /// undoing that exact flip, so an operator's own `true` is never turned
-    /// off by a later secret removal. Never persisted.
-    vercel_ai_gateway_secret_auto_enabled: bool,
 }
 
 /// The seam `tack-api`'s routes call (`handlers::local_runner`'s
@@ -354,15 +287,12 @@ impl EmbeddedRunnerControl {
         };
         let config_path = runner_config_path();
         let runner_config = load_runner_config(command_line, config_path.as_deref())?;
-        let secret_meta = load_secret_meta(&runner_config.state_dir);
         Ok(Self {
             server_config,
             state: Mutex::new(State {
                 bound_addr: None,
                 runner_config,
                 running: None,
-                secret_meta,
-                vercel_ai_gateway_secret_auto_enabled: false,
             }),
         })
     }
@@ -428,121 +358,6 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
         tack_runner::client::persisted_session_runner_id(&state.runner_config.state_dir)
     }
 
-    async fn list_secrets(&self) -> Vec<SecretMeta> {
-        let state = self.state.lock().await;
-        let store = SecretStore::open(&state.runner_config.secret_store_path());
-        let names = store.list().unwrap_or_default();
-        names
-            .into_iter()
-            .map(|name| {
-                let set_at = state.secret_meta.get(&name).copied();
-                SecretMeta { name, set_at }
-            })
-            .collect()
-    }
-
-    async fn set_secret(&self, name: &str, value: &str) -> Result<(), LocalRunnerControlError> {
-        let mut state = self.state.lock().await;
-        let store = SecretStore::open(&state.runner_config.secret_store_path());
-        store
-            .set(name, value)
-            .map_err(|error| LocalRunnerControlError::SecretStore(error.to_string()))?;
-        state.secret_meta.insert(name.to_owned(), Utc::now());
-        save_secret_meta(&state.runner_config.state_dir, &state.secret_meta);
-
-        // A UI-only user must never also have to hand-edit a TOML
-        // `enabled` flag once they've pasted a key — flip the one provider
-        // this build knows on the moment its default secret name is set.
-        // Narrow on purpose: a deployment that configured a *different*
-        // secret-store entry name via `TACK_RUNNER_PROVIDER_
-        // VERCEL_AI_GATEWAY_SECRET` keeps using its own console-only
-        // toggle, unchanged by this route. Only actually flipping the flag
-        // (not merely finding it already `true`) marks the auto-enable —
-        // [`EmbeddedRunnerControl::remove_secret`] undoes exactly this flip
-        // and nothing else, so an operator's own `enabled = true` is never
-        // clobbered by a later key removal.
-        if name == tack_runner::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET {
-            let was_enabled = state
-                .runner_config
-                .providers
-                .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-                .is_some_and(|provider| provider.enabled);
-            if let Some(provider) = state
-                .runner_config
-                .providers
-                .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-            {
-                provider.enabled = true;
-            }
-            if !was_enabled {
-                state.vercel_ai_gateway_secret_auto_enabled = true;
-            }
-        }
-        if provider_resolves_secret(&state.runner_config.providers, name) {
-            self.restart_for_provider_change_locked(&mut state).await?;
-        }
-        Ok(())
-    }
-
-    async fn remove_secret(&self, name: &str) -> Result<(), LocalRunnerControlError> {
-        let mut state = self.state.lock().await;
-        let store = SecretStore::open(&state.runner_config.secret_store_path());
-        store
-            .remove(name)
-            .map_err(|error| LocalRunnerControlError::SecretStore(error.to_string()))?;
-        state.secret_meta.remove(name);
-        save_secret_meta(&state.runner_config.state_dir, &state.secret_meta);
-
-        // Decided before the flag below may change: a provider whose only
-        // credential was just removed is one the running runner was
-        // configured with, whether or not it stays enabled afterwards.
-        let affects_provider = provider_resolves_secret(&state.runner_config.providers, name);
-
-        // The mirror of `set_secret`'s own flip, narrowed the identical
-        // way: only the default secret name is ever considered, so a
-        // provider configured under a different name via
-        // `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET` is never touched
-        // here either. And only undoes `set_secret`'s own convenience flip
-        // — an `enabled = true` the operator set directly (TOML, the
-        // `_ENABLED` environment variable, or already `true` at boot) is
-        // left exactly as it was, because `vercel_ai_gateway_secret_auto_
-        // enabled` is only ever `true` when this process's own `set_secret`
-        // is what turned it on.
-        if name == tack_runner::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET
-            && state.vercel_ai_gateway_secret_auto_enabled
-            && let Some(provider) = state
-                .runner_config
-                .providers
-                .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        {
-            provider.enabled = false;
-            state.vercel_ai_gateway_secret_auto_enabled = false;
-        }
-        if affects_provider {
-            self.restart_for_provider_change_locked(&mut state).await?;
-        }
-        Ok(())
-    }
-
-    async fn catalog(&self) -> CatalogSnapshot {
-        let state = self.state.lock().await;
-        let staging_root = state.runner_config.state_dir.join("staging");
-        let secrets = SecretStore::open(&state.runner_config.secret_store_path());
-        let limits = runner_limits();
-        let report = bootstrap::probe(
-            &staging_root,
-            &limits.harness_process,
-            &secrets,
-            &state.runner_config.providers,
-        )
-        .await;
-        map_catalog_status(
-            report
-                .provider_catalog
-                .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY),
-        )
-    }
-
     async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {
         let state = self.state.lock().await;
         let store = SecretStore::open(&state.runner_config.secret_store_path());
@@ -553,79 +368,7 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
     }
 }
 
-/// How long a stopped runner task is given to actually exit before a
-/// configuration change stops waiting for it and aborts it outright. Shutdown
-/// is observed between protocol calls and terminates every harness child
-/// first, so this is a backstop against a wedged task, not the expected path.
-const RUNNER_STOP_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Whether any configured provider resolves its credential from the
-/// secret-store entry `name`. `RunnerConfig`'s `secret` references may carry
-/// the explicit `store:` prefix `SecretStore::resolve` also accepts, so both
-/// spellings name the same entry.
-fn provider_resolves_secret(
-    providers: &std::collections::BTreeMap<String, tack_runner::config::ProviderConfig>,
-    name: &str,
-) -> bool {
-    providers.values().any(|provider| {
-        provider
-            .secret
-            .strip_prefix("store:")
-            .unwrap_or(&provider.secret)
-            == name
-    })
-}
-
 impl EmbeddedRunnerControl {
-    /// The runner receives its configuration by value when it is spawned —
-    /// its adapters hold their own copy of the provider table, and the
-    /// capability snapshot it enrolls with is computed once at boot. That
-    /// is the runner's model: configuration is fixed for the life of one
-    /// runner task. So a change to a configured provider's credential is not
-    /// something a running task can be told about; it is a new task. Without
-    /// this, the key an operator just pasted reaches this control's own copy
-    /// of the configuration (which is what `catalog` reads, so the page
-    /// reports a live catalog) while every dispatch still resolves the
-    /// provider through the spawned task's stale copy and refuses it.
-    ///
-    /// A stopped runner needs nothing: the next `start` reads the current
-    /// configuration. The old task is joined, not merely signalled, before
-    /// the new one is spawned — two runner tasks sharing one state directory
-    /// would share one journal with nothing arbitrating between them.
-    async fn restart_for_provider_change_locked(
-        &self,
-        state: &mut State,
-    ) -> Result<(), LocalRunnerControlError> {
-        if state.running.is_none() {
-            return Ok(());
-        }
-        self.stop_and_join_locked(state).await;
-        self.start_locked(state).await
-    }
-
-    async fn stop_and_join_locked(&self, state: &mut State) {
-        let Some(running) = state.running.take() else {
-            return;
-        };
-        running.shutdown_handle.request();
-        // The `JoinHandle` moves into the timeout future, which drops it on
-        // expiry — and dropping a `JoinHandle` detaches the task rather than
-        // cancelling it. The abort handle taken first is what actually ends
-        // a task that ignored its shutdown signal.
-        let abort = running.runner_task.abort_handle();
-        match tokio::time::timeout(RUNNER_STOP_TIMEOUT, running.runner_task).await {
-            Ok(_) => {
-                tracing::info!("embedded runner stopped for a provider configuration change");
-            }
-            Err(_) => {
-                abort.abort();
-                tracing::warn!(
-                    "embedded runner did not stop within the shutdown budget; its task was aborted"
-                );
-            }
-        }
-    }
-
     async fn start_locked(&self, state: &mut State) -> Result<(), LocalRunnerControlError> {
         if state.running.is_some() {
             // Idempotent — a second `PUT {"enabled": true}` (or the

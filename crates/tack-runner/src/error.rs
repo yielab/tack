@@ -6,18 +6,17 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("runner configuration is invalid")]
     Invalid,
+    /// Named by its key alone, never its contents: the table is checked
+    /// before any parser text could be produced.
+    #[error(
+        "runner configuration has a [provider] table, which this version no longer reads: \
+         each agent signs in with its own login, so remove the table"
+    )]
+    ProviderTable,
     #[error("runner configuration could not be read")]
     Unreadable,
     #[error("runner id must not be empty")]
     EmptyRunnerId,
-    /// Names the table, never its contents: the message prints the entry's
-    /// key, nothing a `secret` value could leak through.
-    #[error(
-        "[provider.{provider}] is enabled but names no base_url; set it to the server's root \
-         URL (for example http://127.0.0.1:8081) in the configuration file or through \
-         TACK_RUNNER_PROVIDER_OPENAI_COMPATIBLE_BASE_URL"
-    )]
-    ProviderBaseUrlMissing { provider: String },
 }
 
 #[derive(Debug, Error)]

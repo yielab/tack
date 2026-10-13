@@ -19,12 +19,10 @@ use crate::harness::{
     },
     process::{ProcessExit, ProcessResult},
 };
-use crate::provider::Wire;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "docket",
     program: "docket",
-    wire: Wire::OpenAiChatCompletions,
     model_selection: ModelSelection::Explicit(
         "docket exec refuses to run without --model, so a request with no explicit \
          requested_model_provider and requested_model_id is rejected before spawn",
@@ -35,10 +33,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
                         joined as <provider>/<model id> for --model; docket validates the \
                         result at run time, so no model list is claimed",
     probe_notes: &[],
-    credential_note: "docket reads its upstream credential from DOCKET_LLM_API_KEY alone, never \
-                      a provider-named variable. Tack injects the resolved provider credential \
-                      under that fixed name via `credential_env`.",
-    credential_env: Some("DOCKET_LLM_API_KEY"),
+    credential_note: "docket signs in with its own login; Tack holds no model credential.",
     observes_served_model: true,
     reports_process_groups: true,
     reports_progress: true,
@@ -304,10 +299,10 @@ fn policy_document(policy: &PermissionPolicy) -> Result<Option<String>, HarnessE
 /// docket without the probe is passed nothing and `capabilities` says so.
 fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
     let request = &run.spec.work.request;
-    if run.endpoint.is_none() && !request.environment.contains_key(BASE_URL_ENV) {
+    if !request.environment.contains_key(BASE_URL_ENV) {
         return Err(rejected(format!(
-            "no provider endpoint resolved and the request's own environment names no \
-             {BASE_URL_ENV}; docket refuses to run without one"
+            "the request's own environment names no {BASE_URL_ENV}; docket refuses to run \
+             without one"
         )));
     }
 
@@ -324,9 +319,6 @@ fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocat
 
     let mut env = BTreeMap::new();
     env.insert("DOCKET_HOME".to_owned(), docket_home.display().to_string());
-    if let Some(endpoint) = run.endpoint {
-        env.insert(BASE_URL_ENV.to_owned(), endpoint.base_url.clone());
-    }
 
     // On 1.1 the task is a file under the scratch directory, so stdin
     // carries nothing; on 1.0 it is read from stdin, as ADR 0066 measured.

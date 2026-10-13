@@ -8,8 +8,7 @@
 //! one from whatever this machine has installed.
 //!
 //! Adding a harness: write its module, then add one line to [`DESCRIPTORS`]
-//! and one to [`discover`]. Provider wiring and `tack runner doctor` read
-//! the descriptor.
+//! and one to [`discover`]. `tack runner doctor` reads the descriptor.
 
 pub mod artifact;
 pub mod claude_code;
@@ -197,7 +196,7 @@ pub enum HarnessRegistrationError {
 }
 
 /// Every harness this build knows, in the order `tack runner doctor` lists
-/// them. Which model wire reaches which harness is read from here.
+/// them.
 pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 4] = [
     &codex::DESCRIPTOR,
     &claude_code::DESCRIPTOR,
@@ -219,7 +218,6 @@ pub fn discover(
     limits: &process::ProcessLimits,
     staging_root: &Path,
     secrets: &SecretStore,
-    providers: &BTreeMap<String, crate::config::ProviderConfig>,
     request_may_reference: &[String],
     own_environment: &BTreeMap<String, String>,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
@@ -231,7 +229,6 @@ pub fn discover(
         limits,
         staging_root,
         secrets,
-        providers,
         request_may_reference,
         own_environment,
     );
@@ -247,16 +244,13 @@ type Machine<'a> = (
     &'a process::ProcessLimits,
     &'a Path,
     &'a SecretStore,
-    &'a BTreeMap<String, crate::config::ProviderConfig>,
     &'a [String],
     &'a BTreeMap<String, String>,
 );
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (sandbox, limits, staging_root, secrets, providers, request_may_reference, own_environment): Machine<
-        '_,
-    >,
+    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment): Machine<'_>,
     grammar: G,
 ) {
     let kind = grammar.descriptor().kind;
@@ -272,7 +266,6 @@ fn install<G: local_process::HarnessGrammar>(
                 .register(
                     harness
                         .with_probed_sandbox(sandbox.clone())
-                        .with_providers(providers.clone())
                         .with_environment(request_may_reference.to_vec(), own_environment.clone()),
                 )
                 .is_err()

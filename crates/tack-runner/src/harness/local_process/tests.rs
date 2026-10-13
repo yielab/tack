@@ -4,24 +4,21 @@
 use super::*;
 use crate::harness::DecisionOption;
 use crate::harness::test_support::{
-    FixedClock, fake_harness, gateway, harness_for, scratch, script, secret_store, set_env,
+    FixedClock, fake_harness, harness_for, scratch, script, secret_store, set_env,
     set_secret_reference, spec,
 };
 
 const KIND: &str = "test-harness";
-const GATEWAY: &str = crate::config::VERCEL_AI_GATEWAY_PROVIDER;
 
 const BASE: HarnessDescriptor = HarnessDescriptor {
     kind: KIND,
     program: "tack-test-fixture-nonexistent-harness",
-    wire: Wire::OpenAiResponses,
     model_selection: ModelSelection::Explicit("a model is required"),
     native_provider: "native",
     inherited_env: &[],
     model_passthrough: "forwarded verbatim",
     probe_notes: &[("note", "attached to every probe")],
     credential_note: "",
-    credential_env: None,
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
@@ -36,28 +33,11 @@ static INHERITING: HarnessDescriptor = HarnessDescriptor {
     ..BASE
 };
 
-/// Reports its model as an observation even behind a gateway.
+/// Reports its model as an observation.
 static OBSERVING: HarnessDescriptor = HarnessDescriptor {
     model_selection: ModelSelection::Optional,
     inherited_env: &["HOME"],
     observes_served_model: true,
-    ..BASE
-};
-
-/// Reads its credential from a name of its own, never the endpoint's.
-static CREDENTIAL_NAMED: HarnessDescriptor = HarnessDescriptor {
-    model_selection: ModelSelection::Optional,
-    inherited_env: &["HOME"],
-    credential_env: Some("TACK_TEST_FIXTURE_CREDENTIAL"),
-    ..BASE
-};
-
-/// Speaks the one wire an OpenAI-compatible server serves, and reads its
-/// credential from a name of its own like docket does.
-static CHAT_COMPLETIONS: HarnessDescriptor = HarnessDescriptor {
-    wire: Wire::OpenAiChatCompletions,
-    model_selection: ModelSelection::Optional,
-    credential_env: Some("TACK_TEST_FIXTURE_CREDENTIAL"),
     ..BASE
 };
 
@@ -203,7 +183,7 @@ fn absent_binary() -> BinaryLocator {
 type Breakage = fn(&mut ExecutionSpec);
 
 /// `(name, what is wrong with the request, a fragment of the reason)`.
-fn broken_requests() -> [(&'static str, Breakage, &'static str); 5] {
+fn broken_requests() -> [(&'static str, Breakage, &'static str); 4] {
     [
         (
             "other kind",
@@ -224,14 +204,6 @@ fn broken_requests() -> [(&'static str, Breakage, &'static str); 5] {
             "missing secret",
             |s| set_secret_reference(s, "SECRET_VAR", "absent"),
             "secret_reference_unresolved: absent",
-        ),
-        (
-            "disabled provider",
-            |s| {
-                s.work.request.requested_model_provider =
-                    Some(tack_orch::execution::RequestedModelProvider::new(GATEWAY))
-            },
-            GATEWAY,
         ),
     ]
 }
@@ -317,10 +289,8 @@ async fn a_run_reports_the_request_model_as_unconfirmed() {
 
 type TestProvider = tack_orch::execution::RequestedModelProvider;
 
-/// `(descriptor, provider, observed by the harness) -> (model, source)`. A
-/// configured endpoint answers after the CLI printed its model, so what the
-/// CLI reports through one is a request, not an observation — unless the
-/// descriptor itself says otherwise (`OBSERVING`).
+/// `(descriptor, provider, observed by the harness) -> (model, source)`. The
+/// descriptor can declare its report an observation (`OBSERVING`).
 type ModelSourceRow = (
     &'static HarnessDescriptor,
     Option<&'static str>,
@@ -329,7 +299,7 @@ type ModelSourceRow = (
     &'static str,
 );
 
-fn model_source_rows() -> [ModelSourceRow; 4] {
+fn model_source_rows() -> [ModelSourceRow; 3] {
     [
         (
             &INHERITING,
@@ -338,17 +308,10 @@ fn model_source_rows() -> [ModelSourceRow; 4] {
             "seen",
             "harness_reported",
         ),
-        (
-            &INHERITING,
-            Some(GATEWAY),
-            Some("seen"),
-            "seen",
-            "requested_not_confirmed",
-        ),
         (&INHERITING, None, None, "unknown", "not_observed"),
         (
             &OBSERVING,
-            Some(GATEWAY),
+            Some("anthropic"),
             Some("seen"),
             "seen",
             "harness_reported",
@@ -360,14 +323,12 @@ fn model_source_rows() -> [ModelSourceRow; 4] {
 async fn the_model_source_says_who_vouches_for_the_model() {
     for (descriptor, provider, observed_model, model, source) in model_source_rows() {
         let state = scratch("model-source");
-        state_secret(&state, "key");
         let grammar = TestGrammar {
             descriptor,
             observed_model,
             ask: false,
         };
-        let harness =
-            harness_with(grammar, fake_harness(), state.path()).with_providers(gateway("key"));
+        let harness = harness_with(grammar, fake_harness(), state.path());
         let mut request = spec(KIND, state.path());
         request.work.request.requested_model_id = None;
         request.work.request.requested_model_provider = provider.map(TestProvider::new);
@@ -380,14 +341,10 @@ async fn the_model_source_says_who_vouches_for_the_model() {
 }
 
 const SECRET: &str = "stored-secret-canary-41c7";
-const CREDENTIAL: &str = "gateway-credential-canary-9b02";
 
-/// The gateway's key under `name`, and a different value under `requested`
-/// for a request's own `secret_reference`: were they the same value, the
-/// request would register it and hide a credential that is not.
-fn state_secret(state: &tempfile::TempDir, name: &str) {
+/// The value a request's own `secret_reference` resolves to.
+fn state_secret(state: &tempfile::TempDir) {
     let store = secret_store(state.path());
-    store.set(name, CREDENTIAL).expect("seed store");
     store.set("requested", SECRET).expect("seed store");
 }
 
@@ -598,25 +555,13 @@ exit 0"#;
 // ---- what reaches the child ----------------------------------------------
 
 /// Runs a shim that records the names of its environment variables, and
-/// the value of `$ECHOED` on stdout, with the gateway as the one configured
-/// provider. Returns the names and the outcome.
+/// the value of `$ECHOED` on stdout. Returns the names and the outcome.
 async fn run_recording_env(
     descriptor: &'static HarnessDescriptor,
-    provider: &str,
-    echoed: &str,
-) -> (Vec<String>, HarnessOutcome) {
-    run_recording_env_with(descriptor, gateway("key"), provider, echoed).await
-}
-
-/// [`run_recording_env`] against `providers` instead of the gateway.
-async fn run_recording_env_with(
-    descriptor: &'static HarnessDescriptor,
-    providers: BTreeMap<String, ProviderConfig>,
-    provider: &str,
     echoed: &str,
 ) -> (Vec<String>, HarnessOutcome) {
     let state = scratch("child-env");
-    state_secret(&state, "key");
+    state_secret(&state);
     let marker = state.path().join("env.marker");
     let body = format!(
         "[ \"$1\" = run ] && env > {} && printf '%s' \"${echoed}\"\nexit 0",
@@ -627,11 +572,8 @@ async fn run_recording_env_with(
         observed_model: None,
         ask: false,
     };
-    let harness =
-        harness_with(grammar, script(state.path(), &body), state.path()).with_providers(providers);
+    let harness = harness_with(grammar, script(state.path(), &body), state.path());
     let mut request = spec(KIND, state.path());
-    request.work.request.requested_model_provider =
-        Some(tack_orch::execution::RequestedModelProvider::new(provider));
     set_secret_reference(&mut request, "SECRET_VAR", "requested");
     let outcome = run(&harness, &request).await;
     let recorded = std::fs::read_to_string(&marker).expect("shim recorded its environment");
@@ -644,22 +586,15 @@ async fn run_recording_env_with(
 
 #[tokio::test]
 async fn the_child_gets_only_what_was_asked_for() {
-    let (names, _) = run_recording_env(&PLAIN, "openai", "").await;
+    let (names, _) = run_recording_env(&PLAIN, "").await;
     let has = |name: &str| names.iter().any(|recorded| recorded == name);
     assert!(has("SECRET_VAR") && has("RUST_LOG"), "{names:?}");
-    assert!(!has("HOME") && !has("AI_GATEWAY_API_KEY"), "{names:?}");
+    assert!(!has("HOME"), "{names:?}");
 
-    let (names, _) = run_recording_env(&INHERITING, GATEWAY, "").await;
+    let (names, _) = run_recording_env(&INHERITING, "").await;
     let has = |name: &str| names.iter().any(|recorded| recorded == name);
-    assert!(has("HOME") && has("AI_GATEWAY_API_KEY"), "{names:?}");
+    assert!(has("HOME"), "{names:?}");
     assert!(!has("USER"), "{names:?}");
-
-    // `credential_env` renames the variable the credential is injected
-    // under; the endpoint's own name is never also set.
-    let (names, _) = run_recording_env(&CREDENTIAL_NAMED, GATEWAY, "").await;
-    let has = |name: &str| names.iter().any(|recorded| recorded == name);
-    assert!(has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
-    assert!(!has("AI_GATEWAY_API_KEY"), "{names:?}");
 }
 
 /// The shim prints the variable's value; seeing `[REDACTED]` in its place
@@ -667,30 +602,22 @@ async fn the_child_gets_only_what_was_asked_for() {
 /// registered for redaction.
 #[tokio::test]
 async fn resolved_secrets_reach_the_child_and_are_redacted() {
-    for variable in ["SECRET_VAR", "AI_GATEWAY_API_KEY"] {
-        let (_, outcome) = run_recording_env(&PLAIN, GATEWAY, variable).await;
-        let reason = outcome.terminal_reason.to_string();
-        assert!(reason.contains("[REDACTED]"), "{variable}: {reason}");
-        assert!(
-            !reason.contains(SECRET) && !reason.contains(CREDENTIAL),
-            "{variable}"
-        );
-    }
+    let (_, outcome) = run_recording_env(&PLAIN, "SECRET_VAR").await;
+    let reason = outcome.terminal_reason.to_string();
+    assert!(reason.contains("[REDACTED]"), "{reason}");
+    assert!(!reason.contains(SECRET));
 }
 
 #[tokio::test]
 async fn secret_resolution_is_logged_by_name_never_by_value() {
     crate::test_log_capture::install();
-    run_recording_env(&PLAIN, GATEWAY, "").await;
+    run_recording_env(&PLAIN, "").await;
     let log = crate::test_log_capture::captured();
     assert!(
         log.contains("SECRET_VAR"),
         "resolution was not logged: {log}"
     );
-    assert!(
-        !log.contains(SECRET) && !log.contains(CREDENTIAL),
-        "a secret reached a log line"
-    );
+    assert!(!log.contains(SECRET), "a secret reached a log line");
 }
 
 // ---- probe ------------------------------------------------------------------
@@ -764,16 +691,6 @@ async fn probe_reports_the_native_provider() {
     let bare = harness(state.path()).probe().await;
     assert_eq!(bare.native_provider, "native");
     assert!(bare.providers.is_empty());
-
-    let reached = harness(state.path()).with_providers(gateway("key"));
-    assert_eq!(reached.probe().await.providers, [GATEWAY]);
-
-    let mut disabled = gateway("key");
-    for config in disabled.values_mut() {
-        config.enabled = false;
-    }
-    let off = harness(state.path()).with_providers(disabled);
-    assert!(off.probe().await.providers.is_empty());
 }
 
 #[tokio::test]
@@ -939,42 +856,4 @@ fn usage_detail_names_only_what_the_harness_reported() {
         serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"]})
     );
     assert!(UsageDetail::default().into_additional().is_empty());
-}
-
-/// An endpoint with no credential (an OpenAI-compatible server with an
-/// empty `secret`) sets neither the harness's own credential name nor the
-/// endpoint's: the child sees the variable unset, never empty.
-#[tokio::test]
-async fn a_credential_free_endpoint_sets_no_credential_variable() {
-    let (names, outcome) = run_recording_env_with(
-        &CHAT_COMPLETIONS,
-        crate::harness::test_support::openai_compatible("http://127.0.0.1:9", ""),
-        crate::config::OPENAI_COMPATIBLE_PROVIDER,
-        "",
-    )
-    .await;
-    let has = |name: &str| names.iter().any(|recorded| recorded == name);
-    assert!(!has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
-    assert!(!has("OPENAI_API_KEY"), "{names:?}");
-    assert!(has("SECRET_VAR"), "{names:?}");
-    assert_eq!(
-        outcome.actual_execution.model_provider.as_str(),
-        crate::config::OPENAI_COMPATIBLE_PROVIDER
-    );
-}
-
-/// The same endpoint with a `secret` configured injects it under the
-/// harness's own credential name, exactly as the gateway's is.
-#[tokio::test]
-async fn an_openai_compatible_endpoint_with_a_secret_injects_it() {
-    let (names, _) = run_recording_env_with(
-        &CHAT_COMPLETIONS,
-        crate::harness::test_support::openai_compatible("http://127.0.0.1:9", "key"),
-        crate::config::OPENAI_COMPATIBLE_PROVIDER,
-        "",
-    )
-    .await;
-    let has = |name: &str| names.iter().any(|recorded| recorded == name);
-    assert!(has("TACK_TEST_FIXTURE_CREDENTIAL"), "{names:?}");
-    assert!(!has("OPENAI_API_KEY"), "{names:?}");
 }

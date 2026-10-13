@@ -5,10 +5,8 @@
 //! Vendor findings — what is measured, what is a documented guess, and at
 //! which version — are in `fixtures/opencode/README.md`.
 
-use std::collections::BTreeMap;
-
 use serde_json::Value;
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
+use tack_orch::execution::{CapabilitySupport, FeatureCapabilities};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
@@ -18,12 +16,10 @@ use crate::harness::{
     },
     process::{ProcessExit, ProcessResult, confined_cwd},
 };
-use crate::provider::Wire;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "opencode",
     program: "opencode",
-    wire: Wire::OpenAiChatCompletions,
     model_selection: ModelSelection::Explicit(
         "opencode has no default model this adapter can rely on across installs, so a request \
          with no explicit requested_model_provider and requested_model_id is rejected before \
@@ -45,12 +41,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
              stream nor opencode export ever names the served model, so it is not available",
         ),
     ],
-    credential_note: "opencode reads its provider credential from the `apiKey` field of the \
-                      config this adapter injects via OPENCODE_CONFIG_CONTENT, which references \
-                      the resolved endpoint's own credential_env_var by name. Tack injects that \
-                      variable into the process environment; opencode's own vendor logins are \
-                      out of scope (ADR 0067 decision 10).",
-    credential_env: None,
+    credential_note: "opencode signs in with its own login; Tack holds no model credential.",
     // Measured against opencode 1.18.30, 2026-09-20, with the fake model
     // server answering every chunk's `model` as a value distinct from the
     // requested one: neither the `--format json` event stream
@@ -77,14 +68,6 @@ fn rejected(reason: String) -> HarnessError {
 
 fn bounded_prefix(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
-}
-
-/// Whether `tools` names `tool` (case-insensitively), the same convention
-/// `claude_code.rs` uses for its own network-tool check.
-fn grants(tools: &[String], tool: &str) -> bool {
-    tools
-        .iter()
-        .any(|name| name == PermissionPolicy::ALL_TOOLS || name.eq_ignore_ascii_case(tool))
 }
 
 /// No terminal `step_finish` event at all. A process opencode itself
@@ -296,108 +279,14 @@ impl HarnessGrammar for OpencodeGrammar {
         &DESCRIPTOR
     }
 
-    /// A `network: false` request is rejected before spawn: opencode was
-    /// measured reaching a non-loopback host on every run — even `--pure`,
-    /// a fresh `HOME`/`OPENCODE_CONFIG_DIR` and every `OPENCODE_DISABLE_*`
-    /// variable set — so Tack cannot honour a promise this CLI itself
-    /// breaks (`fixtures/opencode/README.md`).
+    /// Refused for every request: opencode needs its own login, which this
+    /// runner does not pass.
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         working_directory(run)?;
-        let request = &run.spec.work.request;
-        let Some(endpoint) = run.endpoint else {
-            return Err(rejected(
-                "no provider endpoint resolved; opencode's own vendor logins are out of scope \
-                 for this adapter"
-                    .to_owned(),
-            ));
-        };
-        if !request.permission_policy.network {
-            return Err(rejected(
-                "opencode reaches a non-loopback host on every run regardless of its own \
-                 config, so a network: false request cannot be honoured"
-                    .to_owned(),
-            ));
-        }
-
-        let model_id = request
-            .requested_model_id
-            .as_ref()
-            .map_or_else(String::new, |id| id.as_str().to_owned());
-        let opencode_home = run.scratch.join("opencode-home");
-        let config_dir = opencode_home.join("config");
-
-        // `ask` swaps only the permission surface and the command line
-        // measured against a real `opencode acp --pure`: every granted tool
-        // is `"ask"` instead of `"allow"`, so each call pauses on a
-        // `session/request_permission` request instead of running; `run`
-        // (absent counts as `run`) keeps every flag and config field exactly
-        // as measured before this ever existed.
-        let ask = matches!(request.permission_policy.approvals, Some(Approvals::Ask));
-        let granted = if ask { "ask" } else { "allow" };
-
-        let tools = &request.permission_policy.tools;
-        let permission = serde_json::json!({
-            "webfetch": if request.permission_policy.network { "allow" } else { "deny" },
-            "task": if grants(tools, "task") { granted } else { "deny" },
-            "edit": if grants(tools, "edit") { granted } else { "deny" },
-            "bash": if grants(tools, "bash") { granted } else { "deny" },
-        });
-        // An endpoint with no credential gets no `apiKey` at all: the
-        // variable it would reference is never set for such a run, and the
-        // provider sends no `Authorization` header when the field is absent.
-        let mut options = serde_json::json!({ "baseURL": endpoint.base_url });
-        if endpoint.credential.is_some() {
-            options["apiKey"] =
-                serde_json::json!(format!("{{env:{}}}", endpoint.credential_env_var));
-        }
-        let mut config_content = serde_json::json!({
-            "provider": {
-                "tack": {
-                    "npm": "@ai-sdk/openai-compatible",
-                    "options": options,
-                    "models": { model_id.clone(): {} },
-                },
-            },
-            "permission": permission,
-        });
-        if ask {
-            // ACP's `session/new` has no `-m` equivalent (measured): the
-            // model is named once, at the top level of the injected config,
-            // instead.
-            config_content["model"] = serde_json::json!(format!("tack/{model_id}"));
-        }
-
-        let mut env = BTreeMap::new();
-        env.insert("HOME".to_owned(), opencode_home.display().to_string());
-        env.insert(
-            "OPENCODE_CONFIG_DIR".to_owned(),
-            config_dir.display().to_string(),
-        );
-        env.insert("OPENCODE_DISABLE_PROJECT_CONFIG".to_owned(), "1".to_owned());
-        env.insert("OPENCODE_DISABLE_AUTOUPDATE".to_owned(), "1".to_owned());
-        env.insert("OPENCODE_DISABLE_MODELS_FETCH".to_owned(), "1".to_owned());
-        env.insert("OPENCODE_DISABLE_SHARE".to_owned(), "1".to_owned());
-        env.insert(
-            "OPENCODE_CONFIG_CONTENT".to_owned(),
-            config_content.to_string(),
-        );
-
-        let args: Vec<String> = if ask {
-            vec!["acp".to_owned(), "--pure".to_owned()]
-        } else {
-            let mut args: Vec<String> =
-                ["run", "--pure", "--format", "json", "--title", "tack", "-m"]
-                    .map(str::to_owned)
-                    .into();
-            args.push(format!("tack/{model_id}"));
-            args
-        };
-
-        Ok(Invocation {
-            args,
-            env,
-            stdin_stays_open: ask,
-        })
+        Err(rejected(
+            "opencode can't run yet: it needs its own login, which this runner doesn't pass"
+                .to_owned(),
+        ))
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {

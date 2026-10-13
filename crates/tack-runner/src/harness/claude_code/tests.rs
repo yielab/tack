@@ -4,7 +4,7 @@
 //! lifecycle is proved in `local_process/tests.rs`.
 
 use super::*;
-use crate::harness::test_support::{finished, gateway, scratch, secret_store, spec};
+use crate::harness::test_support::{finished, spec};
 use tack_orch::execution::{Approvals, RequestedModelProvider};
 
 fn request(provider: Option<&str>, tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
@@ -18,23 +18,20 @@ fn request(provider: Option<&str>, tools: &[&str], network: bool) -> crate::harn
 fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, HarnessError> {
     ClaudeCodeGrammar.invocation(&RunContext {
         spec,
-        endpoint: None,
         scratch: std::path::Path::new("unused"),
     })
 }
 
 /// `(provider, tools, network allowed) -> accepted`. A native family is
-/// matched case-insensitively; a configured provider is known because the
-/// provider registry knows it, not because it is listed here.
+/// matched case-insensitively.
 #[test]
 fn a_request_is_refused_for_its_provider_or_its_policy() {
-    let gateway = crate::config::VERCEL_AI_GATEWAY_PROVIDER;
     let rows: [(Option<&str>, &[&str], bool, bool); 8] = [
         (None, &["Read"], true, true),
         (Some("anthropic"), &[], true, true),
         (Some("BEDROCK"), &[], true, true),
         (Some("Vertex"), &[], true, true),
-        (Some(gateway), &[], true, true),
+        (Some("gateway"), &[], true, false),
         (Some("openai"), &[], true, false),
         (None, &["WebFetch"], false, false),
         (None, &["WebFetch"], true, true),
@@ -170,7 +167,6 @@ fn a_permission_request_line_becomes_a_question() {
     let spec = request(Some("anthropic"), &["Bash"], true);
     let run = RunContext {
         spec: &spec,
-        endpoint: None,
         scratch: std::path::Path::new("unused"),
     };
     let request_line =
@@ -272,53 +268,10 @@ fn an_answer_becomes_a_control_response() {
     );
 }
 
-/// The credential itself is the core's to inject; the grammar only points
-/// the CLI at the endpoint and blanks the variable that would outrank it.
-#[test]
-fn a_configured_endpoint_sets_the_base_url_and_nothing_secret() {
-    let state = scratch("claude-endpoint");
-    let secrets = secret_store(state.path());
-    secrets
-        .set("key", "a-resolvable-value")
-        .expect("seed store");
-    let provider = crate::config::VERCEL_AI_GATEWAY_PROVIDER;
-    let endpoint =
-        crate::provider::resolve_endpoint(&gateway("key"), &secrets, provider, DESCRIPTOR.wire)
-            .expect("resolve")
-            .expect("the gateway serves this wire");
-    let spec = request(Some(provider), &[], true);
-
-    let direct = invocation(&spec).expect("direct").env;
-    assert_eq!(
-        direct.keys().collect::<Vec<_>>(),
-        ["ENABLE_CLAUDEAI_MCP_SERVERS"],
-        "only the connector opt-out, never an endpoint: {direct:?}"
-    );
-    let routed = ClaudeCodeGrammar
-        .invocation(&RunContext {
-            spec: &spec,
-            endpoint: Some(&endpoint),
-            scratch: std::path::Path::new("unused"),
-        })
-        .expect("routed")
-        .env;
-    assert_eq!(routed["ANTHROPIC_BASE_URL"], endpoint.base_url);
-    assert_eq!(routed["ANTHROPIC_API_KEY"], "");
-    assert!(!routed.values().any(|value| {
-        value
-            == endpoint
-                .credential
-                .as_ref()
-                .expect("credential present")
-                .expose()
-    }));
-}
-
 fn read(exit: ProcessExit, stdout: &str) -> RunReport {
     let spec = request(None, &[], true);
     let run = RunContext {
         spec: &spec,
-        endpoint: None,
         scratch: std::path::Path::new("unused"),
     };
     ClaudeCodeGrammar.report(&run, &finished(exit, stdout))

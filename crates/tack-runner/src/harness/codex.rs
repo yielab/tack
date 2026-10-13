@@ -14,12 +14,10 @@ use crate::harness::{
     },
     process::{CapturedOutput, ProcessExit, ProcessResult, confined_cwd},
 };
-use crate::provider::Wire;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "codex",
     program: "codex",
-    wire: Wire::OpenAiResponses,
     model_selection: ModelSelection::Explicit(
         "the served model is not available on codex-cli 0.149.1 (measured 2026-09-20): no \
          line of `exec --json` names which model answered, so the model that ran could not \
@@ -36,11 +34,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
          model that answered; the only model-shaped line is a `type:\"error\"` item echoing \
          the `--model` flag back, so it is not available",
     )],
-    credential_note: "Codex authenticates itself (its own CLI login, or an API key it reads from \
-                      its own config). Tack never reads, stores or forwards it. No host \
-                      environment is forwarded into a run: only entries set on the execution \
-                      request's own `environment` reach the codex process.",
-    credential_env: None,
+    credential_note: "Codex signs in with its own login; Tack holds no model credential.",
     // Measured against codex-cli 0.149.1, 2026-09-20: no line of `exec
     // --json` ever names a served model distinct from the requested one —
     // the only model-shaped line is a `type:"error"` item echoing the
@@ -51,20 +45,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     sandbox_binds: &[".codex"],
 };
 
-/// The key an injected provider endpoint is named under in Codex's
-/// `-c model_providers.<key>.*` overrides. Per invocation only: nothing
-/// writes `~/.codex/config.toml`.
-const PROVIDER_KEY: &str = "tack_provider";
-
 pub struct CodexGrammar;
 
 pub type CodexAdapter<C = crate::SystemClock> = LocalProcessHarness<CodexGrammar, C>;
-
-/// A double-quoted TOML string, the form `-c key="value"` expects. Only
-/// ever given a URL, a variable name or a display label.
-fn toml_quoted(value: &str) -> String {
-    format!("{value:?}")
-}
 
 /// Whether `tools` names `tool` (case-insensitively), the same convention
 /// `opencode.rs`'s own `grants` uses.
@@ -250,31 +233,6 @@ impl HarnessGrammar for CodexGrammar {
             run.spec.work.request.repository.subdirectory.as_deref(),
         )?;
         let mut args = Vec::new();
-        // `-c` overrides are global flags and must precede the subcommand.
-        if let Some(endpoint) = run.endpoint {
-            let overrides = [
-                format!("model_provider={PROVIDER_KEY}"),
-                format!(
-                    "model_providers.{PROVIDER_KEY}.name={}",
-                    toml_quoted(&endpoint.display_name)
-                ),
-                format!(
-                    "model_providers.{PROVIDER_KEY}.base_url={}",
-                    toml_quoted(&endpoint.base_url)
-                ),
-                format!(
-                    "model_providers.{PROVIDER_KEY}.env_key={}",
-                    toml_quoted(&endpoint.credential_env_var)
-                ),
-                format!(
-                    "model_providers.{PROVIDER_KEY}.wire_api={}",
-                    toml_quoted("responses")
-                ),
-            ];
-            for value in overrides {
-                args.extend(["-c".to_owned(), value]);
-            }
-        }
         if matches!(
             run.spec.work.request.permission_policy.approvals,
             Some(Approvals::Ask)
@@ -353,9 +311,6 @@ impl HarnessGrammar for CodexGrammar {
             params.insert("approvalPolicy".to_owned(), serde_json::json!("on-request"));
             params.insert("sandbox".to_owned(), serde_json::json!(sandbox));
             params.insert("model".to_owned(), serde_json::json!(model));
-            if run.endpoint.is_some() {
-                params.insert("modelProvider".to_owned(), serde_json::json!(PROVIDER_KEY));
-            }
             let reply = serde_json::json!({"id": 2, "method": "thread/start", "params": params});
             return Some(StreamSignal::Reply(
                 serde_json::to_vec(&reply).unwrap_or_default(),

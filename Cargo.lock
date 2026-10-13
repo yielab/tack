@@ -3574,7 +3574,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "windows-native-keyring-store",
- "wiremock",
  "zbus-secret-service-keyring-store",
 ]
 
