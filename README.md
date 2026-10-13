@@ -1,6 +1,6 @@
 # Tack
 
-**An open-source project manager that can hand tasks to a coding agent.**
+**An open-source project manager that can assign tasks to AI agents.**
 
 <p align="center">
   <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Starting and Finished" />
@@ -12,18 +12,19 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status: beta"></a>
 </p>
 
-You plan the work in Tack the way you would in any project manager: projects, tasks with
-what "done" means, and a board, list or timeline to follow them by sprint or by phase. That
-part stands on its own.
+Tack is a project manager for planning and tracking work. A project is made of tasks with
+acceptance criteria, followed on a board, a list or a timeline, by sprint or by phase. It
+can be used without any agent.
 
-When a project has code, a task can also go to a coding agent such as Claude Code or Codex,
-running on your computer. The agent reads the task and its acceptance criteria and works on
-a separate branch of your repository. If you ask it to, it stops before each action and
-waits for your answer on the task. When it finishes, the task shows what it changed, what it
-asked and the tokens it used, and you accept or reject the change.
+A task can also be assigned to an AI agent running on your computer: Claude Code, Codex,
+opencode or docket. The agent receives the task and its acceptance criteria, and the work
+can be code, writing or research. Its progress, its questions and the tokens it used are
+recorded on the task, together with any files it changed, which you review and accept or
+reject. In a project with code, the agent can work on a new branch of your repository and
+leave your folder as it is.
 
-Tack runs on your machine, as a desktop app or as a server. Its data lives in a single
-SQLite file, and there is no account to create.
+Tack runs locally, as a desktop app or as a server, and keeps its data in a single SQLite
+file. It requires no account.
 
 [Website](https://yielab.com/tack) · [Documentation](https://yielab.github.io/tack/) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) · [Releases](https://github.com/yielab/tack/releases/latest) · [Changelog](CHANGELOG.md)
 
@@ -33,9 +34,9 @@ SQLite file, and there is no account to create.
 ## Requirements
 
 - **To use Tack:** Linux, macOS or Windows.
-- **To run tasks with an agent:** a coding agent installed on the same computer (Claude
-  Code, Codex, opencode or docket; the documentation calls these *harnesses*), and a model
-  for it, in one of two ways:
+- **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
+  on the same computer (the documentation calls these *harnesses*), and a model for it, in
+  one of two ways:
   - **The agent's own subscription.** Claude Code or Codex, signed in with your plan,
     which includes its models.
   - **An API key set in Tack's runner.** Claude Code and Codex can use one, and opencode and
@@ -102,7 +103,7 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 <img src="docs/screenshots/tutorial/11-run-with-agent.png" width="70%" alt="The Run with agent dialog: what the agent will read, the profile, Ask before each action, Web tools, and the agent and model for this run." />
 
-**Agents** in the sidebar shows which coding agents Tack found on this computer and runs a
+**Agents** in the sidebar shows which agents Tack found on this computer and runs a
 test. The [tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) goes through every screen.
 
 ## Features
@@ -127,7 +128,7 @@ machines. See the [architecture](https://yielab.github.io/tack/developer/index.h
 
 ## Security
 
-Tack starts the coding agent on your computer, with your user's permissions. What it may
+Tack starts the agent on your computer, with your user's permissions. What it may
 do is set first by the agent's own permission settings, then by what you give
 Tack: the folder a project points at and the credentials the runner holds. The API
 requires a token.
@@ -146,7 +147,7 @@ production. Back up your data with `tack backup` before you upgrade. The
 | Goal | Start here |
 | --- | --- |
 | Install and run a first task | [Quick Start](https://yielab.github.io/tack/user-guide/quick-start.html) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) |
-| Set up coding agents, logins and models | [Agent runners](https://yielab.github.io/tack/user-guide/agent-runners.html) |
+| Set up agents, logins and models | [Agent runners](https://yielab.github.io/tack/user-guide/agent-runners.html) |
 | Organize work on the board | [Items](https://yielab.github.io/tack/user-guide/items.html) · [Views](https://yielab.github.io/tack/user-guide/views.html) · [Workflows](https://yielab.github.io/tack/user-guide/workflows.html) |
 | Move data in and out | [Import and export](https://yielab.github.io/tack/user-guide/import-export.html) · [Backup and restore](https://yielab.github.io/tack/user-guide/backup-restore.html) |
 | Use Tack from the terminal or other tools | [CLI](https://yielab.github.io/tack/user-guide/cli.html) · [API](https://yielab.github.io/tack/developer/api-reference.html) · [MCP](docs/MCP.md) |
@@ -154,9 +155,9 @@ production. Back up your data with `tack backup` before you upgrade. The
 
 ## Built alongside
 
-- **[docket](https://github.com/yielab/docket)** gives a repository a team of coding agents
+- **[docket](https://github.com/yielab/docket)** gives a repository a team of AI agents
   and governs what they may do: roles, policies, approvals and an audit trail. Tack can run
-  it as the coding agent on a task.
+  it as the agent on a task.
 - **prill** is an independent verifier of agents' changes. It re-runs the change on clean
   code in a sandbox with no network and writes a merge-readiness report. It isn't published
   yet.
