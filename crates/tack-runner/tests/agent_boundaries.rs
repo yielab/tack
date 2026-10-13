@@ -557,6 +557,9 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
 async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
     let (path, _) = tack_runner::harness::locate::snapshot();
     if sandbox::detect(path.as_deref(), None).kind != sandbox::SandboxKind::Bwrap {
+        if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
+        }
         println!("skipped: bwrap is not on PATH");
         return;
     }
