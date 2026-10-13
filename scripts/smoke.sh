@@ -143,13 +143,19 @@ cargo build -p tack-cli -p tack-runner 2>&1 | tail -3
 # with a cleared environment, so every path is baked in absolute; SMOKE_HANG
 # arrives through the execution request's own `environment` field — which
 # also proves that plumbing end to end.
-SHIMS="$WORK/shims"; MARKERS="$WORK/harness-runs"; RELEASE_FILE="$WORK/shim-release"
+# The runners' HOME. A sandboxed harness sees a private /tmp and a scratch HOME,
+# but its own config directory (~/.codex for codex) is bound through at the
+# same path, so the shim's run markers and release file live there: visible to
+# the shim sandboxed or not, and to this script.
+RUNNER_HOME="$WORK/runner-home"
+SHIMS="$WORK/shims"; MARKERS="$RUNNER_HOME/.codex/smoke-runs"; RELEASE_FILE="$RUNNER_HOME/.codex/smoke-release"
 mkdir -p "$SHIMS" "$MARKERS"
 cat > "$SHIMS/claude" <<SHIM
 #!/bin/sh
 PATH=/usr/bin:/bin
 case "\${1:-}" in
   --version|-v) echo "1.0.0"; exit 0 ;;
+  auth|login|debug) exit 1 ;;  # the probe's sign-in and model checks: not a run, so no marker
 esac
 marker="$MARKERS/run-\${SMOKE_HANG:+hang-}\$\$-\$(date +%s%N)"
 echo "\$\$" > "\$marker"
@@ -173,6 +179,17 @@ printf '{"token":"smoke-docket-run","status":"ok","stop_reason":"","error":"","b
 exit 0
 SHIM
 chmod +x "$SHIMS/docket"
+
+# opencode has no run shim (step 8 says why); this one only answers the probe,
+# so the runner never reaches a real opencode install or its login.
+cat > "$SHIMS/opencode" <<SHIM
+#!/bin/sh
+case "\${1:-}" in
+  --version|-v) echo "1.18.30"; exit 0 ;;
+esac
+exit 1
+SHIM
+chmod +x "$SHIMS/opencode"
 
 step 3 "Start the API server (no agent-fleet backend configured — its absence must not disable runner execution)"
 # Run from $WORK, never the repo root: the developer's tack.toml would otherwise be
@@ -213,7 +230,7 @@ mkdir -p "$WORK/runner-state"; chmod 700 "$WORK/runner-state"
 # TACK_RUNNER_ID must be distinct per runner: the enroll body's runner_name is
 # taken from it, and a duplicate name is answered 500 by the server today,
 # which would otherwise abort the second runner here.
-( exec env PATH="$RUNNER_A_PATH" TACK_RUNNER_ID="smoke-runner-a" TACK_RUNNER_ENROLLMENT_TOKEN="$ENROLL" \
+( exec env HOME="$RUNNER_HOME" PATH="$RUNNER_A_PATH" TACK_RUNNER_ID="smoke-runner-a" TACK_RUNNER_ENROLLMENT_TOKEN="$ENROLL" \
     "$BIN_DIR/tack-runner" --api-url "$API" --state-dir "$WORK/runner-state" \
     >"$WORK/runner.log" 2>&1 ) &
 RUNNER_A_PID=$!; disown "$RUNNER_A_PID"
@@ -356,7 +373,7 @@ ENROLL_B=$(jq -r '.enrollment_token // empty' <<<"$ENROLL_B_JSON")
 RUNNER_B=$(jq -r '.runner_id // empty' <<<"$ENROLL_B_JSON")
 mkdir -p "$WORK/runner-b-state"; chmod 700 "$WORK/runner-b-state"
 start_runner_b() {
-  ( exec env PATH="$SHIMS:$PATH" TACK_RUNNER_ID="smoke-runner-b" TACK_RUNNER_ENROLLMENT_TOKEN="$ENROLL_B" \
+  ( exec env HOME="$RUNNER_HOME" PATH="$SHIMS:$PATH" TACK_RUNNER_ID="smoke-runner-b" TACK_RUNNER_ENROLLMENT_TOKEN="$ENROLL_B" \
       "$BIN_DIR/tack-runner" --api-url "$API" --state-dir "$WORK/runner-b-state" \
       >>"$WORK/runner-b.log" 2>&1 ) &
   RUNNER_B_PID=$!; disown "$RUNNER_B_PID"
@@ -374,7 +391,7 @@ fi
 # can therefore never pollute the duplicate-execution count.
 hang_runs() { ls "$MARKERS"/run-hang-* 2>/dev/null | wc -l; }
 S9_RUNNING=0
-REQ9=$(create_execution "$ITEM" "$RUNNER_B" codex fake smoke-model 600 \
+REQ9=$(create_execution "$ITEM" "$RUNNER_B" codex smoke-model 600 \
   '{"SMOKE_HANG":{"value":"1","secret_reference":null}}' "smoke-s9-$$")
 if wait_for "attempts_json '$REQ9' | jq -r '.data[0] | select(.state==\"running\") | .attempt_id'" 30 >/dev/null; then
   S9_RUNNING=1
@@ -386,7 +403,7 @@ fi
 # Capacity evidence while the runner is saturated (capacity 1, one live lease):
 # a second request for the same runner must NOT be claimed. Only meaningful
 # while the hanging attempt genuinely holds the lease.
-REQ9B=$(create_execution "$ITEM" "$RUNNER_B" codex fake smoke-model 120 '{}' "smoke-s9b-$$")
+REQ9B=$(create_execution "$ITEM" "$RUNNER_B" codex smoke-model 120 '{}' "smoke-s9b-$$")
 if [ "$S9_RUNNING" = 1 ]; then
   sleep 6
   if [ -z "$(attempts_json "$REQ9B" | jq -r '.data[0].attempt_id // empty')" ]; then
