@@ -45,6 +45,9 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 /// The shared fake harness in `spawn_child` mode: it writes `marker` the
@@ -286,6 +289,9 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 /// Runs the shared fake harness to completion in its default `success` mode.
@@ -844,6 +850,9 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
         reports_process_groups: real.reports_process_groups,
         reports_progress: real.reports_progress,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     }))
 }
 
@@ -1069,6 +1078,9 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         reports_process_groups: false,
         reports_progress: false,
         sandbox_binds: &[],
+        readiness: None,
+        models_docs: "",
+        sign_in_docs: "",
     }));
     let machine = sandbox::detect(Some(std::ffi::OsStr::new(&path)), Some(&home));
     for (label, sandboxed) in [("unsandboxed", false), ("sandboxed", true)] {

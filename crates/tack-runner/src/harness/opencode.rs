@@ -20,6 +20,7 @@ use crate::harness::{
 };
 
 mod config;
+mod readiness;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "opencode",
@@ -42,6 +43,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
+    readiness: Some(readiness::check),
+    models_docs: "https://opencode.ai/docs/models/",
+    sign_in_docs: "https://opencode.ai/docs/providers/",
 };
 
 pub struct OpencodeGrammar;

@@ -3,9 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::TimeZone;
 
 use super::*;
-use crate::execution::{
-    CapabilityValue, ExecutionRequestId, HarnessCapability, ModelSelectionReport,
-};
+use crate::execution::{CapabilityValue, ExecutionRequestId, HarnessCapability};
 use crate::scheduler::types::Priority;
 
 fn now() -> DateTime<Utc> {
@@ -19,7 +17,12 @@ fn harness(kind: &str, probe_error: Option<&str>) -> HarnessCapability {
         probe_error: probe_error.map(str::to_string),
         probed_at: now(),
         decisions: None,
-        model_selection: None,
+        requires_model: false,
+        requires_model_reason: None,
+        models: None,
+        default_model: None,
+        sign_in: None,
+        docs: None,
         additional: BTreeMap::new(),
     }
 }
@@ -426,29 +429,18 @@ fn ask_is_gated_on_the_matched_harness_own_decisions_capability() {
 #[test]
 fn a_request_naming_no_model_is_refused_only_by_a_harness_that_needs_one() {
     let cases = [
-        (
-            "required harness, no model: refused",
-            Some(ModelSelectionReport::Required),
-            None,
-            false,
-        ),
+        ("required harness, no model: refused", true, None, false),
         (
             "required harness, a model named: schedules",
-            Some(ModelSelectionReport::Required),
+            true,
             Some("opaque/sonnet"),
             true,
         ),
-        (
-            "optional harness, no model: schedules",
-            Some(ModelSelectionReport::Optional),
-            None,
-            true,
-        ),
-        ("silent harness, no model: schedules", None, None, true),
+        ("optional harness, no model: schedules", false, None, true),
     ];
     for (name, reported, model, selected) in cases {
         let mut c = candidate("runner-a");
-        c.harnesses[0].model_selection = reported;
+        c.harnesses[0].requires_model = reported;
         let mut req = request();
         req.requested_model = model.map(str::to_owned);
         let outcome = select_runner(&req, &[c], now(), &SchedulingPolicy::default());

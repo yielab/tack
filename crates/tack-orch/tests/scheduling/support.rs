@@ -99,7 +99,7 @@ pub(crate) fn codex_capability_snapshot(now: chrono::DateTime<Utc>) -> String {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now.to_rfc3339(),
-            "model_selection": "required"
+            "requires_model": true
         }],
         "features": {
             "cancel": {"support": "supported", "reason": null},

@@ -25,7 +25,12 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
             probe_error: None,
             probed_at: now(),
             decisions: None,
-            model_selection: None,
+            requires_model: false,
+            requires_model_reason: None,
+            models: None,
+            default_model: None,
+            sign_in: None,
+            docs: None,
             additional: BTreeMap::new(),
         }],
     }

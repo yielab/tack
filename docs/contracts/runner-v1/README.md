@@ -51,3 +51,13 @@ A model is one opaque string: a claim carries `requested_model` (or null), a com
 carries `actual_execution.model` (or null) with `model_source` of `reported` (the agent's own
 output named it), `requested` (only the request did) or `agent_default` (neither did). The
 string is passed to the agent verbatim and round-trips unchanged, as do additive object fields.
+
+Each entry of a capability report's `harnesses` says what that agent offers and whether it
+can run now. `requires_model` is true when a request must name a model, with
+`requires_model_reason` saying why; absent means false. `models` is `{source, ids, reason}`: `listed` when the
+agent itself listed them, `suggested` when it cannot and Tack names a few, `none` with a
+`reason` when nothing could be read. `default_model` is present only when the agent names one; absent means it names none.
+`sign_in` is `{state, detail, command}` with `state` one of `signed_in`, `signed_out` or
+`unknown`, and `command` the one that signs in. `docs` holds the `models` and `sign_in` pages
+of the agent's own documentation. A failed listing or sign-in check never fails the probe: it
+is reported in these members.

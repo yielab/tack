@@ -20,6 +20,9 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
+    readiness: None,
+    models_docs: "",
+    sign_in_docs: "",
 };
 
 static PLAIN: HarnessDescriptor = BASE;
@@ -663,12 +666,13 @@ async fn a_probe_reports_a_version_or_says_why_it_cannot() {
 }
 
 #[tokio::test]
-async fn probe_reports_model_selection() {
+async fn probe_reports_whether_a_model_is_required() {
     let state = scratch("probe-model-selection");
     let required = harness(state.path()).probe().await;
+    assert!(required.requires_model);
     assert_eq!(
-        required.model_selection,
-        Some(ModelSelectionReport::Required)
+        required.requires_model_reason.as_deref(),
+        Some("a model is required")
     );
 
     let grammar = TestGrammar {
@@ -679,10 +683,8 @@ async fn probe_reports_model_selection() {
     let optional = harness_with(grammar, fake_harness(), state.path())
         .probe()
         .await;
-    assert_eq!(
-        optional.model_selection,
-        Some(ModelSelectionReport::Optional)
-    );
+    assert!(!optional.requires_model);
+    assert_eq!(optional.requires_model_reason, None);
 }
 
 // ---- cancel and reconcile ---------------------------------------------------

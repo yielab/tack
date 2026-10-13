@@ -33,6 +33,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: true,
     reports_progress: true,
     sandbox_binds: &[],
+    readiness: Some(readiness::check),
+    models_docs: "https://github.com/yielab/docket",
+    sign_in_docs: "https://github.com/yielab/docket",
 };
 
 /// The variable docket's own `run` command refuses to start without, unless
@@ -42,6 +45,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 const BASE_URL_ENV: &str = "DOCKET_LLM_BASE_URL";
 
 mod probe;
+mod readiness;
 
 pub use probe::{Contract, DocketFeatures};
 

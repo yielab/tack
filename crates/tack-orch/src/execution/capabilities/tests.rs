@@ -6,7 +6,7 @@ fn additive_fields_round_trip() {
       "protocol_version":1,"runner_version":"0.1.0","reported_at":"2026-08-06T12:00:00Z",
       "labels":{},"concurrency":{"total":1,"available":1},"harnesses":[{
         "harness_kind":"codex","installed_version":"1","probe_error":null,
-        "probed_at":"2026-08-06T12:00:00Z","model_selection":"required","future_harness_key":true
+        "probed_at":"2026-08-06T12:00:00Z","requires_model":true,"requires_model_reason":"name one","models":{"source":"listed","ids":["a"],"reason":null},"sign_in":{"state":"signed_out","detail":"Not logged in","command":"codex login"},"docs":{"models":"https://example.test/m","sign_in":"https://example.test/s"},"future_harness_key":true
       }],"features":{
         "cancel":{"support":"supported","reason":null},"resume":{"support":"unsupported","reason":"no"},
         "decisions":{"support":"supported","reason":null},"artifacts":{"support":"supported","reason":null},
@@ -14,10 +14,17 @@ fn additive_fields_round_trip() {
       },"limits":{"event_payload_bytes_max":1,"artifact_content_bytes_max":2},"future_capability":{"nested":true}
     }"#;
     let parsed: RunnerCapabilities = serde_json::from_str(raw).expect("capabilities fixture");
+    let harness = &parsed.harnesses[0];
+    assert!(harness.requires_model);
     assert_eq!(
-        parsed.harnesses[0].model_selection,
-        Some(ModelSelectionReport::Required)
+        harness.models.as_ref().map(|m| m.source),
+        Some(ModelListSource::Listed)
     );
+    assert_eq!(
+        harness.sign_in.as_ref().map(|s| s.state),
+        Some(SignInState::SignedOut)
+    );
+    assert_eq!(harness.default_model, None);
     let round_trip = serde_json::to_value(parsed).expect("serialize");
     assert_eq!(round_trip["future_capability"]["nested"], true);
     assert_eq!(round_trip["harnesses"][0]["future_harness_key"], true);

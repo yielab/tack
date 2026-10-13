@@ -9,7 +9,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("artifact.response.json", 0x103d_f88e_44d9_900d),
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
     ("cancellation.response.json", 0x25ac_7703_2f24_298f),
-    ("capabilities.json", 0xd9b0_6051_9396_09a8),
+    ("capabilities.json", 0xb739_3eb1_1586_191b),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
     ("claim.response.json", 0x942c_27a6_690a_a0da),

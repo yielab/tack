@@ -267,7 +267,7 @@ describe('RunWithAgentModal', () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{
         harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        model_selection: 'optional',
+        requires_model: false,
       }],
     }));
     mount({}, { runners: [claude], fleets: [], agentContext: 'Fix login bug\n\nThe brief.' });
@@ -433,7 +433,7 @@ describe('RunWithAgentModal', () => {
 
   it('an agent that needs a model, with none named, is blocked and names the fix, with a link to set one', async () => {
     const needs = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
-      harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', model_selection: 'required',
+      harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: true,
     }] }));
     mount({}, { runners: [needs], fleets: [], agentProfiles: [PROFILE_2] });
     await flush();
@@ -452,7 +452,7 @@ describe('RunWithAgentModal', () => {
 
   it('"Specific model" lists the measured ids for the agent, and picking one enables submit', async () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
-      harnesses: [{ harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', model_selection: 'required' }],
+      harnesses: [{ harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: true }],
     }));
     mount({}, { runners: [claude], fleets: [] });
     await flush();
@@ -478,14 +478,14 @@ describe('RunWithAgentModal', () => {
   });
 
   it('the_dialog_follows_what_the_harness_reports_about_models', async () => {
-    const claude = (model_selection?: string, extra: Record<string, unknown> = {}) => runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+    const claude = (requires_model?: boolean, extra: Record<string, unknown> = {}) => runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
       harnesses: [{
         harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        ...(model_selection ? { model_selection } : {}), ...extra,
+        ...(requires_model === undefined ? {} : { requires_model }), ...extra,
       }],
     }));
     // optional: opens on the agent's default, Run is enabled with no model chosen, and no model is sent.
-    mount({}, { runners: [claude('optional')], fleets: [] });
+    mount({}, { runners: [claude(false)], fleets: [] });
     await flush();
     await flush();
     expect(modelModeRadio(0).checked).toBe(true);
@@ -497,7 +497,7 @@ describe('RunWithAgentModal', () => {
     expect(lastCreateBody).toMatchObject({ requested_model: null });
     teardown();
     // required: opens on "Specific model" with the measured list; a listed id goes out as the one model string.
-    mount({}, { runners: [claude('required')], fleets: [] });
+    mount({}, { runners: [claude(true)], fleets: [] });
     await flush();
     expect(modelModeRadio(1).checked).toBe(true);
     const options = [...select('Model').options].map((o) => o.textContent);
@@ -513,11 +513,11 @@ describe('RunWithAgentModal', () => {
 
   it('the_project_default_harness_that_needs_no_model_is_not_left_on_specific_model', async () => {
     // The form starts on codex (required) until the project's claude-code (optional) lands.
-    const harness = (harness_kind: string, model_selection: string) => ({
+    const harness = (harness_kind: string, requires_model: boolean) => ({
       harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-      model_selection,
+      requires_model,
     });
-    const row = runnerRow('runner-4', 'Box', runnerCapabilitySnapshot({ harnesses: [harness('codex', 'required'), harness('claude-code', 'optional')] }));
+    const row = runnerRow('runner-4', 'Box', runnerCapabilitySnapshot({ harnesses: [harness('codex', true), harness('claude-code', false)] }));
     mount({}, { runners: [row], fleets: [], project: { ...PROJECT, default_harness: 'claude-code' }, itemDelayMs: 10 });
     await new Promise((r) => setTimeout(r, 30));
     await flush();
@@ -534,7 +534,7 @@ describe('RunWithAgentModal', () => {
   it('a_harness_that_needs_a_model_says_so_where_run_was', async () => {
     const codex = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
       harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-      model_selection: 'required',
+      requires_model: true,
     }] }));
     mount({}, { runners: [codex], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
     await flush();

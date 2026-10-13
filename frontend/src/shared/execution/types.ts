@@ -119,15 +119,15 @@ export interface HarnessCapability {
   installed_version: string;
   probe_error: string | null;
   probed_at: string;
-  /** Whether the harness runs without a chosen model (`'optional'`, it uses its own) or needs
-   *  one (`'required'`). Absent on an older runner, which reads as not optional. */
-  model_selection?: 'optional' | 'required';
+  /** Whether a request must name a model for this harness (true) or it may use its own
+   *  (false). Absent on an older runner, which reads as not required. */
+  requires_model?: boolean;
   /**
    * Whether this harness can pause a run and ask the operator before it
    * acts, for a request whose `permission_policy.approvals` is `"ask"` —
    * mirrors the Rust `HarnessCapability::decisions` field
    * (`crates/tack-orch/src/execution/capabilities.rs`), optional for the
-   * same reason `model_selection` is: absent on an older runner or the
+   * same reason `requires_model` is: absent on an older runner or the
    * shared fake probe, never a fabricated `null`. This is distinct from
    * `RunnerCapabilities.features.decisions`, which only says the protocol
    * path exists on the runner at all, not which harness can actually use

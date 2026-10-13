@@ -12,8 +12,9 @@ mod types;
 // `CapabilityLimits` is exported here since it's the type of the public
 // field `RunnerCapabilities::limits`, so downstream crates can name it.
 pub use capabilities::{
-    CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
-    FeatureCapabilities, HarnessCapability, ModelSelectionReport, RunnerCapabilities,
+    CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
+    EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
+    ModelsReport, RunnerCapabilities, SignInReport, SignInState,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{

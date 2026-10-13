@@ -19,6 +19,8 @@ use crate::harness::{
     process::{ProcessExit, ProcessResult},
 };
 
+mod readiness;
+
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "claude-code",
     program: "claude",
@@ -35,6 +37,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
+    readiness: Some(readiness::check),
+    models_docs: "https://code.claude.com/docs/en/model-config",
+    sign_in_docs: "https://code.claude.com/docs/en/authentication",
 };
 
 /// Tools that reach the network, matched case-insensitively against

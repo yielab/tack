@@ -185,7 +185,7 @@ export interface ModelGate {
 /**
  * The submit-gate for the model: disabled and reasoned, never merely rejected
  * server-side. A run with a model is allowed; a run with none is allowed unless
- * every runner reporting the harness says `model_selection === 'required'` (it
+ * every runner reporting the harness says `requires_model` (it
  * will not pick one itself), which the scheduler would leave queued.
  */
 export function gateHarnessModelSelection(
@@ -197,7 +197,7 @@ export function gateHarnessModelSelection(
   if (capabilities.length === 0) return { allowed: false, reason: 'no runner capability data available' };
   if (model) return { allowed: true, reason: `Runs on ${model}` };
   const reporting = capabilities.flatMap((c) => c.harnesses).filter((h) => h.harness_kind === harnessKind);
-  if (reporting.length > 0 && reporting.every((h) => h.model_selection === 'required')) {
+  if (reporting.length > 0 && reporting.every((h) => h.requires_model === true)) {
     return {
       allowed: false,
       reason: `${harnessKind} needs a model named. Choose one below, or set a default model.`,

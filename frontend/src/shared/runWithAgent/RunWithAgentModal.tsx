@@ -168,7 +168,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // The harness can change after that (the project's default lands once runners load), so a
   // "Specific model" nobody filled in goes back to the default when the new harness needs none.
   createEffect(() => {
-    const required = targetHarnessCapability()?.model_selection === 'required' && !projectDefaultLabel();
+    const required = targetHarnessCapability()?.requires_model === true && !projectDefaultLabel();
     const fallback = projectDefaultLabel() ? 'project' : 'auto';
     untrack(() => {
       if (required) setForm('modelMode', 'choose');

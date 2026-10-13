@@ -23,7 +23,7 @@ function fixtureCapabilities(overrides: Partial<RunnerCapabilities> = {}): Runne
         installed_version: '1.2.3',
         probe_error: null,
         probed_at: '2026-08-06T11:59:55Z',
-        model_selection: 'required',
+        requires_model: true,
       },
     ],
     features: {

@@ -78,7 +78,7 @@ async function enrollConfiguredRunner(request: APIRequestContext) {
           installed_version: '2.0.0',
           probe_error: null,
           probed_at: now,
-          model_selection: 'optional',
+          requires_model: false,
         }],
         features: {},
         limits: { event_payload_bytes_max: 65536, artifact_content_bytes_max: 52428800 },
