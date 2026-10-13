@@ -22,13 +22,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     program: "opencode",
     model_selection: ModelSelection::Explicit(
         "opencode has no default model this adapter can rely on across installs, so a request \
-         with no explicit requested_model_provider and requested_model_id is rejected before \
-         spawn",
+         naming no model is rejected before spawn",
     ),
-    native_provider: "opencode",
     inherited_env: &["PATH"],
-    model_passthrough: "requested_model_id is forwarded verbatim via `-m tack/<model id>`; \
-                        opencode validates it at run time, so no model list is claimed",
     probe_notes: &[
         (
             "tested_version",
@@ -42,12 +38,6 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
         ),
     ],
     credential_note: "opencode signs in with its own login; Tack holds no model credential.",
-    // Measured against opencode 1.18.30, 2026-09-20, with the fake model
-    // server answering every chunk's `model` as a value distinct from the
-    // requested one: neither the `--format json` event stream
-    // (`served_model.ndjson`) nor `opencode export` (`served_model_export.json`)
-    // ever names it — both only ever name the requested model.
-    observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],

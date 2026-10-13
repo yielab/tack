@@ -50,7 +50,7 @@ describe('attemptsApi', () => {
       ended_at: '2026-08-06T12:05:00Z',
       created_at: '2026-08-06T12:00:00Z',
       updated_at: '2026-08-06T12:05:00Z',
-      model_provenance: { kind: 'matched', provider: 'openai', model_id: 'opaque/model-alpha' },
+      model_provenance: { requested: 'opaque/model-alpha', served: 'opaque/model-alpha', source: 'reported' },
       usage_economics: {
         model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
         runner_time_cost: { wall_clock_ms: 295000, cost_usd_estimated: { value: null, source: 'not_measured' } },

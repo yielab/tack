@@ -140,8 +140,8 @@ export function readAttemptUsage(attempt: AttemptSummary): AttemptUsage {
     models = Object.keys(obj(reason.modelUsage));
   }
   if (models.length === 0) {
-    const observed = obj(attempt.actual_execution).model_id;
-    if (typeof observed === 'string' && observed !== '' && observed !== 'unknown') models = [observed];
+    const observed = obj(attempt.actual_execution).model;
+    if (typeof observed === 'string' && observed !== '') models = [observed];
   }
   return {
     tokensIn,
@@ -191,48 +191,28 @@ export interface ModelProvenanceDisplay {
  * same fact: this one may still resolve to a real value once the attempt
  * completes.
  */
-export function describeModelProvenance(
-  provenance: ModelProvenance | null,
-  observationSource?: string | null,
-): ModelProvenanceDisplay {
+export function describeModelProvenance(provenance: ModelProvenance | null): ModelProvenanceDisplay {
   if (provenance === null) {
     return { label: 'Not yet reported', detail: 'This attempt has not reported its actual execution yet.', tone: 'neutral' };
   }
-  switch (provenance.kind) {
-    case 'matched':
-      if (observationSource !== 'observed' && observationSource !== 'confirmed_from_output') {
-        return {
-          label: 'Requested, not confirmed',
-          detail: `Requested ${provenance.provider} / ${provenance.model_id} (not confirmed by the run)`,
-          tone: 'neutral',
-        };
-      }
-      return {
-        label: 'Matched request',
-        detail: `Ran on ${provenance.provider} / ${provenance.model_id}, as requested.`,
-        tone: 'success',
-      };
-    case 'auto_select_observed':
-      return {
-        label: 'Auto-selected',
-        detail: `The request allowed auto-selection; the runner chose ${provenance.actual_provider} / ${provenance.actual_model_id}.`,
-        tone: 'info',
-      };
-    case 'mismatched':
-      return {
-        label: 'Mismatched request',
-        detail:
-          `Requested ${provenance.requested_provider} / ${provenance.requested_model_id}, ` +
-          `but ran on ${provenance.actual_provider} / ${provenance.actual_model_id}.`,
-        tone: 'warning',
-      };
-    /* istanbul ignore next -- defensive: ModelProvenance is a closed union
-       today; an unrecognised `kind` still renders instead of throwing. */
-    default: {
-      const unknown = provenance as { kind: string };
-      return { label: 'Unrecognised provenance', detail: `Unknown kind: ${unknown.kind}`, tone: 'neutral' };
-    }
+  const { requested, served } = provenance;
+  if (!served) {
+    return { label: 'Agent default', detail: 'No model was named; the agent used its own.', tone: 'neutral' };
   }
+  if (provenance.source !== 'reported') {
+    return { label: 'Requested, not confirmed', detail: `Requested ${served} (not confirmed by the run)`, tone: 'neutral' };
+  }
+  if (!requested) {
+    return { label: 'Agent chose', detail: `No model was requested; the agent ran on ${served}.`, tone: 'info' };
+  }
+  if (requested !== served) {
+    return {
+      label: 'Mismatched request',
+      detail: `Requested ${requested}, but ran on ${served}.`,
+      tone: 'warning',
+    };
+  }
+  return { label: 'Matched request', detail: `Ran on ${served}, as requested.`, tone: 'success' };
 }
 
 // ─── Outcome ────────────────────────────────────────────────────────────────

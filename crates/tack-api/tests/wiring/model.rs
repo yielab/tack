@@ -1,4 +1,4 @@
-//! Proves `create_execution`'s model-policy resolution
+//! Proves `create_execution`'s model resolution
 //! (`tack_orch::model_policy::wiring::resolve_request_model_policy`) and
 //! `GET /api/executions/{id}/attempts`'s `model_provenance`/
 //! `usage_economics` fields work through the real production router
@@ -93,9 +93,8 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// A runner declaring exactly the `openai`/`opaque/model-f6b` combination —
-/// every fixture in this file that needs a successful claim requests exactly
-/// this pair.
+/// A runner whose `codex` needs a model named — every fixture in this file
+/// that needs a successful claim names one.
 fn full_capabilities() -> Value {
     let now = Utc::now().to_rfc3339();
     json!({
@@ -107,11 +106,7 @@ fn full_capabilities() -> Value {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now,
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": ["opaque/model-f6b", "opaque/model-f6b-mismatch"],
-                "discovery": "reported"
-            }],
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -160,15 +155,12 @@ fn headers_ref(owned: &[(String, String); 1]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-/// `limits` carries the documented `{"default_model": ...}` convention
-/// (`tack_orch::model_policy::wiring::DEFAULT_MODEL_KEY`), operator-settable
-/// via this same route.
-async fn create_agent_profile(app: &axum::Router, name: &str, limits: Value) -> String {
+async fn create_agent_profile(app: &axum::Router, name: &str) -> String {
     let (status, profile) = common::send(
         app,
         "POST",
         "/api/agent-profiles",
-        json!({"name": name, "instructions": "work safely", "limits": limits}),
+        json!({"name": name, "instructions": "work safely"}),
         &operator_headers(),
     )
     .await;
@@ -176,23 +168,8 @@ async fn create_agent_profile(app: &axum::Router, name: &str, limits: Value) -> 
     profile["agent_profile_id"].as_str().unwrap().to_owned()
 }
 
-/// Same convention, read from `agent_fleets.default_policy` instead.
-async fn create_fleet(app: &axum::Router, name: &str, default_policy: Value) -> String {
-    let (status, fleet) = common::send(
-        app,
-        "POST",
-        "/api/runner-fleets",
-        json!({"name": name, "default_policy": default_policy}),
-        &operator_headers(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{fleet}");
-    fleet["fleet_id"].as_str().unwrap().to_owned()
-}
-
-/// `requested_model_provider`/`requested_model_id` are the two fields under
-/// test — `None` reproduces "client expressed no opinion", the case wired
-/// to the resolver.
+/// `requested_model` is the field under test — `None` reproduces "client
+/// expressed no opinion", the case wired to the resolver.
 #[allow(clippy::too_many_arguments)]
 fn execution_request_body(
     item_id: &str,
@@ -200,8 +177,7 @@ fn execution_request_body(
     selector_kind: &str,
     selector_id: &str,
     agent_profile_id: &str,
-    requested_model_provider: Option<&str>,
-    requested_model_id: Option<&str>,
+    requested_model: Option<&str>,
 ) -> Value {
     json!({
         "item_id": item_id,
@@ -210,8 +186,7 @@ fn execution_request_body(
         "selector_id": selector_id,
         "agent_profile_id": agent_profile_id,
         "requested_harness_kind": "codex",
-        "requested_model_provider": requested_model_provider,
-        "requested_model_id": requested_model_id,
+        "requested_model": requested_model,
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/wiring.git", "base_revision": BASE_REVISION, "subdirectory": null},
         "permission_policy": {"tools": ["shell"], "network": false},
         "timeout_seconds": 60,
@@ -221,17 +196,12 @@ fn execution_request_body(
     })
 }
 
-async fn stored_requested_model(
-    pool: &sqlx::SqlitePool,
-    request_id: &str,
-) -> (Option<String>, Option<String>) {
-    sqlx::query_as(
-        "SELECT requested_model_provider, requested_model_id FROM execution_requests WHERE id = ?",
-    )
-    .bind(request_id)
-    .fetch_one(pool)
-    .await
-    .expect("execution_requests row must exist")
+async fn stored_requested_model(pool: &sqlx::SqlitePool, request_id: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT requested_model FROM execution_requests WHERE id = ?")
+        .bind(request_id)
+        .fetch_one(pool)
+        .await
+        .expect("execution_requests row must exist")
 }
 
 async fn stored_requested_model_snapshot(pool: &sqlx::SqlitePool, request_id: &str) -> Value {
@@ -245,28 +215,33 @@ async fn stored_requested_model_snapshot(pool: &sqlx::SqlitePool, request_id: &s
 }
 
 // =======================================================================
-// `create_execution` resolves an absent/explicit model choice through the
-// agent-profile/fleet/auto-select precedence tiers — proved against the
-// persisted row and its idempotency-fingerprint snapshot.
+// `create_execution` resolves an absent/explicit model choice: the request's
+// own, else the project's default for its default agent, else none — proved
+// against the persisted row and its idempotency-fingerprint snapshot.
 // =======================================================================
 
 struct ModelResolutionCase {
     name: &'static str,
-    profile_limits: Value,
-    fleet_default: Option<Value>,
-    requested: Option<(&'static str, &'static str)>,
-    expected: Option<(&'static str, &'static str)>,
+    /// `(default_harness, default_model)` set on the project, if any.
+    project_default: Option<(&'static str, &'static str)>,
+    requested: Option<&'static str>,
+    expected: Option<&'static str>,
 }
 
 /// Runs one [`ModelResolutionCase`] end to end and asserts its expectation —
 /// factored out of the table-driven test so each case reads as one call.
 async fn assert_model_resolution_case(i: usize, case: ModelResolutionCase) {
     let (app, pool, item_id) = setup().await;
-    let agent_profile_id = create_agent_profile(&app, "profile", case.profile_limits).await;
-    let (selector_kind, selector_id) = match case.fleet_default {
-        Some(policy) => ("fleet", create_fleet(&app, "fleet", policy).await),
-        None => ("exact_runner", enroll_runner(&app, "runner").await.0),
-    };
+    if let Some((harness, model)) = case.project_default {
+        sqlx::query("UPDATE projects SET default_harness = ?, default_model = ?")
+            .bind(harness)
+            .bind(model)
+            .execute(&pool)
+            .await
+            .expect("set project default");
+    }
+    let agent_profile_id = create_agent_profile(&app, "profile").await;
+    let (runner_id, _auth) = enroll_runner(&app, "runner").await;
 
     let (status, created) = common::send(
         &app,
@@ -275,11 +250,10 @@ async fn assert_model_resolution_case(i: usize, case: ModelResolutionCase) {
         execution_request_body(
             &item_id,
             &format!("model-precedence-{i}"),
-            selector_kind,
-            &selector_id,
+            "exact_runner",
+            &runner_id,
             &agent_profile_id,
-            case.requested.map(|(p, _)| p),
-            case.requested.map(|(_, m)| m),
+            case.requested,
         ),
         &operator_headers(),
     )
@@ -287,58 +261,44 @@ async fn assert_model_resolution_case(i: usize, case: ModelResolutionCase) {
     assert_eq!(status, StatusCode::OK, "{}: {created}", case.name);
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
-    let (provider, model_id) = stored_requested_model(&pool, &request_id).await;
-    match case.expected {
-        Some((exp_provider, exp_model)) => {
-            assert_eq!(provider.as_deref(), Some(exp_provider), "{}", case.name);
-            assert_eq!(model_id.as_deref(), Some(exp_model), "{}", case.name);
-            // The idempotency-fingerprint snapshot must agree with the stored
-            // columns — no split-brain between the two.
-            let snapshot = stored_requested_model_snapshot(&pool, &request_id).await;
-            assert_eq!(
-                snapshot["requested_model_provider"], exp_provider,
-                "{}",
-                case.name
-            );
-            assert_eq!(snapshot["requested_model_id"], exp_model, "{}", case.name);
-        }
-        None => {
-            assert_eq!(provider, None, "{}: must persist as NULL", case.name);
-            assert_eq!(model_id, None, "{}: must persist as NULL", case.name);
-        }
-    }
+    let stored = stored_requested_model(&pool, &request_id).await;
+    assert_eq!(stored.as_deref(), case.expected, "{}", case.name);
+    // The idempotency-fingerprint snapshot must agree with the stored
+    // column — no split-brain between the two. Absence persists as NULL,
+    // never a placeholder string.
+    let snapshot = stored_requested_model_snapshot(&pool, &request_id).await;
+    assert_eq!(
+        snapshot["requested_model"],
+        json!(case.expected),
+        "{}",
+        case.name
+    );
 }
 
 #[tokio::test]
 async fn create_execution_resolves_model_by_precedence_tier() {
     let cases = [
         ModelResolutionCase {
-            name: "agent profile default applies when neither client nor fleet has an opinion",
-            profile_limits: json!({"default_model": {"provider": "openai", "model_id": "opaque/model-f6b"}}),
-            fleet_default: None,
+            name: "the project default applies to the project's default agent",
+            project_default: Some(("codex", "opaque/model-f6b")),
             requested: None,
-            expected: Some(("openai", "opaque/model-f6b")),
+            expected: Some("opaque/model-f6b"),
         },
         ModelResolutionCase {
-            name: "an explicit client choice overrides the agent profile's default",
-            profile_limits: json!({"default_model": {"provider": "anthropic", "model_id": "opaque/should-never-be-used"}}),
-            fleet_default: None,
-            requested: Some(("openai", "opaque/model-f6b")),
-            expected: Some(("openai", "opaque/model-f6b")),
+            name: "an explicit client choice overrides the project default",
+            project_default: Some(("codex", "opaque/should-never-be-used")),
+            requested: Some("opaque/model-f6b"),
+            expected: Some("opaque/model-f6b"),
         },
         ModelResolutionCase {
-            name: "the fleet default applies only when the selector targets a fleet",
-            profile_limits: json!({}),
-            fleet_default: Some(
-                json!({"default_model": {"provider": "openai", "model_id": "opaque/model-fleet-f6b"}}),
-            ),
+            name: "a run on another agent than the project's default gets no project model",
+            project_default: Some(("claude-code", "opaque/should-never-be-used")),
             requested: None,
-            expected: Some(("openai", "opaque/model-fleet-f6b")),
+            expected: None,
         },
         ModelResolutionCase {
-            name: "auto-select persists as NULL, never a placeholder string",
-            profile_limits: json!({}),
-            fleet_default: None,
+            name: "no model anywhere persists as NULL, never a placeholder string",
+            project_default: None,
             requested: None,
             expected: None,
         },
@@ -364,13 +324,13 @@ struct LiveAttempt {
     fencing_token: i64,
 }
 
-/// Posts a completion for `live`'s attempt, reporting `model_id` as the
+/// Posts a completion for `live`'s attempt, reporting `model` as the
 /// actual model the harness ran, with the given `usage`.
 async fn complete_attempt(
     app: &axum::Router,
     live: &LiveAttempt,
     completion_id: &str,
-    model_id: &str,
+    model: &str,
     usage: Value,
 ) -> (StatusCode, Value) {
     common::send(
@@ -382,8 +342,7 @@ async fn complete_attempt(
             &live.attempt_id,
             live.fencing_token,
             completion_id,
-            "openai",
-            model_id,
+            model,
             usage,
         ),
         &headers_ref(&live.runner_auth),
@@ -399,12 +358,11 @@ async fn claim_accept_start(
     app: &axum::Router,
     item_id: &str,
     idempotency_key: &str,
-    requested_model_provider: &str,
-    requested_model_id: &str,
+    requested_model: &str,
 ) -> LiveAttempt {
     let (runner_id, runner_auth_owned) = enroll_runner(app, "provenance runner").await;
     let runner_auth = headers_ref(&runner_auth_owned);
-    let agent_profile_id = create_agent_profile(app, "provenance profile", json!({})).await;
+    let agent_profile_id = create_agent_profile(app, "provenance profile").await;
 
     let (status, created) = common::send(
         app,
@@ -416,8 +374,7 @@ async fn claim_accept_start(
             "exact_runner",
             &runner_id,
             &agent_profile_id,
-            Some(requested_model_provider),
-            Some(requested_model_id),
+            Some(requested_model),
         ),
         &operator_headers(),
     )
@@ -484,8 +441,7 @@ fn completion_body(
     attempt_id: &str,
     fencing_token: i64,
     completion_id: &str,
-    actual_model_provider: &str,
-    actual_model_id: &str,
+    actual_model: &str,
     usage: Value,
 ) -> Value {
     json!({
@@ -499,9 +455,8 @@ fn completion_body(
         "actual_execution": {
             "harness_kind": "codex",
             "harness_version": "1.0.0",
-            "model_provider": actual_model_provider,
-            "model_id": actual_model_id,
-            "model_observation_source": "harness_reported",
+            "model": actual_model,
+            "model_source": "reported",
             "capability_snapshot": {
                 "cancel": {"support": "advisory", "reason": null},
                 "resume": {"support": "unsupported", "reason": "no resumable session contract"},
@@ -535,14 +490,7 @@ async fn get_attempts(app: &axum::Router, request_id: &str) -> Value {
 #[tokio::test]
 async fn attempt_summary_hides_provenance_and_costs_before_completion() {
     let (app, _pool, item_id) = setup().await;
-    let live = claim_accept_start(
-        &app,
-        &item_id,
-        "provenance-in-flight",
-        "openai",
-        "opaque/model-f6b",
-    )
-    .await;
+    let live = claim_accept_start(&app, &item_id, "provenance-in-flight", "opaque/model-f6b").await;
 
     let body = get_attempts(&app, &live.request_id).await;
     let data = body["data"].as_array().expect("data array");
@@ -587,7 +535,7 @@ struct ProvenanceCase {
 /// and cross-checked against the database.
 async fn assert_provenance_case(case: ProvenanceCase) {
     let (app, pool, item_id) = setup().await;
-    let live = claim_accept_start(&app, &item_id, case.key, "openai", "opaque/model-f6b").await;
+    let live = claim_accept_start(&app, &item_id, case.key, "opaque/model-f6b").await;
 
     let (status, completed) = complete_attempt(
         &app,
@@ -654,7 +602,7 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
                 "duration_ms": {"value": 300000, "source": "measured"},
                 "cost_usd": {"value": 0.42, "source": "measured"},
             }),
-            expected_provenance: json!({"kind": "matched", "provider": "openai", "model_id": "opaque/model-f6b"}),
+            expected_provenance: json!({"requested": "opaque/model-f6b", "served": "opaque/model-f6b", "source": "reported"}),
             expected_cost: json!({"value": 0.42, "source": "measured"}),
         },
         ProvenanceCase {
@@ -663,11 +611,9 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
             actual_model_id: "opaque/model-f6b-mismatch",
             usage: not_measured_usage(),
             expected_provenance: json!({
-                "kind": "mismatched",
-                "requested_provider": "openai",
-                "requested_model_id": "opaque/model-f6b",
-                "actual_provider": "openai",
-                "actual_model_id": "opaque/model-f6b-mismatch",
+                "requested": "opaque/model-f6b",
+                "served": "opaque/model-f6b-mismatch",
+                "source": "reported",
             }),
             expected_cost: json!({"value": null, "source": "not_measured"}),
         },
@@ -687,8 +633,7 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
 #[tokio::test]
 async fn create_execution_succeeds_for_item_with_a_finished_attempt() {
     let (app, _pool, item_id) = setup().await;
-    let live =
-        claim_accept_start(&app, &item_id, "repeat-first", "openai", "opaque/model-f6b").await;
+    let live = claim_accept_start(&app, &item_id, "repeat-first", "opaque/model-f6b").await;
 
     let (status, completed) = complete_attempt(
         &app,
@@ -711,7 +656,6 @@ async fn create_execution_succeeds_for_item_with_a_finished_attempt() {
             "exact_runner",
             &live.runner_id,
             &live.agent_profile_id,
-            Some("openai"),
             Some("opaque/model-f6b"),
         ),
         &operator_headers(),

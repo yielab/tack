@@ -48,7 +48,7 @@ beforeEach(() => {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith('/api/runners')) {
-      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code', native_provider: 'anthropic' }], push_configured: true };
+      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code' }], push_configured: true };
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
@@ -109,13 +109,7 @@ const runnersWith = (harnesses: unknown[]) =>
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   );
 
-const DOCKET_CATALOG = {
-  harness_kind: 'docket',
-  native_provider: 'docket',
-  model_combinations: [
-    { model_provider: 'openai-compatible', model_ids: ['anthropic/claude-sonnet-4-5', 'openai/gpt-5'], discovery: 'probed' },
-  ],
-};
+const DOCKET = { harness_kind: 'docket' };
 
 const lastModelPatch = () => {
   const calls = fetchMock.mock.calls.filter(
@@ -230,9 +224,9 @@ describe('Settings panels', () => {
     rows.push(
       ['specific model', () => {
         byText('label', 'Specific model').querySelector('input')!.click();
-        chooseModel(container, 'anthropic / claude-opus-5-5');
-      }, { default_model: { kind: 'explicit', provider: 'anthropic', model_id: 'claude-opus-5-5' } }],
-      ['auto model', () => byText('label', "The agent's default (recommended)").querySelector('input')!.click(), { default_model: { kind: 'auto' } }],
+        chooseModel(container, 'claude-opus-5-5');
+      }, { default_model: 'claude-opus-5-5' }],
+      ['auto model', () => byText('label', "The agent's default (recommended)").querySelector('input')!.click(), { default_model: null }],
       ['definition of done', () => { dod.value = 'Tests pass'; dod.dispatchEvent(new Event('blur')); }, { definition_of_done: 'Tests pass' }],
     );
     try {
@@ -267,34 +261,28 @@ describe('Settings panels', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it('automation_panel_offers_a_docket_catalog_as_provider_model_pairs_and_saves_the_pair', async () => {
-    const base = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([DOCKET_CATALOG])) : base(input, init),
-    );
-    (PROJECT as { default_harness: string | null }).default_harness = 'docket';
+  it('automation_panel_changing_the_default_agent_clears_its_default_model', async () => {
+    const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
+    mutable.default_harness = 'claude-code';
+    mutable.default_model = 'claude-opus-5-5';
     try {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
-      await flush();
-      expect(modelLabels(container)).toEqual(['openai-compatible / anthropic/claude-sonnet-4-5', 'openai-compatible / openai/gpt-5']);
-      expect(container.textContent).not.toContain('No model ids are measured for this agent yet');
-      chooseModel(container, 'openai-compatible / anthropic/claude-sonnet-4-5');
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.value).toBe('claude-opus-5-5');
+      btn(container, 'Codex').click();
       await flush();
       await flush();
-      expect(lastModelPatch()).toEqual({
-        default_model: { kind: 'explicit', provider: 'openai-compatible', model_id: 'anthropic/claude-sonnet-4-5' },
-      });
+      expect(lastModelPatch()).toEqual({ default_harness: 'codex', default_model: null });
     } finally {
-      (PROJECT as { default_harness: string | null }).default_harness = null;
+      mutable.default_harness = null;
+      mutable.default_model = undefined;
     }
   });
 
   it('automation_panel_says_whether_the_default_agent_runs_on_this_computer', async () => {
     const base = fetchMock.getMockImplementation()!;
-    let docket: unknown = { ...DOCKET_CATALOG, sandbox: 'none', decisions: { support: 'supported' } };
+    let docket: unknown = { ...DOCKET, sandbox: 'none', decisions: { support: 'supported' } };
     fetchMock.mockImplementation((input, init) =>
       String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([docket])) : base(input, init),
     );
@@ -307,7 +295,7 @@ describe('Settings panels', () => {
       expect(line(asks.container)).toContain('Not sandboxed on this computer, so the agent asks before each action');
       asks.dispose();
       asks.container.remove();
-      docket = { ...DOCKET_CATALOG, sandbox: 'none', decisions: { support: 'unsupported' } };
+      docket = { ...DOCKET, sandbox: 'none', decisions: { support: 'unsupported' } };
       const blocked = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -317,40 +305,22 @@ describe('Settings panels', () => {
     }
   });
 
-  it('automation_panel_shows_the_saved_pair_selected_whichever_provider_it_names', async () => {
-    const base = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners') ? Promise.resolve(runnersWith([DOCKET_CATALOG])) : base(input, init),
-    );
+  it('automation_panel_lists_the_measured_ids_and_keeps_a_saved_unmeasured_one_selected', async () => {
     const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
-    mutable.default_harness = 'docket';
-    mutable.default_model = { kind: 'explicit', provider: 'openai-compatible', model_id: 'openai/gpt-5' };
+    mutable.default_harness = 'claude-code';
+    mutable.default_model = 'my-private-model';
     try {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
-      expect(model.selectedOptions[0]?.textContent).toBe('openai-compatible / openai/gpt-5');
+      expect(model.selectedOptions[0]?.textContent).toBe('my-private-model');
+      const labels = modelLabels(container);
+      expect(labels[0]).toBe('claude-sonnet-5-5');
+      expect(labels).toContain('claude-opus-5-5');
     } finally {
       mutable.default_harness = null;
       mutable.default_model = undefined;
-    }
-  });
-
-  it('automation_panel_keeps_the_static_list_under_the_native_provider_for_claude_code', async () => {
-    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
-    try {
-      const { container } = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
-      await flush();
-      const labels = modelLabels(container);
-      expect(labels[0]).toBe('anthropic / claude-sonnet-5-5');
-      expect(labels).toContain('anthropic / claude-opus-5-5');
-      expect(labels.every((l) => l!.startsWith('anthropic / '))).toBe(true);
-    } finally {
-      (PROJECT as { default_harness: string | null }).default_harness = null;
     }
   });
 
@@ -359,7 +329,7 @@ describe('Settings panels', () => {
     const base = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation((input, init) =>
       String(input).endsWith('/api/runners')
-        ? Promise.resolve(runnersWith([{ harness_kind: 'codex', native_provider: 'openai', model_combinations: [] }]))
+        ? Promise.resolve(runnersWith([{ harness_kind: 'codex' }]))
         : base(input, init),
     );
     try {
@@ -371,27 +341,6 @@ describe('Settings panels', () => {
       expect(modelLabels(container)).toEqual([]);
       expect(container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.disabled).toBe(true);
       expect(container.textContent).toContain('No model ids are measured for this agent yet; its default is used.');
-    } finally {
-      (PROJECT as { default_harness: string | null }).default_harness = null;
-    }
-  });
-
-  it('automation_panel_offers_no_through_control_even_when_a_runner_lists_a_second_provider', async () => {
-    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
-    const base = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners')
-        ? Promise.resolve(runnersWith([{ harness_kind: 'claude-code', native_provider: 'anthropic', providers: ['openai-compatible'] }]))
-        : base(input, init),
-    );
-    try {
-      const { container } = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
-      await flush();
-      expect(container.querySelector('select[aria-label="Through"]')).toBeNull();
-      expect(container.textContent).not.toContain('Through');
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }

@@ -23,33 +23,19 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "claude-code",
     program: "claude",
     model_selection: ModelSelection::Optional,
-    native_provider: "anthropic",
     // `claude` finds its login session under `HOME`, and its Bash tool runs
     // a real shell that needs `PATH`. Nothing else is inherited.
     inherited_env: &["HOME", "PATH"],
-    model_passthrough: "requested_model_id is forwarded verbatim via --model; the CLI validates \
-                        it at run time (an invalid model returns is_error:true), so no model \
-                        list is claimed",
     probe_notes: &[(
         "model_discovery_note",
         "Claude Code's CLI has no list-models command; model availability is only observable \
-         via a live, billed invocation, so this probe reports zero model_combinations rather \
-         than an unverified static alias list.",
+         via a live, billed invocation, so this probe lists none.",
     )],
     credential_note: "Claude Code signs in with its own login; Tack holds no model credential.",
-    observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
 };
-
-/// Provider families the `claude` binary knows on its own, confirmed by
-/// `strings` against 2.1.223.
-const NATIVE_PROVIDER_FAMILIES: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
-
-fn is_known_provider(name: &str) -> bool {
-    NATIVE_PROVIDER_FAMILIES.contains(&name)
-}
 
 /// Tools that reach the network, matched case-insensitively against
 /// `permission_policy.tools`.
@@ -252,16 +238,6 @@ impl HarnessGrammar for ClaudeCodeGrammar {
 
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         let request = &run.spec.work.request;
-        if let Some(provider) = &request.requested_model_provider
-            && !is_known_provider(&provider.as_str().trim().to_ascii_lowercase())
-        {
-            let known = NATIVE_PROVIDER_FAMILIES;
-            return Err(rejected(format!(
-                "requested model provider {:?} is not one of this adapter's known provider \
-                 families {known:?}",
-                provider.as_str()
-            )));
-        }
         let policy = &request.permission_policy;
         let all_tools = policy.allows_all_tools();
         let names_network_tool = policy
@@ -329,8 +305,8 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         } else {
             args.push(policy.tools.join(","));
         }
-        if let Some(model) = &request.requested_model_id {
-            args.extend(["--model".to_owned(), model.as_str().to_owned()]);
+        if let Some(model) = &request.requested_model {
+            args.extend(["--model".to_owned(), model.clone()]);
         }
         let budget = request.budgets.get("cost_usd").and_then(Value::as_f64);
         if let Some(budget) = budget.filter(|value| *value > 0.0) {

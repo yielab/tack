@@ -78,7 +78,7 @@ async function enrollConfiguredRunner(request: APIRequestContext) {
           installed_version: '2.0.0',
           probe_error: null,
           probed_at: now,
-          model_combinations: [{ model_provider: 'anthropic', model_ids: [RUNNER_MODEL], discovery: 'reported' }],
+          model_selection: 'optional',
         }],
         features: {},
         limits: { event_payload_bytes_max: 65536, artifact_content_bytes_max: 52428800 },
@@ -106,8 +106,7 @@ async function startRun(
       selector_id: runner.runnerId,
       agent_profile_id: profileId,
       requested_harness_kind: 'claude-code',
-      requested_model_provider: 'anthropic',
-      requested_model_id: RUNNER_MODEL,
+      requested_model: RUNNER_MODEL,
       agent_profile_snapshot: { name: 'Implementer', instructions: 'Implement the item to its brief.', tool_policy: {}, timeout_seconds: 3600, budgets: {} },
       repository_snapshot: { kind: 'git', remote: 'git@github.com:acme/launch.git', base_revision: 'main', subdirectory: null },
       permission_policy: { tools: [], network: false },
@@ -153,7 +152,7 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
   const implementer = profileRows.find((p) => p.kind === 'implementer');
   expect(implementer, 'the built-in Implementer profile exists').toBeTruthy();
   const profileId = (implementer!.agent_profile_id ?? implementer!.id) as string;
-  await setProjectDefaultModel(request, projectId, 'anthropic', RUNNER_MODEL);
+  await setProjectDefaultModel(request, projectId, 'claude-code', RUNNER_MODEL);
 
   const runner = await enrollConfiguredRunner(request);
   const auth = { authorization: `Bearer ${runner.credential}` };
@@ -228,9 +227,8 @@ async function seedAgentWork(request: APIRequestContext, projectId: string) {
       actual_execution: {
         harness_kind: 'claude-code',
         harness_version: '2.0.0',
-        model_provider: 'anthropic',
-        model_id: RUNNER_MODEL,
-        model_observation_source: 'harness_reported',
+        model: RUNNER_MODEL,
+        model_source: 'reported',
         capability_snapshot: {
           cancel: { support: 'supported', reason: null },
           resume: { support: 'unsupported', reason: 'no resumable session contract' },

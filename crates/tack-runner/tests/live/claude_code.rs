@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 use tack_orch::execution::{
     AgentProfileSnapshot, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     ExecutionState, HarnessKind as DomainHarnessKindType, PermissionPolicy, RepositorySnapshot,
-    RequestedModelProvider, RunnerSelector,
+    RunnerSelector,
 };
 use tack_runner::{
     client::{
@@ -71,7 +71,6 @@ fn permission_policy(tools: &[&str], network: bool) -> PermissionPolicy {
 /// only the crate's public API — this file compiles as its own crate
 /// with no access to `harness::claude_code::tests`'s private helpers.
 fn spec_with(
-    provider: Option<&str>,
     tools: &[&str],
     network: bool,
     environment: BTreeMap<String, EnvironmentValue>,
@@ -96,8 +95,7 @@ fn spec_with(
             additional: Default::default(),
         },
         requested_harness_kind: DomainHarnessKindType::new("claude-code"),
-        requested_model_provider: provider.map(RequestedModelProvider::new),
-        requested_model_id: None,
+        requested_model: None,
         repository: RepositorySnapshot {
             kind: "git".to_string(),
             remote: "https://example.invalid/repo.git".to_string(),
@@ -227,13 +225,7 @@ async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
         "HOME".to_string(),
         env_entry(&std::env::var("HOME").unwrap_or_default()),
     );
-    let mut spec = spec_with(
-        None,
-        &["Write"],
-        false,
-        environment,
-        workspace.to_path_buf(),
-    );
+    let mut spec = spec_with(&["Write"], false, environment, workspace.to_path_buf());
     // Overrides the shared helper's default "Print exactly: ok" prompt
     // with one that actually exercises the `Write` tool this spec
     // allows, so the artifact staged below is genuinely something
@@ -252,9 +244,9 @@ async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
         .expect("wait for a live process");
 
     eprintln!(
-        "live claude-code outcome: terminal_state={:?} model_id={} harness_version={}",
+        "live claude-code outcome: terminal_state={:?} model={:?} harness_version={}",
         outcome.terminal_state,
-        outcome.actual_execution.model_id.as_str(),
+        outcome.actual_execution.model,
         outcome.actual_execution.harness_version
     );
 

@@ -9,8 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::execution::{
-    Approvals, ExecutionRequestId, HarnessCapability, HarnessKind, RequestedModelId,
-    RequestedModelProvider, RunnerId, RunnerSelector,
+    Approvals, ExecutionRequestId, HarnessCapability, HarnessKind, RunnerId, RunnerSelector,
 };
 
 /// Mirrors `agent_runners.state` (migration 040). Only [`RunnerState::Active`]
@@ -34,38 +33,6 @@ pub enum Priority {
     High,
 }
 
-/// The requested model, or an explicit request to auto-select. Uses
-/// [`RequestedModelProvider`]/[`RequestedModelId`], distinct from the
-/// runner's declared `ModelProvider`/`ModelId`; [`super::select`] compares
-/// them via `.as_str()`. [`ModelSelector::from_parts`] makes "one of
-/// provider/model set, the other absent" unrepresentable.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ModelSelector {
-    Explicit {
-        provider: RequestedModelProvider,
-        model_id: RequestedModelId,
-    },
-    AutoSelect,
-}
-
-impl ModelSelector {
-    /// `Ok(AutoSelect)` only when both wire fields are absent; exactly one
-    /// present is a caller/data error, reported once here rather than
-    /// repeated per candidate as an [`IneligibleReason`].
-    pub fn from_parts(
-        provider: Option<RequestedModelProvider>,
-        model_id: Option<RequestedModelId>,
-    ) -> Result<Self, super::select::SchedulingError> {
-        match (provider, model_id) {
-            (Some(provider), Some(model_id)) => Ok(Self::Explicit { provider, model_id }),
-            (None, None) => Ok(Self::AutoSelect),
-            (Some(_), None) | (None, Some(_)) => {
-                Err(super::select::SchedulingError::PartialModelSelector)
-            }
-        }
-    }
-}
-
 /// A request awaiting runner assignment. Pure data, built by whatever caller
 /// wires this module to the real `execution_requests` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,7 +41,9 @@ pub struct SchedulingRequest {
     pub selector: RunnerSelector,
     pub priority: Priority,
     pub requested_harness_kind: HarnessKind,
-    pub requested_model: ModelSelector,
+    /// The one model string the run is asked to use; `None` leaves it to
+    /// the agent.
+    pub requested_model: Option<String>,
     /// Mirrors `PermissionPolicy::approvals`: absent means [`Approvals::Auto`].
     /// [`Approvals::Ask`] narrows eligibility to a candidate whose matched
     /// harness attests `decisions: supported` — see
@@ -137,19 +106,9 @@ pub enum IneligibleReason {
         harness: HarnessKind,
         error: String,
     },
-    /// Not in this candidate's declared combinations, and the harness didn't
-    /// attest `model_passthrough: supported` (which would make it eligible
-    /// without being declared).
-    ModelCombinationNotDeclared {
-        harness: HarnessKind,
-        provider: String,
-        model_id: String,
-    },
-    /// The request asked for auto-select and this candidate's matched
-    /// harness does not report `model_selection: optional` — it reports
-    /// `required` or nothing at all, so an unspecified model is not guessed
-    /// safe.
-    AutoSelectNotVerified {
+    /// The request names no model and this candidate's matched harness
+    /// reports `model_selection: required`: it will not pick one itself.
+    ModelNotNamed {
         harness: HarnessKind,
     },
     /// The request asked [`Approvals::Ask`] and this candidate's matched

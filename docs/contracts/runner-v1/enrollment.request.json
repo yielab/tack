@@ -12,10 +12,7 @@
         "harness_kind": "codex",
         "installed_version": "1.2.3",
         "probe_error": null,
-        "probed_at": "2026-08-06T11:59:55Z",
-        "model_combinations": [
-          {"model_provider": "openai", "model_ids": ["opaque/model-alpha"], "discovery": "reported"}
-        ]
+        "probed_at": "2026-08-06T11:59:55Z"
       }
     ],
     "features": {

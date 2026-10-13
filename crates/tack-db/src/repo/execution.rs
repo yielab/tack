@@ -126,8 +126,7 @@ pub struct NewExecutionRequest<'a> {
     pub agent_profile_id: Option<&'a str>,
     pub agent_profile_snapshot: &'a str,
     pub requested_harness_kind: Option<&'a str>,
-    pub requested_model_provider: Option<&'a str>,
-    pub requested_model_id: Option<&'a str>,
+    pub requested_model: Option<&'a str>,
     pub repository_snapshot: &'a str,
     pub permission_policy: &'a str,
     pub timeout_seconds: Option<i64>,
@@ -353,8 +352,7 @@ pub struct QueuedRequestForScheduling {
     /// is a required field) — `Option` only because the raw column
     /// itself has no `NOT NULL` constraint (migration 044).
     pub requested_harness_kind: Option<String>,
-    pub requested_model_provider: Option<String>,
-    pub requested_model_id: Option<String>,
+    pub requested_model: Option<String>,
     pub created_at: String,
     /// JSON object string (`execution_requests.metadata`). The caller may
     /// read a `priority` key from this as a documented, best-effort
@@ -1291,8 +1289,7 @@ fn parse_execution_request_snapshot(serialized: &str) -> Result<serde_json::Valu
     snapshot_field(profile, "timeout_seconds")?
         .as_u64()
         .ok_or_else(|| snapshot_error("resolved_agent_profile.timeout_seconds must be u64"))?;
-    snapshot_nullable_string(root, "requested_model_provider")?;
-    snapshot_nullable_string(root, "requested_model_id")?;
+    snapshot_nullable_string(root, "requested_model")?;
     let repository = snapshot_object(snapshot_field(root, "repository")?, "repository")?;
     for field in ["kind", "remote", "base_revision"] {
         snapshot_string(repository, field)?;
@@ -1366,10 +1363,8 @@ fn validate_execution_request_snapshot(
     if input.agent_profile_id != Some(snapshot_string(root, "agent_profile_id")?.as_str())
         || input.requested_harness_kind
             != Some(snapshot_string(root, "requested_harness_kind")?.as_str())
-        || input.requested_model_provider.map(str::to_owned)
-            != snapshot_nullable_string(root, "requested_model_provider")?
-        || input.requested_model_id.map(str::to_owned)
-            != snapshot_nullable_string(root, "requested_model_id")?
+        || input.requested_model.map(str::to_owned)
+            != snapshot_nullable_string(root, "requested_model")?
         || input.status_map_policy_id.map(str::to_owned)
             != snapshot_nullable_string(root, "status_map_policy_id")?
     {
@@ -2476,7 +2471,7 @@ impl Repository {
     ) -> Result<Vec<QueuedRequestForScheduling>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
-             requested_model_provider, requested_model_id, created_at, metadata, \
+             requested_model, created_at, metadata, \
              permission_policy, waiting_since \
              FROM execution_requests WHERE state='queued' AND \
              ((selector_kind='exact_runner' AND selector_id=?) OR \
@@ -2494,8 +2489,7 @@ impl Repository {
                 selector_kind: row.get("selector_kind"),
                 selector_id: row.get("selector_id"),
                 requested_harness_kind: row.get("requested_harness_kind"),
-                requested_model_provider: row.get("requested_model_provider"),
-                requested_model_id: row.get("requested_model_id"),
+                requested_model: row.get("requested_model"),
                 created_at: row.get("created_at"),
                 metadata: row.get("metadata"),
                 permission_policy: row.get("permission_policy"),
@@ -2563,57 +2557,6 @@ impl Repository {
             concurrency_limit,
             in_use,
         }))
-    }
-
-    /// Read-only model-policy input: `agent_profile_id`'s raw
-    /// `limits` JSON blob (migration 042), unparsed — the convention read
-    /// out of it (`{"default_model": ...}`) lives in
-    /// `tack_orch::model_policy::wiring`, which cannot be called from here
-    /// (`tack-db` cannot depend on `tack-orch`; see [`RequestSelection`]'s
-    /// doc comment for the same layering reason). `None` if
-    /// `agent_profile_id` does not exist.
-    pub async fn fetch_agent_profile_limits(
-        &self,
-        agent_profile_id: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
-        sqlx::query_scalar("SELECT limits FROM agent_profiles WHERE id = ?")
-            .bind(agent_profile_id)
-            .fetch_optional(self.pool())
-            .await
-    }
-
-    /// Read-only model-policy input: `fleet_id`'s raw
-    /// `default_policy` JSON blob (migration 039), unparsed — same
-    /// convention/layering note as [`Self::fetch_agent_profile_limits`].
-    /// `None` if `fleet_id` does not exist.
-    pub async fn fetch_fleet_default_policy(
-        &self,
-        fleet_id: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
-        sqlx::query_scalar("SELECT default_policy FROM agent_fleets WHERE id = ?")
-            .bind(fleet_id)
-            .fetch_optional(self.pool())
-            .await
-    }
-
-    /// Read-only model-policy input: `project_id`'s raw `default_model` JSON
-    /// blob (migration 062). Unlike `fetch_agent_profile_limits`/
-    /// `fetch_fleet_default_policy`'s untyped `{"default_model": ...}`
-    /// convention, this column only ever holds the exact serialization of a
-    /// validated `tack_core::models::ProjectModelDefault` (written by
-    /// `Repository::update_project`), so its caller doesn't need the same
-    /// tolerant, malformed-input-is-"no opinion" parse those two use.
-    /// `None` if `project_id` does not exist or has no default configured.
-    pub async fn fetch_project_default_model(
-        &self,
-        project_id: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
-        let raw: Option<Option<String>> =
-            sqlx::query_scalar("SELECT default_model FROM projects WHERE id = ?")
-                .bind(project_id)
-                .fetch_optional(self.pool())
-                .await?;
-        Ok(raw.flatten())
     }
 
     /// Every enrolled runner, newest-created last, with its current fleet
@@ -2911,14 +2854,14 @@ impl Repository {
         sqlx::query(
             "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
              request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \
-             requested_harness_kind, requested_model_provider, requested_model_id, repository_snapshot, \
+             requested_harness_kind, requested_model, repository_snapshot, \
              permission_policy, timeout_seconds, budgets, status_map_policy_id, environment, metadata, request_snapshot, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(input.id).bind(input.item_id).bind(input.idempotency_scope).bind(input.idempotency_key)
         .bind(input.request_fingerprint).bind(input.selector_kind).bind(input.selector_id)
         .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
-        .bind(input.requested_model_provider).bind(input.requested_model_id).bind(input.repository_snapshot)
+        .bind(input.requested_model).bind(input.repository_snapshot)
         .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
         .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(&now).bind(&now)
         .execute(&mut *tx).await?;

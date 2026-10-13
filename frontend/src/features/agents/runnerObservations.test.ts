@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  anyHarnessAttestsPassthrough,
   countOtherActiveRunners,
   findThisMachineRunner,
   harnessesOf,
-  pickTestRunTarget,
-  unionModelCombinations,
 } from './runnerObservations';
 import type { RunnerSummary } from '../../shared/execution/api';
 
@@ -61,97 +58,7 @@ describe('harnessesOf', () => {
   });
 
   it('returns the real array when the snapshot is well-formed', () => {
-    const snap = { harnesses: [{ harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [] }] };
+    const snap = { harnesses: [{ harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '' }] };
     expect(harnessesOf(runner({ capability_snapshot: snap }))).toHaveLength(1);
-  });
-});
-
-describe('unionModelCombinations / anyHarnessAttestsPassthrough', () => {
-  it('is empty and false against runners with no reported model combinations or passthrough', () => {
-    const runners = [
-      runner({
-        capability_snapshot: {
-          harnesses: [
-            { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [] },
-          ],
-        },
-      }),
-    ];
-    expect(unionModelCombinations(runners)).toEqual([]);
-    expect(anyHarnessAttestsPassthrough(runners)).toBe(false);
-  });
-
-  it('dedupes identical combinations across runners and reports passthrough when any harness attests it', () => {
-    const combo = { model_provider: 'openai', model_ids: ['gpt-x'], discovery: 'reported' };
-    const runners = [
-      runner({
-        runner_id: 'a',
-        capability_snapshot: {
-          harnesses: [
-            { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [combo] },
-          ],
-        },
-      }),
-      runner({
-        runner_id: 'b',
-        capability_snapshot: {
-          harnesses: [
-            {
-              harness_kind: 'codex',
-              installed_version: '1.0.0',
-              probe_error: null,
-              probed_at: '',
-              model_combinations: [combo],
-              model_passthrough: { support: 'supported', reason: 'forwards verbatim' },
-            },
-          ],
-        },
-      }),
-    ];
-    expect(unionModelCombinations(runners)).toEqual([combo]);
-    expect(anyHarnessAttestsPassthrough(runners)).toBe(true);
-  });
-
-  it('ignores a runner that is not active', () => {
-    const combo = { model_provider: 'openai', model_ids: ['gpt-x'], discovery: 'reported' };
-    const runners = [
-      runner({
-        state: 'revoked',
-        capability_snapshot: {
-          harnesses: [
-            { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [combo] },
-          ],
-        },
-      }),
-    ];
-    expect(unionModelCombinations(runners)).toEqual([]);
-  });
-});
-
-describe('pickTestRunTarget', () => {
-  it('returns null when no active runner has an installed harness', () => {
-    const runners = [
-      runner({
-        capability_snapshot: {
-          harnesses: [{ harness_kind: 'codex', installed_version: null, probe_error: '`codex` was not found on PATH', probed_at: '', model_combinations: [] }],
-        },
-      }),
-    ];
-    expect(pickTestRunTarget(runners)).toBeNull();
-  });
-
-  it('prefers this machine\'s own runner over another active one', () => {
-    const installedHarness = { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [] };
-    const runners = [
-      runner({ runner_id: 'remote', name: 'remote-box', capability_snapshot: { harnesses: [installedHarness] } }),
-      runner({ runner_id: 'local', name: 'local-abc', capability_snapshot: { harnesses: [installedHarness] } }),
-    ];
-    expect(pickTestRunTarget(runners)?.runner.runner_id).toBe('local');
-  });
-
-  it('falls back to any other active runner with an installed harness when this machine has none', () => {
-    const installedHarness = { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '', model_combinations: [] };
-    const runners = [runner({ runner_id: 'remote', name: 'remote-box', capability_snapshot: { harnesses: [installedHarness] } })];
-    expect(pickTestRunTarget(runners)?.runner.runner_id).toBe('remote');
   });
 });

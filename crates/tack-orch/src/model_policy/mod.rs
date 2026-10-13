@@ -1,85 +1,62 @@
-//! Deterministic model-selection precedence: request override →
-//! agent-profile default → project default → fleet default → (nothing
-//! configured) auto-select.
+//! A run's model: the request's own, otherwise the project's default model
+//! when the run's agent is the project's default agent, otherwise none (the
+//! agent chooses).
 //!
 //! [`resolve_model_policy`] is pure (no I/O/clock/DB) — see [`wiring`] for
-//! the live `tack-db`-backed caller. Every tier's value is a
-//! [`crate::scheduler::types::ModelSelector`] in the *requested* namespace,
-//! never the *actual* one `crate::usage_provenance` compares against;
-//! intersecting against a runner's capability is `select_runner`'s job.
+//! the live `tack-db`-backed caller. Whether a harness can run with no model
+//! is `select_runner`'s job, not this module's.
 
 pub mod wiring;
 
-use crate::scheduler::types::ModelSelector;
-
-/// The four precedence tiers, most specific first (see the test module for
-/// the exhaustive 2^4 table proving this order).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Which input supplied the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelPolicyTier {
-    RequestOverride,
-    AgentProfile,
-    Project,
-    Fleet,
+    Request,
+    ProjectDefault,
 }
 
-impl ModelPolicyTier {
-    /// The precedence walk order; only `resolve_model_policy` iterates it.
-    pub const ORDER: [ModelPolicyTier; 4] = [
-        ModelPolicyTier::RequestOverride,
-        ModelPolicyTier::AgentProfile,
-        ModelPolicyTier::Project,
-        ModelPolicyTier::Fleet,
-    ];
+/// The facts the policy reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelPolicySources<'a> {
+    /// The model the request named, if it did.
+    pub request: Option<&'a str>,
+    /// The project's default model.
+    pub project_default_model: Option<&'a str>,
+    /// The project's default agent (harness kind).
+    pub project_default_agent: Option<&'a str>,
+    /// The agent (harness kind) this run uses.
+    pub run_agent: &'a str,
 }
 
-/// One `Option<ModelSelector>` per precedence tier. `None` means "no
-/// opinion", not "requests auto-select": `Some(AutoSelect)` *stops* the
-/// walk at that tier rather than falling through to a less-specific one.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ModelPolicySources {
-    pub request_override: Option<ModelSelector>,
-    pub agent_profile_default: Option<ModelSelector>,
-    /// Read from `projects.default_model`.
-    pub project_default: Option<ModelSelector>,
-    pub fleet_default: Option<ModelSelector>,
-}
-
-impl ModelPolicySources {
-    fn get(&self, tier: ModelPolicyTier) -> &Option<ModelSelector> {
-        match tier {
-            ModelPolicyTier::RequestOverride => &self.request_override,
-            ModelPolicyTier::AgentProfile => &self.agent_profile_default,
-            ModelPolicyTier::Project => &self.project_default,
-            ModelPolicyTier::Fleet => &self.fleet_default,
-        }
-    }
-}
-
-/// The outcome of walking [`ModelPolicyTier::ORDER`] against a
-/// [`ModelPolicySources`] value.
+/// The outcome of [`resolve_model_policy`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedModelPolicy {
-    pub selector: ModelSelector,
-    /// Which tier supplied `selector`; `None` only when every tier was
-    /// absent, in which case `selector` is `AutoSelect` by construction.
+    pub model: Option<String>,
+    /// `None` only when no input named a model.
     pub source: Option<ModelPolicyTier>,
 }
 
-/// Walks [`ModelPolicyTier::ORDER`] and returns the first present tier's
-/// value, or `AutoSelect` with `source: None` if every tier is absent. Pure,
-/// deterministic and total over all 16 presence combinations (see the test
-/// suite's exhaustive table).
-pub fn resolve_model_policy(sources: &ModelPolicySources) -> ResolvedModelPolicy {
-    for tier in ModelPolicyTier::ORDER {
-        if let Some(selector) = sources.get(tier) {
-            return ResolvedModelPolicy {
-                selector: selector.clone(),
-                source: Some(tier),
-            };
-        }
+/// The request's model; else the project's default model when the run's
+/// agent is the project's default agent; else none. The string is never
+/// inspected or normalized.
+pub fn resolve_model_policy(sources: &ModelPolicySources<'_>) -> ResolvedModelPolicy {
+    if let Some(model) = sources.request {
+        return ResolvedModelPolicy {
+            model: Some(model.to_owned()),
+            source: Some(ModelPolicyTier::Request),
+        };
+    }
+    if let (Some(model), Some(agent)) =
+        (sources.project_default_model, sources.project_default_agent)
+        && agent == sources.run_agent
+    {
+        return ResolvedModelPolicy {
+            model: Some(model.to_owned()),
+            source: Some(ModelPolicyTier::ProjectDefault),
+        };
     }
     ResolvedModelPolicy {
-        selector: ModelSelector::AutoSelect,
+        model: None,
         source: None,
     }
 }

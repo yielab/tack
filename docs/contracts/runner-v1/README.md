@@ -47,4 +47,7 @@ environment values.
 
 Fixture timestamps are RFC 3339 UTC. IDs are opaque strings with type-specific prefixes in
 examples only; consumers must not parse those prefixes. SHA-256 values are lowercase hex.
-Unknown opaque model ids and additive object fields round-trip unchanged.
+A model is one opaque string: a claim carries `requested_model` (or null), a completion
+carries `actual_execution.model` (or null) with `model_source` of `reported` (the agent's own
+output named it), `requested` (only the request did) or `agent_default` (neither did). The
+string is passed to the agent verbatim and round-trips unchanged, as do additive object fields.

@@ -478,7 +478,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     let request_id = first["request_id"].as_str().unwrap().to_owned();
 
     let row: (String, String, Option<String>, String, String, i64) = sqlx::query_as(
-        "SELECT selector_id, repository_snapshot, requested_model_provider, permission_policy,
+        "SELECT selector_id, repository_snapshot, requested_model, permission_policy,
                 agent_profile_id, timeout_seconds FROM execution_requests WHERE id = ?",
     )
     .bind(&request_id)

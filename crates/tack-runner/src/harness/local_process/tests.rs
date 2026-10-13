@@ -14,12 +14,9 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     kind: KIND,
     program: "tack-test-fixture-nonexistent-harness",
     model_selection: ModelSelection::Explicit("a model is required"),
-    native_provider: "native",
     inherited_env: &[],
-    model_passthrough: "forwarded verbatim",
     probe_notes: &[("note", "attached to every probe")],
     credential_note: "",
-    observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
     sandbox_binds: &[],
@@ -30,14 +27,6 @@ static PLAIN: HarnessDescriptor = BASE;
 static INHERITING: HarnessDescriptor = HarnessDescriptor {
     model_selection: ModelSelection::Optional,
     inherited_env: &["HOME"],
-    ..BASE
-};
-
-/// Reports its model as an observation.
-static OBSERVING: HarnessDescriptor = HarnessDescriptor {
-    model_selection: ModelSelection::Optional,
-    inherited_env: &["HOME"],
-    observes_served_model: true,
     ..BASE
 };
 
@@ -192,7 +181,7 @@ fn broken_requests() -> [(&'static str, Breakage, &'static str); 4] {
         ),
         (
             "no model",
-            |s| s.work.request.requested_model_id = None,
+            |s| s.work.request.requested_model = None,
             "a model is required",
         ),
         (
@@ -250,7 +239,7 @@ async fn a_rejected_start_spawns_nothing_and_tracks_nothing() {
     std::fs::write(workspace.path().join("sentinel.txt"), b"before").expect("seed");
     let harness = harness(state.path());
     let mut request = spec(KIND, workspace.path());
-    request.work.request.requested_model_id = None;
+    request.work.request.requested_model = None;
     set_env(&mut request, &[("TACK_FAKE_HARNESS_MODE", "hang")]);
 
     let started = tokio::time::timeout(Duration::from_secs(5), harness.start(&request)).await;
@@ -266,16 +255,15 @@ async fn a_rejected_start_spawns_nothing_and_tracks_nothing() {
 // ---- a run ----------------------------------------------------------------
 
 #[tokio::test]
-async fn a_run_reports_the_request_model_as_unconfirmed() {
+async fn a_run_reports_the_request_model_as_requested() {
     let state = scratch("run");
     let outcome = run(&harness(state.path()), &spec(KIND, state.path())).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
     let actual = &outcome.actual_execution;
     assert_eq!(actual.harness_kind.as_str(), KIND);
-    assert_eq!(actual.model_provider.as_str(), "openai");
-    assert_eq!(actual.model_id.as_str(), "opaque/model-alpha");
-    assert_eq!(actual.model_observation_source, "requested_not_confirmed");
+    assert_eq!(actual.model.as_deref(), Some("opaque/model-alpha"));
+    assert_eq!(actual.model_source, "requested");
     assert_eq!(
         outcome.usage.duration_ms.source,
         MeasurementSource::Measured
@@ -287,56 +275,46 @@ async fn a_run_reports_the_request_model_as_unconfirmed() {
     assert_eq!(outcome.usage.cost_usd.value, None);
 }
 
-type TestProvider = tack_orch::execution::RequestedModelProvider;
-
-/// `(descriptor, provider, observed by the harness) -> (model, source)`. The
-/// descriptor can declare its report an observation (`OBSERVING`).
+/// `(requested by the request, observed by the harness) -> (model, source)`.
 type ModelSourceRow = (
-    &'static HarnessDescriptor,
     Option<&'static str>,
     Option<&'static str>,
-    &'static str,
+    Option<&'static str>,
     &'static str,
 );
 
-fn model_source_rows() -> [ModelSourceRow; 3] {
+fn model_source_rows() -> [ModelSourceRow; 4] {
     [
-        (
-            &INHERITING,
-            Some("anthropic"),
-            Some("seen"),
-            "seen",
-            "harness_reported",
-        ),
-        (&INHERITING, None, None, "unknown", "not_observed"),
-        (
-            &OBSERVING,
-            Some("anthropic"),
-            Some("seen"),
-            "seen",
-            "harness_reported",
-        ),
+        (Some("asked"), Some("seen"), Some("seen"), "reported"),
+        (Some("asked"), None, Some("asked"), "requested"),
+        (None, Some("seen"), Some("seen"), "reported"),
+        (None, None, None, "agent_default"),
     ]
 }
 
 #[tokio::test]
 async fn the_model_source_says_who_vouches_for_the_model() {
-    for (descriptor, provider, observed_model, model, source) in model_source_rows() {
+    for (requested, observed_model, model, source) in model_source_rows() {
         let state = scratch("model-source");
         let grammar = TestGrammar {
-            descriptor,
+            descriptor: &INHERITING,
             observed_model,
             ask: false,
         };
         let harness = harness_with(grammar, fake_harness(), state.path());
         let mut request = spec(KIND, state.path());
-        request.work.request.requested_model_id = None;
-        request.work.request.requested_model_provider = provider.map(TestProvider::new);
+        request.work.request.requested_model = requested.map(str::to_owned);
 
         let actual = run(&harness, &request).await.actual_execution;
-        assert_eq!(actual.model_id.as_str(), model, "{provider:?}");
-        assert_eq!(actual.model_observation_source, source, "{provider:?}");
-        assert_eq!(actual.model_provider.as_str(), provider.unwrap_or("native"));
+        assert_eq!(
+            actual.model.as_deref(),
+            model,
+            "{requested:?}/{observed_model:?}"
+        );
+        assert_eq!(
+            actual.model_source, source,
+            "{requested:?}/{observed_model:?}"
+        );
     }
 }
 
@@ -679,18 +657,7 @@ async fn a_probe_reports_a_version_or_says_why_it_cannot() {
         let reported = probe.probe_error.unwrap_or_default();
         assert!(reported.contains(error.unwrap_or("")), "{mode}: {reported}");
         assert_eq!(reported.is_empty(), error.is_none(), "{mode}");
-        let passthrough = probe.model_passthrough.expect("passthrough attested");
-        assert_eq!(passthrough.support, CapabilitySupport::Supported);
-        assert!(probe.model_combinations.is_empty());
     }
-}
-
-#[tokio::test]
-async fn probe_reports_the_native_provider() {
-    let state = scratch("probe-native");
-    let bare = harness(state.path()).probe().await;
-    assert_eq!(bare.native_provider, "native");
-    assert!(bare.providers.is_empty());
 }
 
 #[tokio::test]

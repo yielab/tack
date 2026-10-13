@@ -460,13 +460,9 @@ const Unmeasured: Component = () => (
 const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   const usage = () => readAttemptUsage(props.attempt);
   const harness = () => harnessName((props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind);
-  const provenance = () =>
-    describeModelProvenance(
-      props.attempt.model_provenance,
-      (props.attempt.actual_execution as { model_observation_source?: string | null } | null)?.model_observation_source,
-    );
-  // The runner's placeholder when the harness never named its model.
-  const modelUnknown = () => (props.attempt.actual_execution as { model_id?: string } | null)?.model_id === 'unknown';
+  const provenance = () => describeModelProvenance(props.attempt.model_provenance);
+  // Nothing named a model, so there is none to show.
+  const modelUnknown = () => !props.attempt.model_provenance?.served;
   const exact = (n: number | null) => (n === null ? '' : n.toLocaleString('en-US'));
   const cacheLine = () => {
     const u = usage();

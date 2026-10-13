@@ -352,9 +352,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
         actual_execution: {
           harness_kind: 'claude-code',
           harness_version: '2.0.0',
-          model_provider: 'anthropic',
-          model_id: modelId,
-          model_observation_source: 'harness_reported',
+          model: modelId,
+          model_source: 'reported',
           capability_snapshot: {
             cancel: { support: 'supported', reason: null },
             resume: { support: 'unsupported', reason: 'no resumable session contract' },

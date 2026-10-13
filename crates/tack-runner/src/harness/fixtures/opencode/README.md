@@ -109,7 +109,7 @@ this tree trusts blindly.
   `--format json` event stream (`served_model.ndjson`) nor `opencode export <sessionID>`
   (`served_model_export.json`) ever mentions `served-model-xyz` — both only ever name the
   *requested* model (`info.model`/`modelID`/`providerID` in the export, nothing at all in the
-  event stream). `DESCRIPTOR.observes_served_model: false` has nothing left to read even in a
+  event stream). The adapter has nothing left to read even in a
   surface the adapter doesn't currently parse.
 - **`opencode run` never pauses for an ask; `opencode acp` does.** With `permission.bash` set
   to `"ask"` and no interactive terminal: `opencode run` auto-rejects in under a second with

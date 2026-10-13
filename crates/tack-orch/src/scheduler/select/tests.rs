@@ -4,8 +4,7 @@ use chrono::TimeZone;
 
 use super::*;
 use crate::execution::{
-    CapabilityValue, ExecutionRequestId, HarnessCapability, ModelCombination, ModelId,
-    ModelProvider, ModelSelectionReport, RequestedModelId, RequestedModelProvider,
+    CapabilityValue, ExecutionRequestId, HarnessCapability, ModelSelectionReport,
 };
 use crate::scheduler::types::Priority;
 
@@ -13,30 +12,13 @@ fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()
 }
 
-fn harness(
-    kind: &str,
-    probe_error: Option<&str>,
-    combos: Vec<(&str, &[&str])>,
-) -> HarnessCapability {
+fn harness(kind: &str, probe_error: Option<&str>) -> HarnessCapability {
     HarnessCapability {
         harness_kind: HarnessKind::new(kind),
         installed_version: "1.0.0".to_string(),
         probe_error: probe_error.map(str::to_string),
         probed_at: now(),
-        model_combinations: combos
-            .into_iter()
-            .map(|(provider, models)| ModelCombination {
-                model_provider: ModelProvider::new(provider),
-                model_ids: models.iter().map(|m| ModelId::new(*m)).collect(),
-                discovery: "reported".to_string(),
-                model_metadata: BTreeMap::new(),
-                additional: BTreeMap::new(),
-            })
-            .collect(),
-        model_passthrough: None,
         decisions: None,
-        native_provider: String::new(),
-        providers: Vec::new(),
         model_selection: None,
         additional: BTreeMap::new(),
     }
@@ -51,11 +33,7 @@ fn candidate(id: &str) -> RunnerCandidate {
         total_capacity: 2,
         available_capacity: 2,
         last_heartbeat_at: Some(now()),
-        harnesses: vec![harness(
-            "claude_code",
-            None,
-            vec![("anthropic", &["opaque/sonnet"])],
-        )],
+        harnesses: vec![harness("claude_code", None)],
     }
 }
 
@@ -65,10 +43,7 @@ fn request() -> SchedulingRequest {
         selector: RunnerSelector::Any,
         priority: Priority::Normal,
         requested_harness_kind: HarnessKind::new("claude_code"),
-        requested_model: ModelSelector::Explicit {
-            provider: RequestedModelProvider::new("anthropic"),
-            model_id: RequestedModelId::new("opaque/sonnet"),
-        },
+        requested_model: Some("opaque/sonnet".to_string()),
         approvals: None,
         required_labels: BTreeMap::new(),
         created_at: now(),
@@ -152,7 +127,7 @@ fn saturated_fleet_names_no_available_capacity() {
 #[test]
 fn heterogeneous_fleet_selects_only_the_qualifying_member() {
     let mut wrong_harness = candidate("runner-codex");
-    wrong_harness.harnesses = vec![harness("codex", None, vec![])];
+    wrong_harness.harnesses = vec![harness("codex", None)];
 
     let mut saturated = candidate("runner-full");
     saturated.available_capacity = 0;
@@ -345,11 +320,7 @@ fn missing_label_is_named_with_expected_and_actual() {
 #[test]
 fn harness_probe_error_excludes_a_declared_but_broken_harness() {
     let mut c = candidate("runner-a");
-    c.harnesses = vec![harness(
-        "claude_code",
-        Some("binary not found on PATH"),
-        vec![("anthropic", &["opaque/sonnet"])],
-    )];
+    c.harnesses = vec![harness("claude_code", Some("binary not found on PATH"))];
     let outcome = select_runner(&request(), &[c], now(), &SchedulingPolicy::default());
     match outcome {
         SelectionOutcome::NoEligibleRunner { reasons } => {
@@ -358,34 +329,6 @@ fn harness_probe_error_excludes_a_declared_but_broken_harness() {
                 IneligibleReason::HarnessProbeError {
                     harness: HarnessKind::new("claude_code"),
                     error: "binary not found on PATH".to_string(),
-                }
-            );
-        }
-        other => panic!("expected NoEligibleRunner, got {other:?}"),
-    }
-}
-
-#[test]
-fn undeclared_model_combination_is_named_not_a_bare_bool() {
-    let mut req = request();
-    req.requested_model = ModelSelector::Explicit {
-        provider: RequestedModelProvider::new("anthropic"),
-        model_id: RequestedModelId::new("opaque/does-not-exist"),
-    };
-    let outcome = select_runner(
-        &req,
-        &[candidate("runner-a")],
-        now(),
-        &SchedulingPolicy::default(),
-    );
-    match outcome {
-        SelectionOutcome::NoEligibleRunner { reasons } => {
-            assert_eq!(
-                reasons[0].1,
-                IneligibleReason::ModelCombinationNotDeclared {
-                    harness: HarnessKind::new("claude_code"),
-                    provider: "anthropic".to_string(),
-                    model_id: "opaque/does-not-exist".to_string(),
                 }
             );
         }
@@ -481,25 +424,33 @@ fn ask_is_gated_on_the_matched_harness_own_decisions_capability() {
 }
 
 #[test]
-fn auto_select_schedules_on_a_harness_that_declares_optional() {
+fn a_request_naming_no_model_is_refused_only_by_a_harness_that_needs_one() {
     let cases = [
         (
-            "a harness reporting optional schedules",
-            Some(ModelSelectionReport::Optional),
+            "required harness, no model: refused",
+            Some(ModelSelectionReport::Required),
+            None,
+            false,
+        ),
+        (
+            "required harness, a model named: schedules",
+            Some(ModelSelectionReport::Required),
+            Some("opaque/sonnet"),
             true,
         ),
         (
-            "a harness reporting required is refused",
-            Some(ModelSelectionReport::Required),
-            false,
+            "optional harness, no model: schedules",
+            Some(ModelSelectionReport::Optional),
+            None,
+            true,
         ),
-        ("a harness reporting nothing is refused", None, false),
+        ("silent harness, no model: schedules", None, None, true),
     ];
-    for (name, reported, selected) in cases {
+    for (name, reported, model, selected) in cases {
         let mut c = candidate("runner-a");
         c.harnesses[0].model_selection = reported;
         let mut req = request();
-        req.requested_model = ModelSelector::AutoSelect;
+        req.requested_model = model.map(str::to_owned);
         let outcome = select_runner(&req, &[c], now(), &SchedulingPolicy::default());
         match outcome {
             SelectionOutcome::Selected(selection) => {
@@ -511,7 +462,7 @@ fn auto_select_schedules_on_a_harness_that_declares_optional() {
                 assert_eq!(reasons.len(), 1, "{name}");
                 assert_eq!(
                     reasons[0].1,
-                    IneligibleReason::AutoSelectNotVerified {
+                    IneligibleReason::ModelNotNamed {
                         harness: HarnessKind::new("claude_code"),
                     },
                     "{name}"
@@ -525,7 +476,7 @@ fn auto_select_schedules_on_a_harness_that_declares_optional() {
 #[test]
 fn undeclared_harness_is_named_distinctly_from_a_probe_error() {
     let mut c = candidate("runner-a");
-    c.harnesses = vec![harness("codex", None, vec![])];
+    c.harnesses = vec![harness("codex", None)];
     let outcome = select_runner(&request(), &[c], now(), &SchedulingPolicy::default());
     match outcome {
         SelectionOutcome::NoEligibleRunner { reasons } => {
@@ -549,30 +500,4 @@ fn identical_input_selects_identically_across_repeated_calls() {
     for _ in 0..25 {
         assert_eq!(select_runner(&req, &candidates, now(), &policy), first);
     }
-}
-
-#[test]
-fn model_selector_from_parts_rejects_partial_input() {
-    assert_eq!(
-        ModelSelector::from_parts(Some(RequestedModelProvider::new("anthropic")), None),
-        Err(SchedulingError::PartialModelSelector)
-    );
-    assert_eq!(
-        ModelSelector::from_parts(None, Some(RequestedModelId::new("opaque/sonnet"))),
-        Err(SchedulingError::PartialModelSelector)
-    );
-    assert_eq!(
-        ModelSelector::from_parts(None, None),
-        Ok(ModelSelector::AutoSelect)
-    );
-    assert_eq!(
-        ModelSelector::from_parts(
-            Some(RequestedModelProvider::new("anthropic")),
-            Some(RequestedModelId::new("opaque/sonnet"))
-        ),
-        Ok(ModelSelector::Explicit {
-            provider: RequestedModelProvider::new("anthropic"),
-            model_id: RequestedModelId::new("opaque/sonnet"),
-        })
-    );
 }

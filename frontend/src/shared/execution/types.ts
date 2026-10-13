@@ -114,36 +114,11 @@ export interface Concurrency {
   available: number;
 }
 
-/**
- * Models observed for a harness/provider pair. Model IDs are opaque — never
- * parse, split, or infer meaning from their punctuation (mirrors the Rust
- * `ModelId` opaque wrapper's own doc comment).
- */
-export interface ModelCombination {
-  model_provider: string;
-  model_ids: string[];
-  discovery: string;
-}
-
 export interface HarnessCapability {
   harness_kind: string;
   installed_version: string;
   probe_error: string | null;
   probed_at: string;
-  model_combinations: ModelCombination[];
-  /**
-   * Whether this harness forwards an operator-specified model id verbatim
-   * rather than validating it against `model_combinations` — mirrors the
-   * Rust `HarnessCapability::model_passthrough` field
-   * (`crates/tack-orch/src/execution/capabilities.rs`), which is
-   * `#[serde(default, skip_serializing_if = "Option::is_none")]`: absent
-   * from the JSON entirely on an older runner or the shared fake probe, so
-   * this key is optional here too, never a fabricated `null`. Only
-   * `support === 'supported'` unlocks a free-text model id — `'advisory'`
-   * and absent both mean "not attested" and behave identically (the
-   * scheduler's own `select.rs` treats them the same).
-   */
-  model_passthrough?: CapabilityValue;
   /** Whether the harness runs without a chosen model (`'optional'`, it uses its own) or needs
    *  one (`'required'`). Absent on an older runner, which reads as not optional. */
   model_selection?: 'optional' | 'required';
@@ -152,7 +127,7 @@ export interface HarnessCapability {
    * acts, for a request whose `permission_policy.approvals` is `"ask"` —
    * mirrors the Rust `HarnessCapability::decisions` field
    * (`crates/tack-orch/src/execution/capabilities.rs`), optional for the
-   * same reason `model_passthrough` is: absent on an older runner or the
+   * same reason `model_selection` is: absent on an older runner or the
    * shared fake probe, never a fabricated `null`. This is distinct from
    * `RunnerCapabilities.features.decisions`, which only says the protocol
    * path exists on the runner at all, not which harness can actually use
@@ -162,17 +137,6 @@ export interface HarnessCapability {
    * `select.rs` treatment.
    */
   decisions?: CapabilityValue;
-  /**
-   * The provider this harness reaches natively (`"anthropic"` for claude-code,
-   * `"openai"` for codex). Optional: older runners omit it.
-   */
-  native_provider?: string;
-  /**
-   * Wire names of the configured, enabled providers that reach this harness
-   * (e.g. a gateway's `"vercel-ai-gateway"`); may be empty. Optional: older
-   * runners omit it.
-   */
-  providers?: string[];
   /** How the runner confines this harness: `"bwrap"` or `"none"`. Optional: older runners omit it. */
   sandbox?: 'bwrap' | 'none';
   /** Why the harness is not sandboxed, when `sandbox` is `"none"`. */

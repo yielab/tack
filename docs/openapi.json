@@ -7794,17 +7794,12 @@
           "requested_harness_kind": {
             "type": "string"
           },
-          "requested_model_id": {
+          "requested_model": {
             "type": [
               "string",
               "null"
-            ]
-          },
-          "requested_model_provider": {
-            "type": [
-              "string",
-              "null"
-            ]
+            ],
+            "description": "The one model string the agent is asked to use, passed verbatim.\nAbsent, the project's default model applies when this run's agent is\nthe project's default agent; otherwise the agent chooses."
           },
           "selector_id": {
             "type": "string"
@@ -9546,86 +9541,31 @@
         ]
       },
       "ModelProvenanceSchema": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "The attempt ran on exactly the requested provider/model.",
-            "required": [
-              "provider",
-              "model_id",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "matched"
-                ]
-              },
-              "model_id": {
-                "type": "string"
-              },
-              "provider": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The request allowed auto-selection (no explicit provider/model was\never resolved for it) and the attempt observed a concrete choice.",
-            "required": [
-              "actual_provider",
-              "actual_model_id",
-              "kind"
-            ],
-            "properties": {
-              "actual_model_id": {
-                "type": "string"
-              },
-              "actual_provider": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "auto_select_observed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The attempt ran on a provider and/or model different from what was\nexplicitly requested. Both sides are always carried in full, never\nsilently reconciled.",
-            "required": [
-              "requested_provider",
-              "requested_model_id",
-              "actual_provider",
-              "actual_model_id",
-              "kind"
-            ],
-            "properties": {
-              "actual_model_id": {
-                "type": "string"
-              },
-              "actual_provider": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "mismatched"
-                ]
-              },
-              "requested_model_id": {
-                "type": "string"
-              },
-              "requested_provider": {
-                "type": "string"
-              }
-            }
-          }
+        "type": "object",
+        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). Both model strings are carried\nin full, never reconciled, so a caller can show a request and a served\nmodel that differ.",
+        "required": [
+          "source"
         ],
-        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (the frontend's rendering) can show both sides of a mismatch."
+        "properties": {
+          "requested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model the request named; `null` when it named none."
+          },
+          "served": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model the attempt ran on; `null` when nothing named one."
+          },
+          "source": {
+            "type": "string",
+            "description": "Who named `served`: `reported` (the agent's own output), `requested`\n(only the request) or `agent_default` (neither)."
+          }
+        }
       },
       "MrpResponse": {
         "type": "object",
@@ -10016,14 +9956,11 @@
             ]
           },
           "default_model": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ProjectModelDefault"
-              }
-            ]
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model a run uses when it names none and its agent is this\nproject's `default_harness`; changing the default agent clears it."
           },
           "default_profile_id": {
             "type": [
@@ -10093,47 +10030,6 @@
             "$ref": "#/components/schemas/WorkspaceMode"
           }
         }
-      },
-      "ProjectModelDefault": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "auto"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "provider",
-              "model_id",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "explicit"
-                ]
-              },
-              "model_id": {
-                "type": "string"
-              },
-              "provider": {
-                "type": "string"
-              }
-            }
-          }
-        ],
-        "description": "A project's own opinion on which model its executions should use — the\n`Project` tier in `tack-orch::model_policy`'s precedence walk, between the\nagent-profile and fleet defaults. Absent (`None` on `Project`) means \"no\nopinion\" and falls through to the fleet tier; `Auto` is a distinct, real\nchoice that stops the walk at this tier instead of falling through.\nBecause the API deserializes a request body directly into this enum, a\nmalformed shape is rejected before any handler or database write runs —\nthere is no second, tolerant parse of an opaque blob at read time."
       },
       "ProjectTemplate": {
         "type": "object",
@@ -10501,13 +10397,7 @@
               "null"
             ]
           },
-          "model_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "model_provider": {
+          "model": {
             "type": [
               "string",
               "null"
@@ -11208,14 +11098,11 @@
             ]
           },
           "default_model": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ProjectModelDefault"
-              }
-            ]
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves it untouched; JSON `null` clears it."
           },
           "default_profile_id": {
             "type": [

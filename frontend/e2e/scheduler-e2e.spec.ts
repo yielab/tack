@@ -1,14 +1,10 @@
 import { test, expect } from '@playwright/test';
 import {
-  getOrCreateProject,
-  createFreshProject,
   createRunnableProject,
-  setProjectFolder,
   createFreshItem,
   createAgentProfile,
   enrollRunner,
   claimOnce,
-  setProjectDefaultModel,
   waitForApp,
 } from './helpers';
 
@@ -88,15 +84,12 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   const { drawer, modal } = await openRunModal(page, projectId, itemId);
   await fillExactRunnerTarget(modal, runnerId, agentProfileName);
 
-  // A specific, real, matching model choice — the live-capability gate
-  // (`RunWithAgentModal.tsx`'s "Specific model" list, built from the target's own
-  // `GET /api/runners` capability report) must show it as genuinely
-  // supported, not merely "unverified." The target declares exactly one
-  // combination (`helpers.ts#enrollRunner`'s fixed capability shape), so it
-  // is always index "0".
+  // A model named by hand: the fixture's codex lists no models, so the
+  // control offers only "Other…", and a typed name is what reaches the run.
   await modal.getByText('Advanced for this run').click();
   await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('0');
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption('__custom__');
+  await modal.getByLabel('Model id').fill(modelId);
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
   const runButton = modal.getByRole('button', { name: 'Run', exact: true });
@@ -119,48 +112,4 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // refetch trigger from this test. The real attempts endpoint feeds this
   // same tab; the run's one status badge is its claimed attempt's, Starting.
   await expect(drawer.getByText('Starting', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-});
-
-test('an unsupported model is blocked client-side with a named reason, using the same live capability data the scheduler enforces', async ({
-  page,
-  request,
-}) => {
-  // A fresh project, never the shared one `getOrCreateProject` returns —
-  // this test writes the project's own default model, which the API has no
-  // route to clear once set (`helpers.ts#createFreshProject`'s own doc
-  // comment). `RunWithAgentModal.tsx`'s "Specific model" list only ever offers a
-  // combination the target itself declares (or a free-text override when it
-  // attests `model_passthrough`, which this fixture does not), so there is
-  // no dropdown entry for an arbitrary undeclared model any more — the
-  // project's own default-model tier is the one path left that reaches an
-  // explicit, chosen model the target genuinely doesn't support.
-  const projectId = await createFreshProject(request, `Scheduler E2E unsupported model project ${Date.now()}`);
-  const declaredModelId = `opaque/model-declared-${Date.now()}`;
-  const undeclaredModelId = `opaque/model-not-declared-${Date.now()}`;
-  const agentProfileName = `E2E unsupported profile ${Date.now()}`;
-  await createAgentProfile(request, agentProfileName);
-  const { runnerId } = await enrollRunner(request, `unsupported-model-runner-${Date.now()}`, declaredModelId);
-  await setProjectDefaultModel(request, projectId, 'openai', undeclaredModelId);
-  await setProjectFolder(request, projectId);
-
-  const itemId = await createFreshItem(request, projectId, `Scheduler E2E unsupported model ${Date.now()}`);
-  const { modal } = await openRunModal(page, projectId, itemId);
-  await fillExactRunnerTarget(modal, runnerId, agentProfileName);
-
-  // The project's default model is auto-selected ("Project default — …")
-  // whenever one is configured, ahead of Auto — no explicit mode switch is
-  // needed here, only the target/profile `fillExactRunnerTarget` already
-  // chose. The model rows sit under "Advanced for this run".
-  await modal.getByText('Advanced for this run').click();
-  await expect(modal.getByLabel("The agent's default (recommended)")).toBeChecked();
-  await expect(modal.getByText(/^Project default —/)).toBeVisible();
-
-  // The live capability gate (real `GET /api/runners` data — the runner
-  // enrolled above declared a *different* model) must name this
-  // unsupported, not merely leave the control in an ambiguous "unverified"
-  // state, and must disable submission entirely.
-  await expect(modal.getByText('Unsupported', { exact: true })).toBeVisible();
-  // Run itself is replaced by the one sentence saying what to do.
-  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
-  await expect(modal.getByRole('button', { name: 'Choose a model for this run' })).toBeVisible();
 });

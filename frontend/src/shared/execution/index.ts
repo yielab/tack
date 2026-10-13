@@ -11,7 +11,6 @@ export type {
   CapabilityValue,
   FeatureCapabilities,
   Concurrency,
-  ModelCombination,
   HarnessCapability,
   CapabilityLimits,
   RunnerCapabilities,
@@ -82,14 +81,12 @@ export {
 export type { ArtifactRecord } from './artifacts';
 export { artifactsApi, isArtifactNotFound, isArtifactContentNotVerified } from './artifacts';
 
-export type { CapabilityGate, FeatureName, AggregatedModelCombination, CombinationAvailability } from './capabilities';
+export type { CapabilityGate, FeatureName } from './capabilities';
 export {
   gateFeature,
   gateFeatureAcrossRunners,
   listReportedHarnessKinds,
   harnessProbeStatus,
-  listModelCombinationsForHarness,
-  isCombinationSupported,
 } from './capabilities';
 
 export { VersionedCache, SequenceAllocator } from './cache';

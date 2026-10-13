@@ -113,33 +113,33 @@ describe('AttemptList', () => {
         terminal_reason: {
           code: 'harness_rejected',
           message:
-            'requested model provider "claude" is not supported by claude-code; supported: anthropic, bedrock, vertex, foundry, vercel-ai-gateway, anthropic-direct',
+            'requested model "claude" is not supported by claude-code',
         },
-        model_provenance: { kind: 'matched', provider: 'claude', model_id: 'claude-sonnet-5-5' },
+        model_provenance: { requested: 'claude-sonnet-5-5', served: 'claude-sonnet-5-5', source: 'requested' },
         actual_execution: null,
       }),
     ]);
     expect(c.textContent).toContain('Why it stopped:');
-    expect(c.textContent).toContain('Did not start — requested model provider');
-    expect(c.textContent).toContain('Requested claude / claude-sonnet-5-5 (not confirmed by the run)');
+    expect(c.textContent).toContain('Did not start — requested model');
+    expect(c.textContent).toContain('Requested claude-sonnet-5-5 (not confirmed by the run)');
     expect(c.textContent).not.toContain('Matched request');
   });
 
   it('a matched attempt whose actual_execution observed the model says it ran on it', () => {
     const c = mount([
       attempt({
-        model_provenance: { kind: 'matched', provider: 'anthropic', model_id: 'm1' },
-        actual_execution: { model_observation_source: 'observed' },
+        model_provenance: { requested: 'm1', served: 'm1', source: 'reported' },
+        actual_execution: { model_source: 'reported' },
       }),
     ]);
-    expect(c.textContent).toContain('Ran on anthropic / m1, as requested.');
+    expect(c.textContent).toContain('Ran on m1, as requested.');
   });
 
   it('leads the usage with tokens, counts the cache, names the models and calls the cost approximate', () => {
     const c = mount([
       attempt({
-        actual_execution: { harness_kind: 'claude-code', model_id: 'claude-sonnet-5-5', model_observation_source: 'observed' },
-        model_provenance: { kind: 'auto_select_observed', actual_provider: 'anthropic', actual_model_id: 'claude-sonnet-5-5' },
+        actual_execution: { harness_kind: 'claude-code', model: 'claude-sonnet-5-5', model_source: 'reported' },
+        model_provenance: { requested: null, served: 'claude-sonnet-5-5', source: 'reported' },
         usage: {
           tokens_in: { value: 1_077_873, source: 'measured' },
           tokens_out: { value: 3_284, source: 'measured' },
@@ -218,13 +218,7 @@ describe('AttemptList', () => {
   it('renders a mismatched provenance with both requested and actual values visible', () => {
     const c = mount([
       attempt({
-        model_provenance: {
-          kind: 'mismatched',
-          requested_provider: 'openai',
-          requested_model_id: 'opaque/model-alpha',
-          actual_provider: 'anthropic',
-          actual_model_id: 'opaque/model-beta',
-        },
+        model_provenance: { requested: 'opaque/model-alpha', served: 'opaque/model-beta', source: 'reported' },
       }),
     ]);
     expect(c.textContent).toContain('Mismatched request');

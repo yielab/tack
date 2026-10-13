@@ -642,7 +642,7 @@ pub fn request<'a>(
 ) -> NewExecutionRequest<'a> {
     let request_snapshot: &'static str = Box::leak(
         format!(
-            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"operator","subject_id":"test"}},"created_at":"2026-08-07T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"runner-a"}},"agent_profile_id":"profile-a","resolved_agent_profile":{{"name":"Profile A","instructions":"test","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{"limit":1}}}},"requested_harness_kind":"codex","requested_model_provider":"openai","requested_model_id":"opaque/model","repository":{{"kind":"git","remote":"https://example.test/repo.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":["shell"],"network":false}},"timeout_seconds":60,"budgets":{{"limit":1}},"status_map_policy_id":null,"environment":{{"MODE":{{"value":"test","secret_reference":null}}}},"metadata":{{"source":"test"}}}}"#
+            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"operator","subject_id":"test"}},"created_at":"2026-08-07T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"runner-a"}},"agent_profile_id":"profile-a","resolved_agent_profile":{{"name":"Profile A","instructions":"test","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{"limit":1}}}},"requested_harness_kind":"codex","requested_model": "opaque/model","repository":{{"kind":"git","remote":"https://example.test/repo.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":["shell"],"network":false}},"timeout_seconds":60,"budgets":{{"limit":1}},"status_map_policy_id":null,"environment":{{"MODE":{{"value":"test","secret_reference":null}}}},"metadata":{{"source":"test"}}}}"#
         )
         .into_boxed_str(),
     );
@@ -657,8 +657,7 @@ pub fn request<'a>(
         agent_profile_id: Some("profile-a"),
         agent_profile_snapshot: r#"{"name":"Profile A","instructions":"test","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"limit":1}}"#,
         requested_harness_kind: Some("codex"),
-        requested_model_provider: Some("openai"),
-        requested_model_id: Some("opaque/model"),
+        requested_model: Some("opaque/model"),
         repository_snapshot: r#"{"kind":"git","remote":"https://example.test/repo.git","base_revision":"abc123","subdirectory":null}"#,
         permission_policy: r#"{"tools":["shell"],"network":false}"#,
         timeout_seconds: Some(60),

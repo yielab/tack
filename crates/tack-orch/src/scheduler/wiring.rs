@@ -25,12 +25,10 @@ use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForSchedul
 
 use super::select::{SchedulingPolicy, select_runner};
 use super::types::{
-    IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
-    SelectionOutcome,
+    IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest, SelectionOutcome,
 };
 use crate::execution::{
-    Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RequestedModelId,
-    RequestedModelProvider, RunnerId,
+    Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
 };
 
 /// Maps `agent_runners.state`'s three literal values (migration 040) to the
@@ -101,9 +99,9 @@ fn fleet_is_saturated(snapshot: Option<&FleetConcurrencySnapshot>) -> bool {
 }
 
 /// Builds a [`SchedulingRequest`] from a raw queued-request row, or `None` if
-/// the row can't be turned into one (a malformed/partial model selector, or
-/// an absent `requested_harness_kind` — never produced by validated writes,
-/// but the raw column has no `NOT NULL`). Either case removes this one
+/// the row can't be turned into one (an absent `requested_harness_kind` —
+/// never produced by validated writes, but the raw column has no `NOT
+/// NULL`). That case removes this one
 /// request from consideration rather than failing the whole claim; it stays
 /// queued and visible via `GET /executions` until fixed or requeued.
 fn build_scheduling_request(
@@ -111,13 +109,6 @@ fn build_scheduling_request(
     now: DateTime<Utc>,
 ) -> Option<SchedulingRequest> {
     let harness_kind = row.requested_harness_kind.as_deref()?;
-    let requested_model = ModelSelector::from_parts(
-        row.requested_model_provider
-            .as_deref()
-            .map(RequestedModelProvider::new),
-        row.requested_model_id.as_deref().map(RequestedModelId::new),
-    )
-    .ok()?;
     let selector = match row.selector_kind.as_str() {
         "exact_runner" => crate::execution::RunnerSelector::ExactRunner {
             runner_id: RunnerId::new(row.selector_id.clone()),
@@ -132,7 +123,7 @@ fn build_scheduling_request(
         selector,
         priority: priority_from_metadata(&row.metadata),
         requested_harness_kind: HarnessKind::new(harness_kind),
-        requested_model,
+        requested_model: row.requested_model.clone(),
         approvals: approvals_from_permission_policy(&row.permission_policy),
         required_labels: BTreeMap::new(),
         created_at: parse_created_at(&row.created_at, now),
@@ -180,19 +171,8 @@ fn describe_ineligible(reason: &IneligibleReason) -> (&'static str, String) {
                 harness.as_str()
             ),
         ),
-        IneligibleReason::ModelCombinationNotDeclared {
-            harness,
-            provider,
-            model_id,
-        } => (
-            "model_combination_not_declared",
-            format!(
-                "the runner does not offer {} with the model {provider}/{model_id}",
-                harness.as_str()
-            ),
-        ),
-        IneligibleReason::AutoSelectNotVerified { harness } => (
-            "auto_select_not_verified",
+        IneligibleReason::ModelNotNamed { harness } => (
+            "model_not_named",
             format!("{} needs a model named", harness.as_str()),
         ),
         IneligibleReason::DecisionsNotSupported { harness } => (
@@ -450,14 +430,13 @@ mod tests {
     }
 
     #[test]
-    fn partial_model_selector_row_is_skipped_not_panicked() {
+    fn build_scheduling_request_skips_a_row_with_no_harness_kind() {
         let row = QueuedRequestForScheduling {
             id: "req-1".into(),
             selector_kind: "exact_runner".into(),
             selector_id: "runner-1".into(),
-            requested_harness_kind: Some("codex".into()),
-            requested_model_provider: Some("openai".into()),
-            requested_model_id: None,
+            requested_harness_kind: None,
+            requested_model: None,
             created_at: "2026-08-10T00:00:00Z".into(),
             metadata: "{}".into(),
             permission_policy: "{}".into(),
@@ -467,20 +446,14 @@ mod tests {
     }
 
     #[test]
-    fn build_scheduling_request_skips_a_row_with_no_harness_kind() {
-        let row = QueuedRequestForScheduling {
-            id: "req-1".into(),
-            selector_kind: "exact_runner".into(),
-            selector_id: "runner-1".into(),
-            requested_harness_kind: None,
-            requested_model_provider: None,
-            requested_model_id: None,
-            created_at: "2026-08-10T00:00:00Z".into(),
-            metadata: "{}".into(),
-            permission_policy: "{}".into(),
-            waiting_since: None,
+    fn a_harness_that_needs_a_model_says_so_in_one_sentence() {
+        let reason = IneligibleReason::ModelNotNamed {
+            harness: HarnessKind::new("codex"),
         };
-        assert!(build_scheduling_request(&row, Utc::now()).is_none());
+        assert_eq!(
+            describe_ineligible(&reason),
+            ("model_not_named", "codex needs a model named".to_string())
+        );
     }
 
     #[test]
@@ -510,12 +483,7 @@ mod tests {
                 harness: harness(),
                 error: "not installed".into(),
             },
-            IneligibleReason::ModelCombinationNotDeclared {
-                harness: harness(),
-                provider: "openai".into(),
-                model_id: "m".into(),
-            },
-            IneligibleReason::AutoSelectNotVerified { harness: harness() },
+            IneligibleReason::ModelNotNamed { harness: harness() },
             IneligibleReason::DecisionsNotSupported { harness: harness() },
         ];
         for reason in reasons {

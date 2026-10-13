@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use tack_orch::execution::{
     CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
+    ModelSelectionReport,
 };
 use tack_runner::{
     RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
@@ -256,35 +257,12 @@ fn render_sandbox(capability: &HarnessCapability) {
 }
 
 fn render_model_info(capability: &HarnessCapability) {
-    if capability.model_combinations.is_empty() {
-        println!("  model_combinations: (none reported)");
-    } else {
-        println!("  model_combinations:");
-        for combination in &capability.model_combinations {
-            let models = combination
-                .model_ids
-                .iter()
-                .map(|id| id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            println!(
-                "    {} ({}): {models}",
-                combination.model_provider.as_str(),
-                combination.discovery
-            );
-        }
-    }
-
-    match &capability.model_passthrough {
-        Some(value) => {
-            let support = support_label(value.support);
-            match &value.reason {
-                Some(reason) => println!("  model_passthrough: {support} — {reason}"),
-                None => println!("  model_passthrough: {support}"),
-            }
-        }
-        None => println!("  model_passthrough: (not attested)"),
-    }
+    let needs = match capability.model_selection {
+        Some(ModelSelectionReport::Required) => "the request must name one",
+        Some(ModelSelectionReport::Optional) => "the agent chooses when none is named",
+        None => "(not reported)",
+    };
+    println!("  model:       {needs}");
 }
 
 fn support_label(support: CapabilitySupport) -> &'static str {

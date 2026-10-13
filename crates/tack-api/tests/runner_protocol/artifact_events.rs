@@ -33,7 +33,6 @@ use tack_db::{
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const REQUESTED_MODEL_PROVIDER: &str = "openai";
 const REQUESTED_MODEL_ID: &str = "opaque/model-f2";
 
 #[derive(Clone)]
@@ -156,8 +155,7 @@ async fn enqueue_request(
         "agent_profile_id": agent_profile_id,
         "resolved_agent_profile": {"name":"F2 Profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
         "requested_harness_kind": "codex",
-        "requested_model_provider": REQUESTED_MODEL_PROVIDER,
-        "requested_model_id": REQUESTED_MODEL_ID,
+        "requested_model": REQUESTED_MODEL_ID,
         "repository": {"kind":"git","remote":"https://example.test/f2.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory": Value::Null},
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
@@ -181,8 +179,7 @@ async fn enqueue_request(
             agent_profile_id: Some(agent_profile_id),
             agent_profile_snapshot: &field_str("resolved_agent_profile"),
             requested_harness_kind: Some("codex"),
-            requested_model_provider: Some(REQUESTED_MODEL_PROVIDER),
-            requested_model_id: Some(REQUESTED_MODEL_ID),
+            requested_model: Some(REQUESTED_MODEL_ID),
             repository_snapshot: &field_str("repository"),
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
@@ -209,11 +206,7 @@ fn full_capabilities(reported_at: DateTime<Utc>, total: i64, available: i64) -> 
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": reported_at.to_rfc3339(),
-            "model_combinations": [{
-                "model_provider": REQUESTED_MODEL_PROVIDER,
-                "model_ids": [REQUESTED_MODEL_ID],
-                "discovery": "reported"
-            }]
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},

@@ -404,8 +404,7 @@ fn actual_execution() -> tack_orch::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake", "harness_version":"1.0.0",
-            "model_provider":"test-provider", "model_id":"test-model",
-            "model_observation_source":"harness_reported",
+            "model": "test-model", "model_source": "reported",
             "capability_snapshot":{
                 "cancel":{"support":"supported","reason":null},
                 "resume":{"support":"unsupported","reason":"no resume"},
@@ -841,12 +840,9 @@ static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
             "/src/harness/fixtures/fake_harness.sh"
         ),
         model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
-        native_provider: "native",
         inherited_env: &["PATH"],
-        model_passthrough: "forwarded verbatim",
         probe_notes: &[],
         credential_note: "",
-        observes_served_model: false,
         reports_process_groups: true,
         reports_progress: false,
         sandbox_binds: &[],
@@ -860,12 +856,9 @@ static DETACHING_PROGRESS: tack_runner::harness::local_process::HarnessDescripto
             "/src/harness/fixtures/fake_harness.sh"
         ),
         model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
-        native_provider: "native",
         inherited_env: &["PATH"],
-        model_passthrough: "forwarded verbatim",
         probe_notes: &[],
         credential_note: "",
-        observes_served_model: false,
         reports_process_groups: true,
         reports_progress: true,
         sandbox_binds: &[],
@@ -1138,12 +1131,9 @@ static SHELL: tack_runner::harness::local_process::HarnessDescriptor =
         kind: "shell-fake",
         program: "/bin/sh",
         model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
-        native_provider: "native",
         inherited_env: &["PATH"],
-        model_passthrough: "forwarded verbatim",
         probe_notes: &[],
         credential_note: "",
-        observes_served_model: false,
         reports_process_groups: false,
         reports_progress: false,
         sandbox_binds: &[],

@@ -2,15 +2,13 @@ use crate::fixtures::{fixture_name, fixture_paths, load_value};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::any::TypeId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::fs;
 use tack_orch::execution::{
-    ActualExecution, ActualModelId, ActualModelProvider, AttemptSnapshot, ExecutionRequestSnapshot,
-    ExecutionState, ProtocolErrorEnvelope, RecoveryDisposition, RecoveryObservation,
-    RecoveryObservationRequest, RecoveryObservationResponse, RequestedModelId,
-    RequestedModelProvider, RunnerCapabilities, TransitionActor, Usage, validate_transition,
+    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
+    ProtocolErrorEnvelope, RecoveryDisposition, RecoveryObservation, RecoveryObservationRequest,
+    RecoveryObservationResponse, RunnerCapabilities, TransitionActor, Usage, validate_transition,
 };
 
 fn assert_exact_round_trip<T>(name: &str, value: &Value)
@@ -197,24 +195,32 @@ fn recovery_dispositions_match_the_frozen_lifecycle_contract() {
 }
 
 #[test]
-fn opaque_model_ids_survive_punctuation_byte_for_byte() {
+fn a_model_is_one_opaque_string_on_the_claim_and_the_completion() {
+    let claim = load_value("claim.response.json");
+    let request: ExecutionRequestSnapshot =
+        serde_json::from_value(claim["request"].clone()).expect("claim request");
+    assert_eq!(
+        request.requested_model.as_deref(),
+        Some("opaque/model-alpha")
+    );
+
+    let completion = load_value("completion.request.json");
+    let actual: ActualExecution =
+        serde_json::from_value(completion["actual_execution"].clone()).expect("actual execution");
+    assert_eq!(actual.model.as_deref(), Some("opaque/model-alpha"));
+    assert_eq!(actual.model_source, "reported");
+
     let capabilities: RunnerCapabilities = serde_json::from_value(load_value("capabilities.json"))
         .expect("capability fixture must match the domain");
-    let ids = &capabilities.harnesses[0].model_combinations[0].model_ids;
-    assert_eq!(ids[0].as_str(), "opaque/model-alpha");
-    assert_eq!(ids[1].as_str(), "opaque:model-beta");
-}
-
-#[test]
-fn requested_vs_actual_model_and_provider_types_differ() {
-    assert_ne!(
-        TypeId::of::<RequestedModelId>(),
-        TypeId::of::<ActualModelId>()
-    );
-    assert_ne!(
-        TypeId::of::<RequestedModelProvider>(),
-        TypeId::of::<ActualModelProvider>()
-    );
+    let harness = serde_json::to_value(&capabilities.harnesses[0]).expect("serialize harness");
+    for gone in [
+        "native_provider",
+        "providers",
+        "model_combinations",
+        "model_passthrough",
+    ] {
+        assert!(harness.get(gone).is_none(), "{gone} is back on the wire");
+    }
 }
 
 fn state(name: &str) -> ExecutionState {

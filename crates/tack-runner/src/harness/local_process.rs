@@ -26,9 +26,9 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_orch::execution::{
-    ActualExecution, ActualModelId, ActualModelProvider, CapabilitySupport, CapabilityValue,
-    FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind, Measurement,
-    MeasurementSource, ModelSelectionReport, Usage, WorkspaceId as DomainWorkspaceId,
+    ActualExecution, CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, ModelSelectionReport, Usage,
+    WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::mpsc;
 
@@ -37,8 +37,8 @@ use crate::{
     client::AttemptState,
     harness::{
         AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, ExecutionSpec,
-        HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
-        ModelObservationSource, Progress, Question, RecoveryObservation, StreamSignal,
+        HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelSource,
+        Progress, Question, RecoveryObservation, StreamSignal,
         process::{
             CancelOutcome, ProcessExit, ProcessGroups, ProcessLimits, ProcessResult, ProcessSpec,
             SupervisedProcess,
@@ -52,15 +52,11 @@ use crate::{
 /// `request_timeout_seconds_max` in `docs/contracts/runner-v1/limits.json`.
 const MAX_TIMEOUT_SECONDS: u64 = 86_400;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
-/// Reported as the model id when neither the harness nor the request named
-/// one; always paired with [`ModelObservationSource::NotObserved`].
-pub const UNOBSERVED_MODEL: &str = "unknown";
-
 /// Whether a request may leave the model to the harness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelSelection {
-    /// The request must name a provider and a model. The text says why,
-    /// and becomes the rejection reason.
+    /// The request must name a model. The text says why, and becomes the
+    /// rejection reason.
     Explicit(&'static str),
     Optional,
 }
@@ -74,21 +70,14 @@ pub struct HarnessDescriptor {
     /// locations in [`crate::harness::locate`].
     pub program: &'static str,
     pub model_selection: ModelSelection,
-    /// The provider recorded when a request names none.
-    pub native_provider: &'static str,
     /// Names copied from the runner's own environment into every spawn.
     /// The child's environment is otherwise exactly what the request puts
     /// there.
     pub inherited_env: &'static [&'static str],
-    /// Why a requested model id is accepted without a model list.
-    pub model_passthrough: &'static str,
     /// Extra key/value notes attached to every probe report.
     pub probe_notes: &'static [(&'static str, &'static str)],
     /// Where this CLI's own credential lives, for `tack runner doctor`.
     pub credential_note: &'static str,
-    /// Whether this CLI's own reported model comes from the response body
-    /// rather than an echo of what was configured.
-    pub observes_served_model: bool,
     /// Whether this CLI announces each process group its own tools start
     /// (`StreamSignal::ProcessStarted`/`ProcessExited`), so a cancellation
     /// can stop a group the main one does not contain and say whether it
@@ -564,7 +553,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             )));
         }
         if let ModelSelection::Explicit(reason) = descriptor.model_selection
-            && (request.requested_model_provider.is_none() || request.requested_model_id.is_none())
+            && request.requested_model.is_none()
         {
             return Err(self.reject(reason.to_owned()));
         }
@@ -826,24 +815,10 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             object.insert("artifact".to_owned(), artifact);
         }
 
-        let provider = request.requested_model_provider.as_ref().map_or_else(
-            || descriptor.native_provider.to_owned(),
-            |provider| provider.as_str().trim().to_ascii_lowercase(),
-        );
-        let requested_model = request.requested_model_id.as_ref().map(|id| id.as_str());
-        let (model_id, source) = match (report.observed_model, requested_model) {
-            (Some(model), _) if descriptor.observes_served_model => {
-                (model, ModelObservationSource::HarnessReported)
-            }
-            (Some(model), _) => (model, ModelObservationSource::HarnessReported),
-            (None, Some(model)) => (
-                model.to_owned(),
-                ModelObservationSource::RequestedNotConfirmed,
-            ),
-            (None, None) => (
-                UNOBSERVED_MODEL.to_owned(),
-                ModelObservationSource::NotObserved,
-            ),
+        let (model, source) = match (report.observed_model, request.requested_model.as_ref()) {
+            (Some(model), _) => (Some(model), ModelSource::Reported),
+            (None, Some(model)) => (Some(model.clone()), ModelSource::Requested),
+            (None, None) => (None, ModelSource::AgentDefault),
         };
 
         let elapsed_ms = ended_at
@@ -861,9 +836,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             actual_execution: ActualExecution {
                 harness_kind: DomainHarnessKind::new(descriptor.kind),
                 harness_version: report.harness_version.unwrap_or(probed_version),
-                model_provider: ActualModelProvider::new(provider),
-                model_id: ActualModelId::new(model_id),
-                model_observation_source: source.as_str().to_owned(),
+                model,
+                model_source: source.as_str().to_owned(),
                 capability_snapshot: self.grammar.capabilities(),
                 // Overwritten by the engine, which owns workspace facts.
                 workspace_id: DomainWorkspaceId::new(running.spec.workspace.id.as_str()),
@@ -1064,23 +1038,14 @@ where
             installed_version,
             probe_error,
             probed_at,
-            // No harness CLI here can list its models; schedulability rests
-            // on the pass-through attestation instead.
-            model_combinations: Vec::new(),
-            model_passthrough: Some(capability(
-                CapabilitySupport::Supported,
-                descriptor.model_passthrough,
-            )),
             // The grammar's own honest promise, not a second, possibly
             // divergent claim — `declared_capabilities` below reuses the
             // exact same call.
             decisions: Some(self.grammar.capabilities().decisions),
-            native_provider: descriptor.native_provider.to_owned(),
             model_selection: Some(match descriptor.model_selection {
                 ModelSelection::Optional => ModelSelectionReport::Optional,
                 ModelSelection::Explicit(_) => ModelSelectionReport::Required,
             }),
-            providers: Vec::new(),
             additional,
         }
     }

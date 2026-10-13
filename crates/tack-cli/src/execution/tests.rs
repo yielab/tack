@@ -18,8 +18,7 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
         idempotency_key: Some("fixed-key"),
         agent_profile_id: "ap_1",
         requested_harness_kind: "claude_code",
-        requested_model_provider: Some("anthropic"),
-        requested_model_id: Some("claude-sonnet"),
+        requested_model: Some("claude-sonnet"),
         permission_policy: PERMISSION_POLICY_JSON,
         timeout_seconds: 3600,
         ..Default::default()

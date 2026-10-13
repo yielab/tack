@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{Duration, TimeZone};
 
 use super::*;
-use crate::execution::{HarnessCapability, HarnessKind, ModelCombination, ModelId, ModelProvider};
-use crate::scheduler::types::{ModelSelector, Priority, RunnerState};
+use crate::execution::{HarnessCapability, HarnessKind};
+use crate::scheduler::types::{Priority, RunnerState};
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()
@@ -24,17 +24,7 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
             installed_version: "1.0.0".to_string(),
             probe_error: None,
             probed_at: now(),
-            model_combinations: vec![ModelCombination {
-                model_provider: ModelProvider::new("anthropic"),
-                model_ids: vec![ModelId::new("opaque/sonnet")],
-                discovery: "reported".to_string(),
-                model_metadata: BTreeMap::new(),
-                additional: BTreeMap::new(),
-            }],
-            model_passthrough: None,
             decisions: None,
-            native_provider: String::new(),
-            providers: Vec::new(),
             model_selection: None,
             additional: BTreeMap::new(),
         }],
@@ -42,16 +32,13 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
 }
 
 fn request(id: &str, priority: Priority, created_at: DateTime<Utc>) -> SchedulingRequest {
-    use crate::execution::{RequestedModelId, RequestedModelProvider, RunnerSelector};
+    use crate::execution::RunnerSelector;
     SchedulingRequest {
         request_id: ExecutionRequestId::new(id),
         selector: RunnerSelector::Any,
         priority,
         requested_harness_kind: HarnessKind::new("claude_code"),
-        requested_model: ModelSelector::Explicit {
-            provider: RequestedModelProvider::new("anthropic"),
-            model_id: RequestedModelId::new("opaque/sonnet"),
-        },
+        requested_model: Some("opaque/sonnet".to_string()),
         approvals: None,
         required_labels: BTreeMap::new(),
         created_at,

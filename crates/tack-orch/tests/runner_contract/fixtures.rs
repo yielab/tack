@@ -9,23 +9,17 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("artifact.response.json", 0x103d_f88e_44d9_900d),
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
     ("cancellation.response.json", 0x25ac_7703_2f24_298f),
-    // The codex harness entry exemplifies the
-    // optional `model_passthrough` attestation (operator-specified opaque
-    // models forwarded verbatim; scheduler eligibility without a declared
-    // combination) and per-model `model_metadata` (one of the two model ids
-    // priced and windowed, the other absent from the map entirely — a model
-    // the catalog said nothing about, not a claim of zero).
-    ("capabilities.json", 0xe517_84e2_9bd9_9653),
+    ("capabilities.json", 0xd9b0_6051_9396_09a8),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
-    ("claim.response.json", 0x6145_96b7_fde8_48b4),
-    ("completion.request.json", 0x2a0f_8adc_77a0_b06f),
+    ("claim.response.json", 0x942c_27a6_690a_a0da),
+    ("completion.request.json", 0x7b61_d544_ffa0_3a08),
     ("completion.response.json", 0x99b7_7e8d_6afc_1354),
     ("decision.create.request.json", 0xce7f_2568_b0b1_1bdb),
     ("decision.create.response.json", 0xb160_e2d3_f16e_3318),
     ("decision.poll.request.json", 0x7b88_373b_f26d_5a4e),
     ("decision.poll.response.json", 0x2067_05f2_dbb7_7239),
-    ("enrollment.request.json", 0xb58e_21c5_d6d0_bfe8),
+    ("enrollment.request.json", 0x16e0_cc2a_80c0_879c),
     ("enrollment.response.json", 0xbb7a_b9c5_8fbf_ee57),
     (
         "errors/artifact-checksum-mismatch.json",
@@ -36,7 +30,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("errors/forbidden.json", 0xb858_15bd_3d89_bab5),
     ("errors/idempotency-conflict.json", 0x7f61_ba4a_c0a0_8d6a),
     ("errors/internal-error.json", 0x6725_873b_7a8a_5b3d),
-    ("errors/invalid-request.json", 0x4a64_8995_f2fb_3e18),
+    ("errors/invalid-request.json", 0x6f96_baa3_8d15_9076),
     ("errors/invalid-transition.json", 0x312a_85d0_1d0b_8607),
     ("errors/not-found.json", 0x83ad_6515_ae25_0aca),
     ("errors/payload-too-large.json", 0x53ce_0d82_ad8d_a039),

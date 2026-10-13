@@ -118,7 +118,7 @@ function runnerWith(harnesses: unknown[]) {
   };
 }
 
-const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', model_combinations: [], model_selection: 'optional' };
+const CLAUDE_INSTALLED = { harness_kind: 'claude-code', installed_version: '9.9.1', probe_error: null, probed_at: '', model_selection: 'optional' };
 
 describe('AgentsPage — this computer only', () => {
   it('the_test_run_needs_no_fields', async () => {
@@ -270,8 +270,8 @@ describe('AgentsPage — composition', () => {
             available_capacity: 1,
             capability_snapshot: {
               harnesses: [
-                { harness_kind: 'codex', installed_version: '9.9.2', probe_error: null, probed_at: '', model_combinations: [] },
-                { harness_kind: 'claude-code', installed_version: null, probe_error: '`claude` was not found on PATH', probed_at: '', model_combinations: [] },
+                { harness_kind: 'codex', installed_version: '9.9.2', probe_error: null, probed_at: '' },
+                { harness_kind: 'claude-code', installed_version: null, probe_error: '`claude` was not found on PATH', probed_at: '' },
               ],
             },
             capability_snapshot_raw: '{}',

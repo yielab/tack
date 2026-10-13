@@ -34,6 +34,33 @@ fn a_direct_request_passes_only_the_model() {
     assert!(invocation.env.is_empty());
 }
 
+#[test]
+fn a_request_naming_no_model_passes_no_model_flag() {
+    let state = scratch("codex-no-model");
+    let mut request = spec(DESCRIPTOR.kind, state.path());
+    request.work.request.requested_model = None;
+    let run = RunContext {
+        spec: &request,
+        scratch: state.path(),
+    };
+    let args = CodexGrammar.invocation(&run).expect("invocation").args;
+    assert!(!args.iter().any(|arg| arg == "--model"), "{args:?}");
+
+    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+    let run = RunContext {
+        spec: &request,
+        scratch: state.path(),
+    };
+    let id1_result = r#"{"id":1,"result":{}}"#;
+    match CodexGrammar.signal(&run, id1_result) {
+        Some(StreamSignal::Reply(bytes)) => {
+            let reply: serde_json::Value = serde_json::from_slice(&bytes).expect("valid json");
+            assert!(reply["params"].get("model").is_none(), "{reply}");
+        }
+        other => panic!("expected Reply for the id-1 result, got {other:?}"),
+    }
+}
+
 /// The exit decides, never the output: `exec --json`'s shape is unverified,
 /// so output that is not JSON at all still succeeds on exit 0.
 #[test]
@@ -396,6 +423,12 @@ fn the_app_server_stream_decides_the_verdict_and_usage() {
     assert_eq!(succeeded.tokens_in, Some(57));
     assert_eq!(succeeded.tokens_out, Some(10));
     assert_eq!(succeeded.observed_model, None);
+
+    // The `thread/start` reply names the model the server started the thread on.
+    let thread_start = include_str!("../fixtures/codex/0.149.1/app-server-thread-start.txt");
+    let with_reply = format!("{}\n{turn}", json_line(thread_start, "\"id\":2,\"result\""));
+    let reported = CodexGrammar.report(&run, &finished(ProcessExit::Exited(0), &with_reply));
+    assert_eq!(reported.observed_model.as_deref(), Some("fake-model"));
 
     let failed = CodexGrammar.report(&run, &finished(ProcessExit::Exited(0), &failed_turn));
     assert!(!failed.succeeded, "{failed:?}");

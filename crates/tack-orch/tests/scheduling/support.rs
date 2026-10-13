@@ -1,7 +1,7 @@
 //! Shared fixtures for `wiring.rs` and `policy.rs`: both stand up a
 //! real, migrated `tack_db::Repository` with one workspace/project/item and
 //! one agent profile already in it, and both need a runner whose declared
-//! capability snapshot is `codex` + `openai/opaque/model-alpha`. `scheduler.rs`
+//! capability snapshot is `codex`. `scheduler.rs`
 //! doesn't use any of this — it drives `tack_orch::scheduler`'s pure
 //! functions directly, with no repository at all.
 
@@ -87,9 +87,8 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
     (repo, item.id.to_string())
 }
 
-/// A runner that has declared exactly one harness/model combination:
-/// `codex` + `openai/opaque/model-alpha`. Anything else is unavailable to
-/// it.
+/// A runner that has declared exactly one harness: `codex`, which needs a
+/// model named. Anything else is unavailable to it.
 pub(crate) fn codex_capability_snapshot(now: chrono::DateTime<Utc>) -> String {
     serde_json::json!({
         "reported_at": now.to_rfc3339(),
@@ -100,11 +99,7 @@ pub(crate) fn codex_capability_snapshot(now: chrono::DateTime<Utc>) -> String {
             "installed_version": "1.0.0",
             "probe_error": null,
             "probed_at": now.to_rfc3339(),
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": ["opaque/model-alpha"],
-                "discovery": "reported"
-            }]
+            "model_selection": "required"
         }],
         "features": {
             "cancel": {"support": "supported", "reason": null},

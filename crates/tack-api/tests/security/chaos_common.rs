@@ -119,11 +119,7 @@ pub fn full_capabilities() -> Value {
             "installed_version": "1.2.3",
             "probe_error": null,
             "probed_at": now,
-            "model_combinations": [{
-                "model_provider": "openai",
-                "model_ids": ["opaque/model-g2"],
-                "discovery": "reported"
-            }],
+            "model_selection": "required",
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -229,8 +225,7 @@ pub async fn create_execution_request(
             "selector_id": selector_id,
             "agent_profile_id": agent_profile_id,
             "requested_harness_kind": "codex",
-            "requested_model_provider": "openai",
-            "requested_model_id": "opaque/model-g2",
+            "requested_model": "opaque/model-g2",
             "repository_snapshot": {"kind": "git", "remote": "https://example.test/g2.git", "base_revision": BASE_REVISION, "subdirectory": null},
             "permission_policy": {"tools": ["shell"], "network": false},
             "timeout_seconds": 60,

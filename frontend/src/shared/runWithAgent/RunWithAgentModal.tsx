@@ -6,14 +6,14 @@ import { toast } from '../ui/toast';
 import { BOOK } from '../help/routes';
 import { api } from '../api';
 import {
-  fleetsApi, agentProfilesApi, runnersApi, listModelCombinationsForHarness, listReportedHarnessKinds,
-  type AgentProfileSummary, type AggregatedModelCombination, type RunnerCapabilities, type RunnerSummary,
+  fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds,
+  type AgentProfileSummary, type RunnerCapabilities, type RunnerSummary,
 } from '../execution';
 import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
-  shouldHideTargetPicker, isExecutionOff, describeProjectModelDefault, projectDefaultModelPair,
-  isDecisionsAttested, resolveAutoModelPolicy, profileToolsFor,
+  shouldHideTargetPicker, isExecutionOff, resolveRunModel,
+  isDecisionsAttested, profileToolsFor,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow, { CUSTOM_MODEL_VALUE, STATIC_MODEL_PREFIX } from './RunFlow';
@@ -152,7 +152,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     }
   };
 
-  const projectDefaultLabel = createMemo(() => describeProjectModelDefault(project()?.default_model ?? null));
+  // The project's default model applies only to runs of the project's default agent.
+  const projectDefaultLabel = createMemo(() => resolveRunModel(null, form.harnessKind, project()));
 
   createEffect(() => {
     if (!props.isOpen || form.modelModeInitialized || project.loading) return;
@@ -160,15 +161,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     setForm('modelModeInitialized', true);
   });
 
-  const modelCombos = createMemo<AggregatedModelCombination[]>(() => listModelCombinationsForHarness(targetCapabilities(), form.harnessKind));
-
   const targetHarnessCapability = createMemo(() =>
     targetCapabilities().flatMap((c) => c.harnesses).find((h) => h.harness_kind === form.harnessKind));
-  // The measured list is the fallback: ids the runner already reports are not repeated.
-  const staticModels = createMemo(() => {
-    const reported = new Set(modelCombos().map((c) => c.model_id));
-    return (ACCEPTED_MODELS[form.harnessKind] ?? []).filter((id) => !reported.has(id));
-  });
+  const staticModels = createMemo(() => [...(ACCEPTED_MODELS[form.harnessKind] ?? [])]);
   // A harness that needs a model opens on "Specific model", unless the project already names one.
   // The harness can change after that (the project's default lands once runners load), so a
   // "Specific model" nobody filled in goes back to the default when the new harness needs none.
@@ -178,6 +173,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     untrack(() => {
       if (required) setForm('modelMode', 'choose');
       else if (form.modelMode === 'choose' && form.chooseIndex === '') setForm('modelMode', fallback);
+      else if (form.modelMode === 'project' && !projectDefaultLabel()) setForm('modelMode', 'auto');
+      else if (form.modelMode === 'auto' && form.modelModeInitialized && projectDefaultLabel()) setForm('modelMode', 'project');
     });
   });
   // Start from the project's values, then overlay what this task remembered.
@@ -198,13 +195,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (typeof saved.network === 'boolean') setForm('allowNetwork', saved.network);
     if (saved.approvals === 'auto' || saved.approvals === 'ask') { approvalsChosen = true; setForm('approvals', saved.approvals); }
     if (typeof saved.verify === 'boolean') setForm('verify', saved.verify);
-    if (typeof saved.model_id === 'string') {
-      const id = saved.model_id;
-      const comboIndex = modelCombos().findIndex((c) => c.model_id === id && c.model_provider === saved.model_provider);
+    if (typeof saved.model === 'string') {
+      const id = saved.model;
       setForm('modelModeInitialized', true);
       setForm('modelMode', 'choose');
-      if (comboIndex >= 0) setForm('chooseIndex', String(comboIndex));
-      else if (staticModels().includes(id)) setForm('chooseIndex', STATIC_MODEL_PREFIX + id);
+      if (ACCEPTED_MODELS[form.harnessKind]?.includes(id)) setForm('chooseIndex', STATIC_MODEL_PREFIX + id);
       else { setForm('chooseIndex', CUSTOM_MODEL_VALUE); setForm('customModelId', id); }
     }
   });
@@ -229,33 +224,17 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => { if (!approvalsChosen) setForm('approvals', defaultApprovals()); });
   createEffect(() => { if (!decisionsAttested() && form.approvals === 'ask') setForm('approvals', 'auto'); });
 
-  const nativeProvider = () => targetHarnessCapability()?.native_provider;
-  /** The provider is the harness's own; never typed. */
-  const derivedProvider = (): string | null => nativeProvider() ?? null;
-
-  const modelPart = (key: 'provider' | 'id'): string | null => {
-    if (form.modelMode === 'project') return projectDefaultModelPair(project()?.default_model ?? null)[key];
+  /** What this form asks for; `null` names none, and the server fills the project's default. */
+  const requestedModel = (): string | null => {
     if (form.modelMode !== 'choose') return null;
-    if (form.chooseIndex === CUSTOM_MODEL_VALUE) return key === 'provider' ? derivedProvider() : (form.customModelId.trim() || null);
-    if (form.chooseIndex.startsWith(STATIC_MODEL_PREFIX)) {
-      return key === 'provider' ? derivedProvider() : form.chooseIndex.slice(STATIC_MODEL_PREFIX.length);
-    }
-    const combo = modelCombos()[Number(form.chooseIndex)];
-    return (key === 'provider' ? combo?.model_provider : combo?.model_id) ?? null;
+    if (form.chooseIndex === CUSTOM_MODEL_VALUE) return form.customModelId.trim() || null;
+    if (form.chooseIndex.startsWith(STATIC_MODEL_PREFIX)) return form.chooseIndex.slice(STATIC_MODEL_PREFIX.length);
+    return null;
   };
-  const modelProvider = () => modelPart('provider');
-  const modelId = () => modelPart('id');
+  const runModel = () => resolveRunModel(requestedModel(), form.harnessKind, project());
 
-  const autoModelResolution = createMemo(() =>
-    resolveAutoModelPolicy(
-      selectedAgentProfile()?.limits,
-      project()?.default_model ?? null,
-      form.selectorKind === 'fleet' ? fleetsData().find((f) => f.fleet_id === form.selectorId)?.default_policy : null,
-    ),
-  );
-
-  const combinationGate = createMemo(() =>
-    gateHarnessModelSelection(capabilities(), form.harnessKind, modelProvider(), modelId(), autoModelResolution(), `/projects/${props.projectId}/settings?tab=automation`));
+  const modelGate = createMemo(() =>
+    gateHarnessModelSelection(capabilities(), form.harnessKind, runModel(), `/projects/${props.projectId}/settings?tab=automation`));
 
   const structuralErrors = createMemo((): string[] => {
     const errors: string[] = [];
@@ -276,11 +255,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       return state(settled() && !!form.selectorId && (!cap || cap.probe_error != null));
     },
     profile: () => state(!agentProfiles.loading && agentProfilesData().length === 0),
-    model: () => state(!combinationGate().allowed),
+    model: () => state(!modelGate().allowed),
   };
   const missingRow = () => Object.values(rows).some((r) => r() === 'missing');
 
-  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && structuralErrors().length === 0 && combinationGate().allowed && !missingRow() && !submitting());
+  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
     return {
@@ -289,8 +268,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       selectorId: form.selectorId.trim(),
       agentProfileId: form.agentProfileId,
       harnessKind: form.harnessKind,
-      modelProvider: modelProvider(),
-      modelId: modelId(),
+      model: requestedModel(),
       timeoutSeconds: form.timeoutSeconds,
       allowNetwork: form.allowNetwork,
       approvals: form.approvals,
@@ -313,7 +291,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (form.harnessKind !== (p?.default_harness || d.harnessKind)) diff.harness = form.harnessKind;
     const savedProfile = item.error === undefined && typeof item()?.run_settings?.agent_profile_id === 'string';
     if (form.agentProfileId && (profilePicked() || savedProfile)) diff.agent_profile_id = form.agentProfileId;
-    if (form.modelMode === 'choose' && modelProvider() && modelId()) { diff.model_provider = modelProvider(); diff.model_id = modelId(); }
+    if (form.modelMode === 'choose' && requestedModel()) diff.model = requestedModel();
     const branch = form.branch.trim();
     if (branch && branch !== p?.default_branch) diff.branch = branch;
     if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
@@ -402,14 +380,13 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             createDefaultProfile={createDefaultProfile}
             harnessOptions={harnessOptions}
             projectDefaultLabel={projectDefaultLabel}
-            modelCombos={modelCombos}
             staticModels={staticModels}
-            gate={combinationGate}
+            gate={modelGate}
             project={project}
             agentContext={() => agentContext()}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
-            modelLabel={() => modelId() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
+            modelLabel={() => runModel() ?? (form.modelMode === 'choose' ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}
             sandboxLine={sandboxLine}
             onApprovals={() => { approvalsChosen = true; }}

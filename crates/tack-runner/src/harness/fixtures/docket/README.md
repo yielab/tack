@@ -32,7 +32,7 @@ fixture here is `captured`, the 1.0 ones (`ok`, `refused`, `blocked`, `cancelled
   evidence of the run but are not part of the adapter's contract.
 - `--model P/ID` is split on the first `/`; only `ID` is sent to the configured endpoint's
   `model` field (`gw/anthropic/claude-x` on argv produced `"model":"anthropic/claude-x"` in
-  the captured request body). The adapter passes `<requested_model_provider>/<requested_model_id>`
+  the captured request body). The adapter passes `requested_model`
   verbatim and never inspects what docket does with the prefix.
 - The endpoint is called at `<DOCKET_LLM_BASE_URL>/chat/completions` with
   `Authorization: Bearer <DOCKET_LLM_API_KEY>`. `DOCKET_LLM_BASE_URL` carries the `/v1`
@@ -42,7 +42,7 @@ fixture here is `captured`, the 1.0 ones (`ok`, `refused`, `blocked`, `cancelled
 - `model.served` in the result line is populated straight from the chat-completions
   response's own `model` field — a real observation of what answered, even though the
   request went through a gateway that could in principle have substituted a model
-  (`HarnessDescriptor::observes_served_model`). It is empty (`""`, recorded as `None`) when
+  (it is what `ActualExecution.model` records, with source `reported`). It is empty (`""`, recorded as `None`) when
   no model response was ever received (`refused`, and `cancelled` before any reply arrived).
 - Leaving `DOCKET_HOME` unset refuses the run before any network call: exit code 2, one
   result line with `status: "refused"` and no `token`.

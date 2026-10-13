@@ -9,9 +9,9 @@ pub mod types;
 pub mod wiring;
 
 pub use batch::schedule;
-pub use select::{SchedulingError, SchedulingPolicy, select_runner};
+pub use select::{SchedulingPolicy, select_runner};
 pub use types::{
-    IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
-    Selection, SelectionOutcome,
+    IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest, Selection,
+    SelectionOutcome,
 };
 pub use wiring::choose_request_for_runner;

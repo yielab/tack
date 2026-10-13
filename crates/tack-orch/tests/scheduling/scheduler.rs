@@ -10,39 +10,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, TimeZone, Utc};
 
 use tack_orch::execution::{
-    CapabilitySupport, CapabilityValue, ExecutionRequestId, HarnessCapability, HarnessKind,
-    ModelCombination, ModelId, ModelProvider, RequestedModelId, RequestedModelProvider, RunnerId,
-    RunnerSelector,
+    ExecutionRequestId, HarnessCapability, HarnessKind, RunnerId, RunnerSelector,
 };
 use tack_orch::scheduler::{
-    IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingPolicy,
-    SchedulingRequest, Selection, SelectionOutcome, schedule, select_runner,
+    Priority, RunnerCandidate, RunnerState, SchedulingPolicy, SchedulingRequest, Selection,
+    SelectionOutcome, schedule, select_runner,
 };
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()
 }
 
-fn harness(kind: &str, combos: Vec<(&str, &[&str])>) -> HarnessCapability {
+fn harness(kind: &str) -> HarnessCapability {
     HarnessCapability {
         harness_kind: HarnessKind::new(kind),
         installed_version: "1.0.0".to_string(),
         probe_error: None,
         probed_at: now(),
-        model_combinations: combos
-            .into_iter()
-            .map(|(provider, models)| ModelCombination {
-                model_provider: ModelProvider::new(provider),
-                model_ids: models.iter().map(|m| ModelId::new(*m)).collect(),
-                discovery: "reported".to_string(),
-                model_metadata: BTreeMap::new(),
-                additional: BTreeMap::new(),
-            })
-            .collect(),
-        model_passthrough: None,
         decisions: None,
-        native_provider: String::new(),
-        providers: Vec::new(),
         model_selection: None,
         additional: BTreeMap::new(),
     }
@@ -57,10 +42,7 @@ fn candidate(id: &str, available_capacity: u32) -> RunnerCandidate {
         total_capacity: available_capacity.max(1),
         available_capacity,
         last_heartbeat_at: Some(now()),
-        harnesses: vec![harness(
-            "claude_code",
-            vec![("anthropic", &["opaque/sonnet"])],
-        )],
+        harnesses: vec![harness("claude_code")],
     }
 }
 
@@ -72,10 +54,7 @@ fn request() -> SchedulingRequest {
         },
         priority: Priority::Normal,
         requested_harness_kind: HarnessKind::new("claude_code"),
-        requested_model: ModelSelector::Explicit {
-            provider: RequestedModelProvider::new("anthropic"),
-            model_id: RequestedModelId::new("opaque/sonnet"),
-        },
+        requested_model: Some("opaque/sonnet".to_string()),
         approvals: None,
         required_labels: BTreeMap::new(),
         created_at: now(),
@@ -253,134 +232,4 @@ fn stale_heartbeat_rejects_even_with_ample_capacity() {
         Some(now() - policy.max_heartbeat_age + chrono::Duration::seconds(1));
     let outcome = select_runner(&request(), &[fresh_enough], now(), &policy);
     assert!(matches!(outcome, SelectionOutcome::Selected(_)));
-}
-
-// ---- model_passthrough attestation -----------------------------------------
-
-/// A harness that (like the real claude-code and codex adapters) declares no
-/// `model_combinations` at all, with a pass-through attestation at the given
-/// support level.
-fn passthrough_harness(kind: &str, support: CapabilitySupport) -> HarnessCapability {
-    let mut h = harness(kind, vec![]);
-    h.model_passthrough = Some(CapabilityValue {
-        support,
-        reason: Some("test attestation".to_string()),
-        additional: BTreeMap::new(),
-    });
-    h
-}
-
-/// An explicit request for a pairing the harness never declared is
-/// structurally unschedulable on its own; with a `supported` pass-through
-/// attestation it selects.
-#[test]
-fn undeclared_pairing_selects_with_supported_passthrough() {
-    let mut runner = candidate("runner-a", 1);
-    runner.harnesses = vec![passthrough_harness(
-        "claude_code",
-        CapabilitySupport::Supported,
-    )];
-
-    let mut req = request();
-    req.requested_model = ModelSelector::Explicit {
-        provider: RequestedModelProvider::new("anthropic"),
-        model_id: RequestedModelId::new("claude-sonnet-4-5"),
-    };
-
-    let outcome = select_runner(&req, &[runner], now(), &SchedulingPolicy::default());
-    assert!(matches!(outcome, SelectionOutcome::Selected(_)));
-}
-
-/// `Advisory` is an unverified claim and `Unsupported` is a refusal: both
-/// must reject exactly like the no-attestation case, with the
-/// same named reason — capability claims are load-bearing, so nothing short
-/// of `supported` schedules.
-#[test]
-fn advisory_unsupported_and_absent_passthrough_all_reject() {
-    let mut req = request();
-    req.requested_model = ModelSelector::Explicit {
-        provider: RequestedModelProvider::new("anthropic"),
-        model_id: RequestedModelId::new("claude-sonnet-4-5"),
-    };
-
-    let harnesses = [
-        passthrough_harness("claude_code", CapabilitySupport::Advisory),
-        passthrough_harness("claude_code", CapabilitySupport::Unsupported),
-        harness("claude_code", vec![]), // no attestation at all
-    ];
-    for h in harnesses {
-        let mut runner = candidate("runner-a", 1);
-        runner.harnesses = vec![h];
-        let outcome = select_runner(&req, &[runner], now(), &SchedulingPolicy::default());
-        match outcome {
-            SelectionOutcome::NoEligibleRunner { reasons } => {
-                assert!(matches!(
-                    reasons.as_slice(),
-                    [(_, IneligibleReason::ModelCombinationNotDeclared { .. })]
-                ));
-            }
-            other => panic!("expected NoEligibleRunner, got {other:?}"),
-        }
-    }
-}
-
-/// Pass-through attests acceptance of an *operator-specified* model, not of
-/// an unspecified one — `AutoSelect` stays rejected with its own reason even
-/// when the harness attests `supported`.
-#[test]
-fn auto_select_stays_rejected_even_with_supported_passthrough() {
-    let mut runner = candidate("runner-a", 1);
-    runner.harnesses = vec![passthrough_harness(
-        "claude_code",
-        CapabilitySupport::Supported,
-    )];
-
-    let mut req = request();
-    req.requested_model = ModelSelector::AutoSelect;
-
-    let outcome = select_runner(&req, &[runner], now(), &SchedulingPolicy::default());
-    match outcome {
-        SelectionOutcome::NoEligibleRunner { reasons } => {
-            assert!(matches!(
-                reasons.as_slice(),
-                [(_, IneligibleReason::AutoSelectNotVerified { .. })]
-            ));
-        }
-        other => panic!("expected NoEligibleRunner, got {other:?}"),
-    }
-}
-
-/// A pass-through attestation must not weaken any earlier eligibility check:
-/// the harness itself still has to be declared and probe-clean.
-#[test]
-fn passthrough_does_not_bypass_probe_error_or_harness_check() {
-    // Probe error on the attested harness.
-    let mut errored = passthrough_harness("claude_code", CapabilitySupport::Supported);
-    errored.probe_error = Some("binary not found".to_string());
-    let mut runner = candidate("runner-a", 1);
-    runner.harnesses = vec![errored];
-    let outcome = select_runner(&request(), &[runner], now(), &SchedulingPolicy::default());
-    match outcome {
-        SelectionOutcome::NoEligibleRunner { reasons } => {
-            assert!(matches!(
-                reasons.as_slice(),
-                [(_, IneligibleReason::HarnessProbeError { .. })]
-            ));
-        }
-        other => panic!("expected NoEligibleRunner, got {other:?}"),
-    }
-
-    // Attestation on a different harness kind than the one requested.
-    let mut runner = candidate("runner-b", 1);
-    runner.harnesses = vec![passthrough_harness("codex", CapabilitySupport::Supported)];
-    let outcome = select_runner(&request(), &[runner], now(), &SchedulingPolicy::default());
-    match outcome {
-        SelectionOutcome::NoEligibleRunner { reasons } => {
-            assert!(matches!(
-                reasons.as_slice(),
-                [(_, IneligibleReason::HarnessNotDeclared { .. })]
-            ));
-        }
-        other => panic!("expected NoEligibleRunner, got {other:?}"),
-    }
 }

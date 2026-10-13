@@ -1,13 +1,6 @@
 use super::*;
 use std::collections::BTreeMap;
 
-fn actual_model(provider: &str, model_id: &str) -> (ActualModelProvider, ActualModelId) {
-    (
-        ActualModelProvider::new(provider),
-        ActualModelId::new(model_id),
-    )
-}
-
 fn measured<T>(value: T) -> Measurement<T> {
     Measurement {
         value: Some(value),
@@ -22,96 +15,36 @@ fn rfc3339(ts: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-#[test]
-fn matched_when_requested_equals_actual() {
-    let requested = (
-        RequestedModelProvider::new("anthropic"),
-        RequestedModelId::new("opaque/sonnet"),
-    );
-    let (actual_provider, actual_model_id) = actual_model("anthropic", "opaque/sonnet");
-    let provenance = compare_model_provenance(
-        Some((&requested.0, &requested.1)),
-        &actual_provider,
-        &actual_model_id,
-    );
-    assert_eq!(
-        provenance,
-        ModelProvenance::Matched {
-            provider: "anthropic".to_string(),
-            model_id: "opaque/sonnet".to_string(),
-        }
-    );
+fn actual(model: Option<&str>, source: &str) -> ActualExecution {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../docs/contracts/runner-v1/completion.request.json"
+    ))
+    .expect("fixture JSON");
+    let mut actual: ActualExecution =
+        serde_json::from_value(fixture["actual_execution"].clone()).expect("actual_execution");
+    actual.model = model.map(str::to_owned);
+    actual.model_source = source.to_owned();
+    actual
 }
 
-/// A requested/actual mismatch must stay visible: both sides must be
-/// present in the result, not silently reconciled to whichever the
-/// caller might expect.
+/// Both sides stay visible and verbatim, whether or not they agree, and
+/// the source rides along: nothing is reconciled.
 #[test]
-fn mismatch_carries_both_requested_and_actual_values() {
-    let requested = (
-        RequestedModelProvider::new("anthropic"),
-        RequestedModelId::new("opaque/sonnet"),
-    );
-    let (actual_provider, actual_model_id) = actual_model("anthropic", "opaque/haiku");
-    let provenance = compare_model_provenance(
-        Some((&requested.0, &requested.1)),
-        &actual_provider,
-        &actual_model_id,
-    );
-    assert_eq!(
-        provenance,
-        ModelProvenance::Mismatched {
-            requested_provider: "anthropic".to_string(),
-            requested_model_id: "opaque/sonnet".to_string(),
-            actual_provider: "anthropic".to_string(),
-            actual_model_id: "opaque/haiku".to_string(),
-        }
-    );
-
-    // And visible on the wire too — both sides present simultaneously,
-    // not coalesced into one field.
-    let json = serde_json::to_value(&provenance).expect("serialize");
-    assert_eq!(json["requested_model_id"], "opaque/sonnet");
-    assert_eq!(json["actual_model_id"], "opaque/haiku");
-    assert_ne!(json["requested_model_id"], json["actual_model_id"]);
-}
-
-#[test]
-fn auto_select_observed_is_distinct_from_matched_and_mismatched() {
-    let (actual_provider, actual_model_id) = actual_model("openai", "opaque/model-alpha");
-    let provenance = compare_model_provenance(None, &actual_provider, &actual_model_id);
-    assert_eq!(
-        provenance,
-        ModelProvenance::AutoSelectObserved {
-            actual_provider: "openai".to_string(),
-            actual_model_id: "opaque/model-alpha".to_string(),
-        }
-    );
-}
-
-/// Nonsense ids must appear verbatim on both sides of a mismatch —
-/// never normalized away.
-#[test]
-fn nonsense_ids_round_trip_through_a_mismatch_comparison() {
-    let requested = (
-        RequestedModelProvider::new("totally-made-up-provider-9000"),
-        RequestedModelId::new("totally-made-up-model-9000"),
-    );
-    let (actual_provider, actual_model_id) = actual_model("openai", "opaque/model-alpha");
-    let provenance = compare_model_provenance(
-        Some((&requested.0, &requested.1)),
-        &actual_provider,
-        &actual_model_id,
-    );
-    assert_eq!(
-        provenance,
-        ModelProvenance::Mismatched {
-            requested_provider: "totally-made-up-provider-9000".to_string(),
-            requested_model_id: "totally-made-up-model-9000".to_string(),
-            actual_provider: "openai".to_string(),
-            actual_model_id: "opaque/model-alpha".to_string(),
-        }
-    );
+fn provenance_is_requested_served_and_source_and_nothing_else() {
+    let cases = [
+        (Some("opaque/sonnet"), Some("opaque/sonnet"), "reported"),
+        (Some("opaque/sonnet"), Some("opaque/haiku"), "reported"),
+        (Some("opaque:sonnet"), Some("opaque:sonnet"), "requested"),
+        (None, Some("opaque/model-alpha"), "reported"),
+        (None, None, "agent_default"),
+    ];
+    for (requested, served, source) in cases {
+        let provenance = model_provenance(requested, &actual(served, source));
+        assert_eq!(
+            serde_json::to_value(&provenance).expect("serialize"),
+            serde_json::json!({"requested": requested, "served": served, "source": source}),
+        );
+    }
 }
 
 /// Absent usage must never serialize as zero. Asserts the literal JSON
@@ -208,7 +141,6 @@ fn wall_clock_is_known_even_without_a_configured_rate() {
 #[test]
 fn derive_attempt_facts_treats_malformed_json_as_unreported() {
     let facts = derive_attempt_facts(
-        Some("openai"),
         Some("opaque/model-alpha"),
         Some("not json"),
         Some("also not json"),
@@ -232,7 +164,6 @@ fn derive_attempt_facts_end_to_end_from_a_real_fixture() {
     let actual = completion["actual_execution"].to_string();
     let usage = completion["usage"].to_string();
     let facts = derive_attempt_facts(
-        Some("openai"),
         Some("opaque/model-alpha"),
         Some(&actual),
         Some(&usage),
@@ -242,9 +173,10 @@ fn derive_attempt_facts_end_to_end_from_a_real_fixture() {
     );
     assert_eq!(
         facts.model_provenance,
-        Some(ModelProvenance::Matched {
-            provider: "openai".to_string(),
-            model_id: "opaque/model-alpha".to_string(),
+        Some(ModelProvenance {
+            requested: Some("opaque/model-alpha".to_string()),
+            served: Some("opaque/model-alpha".to_string()),
+            source: "reported".to_string(),
         })
     );
     assert_eq!(

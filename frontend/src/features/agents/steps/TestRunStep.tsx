@@ -26,11 +26,10 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
     const h = findHarness(harnessesOf(props.thisMachineRunner), kind);
     return h && h.probe_error === null && !!h.installed_version ? h : undefined;
   };
-  // The test run names no model, and the scheduler only accepts that from an
-  // agent that reports it can run without one; an agent that needs a model
-  // would leave the request queued forever with nothing to say why.
+  // The test run names no model, and the scheduler refuses that for an agent
+  // that reports it needs one: the request would wait with nothing to run it.
   const harnessKind = () =>
-    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind)?.model_selection === 'optional');
+    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind) && installed(kind)?.model_selection !== 'required');
   const needsModelKind = () => HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind));
   const itemId = createMemo(() => {
     const id = requestId();

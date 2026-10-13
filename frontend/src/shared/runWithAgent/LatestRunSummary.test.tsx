@@ -10,7 +10,7 @@ const ATTEMPT = {
   attempt_id: 'att-1', request_id: 'req-1', attempt_number: 1, runner_id: 'runner-1', fencing_token: 1,
   state: 'succeeded', lease_issued_at: '2026-10-08T12:00:00Z', lease_expires_at: '2026-10-08T12:05:00Z',
   last_heartbeat_at: null, event_checkpoint: null, completion_id: null, workspace_id: null, base_revision: null,
-  actual_execution: { harness_kind: 'claude-code', model_id: 'claude-sonnet-5-5' },
+  actual_execution: { harness_kind: 'claude-code', model: 'claude-sonnet-5-5', model_source: 'reported' },
   terminal_reason: { result: 'I created test.md with the main idea of the README.', artifacts: [{ kind: 'patch', size_bytes: 120 }] },
   usage: {
     tokens_in: { value: 1_077_873, source: 'measured' }, tokens_out: { value: 3_284, source: 'measured' },

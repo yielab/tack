@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::harness::test_support::{finished, scratch, set_env, spec};
-use tack_orch::execution::{Approvals, CapabilityValue, RequestedModelId, RequestedModelProvider};
+use tack_orch::execution::{Approvals, CapabilityValue};
 
 /// A request whose own environment names a model server.
 fn spec_with_base_url(state: &std::path::Path) -> crate::harness::ExecutionSpec {
@@ -33,7 +33,7 @@ fn a_request_becomes_a_harness_run_command() {
             "--task-file",
             "/dev/stdin",
             "--model",
-            "openai/opaque/model-alpha",
+            "opaque/model-alpha",
             "--agent-id",
             "attempt",
             "--timeout",
@@ -45,6 +45,24 @@ fn a_request_becomes_a_harness_run_command() {
     assert!(docket_home.starts_with(&scratch_dir.path().display().to_string()));
     assert!(!docket_home.starts_with(&state.path().display().to_string()));
     assert!(docket_home.ends_with("docket-home"));
+}
+
+#[test]
+fn a_request_naming_no_model_passes_no_model_flag() {
+    let state = scratch("docket-no-model");
+    let scratch_dir = scratch("docket-no-model-scratch");
+    let mut request = spec_with_base_url(state.path());
+    request.work.request.requested_model = None;
+    let run = RunContext {
+        spec: &request,
+        scratch: scratch_dir.path(),
+    };
+    let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
+    assert!(
+        !invocation.args.iter().any(|arg| arg == "--model"),
+        "{:?}",
+        invocation.args
+    );
 }
 
 #[test]
@@ -85,7 +103,7 @@ fn contract_1_1_passes_the_task_as_a_file() {
             "--task-file",
             &task_file.display().to_string(),
             "--model",
-            "openai/opaque/model-alpha",
+            "opaque/model-alpha",
             "--agent-id",
             "attempt",
             "--timeout",
@@ -675,8 +693,7 @@ const FAKE_KEY: &str = "sk-fake-canary-71c2";
 /// environment and a fixed model.
 fn live_request(workspace: &std::path::Path, server_uri: &str) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, workspace);
-    request.work.request.requested_model_provider = Some(RequestedModelProvider::new("openai"));
-    request.work.request.requested_model_id = Some(RequestedModelId::new("anthropic/claude-x"));
+    request.work.request.requested_model = Some("anthropic/claude-x".to_owned());
     set_env(
         &mut request,
         &[

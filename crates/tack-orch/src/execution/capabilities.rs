@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::types::{HarnessKind, ModelId, ModelProvider, ProtocolVersion};
+use super::types::{HarnessKind, ProtocolVersion};
 
 /// The three support levels fixed by runner protocol v1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,61 +49,13 @@ pub struct Concurrency {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
-/// A provider's own catalog quote for one model — never invented for a
-/// vendor that publishes nothing (ADR 0063 decision 7): an unpublished field
-/// stays `None`, never a default or zero. `price`/`modality` are recorded
-/// exactly as the provider's catalog shapes them (ADR 0063 decision 5)
-/// rather than normalized — vendor catalogs use mutually incompatible
-/// shapes for both, and normalizing would silently falsify most of them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelMetadata {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_window: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub price: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modality: Option<serde_json::Value>,
-    #[serde(flatten, default)]
-    pub additional: BTreeMap<String, serde_json::Value>,
-}
-
-/// Models observed for a harness/provider pair. Model IDs are deliberately
-/// opaque: their punctuation and prefixes are not a compatibility contract.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelCombination {
-    pub model_provider: ModelProvider,
-    pub model_ids: Vec<ModelId>,
-    pub discovery: String,
-    /// Per-model price, context window and modality (ADR 0063 decision 5).
-    /// A model absent from this map is one the catalog said nothing about,
-    /// not a claim of zero. Absent as a whole field (a pre-metadata runner)
-    /// defaults to an empty map and is omitted again on re-serialization, so
-    /// an older `capabilities.json` round-trips unchanged.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub model_metadata: BTreeMap<ModelId, ModelMetadata>,
-    #[serde(flatten, default)]
-    pub additional: BTreeMap<String, serde_json::Value>,
-}
-
-/// One installed harness and the models it can report.
+/// One installed harness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessCapability {
     pub harness_kind: HarnessKind,
     pub installed_version: String,
     pub probe_error: Option<String>,
     pub probed_at: DateTime<Utc>,
-    #[serde(default)]
-    pub model_combinations: Vec<ModelCombination>,
-    /// Whether this harness accepts an **operator-specified opaque model**
-    /// forwarded verbatim by its adapter — a claim about the adapter's own
-    /// invocation contract (a bad model fails with the harness's own error,
-    /// never a fabricated one), not about which models exist, so adapters
-    /// with no enumeration (claude-code, codex) can attest it honestly even
-    /// with empty `model_combinations`. The scheduler treats only
-    /// `Supported` as schedulable — `Advisory` is rejected like
-    /// `Unsupported`; `None` behaves as if the field did not exist.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_passthrough: Option<CapabilityValue>,
     /// Whether **this harness** can pause a run and ask the operator before
     /// it acts, for a request whose `permission_policy.approvals` is `ask`.
     /// A runner's top-level `features.decisions` only says whether the
@@ -111,23 +63,13 @@ pub struct HarnessCapability {
     /// actually use it differs per adapter (claude-code's grammar keeps
     /// stdin open and answers a `can_use_tool` question, codex/docket/
     /// opencode never open one), so the scheduler reads this field, not
-    /// `features.decisions`, to admit or refuse an `ask` request. Same
-    /// absence/support rule as `model_passthrough`: only `Supported`
-    /// counts, `Advisory` and an absent attestation both mean "not
-    /// attested" and are treated like `Unsupported`.
+    /// `features.decisions`, to admit or refuse an `ask` request. Only
+    /// `Supported` counts, `Advisory` and an absent attestation both mean
+    /// "not attested" and are treated like `Unsupported`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decisions: Option<CapabilityValue>,
-    /// The provider this harness uses when a request names none. Empty when
-    /// the runner did not say; an older snapshot without the key round-trips
-    /// without it.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub native_provider: String,
-    /// The configured providers whose wire this harness speaks, so a request
-    /// naming one of them can reach it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub providers: Vec<String>,
-    /// Whether a request must name a provider and a model for this harness,
-    /// or may leave the choice to it. `None` means the runner did not say.
+    /// Whether a request must name a model for this harness, or may leave
+    /// the choice to it. `None` means the runner did not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_selection: Option<ModelSelectionReport>,
     #[serde(flatten, default)]

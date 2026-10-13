@@ -8,35 +8,13 @@ import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
-import type { ModelCombination } from '../../../shared/execution/types';
 import type { UpdateProject } from '../../../shared/types';
 
 /** The part of a runner's reported harness this panel reads. Every field
  *  but the kind is optional: an older runner omits them. */
 interface SnapshotHarness extends AgentSafetyReport {
   harness_kind: string;
-  native_provider?: string;
-  providers?: string[];
-  model_combinations?: ModelCombination[];
 }
-
-/** One choice in the "Specific model" list. */
-interface ModelPair {
-  provider: string;
-  model_id: string;
-}
-
-/** A `<select>` option value for a pair. JSON, so neither a provider nor a
- *  model id ever has to be split on a separator it might itself contain. */
-const encodePair = (pair: ModelPair): string => JSON.stringify([pair.provider, pair.model_id]);
-const decodePair = (value: string): ModelPair | null => {
-  try {
-    const [provider, model_id] = JSON.parse(value) as [string, string];
-    return provider && model_id ? { provider, model_id } : null;
-  } catch {
-    return null;
-  }
-};
 
 /** One sentence for what `check-folder` found at a path. */
 function checkSentence(r: FolderCheck): string {
@@ -142,42 +120,20 @@ const AutomationPanel: Component = () => {
   /** Every runner's report of the default agent, across snapshots. */
   const defaultHarnessReports = () =>
     snapshots().flatMap((s) => s?.harnesses ?? []).filter((h) => h.harness_kind === p()?.default_harness);
-  const nativeProvider = () => defaultHarnessReports().find((h) => h.native_provider)?.native_provider;
-  const explicit = () => {
-    const m = p()?.default_model;
-    return m?.kind === 'explicit' ? m : null;
-  };
-  /** The pairs the "Specific model" list offers: the static ids under the
-   *  native provider, then every measured combination each runner reports
-   *  for this agent, deduplicated. The pair
-   *  already saved stays listed even when no runner reports it any more, so
-   *  the select never shows an empty choice for a project that has one. */
-  const modelOptions = createMemo<ModelPair[]>(() => {
+  const savedModel = () => p()?.default_model || null;
+  /** The ids the "Specific model" list offers: the ones measured for this agent. The
+   *  model already saved stays listed even when it is not measured, so the select never
+   *  shows an empty choice for a project that has one. */
+  const modelOptions = createMemo<string[]>(() => {
     const harness = p()?.default_harness;
     if (!harness) return [];
-    const pairs: ModelPair[] = [];
-    const seen = new Set<string>();
-    const add = (provider: string, model_id: string) => {
-      const key = encodePair({ provider, model_id });
-      if (seen.has(key)) return;
-      seen.add(key);
-      pairs.push({ provider, model_id });
-    };
-    const native = nativeProvider();
-    if (native) for (const id of ACCEPTED_MODELS[harness] ?? []) add(native, id);
-    for (const h of defaultHarnessReports()) {
-      for (const c of h.model_combinations ?? []) for (const id of c.model_ids) add(c.model_provider, id);
-    }
-    const saved = explicit();
-    if (saved) add(saved.provider, saved.model_id);
-    return pairs;
+    const ids = [...(ACCEPTED_MODELS[harness] ?? [])];
+    const saved = savedModel();
+    if (saved && !ids.includes(saved)) ids.push(saved);
+    return ids;
   });
-  const selectedPair = () => {
-    const saved = explicit();
-    return saved ? encodePair({ provider: saved.provider, model_id: saved.model_id }) : '';
-  };
   const [wantsSpecific, setWantsSpecific] = createSignal(false);
-  const specific = () => !!p()?.default_harness && (wantsSpecific() || explicit() !== null);
+  const specific = () => !!p()?.default_harness && (wantsSpecific() || savedModel() !== null);
   const pushConfigured = () => snapshots().some((s) => s?.push_configured === true);
   const pushDisabledReason = () =>
     mode() === 'in_place'
@@ -310,7 +266,7 @@ const AutomationPanel: Component = () => {
           <div class="flex flex-wrap gap-2">
             <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
               {(h) => (
-                <Pill active={p()?.default_harness === h} onClick={() => void save({ default_harness: p()?.default_harness === h ? null : h })}>
+                <Pill active={p()?.default_harness === h} onClick={() => { setWantsSpecific(false); void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
                   {h === 'claude-code' ? 'Claude Code' : h === 'codex' ? 'Codex' : h}
                 </Pill>
               )}
@@ -333,7 +289,7 @@ const AutomationPanel: Component = () => {
             <Radio
               name="model-mode"
               checked={!specific()}
-              onChange={() => { setWantsSpecific(false); void save({ default_model: { kind: 'auto' } }); }}
+              onChange={() => { setWantsSpecific(false); void save({ default_model: null }); }}
             >
               The agent's default (recommended)
             </Radio>
@@ -357,22 +313,20 @@ const AutomationPanel: Component = () => {
             <Show when={specific()}>
               <Select
                 aria-label="Model"
-                value={selectedPair()}
+                value={savedModel() ?? ''}
                 disabled={modelOptions().length === 0}
                 onChange={(e) => {
-                  const pair = decodePair(e.currentTarget.value);
-                  if (pair) void save({ default_model: { kind: 'explicit', ...pair } });
+                  const model = e.currentTarget.value;
+                  if (model) void save({ default_model: model });
                 }}
                 options={[
                   { value: '', label: 'Choose a model' },
-                  ...modelOptions().map((pair) => ({ value: encodePair(pair), label: `${pair.provider} / ${pair.model_id}` })),
+                  ...modelOptions().map((id) => ({ value: id, label: id })),
                 ]}
               />
               <Show when={modelOptions().length === 0}>
                 <Note>
-                  {nativeProvider()
-                    ? 'No model ids are measured for this agent yet; its default is used.'
-                    : 'No runner on this computer reports a provider for this agent yet.'}
+                  No model ids are measured for this agent yet; its default is used.
                 </Note>
               </Show>
             </Show>

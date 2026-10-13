@@ -1,5 +1,5 @@
 use super::*;
-use tack_orch::execution::{HarnessKind, ModelCombination, ModelId, ModelProvider};
+use tack_orch::execution::HarnessKind;
 
 fn fixed_timestamp() -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
@@ -13,11 +13,7 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
         installed_version: installed_version.to_owned(),
         probe_error: probe_error.map(str::to_owned),
         probed_at: fixed_timestamp(),
-        model_combinations: Vec::new(),
-        model_passthrough: None,
         decisions: None,
-        native_provider: String::new(),
-        providers: Vec::new(),
         model_selection: None,
         additional: Default::default(),
     }
@@ -55,15 +51,9 @@ fn classify_separates_present_probe_error_and_absent() {
     }
 }
 
-/// `render`/`render_model_info` are exercised for their side effects
-/// (stdout), not a return value; this only proves they run to
-/// completion for a shape with real model combinations, so a future
-/// field addition to `ModelCombination` fails loudly here instead of
-/// only in a manual `--json` read.
-/// A fully-populated `DiscoveryReport` — every feature flag, one harness
-/// with model combinations and passthrough, for
-/// tests that only prove `render` runs to completion
-/// over a realistic shape without panicking.
+/// A fully-populated `DiscoveryReport` — every feature flag and the given
+/// harnesses — for tests that only prove `render` runs to completion over a
+/// realistic shape without panicking.
 fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::DiscoveryReport {
     bootstrap::DiscoveryReport {
         capabilities: tack_orch::execution::RunnerCapabilities {
@@ -124,18 +114,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
 #[test]
 fn render_does_not_panic_on_a_populated_report() {
     let mut with_models = capability("codex", "1.18.0", None);
-    with_models.model_combinations = vec![ModelCombination {
-        model_provider: ModelProvider::new("openai"),
-        model_ids: vec![ModelId::new("grok-code")],
-        discovery: "codex models".to_owned(),
-        model_metadata: Default::default(),
-        additional: Default::default(),
-    }];
-    with_models.model_passthrough = Some(CapabilityValue {
-        support: CapabilitySupport::Unsupported,
-        reason: Some("declaration-based only".to_owned()),
-        additional: Default::default(),
-    });
+    with_models.model_selection = Some(ModelSelectionReport::Required);
 
     render(&sample_discovery_report(vec![with_models]));
 }

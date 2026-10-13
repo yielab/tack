@@ -33,22 +33,11 @@ export type TerminalReason = components['schemas']['TerminalReason'];
 // ─── Model provenance (`usage_provenance.rs::ModelProvenance`) ─────────────
 
 /**
- * Whether an attempt ran on what was requested. A tagged union, never
- * collapsed into a bare "matched" boolean, so both sides of a mismatch are
- * always visible — unsupported is typed, unknown is explicit, applied to
- * provenance, not just numbers — see
- * `attemptFormat.ts#describeModelProvenance` for the display layer.
+ * The model the request named and the one the attempt ran on, both in full and
+ * never reconciled; `source` says who named the served one (`reported`,
+ * `requested` or `agent_default`).
  */
-export type ModelProvenance =
-  | { kind: 'matched'; provider: string; model_id: string }
-  | { kind: 'auto_select_observed'; actual_provider: string; actual_model_id: string }
-  | {
-      kind: 'mismatched';
-      requested_provider: string;
-      requested_model_id: string;
-      actual_provider: string;
-      actual_model_id: string;
-    };
+export type ModelProvenance = components['schemas']['ModelProvenanceSchema'];
 
 // ─── Pull request (`executions.rs::AttemptPullRequest`) ────────────────────
 

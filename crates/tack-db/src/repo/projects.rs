@@ -2,7 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use tack_core::models::{CreateProject, Project, ProjectModelDefault, ProjectType, UpdateProject};
+use tack_core::models::{CreateProject, Project, ProjectType, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
 
@@ -146,15 +146,6 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
-        if let Some(ref default_model) = input.default_model {
-            let json = serde_json::to_string(default_model).unwrap();
-            sqlx::query("UPDATE projects SET default_model = ?, updated_at = ? WHERE id = ?")
-                .bind(&json)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
-        }
         if let Some(ref token_ref) = input.github_token_ref {
             // The empty string is how the client spells "clear" for this
             // plain (non-double-`Option`) field — stored as SQL NULL, never
@@ -189,6 +180,18 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
+        // A new default agent starts without the old one's model.
+        if let Some(ref harness) = input.default_harness {
+            sqlx::query(
+                "UPDATE projects SET default_model = NULL, updated_at = ? \
+                 WHERE id = ? AND default_harness IS NOT ?",
+            )
+            .bind(&now)
+            .bind(id.to_string())
+            .bind(harness.as_deref())
+            .execute(self.pool())
+            .await?;
+        }
         // Each column name is a literal here, never client input.
         for (column, value) in [
             (
@@ -205,6 +208,7 @@ impl Repository {
             ("default_profile_id", input.default_profile_id),
             ("on_finish_status", input.on_finish_status),
             ("definition_of_done", input.definition_of_done),
+            ("default_model", input.default_model),
         ] {
             if let Some(value) = value {
                 sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -259,22 +263,7 @@ struct ProjectRow {
 }
 
 impl ProjectRow {
-    /// Every other column here tolerates malformed JSON by silently
-    /// defaulting — a pre-existing choice this method doesn't change.
-    /// `default_model` doesn't: it is only ever written as the exact
-    /// serialization of a validated `ProjectModelDefault` (see
-    /// `Repository::update_project`), so a decode failure here means the
-    /// column holds something no write path produced, and this returns a
-    /// real error instead of silently discarding a configured default.
     fn into_project(self) -> Result<Project, sqlx::Error> {
-        let default_model = self
-            .default_model
-            .as_deref()
-            .map(|raw| {
-                serde_json::from_str::<ProjectModelDefault>(raw)
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
-            })
-            .transpose()?;
         Ok(Project {
             id: Uuid::parse_str(&self.id).unwrap(),
             workspace_id: Uuid::parse_str(&self.workspace_id).unwrap(),
@@ -285,7 +274,7 @@ impl ProjectRow {
             vocabulary: serde_json::from_str(&self.vocabulary).unwrap_or_default(),
             workflow: serde_json::from_str(&self.workflow)
                 .unwrap_or_else(|_| tack_core::workflow::simple_workflow()),
-            default_model,
+            default_model: self.default_model,
             github_token_ref: self.github_token_ref,
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))

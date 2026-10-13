@@ -11,23 +11,11 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::types::{
-    IneligibleReason, ModelSelector, RunnerCandidate, RunnerState, SchedulingRequest, Selection,
-    SelectionOutcome,
+    IneligibleReason, RunnerCandidate, RunnerState, SchedulingRequest, Selection, SelectionOutcome,
 };
 use crate::execution::{
     Approvals, CapabilitySupport, HarnessKind, ModelSelectionReport, RunnerId, RunnerSelector,
 };
-
-/// A request-level defect that disqualifies every candidate identically, so
-/// it is reported once rather than as N copies of the same
-/// [`IneligibleReason`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum SchedulingError {
-    /// `ModelSelector::from_parts` was given exactly one of
-    /// provider/model_id. See that function's doc comment.
-    #[error("requested_model_provider and requested_model_id must both be set or both be absent")]
-    PartialModelSelector,
-}
 
 /// Configurable thresholds the pure selection functions read but never
 /// invent internally.
@@ -155,48 +143,17 @@ fn evaluate_candidate(
         }
     }
 
-    match &request.requested_model {
-        // Auto is eligible only when the matched harness reports it picks
-        // its own model (`model_selection: optional`); a harness reporting
-        // `required` or nothing is rejected rather than guessed safe — see
-        // IneligibleReason::AutoSelectNotVerified's doc comment.
-        ModelSelector::AutoSelect => {
-            if !matches!(
-                harness.model_selection,
-                Some(ModelSelectionReport::Optional)
-            ) {
-                return Err(IneligibleReason::AutoSelectNotVerified {
-                    harness: request.requested_harness_kind.clone(),
-                });
-            }
-        }
-        ModelSelector::Explicit { provider, model_id } => {
-            let declared = harness.model_combinations.iter().any(|combo| {
-                combo.model_provider.as_str() == provider.as_str()
-                    && combo
-                        .model_ids
-                        .iter()
-                        .any(|declared_id| declared_id.as_str() == model_id.as_str())
-            });
-            // An undeclared pairing is still eligible when the harness
-            // attests `model_passthrough: supported` — the adapter forwards
-            // the operator's model verbatim and the harness itself
-            // validates it at run time. Only `Supported` schedules;
-            // `Advisory` is an unverified claim and capability claims are
-            // load-bearing, so it is rejected exactly like `Unsupported`
-            // and like an absent attestation.
-            let passthrough = harness
-                .model_passthrough
-                .as_ref()
-                .is_some_and(|cap| cap.support == CapabilitySupport::Supported);
-            if !declared && !passthrough {
-                return Err(IneligibleReason::ModelCombinationNotDeclared {
-                    harness: request.requested_harness_kind.clone(),
-                    provider: provider.as_str().to_string(),
-                    model_id: model_id.as_str().to_string(),
-                });
-            }
-        }
+    // A harness that reports `required` will not pick a model itself, so a
+    // request naming none cannot run on it.
+    if request.requested_model.is_none()
+        && matches!(
+            harness.model_selection,
+            Some(ModelSelectionReport::Required)
+        )
+    {
+        return Err(IneligibleReason::ModelNotNamed {
+            harness: request.requested_harness_kind.clone(),
+        });
     }
 
     Ok(request.requested_harness_kind.clone())

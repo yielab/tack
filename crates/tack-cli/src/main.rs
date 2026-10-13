@@ -588,12 +588,10 @@ struct ExecutionCreateArgs {
     /// Requested harness kind (e.g. codex, claude_code)
     #[arg(long)]
     harness: String,
-    /// Requested model provider (omit to allow auto-selection)
+    /// The model to run, passed to the agent as given (omit to use the project's
+    /// default for its default agent, else the agent's own choice)
     #[arg(long)]
-    model_provider: Option<String>,
-    /// Requested opaque model id (omit to allow auto-selection)
-    #[arg(long)]
-    model_id: Option<String>,
+    model: Option<String>,
     /// Permission/tool policy, as a JSON object. Required field: network
     /// (bool). Optional: tools (array of strings, default []) — there is no
     /// safe empty default for this field (network has none server-side).
@@ -1115,8 +1113,7 @@ fn main() -> anyhow::Result<()> {
                         fleet: args.fleet,
                         agent_profile: args.agent_profile,
                         harness: args.harness,
-                        model_provider: args.model_provider,
-                        model_id: args.model_id,
+                        model: args.model,
                         permission_policy: args.permission_policy,
                         budgets: args.budgets,
                         environment: args.environment,
@@ -2220,8 +2217,7 @@ struct ExecutionCreateOpts {
     fleet: Option<String>,
     agent_profile: String,
     harness: String,
-    model_provider: Option<String>,
-    model_id: Option<String>,
+    model: Option<String>,
     permission_policy: String,
     budgets: Option<String>,
     environment: Option<String>,
@@ -2242,8 +2238,7 @@ fn cmd_execution_create(
         idempotency_key: opts.idempotency_key.as_deref(),
         agent_profile_id: &opts.agent_profile,
         requested_harness_kind: &opts.harness,
-        requested_model_provider: opts.model_provider.as_deref(),
-        requested_model_id: opts.model_id.as_deref(),
+        requested_model: opts.model.as_deref(),
         permission_policy: &opts.permission_policy,
         budgets: opts.budgets.as_deref(),
         environment: opts.environment.as_deref(),
