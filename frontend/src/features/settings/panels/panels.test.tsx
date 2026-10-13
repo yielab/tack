@@ -375,4 +375,44 @@ describe('Settings panels', () => {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }
   });
+
+  it('automation_panel_offers_through_the_gateway_only_when_a_runner_reports_a_gateway_key', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
+    const base = fetchMock.getMockImplementation()!;
+    const runnerWith = (providers: string[]) =>
+      fetchMock.mockImplementation((input, init) =>
+        String(input).endsWith('/api/runners')
+          ? Promise.resolve(runnersWith([{ harness_kind: 'claude-code', native_provider: 'anthropic', providers }]))
+          : base(input, init),
+      );
+    try {
+      runnerWith([]);
+      let view = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(view.container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      await flush();
+      expect(view.container.querySelector<HTMLSelectElement>('select[aria-label="Through"]')!.disabled).toBe(true);
+      expect(view.container.textContent).toContain('add a gateway key on the Agents page');
+      document.body.innerHTML = '';
+
+      runnerWith(['vercel-ai-gateway']);
+      view = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(view.container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      await flush();
+      const through = view.container.querySelector<HTMLSelectElement>('select[aria-label="Through"]')!;
+      expect(through.disabled).toBe(false);
+      through.value = 'vercel-ai-gateway';
+      through.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      chooseModel(view.container, 'vercel-ai-gateway / claude-opus-5-5');
+      await flush();
+      await flush();
+      expect(lastModelPatch()).toMatchObject({ default_model: { kind: 'explicit', provider: 'vercel-ai-gateway', model_id: 'claude-opus-5-5' } });
+    } finally {
+      (PROJECT as { default_harness: string | null }).default_harness = null;
+    }
+  });
 });
