@@ -3,17 +3,20 @@
 #
 #   - `tack` built from this checkout with the SPA embedded (`--features embed-spa`),
 #     serving a fresh database on its own port, never the dev pair or `tack.toml`;
-#   - `docket` from its source tree (DOCKET_SRC, default ~/Sites/rack-cli) and
-#     `prill` from its source tree (PRILL_SRC, default ~/Sites/prill), each behind a
-#     one-line launcher placed ahead of any installed release on PATH;
+#   - `docket` from its source tree (DOCKET_SRC, default ~/Sites/rack-cli; it must speak
+#     harness contract 1.2, docket 0.2.0-beta.5 or later) and `prill` from its source tree
+#     (PRILL_SRC, default ~/Sites/prill), each behind a one-line launcher placed ahead of any
+#     installed release on PATH;
+#   - a scratch HOME for the server and the runner, in which docket's own setup is made
+#     with docket's own command (`docket setup provider add local <endpoint>`), so docket
+#     reaches the local model the way a person's docket does and Tack holds no endpoint;
 #   - a runner configuration with prill as the verifier (`[verify]` with
-#     `kind = "prill"`, the runner's own seam) and docket pointed at a local OpenAI-compatible
-#     model endpoint through `[provider.openai_compatible]`, because docket always
-#     needs a Tack-configured endpoint.
+#     `kind = "prill"`, the runner's own seam).
 #
 # The spec enrols that runner through the Agents page and starts it itself, so
 # the whole workflow (project, settings, items, runs, packs, review) is one UI
-# session. Every run is a real model call against DOCKET_PRILL_MODEL_BASE_URL.
+# session. Every run is a real model call against DOCKET_PRILL_MODEL_BASE_URL, on the
+# model docket's setup names as its default.
 #
 # Usage: scripts/docket-prill-e2e.sh [extra playwright args…]
 # Knobs (environment):
@@ -57,7 +60,8 @@ if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$PORT\$"; then
   die "port $PORT is already taken — set DOCKET_PRILL_PORT"
 fi
 
-mkdir -p "$WORK/bin" "$WORK/server" "$WORK/runner-state" "$SHOTS"
+AGENT_HOME="$WORK/home"
+mkdir -p "$WORK/bin" "$WORK/server" "$WORK/runner-state" "$AGENT_HOME" "$SHOTS"
 chmod 700 "$WORK/runner-state"
 
 # ── The source-backed launchers ───────────────────────────────────────────────
@@ -70,12 +74,23 @@ cat > "$WORK/bin/prill" <<EOF
 exec "$PRILL_SRC/.venv/bin/prill" "\$@"
 EOF
 chmod +x "$WORK/bin/docket" "$WORK/bin/prill"
+PROBE=$(cd "$WORK" && env -i PATH="$SYSTEM_PATH" "$WORK/bin/docket" exec --workspace . --task probe --contract 1.2 2>/dev/null | tail -1 || true)
+[ "$(jq -r '.v // empty' <<<"$PROBE" 2>/dev/null)" = "1.2.0" ] \
+  || die "docket at $DOCKET_SRC does not speak harness contract 1.2 (docket 0.2.0-beta.5 or later) — point DOCKET_SRC at a checkout that does"
+
+# ── docket's own setup, in the scratch HOME: the local endpoint as its provider ──
+env -i HOME="$AGENT_HOME" PATH="$WORK/bin:$SYSTEM_PATH" \
+  docket setup provider add local "$MODEL_BASE_URL/v1" --model local-model --ctx 32768 --max-tokens 4096 \
+  </dev/null >"$WORK/docket-setup.log" 2>&1 || die "docket setup provider add failed — see $WORK/docket-setup.log"
+READY=$(env -i HOME="$AGENT_HOME" PATH="$WORK/bin:$SYSTEM_PATH" docket setup harness --json || true)
+[ "$(jq -r '.ready' <<<"$READY")" = "true" ] || die "docket's setup is not ready: $(jq -r '.reason' <<<"$READY")"
 {
   echo "tack: $(git -C "$ROOT" rev-parse --short HEAD) ($(git -C "$ROOT" branch --show-current))$([ -n "$(git -C "$ROOT" status --porcelain)" ] && echo ' +uncommitted')"
   echo "docket: $("$WORK/bin/docket" --version 2>/dev/null | tail -1) from $DOCKET_SRC @ $(git -C "$DOCKET_SRC" rev-parse --short HEAD) ($(git -C "$DOCKET_SRC" branch --show-current))$([ -n "$(git -C "$DOCKET_SRC" status --porcelain)" ] && echo ' +uncommitted')"
   echo "docket installed release (not used): $(command -v docket || echo none) $(docket --version 2>/dev/null | tail -1)"
   echo "prill: $("$WORK/bin/prill" --version 2>/dev/null | tail -1) from $PRILL_SRC @ $(git -C "$PRILL_SRC" rev-parse --short HEAD) ($(git -C "$PRILL_SRC" branch --show-current))$([ -n "$(git -C "$PRILL_SRC" status --porcelain)" ] && echo ' +uncommitted')"
   echo "prill image: $PRILL_IMAGE $PRILL_IMAGE_ID"
+  echo "docket setup: $(jq -r '.default_model' <<<"$READY") in $AGENT_HOME/.docket"
   echo "model endpoint: $MODEL_BASE_URL/v1 -> $(curl -fsS -m 5 "$MODEL_BASE_URL/v1/models" | python3 -c 'import json,sys; print(", ".join(m["id"] for m in json.load(sys.stdin).get("data", [])))')"
 } | tee "$WORK/versions.txt"
 
@@ -85,21 +100,24 @@ if [ "${DOCKET_PRILL_SKIP_BUILD:-0}" != "1" ]; then
   (cd "$ROOT/frontend" && npm run build >"$WORK/build-frontend.log" 2>&1) || die "frontend build failed — see $WORK/build-frontend.log"
   (cd "$ROOT" && cargo build -p tack-cli --features embed-spa >"$WORK/build-tack.log" 2>&1) || die "cargo build failed — see $WORK/build-tack.log"
 fi
-BIN="$ROOT/target/debug/tack"
+BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/tack"
 [ -x "$BIN" ] || die "$BIN is missing"
 
 # ── The server ────────────────────────────────────────────────────────────────
 DECISION_TOKEN=docket-prill-decision
+API_TOKEN=docket-prill-api-token
 NO_KEYCHAIN=unix:path=/nonexistent/tack-docket-prill-no-keychain
 say "starting tack serve on :$PORT (work dir $WORK)"
 (
   cd "$WORK/server"
   env PATH="$WORK/bin:$PATH" \
+    HOME="$AGENT_HOME" \
     TACK_PORT="$PORT" \
     TACK_DATABASE_URL="sqlite:$WORK/tack.db?mode=rwc" \
     TACK_STORAGE_DIR="$WORK/storage" \
     TACK_LOG_LEVEL=info \
     TACK_EXECUTION_DECISION_TOKEN="$DECISION_TOKEN" \
+    TACK_API_TOKEN="$API_TOKEN" \
     DBUS_SESSION_BUS_ADDRESS="$NO_KEYCHAIN" \
     "$BIN" serve >"$WORK/server.log" 2>&1 &
   echo $! >"$WORK/server.pid"
@@ -117,14 +135,10 @@ for _ in $(seq 1 120); do
 done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || die "the server never answered — see $WORK/server.log"
 
-# ── The runner's configuration: prill as verifier, docket through the local endpoint ──
+# ── The runner's configuration: prill as verifier; docket brings its own model ──
 RUNNER_PATH="$WORK/bin:$SYSTEM_PATH"
 cat > "$WORK/runner.toml" <<EOF
 # Written by scripts/docket-prill-e2e.sh for one run of the docket + prill e2e.
-[provider.openai_compatible]
-enabled = true
-base_url = "$MODEL_BASE_URL"
-
 [verify]
 enabled = true
 kind = "prill"
@@ -146,8 +160,9 @@ env E2E_API_ORIGIN="http://127.0.0.1:$PORT" \
   DOCKET_PRILL_RUNNER_CONFIG="$WORK/runner.toml" \
   DOCKET_PRILL_RUNNER_STATE="$WORK/runner-state" \
   DOCKET_PRILL_RUNNER_PATH="$RUNNER_PATH" \
-  DOCKET_PRILL_MODEL_BASE_URL="$MODEL_BASE_URL" \
+  DOCKET_PRILL_HOME="$AGENT_HOME" \
   DOCKET_PRILL_DECISION_TOKEN="$DECISION_TOKEN" \
+  DOCKET_PRILL_API_TOKEN="$API_TOKEN" \
   DOCKET_PRILL_NO_KEYCHAIN="$NO_KEYCHAIN" \
   npx playwright test e2e/docket-prill.spec.ts --config playwright.docket-prill.config.ts --project=chromium --workers=1 "$@"
 STATUS=$?

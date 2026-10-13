@@ -54,6 +54,8 @@ zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
+# The fake model endpoint the real docket is pointed at, through its own setup.
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

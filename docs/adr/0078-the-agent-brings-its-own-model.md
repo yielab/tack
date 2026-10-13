@@ -93,4 +93,4 @@ Each was fetched (HTTP 200) on 2026-10-13; the plan re-checks them before the UI
 | Claude Code | https://code.claude.com/docs/en/model-config |
 | Codex | https://developers.openai.com/codex/models |
 | opencode | https://opencode.ai/docs/models/ |
-| docket | its own models page once 0.2.0-beta.5 ships; until then https://github.com/yielab/docket |
+| docket | https://github.com/yielab/docket/blob/develop/docs/CONFIGURATION.md#31-choose-which-model-each-agent-runs-on (models), https://github.com/yielab/docket/blob/develop/docs/MODEL-GATEWAYS.md (sign-in), fetched 2026-10-13 |

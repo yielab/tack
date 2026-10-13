@@ -169,13 +169,18 @@ cp "$SHIMS/claude" "$SHIMS/codex"
 chmod +x "$SHIMS/codex"
 
 # docket's adapter reads only a terminal NDJSON result line, not the exit code (crates/tack-runner/src/harness/docket.rs), so its shim prints one.
+# Without DOCKET_HOME it answers the contract probe the way docket 0.2.0-beta.5 does; `setup` is the probe's readiness check, not a run.
 cat > "$SHIMS/docket" <<SHIM
 #!/bin/sh
 case "\${1:-}" in
-  --version|-v) echo "docket 0.2.0b1"; exit 0 ;;
+  --version|-v) echo "docket 0.2.0b5"; exit 0 ;;
+  setup) exit 1 ;;
 esac
-cat >/dev/null
-printf '{"token":"smoke-docket-run","status":"ok","stop_reason":"","error":"","blocked":null,"model":{"served":"docket/smoke-model"},"usage":{"input_tokens":1,"output_tokens":1}}\n'
+if [ -z "\${DOCKET_HOME:-}" ]; then
+  printf '{"v":"1.2.0","token":"","status":"refused","error":"DOCKET_HOME is not set; harness mode never runs against the default home","model":{"requested":"","served":"","source":""},"usage":{"input_tokens":0,"output_tokens":0}}\n'
+  exit 2
+fi
+printf '{"v":"1.2.0","token":"smoke-docket-run","status":"ok","stop_reason":"","error":"","blocked":null,"model":{"requested":"local/smoke-model","served":"docket/smoke-model","source":"setup default"},"usage":{"input_tokens":1,"output_tokens":1},"files":[]}\n'
 exit 0
 SHIM
 chmod +x "$SHIMS/docket"
@@ -314,11 +319,10 @@ fi
 step 8 "The same neutral request through each harness kind, per kind, never rounded up"
 # opencode (the fourth harness kind) needs an npm install and network per attempt, so it has no small shim here.
 printf '   %-12s not covered in fake mode — installs an npm package per attempt and needs network; no small shim can stand in for it\n' "opencode:"
-# docket runs only from its contract 1.2 (docket 0.2.0-beta.5), which reads its own setup; the shim here predates it.
-printf '   %-12s not covered in fake mode — needs docket 0.2.0-beta.5, which reads its own setup\n' "docket:"
-declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=sonnet )
-declare -A S8_BINARY=( [codex]=codex [claude-code]=claude )
-for kind in codex claude-code; do
+# docket names no model: it runs on its own setup's default.
+declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=sonnet [docket]="" )
+declare -A S8_BINARY=( [codex]=codex [claude-code]=claude [docket]=docket )
+for kind in codex claude-code docket; do
   bin="${S8_BINARY[$kind]}"
   if [ "$LIVE" = 1 ] && ! command -v "$bin" >/dev/null 2>&1; then
     printf '   %-12s ABSENT — not installed, not claimed, not counted\n' "$kind:"

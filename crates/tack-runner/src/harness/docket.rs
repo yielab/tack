@@ -23,37 +23,40 @@ use crate::harness::{
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "docket",
     program: "docket",
-    model_selection: ModelSelection::Explicit(
-        "docket exec refuses to run without --model, so a request naming no model is \
-         rejected before spawn",
-    ),
+    // A request naming no model runs on docket's own setup default; the
+    // readiness check says when there is none.
+    model_selection: ModelSelection::Optional,
     inherited_env: &["PATH"],
     probe_notes: &[],
-    credential_note: "docket signs in with its own login; Tack holds no model credential.",
+    credential_note: "docket reads its provider and credential from its own setup (docket \
+                      setup); Tack holds no model credential.",
     reports_process_groups: true,
     reports_progress: true,
     sandbox_binds: &[],
     readiness: Some(readiness::check),
-    models_docs: "https://github.com/yielab/docket",
-    sign_in_docs: "https://github.com/yielab/docket",
+    models_docs: "https://github.com/yielab/docket/blob/develop/docs/CONFIGURATION.md#31-choose-which-model-each-agent-runs-on",
+    sign_in_docs: "https://github.com/yielab/docket/blob/develop/docs/MODEL-GATEWAYS.md",
 };
 
-/// The variable docket's own `run` command refuses to start without, unless
-/// the request's own `environment` already names it (`DOCKET_HOME` and
-/// `--workspace` are supplied unconditionally by this grammar, so only the
-/// endpoint is ever missing).
-const BASE_URL_ENV: &str = "DOCKET_LLM_BASE_URL";
+/// The files of docket's setup home a contract 1.2 run reads, and nothing
+/// else there: its provider catalog, its model registry and its credential
+/// store (harness-mode spec, "Contract 1.2" section 2).
+const SETUP_FILES: [&str; 3] = [
+    "docket-providers.json",
+    "docket-models.json",
+    "secrets.json",
+];
 
 mod probe;
 mod readiness;
 
-pub use probe::{Contract, DocketFeatures};
+pub use probe::DocketFeatures;
 
 pub struct DocketGrammar;
 
 /// What the located binary can do, measured the first time anything asks
 /// (registration reads `capabilities` at boot) and never again. Nothing
-/// located is the all-false value, which is exactly the 1.0 behaviour.
+/// located is a docket that does not speak the contract, which never runs.
 fn features() -> &'static DocketFeatures {
     static FEATURES: OnceLock<DocketFeatures> = OnceLock::new();
     FEATURES.get_or_init(|| {
@@ -97,20 +100,21 @@ struct ResultLine {
 }
 
 /// A path docket reports a run wrote (`op` is `write`, `edit`, `delete` or
-/// `unknown`); only present on a 1.1 line.
+/// `unknown`).
 #[derive(serde::Deserialize, serde::Serialize)]
 struct ResultFile {
     path: String,
     op: String,
 }
 
-/// The ceilings docket echoes back; only present on a 1.1 line.
+/// The ceilings docket echoes back.
 #[derive(serde::Deserialize)]
 struct ResultLimits {
     #[serde(rename = "maxTokens")]
     max_tokens: Option<u64>,
 }
 
+/// `served` is what the endpoint's response named.
 #[derive(serde::Deserialize)]
 struct ResultModel {
     served: String,
@@ -122,7 +126,6 @@ struct ResultUsage {
     output_tokens: u64,
 }
 
-/// One progress line, as far as the process lifecycle is concerned: a 1.1
 /// One of docket's progress events: a `bash` call's process group when it
 /// starts and when it is gone
 /// (`fixtures/docket/contract-1.1/cancelled-process.ndjson`), and the tool
@@ -293,127 +296,136 @@ fn policy_document(policy: &PermissionPolicy) -> Result<Option<String>, HarnessE
     )))
 }
 
-/// `permission_policy.tools` and `.network` become a `--policy` file, and
-/// `budgets.tokens` a `--max-tokens`, each only when its probe is true; a
-/// docket without the probe is passed nothing and `capabilities` says so.
-fn invocation(features: &DocketFeatures, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+/// The setup home docket would read on its own: `~/.docket` of the
+/// runner's user.
+fn person_setup_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".docket"))
+}
+
+/// Every string in docket's credential store, to strip from what the run
+/// prints. The store maps a credential's name to its value; a name kept in
+/// the keyring has an empty one.
+fn stored_credentials(secrets: &std::path::Path) -> Vec<String> {
+    fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) if !text.trim().is_empty() => out.push(text.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+            serde_json::Value::Object(map) => map.values().for_each(|item| strings(item, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(value) = std::fs::read(secrets)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    {
+        strings(&value, &mut out);
+    }
+    out
+}
+
+/// One `docket exec --contract 1.2` run. docket reaches its model through
+/// its own setup: `DOCKET_SETUP_HOME` is a directory in the scratch that
+/// holds exactly [`SETUP_FILES`] of `setup_home`, each shared read-only.
+/// `--model` is passed only when the request names one; otherwise docket's
+/// setup default for the role answers. `permission_policy.tools` and
+/// `.network` become a `--policy` file, and `budgets.tokens` a
+/// `--max-tokens`.
+fn invocation(
+    run: &RunContext<'_>,
+    setup_home: Option<&std::path::Path>,
+) -> Result<Invocation, HarnessError> {
     let request = &run.spec.work.request;
-    if !request.environment.contains_key(BASE_URL_ENV) {
+    if let Some(recipe) = request
+        .resolved_agent_profile
+        .tool_policy
+        .get("docket")
+        .and_then(|v| v.get("recipe"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|recipe| !recipe.is_empty())
+    {
         return Err(rejected(format!(
-            "the request's own environment names no {BASE_URL_ENV}; docket refuses to run \
-             without one"
+            "the profile names docket recipe {recipe:?}, but docket runs a recipe only under \
+             harness contract 1.1, which needs a model endpoint Tack does not hold"
         )));
     }
 
-    let model_args: Vec<String> = request
-        .requested_model
-        .iter()
-        .flat_map(|model| ["--model".to_owned(), model.clone()])
-        .collect();
     let workspace_root = &run.spec.workspace.path;
-    let docket_home = run.scratch.join("docket-home");
-
     let mut env = BTreeMap::new();
-    env.insert("DOCKET_HOME".to_owned(), docket_home.display().to_string());
+    env.insert(
+        "DOCKET_HOME".to_owned(),
+        run.scratch.join("docket-home").display().to_string(),
+    );
 
-    // On 1.1 the task is a file under the scratch directory, so stdin
-    // carries nothing; on 1.0 it is read from stdin, as ADR 0066 measured.
-    let (contract_args, task_file) = match features.contract {
-        Contract::V1_0 => (Vec::new(), "/dev/stdin".to_owned()),
-        Contract::V1_1 => {
-            let path = run.scratch.join("task.md");
-            std::fs::write(&path, &request.resolved_agent_profile.instructions)
-                .map_err(|_| rejected("the task file could not be written".to_owned()))?;
-            (
-                vec!["--contract".to_owned(), "1.1".to_owned()],
-                path.display().to_string(),
-            )
-        }
-    };
+    let setup_dir = run.scratch.join("docket-setup");
+    std::fs::create_dir_all(&setup_dir)
+        .map_err(|_| rejected("docket's setup directory could not be made".to_owned()))?;
+    env.insert(
+        "DOCKET_SETUP_HOME".to_owned(),
+        setup_dir.display().to_string(),
+    );
+    let read_only_files: Vec<_> = setup_home
+        .into_iter()
+        .flat_map(|home| SETUP_FILES.map(|name| (home.join(name), setup_dir.join(name))))
+        .filter(|(source, _)| source.is_file())
+        .collect();
+    let secrets = setup_home
+        .map(|home| stored_credentials(&home.join("secrets.json")))
+        .unwrap_or_default();
 
-    // An `ask` request on a docket that offers `--answers` pauses each gated
-    // call on stdin (`fixtures/docket/contract-1.1/asked-answered.ndjson`);
-    // any other request keeps the refusal posture.
-    let ask =
-        features.answers && matches!(request.permission_policy.approvals, Some(Approvals::Ask));
-    let answer_args = if ask {
-        vec!["--answers".to_owned(), "stdin".to_owned()]
-    } else {
-        Vec::new()
-    };
+    let task_file = run.scratch.join("task.md");
+    std::fs::write(&task_file, &request.resolved_agent_profile.instructions)
+        .map_err(|_| rejected("the task file could not be written".to_owned()))?;
 
-    // docket refuses `--recipe` together with `--agent-id` or `--max-tokens`
-    // (a recipe's turns are dispatched by its pod), so a recipe run drops both.
-    let recipe = features
-        .recipe
-        .then(|| {
-            request
-                .resolved_agent_profile
-                .tool_policy
-                .get("docket")
-                .and_then(|v| v.get("recipe"))
-                .and_then(serde_json::Value::as_str)
-                .filter(|recipe| !recipe.is_empty())
-        })
-        .flatten();
-
-    let mut limit_args = Vec::new();
-    if features.token_file {
-        limit_args.push("--token-file".to_owned());
-        limit_args.push(run.scratch.join("token.json").display().to_string());
+    let mut args: Vec<String> = [
+        "exec",
+        "--contract",
+        probe::CONTRACT,
+        "--workspace",
+        &workspace_root.display().to_string(),
+        "--task-file",
+        &task_file.display().to_string(),
+        "--agent-id",
+        run.spec.work.lease.attempt_id.as_str(),
+        "--timeout",
+        &request.timeout_seconds.to_string(),
+        "--token-file",
+        &run.scratch.join("token.json").display().to_string(),
+    ]
+    .map(str::to_owned)
+    .into();
+    if let Some(model) = &request.requested_model {
+        args.extend(["--model".to_owned(), model.clone()]);
     }
-    if features.max_tokens
-        && recipe.is_none()
-        && let Some(tokens) = request
-            .budgets
-            .get("tokens")
-            .and_then(serde_json::Value::as_u64)
-            .filter(|tokens| *tokens > 0)
-    {
-        limit_args.push("--max-tokens".to_owned());
-        limit_args.push(tokens.to_string());
+
+    // An `ask` request pauses each gated call on stdin
+    // (`fixtures/docket/contract-1.1/asked-answered.ndjson`); any other
+    // request keeps docket's refusal posture.
+    let ask = matches!(request.permission_policy.approvals, Some(Approvals::Ask));
+    if ask {
+        args.extend(["--answers".to_owned(), "stdin".to_owned()]);
     }
-    if features.policy
-        && let Some(document) = policy_document(&request.permission_policy)?
+    if let Some(tokens) = request
+        .budgets
+        .get("tokens")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|tokens| *tokens > 0)
     {
+        args.extend(["--max-tokens".to_owned(), tokens.to_string()]);
+    }
+    if let Some(document) = policy_document(&request.permission_policy)? {
         let path = run.scratch.join("policy.yaml");
         std::fs::write(&path, document)
             .map_err(|_| rejected("the policy file could not be written".to_owned()))?;
-        limit_args.push("--policy".to_owned());
-        limit_args.push(path.display().to_string());
-    }
-    if let Some(recipe) = recipe {
-        limit_args.push("--recipe".to_owned());
-        limit_args.push(recipe.to_owned());
+        args.extend(["--policy".to_owned(), path.display().to_string()]);
     }
 
-    let agent_id = [
-        "--agent-id".to_owned(),
-        run.spec.work.lease.attempt_id.as_str().to_owned(),
-    ];
     Ok(Invocation {
-        args: [
-            "exec",
-            "--workspace",
-            &workspace_root.display().to_string(),
-            "--task-file",
-            &task_file,
-        ]
-        .map(str::to_owned)
-        .into_iter()
-        .chain(model_args)
-        .chain(if recipe.is_some() {
-            Vec::new()
-        } else {
-            agent_id.to_vec()
-        })
-        .chain(["--timeout".to_owned(), request.timeout_seconds.to_string()])
-        .chain(contract_args)
-        .chain(answer_args)
-        .chain(limit_args)
-        .collect(),
+        args,
         env,
         stdin_stays_open: ask,
+        secrets,
+        read_only_files,
         ..Default::default()
     })
 }
@@ -423,16 +435,18 @@ impl HarnessGrammar for DocketGrammar {
         &DESCRIPTOR
     }
 
-    /// See the free `invocation`: limits and policy only where probed.
-    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
-        invocation(features(), run)
+    fn unsupported(&self) -> Option<String> {
+        features().unsupported()
     }
 
-    fn prompt(&self, prompt: String, _stdin_stays_open: bool) -> Vec<u8> {
-        match features().contract {
-            Contract::V1_0 => prompt.into_bytes(),
-            Contract::V1_1 => Vec::new(),
-        }
+    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        invocation(run, person_setup_home().as_deref())
+    }
+
+    /// The task is a file under the scratch directory, so stdin carries
+    /// only answers.
+    fn prompt(&self, _prompt: String, _stdin_stays_open: bool) -> Vec<u8> {
+        Vec::new()
     }
 
     fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
@@ -464,6 +478,8 @@ impl HarnessGrammar for DocketGrammar {
                 "task": parsed.task,
             }),
             harness_version: None,
+            // What the endpoint named, never `model.requested`: a run that
+            // stopped before any reply had no model answer it.
             observed_model: (!parsed.model.served.is_empty()).then_some(parsed.model.served),
             tokens_in: Some(parsed.usage.input_tokens),
             tokens_out: Some(parsed.usage.output_tokens),
@@ -509,7 +525,8 @@ impl HarnessGrammar for DocketGrammar {
         }
     }
 
-    /// One `AnswerLine` (`fixtures/docket/contract-1.1/`): `accept`
+    /// One `AnswerLine` (`fixtures/docket/contract-1.1/`, stamped with the
+    /// contract this grammar speaks, which docket checks): `accept`
     /// releases the call, anything else, including an option this grammar
     /// never offered, is `decline`.
     fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
@@ -519,7 +536,7 @@ impl HarnessGrammar for DocketGrammar {
             "decline"
         };
         let payload = serde_json::json!({
-            "v": "1.1.0",
+            "v": format!("{}.0", probe::CONTRACT),
             "token": question.metadata.get("token"),
             "answer": {
                 "approvalToken": question.vendor_id,
@@ -633,113 +650,63 @@ fn parse_action<'a>(tool: &str, action: &'a str) -> Option<(&'a str, String)> {
     Some((reason, call))
 }
 
-/// `base`, then `note` when the binary offers what the note describes.
-/// Nothing offered is `base` unchanged, so an unprobed docket reads as it
-/// always did.
-fn derived(base: &str, offered: bool, note: &str) -> String {
-    if offered {
-        format!("{base}; {note}")
-    } else {
-        base.to_owned()
-    }
-}
-
+/// What docket offers under contract 1.2. Every option this grammar passes
+/// is part of that contract, so only the probe's version is added.
 fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
-    let negotiated = if features.version.is_empty() {
-        String::new()
-    } else {
+    let negotiated = if features.speaks_contract && !features.version.is_empty() {
         format!(
-            "; negotiated contract {} against docket {}",
-            features.contract.as_str(),
+            "; contract {} against docket {}",
+            probe::CONTRACT,
             features.version
         )
+    } else {
+        String::new()
     };
     FeatureCapabilities {
-        cancel: if features.contract == Contract::V1_1 {
-            capability(
-                CapabilitySupport::Supported,
-                &format!(
-                    "docket stops cooperatively on SIGTERM and reports a cancelled result; this \
-                     docket also reports each process group its bash calls start and end, so a \
-                     cancellation stops the groups still live and says whether they went{negotiated}"
-                ),
-            )
-        } else {
-            capability(
-                CapabilitySupport::Advisory,
-                "docket stops cooperatively on SIGTERM and reports a cancelled result, but this \
-                 docket does not report the process groups its tools start, so a tool's process \
-                 group that outlives the grace period cannot be confirmed stopped",
-            )
-        },
+        cancel: capability(
+            CapabilitySupport::Supported,
+            &format!(
+                "docket stops cooperatively on SIGTERM and reports a cancelled result; it also \
+                 reports each process group its bash calls start and end, so a cancellation \
+                 stops the groups still live and says whether they went{negotiated}"
+            ),
+        ),
         resume: capability(
             CapabilitySupport::Unsupported,
             "harness mode is one synchronous run to completion; no reattachment interface \
              is documented or observed",
         ),
-        decisions: if features.answers {
-            capability(
-                CapabilitySupport::Supported,
-                &format!(
-                    "this docket accepts --answers, so a tool call its policy gates pauses the run on an approval_requested event and waits for one answer line on stdin (accept or decline), as measured in \
-                     fixtures/docket/contract-1.1/asked-answered.ndjson{negotiated}"
-                ),
-            )
-        } else {
-            capability(
-                CapabilitySupport::Unsupported,
-                &format!(
-                    "harness mode's approval posture is fixed to non-interactive refusal: a \
-                     tool call that would otherwise wait for a human is denied immediately as \
-                     `blocked` rather than pausing the run to ask one{negotiated}"
-                ),
-            )
-        },
-        // The result's `files` is populated by the same docket card that
-        // adds `--token-file`, so that flag's probe is the one that says so.
-        artifacts: if features.token_file {
-            capability(
-                CapabilitySupport::Supported,
-                &format!(
-                    "this docket's 1.1 result lists the files a run wrote, kept in the terminal \
-                     reason (paths under .tack-runner/ are dropped), beside the staged \
-                     stdout/stderr log{negotiated}"
-                ),
-            )
-        } else {
-            capability(
-                CapabilitySupport::Unsupported,
-                "this docket does not report the files a run wrote, so only the captured \
-                 stdout/stderr is staged as a log",
-            )
-        },
-        usage: capability(
-            CapabilitySupport::Advisory,
-            &derived(
-                "the result line's usage.input_tokens/output_tokens are real measurements, but \
-                 cost_usd is always null on the installed version, so cost is never reported",
-                features.max_tokens,
-                "this docket accepts --max-tokens, which the adapter passes from budgets.tokens",
+        decisions: capability(
+            CapabilitySupport::Supported,
+            &format!(
+                "with --answers, a tool call docket's policy gates pauses the run on an \
+                 approval_requested event and waits for one answer line on stdin (accept or \
+                 decline), as measured in fixtures/docket/contract-1.1/asked-answered.ndjson\
+                 {negotiated}"
             ),
         ),
-        additional: if features.policy {
-            policy_capability(
-                CapabilitySupport::Supported,
-                &format!(
-                    "this docket accepts --policy: the request's tool list and network flag are \
-                     passed as one kind: policy document blocking every docket tool they do not \
-                     allow, and a request that document cannot express is refused before spawn{negotiated}"
-                ),
-            )
-        } else {
-            policy_capability(
-                CapabilitySupport::Unsupported,
-                &format!(
-                    "this docket does not accept --policy, so the request's tool list and \
-                     network flag are not passed to it{negotiated}"
-                ),
-            )
-        },
+        artifacts: capability(
+            CapabilitySupport::Supported,
+            &format!(
+                "docket's result lists the files a run wrote, kept in the terminal reason \
+                 (paths under .tack-runner/ are dropped), beside the staged stdout/stderr \
+                 log{negotiated}"
+            ),
+        ),
+        usage: capability(
+            CapabilitySupport::Advisory,
+            "the result line's usage.input_tokens/output_tokens are real measurements, and \
+             budgets.tokens is passed as --max-tokens, but cost_usd is always null, so cost \
+             is never reported",
+        ),
+        additional: policy_capability(
+            CapabilitySupport::Supported,
+            &format!(
+                "the request's tool list and network flag are passed as one kind: policy \
+                 document blocking every docket tool they do not allow, and a request that \
+                 document cannot express is refused before spawn{negotiated}"
+            ),
+        ),
     }
 }
 

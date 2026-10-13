@@ -1,0 +1,6 @@
+captured
+docket 0.2.0b5 (scratch venv install of rack-cli branch harness-contract-1.2 @ 67665c58, which contains 4aa51b4e "harness contract 1.2")
+
+`env -i HOME=<scratch> PATH=/usr/bin:/bin docket setup harness --json` over a setup home with one global provider `local` (auth none, one model `local-model`) and a model registry whose `default` is `local/local-model`. Ready.
+The scratch HOME is rewritten to `/capture`. Offline and secret-free by contract (section 5);
+exit 0 when ready, 1 otherwise, the document printed either way.

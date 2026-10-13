@@ -1,7 +1,7 @@
-//! What the located `docket` binary can do, measured once. The probes are
-//! all `exec` invocations that docket refuses before any network
-//! call, because `DOCKET_HOME` is deliberately left unset: zero spend, no
-//! model endpoint, no state written. Why these probes and not others is in
+//! What the located `docket` binary can do, measured once. The probe is an
+//! `exec` invocation that docket refuses before any network call, because
+//! `DOCKET_HOME` is deliberately left unset: zero spend, no model endpoint,
+//! no state written. Why this probe and not another is in
 //! `fixtures/docket/README.md`.
 
 use std::path::Path;
@@ -12,112 +12,85 @@ use std::time::{Duration, Instant};
 /// a binary that is not docket at all.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The harness contract this docket speaks when asked for the newest one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Contract {
-    #[default]
-    V1_0,
-    V1_1,
-}
+/// The harness contract this grammar writes, and the version of docket that
+/// first speaks it.
+pub const CONTRACT: &str = "1.2";
+pub const FIRST_VERSION: &str = "0.2.0-beta.5";
 
-impl Contract {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::V1_0 => "1.0",
-            Self::V1_1 => "1.1",
-        }
-    }
-}
-
-/// The default is "nothing negotiated": contract 1.0 and no optional flag,
-/// which is exactly what an unprobed or unlocatable docket is treated as.
+/// The default is what an unprobed or unlocatable docket is treated as: one
+/// that does not speak the contract.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocketFeatures {
-    pub contract: Contract,
-    pub answers: bool,
-    pub token_file: bool,
-    pub max_tokens: bool,
-    pub policy: bool,
-    pub recipe: bool,
+    /// docket answered the contract 1.2 probe with a 1.2 refusal.
+    pub speaks_contract: bool,
     /// What `docket --version` printed, or empty when it printed nothing
     /// recognizable. Reported, never compared.
     pub version: String,
 }
 
 impl DocketFeatures {
-    /// Runs `program` a handful of times (in parallel) and reads what it
-    /// refuses. The flags are only probed on a docket that speaks 1.1,
-    /// since every one of them is a 1.1 flag.
+    /// A docket that speaks contract 1.2, for tests and for a probe that
+    /// found one.
+    pub fn speaking(version: &str) -> Self {
+        Self {
+            speaks_contract: true,
+            version: version.to_owned(),
+        }
+    }
+
+    /// Runs `program --version` and the contract probe. A docket that
+    /// implements contract 1.2 refuses `--contract 1.2` with no `DOCKET_HOME`
+    /// on a `v: "1.2.0"` line; an older one refuses it on a `1.0.0` line
+    /// whose error begins `--contract must be one of`.
     pub fn probe(program: &Path) -> Self {
         let version = run(program, &["--version"])
             .and_then(|out| {
                 super::super::local_process::parse_version(out.trim()).map(str::to_owned)
             })
             .unwrap_or_default();
-        let speaks_1_1 = refusal(program, &["--contract", "1.1"]).is_some_and(|r| r.v == "1.1.0");
-        if !speaks_1_1 {
-            return Self {
-                version,
-                ..Self::default()
-            };
-        }
-        let flag = |name: &'static str, value: &'static str| {
-            refusal(program, &["--contract", "1.0", name, value])
-                .is_some_and(|r| r.error.contains(name))
-        };
-        let (answers, token_file, max_tokens, policy, recipe) = std::thread::scope(|scope| {
-            let answers = scope.spawn(|| flag("--answers", "stdin"));
-            let token_file = scope.spawn(|| flag("--token-file", "/x"));
-            let max_tokens = scope.spawn(|| flag("--max-tokens", "1"));
-            let policy = scope.spawn(|| flag("--policy", "/x"));
-            let recipe = scope.spawn(|| flag("--recipe", "x"));
-            let join =
-                |handle: std::thread::ScopedJoinHandle<'_, bool>| handle.join().unwrap_or(false);
-            (
-                join(answers),
-                join(token_file),
-                join(max_tokens),
-                join(policy),
-                join(recipe),
-            )
-        });
         Self {
-            contract: Contract::V1_1,
-            answers,
-            token_file,
-            max_tokens,
-            policy,
-            recipe,
+            speaks_contract: speaks(run(
+                program,
+                &[
+                    "exec",
+                    "--workspace",
+                    ".",
+                    "--task",
+                    "probe",
+                    "--contract",
+                    CONTRACT,
+                ],
+            )),
             version,
         }
     }
+
+    /// Why this docket cannot run here, or `None`.
+    pub fn unsupported(&self) -> Option<String> {
+        (!self.speaks_contract).then(|| {
+            let found = if self.version.is_empty() {
+                String::new()
+            } else {
+                format!("; this one is {}", self.version)
+            };
+            format!(
+                "needs docket {FIRST_VERSION} or later, which reads its own setup \
+                 (harness contract {CONTRACT}){found}"
+            )
+        })
+    }
 }
 
-struct Refusal {
-    v: String,
-    error: String,
-}
-
-/// `exec` with no `DOCKET_HOME`, plus `extra`: docket answers with
-/// one `refused` result line (exit 2) after reading its flags and before
-/// doing anything else. `None` when the output was not such a line.
-fn refusal(program: &Path, extra: &[&str]) -> Option<Refusal> {
-    let mut args = vec![
-        "exec",
-        "--workspace",
-        ".",
-        "--task",
-        "probe",
-        "--model",
-        "probe/probe",
-    ];
-    args.extend_from_slice(extra);
-    let stdout = run(program, &args)?;
-    let line = stdout.lines().rev().find(|line| line.starts_with('{'))?;
-    let result: serde_json::Value = serde_json::from_str(line).ok()?;
-    (result["status"] == "refused").then(|| Refusal {
-        v: result["v"].as_str().unwrap_or_default().to_owned(),
-        error: result["error"].as_str().unwrap_or_default().to_owned(),
+/// Whether `stdout` ends with docket's refused result line for contract 1.2.
+pub(super) fn speaks(stdout: Option<String>) -> bool {
+    let Some(stdout) = stdout else {
+        return false;
+    };
+    let Some(line) = stdout.lines().rev().find(|line| line.starts_with('{')) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(line).is_ok_and(|result| {
+        result["status"] == "refused" && result["v"] == format!("{CONTRACT}.0").as_str()
     })
 }
 

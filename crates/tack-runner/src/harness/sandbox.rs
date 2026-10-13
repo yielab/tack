@@ -34,6 +34,15 @@ impl SandboxKind {
     }
 }
 
+/// Files of the person's a run sees, each `(source, destination)` with the
+/// destination in the scratch home: some it writes in place, some it only
+/// reads.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SharedFiles<'a> {
+    pub writable: &'a [(PathBuf, PathBuf)],
+    pub read_only: &'a [(PathBuf, PathBuf)],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sandbox {
     pub kind: SandboxKind,
@@ -86,8 +95,8 @@ impl Sandbox {
     /// (a harness may keep state there); each of `binds` names a directory
     /// under `$HOME` that is shared as it is, when it exists. A program that
     /// lives outside the system directories is bound read-only. Each of
-    /// `files` is one file shared read-write at the second path, which lies
-    /// in the scratch home.
+    /// `files` is one file shared at the second path, which lies in the
+    /// scratch home.
     pub fn wrap(
         &self,
         program: &Path,
@@ -95,7 +104,7 @@ impl Sandbox {
         workspace: &Path,
         scratch_home: &Path,
         binds: &[&str],
-        files: &[(PathBuf, PathBuf)],
+        files: SharedFiles<'_>,
     ) -> Option<(PathBuf, Vec<String>)> {
         let bwrap = self.bwrap.as_ref()?;
         let mut argv: Vec<String> = Vec::new();
@@ -152,8 +161,11 @@ impl Sandbox {
         // `$HOME` must stay visible on top of the scratch home.
         bind(&mut argv, "--bind", workspace, workspace);
         bind(&mut argv, "--bind", scratch_home, scratch_home);
-        for (source, destination) in files {
+        for (source, destination) in files.writable {
             bind(&mut argv, "--bind", source, destination);
+        }
+        for (source, destination) in files.read_only {
+            bind(&mut argv, "--ro-bind", source, destination);
         }
         let canonical = program
             .canonicalize()

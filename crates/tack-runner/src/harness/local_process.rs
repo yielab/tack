@@ -214,6 +214,9 @@ pub struct Invocation {
     /// and writes in place: bound into the sandbox at the destination, or
     /// linked there when there is none.
     pub shared_files: Vec<(PathBuf, PathBuf)>,
+    /// Files of the person's the run only reads, shared the same way but
+    /// bound read-only.
+    pub read_only_files: Vec<(PathBuf, PathBuf)>,
 }
 
 /// What a finished process's output says happened.
@@ -289,6 +292,13 @@ impl RunReport {
 /// The per-CLI seam.
 pub trait HarnessGrammar: Send + Sync + 'static {
     fn descriptor(&self) -> &'static HarnessDescriptor;
+
+    /// Why the installed CLI cannot run here at all (a version too old to
+    /// speak the protocol this grammar writes), or `None`. Reported as the
+    /// probe's error and refused before spawn, like a missing sandbox.
+    fn unsupported(&self) -> Option<String> {
+        None
+    }
 
     /// The per-feature support this CLI honestly provides.
     fn capabilities(&self) -> FeatureCapabilities;
@@ -578,7 +588,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &scratch,
             &scratch,
             descriptor.sandbox_binds,
-            &[],
+            sandbox::SharedFiles::default(),
         );
         let decided = match wrapped {
             None => machine,
@@ -641,7 +651,11 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     }
 
     fn check_request(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
-        if let Some(reason) = self.unconfined_and_cannot_ask() {
+        if let Some(reason) = self
+            .grammar
+            .unsupported()
+            .or_else(|| self.unconfined_and_cannot_ask())
+        {
             return Err(self.reject(reason));
         }
         let descriptor = self.grammar.descriptor();
@@ -753,7 +767,13 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             Some(subdirectory) if !subdirectory.is_empty() => workspace_root.join(subdirectory),
             _ => workspace_root.clone(),
         };
-        for (_, destination) in &invocation.shared_files {
+        let shared = || {
+            invocation
+                .shared_files
+                .iter()
+                .chain(&invocation.read_only_files)
+        };
+        for (_, destination) in shared() {
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent).map_err(|_| HarnessError::Process)?;
             }
@@ -764,12 +784,15 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             &workspace_root,
             &scratch,
             self.grammar.descriptor().sandbox_binds,
-            &invocation.shared_files,
+            sandbox::SharedFiles {
+                writable: &invocation.shared_files,
+                read_only: &invocation.read_only_files,
+            },
         ) {
             Some(wrapped) => wrapped,
             None => {
                 #[cfg(unix)]
-                for (source, destination) in &invocation.shared_files {
+                for (source, destination) in shared() {
                     std::os::unix::fs::symlink(source, destination)
                         .map_err(|_| HarnessError::Process)?;
                 }
@@ -1128,7 +1151,11 @@ where
         // probe would, so nothing schedules it and every page shows the reason.
         let probe_error = probe_error.or_else(|| {
             (!installed_version.is_empty())
-                .then(|| self.unconfined_and_cannot_ask())
+                .then(|| {
+                    self.grammar
+                        .unsupported()
+                        .or_else(|| self.unconfined_and_cannot_ask())
+                })
                 .flatten()
         });
         if !installed_version.is_empty() {

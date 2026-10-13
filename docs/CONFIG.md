@@ -130,7 +130,7 @@ enroll` call, no token to copy anywhere.
   | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
   | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
   | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch `HOME`, with the `provider`, `model` and `small_model` keys copied from `opencode debug config`. Its MCP servers, plugins and permissions do not reach the run |
-  | docket | `docket setup` ([docket](https://github.com/yielab/docket)) | docket's own setup | What docket's setup report names, read-only. Needs docket 0.2.0-beta.5 or later; an older docket does not run |
+  | docket | `docket setup` ([docket](https://github.com/yielab/docket)) | `~/.docket` | `docket-providers.json`, `docket-models.json` and `secrets.json` of `~/.docket`, read-only; nothing else there. A key kept in the OS keyring is not reachable inside the sandbox: use docket's file backend. Needs docket 0.2.0-beta.5 or later; an older docket does not run |
 
   The runner forwards no new environment variables into a run. A key that lives only in a
   shell variable does not reach an agent: use the agent's own login or config file.

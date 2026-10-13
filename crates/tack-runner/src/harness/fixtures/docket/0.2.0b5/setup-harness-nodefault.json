@@ -1,0 +1,183 @@
+{
+  "v": "1.2.0",
+  "setup_home": "/capture/.docket",
+  "endpoint_override": false,
+  "ready": false,
+  "reason": "no model is set up for role 'implementer' in /capture/.docket; run 'docket setup model set implementer PROVIDER/ID' (or 'docket setup provider add <name>'), or pass --model",
+  "role": "implementer",
+  "default_model": null,
+  "default_models": {
+    "lead": null,
+    "implementer": null,
+    "reviewer": null,
+    "tester": null,
+    "researcher": null,
+    "analyst": null,
+    "writer": null,
+    "critic": null,
+    "operator": null,
+    "monitor": null
+  },
+  "models": [
+    {
+      "model": "local/local-model",
+      "provider": "local"
+    }
+  ],
+  "providers": [
+    {
+      "name": "ai-gateway",
+      "scope": "built-in",
+      "base_url": "https://ai-gateway.vercel.sh/v1",
+      "credential": {
+        "needed": true,
+        "name": "AI_GATEWAY_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "anthropic",
+      "scope": "built-in",
+      "base_url": "https://api.anthropic.com/v1",
+      "credential": {
+        "needed": true,
+        "name": "ANTHROPIC_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "cerebras",
+      "scope": "built-in",
+      "base_url": "https://api.cerebras.ai/v1",
+      "credential": {
+        "needed": true,
+        "name": "CEREBRAS_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "deepseek",
+      "scope": "built-in",
+      "base_url": "https://api.deepseek.com/v1",
+      "credential": {
+        "needed": true,
+        "name": "DEEPSEEK_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "google",
+      "scope": "built-in",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "credential": {
+        "needed": true,
+        "name": "GOOGLE_AI_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "groq",
+      "scope": "built-in",
+      "base_url": "https://api.groq.com/openai/v1",
+      "credential": {
+        "needed": true,
+        "name": "GROQ_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "lmstudio",
+      "scope": "built-in",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "credential": {
+        "needed": false,
+        "name": "",
+        "resolves": true,
+        "source": "none"
+      }
+    },
+    {
+      "name": "local",
+      "scope": "global",
+      "base_url": "http://127.0.0.1:8081/v1",
+      "credential": {
+        "needed": false,
+        "name": "",
+        "resolves": true,
+        "source": "none"
+      }
+    },
+    {
+      "name": "mistral",
+      "scope": "built-in",
+      "base_url": "https://api.mistral.ai/v1",
+      "credential": {
+        "needed": true,
+        "name": "MISTRAL_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "ollama",
+      "scope": "built-in",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "credential": {
+        "needed": false,
+        "name": "",
+        "resolves": true,
+        "source": "none"
+      }
+    },
+    {
+      "name": "openai",
+      "scope": "built-in",
+      "base_url": "https://api.openai.com/v1",
+      "credential": {
+        "needed": true,
+        "name": "OPENAI_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "openrouter",
+      "scope": "built-in",
+      "base_url": "https://openrouter.ai/api/v1",
+      "credential": {
+        "needed": true,
+        "name": "OPENROUTER_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "together",
+      "scope": "built-in",
+      "base_url": "https://api.together.xyz/v1",
+      "credential": {
+        "needed": true,
+        "name": "TOGETHER_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "xai",
+      "scope": "built-in",
+      "base_url": "https://api.x.ai/v1",
+      "credential": {
+        "needed": true,
+        "name": "XAI_API_KEY",
+        "resolves": false,
+        "source": "none"
+      }
+    }
+  ]
+}

@@ -137,7 +137,10 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runner:** opencode runs from its own login: a scratch `HOME` with its own `auth.json` and the
   `provider`, `model` and `small_model` of its config, and nothing else of it (`--pure`)
 - **runner:** docket needs docket 0.2.0-beta.5 or later (contract 1.2), which reads your own
-  `docket setup`; an older docket does not run
+  `docket setup`; an older docket does not run. A run gets the three files of `~/.docket` that
+  hold its providers, models and credentials, read-only, and nothing else there; a request
+  that names no model runs on docket's own default, and the Agents page's Sign in line and the
+  model field's list come from `docket setup harness --json`
 - **runner:** The prill verifier's evidence names the model that generated the work and no
   longer a provider family
 
@@ -152,6 +155,8 @@ Upgrading applies migrations 078–085 on first start — new tables and columns
 - **runs:** The **Through** choice in the run dialog and the Automation tab, the agent-profile
   and fleet default models, and the route that called an agent signed in because a past run of
   its kind had succeeded
+- **runner:** docket recipes: docket runs one only on its contract 1.1, which needs a model
+  endpoint Tack no longer holds, so a profile naming a recipe is refused before the run starts
 
 ### Fixed
 

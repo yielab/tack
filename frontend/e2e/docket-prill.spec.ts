@@ -16,10 +16,12 @@ import { waitForApp } from './helpers';
 // Every screen is captured along the way.
 //
 // Run through `scripts/docket-prill-e2e.sh`, which builds tack from this
-// checkout, starts it on a fresh database, writes the runner configuration
-// (prill as `[verify]`, docket pointed at a local OpenAI-compatible endpoint)
-// and passes everything this spec needs in `DOCKET_PRILL_*` variables. Every
-// run here is a real model call against that endpoint; nothing is staged.
+// checkout, starts it on a fresh database, makes docket's own setup in a scratch
+// HOME (a local OpenAI-compatible endpoint as docket's provider and default
+// model), writes the runner configuration (prill as `[verify]`) and passes
+// everything this spec needs in `DOCKET_PRILL_*` variables. Every run here is a
+// real model call on docket's default model; nothing is staged, and no run names
+// a model.
 //
 // What is asserted, beyond "it finished": the pack came from prill (the
 // artifact of kind `mrp` exists, no `attempt.verify_failed` event), the pack's
@@ -37,7 +39,10 @@ const TACK_BIN = process.env.DOCKET_PRILL_TACK_BIN || path.join(__dirname, '../.
 const RUNNER_CONFIG = process.env.DOCKET_PRILL_RUNNER_CONFIG || '';
 const RUNNER_STATE = process.env.DOCKET_PRILL_RUNNER_STATE || path.join(WORK, 'runner-state');
 const RUNNER_PATH = process.env.DOCKET_PRILL_RUNNER_PATH || process.env.PATH || '';
-const MODEL_BASE_URL = process.env.DOCKET_PRILL_MODEL_BASE_URL || 'http://127.0.0.1:8081';
+const AGENT_HOME = process.env.DOCKET_PRILL_HOME || '';
+// The server's API token: the browser is signed in by the page's own session
+// cookie, and this spec's direct calls carry the token.
+const API_TOKEN = process.env.DOCKET_PRILL_API_TOKEN || '';
 const DECISION_TOKEN = process.env.DOCKET_PRILL_DECISION_TOKEN || 'docket-prill-decision';
 const NO_KEYCHAIN = process.env.DOCKET_PRILL_NO_KEYCHAIN || 'unix:path=/nonexistent/tack-docket-prill-no-keychain';
 
@@ -138,10 +143,15 @@ async function shotFullContent(page: Page, name: string): Promise<void> {
 // The runner's poll loop writes to the same SQLite file often enough that an
 // operator write can lose the single-writer race (`500 database is locked`,
 // marked retryable by the API itself); retried like a real client would.
+function withToken(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (API_TOKEN) headers.set('Authorization', `Bearer ${API_TOKEN}`);
+  return { ...init, headers };
+}
 async function apiFetch(p: string, init?: RequestInit): Promise<unknown> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 6; attempt++) {
-    const res = await fetch(`${API}${p}`, init);
+    const res = await fetch(`${API}${p}`, withToken(init));
     if (res.ok) return res.status === 204 ? null : res.json();
     const text = await res.text();
     if (res.status === 500 && /database is locked/i.test(text) && attempt < 5) {
@@ -176,15 +186,20 @@ interface RunnerRow {
   name: string;
   state: string;
   capability_snapshot?: {
-    harnesses?: Array<{ harness_kind: string }>;
+    harnesses?: Array<{
+      harness_kind: string;
+      default_model?: string | null;
+      sign_in?: { state: string; detail: string } | null;
+    }>;
   };
 }
-/** The first model the configured OpenAI-compatible endpoint serves. */
-async function endpointModel(): Promise<string> {
-  const res = await fetch(`${MODEL_BASE_URL}/v1/models`);
-  const ids = ((await res.json()) as { data?: Array<{ id: string }> }).data ?? [];
-  expect(ids.length, `the endpoint at ${MODEL_BASE_URL} serves a model`).toBeGreaterThan(0);
-  return ids[0].id;
+/** The model docket's own setup runs when a request names none, as our runner reports it. */
+async function docketDefaultModel(): Promise<string> {
+  const mine = (await runners()).find((r) => r.runner_id === runnerId);
+  const docket = mine?.capability_snapshot?.harnesses?.find((h) => h.harness_kind === 'docket');
+  expect(docket?.sign_in?.state, `docket's sign-in: ${docket?.sign_in?.detail}`).toBe('signed_in');
+  expect(docket?.default_model, "docket's setup names a default model").toBeTruthy();
+  return docket!.default_model!;
 }
 async function runners(): Promise<RunnerRow[]> {
   return ((await apiFetch('/runners')) as { data: RunnerRow[] }).data;
@@ -290,7 +305,7 @@ async function artifactsOf(requestId: string, n: number): Promise<ArtifactRow[]>
   return ((await apiFetch(`/executions/${requestId}/attempts/${n}/artifacts`)) as { data: ArtifactRow[] }).data;
 }
 async function artifactJson(requestId: string, n: number, artifactId: string): Promise<unknown> {
-  const res = await fetch(`${API}/executions/${requestId}/attempts/${n}/artifacts/${artifactId}/content`);
+  const res = await fetch(`${API}/executions/${requestId}/attempts/${n}/artifacts/${artifactId}/content`, withToken());
   if (!res.ok) throw new Error(`artifact ${artifactId} -> ${res.status}`);
   return res.json();
 }
@@ -321,7 +336,7 @@ async function addCriteria(itemId: string, key: ItemKey): Promise<void> {
 }
 
 /** Opens the run dialog for an item from the board, fills it the way a person
- *  would (our runner, docket, the project's default model, verify on) and
+ *  would (our runner, docket, docket's own default model, verify on) and
  *  submits. Returns the request id. */
 async function runFromBoard(page: Page, key: ItemKey, options: { ask?: boolean; capture?: boolean } = {}): Promise<string> {
   const itemId = await ensureItem(key);
@@ -335,7 +350,7 @@ async function runFromBoard(page: Page, key: ItemKey, options: { ask?: boolean; 
   await expect(modal.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
   await modal.getByText('Advanced for this run').click();
   await modal.getByLabel('Agent', { exact: true }).selectOption('docket');
-  await expect(modal.getByText(`Project default — ${modelId}`)).toBeVisible();
+  await expect(modal.getByLabel('Model', { exact: true }).locator('option:checked')).toHaveText(`Agent's default (${modelId})`);
   // prill is this runner's verifier: the switch is live and on, not deferred.
   const verify = modal.getByLabel('Verify the result');
   await expect(verify).toBeEnabled();
@@ -515,7 +530,7 @@ test.describe.serial('docket runs, prill verifies', () => {
       {
         env: {
           PATH: RUNNER_PATH,
-          HOME: os.homedir(),
+          HOME: AGENT_HOME || os.homedir(),
           TACK_RUNNER_ENROLLMENT_TOKEN: token,
           DBUS_SESSION_BUS_ADDRESS: NO_KEYCHAIN,
         },
@@ -529,7 +544,7 @@ test.describe.serial('docket runs, prill verifies', () => {
     const mine = (await runners()).find((r) => r.runner_id === runnerId)!;
     const docket = mine.capability_snapshot?.harnesses?.find((h) => h.harness_kind === 'docket');
     expect(docket, 'the runner reports docket').toBeTruthy();
-    modelId = await endpointModel();
+    modelId = await docketDefaultModel();
     summary.runner = { runnerId, name: RUNNER_NAME, modelId };
     await page.waitForTimeout(4500);
     await shot(page.getByText('Runners enrolled or revoked this session', { exact: true }).locator('xpath=..'), 'runners-this-session');
@@ -538,27 +553,26 @@ test.describe.serial('docket runs, prill verifies', () => {
   test('03 the project\'s agent settings: a branch of the folder, docket, the model', async ({ page }) => {
     await ensureProject();
     await ensureRunner();
-    if (!modelId) modelId = await endpointModel();
+    if (!modelId) modelId = await docketDefaultModel();
     await page.goto(`${BASE}/projects/${projectId}/settings?tab=automation`);
     await waitForApp(page);
     await expect(page.getByRole('heading', { name: 'Where the code is' })).toBeVisible();
     await expect(page.getByLabel('An existing folder on this computer')).toBeChecked();
     await page.getByLabel('On a new branch of your repo (recommended)').check();
-    await page.getByRole('button', { name: 'docket', exact: true }).click();
-    // The panel lists no model ids for docket (the endpoint's catalog is its own), so the
-    // default model, which belongs to the agent just chosen, is written to the API directly.
+    await page.getByRole('button', { name: /^docket$/i }).click();
     await expect.poll(async () => ((await apiFetch(`/projects/${projectId}`)) as { default_harness: string | null }).default_harness, { timeout: 10_000 }).toBe('docket');
-    await apiFetch(`/projects/${projectId}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ default_model: modelId }),
-    });
     await page.reload();
     await waitForApp(page);
-    await expect(page.getByRole('button', { name: 'docket', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    const project = (await apiFetch(`/projects/${projectId}`)) as { workspace_mode: string; default_harness: string | null };
+    await expect(page.getByRole('button', { name: /^docket$/i })).toHaveAttribute('aria-pressed', 'true');
+    // docket listed its models from its own setup; the project keeps docket's own default.
+    const model = page.getByLabel('Model', { exact: true });
+    await expect(model.locator('option:checked')).toHaveText(`Agent's default (${modelId})`);
+    await expect(model.locator('option', { hasText: modelId }).last()).toHaveText(modelId);
+    await expect(page.getByText(/From docket on this computer\./i)).toBeVisible();
+    const project = (await apiFetch(`/projects/${projectId}`)) as { workspace_mode: string; default_harness: string | null; default_model: string | null };
     expect(project.workspace_mode).toBe('local_branch');
     expect(project.default_harness).toBe('docket');
+    expect(project.default_model).toBeNull();
     await shotFullContent(page, 'automation-settings');
   });
 

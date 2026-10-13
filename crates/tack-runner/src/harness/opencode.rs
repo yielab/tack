@@ -386,6 +386,7 @@ impl HarnessGrammar for OpencodeGrammar {
             stdin_stays_open: ask,
             secrets: login.secrets(),
             shared_files,
+            ..Default::default()
         })
     }
 

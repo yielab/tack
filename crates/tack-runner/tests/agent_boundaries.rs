@@ -472,7 +472,7 @@ fn sandbox_binds_only_absolute_paths() {
             std::path::Path::new("./storage/workspace"),
             std::path::Path::new("./storage/scratch"),
             &[],
-            &[],
+            sandbox::SharedFiles::default(),
         )
         .expect("wrapped");
     // bwrap resolves a relative path against the workspace it runs in, so a
@@ -1123,5 +1123,161 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
             }
         }
         assert!(stdout.contains("[REDACTED]"), "{label}: {stdout}");
+    }
+}
+
+/// docket's own invocation, run by the fake harness reading one file: a
+/// file of the setup docket is handed (`DOCKET_SETUP_HOME/<name>`), or a
+/// path on the host.
+struct DocketSetupReader(Result<&'static str, PathBuf>);
+
+impl HarnessGrammar for DocketSetupReader {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        &RUN_FAKE
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        let mut invocation = DocketGrammar.invocation(run)?;
+        let path = match &self.0 {
+            Ok(name) => PathBuf::from(&invocation.env["DOCKET_SETUP_HOME"]).join(name),
+            Err(host) => host.clone(),
+        };
+        invocation.args.clear();
+        invocation.env.insert(
+            "TACK_FAKE_HARNESS_MODE".to_owned(),
+            "read_relative".to_owned(),
+        );
+        invocation.env.insert(
+            "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
+            path.display().to_string(),
+        );
+        Ok(invocation)
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(
+            matches!(result.exit, ProcessExit::Exited(0)),
+            serde_json::json!({}),
+        )
+    }
+}
+
+/// docket's setup home holds pods, traces and an audit log beside its
+/// provider catalog, model registry and credential store. Inside the
+/// sandbox a docket run reads those three, bound read-only, and nothing
+/// else of that home. Mutates `HOME`: safe under `cargo nextest` (one
+/// process per test), never under a bare `cargo test`.
+#[tokio::test]
+async fn docket_reads_its_setup_and_nothing_else() {
+    let dir = root("docket-setup");
+    let home = dir.path().join("home");
+    let setup = home.join(".docket");
+    let state = dir.path().join("state");
+    let workspace = dir.path().join("workspace");
+    for path in [&setup.join("pods/p"), &state, &workspace] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    for name in [
+        "docket-providers.json",
+        "docket-models.json",
+        "secrets.json",
+        "audit.log",
+        "pods/p/trace.jsonl",
+    ] {
+        std::fs::write(setup.join(name), "{}").expect("setup file");
+    }
+    unsafe { std::env::set_var("HOME", &home) };
+
+    let mut spec = claude_spec(workspace.clone());
+    spec.work.request.permission_policy.tools = vec!["*".to_owned()];
+    spec.work.request.permission_policy.network = true;
+    spec.work.request.permission_policy.approvals = None;
+    let scratch = dir.path().join("scratch");
+    let invocation = DocketGrammar
+        .invocation(&RunContext {
+            spec: &spec,
+            scratch: &scratch,
+            program: None,
+        })
+        .expect("an invocation");
+    let handed = scratch.join("docket-setup");
+    assert_eq!(
+        invocation.env["DOCKET_SETUP_HOME"],
+        handed.display().to_string()
+    );
+    assert_eq!(
+        invocation.read_only_files,
+        [
+            "docket-providers.json",
+            "docket-models.json",
+            "secrets.json"
+        ]
+        .map(|name| (setup.join(name), handed.join(name)))
+    );
+    assert!(invocation.shared_files.is_empty());
+
+    let (path, _) = tack_runner::harness::locate::snapshot();
+    let found = sandbox::detect(path.as_deref(), Some(&home));
+    if found.kind != sandbox::SandboxKind::Bwrap {
+        if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
+            panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
+        }
+        println!("skipped the sandboxed half: bwrap is not on PATH");
+        return;
+    }
+    let (_, argv) = found
+        .wrap(
+            std::path::Path::new("/bin/true"),
+            &[],
+            &workspace,
+            &scratch,
+            &[],
+            sandbox::SharedFiles {
+                writable: &invocation.shared_files,
+                read_only: &invocation.read_only_files,
+            },
+        )
+        .expect("wrapped");
+    for (source, destination) in &invocation.read_only_files {
+        assert!(
+            argv.windows(3).any(|bind| bind
+                == [
+                    "--ro-bind".to_owned(),
+                    source.display().to_string(),
+                    destination.display().to_string()
+                ]),
+            "{source:?} is not bound read-only: {argv:?}"
+        );
+    }
+
+    let run = |target: Result<&'static str, PathBuf>| {
+        let (found, state, spec) = (found.clone(), state.clone(), spec.clone());
+        async move {
+            let harness = sandboxed_harness(DocketSetupReader(target), &state, found);
+            let handle = harness.start(&spec).await.expect("starts");
+            harness
+                .wait(&handle)
+                .await
+                .expect("finishes")
+                .terminal_state
+        }
+    };
+    for name in [
+        "docket-providers.json",
+        "docket-models.json",
+        "secrets.json",
+    ] {
+        assert_eq!(run(Ok(name)).await, AttemptState::Succeeded, "{name}");
+    }
+    for name in ["audit.log", "pods/p/trace.jsonl", "secrets.json"] {
+        assert_eq!(
+            run(Err(setup.join(name))).await,
+            AttemptState::Failed,
+            "{name} is visible at its own path"
+        );
     }
 }
