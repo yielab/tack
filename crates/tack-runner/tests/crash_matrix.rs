@@ -825,7 +825,12 @@ async fn reoffered_quarantined_attempt_rejected_before_second_spawn() {
 /// own event. `announces` is whether the fake prints the line at all.
 struct DetachingGrammar {
     announces: bool,
+    /// Whether the descriptor reports progress, which is what sends the
+    /// attempt down the line-reading wait docket takes.
+    progress: bool,
     pidfile: std::path::PathBuf,
+    /// The groups the wait reported, as the grammar's `report` saw them.
+    seen: std::sync::Arc<std::sync::Mutex<Option<tack_runner::harness::process::ProcessGroups>>>,
 }
 
 static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
@@ -849,13 +854,40 @@ static DETACHING: tack_runner::harness::local_process::HarnessDescriptor =
         sandbox_binds: &[],
     };
 
+static DETACHING_PROGRESS: tack_runner::harness::local_process::HarnessDescriptor =
+    tack_runner::harness::local_process::HarnessDescriptor {
+        kind: "detaching-progress-fake",
+        program: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/harness/fixtures/fake_harness.sh"
+        ),
+        wire: tack_runner::provider::Wire::OpenAiResponses,
+        model_selection: tack_runner::harness::local_process::ModelSelection::Optional,
+        native_provider: "native",
+        inherited_env: &["PATH"],
+        model_passthrough: "forwarded verbatim",
+        probe_notes: &[],
+        credential_note: "",
+        credential_env: None,
+        observes_served_model: false,
+        reports_process_groups: true,
+        reports_progress: true,
+        sandbox_binds: &[],
+    };
+
 impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
     fn descriptor(&self) -> &'static tack_runner::harness::local_process::HarnessDescriptor {
-        &DETACHING
+        if self.progress {
+            &DETACHING_PROGRESS
+        } else {
+            &DETACHING
+        }
     }
 
     fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
-        unreachable!("the capability table is not read by this test")
+        tack_runner::harness::local_process::HarnessGrammar::capabilities(
+            &tack_runner::harness::claude_code::ClaudeCodeGrammar,
+        )
     }
 
     fn invocation(
@@ -882,10 +914,15 @@ impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
 
     fn report(
         &self,
-        _run: &tack_runner::harness::local_process::RunContext<'_>,
-        _result: &tack_runner::harness::process::ProcessResult,
+        run: &tack_runner::harness::local_process::RunContext<'_>,
+        result: &tack_runner::harness::process::ProcessResult,
     ) -> tack_runner::harness::local_process::RunReport {
-        unreachable!("the attempt is cancelled, never waited on")
+        *self.seen.lock().expect("groups lock") = Some(result.groups);
+        tack_runner::harness::local_process::HarnessGrammar::report(
+            &tack_runner::harness::claude_code::ClaudeCodeGrammar,
+            run,
+            result,
+        )
     }
 
     fn signal(
@@ -911,7 +948,9 @@ async fn cancel_with_a_detached_grandchild(announces: bool) -> (CancellationEvid
     let harness = LocalProcessHarness::discover(
         DetachingGrammar {
             announces,
+            progress: false,
             pidfile: pidfile.clone(),
+            seen: Default::default(),
         },
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
@@ -961,6 +1000,100 @@ async fn gone_within(pid: u32, within: Duration) -> bool {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     false
+}
+
+/// The attempt times out with the fake never exiting on its own: the group it
+/// announced must be gone and the wait must say so. `progress` picks the wait
+/// path: the line-reading one (what docket takes) or the plain one.
+async fn time_out_with_an_announced_detached_group(
+    progress: bool,
+) -> (
+    tack_runner::harness::process::ProcessGroups,
+    Option<u32>,
+    HarnessOutcome,
+) {
+    use tack_runner::client::engine::ExecutionSpec;
+    use tack_runner::harness::local_process::LocalProcessHarness;
+    use tack_runner::harness::process::ProcessLimits;
+
+    let dir = root("timeout-groups");
+    let pidfile = dir.path().join("grandchild.pid");
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let harness = LocalProcessHarness::discover(
+        DetachingGrammar {
+            announces: true,
+            progress,
+            pidfile: pidfile.clone(),
+            seen: seen.clone(),
+        },
+        ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+        dir.path().join("staging"),
+        tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+    )
+    .expect("the fake harness script is locatable");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    let mut work = work();
+    let descriptor = if progress {
+        &DETACHING_PROGRESS
+    } else {
+        &DETACHING
+    };
+    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(descriptor.kind);
+    work.request.timeout_seconds = 3;
+    let spec = ExecutionSpec {
+        work,
+        workspace: Workspace {
+            attempt_id: AttemptId::new("attempt-crash"),
+            id: WorkspaceId::new("ws_timeout_groups"),
+            path: workspace,
+            base_revision: "0123456789abcdef".into(),
+        },
+    };
+    let handle = harness.start(&spec).await.expect("start");
+    let outcome = harness.wait(&handle).await.expect("wait");
+    let grandchild = std::fs::read_to_string(&pidfile)
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok());
+    let groups = seen
+        .lock()
+        .expect("groups lock")
+        .expect("the wait reported its groups");
+    (groups, grandchild, outcome)
+}
+
+/// Docket reports progress, so its attempts take the line-reading wait, which
+/// reads the announcement and kills the group on timeout. The plain wait never
+/// reads a line, so a group is never announced to it: the second row records
+/// that as it is (nothing tracked, the group survives), and no harness can
+/// reach it while one that announces groups also reports progress.
+#[tokio::test]
+async fn timeout_stops_every_group_the_harness_announced() {
+    use tack_runner::harness::process::ProcessGroups;
+    let reached = ProcessGroups {
+        tracked: 1,
+        killed: 1,
+        survived: 0,
+    };
+    for (path, progress, expected, stopped) in [
+        ("line-reading wait", true, reached, true),
+        ("plain wait", false, ProcessGroups::default(), false),
+    ] {
+        let (groups, grandchild, outcome) =
+            time_out_with_an_announced_detached_group(progress).await;
+        let grandchild = grandchild.expect("the fake harness started its detached grandchild");
+        let gone = gone_within(grandchild, Duration::from_secs(10)).await;
+        // Reap it before asserting: this test started it.
+        let _ = std::process::Command::new("kill")
+            .arg(grandchild.to_string())
+            .status();
+        assert_eq!(outcome.terminal_state, AttemptState::Failed, "{path}");
+        assert_eq!(
+            gone, stopped,
+            "{path}: the announced group after the timeout"
+        );
+        assert_eq!(groups, expected, "{path}");
+    }
 }
 
 #[tokio::test]
@@ -1140,5 +1273,19 @@ async fn the_first_terminal_line_decides_and_a_later_one_is_ignored() {
     for (script, expected) in rows {
         let (outcome, _) = run_shell_harness(script).await;
         assert_eq!(outcome.terminal_state, expected, "{script}");
+    }
+}
+
+/// The plain wait never reads a line, so it can never kill a group it was
+/// told about: a harness that announces its groups must report progress,
+/// which is what sends its attempts down the line-reading wait.
+#[test]
+fn a_harness_that_announces_groups_takes_the_line_reading_wait() {
+    for descriptor in tack_runner::harness::DESCRIPTORS {
+        assert!(
+            !descriptor.reports_process_groups || descriptor.reports_progress,
+            "{} announces process groups but would take the plain wait",
+            descriptor.kind
+        );
     }
 }
