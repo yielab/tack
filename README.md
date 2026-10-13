@@ -29,7 +29,8 @@ file. It requires no account.
 [Website](https://yielab.com/tack) · [Documentation](https://yielab.github.io/tack/) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) · [Releases](https://github.com/yielab/tack/releases/latest) · [Changelog](CHANGELOG.md)
 
 > [!NOTE]
-> Tack is in public beta. See [Status](#status) before you rely on it.
+> Tack is in public beta. It still changes between releases and hasn't been used in
+> production. Back up your data with `tack backup` before you upgrade.
 
 ## Requirements
 
