@@ -427,3 +427,9 @@ Opened 2026-10-13.
   - A's integrator fix: an old `[provider]` table now fails with `ConfigError::ProviderTable`. The error names the key and never the parser text, because that text can echo an enrolment credential. `wiremock` left `tack-runner`'s dev-dependencies.
   - A's finding: docket cannot get a base URL through the runner at all now. `env_policy` refuses `*_BASE_URL` in a request, and the grammar reads only the request's environment. So A deleted the two docket real-binary tests that drove a fake model server; E brings them back on contract 1.2.
   - Strings left for B/B2/G: `scripts/docket-prill-e2e.sh` (E), `crates/tack-api/tests/handlers/attempt_lists.rs:572`, `crates/tack-orch/src/execution/capabilities/tests.rs:69`, `frontend/e2e/helpers.ts:615-618`, `frontend/e2e/docket-prill.spec.ts:531,552`, `frontend/src/shared/execution/types.ts:172`, `frontend/src/shared/runWithAgent/AttemptList.test.tsx:116`.
+- **Round 2:**
+  - B and B2 merged in `e7852db7`. On the branch: the gate is green, nextest is 1217/1217, vitest is 592/592, typecheck is clean, and Playwright is 54/54 with one worker. `a11y` agents-page is the known color-contrast flake: it failed once in the full run, then passed 3/3 run alone.
+  - B also rewrote each stored `request_snapshot`, so a request queued across the upgrade keeps its model. The wire's `model_selection` is `optional | required`. The scheduler's reason is `model_not_named`, "<agent> needs a model named".
+  - The integrator deleted the e2e test of an undeclared model, since there is no such rule now, and made two specs type the model through "Other…".
+  - The verifier's evidence never carried the agent's version or model: `Usage` has neither, and prill read them from it. `HarnessOutcome::evidence_usage` now adds both, and a unit test covers it.
+  - B2's finding for F2: the Automation panel has no "Other…", so it cannot set a default model for an agent that lists none.
