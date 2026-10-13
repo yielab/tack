@@ -85,7 +85,9 @@ impl Sandbox {
     /// `scratch_home` is bound at the runner's `$HOME` and at its own path
     /// (a harness may keep state there); each of `binds` names a directory
     /// under `$HOME` that is shared as it is, when it exists. A program that
-    /// lives outside the system directories is bound read-only.
+    /// lives outside the system directories is bound read-only. Each of
+    /// `files` is one file shared read-write at the second path, which lies
+    /// in the scratch home.
     pub fn wrap(
         &self,
         program: &Path,
@@ -93,6 +95,7 @@ impl Sandbox {
         workspace: &Path,
         scratch_home: &Path,
         binds: &[&str],
+        files: &[(PathBuf, PathBuf)],
     ) -> Option<(PathBuf, Vec<String>)> {
         let bwrap = self.bwrap.as_ref()?;
         let mut argv: Vec<String> = Vec::new();
@@ -149,6 +152,9 @@ impl Sandbox {
         // `$HOME` must stay visible on top of the scratch home.
         bind(&mut argv, "--bind", workspace, workspace);
         bind(&mut argv, "--bind", scratch_home, scratch_home);
+        for (source, destination) in files {
+            bind(&mut argv, "--bind", source, destination);
+        }
         let canonical = program
             .canonicalize()
             .unwrap_or_else(|_| program.to_path_buf());

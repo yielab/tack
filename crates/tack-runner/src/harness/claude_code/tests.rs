@@ -18,6 +18,7 @@ fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, Harnes
     ClaudeCodeGrammar.invocation(&RunContext {
         spec,
         scratch: std::path::Path::new("unused"),
+        program: None,
     })
 }
 
@@ -157,6 +158,7 @@ fn a_permission_request_line_becomes_a_question() {
     let run = RunContext {
         spec: &spec,
         scratch: std::path::Path::new("unused"),
+        program: None,
     };
     let request_line =
         include_str!("../fixtures/claude_code/2.1.273/ask-tool-permission-request.jsonl");
@@ -262,6 +264,7 @@ fn read(exit: ProcessExit, stdout: &str) -> RunReport {
     let run = RunContext {
         spec: &spec,
         scratch: std::path::Path::new("unused"),
+        program: None,
     };
     ClaudeCodeGrammar.report(&run, &finished(exit, stdout))
 }

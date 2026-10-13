@@ -371,6 +371,7 @@ fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
     let run = RunContext {
         spec: &spec,
         scratch: dir.path(),
+        program: None,
     };
     for (kind, result) in [
         ("codex", CodexGrammar.invocation(&run)),
@@ -464,6 +465,7 @@ fn sandbox_binds_only_absolute_paths() {
             &[],
             std::path::Path::new("./storage/workspace"),
             std::path::Path::new("./storage/scratch"),
+            &[],
             &[],
         )
         .expect("wrapped");
@@ -887,12 +889,12 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
         let run = RunContext {
             spec: &spec,
             scratch: dir.path(),
+            program: None,
         };
         for (kind, invocation) in [
             ("codex", CodexGrammar.invocation(&run)),
             ("claude-code", ClaudeCodeGrammar.invocation(&run)),
             ("docket", DocketGrammar.invocation(&run)),
-            ("opencode", OpencodeGrammar.invocation(&run)),
         ] {
             if let Ok(invocation) = invocation {
                 for name in MODEL_CREDENTIAL_VARIABLES {
@@ -903,5 +905,211 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
     }
     for name in MODEL_CREDENTIAL_VARIABLES {
         unsafe { std::env::remove_var(name) };
+    }
+}
+
+/// opencode's `debug` commands, answered from the captured fixture with a
+/// seeded key, and a harness that reports what its scratch home holds.
+struct LoginGrammar(&'static HarnessDescriptor);
+
+impl HarnessGrammar for LoginGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        self.0
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        OpencodeGrammar.invocation(run)
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(true, serde_json::json!({ "stdout": result.stdout.text }))
+    }
+}
+
+fn files_under(root: &std::path::Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_under(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// Mutates process-wide variables: safe under `cargo nextest` (one process
+/// per test), never under a bare `cargo test`.
+#[tokio::test]
+async fn opencode_gets_its_login_and_providers_and_nothing_else() {
+    const SEEDED_KEY: &str = "sk-seeded-key-7731";
+    let dir = root("opencode-login");
+    let workspace = dir.path().join("workspace");
+    let home = dir.path().join("home");
+    let data = home.join(".local/share/opencode");
+    let bin = dir.path().join("bin");
+    for path in [&workspace, &data, &bin] {
+        std::fs::create_dir_all(path).expect("directory");
+    }
+    std::fs::write(data.join("auth.json"), "login-token-4410").expect("auth.json");
+    std::fs::write(data.join("sibling.json"), "sibling-contents-9921").expect("sibling");
+
+    let fixture = include_str!("../src/harness/fixtures/opencode/1.18.30/debug-config.json");
+    let mut person: serde_json::Value = serde_json::from_str(fixture).expect("fixture config");
+    person["provider"]["llamacpp"]["options"]["apiKey"] = SEEDED_KEY.into();
+    person["provider"]["llamacpp"]["options"]["headers"] =
+        serde_json::json!({ "x-key": "header-secret-5512" });
+    std::fs::write(dir.path().join("config.json"), person.to_string()).expect("config");
+    let opencode = bin.join("opencode");
+    std::fs::write(
+        &opencode,
+        format!(
+            "#!/bin/sh\ncase \"$2\" in\nconfig) cat {config};;\npaths) echo \"data {data}\";;\nesac\n",
+            config = dir.path().join("config.json").display(),
+            data = data.display(),
+        ),
+    )
+    .expect("fake opencode");
+    std::fs::set_permissions(
+        &opencode,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .expect("executable");
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    unsafe {
+        std::env::set_var("PATH", &path);
+        std::env::set_var("HOME", &home);
+    }
+
+    let mut spec = spec(workspace.clone(), &[]);
+    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("opencode");
+    spec.work.request.permission_policy.network = true;
+    spec.work.request.permission_policy.approvals = None;
+    spec.work.request.requested_model = Some("llamacpp/chosen".to_owned());
+    let run = RunContext {
+        spec: &spec,
+        scratch: dir.path(),
+        program: Some(&opencode),
+    };
+    let invocation = OpencodeGrammar.invocation(&run).expect("an invocation");
+    let injected: serde_json::Value =
+        serde_json::from_str(&invocation.env["OPENCODE_CONFIG_CONTENT"]).expect("injected config");
+    assert_eq!(injected["provider"], person["provider"]);
+    assert_eq!(injected["model"], person["model"]);
+    assert_eq!(injected["small_model"], person["small_model"]);
+    let mut keys: Vec<&String> = injected.as_object().expect("an object").keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["model", "permission", "provider", "small_model"]);
+    let mut permission: Vec<&String> = injected["permission"]
+        .as_object()
+        .expect("permissions")
+        .keys()
+        .collect();
+    permission.sort();
+    assert_eq!(permission, ["bash", "edit", "task", "webfetch"]);
+    assert_ne!(injected["permission"], person["permission"]);
+    assert!(invocation.args.iter().any(|argument| argument == "--pure"));
+    assert!(invocation.args.join(" ").ends_with("-m llamacpp/chosen"));
+    for name in MODEL_CREDENTIAL_VARIABLES {
+        assert!(!invocation.env.contains_key(name), "{name}");
+    }
+
+    // No model anywhere: a refusal, not a guess.
+    let mut without_model = person.clone();
+    without_model
+        .as_object_mut()
+        .expect("object")
+        .remove("model");
+    std::fs::write(dir.path().join("config.json"), without_model.to_string()).expect("config");
+    spec.work.request.requested_model = None;
+    let run = RunContext {
+        spec: &spec,
+        scratch: dir.path(),
+        program: Some(&opencode),
+    };
+    match OpencodeGrammar.invocation(&run) {
+        Err(HarnessError::Rejected { reason }) => {
+            assert!(reason.contains("opencode has no default model"), "{reason}")
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    std::fs::write(dir.path().join("config.json"), person.to_string()).expect("config");
+    spec.work.request.requested_model = Some("llamacpp/chosen".to_owned());
+
+    // The run itself: what the harness can read, and what the log keeps.
+    let probe = dir.path().join("probe.sh");
+    // The located binary is asked for its config first, so the probe hands
+    // `debug …` to the fake opencode and is the run otherwise.
+    std::fs::write(
+        &probe,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = debug ]; then exec {opencode} \"$@\"; fi\ncat > /dev/null\n\
+             echo \"auth=$(cat \"$HOME/.local/share/opencode/auth.json\" 2>&1)\"\n\
+             echo \"sibling=$(cat \"$HOME/.local/share/opencode/sibling.json\" 2>&1)\"\n\
+             echo \"config=$OPENCODE_CONFIG_CONTENT\"\n",
+            opencode = opencode.display(),
+        ),
+    )
+    .expect("probe");
+    std::fs::set_permissions(&probe, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("executable");
+    let probe_path: &'static str = Box::leak(probe.display().to_string().into_boxed_str());
+    let descriptor: &'static HarnessDescriptor = Box::leak(Box::new(HarnessDescriptor {
+        kind: "opencode",
+        program: probe_path,
+        model_selection: ModelSelection::Optional,
+        inherited_env: &["PATH"],
+        probe_notes: &[],
+        credential_note: "",
+        reports_process_groups: false,
+        reports_progress: false,
+        sandbox_binds: &[],
+    }));
+    let machine = sandbox::detect(Some(std::ffi::OsStr::new(&path)), Some(&home));
+    for (label, sandboxed) in [("unsandboxed", false), ("sandboxed", true)] {
+        let state = dir.path().join(label);
+        let harness = LocalProcessHarness::discover(
+            LoginGrammar(descriptor),
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+            state.join("staging"),
+            SecretStore::file(state.join("secrets.json")),
+        )
+        .expect("the probe is locatable");
+        let harness = if sandboxed {
+            harness.with_probed_sandbox(machine.clone())
+        } else {
+            harness
+        };
+        let handle = harness.start(&spec).await.expect("the run starts");
+        if sandboxed && machine.kind == sandbox::SandboxKind::Bwrap {
+            assert_eq!(harness.sandbox(&handle).await.as_deref(), Some("bwrap"));
+        }
+        let outcome = harness.wait(&handle).await.expect("the run finishes");
+        let stdout = outcome.terminal_reason["stdout"].as_str().unwrap_or("");
+        assert!(
+            stdout.contains("auth=login-token-4410"),
+            "{label}: {stdout}"
+        );
+        assert!(
+            !stdout.contains("sibling-contents-9921") && stdout.contains("sibling=cat:"),
+            "{label}: {stdout}"
+        );
+        for secret in [SEEDED_KEY, "header-secret-5512"] {
+            assert!(!stdout.contains(secret), "{label}: {secret} in {stdout}");
+            for file in files_under(&state.join("staging")) {
+                let kept = std::fs::read(&file).unwrap_or_default();
+                assert!(
+                    !String::from_utf8_lossy(&kept).contains(secret),
+                    "{label}: {secret} in {}",
+                    file.display()
+                );
+            }
+        }
+        assert!(stdout.contains("[REDACTED]"), "{label}: {stdout}");
     }
 }
