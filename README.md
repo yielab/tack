@@ -36,13 +36,15 @@ file. It requires no account.
 
 - **To use Tack:** Linux, macOS or Windows.
 - **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
-  on the same computer (the documentation calls these *harnesses*), and a model for it, in
-  one of two ways:
-  - **The agent's own subscription.** Claude Code or Codex, signed in with your plan,
-    which includes its models.
-  - **An API key set in Tack's runner.** Claude Code and Codex can use one, and opencode and
-    docket work only this way: a model gateway, or an OpenAI-compatible server, including
-    one running local models.
+  on the same computer (the documentation calls these *harnesses*). Tack has no agent of
+  its own: it hands the task to that program, which reads and edits files and runs
+  commands. The program also needs a model, in one of two ways:
+  - **Its own subscription.** Claude Code or Codex, signed in with your plan, which
+    includes its models. Tack never sees that login.
+  - **An API key set in Tack's runner,** for a model gateway or an OpenAI-compatible
+    server, including one running local models. The runner passes the key to the installed
+    program: Claude Code and Codex can use one, and opencode and docket work only this way.
+    A key without one of these programs doesn't run a task.
 
   [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says
   what each one supports.
