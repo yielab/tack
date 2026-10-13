@@ -380,6 +380,14 @@ impl AdapterRegistry {
         reports
     }
 
+    /// Each probed harness's declared per-feature support, by kind.
+    pub fn declared_capabilities(&self) -> BTreeMap<String, FeatureCapabilities> {
+        self.probes
+            .iter()
+            .map(|(kind, probe)| (kind.clone(), probe.declared_capabilities()))
+            .collect()
+    }
+
     fn resolve(&self, kind: &str) -> Result<&dyn HarnessAdapter, HarnessError> {
         self.adapters
             .get(kind)

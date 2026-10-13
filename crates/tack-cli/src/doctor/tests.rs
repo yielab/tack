@@ -117,6 +117,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
             "no executable named `claude` was found on PATH".to_owned(),
         )]),
         secret_backend: tack_runner::secrets::SecretBackendKind::File,
+        declared: BTreeMap::new(),
         provider_catalog: BTreeMap::from([(
             tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
             tack_runner::provider::CatalogStatus::Configured {
@@ -174,5 +175,46 @@ fn render_provider_does_not_panic_for_any_catalog_status() {
             catalog.insert(provider.config_key().to_owned(), status.clone());
         }
         render_provider(&catalog);
+    }
+}
+
+/// A harness with artifacts and a policy prints both lines; one without
+/// prints `not supported` with its reason.
+#[test]
+fn declared_lines_state_artifacts_and_policy_per_harness() {
+    let value = |support, reason: &str| CapabilityValue {
+        support,
+        reason: Some(reason.to_owned()),
+        additional: Default::default(),
+    };
+    let features = |artifacts, policy: Option<CapabilityValue>| {
+        let mut features = sample_discovery_report(Vec::new()).capabilities.features;
+        features.artifacts = artifacts;
+        features.additional = policy
+            .map(|p| BTreeMap::from([("permission_policy".to_owned(), serde_json::json!(p))]))
+            .unwrap_or_default();
+        features
+    };
+    let rows = [
+        (
+            features(
+                value(CapabilitySupport::Supported, "lists written files"),
+                Some(value(CapabilitySupport::Supported, "passed as --policy")),
+            ),
+            vec![
+                "  artifacts:         supported — lists written files",
+                "  permission policy: supported — passed as --policy",
+            ],
+        ),
+        (
+            features(value(CapabilitySupport::Unsupported, "only the log"), None),
+            vec![
+                "  artifacts:         not supported — only the log",
+                "  permission policy: not supported — this harness declares no policy",
+            ],
+        ),
+    ];
+    for (declared, expected) in rows {
+        assert_eq!(declared_lines(&declared), expected);
     }
 }
