@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (95 paths, 131 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (93 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1720,7 +1720,7 @@ the persisted preference, the live runtime
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Embedded-runner preference, runtime state, and provider catalog | — |
+| 200 | Embedded-runner preference and runtime state | — |
 
 #### `PUT /api/local-runner`
 
@@ -1763,32 +1763,6 @@ creates `path` and runs `git init`.
 | 200 | Directory created and initialised as a git repository | — |
 | 400 | The path is not absolute | — |
 | 409 | The path exists and is not an empty directory, or the embedded runner is not configured | — |
-
-#### `GET /api/local-runner/secrets`
-
-names and set-at timestamps only.
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 200 | Stored secret names and set-at timestamps, never values | — |
-
-#### `DELETE /api/local-runner/secrets/{name}`
-
-not an error if already absent.
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 204 | Removed (or already absent) | — |
-
-#### `PUT /api/local-runner/secrets/{name}`
-
-store a value. Never echoes it
-
-**Request body:** `SetLocalRunnerSecret`
-
-| Status | Meaning | Schema |
-|---|---|---|
-| 204 | Stored; the value is never echoed back | — |
 
 #### `POST /api/local-runner/test-run`
 

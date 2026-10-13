@@ -18,12 +18,10 @@ use crate::harness::{
     },
     process::{ProcessExit, ProcessResult},
 };
-use crate::provider::Wire;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "claude-code",
     program: "claude",
-    wire: Wire::AnthropicMessages,
     model_selection: ModelSelection::Optional,
     native_provider: "anthropic",
     // `claude` finds its login session under `HOME`, and its Bash tool runs
@@ -38,12 +36,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
          via a live, billed invocation, so this probe reports zero model_combinations rather \
          than an unverified static alias list.",
     )],
-    credential_note: "Claude Code authenticates itself: typically an OAuth session under \
-                      $HOME/.claude from its own login flow, or an API key it reads from its own \
-                      environment. Tack never reads, stores or forwards it. Only HOME and PATH \
-                      are forwarded from the runner's environment; anything else must come \
-                      through the execution request's own `environment`.",
-    credential_env: None,
+    credential_note: "Claude Code signs in with its own login; Tack holds no model credential.",
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
@@ -51,15 +44,11 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 };
 
 /// Provider families the `claude` binary knows on its own, confirmed by
-/// `strings` against 2.1.223. A Tack-configured provider is not listed
-/// here: [`is_known_provider`] asks the provider registry for those.
+/// `strings` against 2.1.223.
 const NATIVE_PROVIDER_FAMILIES: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
 
 fn is_known_provider(name: &str) -> bool {
     NATIVE_PROVIDER_FAMILIES.contains(&name)
-        || crate::provider::registry()
-            .iter()
-            .any(|provider| provider.wire_name() == name)
 }
 
 /// Tools that reach the network, matched case-insensitively against
@@ -266,8 +255,7 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         if let Some(provider) = &request.requested_model_provider
             && !is_known_provider(&provider.as_str().trim().to_ascii_lowercase())
         {
-            let mut known: Vec<&str> = NATIVE_PROVIDER_FAMILIES.to_vec();
-            known.extend(crate::provider::registry().iter().map(|p| p.wire_name()));
+            let known = NATIVE_PROVIDER_FAMILIES;
             return Err(rejected(format!(
                 "requested model provider {:?} is not one of this adapter's known provider \
                  families {known:?}",
@@ -353,14 +341,6 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         // The same opt-out for claude.ai connectors, for a CLI that predates
         // `--strict-mcp-config` covering them.
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".to_owned(), "false".to_owned());
-        if let Some(endpoint) = run.endpoint {
-            env.insert("ANTHROPIC_BASE_URL".to_owned(), endpoint.base_url.clone());
-            // Measured against 2.1.260: empty, unset and non-empty all sent
-            // byte-identical requests, `ANTHROPIC_AUTH_TOKEN` winning each
-            // time, which contradicts the vendor's documented precedence.
-            // Set empty anyway rather than trusted to be absent.
-            env.insert("ANTHROPIC_API_KEY".to_owned(), String::new());
-        }
         Ok(Invocation {
             args,
             env,

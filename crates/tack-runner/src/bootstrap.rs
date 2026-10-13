@@ -67,13 +67,10 @@ pub async fn build_runtime(
         &limits.harness_process,
         &staging_root,
         &secrets,
-        &config.providers,
         &config.secrets.request_may_reference,
         &own_environment,
     );
     let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
-    crate::provider::attach_catalog(&mut capabilities, &config.providers, &secrets, &SystemClock)
-        .await;
     // Whether this runner has a verifier and a branch push at all; a request
     // may decline either, never enable one that is off here.
     capabilities.additional.insert(
@@ -146,10 +143,6 @@ pub struct DiscoveryReport {
     /// Which backend `secrets` answered from — `tack runner doctor` prints
     /// this so a file is never mistaken for a keychain.
     pub secret_backend: crate::secrets::SecretBackendKind,
-    /// What asking each provider for its model catalog produced, keyed by
-    /// `config_key`. A reached fetch already lives in `capabilities`; this
-    /// is the typed reason for every other outcome.
-    pub provider_catalog: BTreeMap<String, crate::provider::CatalogStatus>,
     /// What each registered harness declares per feature, keyed by kind —
     /// the values the runner-wide summary cannot state because they differ
     /// per harness. Not sent to the server.
@@ -167,25 +160,15 @@ pub async fn probe(
     staging_root: &Path,
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
-    providers: &BTreeMap<String, crate::config::ProviderConfig>,
 ) -> DiscoveryReport {
-    let (adapters, missing_harnesses) = crate::harness::discover(
-        process_limits,
-        staging_root,
-        secrets,
-        providers,
-        &[],
-        &BTreeMap::new(),
-    );
-    let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
-    let provider_catalog =
-        crate::provider::attach_catalog(&mut capabilities, providers, secrets, &SystemClock).await;
+    let (adapters, missing_harnesses) =
+        crate::harness::discover(process_limits, staging_root, secrets, &[], &BTreeMap::new());
+    let capabilities = report_capabilities(&adapters, &SystemClock).await;
     let declared = adapters.declared_capabilities();
     DiscoveryReport {
         capabilities,
         missing_harnesses,
         secret_backend: secrets.backend(),
-        provider_catalog,
         declared,
     }
 }

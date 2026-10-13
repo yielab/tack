@@ -14,7 +14,10 @@ use tack_runner::{
         engine::ExecutionSpec,
     },
     harness::{
+        DESCRIPTORS,
+        claude_code::ClaudeCodeGrammar,
         codex::CodexGrammar,
+        docket::DocketGrammar,
         env_policy,
         local_process::{
             HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
@@ -35,14 +38,12 @@ static FAKE: HarnessDescriptor = HarnessDescriptor {
         env!("CARGO_MANIFEST_DIR"),
         "/src/harness/fixtures/fake_harness.sh"
     ),
-    wire: tack_runner::provider::Wire::OpenAiResponses,
     model_selection: ModelSelection::Optional,
     native_provider: "native",
     inherited_env: &["PATH"],
     model_passthrough: "forwarded verbatim",
     probe_notes: &[],
     credential_note: "",
-    credential_env: None,
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
@@ -281,14 +282,12 @@ static RUN_FAKE: HarnessDescriptor = HarnessDescriptor {
         env!("CARGO_MANIFEST_DIR"),
         "/src/harness/fixtures/fake_harness.sh"
     ),
-    wire: tack_runner::provider::Wire::OpenAiResponses,
     model_selection: ModelSelection::Optional,
     native_provider: "native",
     inherited_env: &["PATH"],
     model_passthrough: "forwarded verbatim",
     probe_notes: &[],
     credential_note: "",
-    credential_env: None,
     observes_served_model: false,
     reports_process_groups: false,
     reports_progress: false,
@@ -377,7 +376,6 @@ fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
     spec.work.request.repository.subdirectory = Some("../..".to_owned());
     let run = RunContext {
         spec: &spec,
-        endpoint: None,
         scratch: dir.path(),
     };
     for (kind, result) in [
@@ -793,5 +791,126 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
     match silent.start(&spec).await {
         Err(HarnessError::Rejected { reason: refused }) => assert_eq!(refused, reason),
         other => panic!("expected a refusal before spawn, got {other:?}"),
+    }
+}
+
+const MODEL_CREDENTIAL_VARIABLES: [&str; 7] = [
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "AI_GATEWAY_API_KEY",
+    "OPENAI_API_KEY",
+    "DOCKET_LLM_API_KEY",
+    "DOCKET_LLM_BASE_URL",
+];
+
+/// Echoes the model-credential variables the shared fake harness sees.
+struct EchoGrammar(&'static HarnessDescriptor);
+
+impl HarnessGrammar for EchoGrammar {
+    fn descriptor(&self) -> &'static HarnessDescriptor {
+        self.0
+    }
+
+    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+        RunGrammar.capabilities()
+    }
+
+    fn invocation(&self, _run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
+        Ok(Invocation {
+            env: [
+                ("TACK_FAKE_HARNESS_MODE", "echo_canary".to_owned()),
+                (
+                    "TACK_FAKE_HARNESS_ECHO_ENV_KEYS",
+                    MODEL_CREDENTIAL_VARIABLES.join(","),
+                ),
+            ]
+            .map(|(name, value)| (name.to_owned(), value))
+            .into(),
+            ..Default::default()
+        })
+    }
+
+    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
+        RunReport::verdict(true, serde_json::json!({ "stdout": result.stdout.text }))
+    }
+}
+
+/// A real descriptor's environment policy, pointed at the shared fake harness.
+fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
+    Box::leak(Box::new(HarnessDescriptor {
+        kind: real.kind,
+        program: FAKE.program,
+        model_selection: real.model_selection,
+        native_provider: real.native_provider,
+        inherited_env: real.inherited_env,
+        model_passthrough: real.model_passthrough,
+        probe_notes: real.probe_notes,
+        credential_note: real.credential_note,
+        observes_served_model: real.observes_served_model,
+        reports_process_groups: real.reports_process_groups,
+        reports_progress: real.reports_progress,
+        sandbox_binds: &[],
+    }))
+}
+
+/// Mutates process-wide variables: safe under `cargo nextest` (one process
+/// per test), never under a bare `cargo test`.
+#[tokio::test]
+async fn the_runner_passes_no_model_credential_of_its_own() {
+    for name in MODEL_CREDENTIAL_VARIABLES {
+        unsafe { std::env::set_var(name, "runner-own-model-credential") };
+    }
+    for real in DESCRIPTORS {
+        let dir = root("no-model-credential");
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let harness = LocalProcessHarness::discover(
+            EchoGrammar(on_the_fake_harness(real)),
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
+            dir.path().join("staging"),
+            SecretStore::file(dir.path().join("secrets.json")),
+        )
+        .expect("the fake harness script is locatable");
+        let mut spec = spec(workspace.clone(), &[]);
+        spec.work.request.requested_harness_kind =
+            tack_orch::execution::HarnessKind::new(real.kind);
+
+        let handle = harness.start(&spec).await.expect("the run starts");
+        let outcome = harness.wait(&handle).await.expect("the run finishes");
+        let stdout = outcome.terminal_reason["stdout"].as_str().unwrap_or("");
+        for name in MODEL_CREDENTIAL_VARIABLES {
+            assert!(
+                stdout.lines().any(|line| line == format!("env:{name}=")),
+                "{}: {name} was not echoed empty: {stdout}",
+                real.kind
+            );
+        }
+        assert!(
+            !stdout.contains("runner-own-model-credential"),
+            "{}",
+            real.kind
+        );
+
+        // The grammar's own part of the spawn adds none either.
+        let run = RunContext {
+            spec: &spec,
+            scratch: dir.path(),
+        };
+        for (kind, invocation) in [
+            ("codex", CodexGrammar.invocation(&run)),
+            ("claude-code", ClaudeCodeGrammar.invocation(&run)),
+            ("docket", DocketGrammar.invocation(&run)),
+            ("opencode", OpencodeGrammar.invocation(&run)),
+        ] {
+            if let Ok(invocation) = invocation {
+                for name in MODEL_CREDENTIAL_VARIABLES {
+                    assert!(!invocation.env.contains_key(name), "{kind}: {name}");
+                }
+            }
+        }
+    }
+    for name in MODEL_CREDENTIAL_VARIABLES {
+        unsafe { std::env::remove_var(name) };
     }
 }

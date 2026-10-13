@@ -60,7 +60,6 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
             runner_id: cli.runner_id,
             state_dir: cli.state_dir,
             enrollment_credential: cli.enrollment_token.map(EnrollmentCredential::new),
-            ..ConfigOverrides::default()
         },
     })?;
 

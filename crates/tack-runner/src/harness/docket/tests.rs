@@ -1,38 +1,26 @@
 //! docket's own claims: its command line, how a result line becomes a
-//! report, and the real binary against a fake model server. Fixtures are
+//! report, and the real binary's negotiated features. Fixtures are
 //! captured transcripts under `fixtures/docket/`. The lifecycle is proved
 //! in `local_process/tests.rs`.
 
-use std::time::Duration;
-
 use super::*;
-use crate::harness::HarnessAdapter;
-use crate::harness::local_process::LocalProcessHarness;
-use crate::harness::process::ProcessLimits;
-use crate::harness::test_support::{finished, gateway, scratch, secret_store, set_env, spec};
-use crate::secrets::SecretStore;
+use crate::harness::test_support::{finished, scratch, set_env, spec};
 use tack_orch::execution::{Approvals, CapabilityValue, RequestedModelId, RequestedModelProvider};
 
-fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
-    let secrets = secret_store(state);
-    secrets
-        .set("key", "a-resolvable-value")
-        .expect("seed store");
-    let provider = crate::config::VERCEL_AI_GATEWAY_PROVIDER;
-    crate::provider::resolve_endpoint(&gateway("key"), &secrets, provider, DESCRIPTOR.wire)
-        .expect("resolve")
-        .expect("the gateway serves this wire")
+/// A request whose own environment names a model server.
+fn spec_with_base_url(state: &std::path::Path) -> crate::harness::ExecutionSpec {
+    let mut request = spec(DESCRIPTOR.kind, state);
+    set_env(&mut request, &[(BASE_URL_ENV, "http://127.0.0.1:9/v1")]);
+    request
 }
 
 #[test]
 fn a_request_becomes_a_harness_run_command() {
     let state = scratch("docket-invocation");
     let scratch_dir = scratch("docket-invocation-scratch");
-    let endpoint = endpoint(state.path());
-    let with_endpoint = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
-        spec: &with_endpoint,
-        endpoint: Some(&endpoint),
+        spec: &request,
         scratch: scratch_dir.path(),
     };
     let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
@@ -52,35 +40,23 @@ fn a_request_becomes_a_harness_run_command() {
             "30",
         ]
     );
-    assert_eq!(invocation.env[BASE_URL_ENV], endpoint.base_url);
+    assert!(!invocation.env.contains_key(BASE_URL_ENV));
     let docket_home = &invocation.env["DOCKET_HOME"];
     assert!(docket_home.starts_with(&scratch_dir.path().display().to_string()));
     assert!(!docket_home.starts_with(&state.path().display().to_string()));
     assert!(docket_home.ends_with("docket-home"));
-
-    let mut own_env = spec(DESCRIPTOR.kind, state.path());
-    set_env(&mut own_env, &[(BASE_URL_ENV, "http://127.0.0.1:9/v1")]);
-    let run = RunContext {
-        spec: &own_env,
-        endpoint: None,
-        scratch: scratch_dir.path(),
-    };
-    let invocation = super::invocation(&DocketFeatures::default(), &run).expect("invocation");
-    assert!(!invocation.env.contains_key(BASE_URL_ENV));
-    assert!(invocation.env.contains_key("DOCKET_HOME"));
 }
 
 #[test]
-fn a_request_with_no_model_endpoint_is_refused() {
+fn a_request_naming_no_base_url_is_refused() {
     let state = scratch("docket-refused-invocation");
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
-    let error = invocation(&DocketFeatures::default(), &run)
-        .expect_err("no endpoint and no request-level base url");
+    let error =
+        invocation(&DocketFeatures::default(), &run).expect_err("no request-level base url");
     assert!(matches!(&error, HarnessError::Rejected { reason } if reason.contains(BASE_URL_ENV)));
 }
 
@@ -88,11 +64,9 @@ fn a_request_with_no_model_endpoint_is_refused() {
 fn contract_1_1_passes_the_task_as_a_file() {
     let state = scratch("docket-invocation-1-1");
     let scratch_dir = scratch("docket-invocation-1-1-scratch");
-    let endpoint = endpoint(state.path());
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: Some(&endpoint),
         scratch: scratch_dir.path(),
     };
     let features = DocketFeatures {
@@ -207,10 +181,9 @@ fn capability_lines_follow_what_was_negotiated() {
 #[test]
 fn process_lines_become_group_signals() {
     let state = scratch("docket-signal");
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/cancelled-process.ndjson")
@@ -239,8 +212,7 @@ fn process_lines_become_group_signals() {
 fn ask_drives_the_answer_channel_only_where_docket_offers_it() {
     let state = scratch("docket-invocation-ask");
     let scratch_dir = scratch("docket-invocation-ask-scratch");
-    let endpoint = endpoint(state.path());
-    let mut request = spec(DESCRIPTOR.kind, state.path());
+    let mut request = spec_with_base_url(state.path());
     let offered = DocketFeatures {
         contract: Contract::V1_1,
         answers: true,
@@ -255,7 +227,6 @@ fn ask_drives_the_answer_channel_only_where_docket_offers_it() {
         request.work.request.permission_policy.approvals = approvals;
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let invocation = invocation(features, &run).expect("invocation");
@@ -276,10 +247,9 @@ fn ask_drives_the_answer_channel_only_where_docket_offers_it() {
 #[test]
 fn an_approval_request_becomes_a_question_and_its_answer_is_one_line() {
     let state = scratch("docket-ask-signal");
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let signals: Vec<_> = include_str!("../fixtures/docket/contract-1.1/asked-answered.ndjson")
@@ -396,8 +366,7 @@ fn a_contract_1_1_result_line_is_finished() {
 fn limits_and_policy_are_passed_only_where_probed() {
     let state = scratch("docket-invocation-limits");
     let scratch_dir = scratch("docket-invocation-limits-scratch");
-    let endpoint = endpoint(state.path());
-    let mut request = spec(DESCRIPTOR.kind, state.path());
+    let mut request = spec_with_base_url(state.path());
     request.work.request.permission_policy.tools = vec!["read".to_owned(), "BASH".to_owned()];
     request.work.request.permission_policy.network = false;
     request.work.request.budgets = serde_json::json!({"tokens": 200_000});
@@ -417,7 +386,6 @@ fn limits_and_policy_are_passed_only_where_probed() {
     let flags = |args: Vec<String>| args[11..].to_vec();
     let run = RunContext {
         spec: &request,
-        endpoint: Some(&endpoint),
         scratch: scratch_dir.path(),
     };
     let args = |features: &DocketFeatures| flags(invocation(features, &run).expect("args").args);
@@ -464,7 +432,6 @@ fn limits_and_policy_are_passed_only_where_probed() {
         request.work.request.budgets = budgets;
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let args = invocation(&everything, &run).expect("args").args;
@@ -482,7 +449,6 @@ fn limits_and_policy_are_passed_only_where_probed() {
         request.work.request.permission_policy.network = network;
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let error = invocation(&everything, &run).expect_err("refused");
@@ -498,7 +464,6 @@ fn limits_and_policy_are_passed_only_where_probed() {
         [("sandbox".to_owned(), serde_json::json!(true))].into();
     let run = RunContext {
         spec: &request,
-        endpoint: Some(&endpoint),
         scratch: scratch_dir.path(),
     };
     let error = invocation(&everything, &run).expect_err("refused");
@@ -511,7 +476,6 @@ fn limits_and_policy_are_passed_only_where_probed() {
 fn recipe_is_passed_only_when_probed_and_specified() {
     let state = scratch("docket-invocation-recipe");
     let scratch_dir = scratch("docket-invocation-recipe-scratch");
-    let endpoint = endpoint(state.path());
     let with_recipe = DocketFeatures {
         contract: Contract::V1_1,
         recipe: true,
@@ -526,12 +490,11 @@ fn recipe_is_passed_only_when_probed_and_specified() {
 
     // Recipe is passed when probed and specified.
     {
-        let mut request = spec(DESCRIPTOR.kind, state.path());
+        let mut request = spec_with_base_url(state.path());
         request.work.request.resolved_agent_profile.tool_policy =
             serde_json::json!({"docket": {"recipe": "my-recipe"}});
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let all = |features: &DocketFeatures| invocation(features, &run).expect("args").args;
@@ -561,12 +524,11 @@ fn recipe_is_passed_only_when_probed_and_specified() {
 
     // Recipe is not passed when empty.
     {
-        let mut request = spec(DESCRIPTOR.kind, state.path());
+        let mut request = spec_with_base_url(state.path());
         request.work.request.resolved_agent_profile.tool_policy =
             serde_json::json!({"docket": {"recipe": ""}});
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let args =
@@ -576,11 +538,10 @@ fn recipe_is_passed_only_when_probed_and_specified() {
 
     // Recipe is not passed when absent.
     {
-        let mut request = spec(DESCRIPTOR.kind, state.path());
+        let mut request = spec_with_base_url(state.path());
         request.work.request.resolved_agent_profile.tool_policy = serde_json::json!({"docket": {}});
         let run = RunContext {
             spec: &request,
-            endpoint: Some(&endpoint),
             scratch: scratch_dir.path(),
         };
         let args =
@@ -599,11 +560,9 @@ fn the_real_docket_is_negotiated_not_assumed() {
     assert!(!found.version.is_empty(), "docket --version was not read");
     let state = scratch("docket-negotiated");
     let scratch_dir = scratch("docket-negotiated-scratch");
-    let endpoint = endpoint(state.path());
-    let request = live_request(state.path());
+    let request = live_request(state.path(), "http://127.0.0.1:9");
     let run = RunContext {
         spec: &request,
-        endpoint: Some(&endpoint),
         scratch: scratch_dir.path(),
     };
     let args = invocation(&found, &run).expect("invocation").args;
@@ -655,10 +614,9 @@ fn the_real_docket_is_negotiated_not_assumed() {
 
 fn read(stdout: &str) -> RunReport {
     let state = scratch("docket-report");
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     DocketGrammar.report(
@@ -710,242 +668,28 @@ fn output_without_a_result_line_is_a_failed_run() {
     }
 }
 
-/// One JSON chat-completions response per call: a `write` tool call, then a
-/// final message. The served model id is fixed and distinct from what was
-/// requested, so an assertion that it reached the outcome proves it came
-/// from the response body, not an echo of the request.
-const SERVED_MODEL: &str = "served/observed-model-x";
-const FAKE_KEY: &str = "sk-fake-gateway-canary-71c2";
-
-#[derive(Default)]
-struct SequencedToolCall {
-    calls: std::sync::atomic::AtomicUsize,
-}
-
-impl wiremock::Respond for SequencedToolCall {
-    /// The tool call's own `content` argument carries the fake credential —
-    /// standing in for a worst-case model response that echoes a value it
-    /// was never even given — so a real captured line on docket's own
-    /// stdout is what the redaction assertion below actually has to catch.
-    fn respond(&self, _request: &wiremock::Request) -> wiremock::ResponseTemplate {
-        let first = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
-        let message = if first {
-            serde_json::json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": [{
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {
-                        "name": "write",
-                        "arguments": serde_json::json!({
-                            "path": "greeting.txt",
-                            "content": format!("hello from the fake model server; canary={FAKE_KEY}\n"),
-                        })
-                        .to_string(),
-                    },
-                }],
-            })
-        } else {
-            serde_json::json!({"role": "assistant", "content": "Done."})
-        };
-        let finish_reason = if first { "tool_calls" } else { "stop" };
-        wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "chatcmpl-live",
-            "model": SERVED_MODEL,
-            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
-            "usage": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16},
-        }))
-    }
-}
+const FAKE_KEY: &str = "sk-fake-canary-71c2";
 
 /// Builds the request a live docket run is spawned with: the contract's own
-/// claim fixture, pointed at the gateway provider and a fixed model.
-fn live_request(workspace: &std::path::Path) -> crate::harness::ExecutionSpec {
+/// claim fixture, pointed at the fake model server named in its own
+/// environment and a fixed model.
+fn live_request(workspace: &std::path::Path, server_uri: &str) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, workspace);
-    request.work.request.requested_model_provider = Some(RequestedModelProvider::new(
-        crate::config::VERCEL_AI_GATEWAY_PROVIDER,
-    ));
+    request.work.request.requested_model_provider = Some(RequestedModelProvider::new("openai"));
     request.work.request.requested_model_id = Some(RequestedModelId::new("anthropic/claude-x"));
+    set_env(
+        &mut request,
+        &[
+            (BASE_URL_ENV, &format!("{server_uri}/v1")),
+            ("DOCKET_LLM_API_KEY", FAKE_KEY),
+        ],
+    );
     request.work.request.resolved_agent_profile.instructions =
         "Write a short greeting to greeting.txt".to_owned();
     // docket's own tool names: the policy document can only name those.
     request.work.request.permission_policy.tools =
         ["read", "write", "edit", "bash"].map(str::to_owned).into();
     request
-}
-
-/// Sets the loopback override for the lifetime of the guard, so a panic
-/// mid-test still clears a process-wide variable the next test would
-/// otherwise inherit.
-struct BaseUrlOverride;
-
-impl BaseUrlOverride {
-    fn set(uri: &str) -> Self {
-        // SAFETY-ish: process-wide, but safe under `cargo nextest` (one
-        // process per test), never under a bare `cargo test`.
-        unsafe { std::env::set_var("TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL", uri) };
-        Self
-    }
-}
-
-impl Drop for BaseUrlOverride {
-    fn drop(&mut self) {
-        unsafe { std::env::remove_var("TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL") };
-    }
-}
-
-async fn mount_sequenced_tool_call(server: &wiremock::MockServer) {
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::path("/v1/chat/completions"))
-        .respond_with(SequencedToolCall::default())
-        .mount(server)
-        .await;
-}
-
-fn live_harness(staging_root: std::path::PathBuf, secrets: SecretStore) -> DocketAdapter {
-    LocalProcessHarness::discover(
-        DocketGrammar,
-        ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(30)),
-        staging_root,
-        secrets,
-    )
-    .expect("docket located above")
-    .with_providers(gateway("key"))
-}
-
-fn assert_live_outcome(outcome: &crate::harness::HarnessOutcome, workspace: &std::path::Path) {
-    assert_eq!(
-        outcome.terminal_state,
-        crate::client::AttemptState::Succeeded,
-        "{:?}",
-        outcome.terminal_reason
-    );
-    let written = std::fs::read_to_string(workspace.join("greeting.txt")).expect("docket wrote it");
-    assert!(written.contains("hello from the fake model server"));
-    assert_eq!(outcome.actual_execution.model_id.as_str(), SERVED_MODEL);
-    assert_eq!(
-        outcome.actual_execution.model_observation_source,
-        "harness_reported"
-    );
-    assert!(outcome.usage.tokens_in.value.unwrap_or(0) > 0);
-}
-
-/// The gateway credential reached the fake server, but never the staged log.
-async fn assert_key_handling(
-    server: &wiremock::MockServer,
-    outcome: &crate::harness::HarnessOutcome,
-) {
-    let requests = server.received_requests().await.unwrap_or_default();
-    let auth = requests[0]
-        .headers
-        .get("Authorization")
-        .expect("auth header sent")
-        .to_str()
-        .expect("header is ascii");
-    assert_eq!(auth, format!("Bearer {FAKE_KEY}"));
-
-    let staged = outcome.terminal_reason["artifact"]["staged_path"]
-        .as_str()
-        .expect("run log staged");
-    let log = std::fs::read_to_string(staged).expect("read staged log");
-    assert!(!log.contains(FAKE_KEY));
-}
-
-#[tokio::test]
-async fn the_real_docket_edits_a_file_against_a_fake_model_server() {
-    if crate::harness::locate::locate_installed(DESCRIPTOR.program).is_err() {
-        eprintln!("skipping live docket test: `docket` not found on PATH");
-        return;
-    }
-    let state = scratch("docket-live");
-    let workspace = scratch("docket-live-workspace");
-    let secrets = secret_store(state.path());
-    secrets.set("key", FAKE_KEY).expect("seed store");
-
-    let server = wiremock::MockServer::start().await;
-    mount_sequenced_tool_call(&server).await;
-    let _base_url_override = BaseUrlOverride::set(&server.uri());
-
-    let harness = live_harness(state.path().join("staging"), secrets);
-    let request = live_request(workspace.path());
-    let handle = harness.start(&request).await.expect("start");
-    let outcome = harness.wait(&handle).await.expect("wait");
-
-    assert_live_outcome(&outcome, workspace.path());
-    assert_key_handling(&server, &outcome).await;
-}
-
-/// Gates one `bash` call (`git push origin production` is a `prod-deploy`
-/// action class for docket) on a real docket that offers `--answers` and
-/// accepts it. Run by hand: `cargo nextest run ... --run-ignored only`.
-#[tokio::test]
-#[ignore = "needs a docket with --answers on PATH"]
-async fn the_real_docket_asks_and_a_gated_bash_call_is_accepted() {
-    let state = scratch("docket-live-ask");
-    let workspace = scratch("docket-live-ask-workspace");
-    let secrets = secret_store(state.path());
-    secrets.set("key", FAKE_KEY).expect("seed store");
-
-    let calls = std::sync::atomic::AtomicUsize::new(0);
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::path("/v1/chat/completions"))
-        .respond_with(move |_: &wiremock::Request| {
-            let first = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
-            let message = if first {
-                serde_json::json!({
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {
-                            "name": "bash",
-                            "arguments": serde_json::json!({"command": "git push origin production"}).to_string(),
-                        },
-                    }],
-                })
-            } else {
-                serde_json::json!({"role": "assistant", "content": "Done."})
-            };
-            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "chatcmpl-live",
-                "model": SERVED_MODEL,
-                "choices": [{"index": 0, "message": message,
-                    "finish_reason": if first { "tool_calls" } else { "stop" }}],
-                "usage": {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16},
-            }))
-        })
-        .mount(&server)
-        .await;
-    let _base_url_override = BaseUrlOverride::set(&server.uri());
-
-    let harness = live_harness(state.path().join("staging"), secrets);
-    let mut request = live_request(workspace.path());
-    request.work.request.permission_policy.approvals = Some(Approvals::Ask);
-    let handle = harness.start(&request).await.expect("start");
-    let (mut questions, answers) = harness
-        .decision_channels(&handle)
-        .await
-        .expect("an ask request exposes decision channels");
-    let drive = async {
-        let question = questions.recv().await.expect("a gated call asks");
-        assert!(question.prompt.contains("bash"), "{question:?}");
-        let accept = DecisionAnswer {
-            option_id: Some("accept".to_owned()),
-            text: None,
-        };
-        let _ = answers.send(accept).await;
-    };
-    let (outcome, ()) = tokio::join!(harness.wait(&handle), drive);
-    let outcome = outcome.expect("wait");
-    assert_eq!(
-        outcome.terminal_state,
-        crate::client::AttemptState::Succeeded,
-        "{:?}",
-        outcome.terminal_reason
-    );
 }
 
 /// `*` blocks nothing, except `fetch` when the network is denied.
@@ -963,47 +707,6 @@ fn every_tool_blocks_only_fetch_when_offline() {
         .expect("a document");
     assert!(offline.contains("fetch"), "{offline}");
     assert!(!offline.contains("bash"), "{offline}");
-}
-
-/// An OpenAI-compatible server reaches docket the way the gateway does:
-/// its `/v1` root under `DOCKET_LLM_BASE_URL`, the model joined as
-/// `<provider>/<id>`. Injecting the credential variable is the lifecycle's
-/// job (`local_process/tests.rs`), and this endpoint carries none.
-#[test]
-fn an_openai_compatible_endpoint_sets_the_base_url_alone() {
-    let state = scratch("docket-openai-compatible");
-    let scratch_dir = scratch("docket-openai-compatible-scratch");
-    let endpoint = crate::provider::resolve_endpoint(
-        &crate::harness::test_support::openai_compatible("http://127.0.0.1:8081/", ""),
-        &secret_store(state.path()),
-        crate::config::OPENAI_COMPATIBLE_PROVIDER,
-        DESCRIPTOR.wire,
-    )
-    .expect("resolve")
-    .expect("the server serves this wire");
-    assert!(endpoint.credential.is_none());
-    let mut request = spec(DESCRIPTOR.kind, state.path());
-    request.work.request.requested_model_provider = Some(RequestedModelProvider::new(
-        crate::config::OPENAI_COMPATIBLE_PROVIDER,
-    ));
-    request.work.request.requested_model_id = Some(RequestedModelId::new("qwen2.5-coder"));
-    let run = RunContext {
-        spec: &request,
-        endpoint: Some(&endpoint),
-        scratch: scratch_dir.path(),
-    };
-    let invocation = invocation(&DocketFeatures::default(), &run).expect("invocation");
-    assert_eq!(
-        invocation.env["DOCKET_LLM_BASE_URL"],
-        "http://127.0.0.1:8081/v1"
-    );
-    assert!(!invocation.env.contains_key("DOCKET_LLM_API_KEY"));
-    let model = invocation
-        .args
-        .iter()
-        .position(|arg| arg == "--model")
-        .map(|index| invocation.args[index + 1].as_str());
-    assert_eq!(model, Some("openai-compatible/qwen2.5-coder"));
 }
 
 #[test]
@@ -1059,10 +762,9 @@ fn step(kind: &str, text: &str) -> StreamSignal {
 #[test]
 fn refused_calls_failed_model_calls_and_other_tools_are_steps() {
     let state = scratch("docket-steps");
-    let request = spec(DESCRIPTOR.kind, state.path());
+    let request = spec_with_base_url(state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let line = |event_type: &str, payload: serde_json::Value| {

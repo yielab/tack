@@ -2881,11 +2881,11 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "GET /api/local-runner — the persisted preference, the live runtime\nstate, and the current provider catalog. Only mounted on a loopback bind\nwith a control actually wired in — see `router.rs`'s `local_runner_routes`.",
+        "summary": "GET /api/local-runner — the persisted preference, the live runtime\nstate. Only mounted on a loopback bind\nwith a control actually wired in — see `router.rs`'s `local_runner_routes`.",
         "operationId": "get_local_runner",
         "responses": {
           "200": {
-            "description": "Embedded-runner preference, runtime state, and provider catalog",
+            "description": "Embedded-runner preference and runtime state",
             "content": {
               "application/json": {
                 "schema": {}
@@ -3004,61 +3004,6 @@
           },
           "409": {
             "description": "The path exists and is not an empty directory, or the embedded runner is not configured"
-          }
-        }
-      }
-    },
-    "/api/local-runner/secrets": {
-      "get": {
-        "tags": [
-          "local-runner"
-        ],
-        "summary": "GET /api/local-runner/secrets — names and set-at timestamps only.",
-        "operationId": "list_local_runner_secrets",
-        "responses": {
-          "200": {
-            "description": "Stored secret names and set-at timestamps, never values",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/local-runner/secrets/{name}": {
-      "put": {
-        "tags": [
-          "local-runner"
-        ],
-        "summary": "PUT /api/local-runner/secrets/{name} — store a value. Never echoes it\nback, not even as a hash: the response carries nothing but a status code.",
-        "operationId": "put_local_runner_secret",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetLocalRunnerSecret"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Stored; the value is never echoed back"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "local-runner"
-        ],
-        "summary": "DELETE /api/local-runner/secrets/{name} — not an error if already absent.",
-        "operationId": "delete_local_runner_secret",
-        "responses": {
-          "204": {
-            "description": "Removed (or already absent)"
           }
         }
       }
@@ -10800,17 +10745,6 @@
             "format": "uuid"
           },
           "value": {}
-        }
-      },
-      "SetLocalRunnerSecret": {
-        "type": "object",
-        "required": [
-          "value"
-        ],
-        "properties": {
-          "value": {
-            "type": "string"
-          }
         }
       },
       "Sprint": {

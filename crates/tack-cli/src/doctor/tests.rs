@@ -61,8 +61,8 @@ fn classify_separates_present_probe_error_and_absent() {
 /// field addition to `ModelCombination` fails loudly here instead of
 /// only in a manual `--json` read.
 /// A fully-populated `DiscoveryReport` — every feature flag, one harness
-/// with model combinations and passthrough, one configured provider — for
-/// tests that only prove `render`/`render_provider` run to completion
+/// with model combinations and passthrough, for
+/// tests that only prove `render` runs to completion
 /// over a realistic shape without panicking.
 fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::DiscoveryReport {
     bootstrap::DiscoveryReport {
@@ -118,15 +118,6 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
         )]),
         secret_backend: tack_runner::secrets::SecretBackendKind::File,
         declared: BTreeMap::new(),
-        provider_catalog: BTreeMap::from([(
-            tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-            tack_runner::provider::CatalogStatus::Configured {
-                model_count: 373,
-                priced_model_count: 352,
-                context_window_model_count: 355,
-                checked_at: fixed_timestamp(),
-            },
-        )]),
     }
 }
 
@@ -147,35 +138,6 @@ fn render_does_not_panic_on_a_populated_report() {
     });
 
     render(&sample_discovery_report(vec![with_models]));
-}
-
-/// `render_provider` is exercised for its side effects (stdout), not a
-/// return value; this only proves every `CatalogStatus` variant renders
-/// to completion, so a future variant addition fails loudly here
-/// instead of only in a manual `--json` read. Also proves a provider
-/// this build knows about but the map has no entry for (an empty map)
-/// renders as "not configured" instead of panicking on a missing key.
-#[test]
-fn render_provider_does_not_panic_for_any_catalog_status() {
-    render_provider(&BTreeMap::new());
-    for status in [
-        tack_runner::provider::CatalogStatus::NotConfigured,
-        tack_runner::provider::CatalogStatus::SecretUnresolved,
-        tack_runner::provider::CatalogStatus::Unreachable { status: Some(401) },
-        tack_runner::provider::CatalogStatus::Unreachable { status: None },
-        tack_runner::provider::CatalogStatus::Configured {
-            model_count: 373,
-            priced_model_count: 352,
-            context_window_model_count: 355,
-            checked_at: fixed_timestamp(),
-        },
-    ] {
-        let mut catalog = BTreeMap::new();
-        for provider in tack_runner::provider::registry() {
-            catalog.insert(provider.config_key().to_owned(), status.clone());
-        }
-        render_provider(&catalog);
-    }
 }
 
 /// A harness with artifacts and a policy prints both lines; one without

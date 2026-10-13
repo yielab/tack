@@ -297,25 +297,6 @@ impl LocalRunnerControl for RecordingControl {
     async fn runner_id(&self) -> Option<String> {
         Some("runner-test".to_string())
     }
-    async fn list_secrets(&self) -> Vec<crate::handlers::local_runner::SecretMeta> {
-        Vec::new()
-    }
-    async fn set_secret(
-        &self,
-        _name: &str,
-        _value: &str,
-    ) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {
-        Ok(())
-    }
-    async fn remove_secret(
-        &self,
-        _name: &str,
-    ) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {
-        Ok(())
-    }
-    async fn catalog(&self) -> crate::handlers::local_runner::CatalogSnapshot {
-        crate::handlers::local_runner::CatalogSnapshot::NotConfigured
-    }
     async fn resolve_secret(
         &self,
         _reference: &str,

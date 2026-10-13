@@ -41,5 +41,5 @@ path = "junit.xml"
 # of these tests runs with nothing else alongside — the guarantee
 # `--test-threads=1` on a sequential `cargo test` used to give.
 [[profile.default.overrides]]
-filter = 'binary(e6_scheduler_e2e_test) | binary(embedded_runner_orphaned_credential) | binary(embedded_runner_state_scoping) | binary(embedded_runner_live_secret)'
+filter = 'binary(e6_scheduler_e2e_test) | binary(embedded_runner_orphaned_credential) | binary(embedded_runner_state_scoping)'
 threads-required = "num-test-threads"

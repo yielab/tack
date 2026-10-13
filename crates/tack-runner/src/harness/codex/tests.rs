@@ -4,21 +4,8 @@
 use super::*;
 use crate::client::AttemptState;
 use crate::harness::HarnessAdapter;
-use crate::harness::test_support::{
-    finished, gateway, harness_for, scratch, script, secret_store, spec,
-};
+use crate::harness::test_support::{finished, harness_for, scratch, script, spec};
 use tack_orch::execution::Approvals;
-
-fn endpoint(state: &std::path::Path) -> crate::provider::ProviderEndpoint {
-    let secrets = secret_store(state);
-    secrets
-        .set("key", "a-resolvable-value")
-        .expect("seed store");
-    let provider = crate::config::VERCEL_AI_GATEWAY_PROVIDER;
-    crate::provider::resolve_endpoint(&gateway("key"), &secrets, provider, DESCRIPTOR.wire)
-        .expect("resolve")
-        .expect("the gateway serves this wire")
-}
 
 #[test]
 fn a_direct_request_passes_only_the_model() {
@@ -26,7 +13,6 @@ fn a_direct_request_passes_only_the_model() {
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
@@ -46,43 +32,6 @@ fn a_direct_request_passes_only_the_model() {
         ]
     );
     assert!(invocation.env.is_empty());
-}
-
-/// The overrides are global flags: Codex ignores one placed after `exec`.
-#[test]
-fn a_configured_endpoint_is_named_before_the_subcommand() {
-    let state = scratch("codex-endpoint");
-    let request = spec(DESCRIPTOR.kind, state.path());
-    let endpoint = endpoint(state.path());
-    let run = RunContext {
-        spec: &request,
-        endpoint: Some(&endpoint),
-        scratch: state.path(),
-    };
-    let args = CodexGrammar.invocation(&run).expect("invocation").args;
-
-    let exec = args.iter().position(|arg| arg == "exec").expect("exec");
-    let overrides: Vec<&String> = args[..exec].iter().filter(|arg| *arg != "-c").collect();
-    assert_eq!(overrides.len(), 5, "{args:?}");
-    assert_eq!(overrides[0], "model_provider=tack_provider");
-    let base_url = format!(
-        "model_providers.tack_provider.base_url={:?}",
-        endpoint.base_url
-    );
-    assert!(overrides.contains(&&base_url), "{args:?}");
-    assert!(
-        overrides
-            .contains(&&"model_providers.tack_provider.env_key=\"AI_GATEWAY_API_KEY\"".to_owned())
-    );
-    assert!(!args.iter().any(|arg| {
-        arg.contains(
-            endpoint
-                .credential
-                .as_ref()
-                .expect("credential present")
-                .expose(),
-        )
-    }));
 }
 
 /// The exit decides, never the output: `exec --json`'s shape is unverified,
@@ -106,7 +55,6 @@ fn the_exit_status_alone_decides_the_verdict() {
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     for (exit, stdout, succeeded, code) in rows {
@@ -164,7 +112,6 @@ fn the_permission_policy_maps_onto_the_sandbox_flag() {
         request.work.request.permission_policy.approvals = approvals;
         let run = RunContext {
             spec: &request,
-            endpoint: None,
             scratch: state.path(),
         };
         let args = CodexGrammar.invocation(&run).expect("invocation").args;
@@ -200,7 +147,6 @@ fn usage_is_read_from_the_turn_completed_line() {
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let rows = [
@@ -244,8 +190,7 @@ fn thread_id_in(fixture: &str) -> String {
     rest[..end].to_owned()
 }
 
-/// `(the args and stdin_stays_open an ask request builds, direct and with an
-/// endpoint) -> (prompt()'s initialize line) -> (each stream line ->
+/// `(the args and stdin_stays_open an ask request builds) -> (prompt()'s initialize line) -> (each stream line ->
 /// signal()'s verdict)`, driven off the real `app-server-approval.txt` and
 /// `app-server-turn.txt` captures.
 #[test]
@@ -255,30 +200,11 @@ fn an_ask_request_becomes_an_app_server_conversation() {
     request.work.request.permission_policy.approvals = Some(Approvals::Ask);
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
     assert_eq!(invocation.args, ["app-server"]);
     assert!(invocation.stdin_stays_open);
-
-    let endpoint = endpoint(state.path());
-    let run_with_endpoint = RunContext {
-        spec: &request,
-        endpoint: Some(&endpoint),
-        scratch: state.path(),
-    };
-    let with_endpoint = CodexGrammar
-        .invocation(&run_with_endpoint)
-        .expect("invocation");
-    assert!(with_endpoint.stdin_stays_open);
-    assert_eq!(with_endpoint.args.last(), Some(&"app-server".to_owned()));
-    let overrides: Vec<&String> = with_endpoint.args[..with_endpoint.args.len() - 1]
-        .iter()
-        .filter(|arg| *arg != "-c")
-        .collect();
-    assert_eq!(overrides.len(), 5, "{:?}", with_endpoint.args);
-    assert_eq!(overrides[0], "model_provider=tack_provider");
 
     // `prompt()`'s bytes: framed as the JSON-RPC `initialize` request when
     // stdin stays open, plain text otherwise.
@@ -462,7 +388,6 @@ fn the_app_server_stream_decides_the_verdict_and_usage() {
     let request = spec(DESCRIPTOR.kind, state.path());
     let run = RunContext {
         spec: &request,
-        endpoint: None,
         scratch: state.path(),
     };
 

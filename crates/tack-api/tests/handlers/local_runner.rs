@@ -1,9 +1,8 @@
 //! HTTP-level proof for `handlers::local_runner` (ADR 0061 decisions 2 and
 //! 6): the routes exist only on a loopback bind with a control actually
 //! wired in, they are a genuine 404 otherwise (never present-and-refusing),
-//! the on/off preference persists in `app_meta` and nowhere else, and a
-//! secret value is never echoed back. A fake [`LocalRunnerControl`] stands
-//! in for the real embedded-runner composition
+//! and the on/off preference persists in `app_meta` and nowhere else. A fake
+//! [`LocalRunnerControl`] stands in for the real embedded-runner composition
 //! (`crates/tack-cli/src/local_runner.rs`), unreachable from this crate —
 //! this proves the HTTP contract those routes must uphold regardless of
 //! which control answers them.
@@ -17,8 +16,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
 use tack_api::{
-    CatalogSnapshot, LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
-    SecretMeta, config::AppConfig,
+    LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus, config::AppConfig,
 };
 use tower::ServiceExt;
 
@@ -32,9 +30,7 @@ use crate::common::test_app_with_local_runner;
 pub(crate) struct FakeControl {
     running: AtomicBool,
     start_calls: std::sync::atomic::AtomicUsize,
-    set_secret_calls: std::sync::Mutex<Vec<(String, String)>>,
-    secrets: std::sync::Mutex<Vec<SecretMeta>>,
-    /// Name → value, filled by `set_secret` — what `resolve_secret` reads
+    /// Name → value, filled by [`FakeControl::set_secret`] — what `resolve_secret` reads
     /// back, so a test can seed `store:<name>` to resolve to a chosen value.
     secret_values: std::sync::Mutex<std::collections::HashMap<String, String>>,
     /// The runner id to return from `runner_id()`. Defaults to Some("runner-test").
@@ -75,35 +71,6 @@ impl LocalRunnerControl for FakeControl {
             .unwrap_or_else(|| Some("runner-test".to_string()))
     }
 
-    async fn list_secrets(&self) -> Vec<SecretMeta> {
-        self.secrets.lock().unwrap().clone()
-    }
-
-    async fn set_secret(&self, name: &str, value: &str) -> Result<(), LocalRunnerControlError> {
-        self.set_secret_calls
-            .lock()
-            .unwrap()
-            .push((name.to_owned(), value.to_owned()));
-        self.secrets.lock().unwrap().push(SecretMeta {
-            name: name.to_owned(),
-            set_at: Some(Utc::now()),
-        });
-        self.secret_values
-            .lock()
-            .unwrap()
-            .insert(name.to_owned(), value.to_owned());
-        Ok(())
-    }
-
-    async fn remove_secret(&self, name: &str) -> Result<(), LocalRunnerControlError> {
-        self.secrets.lock().unwrap().retain(|s| s.name != name);
-        Ok(())
-    }
-
-    async fn catalog(&self) -> CatalogSnapshot {
-        CatalogSnapshot::NotConfigured
-    }
-
     async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {
         let name = reference.strip_prefix("store:").unwrap_or(reference);
         self.secret_values
@@ -114,6 +81,21 @@ impl LocalRunnerControl for FakeControl {
             .ok_or_else(|| {
                 LocalRunnerControlError::SecretStore(format!("no secret named {name:?}"))
             })
+    }
+}
+
+impl FakeControl {
+    /// Seeds the value `resolve_secret` answers for `name`.
+    pub(crate) async fn set_secret(
+        &self,
+        name: &str,
+        value: &str,
+    ) -> Result<(), LocalRunnerControlError> {
+        self.secret_values
+            .lock()
+            .unwrap()
+            .insert(name.to_owned(), value.to_owned());
+        Ok(())
     }
 }
 
@@ -233,81 +215,6 @@ async fn loopback_bind_with_control_mounts_routes_and_starts_it() {
     .unwrap();
     assert_eq!(body["enabled"], true);
     assert_eq!(body["state"], "running");
-}
-
-#[tokio::test]
-async fn secret_write_never_touches_the_enable_preference_row() {
-    let control: Arc<dyn LocalRunnerControl> = Arc::new(FakeControl::default());
-    let (app, _workspace_id) = test_app_with_local_runner(loopback_config(), Some(control)).await;
-
-    let put_secret = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/local-runner/secrets/vercel-ai-gateway%2Fdefault")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"value": "positive-control-marker-value"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(put_secret.status(), StatusCode::NO_CONTENT);
-
-    // A secret write must never touch `app_meta` — the on/off preference
-    // is the only key this module ever writes there, and this request
-    // never wrote it. Asserted from inside the handler's own crate isn't
-    // possible from here (this is a black-box HTTP test), so this proves
-    // the same claim through the route contract instead: `GET
-    // /api/local-runner/secrets` reflects the write, and a `GET
-    // /api/local-runner` still reports the untouched `enabled: false`
-    // env-default — the two are independent, exactly as
-    // `handlers::local_runner`'s module doc says the secret half must be.
-    let list_secrets = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/local-runner/secrets")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body: serde_json::Value = serde_json::from_slice(
-        &axum::body::to_bytes(list_secrets.into_body(), usize::MAX)
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    let names: Vec<&str> = body["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, vec!["vercel-ai-gateway/default"]);
-    // The response never carries the value under any key.
-    assert!(!body.to_string().contains("positive-control-marker-value"));
-
-    let status = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/local-runner")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body: serde_json::Value = serde_json::from_slice(
-        &axum::body::to_bytes(status.into_body(), usize::MAX)
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        body["enabled"], false,
-        "the secret write above must not have touched the persisted enable preference"
-    );
 }
 
 async fn post_json(

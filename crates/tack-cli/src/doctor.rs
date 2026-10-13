@@ -63,8 +63,7 @@ async fn probe() -> (bootstrap::DiscoveryReport, tack_runner::VerifyConfig) {
     })
     .unwrap_or_else(|_| RunnerConfig::defaults());
     let secrets = SecretStore::open(&config.secret_store_path());
-    let report =
-        bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.providers).await;
+    let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets).await;
     (report, config.verify)
 }
 
@@ -199,60 +198,6 @@ fn render(report: &bootstrap::DiscoveryReport) {
         tack_runner::secrets::PLATFORM_STORE_TIMEOUT
     );
     println!();
-
-    render_provider(&report.provider_catalog);
-
-    println!(
-        "Every harness above can also authenticate itself directly, using its own \
-         login/credential mechanism — the server never touches that credential either way. \
-         The runner is allowed to hold a provider key of its own (above) and point a harness \
-         at a configured endpoint instead; see docs/adr/0050-runner-control-plane.md, \
-         docs/adr/0058-standalone-single-binary-runner.md and \
-         docs/adr/0061-provider-credentials-at-the-runner-boundary.md."
-    );
-}
-
-/// Renders one block per provider this build knows how to configure —
-/// which harnesses it reaches and, when it is on, the catalog state. Every
-/// provider is walked in registry order regardless of whether it is
-/// enabled, mirroring how a disabled entry was always shown before a
-/// second provider existed.
-fn render_provider(catalog: &BTreeMap<String, tack_runner::provider::CatalogStatus>) {
-    for provider in tack_runner::provider::registry() {
-        let reaches = tack_runner::provider::reaches(provider.as_ref());
-        println!("Provider endpoint ({}):", provider.config_key());
-        println!("  reaches: {}", reaches.join(", "));
-        match catalog.get(provider.config_key()) {
-            None | Some(tack_runner::provider::CatalogStatus::NotConfigured) => {
-                println!("  status:  not configured");
-            }
-            Some(tack_runner::provider::CatalogStatus::SecretUnresolved) => {
-                println!("  status:  configured, but its secret does not resolve");
-            }
-            Some(tack_runner::provider::CatalogStatus::Unreachable { status }) => match status {
-                Some(status) => println!("  status:  catalog error (HTTP {status})"),
-                None => println!("  status:  catalog error (request failed)"),
-            },
-            Some(tack_runner::provider::CatalogStatus::Configured {
-                model_count,
-                priced_model_count,
-                context_window_model_count,
-                checked_at,
-            }) => {
-                println!("  status:  configured");
-                println!("  catalog: {model_count} models, checked at {checked_at}");
-                println!(
-                    "  price:   {priced_model_count} of {model_count} models published a price ({} Not measured)",
-                    model_count - priced_model_count
-                );
-                println!(
-                    "  limit:   {context_window_model_count} of {model_count} models published a context window ({} Not measured)",
-                    model_count - context_window_model_count
-                );
-            }
-        }
-        println!();
-    }
 }
 
 fn render_feature(name: &str, value: &CapabilityValue) {
