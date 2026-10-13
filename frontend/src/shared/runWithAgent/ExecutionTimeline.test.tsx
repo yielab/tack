@@ -23,6 +23,14 @@ const ROWS = [
   { request_id: 'req-other-item', item_id: 'item-OTHER', state: 'queued', cancellation_requested_at: null, created_at: '2025-01-01T00:00:00Z' },
 ];
 
+const FIVE_MIN_AGO = new Date(Date.now() - 5 * 60_000).toISOString();
+const NO_RUNNER = 'No runner can run this: none has the model it asks for.';
+const WAIT_ROWS = [
+  { request_id: 'req-wait-since', item_id: 'item-wait', state: 'queued', cancellation_requested_at: null, created_at: '2025-02-01T00:00:00Z', waiting_reason: NO_RUNNER, waiting_since: FIVE_MIN_AGO },
+  { request_id: 'req-wait-capacity', item_id: 'item-wait', state: 'queued', cancellation_requested_at: null, created_at: '2025-02-02T00:00:00Z', waiting_reason: 'Every runner is busy.', waiting_since: null },
+  { request_id: 'req-wait-failed', item_id: 'item-wait', state: 'failed', cancellation_requested_at: null, created_at: '2025-02-03T00:00:00Z', waiting_reason: NO_RUNNER, waiting_since: FIVE_MIN_AGO },
+];
+
 const ATTEMPT_ROW = {
   attempt_id: 'att-1',
   request_id: 'req-running',
@@ -78,7 +86,7 @@ function mockFetch(): typeof fetch {
       return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
     }
     if (url.includes('/executions')) {
-      return new Response(JSON.stringify({ protocol_version: 1, data: ROWS }), { status: 200 });
+      return new Response(JSON.stringify({ protocol_version: 1, data: [...ROWS, ...WAIT_ROWS] }), { status: 200 });
     }
     return new Response(JSON.stringify({}), { status: 200 });
   }) as typeof fetch;
@@ -130,6 +138,22 @@ describe('ExecutionTimeline', () => {
     expect(ids[ids.length - 1]).toContain('req-running');
     expect(c.textContent).toContain('Running');
     expect(c.textContent).toContain('Needs operator');
+  });
+
+  it('a queued run says why it waits and for how long; a capacity wait has no duration; a request that failed for want of a runner shows the reason as its failure', async () => {
+    const c = mount('item-wait');
+    await flush();
+    await flush();
+    const rows = requestRows(c);
+    const byId = (id: string) => rows.find((li) => li.textContent?.includes(id))!;
+    const since = byId('req-wait-since').querySelector('[data-testid="run-waiting"]')!;
+    expect(since.textContent).toContain(`Waiting: ${NO_RUNNER}`);
+    expect(since.textContent).toContain('5m ago');
+    const capacity = byId('req-wait-capacity').querySelector('[data-testid="run-waiting"]')!;
+    expect(capacity.textContent).toBe('Waiting: Every runner is busy.');
+    const failed = byId('req-wait-failed');
+    expect(failed.querySelector('[data-testid="run-waiting"]')).toBeNull();
+    expect(failed.querySelector('[data-testid="run-failure-reason"]')!.textContent).toBe(NO_RUNNER);
   });
 
   it('a run shows one status, its attempt\'s: a leased request whose attempt runs reads Running', async () => {

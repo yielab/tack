@@ -10,7 +10,7 @@ use crate::common;
 use crate::common::send_as_operator as snd;
 use axum::http::StatusCode;
 use chrono::Utc;
-use serde_json::json;
+use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
@@ -1574,4 +1574,64 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     let for_b = compose(Some("profile-b")).await;
     assert!(for_b.starts_with("profile B instructions"), "{for_b}");
     assert!(!for_b.contains("work safely"), "{for_b}");
+}
+
+/// A queued request no poll has explained reads "no runner is online" while
+/// no active runner has a fresh heartbeat; the word is decided at read time,
+/// never stored, and a reason a poll wrote always wins.
+#[tokio::test]
+async fn a_queued_request_reads_no_runner_is_online_until_a_runner_is() {
+    let (app, repo, item_id) = setup().await;
+    let (status, _) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK);
+    let list = format!("/executions?item_ids={item_id}");
+    let reason = |body: &Value| body["data"][0]["waiting_reason"].clone();
+
+    let (_, body) = snd(&app, "GET", &list, String::new()).await;
+    assert_eq!(reason(&body), json!("no runner is online"), "{body}");
+    let request_id = body["data"][0]["request_id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    let (_, detail) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{request_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(
+        detail["waiting_reason"],
+        json!("no runner is online"),
+        "{detail}"
+    );
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT waiting_reason FROM execution_requests WHERE id = ?")
+            .bind(&request_id)
+            .fetch_one(repo.pool())
+            .await
+            .expect("row");
+    assert_eq!(stored, None, "the read-time word is never stored");
+
+    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = 'runner-active'")
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(repo.pool())
+        .await
+        .expect("heartbeat");
+    let (_, body) = snd(&app, "GET", &list, String::new()).await;
+    assert_eq!(reason(&body), Value::Null, "a runner is online: {body}");
+
+    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = NULL")
+        .execute(repo.pool())
+        .await
+        .expect("offline again");
+    sqlx::query(
+        "UPDATE execution_requests SET waiting_reason = 'codex needs a model named' WHERE id = ?",
+    )
+    .bind(&request_id)
+    .execute(repo.pool())
+    .await
+    .expect("a poll's reason");
+    let (_, body) = snd(&app, "GET", &list, String::new()).await;
+    assert_eq!(reason(&body), json!("codex needs a model named"), "{body}");
 }

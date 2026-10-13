@@ -1312,15 +1312,29 @@ pub async fn list_executions(
             json!({}),
         )
     })?;
+    let unexplained = rows
+        .iter()
+        .any(|row| row.state == "queued" && row.waiting_reason.is_none());
+    let offline = unexplained
+        && no_runner_online(&state.repo, state.clock.now())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not list runners",
+                    json!({}),
+                )
+            })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| ExecutionSummary {
+            waiting_reason: waiting_reason_or_offline(&row.state, row.waiting_reason, offline),
             request_id: row.id,
             item_id: row.item_id,
             state: row.state,
             cancellation_requested_at: row.cancellation_requested_at,
             created_at: row.created_at,
-            waiting_reason: row.waiting_reason,
             waiting_since: row.waiting_since,
         })
         .collect();
@@ -1328,6 +1342,31 @@ pub async fn list_executions(
         protocol_version: 1,
         data,
     }))
+}
+
+/// What a queued request no poll has explained reads when no runner is
+/// online: no active runner has sent a heartbeat within the scheduler's
+/// window. Decided at read time; never stored, never grounds for failing it.
+const NO_RUNNER_ONLINE: &str = "no runner is online";
+
+async fn no_runner_online(repo: &Repository, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
+    let window = tack_orch::scheduler::select::SchedulingPolicy::default().max_heartbeat_age;
+    Ok(!repo.list_runners().await?.iter().any(|runner| {
+        runner.state == "active"
+            && runner
+                .last_heartbeat_at
+                .as_deref()
+                .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+                .is_some_and(|at| now - at.with_timezone(&Utc) <= window)
+    }))
+}
+
+/// A queued request's reason, or the read-time one when nothing explains it.
+fn waiting_reason_or_offline(state: &str, reason: Option<String>, offline: bool) -> Option<String> {
+    match reason {
+        None if state == "queued" && offline => Some(NO_RUNNER_ONLINE.to_string()),
+        reason => reason,
+    }
 }
 
 #[utoipa::path(
@@ -1361,15 +1400,29 @@ pub async fn get_execution(
             json!({"resource": "execution_request"}),
         ));
     };
+    let request_state: String = row.get("state");
+    let waiting_reason: Option<String> = row.get("waiting_reason");
+    let offline = request_state == "queued"
+        && waiting_reason.is_none()
+        && no_runner_online(&state.repo, state.clock.now())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not list runners",
+                    json!({}),
+                )
+            })?;
     Ok(Json(ExecutionDetailResponse {
         protocol_version: 1,
         request_id: row.get("id"),
         item_id: row.get("item_id"),
-        state: row.get("state"),
+        state: request_state.clone(),
         cancellation_requested_at: row.get("cancellation_requested_at"),
         created_at: row.get("created_at"),
         instructions: row.get("instructions"),
-        waiting_reason: row.get("waiting_reason"),
+        waiting_reason: waiting_reason_or_offline(&request_state, waiting_reason, offline),
         waiting_since: row.get("waiting_since"),
     }))
 }
