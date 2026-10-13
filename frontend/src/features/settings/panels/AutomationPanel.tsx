@@ -1,7 +1,9 @@
 import { type Component, type JSX, createMemo, createResource, createSignal, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { ApiError } from '../../../shared/api/client';
-import { ACCEPTED_MODELS } from '../../../shared/runWithAgent/models';
+import type { AgentModelsReport } from '../../../shared/runWithAgent/models';
+import ModelField from '../../../shared/runWithAgent/ModelField';
+import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
 import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
@@ -10,9 +12,10 @@ import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
 import type { UpdateProject } from '../../../shared/types';
 
+
 /** The part of a runner's reported harness this panel reads. Every field
  *  but the kind is optional: an older runner omits them. */
-interface SnapshotHarness extends AgentSafetyReport {
+interface SnapshotHarness extends AgentSafetyReport, AgentModelsReport {
   harness_kind: string;
 }
 
@@ -121,19 +124,7 @@ const AutomationPanel: Component = () => {
   const defaultHarnessReports = () =>
     snapshots().flatMap((s) => s?.harnesses ?? []).filter((h) => h.harness_kind === p()?.default_harness);
   const savedModel = () => p()?.default_model || null;
-  /** The ids the "Specific model" list offers: the ones measured for this agent. The
-   *  model already saved stays listed even when it is not measured, so the select never
-   *  shows an empty choice for a project that has one. */
-  const modelOptions = createMemo<string[]>(() => {
-    const harness = p()?.default_harness;
-    if (!harness) return [];
-    const ids = [...(ACCEPTED_MODELS[harness] ?? [])];
-    const saved = savedModel();
-    if (saved && !ids.includes(saved)) ids.push(saved);
-    return ids;
-  });
-  const [wantsSpecific, setWantsSpecific] = createSignal(false);
-  const specific = () => !!p()?.default_harness && (wantsSpecific() || savedModel() !== null);
+  const agentLabel = (kind: string) => HARNESS_KINDS.find((k) => k.value === kind)?.label ?? kind;
   const pushConfigured = () => snapshots().some((s) => s?.push_configured === true);
   const pushDisabledReason = () =>
     mode() === 'in_place'
@@ -266,8 +257,8 @@ const AutomationPanel: Component = () => {
           <div class="flex flex-wrap gap-2">
             <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
               {(h) => (
-                <Pill active={p()?.default_harness === h} onClick={() => { setWantsSpecific(false); void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
-                  {h === 'claude-code' ? 'Claude Code' : h === 'codex' ? 'Codex' : h}
+                <Pill active={p()?.default_harness === h} onClick={() => { void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
+                  {agentLabel(h)}
                 </Pill>
               )}
             </For>
@@ -284,54 +275,24 @@ const AutomationPanel: Component = () => {
             )}
           </Show>
         </FieldShell>
-        <FieldShell label="Model" help={HELP.model}>
-          <div class="flex flex-col gap-1.5">
-            <Radio
-              name="model-mode"
-              checked={!specific()}
-              onChange={() => { setWantsSpecific(false); void save({ default_model: null }); }}
-            >
-              The agent's default (recommended)
-            </Radio>
-            <label
-              class="flex items-center gap-2 text-sm"
-              classList={{ 'opacity-60': !p()?.default_harness }}
-              style={{ color: 'var(--color-text-primary)' }}
-            >
-              <input
-                type="radio"
-                name="model-mode"
-                checked={specific()}
-                disabled={!p()?.default_harness}
-                onChange={() => setWantsSpecific(true)}
-              />
-              Specific model
-            </label>
-            <Show when={!p()?.default_harness}>
+        <Show
+          when={p()?.default_harness}
+          keyed
+          fallback={
+            <FieldShell label="Model" help={HELP.model}>
               <Note>Choose an agent first</Note>
-            </Show>
-            <Show when={specific()}>
-              <Select
-                aria-label="Model"
-                value={savedModel() ?? ''}
-                disabled={modelOptions().length === 0}
-                onChange={(e) => {
-                  const model = e.currentTarget.value;
-                  if (model) void save({ default_model: model });
-                }}
-                options={[
-                  { value: '', label: 'Choose a model' },
-                  ...modelOptions().map((id) => ({ value: id, label: id })),
-                ]}
-              />
-              <Show when={modelOptions().length === 0}>
-                <Note>
-                  No model ids are measured for this agent yet; its default is used.
-                </Note>
-              </Show>
-            </Show>
-          </div>
-        </FieldShell>
+            </FieldShell>
+          }
+        >
+          {(harness) => (
+            <ModelField
+              agentLabel={agentLabel(harness)}
+              reports={defaultHarnessReports()}
+              value={savedModel() ?? ''}
+              onChange={(model) => void save({ default_model: model.trim() || null })}
+            />
+          )}
+        </Show>
         <FieldShell label="Default profile" help={HELP.profile}>
           <div class="flex flex-wrap gap-2">
             <For each={profiles()} fallback={<Note>No agent profiles yet.</Note>}>

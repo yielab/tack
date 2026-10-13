@@ -21,7 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // chose persistence by leaving that server running. See docs/TESTING.md's
 // E2E section for the measured cost of resetting every run.
 
-// Fake `claude`/`codex` binaries (`e2e/fixtures/harness-shims/`), prepended
+// Fake `claude`/`codex`/`opencode`/`docket` binaries (`e2e/fixtures/harness-shims/`), prepended
 // ahead of the real PATH so the embedded runner's own probe (a real
 // subprocess exec — see `agents-page.spec.ts`) always finds these instead
 // of whatever is or isn't really installed on the machine running the
@@ -162,13 +162,10 @@ export default defineConfig({
         // connection in the suite is refused and no spec can see a live event.
         TACK_ALLOWED_ORIGINS: `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`,
         PATH: `${HARNESS_SHIMS_DIR}:${process.env.PATH}`,
-        // The provider-key spec deletes and rewrites `vercel-ai-gateway/default`
-        // through the real secret store. With the session's Secret Service
-        // reachable that is the operator's own keychain entry, so the bus is
-        // pointed at a socket that does not exist and the store falls back to
-        // its owner-only file under `storage-e2e`. Linux only: the macOS
-        // Keychain is not reached over D-Bus, and nothing here keeps a run
-        // there away from it.
+        // The runner's secret store must never be the operator's own keychain,
+        // so the bus is pointed at a socket that does not exist and the store
+        // falls back to its owner-only file under `storage-e2e`. Linux only:
+        // the macOS Keychain is not reached over D-Bus.
         DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent/tack-e2e-no-keychain',
       },
     },

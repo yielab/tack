@@ -86,10 +86,9 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
 
   // A model named by hand: the fixture's codex lists no models, so the
   // control offers only "Other…", and a typed name is what reaches the run.
-  await modal.getByText('Advanced for this run').click();
-  await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('__custom__');
-  await modal.getByLabel('Model id').fill(modelId);
+  // With no model named, "Advanced for this run" is already open on the model.
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
+  await modal.getByLabel('Model name').fill(modelId);
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
   const runButton = modal.getByRole('button', { name: 'Run', exact: true });

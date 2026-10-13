@@ -21,20 +21,3 @@ export const HARNESS_INSTALL_COMMAND: Readonly<Record<string, string>> = {
 export const HARNESS_INSTALL_NOTE: Readonly<Record<string, string>> = {
   docket: 'From the docket project, following its own install instructions.',
 };
-
-/** Per-harness vendor login command — the "use the agent's own login"
- *  path. Each is the harness's own CLI entry point; Tack never touches
- *  vendor credentials (ADR 0050/0058), so this is the whole of what Tack can
- *  tell the operator to run. A harness absent here (docket, opencode) has no
- *  login of its own that Tack's adapter uses. */
-export const HARNESS_LOGIN_COMMAND: Readonly<Record<string, string>> = {
-  'claude-code': 'claude',
-  codex: 'codex login',
-};
-
-/** The one sentence every "use the agent's own login" row carries — Tack
- *  has no route that reads back whether a vendor login succeeded, so this
- *  is the honest state rather than a guess. A shared
- *  constant keeps every row's wording identical instead of near-duplicates. */
-export const CANNOT_OBSERVE_VENDOR_LOGIN =
-  'Tack cannot see whether this succeeded — confirm with a test run below.';

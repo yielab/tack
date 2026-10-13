@@ -193,6 +193,7 @@ function field(labelText: string): HTMLInputElement {
 function setSelect(el: HTMLSelectElement, value: string) {
   el.value = value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function setField(el: HTMLInputElement, value: string) {
@@ -209,9 +210,7 @@ function teardown() {
   document.body.innerHTML = '';
 }
 
-function modelModeRadio(index: number): HTMLInputElement {
-  return [...document.querySelectorAll('input[type="radio"][name="model-mode"]')][index] as HTMLInputElement;
-}
+const modelOptions = () => [...select('Model').options].map((o) => o.textContent);
 
 afterEach(() => {
   teardown();
@@ -365,10 +364,8 @@ describe('RunWithAgentModal', () => {
   it('submit is disabled with every missing-field reason listed when the form is empty', async () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET], agentProfiles: [PROFILE, PROFILE_2], project: { ...PROJECT, default_profile_id: null } });
     await flush();
-    // With no target chosen no model can be vouched for, so the model sentence stands in for Run.
-    expect(submitButton()).toBeUndefined();
+    expect(submitButton().disabled).toBe(true);
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain('Choose a model for this run');
     expect(dialog.textContent).toContain('Select where this runs.');
     expect(dialog.textContent).toContain('Choose a profile.');
   });
@@ -402,13 +399,13 @@ describe('RunWithAgentModal', () => {
     });
   });
 
-  it('with a project model default for the default agent, "Project default — …" is offered, selected, and applied', async () => {
+  it('with a project model default for the default agent, "Project default — …" is shown and applied', async () => {
     mount({}, { runners: [RUNNER], fleets: [], project: { id: 'project-1', name: 'P', default_harness: 'codex', default_model: 'opaque/model-alpha' } });
     await flush();
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Project default — opaque/model-alpha');
-    expect(modelModeRadio(0).checked).toBe(true);
+    expect(select('Model').value).toBe('');
     submitButton().click();
     await flush();
     await flush();
@@ -423,95 +420,78 @@ describe('RunWithAgentModal', () => {
     expect(document.querySelector('[role="dialog"]')!.textContent).not.toContain('Project default —');
   });
 
-  it('with no project model default, "Auto" is selected and no "Project default" option is offered', async () => {
+  it('with no project model default, the agent\'s default is selected and no "Project default" line is shown', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
     await flush();
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).not.toContain('Project default —');
-    expect(modelModeRadio(0).checked).toBe(true); // "The agent's default", the first of two radios
+    expect(select('Model').value).toBe('');
+    expect(modelOptions()[0]).toBe("Agent's default");
   });
 
-  it('an agent that needs a model, with none named, is blocked and names the fix, with a link to set one', async () => {
+  it('an agent that needs a model, with none named, says why in place of Run, with a link to set one', async () => {
     const needs = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
       harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: true,
+      requires_model_reason: 'Codex has no model of its own on this computer.',
     }] }));
     mount({}, { runners: [needs], fleets: [], agentProfiles: [PROFILE_2] });
     await flush();
     await flush();
-    expect(modelModeRadio(1).checked).toBe(true); // an agent that needs a model opens on "Specific model"
-    modelModeRadio(0).click();
-    await flush();
     expect(submitButton()).toBeUndefined();
     const dialog = document.querySelector('[role="dialog"]')!;
+    expect(select('Model').value).toBe('');
+    expect(modelOptions()[0]).toBe('Choose a model');
+    expect(dialog.querySelector('[data-prerequisite="missing"]')?.textContent).toContain('Codex has no model of its own on this computer.');
     expect(dialog.textContent).toContain('Unsupported');
-    expect(dialog.textContent).toContain('codex needs a model named');
     const fixLink = [...dialog.querySelectorAll('a')].find((a) => a.textContent === 'Set a default model for this project');
-    expect(fixLink).toBeTruthy();
     expect(fixLink!.getAttribute('href')).toBe('/projects/project-1/settings?tab=automation');
   });
 
-  it('"Specific model" lists the measured ids for the agent, and picking one enables submit', async () => {
+  it('the model list is what the agent reports, and picking one enables Run', async () => {
     const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
-      harnesses: [{ harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: true }],
+      harnesses: [{
+        harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: true,
+        models: { source: 'listed', ids: ['claude-sonnet-5-5', 'claude-opus-5-5'], reason: null },
+        docs: { models: 'https://example.test/models', sign_in: 'https://example.test/sign-in' },
+      }],
     }));
     mount({}, { runners: [claude], fleets: [] });
     await flush();
     await flush();
-    const labels = [...select('Model').options].map((o) => o.textContent);
-    expect(labels).toContain('claude-sonnet-5-5');
-    setSelect(select('Model'), 'static:claude-sonnet-5-5');
+    expect(modelOptions()).toEqual(['Choose a model', 'claude-sonnet-5-5', 'claude-opus-5-5', 'Another model…']);
+    expect(document.querySelector('[data-testid="model-line"]')?.textContent).toContain('From Claude Code on this computer.');
+    expect(submitButton()).toBeUndefined();
+    setSelect(select('Model'), 'claude-sonnet-5-5');
     await flush();
     expect(submitButton().disabled).toBe(false);
     expect(document.body.textContent).toContain('Runs on claude-sonnet-5-5');
-  });
-
-  it('"Other…" ends the model list and reveals the model id field', async () => {
-    mount({}, { runners: [RUNNER], fleets: [] });
-    await flush();
-    modelModeRadio(1).click();
-    await flush();
-    expect([...select('Model').options].map((o) => o.textContent).pop()).toBe('Other…');
-
-    setSelect(select('Model'), '__custom__');
-    await flush();
-    expect(field('Model id')).toBeTruthy();
-  });
-
-  it('the_dialog_follows_what_the_harness_reports_about_models', async () => {
-    const claude = (requires_model?: boolean, extra: Record<string, unknown> = {}) => runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
-      harnesses: [{
-        harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        ...(requires_model === undefined ? {} : { requires_model }), ...extra,
-      }],
-    }));
-    // optional: opens on the agent's default, Run is enabled with no model chosen, and no model is sent.
-    mount({}, { runners: [claude(false)], fleets: [] });
-    await flush();
-    await flush();
-    expect(modelModeRadio(0).checked).toBe(true);
-    expect(document.body.textContent).toContain("Uses the agent's own model");
-    expect(submitButton().disabled).toBe(false);
-    submitButton().click();
-    await flush();
-    await flush();
-    expect(lastCreateBody).toMatchObject({ requested_model: null });
-    teardown();
-    // required: opens on "Specific model" with the measured list; a listed id goes out as the one model string.
-    mount({}, { runners: [claude(true)], fleets: [] });
-    await flush();
-    expect(modelModeRadio(1).checked).toBe(true);
-    const options = [...select('Model').options].map((o) => o.textContent);
-    expect(options).toContain('claude-sonnet-5-5');
-    expect(options).toContain('Other…');
-    setSelect(select('Model'), 'static:claude-sonnet-5-5');
-    await flush();
     submitButton().click();
     await flush();
     await flush();
     expect(lastCreateBody).toMatchObject({ requested_model: 'claude-sonnet-5-5' });
   });
 
-  it('the_project_default_harness_that_needs_no_model_is_not_left_on_specific_model', async () => {
+  it('an agent that needs no model opens on its default and sends none', async () => {
+    const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+      harnesses: [{
+        harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+        requires_model: false, default_model: 'claude-sonnet-5-5',
+      }],
+    }));
+    mount({}, { runners: [claude], fleets: [] });
+    await flush();
+    await flush();
+    expect(modelOptions()[0]).toBe("Agent's default (claude-sonnet-5-5)");
+    expect(document.body.textContent).toContain("Uses the agent's own model");
+    expect(submitButton().disabled).toBe(false);
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_model: null });
+  });
+
+  it('the_project_default_harness_that_needs_no_model_is_not_left_blocked', async () => {
     // The form starts on codex (required) until the project's claude-code (optional) lands.
     const harness = (harness_kind: string, requires_model: boolean) => ({
       harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
@@ -521,48 +501,41 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [row], fleets: [], project: { ...PROJECT, default_harness: 'claude-code' }, itemDelayMs: 10 });
     await new Promise((r) => setTimeout(r, 30));
     await flush();
-    expect(modelModeRadio(0).checked).toBe(true);
+    expect(modelOptions()[0]).toBe("Agent's default");
     expect(document.querySelector('[data-testid="run-summary"]')?.textContent).toContain("the agent's default");
-    expect(document.body.textContent).not.toContain('Select a model, or use');
     expect(submitButton().disabled).toBe(false);
-    // Choosing "Specific model" by hand stays there.
-    modelModeRadio(1).click();
-    await flush();
-    expect(modelModeRadio(1).checked).toBe(true);
   });
 
   it('a_harness_that_needs_a_model_says_so_where_run_was', async () => {
     const codex = runnerRow('runner-5', 'Box', runnerCapabilitySnapshot({ harnesses: [{
       harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-      requires_model: true,
+      requires_model: true, requires_model_reason: 'Codex needs a model named here.',
     }] }));
     mount({}, { runners: [codex], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
     await flush();
     await flush();
     expect(document.querySelector('[data-testid="run-summary"]')?.textContent).toContain('no model chosen');
-    const fix = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Choose a model for this run');
-    expect(fix).toBeTruthy();
-    fix!.click();
-    await flush();
+    expect(submitButton()).toBeUndefined();
+    expect(document.querySelector('[data-prerequisite="missing"]')?.textContent).toContain('Codex needs a model named here.');
+    // The field is in view: the advanced section opens while the model is missing.
     expect((document.querySelectorAll('details')[1] as HTMLDetailsElement).open).toBe(true);
   });
 
-  it('a typed model id goes out as the one model string, with no provider anywhere', async () => {
+  it('a typed model name goes out verbatim, with no provider anywhere', async () => {
     const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot());
     mount({}, { runners: [row], fleets: [] });
     await flush();
-    modelModeRadio(1).click();
+    expect(modelOptions()).toEqual(["Agent's default", 'Another model…']);
+    setSelect(select('Model'), '__other__');
     await flush();
-    setSelect(select('Model'), '__custom__');
-    await flush();
-    setField(field('Model id'), 'opaque/typed');
+    setField(field('Model name'), 'opaque/Typed Name:1');
     await flush();
     expect(document.body.textContent).not.toMatch(/Provider/);
     expect(document.body.textContent).not.toContain('Through');
     submitButton().click();
     await flush();
     await flush();
-    expect(lastCreateBody).toMatchObject({ requested_model: 'opaque/typed' });
+    expect(lastCreateBody).toMatchObject({ requested_model: 'opaque/Typed Name:1' });
   });
 
   it('submitting posts the exact CreateExecutionInput shape, closes, and calls onCreated', async () => {

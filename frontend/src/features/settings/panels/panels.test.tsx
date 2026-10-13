@@ -48,7 +48,13 @@ beforeEach(() => {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith('/api/runners')) {
-      const snapshot = { harnesses: [{ harness_kind: 'codex' }, { harness_kind: 'claude-code' }], push_configured: true };
+      const snapshot = {
+        harnesses: [
+          { harness_kind: 'codex' },
+          { harness_kind: 'claude-code', models: { source: 'listed', ids: ['claude-sonnet-5-5', 'claude-opus-5-5'], reason: null } },
+        ],
+        push_configured: true,
+      };
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
@@ -87,11 +93,9 @@ function mount(comp: () => unknown) {
 const btn = (c: HTMLElement, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)!;
 
-/** The labels the "Specific model" select offers, in order, without the placeholder. */
+/** The labels the model select offers, in order. */
 const modelLabels = (c: HTMLElement) =>
-  Array.from(c.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.options)
-    .map((o) => o.textContent)
-    .filter((label) => label !== 'Choose a model');
+  Array.from(c.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.options).map((o) => o.textContent);
 
 /** Picks a model by its visible label: the option values are the panel's own encoding, never typed here. */
 const chooseModel = (c: HTMLElement, label: string) => {
@@ -222,11 +226,8 @@ describe('Settings panels', () => {
     ];
     const dod = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Definition of done"]')!;
     rows.push(
-      ['specific model', () => {
-        byText('label', 'Specific model').querySelector('input')!.click();
-        chooseModel(container, 'claude-opus-5-5');
-      }, { default_model: 'claude-opus-5-5' }],
-      ['auto model', () => byText('label', "The agent's default (recommended)").querySelector('input')!.click(), { default_model: null }],
+      ['listed model', () => chooseModel(container, 'claude-opus-5-5'), { default_model: 'claude-opus-5-5' }],
+      ['agent default model', () => chooseModel(container, "Agent's default"), { default_model: null }],
       ['definition of done', () => { dod.value = 'Tests pass'; dod.dispatchEvent(new Event('blur')); }, { definition_of_done: 'Tests pass' }],
     );
     try {
@@ -305,7 +306,7 @@ describe('Settings panels', () => {
     }
   });
 
-  it('automation_panel_lists_the_measured_ids_and_keeps_a_saved_unmeasured_one_selected', async () => {
+  it('automation_panel_lists_what_the_agent_reports_and_keeps_a_saved_unlisted_name_in_the_typed_field', async () => {
     const mutable = PROJECT as { default_harness: string | null; default_model: unknown };
     mutable.default_harness = 'claude-code';
     mutable.default_model = 'my-private-model';
@@ -313,34 +314,31 @@ describe('Settings panels', () => {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      const model = container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
-      expect(model.selectedOptions[0]?.textContent).toBe('my-private-model');
-      const labels = modelLabels(container);
-      expect(labels[0]).toBe('claude-sonnet-5-5');
-      expect(labels).toContain('claude-opus-5-5');
+      expect(modelLabels(container)).toEqual(["Agent's default", 'claude-sonnet-5-5', 'claude-opus-5-5', 'Another model…']);
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.selectedOptions[0]?.textContent).toBe('Another model…');
+      expect(container.querySelector<HTMLInputElement>('input[aria-label="Model name"]')!.value).toBe('my-private-model');
     } finally {
       mutable.default_harness = null;
       mutable.default_model = undefined;
     }
   });
 
-  it('automation_panel_says_no_model_ids_are_measured_only_when_the_merged_list_is_empty', async () => {
+  it('automation_panel_saves_a_typed_default_for_an_agent_that_lists_no_models', async () => {
     (PROJECT as { default_harness: string | null }).default_harness = 'codex';
-    const base = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation((input, init) =>
-      String(input).endsWith('/api/runners')
-        ? Promise.resolve(runnersWith([{ harness_kind: 'codex' }]))
-        : base(input, init),
-    );
     try {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.trim() === 'Specific model')!.querySelector('input')!.click();
+      expect(modelLabels(container)).toEqual(["Agent's default", 'Another model…']);
+      expect(container.textContent).toContain("Codex can't list its models here. Type the model's name as Codex spells it.");
+      chooseModel(container, 'Another model…');
       await flush();
-      expect(modelLabels(container)).toEqual([]);
-      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!.disabled).toBe(true);
-      expect(container.textContent).toContain('No model ids are measured for this agent yet; its default is used.');
+      const typed = container.querySelector<HTMLInputElement>('input[aria-label="Model name"]')!;
+      typed.value = ' vendor/Odd-Name ';
+      typed.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      await flush();
+      expect(lastModelPatch()).toEqual({ default_model: 'vendor/Odd-Name' });
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }

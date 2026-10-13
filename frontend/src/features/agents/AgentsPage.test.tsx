@@ -19,7 +19,6 @@ function mockFetch(overrides: Record<string, unknown> = {}) {
     '/api/local-runner/secrets': { data: [] },
     '/api/runners': { protocol_version: 1, data: [] },
     '/api/projects': [],
-    '/api/local-runner/harness-verification': { harnesses: {} },
     '/api/local-runner/test-run': { request_id: 'req_1' },
     '/api/executions/req_1': { request_id: 'req_1', item_id: 'item_1', state: 'queued', cancellation_requested_at: null, created_at: '' },
     '/api/executions/req_1/attempts': { protocol_version: 1, data: [] },
@@ -169,19 +168,15 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('docket needs a model named for every run, and the test run names none');
   });
 
-  it('badges come from harness-verification: signed-in date, or "Not signed in" with the command', async () => {
+  it('lists the agents not reported as not installed, each with its install hint', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,
       '/api/runners': runnerWith([CLAUDE_INSTALLED, { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3' }]),
-      '/api/local-runner/harness-verification': { harnesses: { 'claude-code': '2026-10-07T21:51:00Z' } },
     });
     const { container } = mount();
     await flush();
     await flush();
-    expect(container.textContent).toContain('Installed v9.9.1 · Signed in ');
-    expect(container.textContent).toContain('2026');
-    expect(container.textContent).toContain('Not signed in — run `codex login` once in a terminal');
-    // The two harnesses this runner never reported are rows too, each with its install hint.
+    expect(container.textContent).toContain('Installed v9.9.1');
     expect(container.textContent).toContain('Docket');
     expect(container.textContent).toContain('OpenCode');
     expect((container.textContent!.match(/Not installed/g) ?? []).length).toBe(2);
@@ -189,21 +184,52 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('From the docket project, following its own install instructions.');
   });
 
-  it('an installed harness with no vendor login reads as unable to run yet, never "Not signed in"', async () => {
+  it('step 3 reads each installed agent as signed in, signed out or unknown, and is done only when all are signed in', async () => {
+    const docs = { models: 'https://example.test/models', sign_in: 'https://example.test/sign-in' };
+    const harness = (extra: Record<string, unknown>) => ({ ...CLAUDE_INSTALLED, docs, ...extra });
+    const stepThree = (c: HTMLElement) => c.querySelectorAll('[data-step-state]')[2] as HTMLElement;
+    const row = (c: HTMLElement, kind: string) => c.querySelector(`[data-testid="sign-in-${kind}"]`) as HTMLElement;
+
     mockFetch({
       '/api/local-runner': RUNNING,
       '/api/runners': runnerWith([
-        { ...CLAUDE_INSTALLED, harness_kind: 'docket', installed_version: '0.4.0', requires_model: true },
-        { ...CLAUDE_INSTALLED, harness_kind: 'opencode', installed_version: '1.0.3', requires_model: true },
+        harness({ sign_in: { state: 'signed_in', detail: 'Logged in as ana@example.test', command: null } }),
+        harness({ harness_kind: 'codex', installed_version: '1.2.3', sign_in: { state: 'signed_out', detail: 'Not logged in', command: 'codex login' } }),
+        harness({ harness_kind: 'opencode', installed_version: '1.0.3', sign_in: { state: 'unknown', detail: 'opencode does not say whether it is signed in', command: null } }),
       ]),
-      '/api/local-runner/harness-verification': { harnesses: { docket: '2026-10-09T10:00:00Z' } },
     });
+    const mixed = mount();
+    await flush();
+    await flush();
+    expect(row(mixed.container, 'claude-code').textContent).toContain('Signed in');
+    expect(row(mixed.container, 'claude-code').textContent).toContain('Logged in as ana@example.test');
+    expect(row(mixed.container, 'codex').textContent).toContain('Not signed in. Run codex login in a terminal.');
+    expect(row(mixed.container, 'codex').querySelector('code')?.textContent).toBe('codex login');
+    expect(row(mixed.container, 'codex').querySelector<HTMLAnchorElement>('a')?.href).toBe(docs.sign_in);
+    expect(row(mixed.container, 'opencode').textContent).toContain('opencode does not say whether it is signed in');
+    expect(row(mixed.container, 'opencode').querySelector<HTMLAnchorElement>('a')?.href).toBe(docs.sign_in);
+    expect(stepThree(mixed.container).dataset.stepState).not.toBe('done');
+    mixed.dispose();
+    mixed.container.remove();
+
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([harness({ sign_in: { state: 'signed_in', detail: 'Logged in', command: null } })]),
+    });
+    const signedIn = mount();
+    await flush();
+    await flush();
+    expect(stepThree(signedIn.container).dataset.stepState).toBe('done');
+  });
+
+  it('an older runner with no sign-in report reads as unknown, with no link', async () => {
+    mockFetch({ '/api/local-runner': RUNNING, '/api/runners': runnerWith([CLAUDE_INSTALLED]) });
     const { container } = mount();
     await flush();
     await flush();
-    expect(container.textContent).toContain('Installed v0.4.0 · Signed in ');
-    expect(container.textContent).toContain("Installed v1.0.3 · Can't run yet on this computer");
-    expect(container.textContent).not.toContain('Not signed in');
+    const row = container.querySelector('[data-testid="sign-in-claude-code"]')!;
+    expect(row.getAttribute('data-sign-in')).toBe('unknown');
+    expect(row.querySelector('a')).toBeNull();
   });
 
   it('each installed agent says whether it is sandboxed, asks first, or does not run here', async () => {

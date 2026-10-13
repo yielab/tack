@@ -114,6 +114,29 @@ export interface Concurrency {
   available: number;
 }
 
+/** `listed`: the harness itself listed them; `suggested`: names from its documentation; `none`: no list. */
+export type HarnessModelsSource = 'listed' | 'suggested' | 'none';
+
+export interface HarnessModels {
+  source: HarnessModelsSource;
+  ids: string[];
+  reason: string | null;
+}
+
+export type HarnessSignInState = 'signed_in' | 'signed_out' | 'unknown';
+
+export interface HarnessSignIn {
+  state: HarnessSignInState;
+  detail: string;
+  /** The command that signs in, when there is one. */
+  command: string | null;
+}
+
+export interface HarnessDocs {
+  models: string;
+  sign_in: string;
+}
+
 export interface HarnessCapability {
   harness_kind: string;
   installed_version: string;
@@ -122,6 +145,16 @@ export interface HarnessCapability {
   /** Whether a request must name a model for this harness (true) or it may use its own
    *  (false). Absent on an older runner, which reads as not required. */
   requires_model?: boolean;
+  /** Why this harness needs a model named; `null` when it does not say. */
+  requires_model_reason?: string | null;
+  /** The models the harness offers, and where that list came from. `null` or absent on an older runner. */
+  models?: HarnessModels | null;
+  /** The model the harness uses when a run names none. Omitted when it does not say. */
+  default_model?: string | null;
+  /** Whether the harness is signed in on the runner's computer. `null` or absent on an older runner. */
+  sign_in?: HarnessSignIn | null;
+  /** The harness's own documentation pages for its models and its sign-in. */
+  docs?: HarnessDocs | null;
   /**
    * Whether this harness can pause a run and ask the operator before it
    * acts, for a request whose `permission_policy.approvals` is `"ask"` —

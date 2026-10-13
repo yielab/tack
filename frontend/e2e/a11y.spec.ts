@@ -276,10 +276,9 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   await modal.getByRole('button', { name: profileName, exact: true }).click();
   // The fixture's codex needs a model named and lists none, so the model is
   // typed by hand ("Other…"); without one the dialog has no Run button.
-  await modal.getByText('Advanced for this run').click();
-  await modal.getByText('Specific model').click();
-  await modal.getByRole('combobox', { name: 'Model' }).selectOption('__custom__');
-  await modal.getByLabel('Model id').fill('opaque/model-a11y');
+  // With no model named, "Advanced for this run" is already open on the model.
+  await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
+  await modal.getByLabel('Model name').fill('opaque/model-a11y');
   await modal.getByRole('button', { name: 'Run', exact: true }).click();
   await expect(modal).toBeHidden();
 

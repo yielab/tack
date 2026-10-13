@@ -2954,25 +2954,6 @@
         }
       }
     },
-    "/api/local-runner/harness-verification": {
-      "get": {
-        "tags": [
-          "local-runner"
-        ],
-        "summary": "GET /api/local-runner/harness-verification — per harness kind, when its\nlatest succeeded attempt ended. A kind with no succeeded attempt is absent.",
-        "operationId": "get_harness_verification",
-        "responses": {
-          "200": {
-            "description": "Harness kind to the ended_at of its latest succeeded attempt",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/local-runner/init-folder": {
       "post": {
         "tags": [
