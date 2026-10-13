@@ -1,11 +1,9 @@
-// Wire-format boundary for the embedded-runner control surface (ADR 0061
-// decisions 2 and 6 — a UI-only user turns the in-process runner on/off and
-// hands it a provider key, on a loopback bind, without a console). Every
-// assumption about `GET`/`PUT /api/local-runner` and `GET`/`PUT`/`DELETE
-// /api/local-runner/secrets(/{name})` lives in this one file — `
-// ExecutionToggle.tsx` and `ProviderKeyPanel.tsx` only ever import types and
-// functions from here, never construct a request body or read a raw wire
-// field themselves.
+// Wire-format boundary for the embedded-runner control surface (a UI-only
+// user turns the in-process runner on and off on a loopback bind, without a
+// console). Every assumption about `GET`/`PUT /api/local-runner` lives in
+// this one file — `ExecutionToggle.tsx` only ever imports types and
+// functions from here, never building a request body or reading a raw wire
+// field itself.
 //
 // ── Why these routes can be a genuine 404 ───────────────────────────────
 //
@@ -18,77 +16,32 @@
 // executes arbitrary agent processes on the host serving the UI, so it must
 // not even be discoverable from outside the machine it runs on.
 // `isLocalRunnerUnavailable` below is the one place that 404 is
-// interpreted — both panels explain this is a remote-runner deployment
-// instead of a bare error: `ExecutionToggle.tsx` points at the Advanced
-// section's enrollment flow, `ProviderKeyPanel.tsx` at the console-only
-// `tack runner secret set`, since a provider key genuinely is set on the
-// runner's own machine regardless of embedded vs. remote.
+// interpreted — the toggle explains this is a remote-runner deployment
+// instead of a bare error, pointing at the Advanced section's enrollment flow.
 //
 // ── The `GET/PUT /api/local-runner` contract ────────────────────────────
 //
-//   GET  /api/local-runner  -> { enabled, state, since, catalog }
+//   GET  /api/local-runner  -> { enabled, state, since }
 //     `enabled` is the persisted preference (survives a restart); `state`
 //     ("running" | "stopped") is the live runtime, which can briefly lag
-//     `enabled` right after boot. `catalog` is the provider-catalog
-//     snapshot — see `CatalogSnapshot` below.
+//     `enabled` right after boot.
 //   PUT  /api/local-runner  body: { enabled: boolean } -> 204
 //     Persists the preference and starts/stops the runner to match, with no
 //     restart.
 //
-// ── The `/api/local-runner/secrets` contract ────────────────────────────
-//
-//   GET    /api/local-runner/secrets            -> { data: SecretMeta[] }
-//   PUT    /api/local-runner/secrets/{name}  body: { value: string } -> 204
-//     Never echoes the value back, not even as a hash.
-//   DELETE /api/local-runner/secrets/{name}      -> 204 (not an error if
-//     already absent)
-//
-// This build has exactly one provider — Vercel AI Gateway — so every caller
-// here hardcodes `VERCEL_AI_GATEWAY_SECRET_NAME` as `{name}` rather than
-// exposing a picker for zero real choices.
 
 import { ApiError, request } from '../../shared/api/client';
 
-/** The one secret name this build's UI writes — `tack-runner`'s own
- *  default (`DEFAULT_VERCEL_AI_GATEWAY_SECRET`,
- *  `crates/tack-runner/src/config.rs`). Setting a value under this exact
- *  name is also what flips the Vercel provider on — see
- *  `EmbeddedRunnerControl::set_secret`'s own doc comment
- *  (`crates/tack-cli/src/local_runner.rs`). */
-export const VERCEL_AI_GATEWAY_SECRET_NAME = 'vercel-ai-gateway/default';
-
 export type LocalRunnerState = 'running' | 'stopped';
-
-/** Mirrors `CatalogSnapshot` (`crates/tack-api/src/handlers/local_runner.rs`)
- *  field-for-field — the provider's own catalog, as the embedded runner's
- *  own probe last saw it, computed fresh on every `GET`. */
-export type CatalogSnapshot =
-  | { status: 'not_configured' }
-  | { status: 'secret_unresolved' }
-  | { status: 'unreachable'; http_status: number | null }
-  | { status: 'configured'; model_count: number; checked_at: string };
 
 export interface LocalRunnerStatus {
   enabled: boolean;
   state: LocalRunnerState;
   since: string | null;
-  catalog: CatalogSnapshot;
 }
 
 export interface UpdateLocalRunnerBody {
   enabled: boolean;
-}
-
-export interface SecretMeta {
-  name: string;
-  /** `null` when the store holds this name but this process has no record
-   *  of when it was set (e.g. `tack runner secret set` wrote it before this
-   *  UI ever ran) — never a fabricated timestamp. */
-  set_at: string | null;
-}
-
-export interface SecretListResult {
-  data: SecretMeta[];
 }
 
 /** `GET /api/local-runner/harness-verification` — only the harness kinds with
@@ -117,24 +70,11 @@ export const localRunnerApi = {
       body: JSON.stringify({ enabled } satisfies UpdateLocalRunnerBody),
     }),
 
-  listSecrets: () => request<SecretListResult>('/local-runner/secrets'),
-
-  setSecret: (name: string, value: string) =>
-    request<void>(`/local-runner/secrets/${encodeURIComponent(name)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value }),
-    }),
-
   harnessVerification: () => request<HarnessVerification>('/local-runner/harness-verification'),
 
   testRun: (harnessKind: string) =>
     request<{ request_id: string }>('/local-runner/test-run', {
       method: 'POST',
       body: JSON.stringify({ harness_kind: harnessKind }),
-    }),
-
-  removeSecret: (name: string) =>
-    request<void>(`/local-runner/secrets/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
     }),
 };

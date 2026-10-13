@@ -3,7 +3,6 @@ import { runnersApi } from '../../shared/execution';
 import { localRunnerApi, isLocalRunnerUnavailable } from './api';
 import ExecutionToggle from './ExecutionToggle';
 import HarnessStep from './steps/HarnessStep';
-import ProviderStep from './steps/ProviderStep';
 import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
 import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isThisMachineRunner } from './runnerObservations';
@@ -69,10 +68,10 @@ const StepRow: Component<{ number: number; state: StepState; last?: boolean; chi
 };
 
 /**
- * The Agents page — three numbered, API-observed steps on this computer, a one-button test run, plus an Advanced section for running
- * agents on other machines. Composes `ExecutionToggle`/`ProviderKeyPanel`
- * (each independently fetches and owns its own state) with the harness,
- * provider and test-run steps, and the `runnerFleet/`
+ * The Agents page — two numbered, API-observed steps on this computer, a one-button test run, plus an Advanced section for running
+ * agents on other machines. Composes `ExecutionToggle`
+ * (which independently fetches and owns its own state) with the harness
+ * and test-run steps, and the `runnerFleet/`
  * management tree.
  */
 const AgentsPage: Component = () => {
@@ -128,7 +127,6 @@ const AgentsPage: Component = () => {
   const stepDone = (): boolean[] => [
     localRunnerStatus.error === undefined && localRunnerStatus()?.state === 'running',
     harnessesOf(thisMachineRunner()).some((h) => h.probe_error === null && !!h.installed_version),
-    Object.keys(signedIn()).length > 0,
   ];
   const stepState = (index: number): StepState => {
     const done = stepDone();
@@ -165,12 +163,8 @@ const AgentsPage: Component = () => {
           <ExecutionToggle />
         </StepRow>
 
-        <StepRow number={2} state={stepState(1)}>
+        <StepRow number={2} state={stepState(1)} last>
           <HarnessStep thisMachineRunner={thisMachineRunner()} onRecheck={() => void recheck()} rechecking={rechecking()} verification={signedIn()} />
-        </StepRow>
-
-        <StepRow number={3} state={stepState(2)} last>
-          <ProviderStep />
         </StepRow>
       </div>
 

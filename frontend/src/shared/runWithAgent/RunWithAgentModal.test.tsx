@@ -596,7 +596,7 @@ describe('RunWithAgentModal', () => {
       native_provider: 'anthropic',
       providers,
     });
-    const submitCustom = async (providers: string[], through?: string) => {
+    const submitCustom = async (providers: string[]) => {
       const row = runnerRow('runner-2', 'Box', runnerCapabilitySnapshot({ harnesses: [harness(providers)] }));
       mount({}, { runners: [row], fleets: [] });
       await flush();
@@ -607,11 +607,7 @@ describe('RunWithAgentModal', () => {
       setField(field('Model id'), 'opaque/typed');
       await flush();
       expect(document.body.textContent).not.toMatch(/Provider/);
-      expect(document.body.textContent?.includes('Through')).toBe(providers.length > 1);
-      if (through) {
-        setSelect(select('Through'), through);
-        await flush();
-      }
+      expect(document.body.textContent).not.toContain('Through');
       submitButton().click();
       await flush();
       await flush();
@@ -620,9 +616,7 @@ describe('RunWithAgentModal', () => {
 
     expect(await submitCustom(['anthropic'])).toMatchObject({ requested_model_provider: 'anthropic', requested_model_id: 'opaque/typed' });
     teardown();
-    expect(await submitCustom(['anthropic', 'vercel-ai-gateway'])).toMatchObject({ requested_model_provider: 'anthropic' });
-    teardown();
-    expect(await submitCustom(['anthropic', 'vercel-ai-gateway'], 'vercel-ai-gateway')).toMatchObject({ requested_model_provider: 'vercel-ai-gateway' });
+    expect(await submitCustom(['anthropic', 'openai-compatible'])).toMatchObject({ requested_model_provider: 'anthropic' });
   });
 
   it('proves the gate is load-bearing: injecting a real supported combination allows submit', async () => {
@@ -894,25 +888,6 @@ describe('RunWithAgentModal', () => {
     const options = [...select('Agent').options].map((o) => [o.value, o.textContent]);
     expect(options).toEqual([['prill', 'prill']]);
     expect(select('Agent').value).toBe('prill');
-  });
-
-  it('the Through select names a configured OpenAI-compatible endpoint in words', async () => {
-    const local = runnerRow('runner-8', 'Local model', runnerCapabilitySnapshot({
-      harnesses: [{
-        ...runnerCapabilitySnapshot().harnesses[0],
-        harness_kind: 'docket',
-        native_provider: 'docket',
-        providers: ['openai-compatible'],
-      }],
-    }));
-    mount({}, { runners: [local], fleets: [] });
-    await flush();
-    modelModeRadio(1).click();
-    await flush();
-    setSelect(select('Model'), '__custom__');
-    await flush();
-    const labels = [...select('Through').options].map((o) => o.textContent);
-    expect(labels).toEqual(['Docket', 'OpenAI-compatible endpoint']);
   });
 
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {

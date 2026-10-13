@@ -6,10 +6,10 @@ import { test, expect, waitForApp } from './helpers';
 // `/api/local-runner` is genuinely mounted and this exercises the real
 // `EmbeddedRunnerControl` lifecycle end to end, not a mock.
 //
-// This is the whole server-wide switch `provider-key-panel.spec.ts` and
-// `agents-page.spec.ts`'s first test also drive — `executionToggleLock`
+// This is the whole server-wide switch `agents-page.spec.ts`'s first test
+// also drives — `executionToggleLock`
 // (`./helpers.ts`) keeps this test's own on/off round trip from racing
-// either of theirs under full parallel load. See that fixture's own doc
+// that one's under full parallel load. See that fixture's own doc
 // comment before removing it.
 
 test.beforeEach(async ({ page }) => {

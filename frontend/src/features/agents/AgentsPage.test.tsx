@@ -11,7 +11,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-const LOCAL_RUNNER_OFF = { enabled: false, state: 'stopped', since: null, catalog: { status: 'not_configured' } };
+const LOCAL_RUNNER_OFF = { enabled: false, state: 'stopped', since: null };
 
 function mockFetch(overrides: Record<string, unknown> = {}) {
   const responses: Record<string, unknown> = {
@@ -101,7 +101,7 @@ describe('AgentsPage — default screen vocabulary', () => {
   });
 });
 
-const RUNNING = { enabled: true, state: 'running', since: '2026-01-01T00:00:00Z', catalog: { status: 'not_configured' } };
+const RUNNING = { enabled: true, state: 'running', since: '2026-01-01T00:00:00Z' };
 
 function runnerWith(harnesses: unknown[]) {
   return {
@@ -127,9 +127,9 @@ describe('AgentsPage — this computer only', () => {
     await flush();
     await flush();
 
-    // No project exists, and the only input on the page is the gateway key.
+    // No project exists, and the page has no input at all.
     const inputs = Array.from(container.querySelectorAll('input, select, textarea'));
-    expect(inputs.length).toBeLessThanOrEqual(1);
+    expect(inputs.length).toBe(0);
     expect(container.textContent).not.toContain('Project');
     const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
     expect(button).toBeTruthy();
@@ -181,7 +181,6 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('Installed v9.9.1 · Signed in ');
     expect(container.textContent).toContain('2026');
     expect(container.textContent).toContain('Not signed in — run `codex login` once in a terminal');
-    expect(container.textContent).toContain('Your agents sign in on their own');
     // The two harnesses this runner never reported are rows too, each with its install hint.
     expect(container.textContent).toContain('Docket');
     expect(container.textContent).toContain('OpenCode');
@@ -190,7 +189,7 @@ describe('AgentsPage — this computer only', () => {
     expect(container.textContent).toContain('From the docket project, following its own install instructions.');
   });
 
-  it('an installed harness with no vendor login reads as using a provider endpoint, never "Not signed in"', async () => {
+  it('an installed harness with no vendor login reads as unable to run yet, never "Not signed in"', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,
       '/api/runners': runnerWith([
@@ -203,7 +202,7 @@ describe('AgentsPage — this computer only', () => {
     await flush();
     await flush();
     expect(container.textContent).toContain('Installed v0.4.0 · Signed in ');
-    expect(container.textContent).toContain('Installed v1.0.3 · uses a provider endpoint (step 3)');
+    expect(container.textContent).toContain("Installed v1.0.3 · Can't run yet on this computer");
     expect(container.textContent).not.toContain('Not signed in');
   });
 
@@ -234,14 +233,15 @@ describe('AgentsPage — this computer only', () => {
 });
 
 describe('AgentsPage — composition', () => {
-  it('renders every numbered step and mounts both ExecutionToggle and ProviderKeyPanel', async () => {
+  it('renders both numbered steps and mounts ExecutionToggle, with no key field and no Provider heading', async () => {
     mockFetch();
     const { container } = mount();
     await flush();
     await flush();
 
     expect(container.textContent).toContain('Agent execution on this machine'); // ExecutionToggle
-    expect(container.textContent).toContain('Vercel AI Gateway key'); // ProviderKeyPanel
+    expect(container.querySelector('input[type="password"], input[type="text"]')).toBeNull();
+    expect(Array.from(container.querySelectorAll('h1, h2, h3')).map((h) => h.textContent)).not.toContain('Provider');
     expect(container.textContent).toContain('Agents on this machine');
     expect(container.textContent).toContain('Test run');
   });
@@ -256,7 +256,7 @@ describe('AgentsPage — composition', () => {
 
   it('lists a harness as installed, with its version, once this machine has an active runner reporting it', async () => {
     mockFetch({
-      '/api/local-runner': { enabled: true, state: 'running', since: '2026-01-01T00:00:00Z', catalog: { status: 'not_configured' } },
+      '/api/local-runner': { enabled: true, state: 'running', since: '2026-01-01T00:00:00Z' },
       '/api/runners': {
         protocol_version: 1,
         data: [

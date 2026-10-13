@@ -10,8 +10,7 @@ import { test, expect, waitForApp } from './helpers';
 // something the frontend fabricated.
 //
 // The first test below flips the same server-wide "agent execution on/off"
-// switch `execution-toggle.spec.ts` and `provider-key-panel.spec.ts` each
-// drive — it holds `executionToggleLock` (`./helpers.ts`) for that reason;
+// switch `execution-toggle.spec.ts` drives — it holds `executionToggleLock` (`./helpers.ts`) for that reason;
 // see that fixture's own doc comment before touching either.
 
 test.beforeEach(async ({ page }) => {
@@ -71,9 +70,9 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
 
   // Leave the machine as this test found it, for every other spec in this
   // suite that assumes agent execution starts off — but only when it is
-  // still this test's own to turn off. `execution-toggle.spec.ts` and
-  // `provider-key-panel.spec.ts` drive this identical, single, server-wide
-  // switch too; if one of them already turned it off while this test was
+  // still this test's own to turn off. `execution-toggle.spec.ts` drives
+  // this identical, single, server-wide
+  // switch too; if it already turned it off while this test was
   // busy reloading and re-reading the saved default above, the goal this
   // step exists for is already met, and clicking a button that no longer
   // reads "Turn off" would itself be the flaky assertion.

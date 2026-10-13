@@ -143,26 +143,13 @@ const AutomationPanel: Component = () => {
   const defaultHarnessReports = () =>
     snapshots().flatMap((s) => s?.harnesses ?? []).filter((h) => h.harness_kind === p()?.default_harness);
   const nativeProvider = () => defaultHarnessReports().find((h) => h.native_provider)?.native_provider;
-  /** The configured gateway a runner reports for the default agent, as the run dialog reads it. */
-  const gatewayProvider = () =>
-    defaultHarnessReports().flatMap((h) => h.providers ?? []).find((pr) => pr !== nativeProvider());
-  const GATEWAY_LABELS: Record<string, string> = {
-    'vercel-ai-gateway': 'Vercel AI Gateway',
-    'openai-compatible': 'OpenAI-compatible endpoint',
-  };
-  const [wantsGateway, setWantsGateway] = createSignal(false);
-  const viaGateway = () => {
-    const saved = explicit();
-    const gateway = gatewayProvider();
-    return !!gateway && (saved ? saved.provider === gateway : wantsGateway());
-  };
   const explicit = () => {
     const m = p()?.default_model;
     return m?.kind === 'explicit' ? m : null;
   };
   /** The pairs the "Specific model" list offers: the static ids under the
    *  native provider, then every measured combination each runner reports
-   *  for this agent (a gateway catalog, for docket), deduplicated. The pair
+   *  for this agent, deduplicated. The pair
    *  already saved stays listed even when no runner reports it any more, so
    *  the select never shows an empty choice for a project that has one. */
   const modelOptions = createMemo<ModelPair[]>(() => {
@@ -177,8 +164,7 @@ const AutomationPanel: Component = () => {
       pairs.push({ provider, model_id });
     };
     const native = nativeProvider();
-    const through = viaGateway() ? gatewayProvider() : native;
-    if (through) for (const id of ACCEPTED_MODELS[harness] ?? []) add(through, id);
+    if (native) for (const id of ACCEPTED_MODELS[harness] ?? []) add(native, id);
     for (const h of defaultHarnessReports()) {
       for (const c of h.model_combinations ?? []) for (const id of c.model_ids) add(c.model_provider, id);
     }
@@ -369,25 +355,6 @@ const AutomationPanel: Component = () => {
               <Note>Choose an agent first</Note>
             </Show>
             <Show when={specific()}>
-              <Select
-                label="Through"
-                aria-label="Through"
-                value={viaGateway() ? gatewayProvider()! : (nativeProvider() ?? '')}
-                disabled={!gatewayProvider() || !nativeProvider()}
-                onChange={(e) => {
-                  const provider = e.currentTarget.value;
-                  setWantsGateway(provider === gatewayProvider());
-                  const saved = explicit();
-                  if (saved) void save({ default_model: { kind: 'explicit', provider, model_id: saved.model_id } });
-                }}
-                options={[
-                  { value: nativeProvider() ?? '', label: nativeProvider() ? nativeProvider()!.charAt(0).toUpperCase() + nativeProvider()!.slice(1) : 'The agent\'s own login' },
-                  ...(gatewayProvider() ? [{ value: gatewayProvider()!, label: GATEWAY_LABELS[gatewayProvider()!] ?? gatewayProvider()! }] : []),
-                ]}
-              />
-              <Show when={!gatewayProvider()}>
-                <Note>Through the gateway is not available: add a gateway key on the Agents page.</Note>
-              </Show>
               <Select
                 aria-label="Model"
                 value={selectedPair()}
