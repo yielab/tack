@@ -228,10 +228,20 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
             follow_ups: 0,
         },
         Row {
-            name: "no next steps",
+            name: "no next steps: the failed criteria go back",
             cap: 2,
             first: pack(|p| {
                 p.as_object_mut().unwrap().remove("next_steps");
+            }),
+            second: None,
+            follow_ups: 1,
+        },
+        Row {
+            name: "nothing named to fix",
+            cap: 2,
+            first: pack(|p| {
+                p.as_object_mut().unwrap().remove("next_steps");
+                p["criteria"] = json!([]);
             }),
             second: None,
             follow_ups: 0,

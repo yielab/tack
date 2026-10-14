@@ -1,7 +1,7 @@
 # Plan: Phase 72 — merge authority follows the autonomy level you set
 
-**Status: opened 2026-10-13; every task but K2 merged into `develop` the same day, unpushed. K2
-waits on prill's M6.** Serves ADR 0079
+**Status: opened 2026-10-13; every task but K2 merged into `develop` the same day. K2, reshaped
+so it does not wait on prill, closed 2026-10-14. Phase 72 is closed.** Serves ADR 0079
 (`docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
 "Amendments agreed 2026-10-13" wins where it disagrees with the table. Written against `develop`
 at `11de5f2e`, prill at `324842e` (ADR 0014 accepted, M6 specified, not built) and docket at
@@ -505,7 +505,7 @@ card badge; the section saves; a disabled L4 shows its reason; both pack panel s
 **Done when:** vitest, typecheck, Playwright `--workers=2` headless and the gate are green.
 **Hand-off:** Sonnet, frontend, ceiling 150.
 
-### K2 — the runner sends the required stages and reads prill's next steps (Sonnet; waits on prill M6)
+### K2 — the runner sends the required stages and reads prill's next steps (Sonnet; waits on prill M6) — superseded, see Status
 
 **Needs:** a prill that implements ADR 0014 L-1 and L-2, named by version, and the integrator's
 fixtures from it (a run with `require` holding a stage `not_run: required`, an MRP with
@@ -576,4 +576,8 @@ tree; `scripts/smoke.sh` fake mode.
 - **Round 5 (F)** closed 2026-10-13, merged in `9d26dbeb`; its locally declared Autonomy types were replaced by the generated ones. On the merged tree: the gate is green, nextest is 1257/1257, vitest is 622/622, the token gate passes, Playwright chromium is 54/54 (`--workers=2`, headless; firefox and webkit are not installed on this machine), and `scripts/smoke.sh` fake mode passes.
   - F's calls, kept: L4/L5 are disabled while `automatic_merge_blocked_by` is non-empty, with its sentences under the levels; the badge's label is chosen from the note's wording; the badge sits on the board card, the list row and the table's Review column; a system comment's author reads "Tack".
 - **Z** done 2026-10-13: `docs/CONFIG.md` (`TACK_PRILL_PROGRAM`, `[verify] sign_key`, the metric criterion and `--sign`/`--db` corrected), the changelog's beta.10 section (phase 72, migrations 078–087), the book's "Merging from Tack" page.
-- **Open: K2 only.** It waits for prill to enforce `require` and fill `nextSteps` (its M6 past wave 1; prill was at `631b4cd`). Until then L4/L5 hold every automatic merge with "The runner has not reported that its prill can require stages", and the loop back to the agent never fires, by design (P3). The button and merge on Done work now.
+- **K2** reshaped and closed 2026-10-14 (the integrator, no agent: four small edits). The owner asked why Tack waited on prill when prill is not a dependency. It did not need to: the pack already carried what both checks need. ADR 0079's amendments say so, dated.
+  - The runner copies prill's `stages` (name, status, reason) and its `nextSteps` into Tack's pack; `stages` is a new optional field of `mrp-v1`.
+  - The automatic merge's require check is `MergeReadinessPack::required_stage_missing`: every stage in `verify_require` must be listed as `passed`; `not_applicable` or absent holds the merge, naming the stage. `can_require` and the `--config` layer are dropped.
+  - The loop back to the agent uses `MergeReadinessPack::what_to_fix`: prill's next steps when it gave some, else each failed criterion and each failed stage but `criteria`.
+- **CI**, 2026-10-14: `opencode_gets_its_login_and_providers_and_nothing_else` failed on every push since phase 71 because CI's test job has no bwrap; its sandboxed half is skipped there now, as the other bwrap tests are.

@@ -52,8 +52,9 @@ that does not is shown on the task, and a person reviews it as usual:
 1. The run did not come through MCP.
 2. The verifier said the change can merge.
 3. The change's domain is at L4 or L5.
-4. The verifier ran with the stages the project requires ("Stages the verifier must run";
-   at least one is needed).
+4. The verifier's pack lists every stage the project requires ("Stages the verifier must
+   run"; at least one is needed) as passed. A stage it skipped as not applicable does not
+   count.
 5. The verifier's pack is signed, and the signature checks against the exact commit.
 6. No daily budget of the project is spent.
 7. The pull request is open, and CI on that commit is green.
@@ -79,7 +80,7 @@ activity says so. Only you raise a level again.
 ## Sending a rejected change back to the agent
 
 A project can let a change the verifier rejects go back to the agent first, with the
-verifier's list of what to fix, up to a number of times you set (0, the default, is never).
+verifier's list of what to fix (or, when it gave none, the checks that failed), up to a number of times you set (0, the default, is never).
 It stops sooner when two rejections in a row give the same reasons, when the verifier asks
 for a person instead, or when you cancel the follow-up run; then the task waits for your
 review with every attempt kept.

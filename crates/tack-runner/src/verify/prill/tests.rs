@@ -294,6 +294,33 @@ fn every_prill_fixture_translates_into_a_pack_that_round_trips() {
     }
 }
 
+/// prill's stages reach the pack as it reports them, so the board can check
+/// the required ones; its `nextSteps` come across field by field.
+#[test]
+fn prills_stages_and_next_steps_reach_the_pack() {
+    let evidence = tack_evidence("att_9", &"a".repeat(40), Value::Null);
+    let mut prill = prill_fixture("reject-failed-criterion");
+    let translated = pack(&prill, &evidence, &"e".repeat(64), None);
+    let stages = translated.stages.as_deref().expect("stages");
+    assert_eq!(stages.len(), 9);
+    assert_eq!(
+        (stages[1].name.as_str(), stages[1].status.as_str()),
+        ("criteria", "failed")
+    );
+    assert_eq!(stages[1].reason.as_deref(), Some("criterion_failed"));
+    assert_eq!(translated.next_steps, None);
+
+    prill["nextSteps"] = json!([{"code": "fix_test", "severity": "error", "stage": "suite",
+        "criterionId": "unit", "path": "src/a.rs", "line": 4, "command": "cargo test",
+        "message": "make it pass"}]);
+    let steps = pack(&prill, &evidence, &"e".repeat(64), None)
+        .next_steps
+        .expect("next steps");
+    assert_eq!(steps[0].criterion_id.as_deref(), Some("unit"));
+    assert_eq!(steps[0].line, Some(4));
+    assert_eq!(steps[0].message.as_deref(), Some("make it pass"));
+}
+
 #[test]
 fn every_section_of_a_full_prill_pack_lands_in_its_tack_section() {
     let evidence = tack_evidence("att_9", &"a".repeat(40), Value::Null);

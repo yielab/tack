@@ -303,6 +303,20 @@
           "message": {"type": "string"}
         }
       }
+    },
+    "stages": {
+      "type": "array",
+      "description": "Every stage the verifier knows and what became of it. Absent when it does not report stages.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "minLength": 1},
+          "reason": {"type": "string"}
+        }
+      }
     }
   }
 }

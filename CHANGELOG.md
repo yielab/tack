@@ -38,7 +38,7 @@ database), and a pull request opens when you accept the run, not when it finishe
 Phase 72 (ADR 0079) lets Tack merge: a **Merge** button on a finished task, a project option
 that merges when you move the task to Done, and, for a project that allows it, a merge Tack
 makes by itself inside the parts of the code you authorise (L4) or everywhere (L5), only when
-the verifier said merge under the stages you require, the pack is signed for that exact
+the verifier said merge, its pack shows every stage you require as passed, the pack is signed for that exact
 commit, CI is green and no budget is spent. Nothing changes for a project that stays at L3.
 
 Upgrading applies migrations 078–087 on first start — new tables and columns, and phase 71's
@@ -54,8 +54,9 @@ one model string.
   anything is missing, and taken down a level by itself after a revert or red CI; a run that came
   through MCP is merged only with the button
 - **merge:** The task card says when its merge did not happen and why
-- **runs:** A change the verifier rejects can go back to the agent with the verifier's next steps
-  a set number of times before a person sees it (off by default)
+- **runs:** A change the verifier rejects can go back to the agent with the verifier's next steps,
+  or its failed checks when it gave none, a set number of times before a person sees it (off by
+  default)
 - **runs:** Daily budgets per project — tokens, dollars, automatic merges, items waiting for
   review — stop new work and say why; running work finishes
 - **verifier:** The runner can sign the pack (`[verify] sign_key`), and the board checks the

@@ -149,19 +149,22 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
         .as_deref()
         .and_then(|raw| serde_json::from_str(raw).ok())
         .unwrap_or(Value::Null);
-    let asked = snapshot["verify_require"]
+    // The stages the run was asked for, read off the pack: the merge is Tack's,
+    // so whether the evidence is enough is Tack's to check.
+    let required: Vec<String> = snapshot["verify_require"]
         .as_array()
-        .is_some_and(|list| !list.is_empty());
-    // K2 writes the runner's report; its prill must be able to require stages.
-    extra.require = if !asked {
+        .into_iter()
+        .flatten()
+        .filter_map(|stage| stage.as_str().map(str::to_owned))
+        .collect();
+    extra.require = if required.is_empty() {
         fail(
             "The project's required verification stages are empty; automatic merge needs at least one",
         )
     } else {
-        match actual["verify"]["can_require"].as_bool() {
-            Some(true) => Check::Pass,
-            Some(false) => fail("The runner's prill cannot require verification stages"),
-            None => fail("The runner has not reported that its prill can require stages"),
+        match pack.required_stage_missing(&required) {
+            None => Check::Pass,
+            Some(reason) => Check::Fail(reason),
         }
     };
 

@@ -46,7 +46,8 @@ or catalog; each agent signs in with its own tools and a run names its model as 
 Phase 72 (`docs/plans/phase-72.md`, ADR 0079, opened 2026-10-13) lets Tack merge: a Merge button,
 merge on Done, and an automatic merge at L4/L5 under the verifier's signed verdict. One owner per
 responsibility: prill owns the verdict, required stages and every quality figure; Tack the loop,
-the merge, GitHub and money; docket runs the agent. Its K2 waits on prill M6.
+the merge (and whether its evidence is enough), GitHub and money; docket runs the agent. K2 closed
+2026-10-14 without waiting for prill: Tack reads the required stages and what to fix off the pack.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

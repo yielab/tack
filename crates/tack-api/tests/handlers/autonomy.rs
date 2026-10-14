@@ -131,6 +131,8 @@ pub(crate) struct Setup {
     pub(crate) github: bool,
     pub(crate) signed: bool,
     pub(crate) verify_require: Vec<&'static str>,
+    /// The stages the pack reports, as (name, status)
+    pub(crate) pack_stages: Vec<(&'static str, &'static str)>,
     pub(crate) merges_per_day: Option<i64>,
 }
 
@@ -143,6 +145,7 @@ impl Default for Setup {
             github: true,
             signed: true,
             verify_require: vec!["criteria", "suite"],
+            pack_stages: vec![("criteria", "passed"), ("suite", "passed")],
             merges_per_day: Some(5),
         }
     }
@@ -225,6 +228,12 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
     }
     let a = request_and_claim(&b.app, &b.item_id, "a2", None).await;
     accept_and_start(&b.app, &a).await;
+    let mut pack: Value = serde_json::from_str(READY).unwrap();
+    pack["stages"] = setup
+        .pack_stages
+        .iter()
+        .map(|(name, status)| json!({"name": name, "status": status}))
+        .collect();
     upload(
         &b.app,
         &a,
@@ -232,7 +241,7 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
         "report",
         "mrp.json",
         MRP_MEDIA_TYPE,
-        READY.as_bytes(),
+        pack.to_string().as_bytes(),
     )
     .await;
     let evidence = json!({"v": "1", "files": [{"path": "src/new.rs", "op": "added"}]}).to_string();
@@ -268,14 +277,6 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // The runner's report that its prill can require stages (written by K2).
-    sqlx::query(
-        "UPDATE execution_attempts SET actual_execution = json_set(actual_execution, '$.verify', json('{\"can_require\":true}')) WHERE id = ?",
-    )
-    .bind(&a.attempt_id)
-    .execute(b.state.repo.pool())
-    .await
-    .unwrap();
     a
 }
 
@@ -504,6 +505,22 @@ async fn holds_table() {
                 ..Setup::default()
             },
             Some("required verification stages"),
+        ),
+        (
+            "a required stage the verifier passed over",
+            Setup {
+                pack_stages: vec![("criteria", "passed"), ("suite", "not_applicable")],
+                ..Setup::default()
+            },
+            Some("The required stage suite is not_applicable"),
+        ),
+        (
+            "a required stage the pack does not list",
+            Setup {
+                pack_stages: vec![("criteria", "passed")],
+                ..Setup::default()
+            },
+            Some("The required stage suite is not in the pack"),
         ),
         (
             "merge budget spent",

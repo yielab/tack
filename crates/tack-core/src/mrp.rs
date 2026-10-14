@@ -227,6 +227,16 @@ pub struct NextStep {
     pub message: Option<String>,
 }
 
+/// One stage the verifier ran or passed over, as it reports it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StageRun {
+    pub name: String,
+    /// `passed`, `failed`, `degraded`, `not_run` or `not_applicable`
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// The Merge Readiness Pack.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MergeReadinessPack {
@@ -261,6 +271,81 @@ pub struct MergeReadinessPack {
     /// What the verifier says to do next (absent when it gave none)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_steps: Option<Vec<NextStep>>,
+    /// Every stage the verifier knows and what became of it (absent when it
+    /// does not report stages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stages: Option<Vec<StageRun>>,
+}
+
+impl MergeReadinessPack {
+    /// The first of `required` that did not pass, with what the pack says of
+    /// it. A stage the pack does not list, or lists as anything but `passed`
+    /// (`not_applicable` included: a verifier that skips a stage passes it),
+    /// counts as not run. `None` when every required stage passed.
+    pub fn required_stage_missing(&self, required: &[String]) -> Option<String> {
+        let stages = self.stages.as_deref().unwrap_or_default();
+        required.iter().find_map(
+            |name| match stages.iter().find(|stage| stage.name == *name) {
+                Some(stage) if stage.status == "passed" => None,
+                Some(stage) => Some(format!(
+                    "The required stage {name} is {}{}",
+                    stage.status,
+                    stage
+                        .reason
+                        .as_deref()
+                        .map(|reason| format!(" ({reason})"))
+                        .unwrap_or_default()
+                )),
+                None => Some(format!("The required stage {name} is not in the pack")),
+            },
+        )
+    }
+
+    /// What the agent is asked to fix after a rejection: the verifier's own
+    /// next steps when it gave some, else one step per failed criterion and
+    /// per failed stage other than `criteria` (whose failures are the
+    /// criteria themselves).
+    pub fn what_to_fix(&self) -> Vec<NextStep> {
+        if let Some(steps) = self.next_steps.as_ref().filter(|steps| !steps.is_empty()) {
+            return steps.clone();
+        }
+        let criteria = self
+            .criteria
+            .iter()
+            .filter(|criterion| criterion.status == CriterionStatus::Failed)
+            .map(|criterion| NextStep {
+                code: format!("criterion_failed:{}", criterion.id),
+                severity: "error".to_owned(),
+                stage: None,
+                criterion_id: Some(criterion.id.clone()),
+                path: None,
+                line: None,
+                command: None,
+                message: Some(match &criterion.note {
+                    Some(note) => format!("Criterion {} failed: {note}", criterion.id),
+                    None => format!("Criterion {} failed", criterion.id),
+                }),
+            });
+        let stages = self
+            .stages
+            .iter()
+            .flatten()
+            .filter(|stage| stage.status == "failed" && stage.name != "criteria")
+            .map(|stage| NextStep {
+                code: format!("stage_failed:{}", stage.name),
+                severity: "error".to_owned(),
+                stage: Some(stage.name.clone()),
+                criterion_id: None,
+                path: None,
+                line: None,
+                command: None,
+                message: Some(match &stage.reason {
+                    Some(reason) => format!("Stage {} failed: {reason}", stage.name),
+                    None => format!("Stage {} failed", stage.name),
+                }),
+            });
+        criteria.chain(stages).collect()
+    }
 }
 
 /// Render the pack as Markdown for a pull-request body. One heading per

@@ -35,8 +35,8 @@ use std::{fs, path::Path, process::Stdio, time::Duration};
 use serde_json::{Value, json};
 use tack_core::mrp::{
     Criterion, CriterionStatus, JudgeRubricEntry, JudgeSection, JudgeVerdict, MergeDecision,
-    MergeReadinessPack, MutationSection, ProducedBySection, RecommendationSection, RiskSection,
-    RiskTier, SignatureSection, UsageSection, VerifySection,
+    MergeReadinessPack, MutationSection, NextStep, ProducedBySection, RecommendationSection,
+    RiskSection, RiskTier, SignatureSection, StageRun, UsageSection, VerifySection,
 };
 use tokio::process::Command;
 
@@ -740,9 +740,39 @@ pub(super) fn pack(
                 .unwrap_or("unknown")
                 .to_owned(),
         },
-        // K2 fills this from prill's `nextSteps`.
-        next_steps: None,
+        next_steps: next_steps(&prill["nextSteps"]),
+        stages: prill["stages"].as_array().map(|stages| {
+            stages
+                .iter()
+                .map(|stage| StageRun {
+                    name: text(&stage["name"]),
+                    status: text(&stage["status"]),
+                    reason: non_empty(&stage["reason"]).map(str::to_owned),
+                })
+                .collect()
+        }),
     }
+}
+
+/// prill's `nextSteps`, `None` when it gave none.
+fn next_steps(steps: &Value) -> Option<Vec<NextStep>> {
+    let owned = |value: &Value| non_empty(value).map(str::to_owned);
+    let steps: Vec<NextStep> = steps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|step| NextStep {
+            code: text(&step["code"]),
+            severity: text(&step["severity"]),
+            stage: owned(&step["stage"]),
+            criterion_id: owned(&step["criterionId"]),
+            path: owned(&step["path"]),
+            line: step["line"].as_u64().map(|line| line as u32),
+            command: owned(&step["command"]),
+            message: owned(&step["message"]),
+        })
+        .collect();
+    (!steps.is_empty()).then_some(steps)
 }
 
 /// What a criterion's command or file evidence says when prill gave no

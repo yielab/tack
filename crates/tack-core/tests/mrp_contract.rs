@@ -139,3 +139,68 @@ All criteria passed
 
 prill 0.1.0
 "#;
+
+/// A required stage counts only when the pack lists it as `passed`.
+#[test]
+fn required_stages_are_read_off_the_pack() {
+    let mut ready = pack(FIXTURES[0].1);
+    let required = ["criteria".to_owned(), "suite".to_owned()];
+    assert_eq!(
+        ready.required_stage_missing(&required).as_deref(),
+        Some("The required stage criteria is not in the pack")
+    );
+    let stage = |name: &str, status: &str, reason: Option<&str>| tack_core::mrp::StageRun {
+        name: name.to_owned(),
+        status: status.to_owned(),
+        reason: reason.map(str::to_owned),
+    };
+    ready.stages = Some(vec![
+        stage("criteria", "passed", None),
+        stage("suite", "not_applicable", Some("no_suite_command")),
+    ]);
+    assert_eq!(
+        ready.required_stage_missing(&required).as_deref(),
+        Some("The required stage suite is not_applicable (no_suite_command)")
+    );
+    ready.stages = Some(vec![
+        stage("criteria", "passed", None),
+        stage("suite", "passed", None),
+    ]);
+    assert_eq!(ready.required_stage_missing(&required), None);
+}
+
+/// The verifier's own next steps win; without them, each failed criterion and
+/// each failed stage but `criteria` is one thing to fix.
+#[test]
+fn what_to_fix_falls_back_to_the_failures() {
+    let with_steps = pack(FIXTURES[4].1);
+    assert_eq!(
+        with_steps.what_to_fix(),
+        with_steps.next_steps.clone().unwrap()
+    );
+
+    let mut bare = with_steps;
+    bare.next_steps = None;
+    bare.stages = Some(vec![
+        tack_core::mrp::StageRun {
+            name: "criteria".to_owned(),
+            status: "failed".to_owned(),
+            reason: None,
+        },
+        tack_core::mrp::StageRun {
+            name: "static_analysis".to_owned(),
+            status: "failed".to_owned(),
+            reason: Some("2 new findings".to_owned()),
+        },
+    ]);
+    let codes: Vec<String> = bare.what_to_fix().into_iter().map(|s| s.code).collect();
+    assert_eq!(
+        codes,
+        [
+            "criterion_failed:cmd_build",
+            "criterion_failed:test_unit",
+            "criterion_failed:metric_coverage",
+            "stage_failed:static_analysis",
+        ]
+    );
+}

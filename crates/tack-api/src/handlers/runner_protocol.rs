@@ -2274,10 +2274,10 @@ async fn pack_of(
 }
 
 /// A change the verifier rejected goes back to the agent that made it: when the
-/// pack says `reject`, carries next steps, made progress since the run before
-/// it, and the project's loop cap is above the follow-ups already made, one
-/// follow-up is enqueued on the same item, harness, profile and model with the
-/// next steps in a fenced block. Budgets are the scheduler's and never read
+/// pack says `reject`, names something to fix (`MergeReadinessPack::what_to_fix`),
+/// made progress since the run before it, and the project's loop cap is above
+/// the follow-ups already made, one follow-up is enqueued on the same item,
+/// harness, profile and model with what to fix in a fenced block. Budgets are the scheduler's and never read
 /// here. Nothing is enqueued otherwise; the item waits for review as before.
 async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result<(), sqlx::Error> {
     use sha2::{Digest, Sha256};
@@ -2287,7 +2287,7 @@ async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result
     let Some(pack) = pack_of(state, attempt_id).await else {
         return Ok(());
     };
-    let steps = pack.next_steps.clone().unwrap_or_default();
+    let steps = pack.what_to_fix();
     if pack.recommendation.decision != MergeDecision::Reject || steps.is_empty() {
         return Ok(());
     }
@@ -2347,7 +2347,7 @@ async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result
         if let Some(previous) = match previous_attempt {
             Some(id) => pack_of(state, &id).await,
             None => None,
-        } && codes(&previous.next_steps.unwrap_or_default()) == codes(&steps)
+        } && codes(&previous.what_to_fix()) == codes(&steps)
         {
             return Ok(());
         }
