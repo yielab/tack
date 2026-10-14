@@ -16,6 +16,8 @@ pub struct PullRequestRow {
     pub merged_at: Option<String>,
     pub closed_at: Option<String>,
     pub reverted_by_number: Option<i64>,
+    pub merge_sha: Option<String>,
+    pub red_ci_at: Option<String>,
 }
 
 /// Record the pull request an attempt opened. A second call for the same
@@ -82,19 +84,70 @@ pub async fn observe(
     Ok(result.rows_affected() > 0)
 }
 
-/// Mark a stored merged pull request as reverted by PR `by_number`. Returns
-/// whether it was one.
+/// Mark a stored merged pull request as reverted, by PR `by_number` or, when
+/// `None`, by a commit that has no pull request. Returns whether it was merged.
 pub async fn mark_reverted(
     pool: &SqlitePool,
     repo: &str,
     number: i64,
-    by_number: i64,
+    by_number: Option<i64>,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE pull_requests SET state = 'reverted', reverted_by_number = ?
          WHERE repo = ? AND number = ? AND state = 'merged'",
     )
     .bind(by_number)
+    .bind(repo)
+    .bind(number)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// The merged pull requests of `repo` merged at or after `since` (RFC 3339).
+pub async fn list_merged_since(
+    pool: &SqlitePool,
+    repo: &str,
+    since: &str,
+) -> Result<Vec<PullRequestRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT * FROM pull_requests WHERE repo = ? AND state = 'merged' AND merged_at >= ?",
+    )
+    .bind(repo)
+    .bind(since)
+    .fetch_all(pool)
+    .await
+}
+
+/// Store the merge commit of a pull request that has none yet.
+pub async fn set_merge_sha(
+    pool: &SqlitePool,
+    repo: &str,
+    number: i64,
+    merge_sha: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE pull_requests SET merge_sha = ? WHERE repo = ? AND number = ? AND merge_sha IS NULL",
+    )
+    .bind(merge_sha)
+    .bind(repo)
+    .bind(number)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Record when CI on a pull request's merge commit was first seen red.
+pub async fn set_red_ci_at(
+    pool: &SqlitePool,
+    repo: &str,
+    number: i64,
+    at: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE pull_requests SET red_ci_at = ? WHERE repo = ? AND number = ? AND red_ci_at IS NULL",
+    )
+    .bind(at)
     .bind(repo)
     .bind(number)
     .execute(pool)

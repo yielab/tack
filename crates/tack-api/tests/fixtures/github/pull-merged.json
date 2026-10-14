@@ -1,0 +1,9 @@
+{
+  "number": 7,
+  "state": "closed",
+  "merged": true,
+  "merge_commit_sha": "e5bd3914e2e596debea16f433f57875b5b90bcd6",
+  "head": {
+    "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+  }
+}
