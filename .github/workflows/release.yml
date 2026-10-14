@@ -489,23 +489,18 @@ jobs:
       id-token: write        # OIDC token for provenance signing
       attestations: write    # write build-provenance attestations
     steps:
-      # git-cliff renders the tag's CHANGELOG section from the commit history
-      # (cliff.toml), so the release notes say what `make changelog-release`
-      # wrote. It needs the whole history and every tag, hence fetch-depth 0.
+      # The release notes are the tag's CHANGELOG.md section, so they say what
+      # the changelog says.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install git-cliff (prebuilt)
-        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
-        with:
-          tool: git-cliff
-      - name: Render release notes from the commit history
+      - name: Render release notes from CHANGELOG.md
         run: |
           set -euo pipefail
           # ADR 0062 decision 7: desktop bundles are unsigned (signing needs a
           # paid certificate, a separate decision) — the fixed warning comes
-          # first, the generated section after it.
+          # first, the changelog section after it.
           cat > release-notes.md <<'EOF'
           The desktop app (`.deb`, `.AppImage`, `.dmg`, `.msi` below) is unsigned:
           signing certificates are a separate, not-yet-made decision. Two
@@ -518,7 +513,18 @@ jobs:
             **More info** → **Run anyway**. Only needed once.
 
           EOF
-          git-cliff --latest --strip all >> release-notes.md
+          # The tag's section of CHANGELOG.md, which is written by hand: the
+          # `Add:`/`Fix:` commits since beta.9 are not conventional, so
+          # git-cliff would render an almost empty section.
+          version="${GITHUB_REF_NAME#v}"
+          awk -v head="## [$version]" '
+            index($0, head) == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^---$/ { exit }
+            on { print }
+          ' CHANGELOG.md > section.md
+          grep -q '[^[:space:]]' section.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
+          cat section.md >> release-notes.md
           echo "----- release-notes.md -----"
           cat release-notes.md
 

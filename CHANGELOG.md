@@ -9,9 +9,9 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
-## [0.1.0-beta.10] - 2026-10-11
+## [0.1.0-beta.10] - 2026-10-14
 
-Phases 66, 67 and 68. The version moved to `0.1.0-beta.10` on 2026-10-05 when Phase 66
+Phases 66 to 72. The version moved to `0.1.0-beta.10` on 2026-10-05 when Phase 66
 closed, but it was not tagged then, so everything since beta.9 ships here.
 
 Phase 66: an agent run now closes the loop up to the merge. An item carries a brief that
