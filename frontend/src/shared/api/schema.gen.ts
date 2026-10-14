@@ -2816,6 +2816,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/rate-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/settings/rate-card */
+        get: operations["get_rate_card"];
+        /** PUT /api/settings/rate-card */
+        put: operations["put_rate_card"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sprints/{id}": {
         parameters: {
             query?: never;
@@ -3601,6 +3619,17 @@ export interface components {
         FactoryMetrics: {
             /** Format: int64 */
             attempts: number;
+            /**
+             * Format: int64
+             * @description Attempts whose model the rate card does not list, so not in `cost_usd`.
+             */
+            cost_unpriced_attempts?: number | null;
+            /**
+             * Format: double
+             * @description Tokens priced by the rate card, plus the human minutes at its hour
+             *     rate. Absent without a rate card.
+             */
+            cost_usd?: number | null;
             /** Format: int64 */
             decisions: number;
             /** @description decisions ÷ attempts. */
@@ -3617,6 +3646,9 @@ export interface components {
             /** Format: int64 */
             mrp_unreviewed: number;
             outcomes: components["schemas"]["Outcomes"];
+            quality?: null | components["schemas"]["Quality"];
+            quality_unavailable?: string | null;
+            rate_card_as_of?: string | null;
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
         };
@@ -3869,6 +3901,13 @@ export interface components {
         MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
         /** @enum {string} */
         MetricOp: "lte" | "gte" | "eq";
+        /** @description Dollars per million tokens of one model. */
+        ModelPrice: {
+            /** Format: double */
+            input_per_mtok: number;
+            /** Format: double */
+            output_per_mtok: number;
+        };
         /**
          * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
          *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
@@ -3907,16 +3946,15 @@ export interface components {
             merged: number;
             /**
              * Format: int64
+             * @description Merged and not reverted at the time of the query: no CI, defect or
+             *     window behind it, so it is not a quality figure (prill's `quality` is).
+             */
+            merged_not_reverted: number;
+            /**
+             * Format: int64
              * @description Pull requests opened in the window, and what each is now.
              */
             opened: number;
-            /**
-             * Format: int64
-             * @description Merged and not reverted.
-             */
-            pqc: number;
-            /** @description `pqc` ÷ `opened`. */
-            pqc_rate: components["schemas"]["Ratio"];
             /** Format: int64 */
             reverted: number;
         };
@@ -4078,6 +4116,25 @@ export interface components {
         };
         /** @enum {string} */
         ProjectType: "software" | "web" | "mobile" | "construction" | "personal" | "homework" | "maintenance" | "legal" | "research" | "event" | "custom";
+        /** @description What prill measured. Present only when prill answered. */
+        Quality: {
+            prill_version: string;
+            repositories: components["schemas"]["RepositoryQuality"][];
+            /** @description Always `prill`. */
+            source: string;
+        };
+        RateCard: {
+            /** @description The date the prices were read, as the operator wrote it. */
+            as_of: string;
+            /** Format: double */
+            ci_minute: number;
+            /** Format: double */
+            human_hour: number;
+            /** @description Price per model string, exactly as a run names its model. */
+            models: {
+                [key: string]: components["schemas"]["ModelPrice"];
+            };
+        };
         /** @description A ratio with the counts it came from. */
         Ratio: {
             /** Format: int64 */
@@ -4095,6 +4152,25 @@ export interface components {
         RecoveryConfirmation: {
             reason: string;
             recovery_key: string;
+        };
+        /** @description One repository's figures from prill's store. */
+        RepositoryQuality: {
+            /**
+             * Format: double
+             * @description Tokens of the attempts that opened this repository's pull requests,
+             *     priced by the rate card. Absent without a card.
+             */
+            cost_usd?: number | null;
+            /** @description prill's `metrics/v1` document, as prill printed it. */
+            metrics: Record<string, never>;
+            /**
+             * Format: double
+             * @description prill's `qualified` ÷ `cost_usd`. Absent without a card, without a
+             *     `qualified` count, or when the cost is zero.
+             */
+            qualified_per_usd?: number | null;
+            /** @description `owner/repo`. */
+            repository: string;
         };
         /** @description Response body for `POST /api/executions/{id}/requeue`. */
         RequeueResponse: {
@@ -8154,6 +8230,59 @@ export interface operations {
                 };
             };
             /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_rate_card: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rate card, or null when none was entered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": null | components["schemas"]["RateCard"];
+                };
+            };
+        };
+    };
+    put_rate_card: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateCard"];
+            };
+        };
+        responses: {
+            /** @description The saved rate card */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateCard"];
+                };
+            };
+            /** @description A price is negative or not a number */
             422: {
                 headers: {
                     [name: string]: unknown;

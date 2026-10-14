@@ -496,8 +496,10 @@ async fn follow_pull_request(
         for cited in cited_numbers(pr.body.as_deref().unwrap_or_default()) {
             tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, cited, Some(pr.number))
                 .await?;
+            crate::prill_store::observed(state, repo, cited).await;
         }
     }
+    crate::prill_store::observed(state, repo, pr.number).await;
     Ok(())
 }
 
@@ -727,9 +729,7 @@ async fn follow_merged_inner(
         if commits.iter().any(|c| c.commit.message.contains(&needle)) {
             tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, row.number, None)
                 .await?;
-            continue;
-        }
-        if row.red_ci_at.is_none()
+        } else if row.red_ci_at.is_none()
             && row
                 .merged_at
                 .as_deref()
@@ -739,6 +739,7 @@ async fn follow_merged_inner(
             tack_db::repo::pull_requests::set_red_ci_at(state.pool(), repo, row.number, &at)
                 .await?;
         }
+        crate::prill_store::observed(state, repo, row.number).await;
     }
     Ok(())
 }

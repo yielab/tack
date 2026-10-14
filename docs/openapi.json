@@ -6363,6 +6363,73 @@
         }
       }
     },
+    "/api/settings/rate-card": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "GET /api/settings/rate-card",
+        "operationId": "get_rate_card",
+        "responses": {
+          "200": {
+            "description": "The rate card, or null when none was entered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RateCard"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "PUT /api/settings/rate-card",
+        "operationId": "put_rate_card",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateCard"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The saved rate card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateCard"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A price is negative or not a number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sprints/{id}": {
       "get": {
         "tags": [
@@ -8960,6 +9027,22 @@
             "type": "integer",
             "format": "int64"
           },
+          "cost_unpriced_attempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Attempts whose model the rate card does not list, so not in `cost_usd`."
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Tokens priced by the rate card, plus the human minutes at its hour\nrate. Absent without a rate card."
+          },
           "decisions": {
             "type": "integer",
             "format": "int64"
@@ -8989,6 +9072,29 @@
           },
           "outcomes": {
             "$ref": "#/components/schemas/Outcomes"
+          },
+          "quality": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Quality",
+                "description": "prill's figures; absent when `quality_unavailable` says why."
+              }
+            ]
+          },
+          "quality_unavailable": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate_card_as_of": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "since": {
             "type": [
@@ -9636,6 +9742,24 @@
           "eq"
         ]
       },
+      "ModelPrice": {
+        "type": "object",
+        "description": "Dollars per million tokens of one model.",
+        "required": [
+          "input_per_mtok",
+          "output_per_mtok"
+        ],
+        "properties": {
+          "input_per_mtok": {
+            "type": "number",
+            "format": "double"
+          },
+          "output_per_mtok": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "ModelProvenanceSchema": {
         "type": "object",
         "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). Both model strings are carried\nin full, never reconciled, so a caller can show a request and a served\nmodel that differ.",
@@ -9712,8 +9836,7 @@
           "merged",
           "closed",
           "reverted",
-          "pqc",
-          "pqc_rate"
+          "merged_not_reverted"
         ],
         "properties": {
           "closed": {
@@ -9724,19 +9847,15 @@
             "type": "integer",
             "format": "int64"
           },
+          "merged_not_reverted": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged and not reverted at the time of the query: no CI, defect or\nwindow behind it, so it is not a quality figure (prill's `quality` is)."
+          },
           "opened": {
             "type": "integer",
             "format": "int64",
             "description": "Pull requests opened in the window, and what each is now."
-          },
-          "pqc": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Merged and not reverted."
-          },
-          "pqc_rate": {
-            "$ref": "#/components/schemas/Ratio",
-            "description": "`pqc` ÷ `opened`."
           },
           "reverted": {
             "type": "integer",
@@ -10205,6 +10324,63 @@
           "custom"
         ]
       },
+      "Quality": {
+        "type": "object",
+        "description": "What prill measured. Present only when prill answered.",
+        "required": [
+          "source",
+          "prill_version",
+          "repositories"
+        ],
+        "properties": {
+          "prill_version": {
+            "type": "string"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepositoryQuality"
+            }
+          },
+          "source": {
+            "type": "string",
+            "description": "Always `prill`."
+          }
+        }
+      },
+      "RateCard": {
+        "type": "object",
+        "required": [
+          "as_of",
+          "models",
+          "ci_minute",
+          "human_hour"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "description": "The date the prices were read, as the operator wrote it."
+          },
+          "ci_minute": {
+            "type": "number",
+            "format": "double"
+          },
+          "human_hour": {
+            "type": "number",
+            "format": "double"
+          },
+          "models": {
+            "type": "object",
+            "description": "Price per model string, exactly as a run names its model.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModelPrice"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Ratio": {
         "type": "object",
         "description": "A ratio with the counts it came from.",
@@ -10250,6 +10426,40 @@
           },
           "recovery_key": {
             "type": "string"
+          }
+        }
+      },
+      "RepositoryQuality": {
+        "type": "object",
+        "description": "One repository's figures from prill's store.",
+        "required": [
+          "repository",
+          "metrics"
+        ],
+        "properties": {
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Tokens of the attempts that opened this repository's pull requests,\npriced by the rate card. Absent without a card."
+          },
+          "metrics": {
+            "type": "object",
+            "description": "prill's `metrics/v1` document, as prill printed it."
+          },
+          "qualified_per_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "prill's `qualified` ÷ `cost_usd`. Absent without a card, without a\n`qualified` count, or when the cost is zero."
+          },
+          "repository": {
+            "type": "string",
+            "description": "`owner/repo`."
           }
         }
       },

@@ -247,6 +247,10 @@ pub fn build_router(state: AppState) -> Router {
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
         )
+        .route(
+            "/settings/rate-card",
+            get(crate::rate_card::get_rate_card).put(crate::rate_card::put_rate_card),
+        )
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
         .route("/projects/{id}", get(projects::get_project))

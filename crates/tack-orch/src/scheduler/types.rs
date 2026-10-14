@@ -37,7 +37,11 @@ pub enum Priority {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BudgetKind {
     Tokens,
-    ReviewQueue { waiting: u32 },
+    /// `usd_per_day`, priced by the operator's rate card.
+    Dollars,
+    ReviewQueue {
+        waiting: u32,
+    },
 }
 
 /// A request awaiting runner assignment. Pure data, built by whatever caller

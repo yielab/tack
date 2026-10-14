@@ -148,8 +148,11 @@ async fn budget_reached(
     let Some(limits) = budgets::get(repo.pool(), project_id).await? else {
         return Ok(None);
     };
-    // P wires the price: `usd_per_day` is read and ignored until then.
-    let _ = limits.usd_per_day;
+    if let Some(max) = limits.usd_per_day
+        && dollars_today(repo, project_id, now).await? >= max
+    {
+        return Ok(Some(BudgetKind::Dollars));
+    }
     if let Some(max) = limits.tokens_per_day
         && budgets::spent_today(repo.pool(), project_id, now).await? >= max
     {
@@ -164,6 +167,59 @@ async fn budget_reached(
         }
     }
     Ok(None)
+}
+
+/// What the project's attempts since 00:00 UTC cost under the operator's rate
+/// card (`app_meta` key `rate_card`, price per million tokens by model string).
+/// Without a card, or for a model it does not list, nothing is priced: the
+/// dollar budget cannot be reached by what cannot be priced.
+async fn dollars_today(
+    repo: &Repository,
+    project_id: &str,
+    now: DateTime<Utc>,
+) -> Result<f64, sqlx::Error> {
+    let card: Option<String> =
+        sqlx::query_scalar("SELECT value FROM app_meta WHERE key = 'rate_card'")
+            .fetch_optional(repo.pool())
+            .await?;
+    let Some(models) = card
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|card| card.get("models").cloned())
+    else {
+        return Ok(0.0);
+    };
+    let day_start = now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight exists")
+        .and_utc()
+        .to_rfc3339();
+    let spend: Vec<(Option<String>, i64, i64)> = sqlx::query_as(
+        "SELECT r.requested_model,
+                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)), 0),
+                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0)
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)
+         GROUP BY r.requested_model",
+    )
+    .bind(project_id)
+    .bind(day_start)
+    .fetch_all(repo.pool())
+    .await?;
+    Ok(spend
+        .into_iter()
+        .filter_map(|(model, tokens_in, tokens_out)| {
+            let price = models.get(model?)?;
+            let per_mtok = |field: &str| price.get(field).and_then(serde_json::Value::as_f64);
+            Some(
+                (tokens_in as f64 * per_mtok("input_per_mtok")?
+                    + tokens_out as f64 * per_mtok("output_per_mtok")?)
+                    / 1_000_000.0,
+            )
+        })
+        .sum())
 }
 
 /// The terminal code of a request failed for want of a runner.
@@ -223,6 +279,12 @@ fn describe_ineligible(reason: &IneligibleReason) -> (&'static str, String) {
         } => (
             BUDGET_REACHED,
             "This project used its tokens for today".to_string(),
+        ),
+        IneligibleReason::BudgetReached {
+            which: BudgetKind::Dollars,
+        } => (
+            BUDGET_REACHED,
+            "This project used its dollars for today".to_string(),
         ),
         IneligibleReason::BudgetReached {
             which: BudgetKind::ReviewQueue { waiting },

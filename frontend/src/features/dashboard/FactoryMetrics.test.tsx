@@ -79,12 +79,7 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
     merged: 12,
     closed: 2,
     reverted: 1,
-    pqc: 11,
-    pqc_rate: {
-      numerator: 11,
-      denominator: 15,
-      value: 0.7333,
-    },
+    merged_not_reverted: 11,
   },
   verification_tax: {
     implementation_attempts: 100,
