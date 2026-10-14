@@ -210,7 +210,7 @@ pub async fn review_mrp(
 
 /// Moves the request's item to the first Done status when the request's
 /// `status_map_policy_id` is `done_on_mrp_accepted`; any other policy leaves it.
-async fn apply_mrp_accepted(state: &AppState, request_id: &str) -> ApiResult<()> {
+pub(crate) async fn apply_mrp_accepted(state: &AppState, request_id: &str) -> ApiResult<()> {
     let row: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT item_id, json_extract(request_snapshot, '$.status_map_policy_id') \
          FROM execution_requests WHERE id = ?",

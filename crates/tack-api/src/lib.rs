@@ -1,3 +1,4 @@
+pub mod autonomy;
 pub mod config;
 pub mod debug;
 pub mod error;
@@ -6,6 +7,7 @@ pub mod error;
 pub mod execution_runtime;
 pub mod github_sync;
 pub mod handlers;
+pub mod merge;
 pub mod middleware;
 pub mod openapi;
 pub mod prill;
@@ -53,5 +55,6 @@ pub async fn run_github_poll_task(state: AppState) {
             }
             Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
         }
+        autonomy::tick(&state).await;
     }
 }

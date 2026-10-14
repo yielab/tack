@@ -880,6 +880,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::mrp::mark_viewed,
         handlers::mrp::review_mrp,
         // ── Factory metrics ───────────────────────────────────────────────
+        handlers::autonomy::get_autonomy,
+        handlers::autonomy::put_autonomy,
         handlers::metrics::factory_metrics,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
@@ -965,6 +967,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        handlers::autonomy::AutonomySettings,
+        handlers::autonomy::DomainSettings,
+        handlers::autonomy::BudgetSettings,
         handlers::metrics::FactoryMetrics,
         handlers::metrics::Ratio,
         handlers::metrics::HumanMinutes,
@@ -1107,6 +1112,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         (name = "items", description = "Items: the universal work unit (epics, tasks, bugs, …)."),
         (name = "sprints", description = "Sprints / iterations within a project."),
         (name = "roles", description = "Roles / specialties and their assignment to items."),
+        (name = "autonomy", description = "How far Tack may merge a project's changes on its own."),
         (name = "mrp", description = "An attempt's Merge-Readiness Pack and the human verdict on it."),
         (name = "metrics", description = "Factory metrics measured from a project's rows."),
         (name = "briefs", description = "An item's brief: acceptance criteria, constraints, definition of done."),

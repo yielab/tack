@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod autonomy;
 pub mod boards;
 pub mod briefs;
 pub mod budgets;
