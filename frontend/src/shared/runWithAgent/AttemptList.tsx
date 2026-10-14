@@ -27,6 +27,7 @@ import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
+import MergeButton from './MergeButton';
 import PlanPanel from './PlanPanel';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
@@ -87,7 +88,7 @@ const AgentReport: Component<{ steps: ReturnType<typeof parseRunLog> | undefined
 
 /** The pack panel, shown only when the attempt's artifacts include a
  *  merge-readiness pack (kind `mrp`). */
-const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props) => {
+const MrpSlot: Component<{ requestId: string; attemptNumber: number; merge?: AttemptSummary['merge'] }> = (props) => {
   const [artifacts] = createResource(
     () => `${props.requestId}:${props.attemptNumber}`,
     () => artifactsApi.list(props.requestId, props.attemptNumber).catch(() => []),
@@ -98,7 +99,7 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number }> = (props)
         <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
           Merge-readiness pack
         </h4>
-        <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} />
+        <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} merge={props.merge} />
       </section>
     </Show>
   );
@@ -283,6 +284,19 @@ const AttemptRow: Component<{
   const status = () => describeAttemptStatus(props.attempt, review());
   const awaitingReview = () => isReviewableAttempt(props.attempt) && !review();
   const terminal = () => isTerminalAttemptState(props.attempt.state);
+  // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
+  const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
+  const merge = () => freshMerge() ?? props.attempt.merge;
+  const refreshMerge = async () => {
+    try {
+      const list = await attemptsApi.list(props.requestId);
+      setFreshMerge(list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number)?.merge);
+    } catch {
+      /* the next load shows it */
+    }
+    props.onReviewed?.();
+    window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
+  };
   const [note, setNote] = createSignal('');
   const [reviewing, setReviewing] = createSignal(false);
   const [reviewError, setReviewError] = createSignal<string | null>(null);
@@ -369,6 +383,9 @@ const AttemptRow: Component<{
           </p>
         )}
       </Show>
+      <Show when={terminal() && merge() && !merge()!.merged}>
+        <MergeButton attemptId={props.attempt.attempt_id} merge={merge()!} onMerged={() => void refreshMerge()} />
+      </Show>
       <Show when={awaitingReview()}>
         <div class="flex flex-wrap items-center gap-2">
           <input
@@ -438,7 +455,7 @@ const AttemptRow: Component<{
             <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
           </section>
 
-          <MrpSlot requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
+          <MrpSlot requestId={props.requestId} attemptNumber={props.attempt.attempt_number} merge={merge()} />
         </div>
       </Show>
     </li>

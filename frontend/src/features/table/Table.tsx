@@ -1,4 +1,5 @@
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from 'solid-js';
+import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
@@ -372,7 +373,7 @@ function renderCell(
     case 'status':
       return <span>{item.status}</span>;
     case 'needs_review':
-      return item.needs_review ? <Badge tone="warning">Needs your review</Badge> : null;
+      return item.needs_review ? <Badge tone="warning">Needs your review</Badge> : <MergeNoteBadge note={item.merge_note} />;
     case 'priority':
       return (
         <span class="inline-flex items-center gap-1.5 capitalize">

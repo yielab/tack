@@ -81,6 +81,14 @@ export interface UsageEconomics {
   runner_time_cost: RunnerTimeCost;
 }
 
+// ─── Merge (`executions.rs::AttemptMerge`) ─────────────────────────────────
+
+/** Who merged an attempt's pull request, when it is merged. */
+export type MergedBy = components['schemas']['MergedBy'];
+
+/** The Merge button's state: `reason` says why it is disabled, or what held its last press. */
+export type AttemptMerge = components['schemas']['AttemptMerge'];
+
 // ─── Attempts (`GET /executions/{id}/attempts`) ────────────────────────────
 
 /**
@@ -118,6 +126,8 @@ export interface AttemptSummary {
   usage_economics: UsageEconomics;
   /** `null` when no pull request was opened by the run. */
   pull_request: AttemptPullRequest | null;
+  /** The Merge button's state. Absent from a server that predates it. */
+  merge?: AttemptMerge;
   /** Names (never values) of the environment variables the runner gave the harness, as it reported at start. */
   environment_names?: string[];
   /** What the harness ran inside, as the runner reported at start; `null` when it did not say. */
@@ -162,6 +172,12 @@ export const attemptsApi = {
   events: (requestId: string, attemptNumber: number) =>
     requestWithHeaders<EventListResult>(
       `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(String(attemptNumber))}/events`,
+    ),
+  /** `POST /attempts/{attempt_id}/merge` — 200 `{merged, merge_sha}`; a refusal is a 409 whose message says why. */
+  merge: (attemptId: string) =>
+    requestWithHeaders<{ merged: boolean; merge_sha?: string | null }>(
+      `/attempts/${encodeURIComponent(attemptId)}/merge`,
+      { method: 'POST' },
     ),
   review: (requestId: string, attemptNumber: number, body: { verdict: 'accepted' | 'rejected'; note?: string }) =>
     requestWithHeaders<unknown>(

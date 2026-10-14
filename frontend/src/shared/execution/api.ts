@@ -456,6 +456,19 @@ export interface MrpPack {
   } | null;
   risk: { tier: 'low' | 'medium' | 'high'; reasons: string[] };
   recommendation: { decision: 'merge' | 'review' | 'reject'; rationale: string };
+  /** What to do next, when the verifier says. Absent from an older pack. */
+  next_steps?: MrpNextStep[];
+}
+
+export interface MrpNextStep {
+  code: string;
+  severity: string;
+  stage?: string | null;
+  criterion_id?: string | null;
+  path?: string | null;
+  line?: number | null;
+  command?: string | null;
+  message?: string | null;
 }
 
 export interface MrpReview {

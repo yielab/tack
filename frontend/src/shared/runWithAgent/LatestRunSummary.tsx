@@ -10,6 +10,7 @@ import {
   readAttemptUsage,
   NOT_MEASURED_TEXT,
 } from './attemptFormat';
+import MergeButton from './MergeButton';
 import { describeExecutionState, relativeTimeFromIso } from './shared';
 
 export interface LatestRunSummaryProps {
@@ -132,6 +133,13 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 {line()}
               </p>
             )}
+          </Show>
+          <Show when={finished() && attempt()?.merge && !attempt()!.merge!.merged}>
+            <MergeButton
+              attemptId={attempt()!.attempt_id}
+              merge={attempt()!.merge!}
+              onMerged={() => void store.loadAttempts(latest()!.request_id).catch(() => undefined)}
+            />
           </Show>
           <div class="pt-1">
             <Button size="sm" variant="secondary" onClick={() => props.onOpen()}>

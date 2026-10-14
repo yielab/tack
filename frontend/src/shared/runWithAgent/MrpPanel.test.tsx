@@ -5,14 +5,15 @@ import notReady from '../../../../docs/contracts/mrp-v1/fixtures/not-ready.json'
 import manualOnly from '../../../../docs/contracts/mrp-v1/fixtures/manual-only.json';
 import verifierFailed from '../../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json';
 import MrpPanel from './MrpPanel';
+import type { AttemptMerge } from '../execution/attempts';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
-function mount() {
+function mount(merge?: AttemptMerge) {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <MrpPanel requestId="exec_1" attemptNumber={2} />, container);
+  const dispose = render(() => <MrpPanel requestId="exec_1" attemptNumber={2} merge={merge} />, container);
   disposers.push(() => {
     dispose();
     container.remove();
@@ -98,5 +99,46 @@ describe('MrpPanel', () => {
     mount();
     await flush();
     expect(calls(spy2, '/mrp/viewed')).toHaveLength(0);
+  });
+
+  it('the_pack_panel_shows_the_held_reason', async () => {
+    mockFetch(ready);
+    const el = mount({ enabled: true, reason: 'CI is still running on the head commit' });
+    await flush();
+    expect(el.querySelector('[data-testid="mrp-merge-state"]')!.textContent).toContain('CI is still running on the head commit');
+  });
+
+  it('the_pack_panel_says_who_merged_with_the_policy_behind_a_disclosure', async () => {
+    mockFetch(ready);
+    const el = mount({
+      enabled: false,
+      reason: 'Already merged',
+      merged: { trigger: 'auto', level: 'L4', domain: 'docs', merged_at: '2026-10-13T10:00:00Z', merge_sha: 'abc1234', policy_snapshot: { level: 'L4' } },
+    });
+    await flush();
+    const state = el.querySelector('[data-testid="mrp-merge-state"]')!;
+    expect(state.textContent).toContain('Merged by Tack (L4, domain docs)');
+    expect(state.querySelector('details pre')!.textContent).toContain('"level": "L4"');
+    disposers.pop()!();
+    const byYou = mount({ enabled: false, merged: { trigger: 'button', merged_at: '2026-10-13T10:00:00Z' } });
+    await flush();
+    expect(byYou.querySelector('[data-testid="mrp-merge-state"]')!.textContent).toContain('Merged by you');
+  });
+
+  it('the_pack_panel_lists_the_next_steps', async () => {
+    mockFetch({
+      ...ready,
+      next_steps: [
+        { code: 'suite_failed', severity: 'error', stage: 'suite', command: 'cargo test', message: 'The suite failed' },
+        { code: 'criterion_open', severity: 'warning', criterion_id: 'c1', path: 'src/a.rs', line: 4, message: 'Criterion c1 has no evidence' },
+      ],
+    });
+    const el = mount();
+    await flush();
+    const steps = el.querySelectorAll('[data-testid="mrp-next-step"]');
+    expect(steps).toHaveLength(2);
+    expect(steps[0].textContent).toContain('The suite failed');
+    expect(steps[0].textContent).toContain('cargo test');
+    expect(steps[1].textContent).toContain('src/a.rs:4');
   });
 });

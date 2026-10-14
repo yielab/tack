@@ -1,4 +1,5 @@
 import { createMemo, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
+import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
@@ -95,6 +96,7 @@ export const ItemCard: Component<{
       <Show when={props.item.needs_review}>
         <div><Badge tone="warning">Needs your review</Badge></div>
       </Show>
+      <MergeNoteBadge note={props.item.merge_note} />
       <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px' }}>
         <Show when={props.item.priority !== 'none'}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
