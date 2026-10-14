@@ -553,8 +553,13 @@ jobs:
           echo "----- SHA256SUMS -----"
           cat SHA256SUMS
 
+      # Through install-action, which the repository's allowed-actions list
+      # admits and which checks the download against its manifest's checksum;
+      # sigstore/cosign-installer is not on that list.
       - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
+        with:
+          tool: cosign
 
       # Keyless: the signing identity is this workflow's OIDC token, which the
       # installers check with `cosign verify-blob`.
