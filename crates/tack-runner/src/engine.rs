@@ -1325,7 +1325,7 @@ where
             }
         };
         match result {
-            Ok(artifact) => staged.push(artifact),
+            Ok(artifacts) => staged.extend(artifacts),
             Err(error) => {
                 let payload =
                     serde_json::json!({"exit_code": error.exit_code, "reason": error.reason});

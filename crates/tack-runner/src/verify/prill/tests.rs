@@ -490,13 +490,18 @@ fn launcher(dir: &Path, knob: &str) -> PathBuf {
 }
 
 struct Verified {
-    result: Result<Value, VerifyFailure>,
+    result: Result<Vec<Value>, VerifyFailure>,
     scratch: PathBuf,
     workspace: PathBuf,
     _dir: tempfile::TempDir,
 }
 
-async fn verify_with(knob: &str, args: Vec<String>, with_brief: bool) -> Verified {
+async fn verify_with(
+    knob: &str,
+    args: Vec<String>,
+    with_brief: bool,
+    sign_key: Option<&str>,
+) -> Verified {
     let dir = tempfile::tempdir().expect("temporary directory");
     let workspace_path = dir.path().join("ws");
     fs::create_dir_all(&workspace_path).expect("workspace");
@@ -522,6 +527,7 @@ async fn verify_with(knob: &str, args: Vec<String>, with_brief: bool) -> Verifie
         program: launcher(dir.path(), knob).display().to_string(),
         args,
         timeout_seconds: 60,
+        sign_key: sign_key.map(str::to_owned),
     };
     let workspace = Workspace {
         attempt_id: AttemptId::new("att_1"),
@@ -549,9 +555,12 @@ async fn a_prill_pack_is_translated_and_staged() {
         "TACK_FAKE_PRILL_FIXTURE=m2-sections",
         vec!["--no-sandbox".to_owned()],
         true,
+        None,
     )
     .await;
     let staged = verified.result.expect("a pack");
+    assert_eq!(staged.len(), 1, "an unsigned run stages the pack alone");
+    let staged = &staged[0];
     assert_eq!(staged["kind"], "mrp");
     assert_eq!(staged["name"], "mrp.json");
     assert_eq!(staged["media_type"], MRP_MEDIA_TYPE);
@@ -613,6 +622,7 @@ async fn without_a_brief_prill_gets_none() {
         "TACK_FAKE_PRILL_FIXTURE=human-review-no-sandbox",
         Vec::new(),
         false,
+        None,
     )
     .await;
     verified.result.expect("a pack");
@@ -632,12 +642,13 @@ async fn a_reject_pack_is_still_a_staged_pack() {
         "TACK_FAKE_PRILL_FIXTURE=reject-failed-criterion",
         Vec::new(),
         false,
+        None,
     )
     .await;
     let staged = verified
         .result
         .expect("prill's exit 1 is a decision, not a failure");
-    assert_eq!(staged["kind"], "mrp");
+    assert_eq!(staged[0]["kind"], "mrp");
     let pack: MergeReadinessPack =
         serde_json::from_slice(&fs::read(verified.scratch.join("evidence/mrp.json")).unwrap())
             .expect("mrp-v1");
@@ -647,7 +658,13 @@ async fn a_reject_pack_is_still_a_staged_pack() {
 
 #[tokio::test]
 async fn a_refusal_is_a_failure_naming_prills_error_code() {
-    let verified = verify_with("TACK_FAKE_PRILL_ERROR=invalid_brief", Vec::new(), true).await;
+    let verified = verify_with(
+        "TACK_FAKE_PRILL_ERROR=invalid_brief",
+        Vec::new(),
+        true,
+        None,
+    )
+    .await;
     let error = verified.result.expect_err("exit 2 is a failure");
     assert_eq!(error.exit_code, Some(2));
     assert_eq!(
@@ -678,6 +695,7 @@ async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
             .to_string(),
         args: Vec::new(),
         timeout_seconds: 60,
+        sign_key: None,
     };
     let workspace = Workspace {
         attempt_id: AttemptId::new("att_1"),
@@ -697,4 +715,62 @@ async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
         "{}",
         error.reason
     );
+}
+
+/// A signed run: the key path goes to prill after `--json`, the envelope is a
+/// second artifact, and the pack names the envelope's hash.
+#[tokio::test]
+async fn a_signed_run_stages_the_envelope_and_names_it_in_the_pack() {
+    let verified = verify_with(
+        "TACK_FAKE_PRILL_SIGNED=1",
+        Vec::new(),
+        false,
+        Some("/keys/prill.key"),
+    )
+    .await;
+    let staged = verified.result.expect("a signed pack");
+    assert_eq!(staged.len(), 2);
+    assert_eq!(staged[0]["kind"], "mrp");
+    assert_eq!(staged[1]["kind"], "mrp_attestation");
+    assert_eq!(staged[1]["name"], "mrp.intoto.json");
+    assert_eq!(staged[1]["media_type"], "application/vnd.in-toto+json");
+    let evidence = verified.scratch.join("evidence");
+    let envelope = fs::read(evidence.join("prill/mrp.intoto.json")).expect("envelope");
+    assert_eq!(staged[1]["sha256"], sha256_hex(&envelope));
+    let pack: MergeReadinessPack =
+        serde_json::from_slice(&fs::read(evidence.join("mrp.json")).unwrap()).expect("mrp-v1");
+    assert_eq!(
+        pack.signature,
+        SignatureSection::InToto {
+            statement_sha256: sha256_hex(&envelope)
+        }
+    );
+    let argv = fs::read_to_string(evidence.join("prill/argv")).expect("argv");
+    let argv: Vec<&str> = argv.lines().collect();
+    assert_eq!(
+        &argv[argv.len() - 3..],
+        ["--json", "--sign", "/keys/prill.key"]
+    );
+}
+
+/// A refusal to sign fails the verification with prill's reason; the runner
+/// never runs prill a second time without the key.
+#[tokio::test]
+async fn a_signing_refusal_fails_the_verification_and_is_not_retried_unsigned() {
+    let verified = verify_with(
+        "TACK_FAKE_PRILL_ERROR=signing_unavailable",
+        Vec::new(),
+        false,
+        Some("/keys/prill.key"),
+    )
+    .await;
+    let error = verified.result.expect_err("a refusal");
+    assert!(
+        error.reason.contains("signing_unavailable"),
+        "{}",
+        error.reason
+    );
+    assert!(!verified.scratch.join("evidence/mrp.json").exists());
+    let argv = fs::read_to_string(verified.scratch.join("evidence/prill/argv")).expect("argv");
+    assert!(argv.contains("--sign"), "{argv}");
 }

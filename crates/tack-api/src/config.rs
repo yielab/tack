@@ -99,6 +99,12 @@ pub struct AppConfig {
     #[serde(default = "default_backup_retention")]
     pub backup_retention: usize,
 
+    /// The prill the board runs to check an attestation
+    /// (`crate::prill::attest_verify`). `TACK_PRILL_PROGRAM`; a bare name is
+    /// looked up on `PATH`. Default: `prill`.
+    #[serde(default = "default_prill_program")]
+    pub prill_program: String,
+
     // ── Embedded runner (ADR 0061 decisions 2 and 6) ───────────────────────
     /// The env/CLI-flag default for whether the in-process embedded runner
     /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
@@ -189,6 +195,7 @@ impl Default for AppConfig {
             backup_prefix: default_backup_prefix(),
             backup_interval_secs: None,
             backup_retention: default_backup_retention(),
+            prill_program: default_prill_program(),
             local_runner_enable: false,
             execution_retention_enable: default_execution_retention_enable(),
             execution_retention_days: default_execution_retention_days(),
@@ -201,6 +208,9 @@ impl Default for AppConfig {
     }
 }
 
+fn default_prill_program() -> String {
+    "prill".into()
+}
 fn default_github_api_base() -> String {
     "https://api.github.com".into()
 }
@@ -433,6 +443,11 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.github_api_base = v;
+        }
+        if let Ok(v) = std::env::var("TACK_PRILL_PROGRAM")
+            && !v.is_empty()
+        {
+            config.prill_program = v;
         }
         if let Ok(v) = std::env::var("TACK_GITHUB_POLL_SECONDS") {
             config.github_poll_seconds = v.parse().unwrap_or(0);

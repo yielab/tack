@@ -1186,6 +1186,7 @@ fn verifier(
         program: program.display().to_string(),
         args: Vec::new(),
         timeout_seconds: 60,
+        sign_key: None,
     }
 }
 

@@ -16,10 +16,11 @@ fn fake(knob: &str) -> VerifyConfig {
             script.display().to_string(),
         ],
         timeout_seconds: 60,
+        sign_key: None,
     }
 }
 
-async fn run_with(config: &VerifyConfig) -> Result<serde_json::Value, VerifyFailure> {
+async fn run_with(config: &VerifyConfig) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let root = tempfile::tempdir().expect("temp dir");
     let path = root.path().join("ws");
     let scratch = root.path().join("scratch");
@@ -41,6 +42,7 @@ async fn a_fixture_pack_is_staged_as_an_artifact() {
     let staged = run_with(&fake("TACK_FAKE_VERIFIER_FIXTURE=ready"))
         .await
         .expect("a pack");
+    let staged = &staged[0];
     assert_eq!(staged["kind"], "mrp");
     assert_eq!(staged["name"], "mrp.json");
     assert_eq!(staged["media_type"], MRP_MEDIA_TYPE);

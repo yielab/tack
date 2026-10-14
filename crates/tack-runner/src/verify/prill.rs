@@ -59,6 +59,10 @@ const RUNNER_MARKERS: [&str; 3] = [".tack-runner", ".tack-attempt", ".tack-check
 /// How long one git invocation of the snapshot may take.
 const GIT_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// The in-toto envelope prill writes beside its pack when it signs, and the
+/// name it is staged under.
+pub(super) const ENVELOPE_FILE: &str = "mrp.intoto.json";
+
 /// The name under `<evidence>` holding prill's documents and its own pack.
 const PRILL_DIR: &str = "prill";
 
@@ -147,6 +151,9 @@ pub(super) async fn run(
         out_dir.display().to_string(),
         "--json".to_owned(),
     ]);
+    if let Some(key) = &config.sign_key {
+        args.extend(["--sign".to_owned(), key.clone()]);
+    }
     // prill reads its configuration from the commit `baseCommit` names in the
     // evidence document, which is the id fixed at provisioning, so a
     // `prill.yaml` the agent edited is never the one it applies.
@@ -208,12 +215,25 @@ pub(super) async fn run(
             format!("prill exited with a pack status but printed none: {stderr}"),
         )
     })?;
-    let translated = pack(
+    let mut translated = pack(
         &prill_pack,
         &tack_evidence,
         &sha256_hex(&evidence_bytes),
         brief_sha256,
     );
+    if config.sign_key.is_some() {
+        let envelope = fs::read(out_dir.join(ENVELOPE_FILE)).map_err(|_| {
+            failure(
+                Some(exit_code),
+                "prill was asked to sign but wrote no mrp.intoto.json",
+            )
+        })?;
+        translated.signature = SignatureSection::InToto {
+            statement_sha256: sha256_hex(&envelope),
+        };
+        fs::write(evidence.join(ENVELOPE_FILE), envelope)
+            .map_err(|_| failure(Some(exit_code), "the attestation could not be written"))?;
+    }
     let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|_| {
         failure(
             Some(exit_code),
@@ -720,6 +740,8 @@ pub(super) fn pack(
                 .unwrap_or("unknown")
                 .to_owned(),
         },
+        // K2 fills this from prill's `nextSteps`.
+        next_steps: None,
     }
 }
 

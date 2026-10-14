@@ -262,7 +262,7 @@
             "statement_sha256": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$",
-              "description": "SHA256 of the in-toto statement"
+              "description": "SHA256 of the in-toto envelope the verifier signed (the staged mrp.intoto.json)"
             }
           },
           "required": ["kind", "statement_sha256"],
@@ -282,6 +282,25 @@
         "version": {
           "type": "string",
           "description": "Version of the producing program"
+        }
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "description": "What the verifier says to do next, in the order it says it. Absent when it gave none.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "minLength": 1},
+          "stage": {"type": "string"},
+          "criterion_id": {"type": "string"},
+          "path": {"type": "string"},
+          "line": {"type": "integer", "minimum": 0},
+          "command": {"type": "string"},
+          "message": {"type": "string"}
         }
       }
     }

@@ -141,6 +141,10 @@ pub struct VerifyConfig {
     pub program: String,
     pub args: Vec<String>,
     pub timeout_seconds: u64,
+    /// `kind = "prill"` only: the private key prill signs the pack with
+    /// (`--sign <path>`). Unset, packs are unsigned. A refusal to sign fails
+    /// the verification; the runner never retries without the key.
+    pub sign_key: Option<String>,
 }
 
 impl Default for VerifyConfig {
@@ -151,6 +155,7 @@ impl Default for VerifyConfig {
             program: "prill".to_owned(),
             args: Vec::new(),
             timeout_seconds: 1800,
+            sign_key: None,
         }
     }
 }
