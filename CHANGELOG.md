@@ -35,10 +35,36 @@ a run that waited in Queued without a word. Two behaviours change for everyone: 
 (the board's page holds it as a cookie it cannot read, the CLI finds it beside the
 database), and a pull request opens when you accept the run, not when it finishes.
 
-Upgrading applies migrations 078–085 on first start — new tables and columns only.
+Phase 72 (ADR 0079) lets Tack merge: a **Merge** button on a finished task, a project option
+that merges when you move the task to Done, and, for a project that allows it, a merge Tack
+makes by itself inside the parts of the code you authorise (L4) or everywhere (L5), only when
+the verifier said merge under the stages you require, the pack is signed for that exact
+commit, CI is green and no budget is spent. Nothing changes for a project that stays at L3.
+
+Upgrading applies migrations 078–087 on first start — new tables and columns, and phase 71's
+one model string.
 
 ### Added
 
+- **merge:** A **Merge** button on a finished task merges its pull request with the head commit
+  that was checked; it is enabled when the run finished with a pushed branch, and when it cannot
+  merge (CI running or failed, the token cannot merge, branch protection, a conflict) it says why
+- **merge:** **Automation → Autonomy**: merge when the task moves to Done; let Tack merge by
+  itself in named areas of the code (L4) or everywhere (L5), held with the first reason when
+  anything is missing, and taken down a level by itself after a revert or red CI; a run that came
+  through MCP is merged only with the button
+- **merge:** The task card says when its merge did not happen and why
+- **runs:** A change the verifier rejects can go back to the agent with the verifier's next steps
+  a set number of times before a person sees it (off by default)
+- **runs:** Daily budgets per project — tokens, dollars, automatic merges, items waiting for
+  review — stop new work and say why; running work finishes
+- **verifier:** The runner can sign the pack (`[verify] sign_key`), and the board checks the
+  signature against the exact commit before an automatic merge
+- **metrics:** The Factory page shows the verifier's quality figures from its own store, Tack's
+  "merged and not reverted" as its own, and, with a rate card you enter, the cost and qualified
+  changes per dollar
+- **briefs:** A brief keeps every version; a run records the version it was given; a metric
+  criterion can carry the command and pattern that measure it
 - **projects:** Project creation asks where the code is; **Settings → Automation** holds the
   folder, how the agent works there, the agent, its default model, the definition of done and
   the column a finished run moves the task to
