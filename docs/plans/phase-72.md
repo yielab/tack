@@ -1,7 +1,7 @@
 # Plan: Phase 72 — merge authority follows the autonomy level you set
 
-**Status: opened 2026-10-13; ADR 0079 accepted with every cut and question answered the same
-day. Round 0 dispatched.** Serves ADR 0079
+**Status: opened 2026-10-13; every task but K2 merged into `develop` the same day, unpushed. K2
+waits on prill's M6.** Serves ADR 0079
 (`docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
 "Amendments agreed 2026-10-13" wins where it disagrees with the table. Written against `develop`
 at `11de5f2e`, prill at `324842e` (ADR 0014 accepted, M6 specified, not built) and docket at
@@ -569,3 +569,11 @@ tree; `scripts/smoke.sh` fake mode.
   - M's calls, kept: `merge: {enabled, reason}` rides on the attempts list (there is no single-attempt GET); `origin` is stored only when it is `"mcp"`, in the snapshot's flattened fields, with no runner-v1 fixture change; `tack mcp` marks every call through `TackClient::marked_mcp()`.
   - L's calls, kept: the follow-up is a copy of the request snapshot (so permissions and origin carry over) with a key `rework-<attempt id>` that dedupes a replayed completion; the chain is counted from its root; budgets are left to the scheduler.
   - P-ui's calls, kept: the rate card form calls the shared API client directly; it reads prill's `metrics/v1` through a local type, since Tack passes prill's document through untyped (prill owns it); fields checked against the captured `prill metrics` output.
+- **Between rounds 4 and 5**, integrator:
+  - A change outside every domain authorised for automatic merge was held "not authorised" each tick and noted on its item's activity, in any project with one L4 domain: noise on every ordinary run. It is now L3 as today — no held row, no note (`03aa9d82`, with a row in `holds_table` that fails without it).
+  - No API said whether a task's merge was held or who made a merge, so the card could not show answer C's notice. F0 (Haiku, added to the plan) gave the item `merge_note` and the attempt `merge.merged`; merged in `a4f315f2`. Its call, kept: `merge_note` has `#[sqlx(default)]` like `needs_review`, so the sprint, due-soon and child-propagation queries, which select neither, return it as `None`.
+  - The Autonomy settings gained read-only `automatic_merge_blocked_by` (GitHub poll off, no prill on the board, no public key) and each domain's `merged` and `undone` counts, so F could disable L4/L5 with the reason and show the counts first (`c62f605d`). `skip_deserializing` had kept those fields out of the generated schema, unnoticed by the gate because regeneration then changed nothing; they are `#[schema(read_only)]` now (F found it).
+- **Round 5 (F)** closed 2026-10-13, merged in `9d26dbeb`; its locally declared Autonomy types were replaced by the generated ones. On the merged tree: the gate is green, nextest is 1257/1257, vitest is 622/622, the token gate passes, Playwright chromium is 54/54 (`--workers=2`, headless; firefox and webkit are not installed on this machine), and `scripts/smoke.sh` fake mode passes.
+  - F's calls, kept: L4/L5 are disabled while `automatic_merge_blocked_by` is non-empty, with its sentences under the levels; the badge's label is chosen from the note's wording; the badge sits on the board card, the list row and the table's Review column; a system comment's author reads "Tack".
+- **Z** done 2026-10-13: `docs/CONFIG.md` (`TACK_PRILL_PROGRAM`, `[verify] sign_key`, the metric criterion and `--sign`/`--db` corrected), the changelog's beta.10 section (phase 72, migrations 078–087), the book's "Merging from Tack" page.
+- **Open: K2 only.** It waits for prill to enforce `require` and fill `nextSteps` (its M6 past wave 1; prill was at `631b4cd`). Until then L4/L5 hold every automatic merge with "The runner has not reported that its prill can require stages", and the loop back to the agent never fires, by design (P3). The button and merge on Done work now.
