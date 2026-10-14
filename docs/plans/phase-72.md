@@ -127,7 +127,7 @@ At most two agents building cargo at once; a frontend-only task runs beside them
 | 2 | K1, U | S, A1 |
 | 3 | A2, P; P-ui beside | G, K1, U (A2); G (P); P (P-ui) |
 | 4 | M, L | A2 (M); K1, U (L) |
-| 5 | F; K2 when prill is ready | M (F); prill with M6 (`require`, `nextSteps`) and its captured fixtures (K2) |
+| 5 | F0, then F; K2 when prill is ready | M (F0); F0 (F); prill with M6 (`require`, `nextSteps`) and its captured fixtures (K2) |
 | 6 | Z (integrator) | everything |
 
 Rounds 0–4 do not wait on prill. Until K2 lands, L4 holds every merge with finding 1's reason and
@@ -458,14 +458,42 @@ the budget's reason, never checked here. The item then waits in Needs your revie
 **Done when:** the api binary and the gate are green.
 **Hand-off:** Sonnet, one layer, ceiling 100.
 
+### F0 — what the UI reads about a merge (Haiku)
+
+**Serves:** answer C on the card, and F's pack panel. Found at round 4: no API said whether a
+task's merge was held, or who made a merge.
+**Files:** `crates/tack-core/src/models.rs` (`Item`); `crates/tack-db/src/repo/items.rs`;
+`crates/tack-core/src/outline/tests.rs` and any other `Item { .. }` literal the compiler names;
+`crates/tack-api/src/handlers/executions.rs` (`AttemptMerge`); `crates/tack-api/src/openapi.rs`;
+`crates/tack-api/tests/handlers/merge_button.rs`.
+**Do:**
+1. `Item` gains `#[serde(default)] pub merge_note: Option<String>`, documented as "Why the
+   task's last merge did not happen, while it has not; `None` once merged or never tried".
+2. In `items.rs`, beside `NEEDS_REVIEW_SQL`, a `const MERGE_NOTE_SQL: &str` with exactly
+   `(SELECT CASE WHEN t.merged_at IS NULL THEN t.held_reason END FROM tack_merges t JOIN execution_attempts a ON a.id = t.attempt_id JOIN execution_requests r ON r.id = a.request_id WHERE r.item_id = items.id ORDER BY t.checked_at DESC LIMIT 1)`,
+   selected as `merge_note` in every query that selects `{NEEDS_REVIEW_SQL} AS needs_review`;
+   `ItemRow` and its mapping carry it; every literal that sets `needs_review: false` sets
+   `merge_note: None`.
+3. `AttemptMerge` gains `merged: Option<MergedBy>`, a new `#[derive(Serialize, ToSchema)] pub struct MergedBy { trigger: String, level: Option<String>, domain: Option<String>, merged_at: String, merge_sha: Option<String>, policy_snapshot: Option<serde_json::Value> }`,
+   filled from `tack_db::repo::autonomy::get_merge` when the row has `merged_at`; register
+   `MergedBy` in `openapi.rs`. Regenerate and stage.
+**Test (RED first):** in `merge_button.rs`: after `the_button_merges_with_the_head_sha` merges,
+the attempts list says `merge.merged.trigger == "button"` and `GET /api/items/{id}` has
+`merge_note: null`; in the held-press table, after each press, `GET /api/items/{id}` has a
+`merge_note` containing the row's words.
+**Done when:** the api, db and core binaries are green; the generated files are staged; the gate
+is green.
+**Hand-off:** Haiku, every name spelled here, ceiling 60.
+
 ### F — the Automation panel and the held reason (Sonnet)
 
 **Files:** `frontend/src/features/settings/panels/{AutomationPanel.tsx, panels.test.tsx}`; `frontend/src/shared/runWithAgent/{MrpPanel.tsx, MrpPanel.test.tsx}`; the attempt view and the task card (`rg -ln "Needs your review" frontend/src`); the item activity rendering for the merge and demotion events.
 **Hand-off note:** the widest frontend task; ceiling 150.
 **Do:** a **Merge** button on the finished task and on its attempt, disabled with M's reason
 when it cannot merge; a "Merge when moved to Done" switch in the Automation panel; on the task
-card, a badge when a merge did not happen ("Not merged: CI failed", "Waiting for CI to merge",
-"The GitHub token can't merge") that opens the reason and what to do. Then an **Autonomy**
+card, a badge from the item's `merge_note` (F0) when a merge did not happen ("Not merged: CI
+failed", "Waiting for CI to merge", "The GitHub token can't merge") that opens the reason and what
+to do. Then an **Autonomy**
 section: the level with one plain sentence each; domains (name, globs,
 item types, level, and their merged / reverted counts shown before the level control); "Stages
 prill must run" with a button that fills prill's L4 example; the public key; the loop cap; the four
