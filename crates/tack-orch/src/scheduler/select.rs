@@ -55,6 +55,12 @@ fn evaluate_candidate(
     now: DateTime<Utc>,
     policy: &SchedulingPolicy,
 ) -> Result<HarnessKind, IneligibleReason> {
+    if let Some(which) = &request.budget_reached {
+        return Err(IneligibleReason::BudgetReached {
+            which: which.clone(),
+        });
+    }
+
     match &request.selector {
         RunnerSelector::ExactRunner { runner_id } => {
             if &candidate.runner_id != runner_id {

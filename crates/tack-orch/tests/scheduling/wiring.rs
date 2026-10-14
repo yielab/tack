@@ -634,3 +634,164 @@ async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
         "a runner that could take it restarts the clock"
     );
 }
+
+async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queue: Option<i64>) {
+    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(item_id)
+        .fetch_one(repo.pool())
+        .await
+        .expect("project");
+    tack_db::repo::budgets::put(
+        repo.pool(),
+        &project_id,
+        &tack_db::repo::budgets::ProjectBudgets {
+            tokens_per_day: tokens,
+            usd_per_day: Some(0.01),
+            auto_merges_per_day: None,
+            queue_items_max: queue,
+        },
+    )
+    .await
+    .expect("put budgets");
+}
+
+#[tokio::test]
+async fn a_budget_reached_stops_new_work_and_says_why() {
+    let (repo, item_id) = setup_repo().await;
+    let now = Utc::now();
+    setup_codex_runner(&repo, "runner-a", 3, 3, Some(0), now).await;
+    // One run already going, with measured usage, and one item waiting for review.
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "running",
+        "runner-a",
+        Some("opaque/model-alpha"),
+        "{}",
+        now,
+    )
+    .await;
+    repo.claim_execution_idempotent_with_snapshot(
+        "runner-a",
+        "claim",
+        "attempt",
+        chrono::Duration::seconds(60),
+        &FixedClock(now),
+        RequestSelection::Scheduled(Some("running")),
+    )
+    .await
+    .expect("no db error")
+    .expect("claimed");
+    sqlx::query("UPDATE execution_attempts SET usage = ? WHERE id = 'attempt'")
+        .bind(r#"{"tokens_in":{"value":60,"source":"measured"},"tokens_out":{"value":50,"source":"measured"}}"#)
+        .execute(repo.pool())
+        .await
+        .expect("usage");
+    // A second item whose finished run kept its workspace: it shows Needs your review.
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, status) \
+         SELECT 'item-review', project_id, 'Review me', 'In Progress' FROM items WHERE id = ?",
+    )
+    .bind(&item_id)
+    .execute(repo.pool())
+    .await
+    .expect("second item");
+    enqueue_for_runner(
+        &repo,
+        "item-review",
+        "review",
+        "runner-a",
+        Some("opaque/model-alpha"),
+        "{}",
+        now,
+    )
+    .await;
+    repo.claim_execution_idempotent_with_snapshot(
+        "runner-a",
+        "claim-review",
+        "attempt-review",
+        chrono::Duration::seconds(60),
+        &FixedClock(now),
+        RequestSelection::Scheduled(Some("review")),
+    )
+    .await
+    .expect("no db error")
+    .expect("claimed");
+    sqlx::query(
+        "UPDATE execution_attempts SET state = 'succeeded', \
+         terminal_reason = '{\"workspace_kept_at\":\"/tmp/kept\"}' WHERE id = 'attempt-review'",
+    )
+    .execute(repo.pool())
+    .await
+    .expect("finished with a kept workspace");
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "next",
+        "runner-a",
+        Some("opaque/model-alpha"),
+        "{}",
+        now,
+    )
+    .await;
+    let policy = SchedulingPolicy::default();
+
+    // (budgets, expected code and sentence; None = the request is chosen)
+    let cases = [
+        ("no row", None, None, None),
+        (
+            "a dollar budget alone is read and ignored",
+            None,
+            None,
+            None,
+        ),
+        (
+            "tokens",
+            Some(100),
+            None,
+            Some("This project used its tokens for today"),
+        ),
+        (
+            "queue",
+            None,
+            Some(1),
+            Some("This project's review queue is full (1 waiting)"),
+        ),
+    ];
+    for (case, tokens, queue, expect) in cases {
+        if case == "no row" {
+            // no project_budgets row at all
+        } else {
+            set_budgets(&repo, &item_id, tokens, queue).await;
+        }
+        let chosen = choose_request_for_runner(&repo, "runner-a", now, &policy)
+            .await
+            .expect("no db error");
+        let (state, code, reason, since) = waiting_row(&repo, "next").await;
+        match expect {
+            None => {
+                assert_eq!(chosen.as_deref(), Some("next"), "{case}");
+                assert_eq!(state, "queued", "{case}");
+            }
+            Some(sentence) => {
+                assert_eq!(chosen, None, "{case}");
+                assert_eq!(code.as_deref(), Some("budget_reached"), "{case}");
+                assert_eq!(reason.as_deref(), Some(sentence), "{case}");
+                assert_eq!(since, Some(now.to_rfc3339()), "{case}");
+                // The budget never fails the request, however long it waits.
+                let later = now + chrono::Duration::hours(3);
+                choose_request_for_runner(&repo, "runner-a", later, &policy)
+                    .await
+                    .expect("no db error");
+                assert_eq!(waiting_row(&repo, "next").await.0, "queued", "{case}");
+            }
+        }
+    }
+    // The running attempt is untouched throughout.
+    let running: String =
+        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = 'attempt'")
+            .fetch_one(repo.pool())
+            .await
+            .expect("attempt");
+    assert_eq!(running, "leased");
+}

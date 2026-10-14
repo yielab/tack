@@ -49,6 +49,7 @@ fn request() -> SchedulingRequest {
         requested_model: Some("opaque/sonnet".to_string()),
         approvals: None,
         required_labels: BTreeMap::new(),
+        budget_reached: None,
         created_at: now(),
     }
 }
@@ -491,5 +492,27 @@ fn identical_input_selects_identically_across_repeated_calls() {
     let first = select_runner(&req, &candidates, now(), &policy);
     for _ in 0..25 {
         assert_eq!(select_runner(&req, &candidates, now(), &policy), first);
+    }
+}
+
+#[test]
+fn a_reached_budget_makes_every_candidate_ineligible_before_any_other_check() {
+    use crate::scheduler::types::BudgetKind;
+    for which in [BudgetKind::Tokens, BudgetKind::ReviewQueue { waiting: 3 }] {
+        let mut req = request();
+        req.budget_reached = Some(which.clone());
+        // Also stale and full: the budget is still the reason named.
+        let mut c = candidate("runner-a");
+        c.available_capacity = 0;
+        let outcome = select_runner(&req, &[c], now(), &SchedulingPolicy::default());
+        assert_eq!(
+            outcome,
+            SelectionOutcome::NoEligibleRunner {
+                reasons: vec![(
+                    RunnerId::new("runner-a"),
+                    IneligibleReason::BudgetReached { which }
+                )]
+            }
+        );
     }
 }

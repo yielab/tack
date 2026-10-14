@@ -46,6 +46,7 @@ fn request(id: &str, priority: Priority, created_at: DateTime<Utc>) -> Schedulin
         requested_model: Some("opaque/sonnet".to_string()),
         approvals: None,
         required_labels: BTreeMap::new(),
+        budget_reached: None,
         created_at,
     }
 }
