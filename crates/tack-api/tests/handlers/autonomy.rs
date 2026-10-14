@@ -434,6 +434,9 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
     )
     .await;
     assert_eq!(got["domains"][0]["level"], "L3", "{got}");
+    assert_eq!(got["domains"][0]["merged"], 1, "{got}");
+    assert_eq!(got["domains"][0]["undone"], 1, "{got}");
+    assert!(got["automatic_merge_blocked_by"].is_array(), "{got}");
     let demoted: Option<String> =
         sqlx::query_scalar("SELECT demoted_at FROM tack_merges WHERE attempt_id = ?")
             .bind(&a.attempt_id)

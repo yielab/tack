@@ -26,6 +26,13 @@ pub struct DomainSettings {
     pub item_types: Vec<String>,
     /// `L3`, `L4` or `L5`.
     pub level: String,
+    /// Read only: changes Tack merged by itself in this domain.
+    #[serde(default, skip_deserializing)]
+    pub merged: i64,
+    /// Read only: of those, how many were reverted or turned CI red (each one
+    /// took the domain down a level).
+    #[serde(default, skip_deserializing)]
+    pub undone: i64,
 }
 
 /// The project's daily limits; `null` is no limit.
@@ -52,6 +59,11 @@ pub struct AutonomySettings {
     pub budgets: BudgetSettings,
     /// Merge when a person moves the task to Done.
     pub merge_on_done: bool,
+    /// Read only: why Tack could not merge by itself here, whatever the level
+    /// (GitHub polling off, no prill on the board, no public key); empty when
+    /// nothing on this board stops it.
+    #[serde(default, skip_deserializing)]
+    pub automatic_merge_blocked_by: Vec<String>,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -66,6 +78,8 @@ impl From<Settings> for AutonomySettings {
                     path_globs: d.path_globs,
                     item_types: d.item_types,
                     level: d.level.to_string(),
+                    merged: 0,
+                    undone: 0,
                 })
                 .collect(),
             verify_require: s.verify_require,
@@ -78,6 +92,7 @@ impl From<Settings> for AutonomySettings {
                 queue_items_max: s.budgets.queue_items_max,
             },
             merge_on_done: s.merge_on_done,
+            automatic_merge_blocked_by: Vec::new(),
         }
     }
 }
@@ -151,10 +166,31 @@ pub async fn get_autonomy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<AutonomySettings>> {
-    store::get_settings(state.repo.pool(), &id.to_string())
+    let project_id = id.to_string();
+    let mut settings: AutonomySettings = store::get_settings(state.repo.pool(), &project_id)
         .await?
-        .map(|settings| Json(settings.into()))
-        .ok_or_else(|| ApiError::NotFound("Project not found".into()))
+        .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
+        .into();
+    let counts = store::domain_counts(state.repo.pool(), &project_id).await?;
+    for domain in &mut settings.domains {
+        if let Some((merged, undone)) = counts.get(&domain.name) {
+            (domain.merged, domain.undone) = (*merged, *undone);
+        }
+    }
+    let mut blocked = Vec::new();
+    if state.config.github_poll_seconds == 0 || state.config.github_token.is_none() {
+        blocked.push(
+            "GitHub polling is off on this board, so Tack cannot read CI or merge".to_owned(),
+        );
+    }
+    if let Err(reason) = crate::prill_store::version(&state.config.prill_program).await {
+        blocked.push(format!("{reason}, so a signed pack cannot be checked"));
+    }
+    if settings.attestation_public_key.is_none() {
+        blocked.push("The project has no public key to check prill's signature against".to_owned());
+    }
+    settings.automatic_merge_blocked_by = blocked;
+    Ok(Json(settings))
 }
 
 /// PUT /api/projects/:id/autonomy

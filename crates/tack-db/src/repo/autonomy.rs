@@ -138,6 +138,24 @@ pub async fn put_settings(
     Ok(true)
 }
 
+/// Per domain: the changes Tack merged by itself, and how many of those were
+/// undone (reverted or CI red, which demoted the domain).
+pub async fn domain_counts(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<std::collections::HashMap<String, (i64, i64)>, sqlx::Error> {
+    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT domain, SUM(merged_at IS NOT NULL), SUM(demoted_at IS NOT NULL)
+         FROM tack_merges
+         WHERE project_id = ? AND trigger = 'auto' AND domain IS NOT NULL
+         GROUP BY domain",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(d, m, u)| (d, (m, u))).collect())
+}
+
 /// One row of the merge ledger: a merge Tack made, or the first condition that
 /// kept it from making one.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
