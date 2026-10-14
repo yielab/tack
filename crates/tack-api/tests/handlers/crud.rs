@@ -2201,3 +2201,115 @@ async fn github_poll_marks_a_reverted_pull_request() {
     assert_eq!(stored.state, "reverted");
     assert_eq!(stored.reverted_by_number, Some(9));
 }
+
+/// Mounts the GitHub answers a poll needs to follow a merged PR 7 whose merge
+/// commit is `merge-sha`: the issues list (empty), the pull request, the repo
+/// and the default branch's commits, all from the round-0 fixtures.
+async fn mount_merged_pull_request(gh: &wiremock::MockServer, commits: &str) {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+    let fixture = |name: &str| {
+        std::fs::read_to_string(format!(
+            "{}/tests/fixtures/github/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let merge = "e5bd3914e2e596debea16f433f57875b5b90bcd6";
+    let routes = [
+        ("/repos/acme/widgets/issues".to_string(), "[]".to_string()),
+        (
+            "/repos/acme/widgets/pulls/7".to_string(),
+            fixture("pull-merged.json"),
+        ),
+        (
+            "/repos/acme/widgets".to_string(),
+            json!({"default_branch": "main"}).to_string(),
+        ),
+        (
+            "/repos/acme/widgets/commits".to_string(),
+            commits.to_string(),
+        ),
+        (
+            format!("/repos/acme/widgets/commits/{merge}/check-runs"),
+            fixture("check-runs-one-failure.json"),
+        ),
+        (
+            format!("/repos/acme/widgets/commits/{merge}/status"),
+            fixture("status-success.json"),
+        ),
+    ];
+    for (p, body) in routes {
+        Mock::given(method("GET"))
+            .and(path(p))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+            .mount(gh)
+            .await;
+    }
+}
+
+/// Marks the seeded PR 7 merged yesterday, so it is inside the 14-day window.
+async fn merge_seeded_pull_request(state: &tack_api::AppState) {
+    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    tack_db::repo::pull_requests::observe(
+        state.pool(),
+        "acme/widgets",
+        7,
+        "merged",
+        Some(&yesterday),
+        Some(&yesterday),
+    )
+    .await
+    .unwrap();
+}
+
+/// A default-branch commit saying `This reverts commit <merge_sha>` marks the
+/// merged PR reverted, though no `Revert` PR exists; the merge sha is stored.
+#[tokio::test]
+async fn github_poll_marks_a_pull_request_reverted_by_a_commit() {
+    let gh = wiremock::MockServer::start().await;
+    let state = pull_request_poll_state(gh.uri()).await;
+    merge_seeded_pull_request(&state).await;
+    let commits = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/github/commits-default-branch-with-revert.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    mount_merged_pull_request(&gh, &commits).await;
+
+    let mut etags = std::collections::HashMap::new();
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, "reverted");
+    assert_eq!(stored.reverted_by_number, None);
+    assert_eq!(
+        stored.merge_sha.as_deref(),
+        Some("e5bd3914e2e596debea16f433f57875b5b90bcd6")
+    );
+}
+
+/// Red CI on the merge commit sets `red_ci_at`; the PR stays merged.
+#[tokio::test]
+async fn github_poll_records_red_ci_on_the_merge_commit() {
+    let gh = wiremock::MockServer::start().await;
+    let state = pull_request_poll_state(gh.uri()).await;
+    merge_seeded_pull_request(&state).await;
+    mount_merged_pull_request(&gh, "[]").await;
+
+    let mut etags = std::collections::HashMap::new();
+    tack_api::github_sync::poll_once(&state, &mut etags)
+        .await
+        .expect("poll_once");
+    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, "merged");
+    assert!(stored.red_ci_at.is_some(), "red CI must be recorded");
+}

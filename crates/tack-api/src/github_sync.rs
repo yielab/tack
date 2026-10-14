@@ -365,6 +365,7 @@ async fn poll_repo(
     let resp = request.send().await?;
     let status = resp.status();
     if status == reqwest::StatusCode::NOT_MODIFIED {
+        follow_merged(state, client, base, token, repo).await;
         return Ok(0);
     }
     if !status.is_success() {
@@ -385,6 +386,8 @@ async fn poll_repo(
             tracing::warn!(pull_request = issue.number, %error, "GitHub pull request follow failed");
         }
     }
+
+    follow_merged(state, client, base, token, repo).await;
 
     let mut updated = 0;
     for link in &links {
@@ -491,7 +494,241 @@ async fn follow_pull_request(
 
     if pr.title.as_deref().is_some_and(|t| t.starts_with("Revert")) {
         for cited in cited_numbers(pr.body.as_deref().unwrap_or_default()) {
-            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, cited, pr.number)
+            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, cited, Some(pr.number))
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// A merge GitHub refused, worded as what to do about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeRefused(pub String);
+
+impl std::fmt::Display for MergeRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for MergeRefused {}
+
+/// The CI state of commit `sha`: both GitHub signals count. Any check run that
+/// completed other than `success`/`neutral`/`skipped`, or a combined status of
+/// `failure`/`error`, is `Red`; else any unfinished check run or a pending
+/// status with statuses in it is `Pending`; no check run and no status at all
+/// is `Absent`, never `Green`. A pending combined status with zero statuses is
+/// what a repository with only Actions returns, so it counts as no status.
+pub async fn ci_state(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    repo: &str,
+    sha: &str,
+) -> anyhow::Result<tack_core::autonomy::CiState> {
+    use tack_core::autonomy::CiState;
+    #[derive(serde::Deserialize)]
+    struct CheckRuns {
+        check_runs: Vec<CheckRun>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CheckRun {
+        status: String,
+        conclusion: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Combined {
+        state: String,
+        total_count: i64,
+    }
+
+    let get = |suffix: &str| {
+        let url = format!(
+            "{}/repos/{}/commits/{}/{}",
+            base.trim_end_matches('/'),
+            repo,
+            sha,
+            suffix
+        );
+        client
+            .get(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {token}"))
+    };
+    let runs = get("check-runs").send().await?;
+    if !runs.status().is_success() {
+        anyhow::bail!("GitHub GET check-runs of {sha} returned {}", runs.status());
+    }
+    let runs: CheckRuns = runs.json().await?;
+    let status = get("status").send().await?;
+    if !status.status().is_success() {
+        anyhow::bail!("GitHub GET status of {sha} returned {}", status.status());
+    }
+    let status: Combined = status.json().await?;
+
+    let has_status = status.total_count > 0;
+    if runs.check_runs.is_empty() && !has_status {
+        return Ok(CiState::Absent);
+    }
+    let run_red = runs.check_runs.iter().any(|r| {
+        r.status == "completed"
+            && !matches!(
+                r.conclusion.as_deref(),
+                Some("success" | "neutral" | "skipped")
+            )
+    });
+    if run_red || (has_status && matches!(status.state.as_str(), "failure" | "error")) {
+        return Ok(CiState::Red);
+    }
+    let run_pending = runs.check_runs.iter().any(|r| r.status != "completed");
+    if run_pending || (has_status && status.state == "pending") {
+        return Ok(CiState::Pending);
+    }
+    Ok(CiState::Green)
+}
+
+/// Merge pull request `number` with GitHub's default method, only if its head
+/// is still `sha`. Returns the merge commit's sha.
+pub async fn merge_pull_request(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    repo: &str,
+    number: i64,
+    sha: &str,
+) -> Result<String, MergeRefused> {
+    #[derive(serde::Deserialize)]
+    struct Merged {
+        sha: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Message {
+        message: String,
+    }
+    let url = format!(
+        "{}/repos/{}/pulls/{}/merge",
+        base.trim_end_matches('/'),
+        repo,
+        number
+    );
+    let resp = client
+        .put(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "sha": sha }))
+        .send()
+        .await
+        .map_err(|error| MergeRefused(format!("GitHub could not be reached: {error}")))?;
+    let status = resp.status();
+    if status.is_success() {
+        return resp.json::<Merged>().await.map(|m| m.sha).map_err(|error| {
+            MergeRefused(format!("GitHub's merge answer was unreadable: {error}"))
+        });
+    }
+    let github_says = resp
+        .json::<Message>()
+        .await
+        .map(|m| m.message)
+        .unwrap_or_else(|_| format!("GitHub answered {status}"));
+    Err(MergeRefused(match status.as_u16() {
+        403 => format!("The GitHub token can't merge in {repo}: give it Contents: write"),
+        409 => "The branch moved since it was checked".to_string(),
+        405 | 422 => github_says,
+        _ => format!("GitHub refused the merge ({status}): {github_says}"),
+    }))
+}
+
+/// For each pull request merged in the last 14 days: learn its merge commit,
+/// mark it reverted when a default-branch commit says `This reverts commit
+/// <merge_sha>`, and record when CI on that commit first read red. A failure
+/// is logged and skipped, like the rest of the poll.
+async fn follow_merged(
+    state: &crate::router::AppState,
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    repo: &str,
+) {
+    if let Err(error) = follow_merged_inner(state, client, base, token, repo).await {
+        tracing::warn!(repo = %repo, %error, "GitHub merged pull request follow failed");
+    }
+}
+
+async fn follow_merged_inner(
+    state: &crate::router::AppState,
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    repo: &str,
+) -> anyhow::Result<()> {
+    #[derive(serde::Deserialize)]
+    struct Pull {
+        merge_commit_sha: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Commit {
+        commit: CommitBody,
+    }
+    #[derive(serde::Deserialize)]
+    struct CommitBody {
+        message: String,
+    }
+
+    let now = chrono::Utc::now();
+    let cutoff =
+        (now - chrono::Duration::days(14)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut merged =
+        tack_db::repo::pull_requests::list_merged_since(state.pool(), repo, &cutoff).await?;
+    if merged.is_empty() {
+        return Ok(());
+    }
+    let base = base.trim_end_matches('/');
+    let get = |url: String| {
+        client
+            .get(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {token}"))
+    };
+
+    for row in merged.iter_mut().filter(|row| row.merge_sha.is_none()) {
+        let resp = get(format!("{base}/repos/{repo}/pulls/{}", row.number))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            continue;
+        }
+        if let Some(sha) = resp.json::<Pull>().await?.merge_commit_sha {
+            tack_db::repo::pull_requests::set_merge_sha(state.pool(), repo, row.number, &sha)
+                .await?;
+            row.merge_sha = Some(sha);
+        }
+    }
+
+    let branch = default_branch(base, token, repo).await?;
+    let resp = get(format!("{base}/repos/{repo}/commits"))
+        .query(&[("sha", branch.as_str()), ("per_page", "100")])
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("GitHub GET commits of {repo} returned {}", resp.status());
+    }
+    let commits: Vec<Commit> = resp.json().await?;
+
+    let at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    for row in &merged {
+        let Some(sha) = row.merge_sha.as_deref() else {
+            continue;
+        };
+        let needle = format!("This reverts commit {sha}");
+        if commits.iter().any(|c| c.commit.message.contains(&needle)) {
+            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, row.number, None)
+                .await?;
+            continue;
+        }
+        if row.red_ci_at.is_none()
+            && ci_state(client, base, token, repo, sha).await? == tack_core::autonomy::CiState::Red
+        {
+            tack_db::repo::pull_requests::set_red_ci_at(state.pool(), repo, row.number, &at)
                 .await?;
         }
     }
@@ -581,6 +818,119 @@ mod tests {
         assert_eq!(state_change(true, false), Some(false)); // moved out of Done → reopen
         assert_eq!(state_change(false, false), None); // still not done → no-op
         assert_eq!(state_change(true, true), None); // still done → no-op
+    }
+
+    fn fixture(name: &str) -> String {
+        std::fs::read_to_string(format!(
+            "{}/tests/fixtures/github/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap_or_else(|e| panic!("fixture {name}: {e}"))
+    }
+
+    const HEAD: &str = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+
+    #[tokio::test]
+    async fn ci_state_reads_check_runs_and_combined_status() {
+        use tack_core::autonomy::CiState::{Absent, Green, Pending, Red};
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let rows = [
+            ("check-runs-all-success.json", "status-success.json", Green),
+            (
+                "check-runs-all-success.json",
+                "status-pending-empty.json",
+                Green,
+            ),
+            ("check-runs-none.json", "status-success.json", Green),
+            ("check-runs-none.json", "status-pending-empty.json", Absent),
+            ("check-runs-one-failure.json", "status-success.json", Red),
+            (
+                "check-runs-in-progress.json",
+                "status-success.json",
+                Pending,
+            ),
+            ("check-runs-all-success.json", "status-failure.json", Red),
+        ];
+        for (runs, status, want) in rows {
+            let server = MockServer::start().await;
+            for (suffix, file) in [("check-runs", runs), ("status", status)] {
+                Mock::given(method("GET"))
+                    .and(path(format!("/repos/acme/widgets/commits/{HEAD}/{suffix}")))
+                    .respond_with(
+                        ResponseTemplate::new(200).set_body_raw(fixture(file), "application/json"),
+                    )
+                    .mount(&server)
+                    .await;
+            }
+            let got = ci_state(
+                &reqwest::Client::new(),
+                &server.uri(),
+                "tok",
+                "acme/widgets",
+                HEAD,
+            )
+            .await
+            .expect("ci_state");
+            assert_eq!(got, want, "{runs} + {status}");
+        }
+    }
+
+    #[tokio::test]
+    async fn merge_pull_request_answers_with_the_sha_or_what_to_do() {
+        use wiremock::matchers::{body_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let rows: [(u16, &str, Result<&str, &str>); 5] = [
+            (
+                200,
+                "merge-200.json",
+                Ok("e5bd3914e2e596debea16f433f57875b5b90bcd6"),
+            ),
+            (
+                403,
+                "merge-403.json",
+                Err("The GitHub token can't merge in acme/widgets: give it Contents: write"),
+            ),
+            (
+                405,
+                "merge-405.json",
+                Err("At least 1 approving review is required by reviewers with write access."),
+            ),
+            (
+                409,
+                "merge-409.json",
+                Err("The branch moved since it was checked"),
+            ),
+            (422, "merge-422.json", Err("Pull Request is not mergeable")),
+        ];
+        for (code, file, want) in rows {
+            let server = MockServer::start().await;
+            Mock::given(method("PUT"))
+                .and(path("/repos/acme/widgets/pulls/7/merge"))
+                .and(body_json(serde_json::json!({ "sha": HEAD })))
+                .respond_with(
+                    ResponseTemplate::new(code).set_body_raw(fixture(file), "application/json"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let got = merge_pull_request(
+                &reqwest::Client::new(),
+                &server.uri(),
+                "tok",
+                "acme/widgets",
+                7,
+                HEAD,
+            )
+            .await;
+            assert_eq!(
+                got.map_err(|e| e.0),
+                want.map(str::to_string).map_err(str::to_string),
+                "{code}"
+            );
+        }
     }
 
     #[tokio::test]
