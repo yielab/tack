@@ -106,6 +106,15 @@ pub async fn put_settings(
     if updated == 0 {
         return Ok(false);
     }
+    // A held merge keeps the key id it was verified with so a tick need not run
+    // prill again; any change here may replace the key, so every unmerged
+    // attempt of the project is verified afresh.
+    sqlx::query(
+        "UPDATE tack_merges SET attestation_keyid = NULL WHERE project_id = ? AND merged_at IS NULL",
+    )
+    .bind(project_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM autonomy_domains WHERE project_id = ?")
         .bind(project_id)
         .execute(&mut *tx)
@@ -222,6 +231,8 @@ pub async fn attempt_context(
 /// Attempts the automatic merge looks at: succeeded, with a merge-readiness
 /// pack, no human review and no merge yet, in a project (or a domain of one)
 /// above L3. An attempt whose ledger row belongs to a human trigger is theirs.
+/// Only the newest finished attempt of an unfinished item's newest request is
+/// one: a run a newer one replaced, or an item already Done, is never merged.
 pub async fn auto_candidates(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT a.id FROM execution_attempts a
@@ -229,6 +240,13 @@ pub async fn auto_candidates(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Err
          JOIN items i ON i.id = r.item_id
          JOIN projects p ON p.id = i.project_id
          WHERE a.state = 'succeeded'
+           AND p.archived = 0
+           AND i.completed_at IS NULL
+           AND r.id = (SELECT r2.id FROM execution_requests r2 WHERE r2.item_id = i.id
+                        ORDER BY r2.created_at DESC, r2.rowid DESC LIMIT 1)
+           AND a.id = (SELECT a2.id FROM execution_attempts a2 WHERE a2.request_id = r.id
+                         AND a2.state IN ('succeeded','failed','cancelled')
+                        ORDER BY a2.attempt_number DESC LIMIT 1)
            AND (p.autonomy_level != 'L3' OR EXISTS (
                 SELECT 1 FROM autonomy_domains d WHERE d.project_id = p.id AND d.level != 'L3'))
            AND EXISTS (SELECT 1 FROM execution_artifacts x

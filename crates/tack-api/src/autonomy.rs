@@ -177,9 +177,22 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
             fail("The attempt recorded no head commit to check the signature against")
         }
         (Some(envelope), Some(key)) => {
-            match crate::prill::attest_verify(&state.config.prill_program, &envelope, key, head)
+            // The envelope and the head commit of an attempt never change, so a
+            // signature verified on an earlier tick still holds; saving the
+            // project's settings clears it (`put_settings`).
+            let verified = store::get_merge(pool, attempt_id)
                 .await
-            {
+                .ok()
+                .flatten()
+                .and_then(|row| row.attestation_keyid);
+            let checked = match verified {
+                Some(keyid) => Ok(keyid),
+                None => {
+                    crate::prill::attest_verify(&state.config.prill_program, &envelope, key, head)
+                        .await
+                }
+            };
+            match checked {
                 Ok(keyid) => {
                     extra.attestation_keyid = Some(keyid);
                     Check::Pass

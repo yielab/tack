@@ -530,3 +530,40 @@ async fn holds_table() {
         }
     }
 }
+
+/// Only the live run of an unfinished item is ever merged by itself: an item
+/// already Done, or a run a newer request replaced, is left alone.
+#[tokio::test]
+async fn a_finished_item_or_a_replaced_run_is_never_merged_by_itself() {
+    for case in ["item done", "replaced by a newer request"] {
+        let root = tempfile::tempdir().unwrap();
+        let prill = fake_prill(root.path());
+        let gh = github(false, 0).await;
+        let b = board(root.path(), Some(gh.uri().as_str()), &prill).await;
+        let setup = Setup::default();
+        let (status, put) = put_autonomy(&b, &setup).await;
+        assert_eq!(status, StatusCode::OK, "{case}: {put}");
+        let a = finished_attempt(&b, &setup).await;
+        let pool = b.state.repo.pool();
+        match case {
+            "item done" => {
+                sqlx::query(
+                    "UPDATE items SET completed_at = datetime('now') WHERE id = \
+                     (SELECT r.item_id FROM execution_attempts a \
+                      JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?)",
+                )
+                .bind(&a.attempt_id)
+                .execute(pool)
+                .await
+                .unwrap();
+            }
+            _ => {
+                // A newer run of the same item makes this attempt a replaced one.
+                let _ = request_and_claim(&b.app, &b.item_id, "a2-newer", None).await;
+            }
+        }
+        tack_api::autonomy::tick(&b.state).await;
+        let row = merge_row(&b, &a.attempt_id).await;
+        assert!(row.is_none(), "{case}: {row:?}");
+    }
+}
