@@ -1,13 +1,15 @@
 # Plan: Phase 72 — merge authority follows the autonomy level you set
 
-**Status: proposed 2026-10-13; cuts X1, X2, X3, X5 and X6 taken by the owner the same day, X4
-and acceptance pending.** Serves ADR 0079
+**Status: proposed 2026-10-13; every cut and question answered by the owner the same day,
+acceptance pending.** Serves ADR 0079
 (`docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
 "Amendments agreed 2026-10-13" wins where it disagrees with the table. Written against `develop`
 at `11de5f2e`, prill at `324842e` (ADR 0014 accepted, M6 specified, not built) and docket at
 `e8774fad` (ADR 0025 accepted with amendments). Re-run `rg -n` before trusting a line number.
 
-What this phase builds, in one paragraph. A project can let Tack merge a change by itself (L4)
+What this phase builds, in one paragraph. Tack can merge a finished change in three ways: a
+**Merge** button on the task, a project option that merges when a person moves the task to Done,
+and, for a project that allows it, by itself (L4)
 inside the parts of the code the person authorised, or everywhere (L5). Tack merges only when
 prill said `merge` under the stages the project requires, the pack is signed for the exact head
 commit, CI is green on that commit and no budget is spent; otherwise the item waits in Needs your
@@ -45,9 +47,18 @@ from Tack ADR 0079, prill ADR 0014 and docket ADR 0025 as each stands today.
 | X1 | Decision 6 (directives) is not built. Tack will apply directives prill proposes; it never groups them itself. Trigger: prill publishes `directives-proposal/v1` and a contract through which Tack sends the human corrections it holds. | **Taken** |
 | X2 | Reshaped by the ownership rule: Tack drops its own PQC (ADR 0079 decision 4(d)) and keeps 4(a), 4(b), 4(c). prill's store lives **on the board's host**, one per repository, so outcomes never cross machines. Without prill on the board, the page shows Tack's own facts and says the quality figures need prill. | **Taken (reshaped)** |
 | X3 | Budgets: `tokens_per_day`, `usd_per_day`, `auto_merges_per_day`, `queue_items_max`; enforced at the attempt boundary and in the merge check. | **Taken** |
-| X4 | L5 has no limits of its own: L5 is L4 over every domain, because one revert already demotes. | **Pending** |
+| X4 | L5 has no limits of its own: L5 is L4 over every domain, because one revert already demotes. | **Taken** (read from the owner's answer A; say so if not) |
 | X5 | No `brief_version` in the pack; the request snapshot records it, the hash already identifies it. | **Taken** |
 | X6 | Stopping the loop is cancelling the follow-up run. | **Taken** |
+
+### The owner's answers of 2026-10-13 (second round)
+
+| # | Answer | What it changes |
+|---|---|---|
+| A | Merging is something a person can do from Tack: a **Merge** button, enabled when the task is finished, and a project option "merge when the task moves to Done". | Two human merge triggers beside the automatic one (task M). Both are human decisions, so they need no signature, no `require` and no domain; they still need an open PR and green CI on the head commit, and they merge with `sha` = that head. |
+| B | A run that came through MCP is merged only by hand, for now. | `tack mcp` sends `X-Tack-Client: mcp` on every call and `origin: "mcp"` on every run it creates. A change from such a run, and a move to Done made through MCP, never merges by itself (L4, L5 or the Done option); the button still works. |
+| C | When a merge cannot happen, Tack says what happened. | Every merge that does not happen — CI red or running, the token lacks `Contents: write`, branch protection, a conflict, a moved branch — shows on the task card and in its activity with GitHub's reason and what to do. Tack never asks GitHub for more permission. |
+| D | The contract test against prill's schema runs on the maintainer's machine and in the docket + prill e2e, not in CI, for now. | B's test skips in CI with a line saying so; prill stays private. |
 
 ### Open questions — the default this plan builds with
 
@@ -96,12 +107,13 @@ Every row of ADR 0079's table as amended, the "Who owns what" table, the cuts, t
 | Schema | One migration, `087_autonomy` (task S), ahead of its readers — the 078–081 precedent. A reader needing another shape adds a new migration; it never edits 087. |
 | The policy | A pure function in `tack-core::autonomy` (A1): facts in, `Ok` or the first failing condition out. |
 | Where it runs | In the GitHub poll loop, after `poll_once`, as `autonomy::tick`. The completion handler records; it never merges. |
-| Holds | A row in `autonomy_merges` with `merged_at` NULL and `held_reason` set. One table for merged and held. |
-| The merge | `PUT /repos/{repo}/pulls/{n}/merge` with `sha` = `actual_execution.git.head_commit`. After it, the item follows `done_on_mrp_accepted` as if accepted. |
+| Three triggers, one record | `tack_merges.trigger` is `button`, `done` or `auto`. Every merge Tack makes, and every one it could not make, is a row with `merged_at` or `held_reason`. |
+| What each trigger checks | `button` and `done`: an open PR (opened if missing) and green CI on the head commit; `done` also refuses an MCP origin. `auto`: the full order below. All three share A1's `evaluate`, so a reason reads the same everywhere. |
+| The merge | `PUT /repos/{repo}/pulls/{n}/merge` with `sha` = `actual_execution.git.head_commit`. After an `auto` merge the item follows `done_on_mrp_accepted` as if accepted. A `done` merge whose CI is still running waits, and the card says "Waiting for CI to merge". |
 | Order inside a tick | pack says merge → domain ≥ L4 → the request sent a non-empty `require` that the runner's prill honours → attestation verifies for the head commit → budgets → open the PR → CI on head green → merge. |
 | Demotion | A revert or red CI on the merge commit of an automatically merged change drops its domain (or the project) one level; an activity event names it. |
 | prill on the board | `TACK_PRILL_PROGRAM` (default `prill`). The board runs only `attest verify`, `record mrp`, `record outcome` and `metrics`, against `<storage_dir>/prill/<owner>__<repo>.db`. Absent: no L4, no quality figures, each with its reason. |
-| MCP | One read-only tool, `get_autonomy`. |
+| MCP | One read-only tool, `get_autonomy`. Nothing over MCP merges or changes a level, and nothing that came over MCP merges by itself (answer B). |
 | Generated files | Each task regenerates and stages them; on a conflict the integrator regenerates. |
 
 ## Rounds
@@ -114,13 +126,13 @@ At most two agents building cargo at once; a frontend-only task runs beside them
 | 1 | B, G | S; A1 (G) |
 | 2 | K1, U | S, A1 |
 | 3 | A2, P; P-ui beside | G, K1, U (A2); G (P); P (P-ui) |
-| 4 | L; F beside | K1, U (L); A2 (F) |
-| 5 | K2 | prill with M6 (`require`, `nextSteps`) and its captured fixtures |
+| 4 | M, L | A2 (M); K1, U (L) |
+| 5 | F; K2 when prill is ready | M (F); prill with M6 (`require`, `nextSteps`) and its captured fixtures (K2) |
 | 6 | Z (integrator) | everything |
 
 Rounds 0–4 do not wait on prill. Until K2 lands, L4 holds every merge with finding 1's reason and
 the loop sends packs to a human: correct by P3, nothing faked. Ceilings: Haiku 60; Sonnet one
-layer 100, two layers 150 — twelve agents, ≈ 1 200 calls at the ceiling.
+layer 100, two layers 150 — thirteen agents, ≈ 1 300 calls at the ceiling.
 
 ## How a task is handed to an agent
 
@@ -170,6 +182,8 @@ ALTER TABLE projects ADD COLUMN verify_require TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE projects ADD COLUMN attestation_public_key TEXT;
 ALTER TABLE projects ADD COLUMN verify_loop_max_attempts INTEGER NOT NULL DEFAULT 0
     CHECK (verify_loop_max_attempts >= 0);
+ALTER TABLE projects ADD COLUMN merge_on_done INTEGER NOT NULL DEFAULT 0
+    CHECK (merge_on_done IN (0,1));
 CREATE TABLE autonomy_domains (
     id TEXT PRIMARY KEY NOT NULL,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -181,13 +195,14 @@ CREATE TABLE autonomy_domains (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, name)
 );
-CREATE TABLE autonomy_merges (
+CREATE TABLE tack_merges (
     attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    trigger TEXT NOT NULL CHECK (trigger IN ('button','done','auto')),
     domain TEXT,
-    level TEXT NOT NULL,
-    policy_snapshot TEXT NOT NULL,
-    pack_artifact_id TEXT NOT NULL,
+    level TEXT,
+    policy_snapshot TEXT,
+    pack_artifact_id TEXT,
     attestation_keyid TEXT,
     ci_state TEXT,
     held_reason TEXT,
@@ -196,7 +211,7 @@ CREATE TABLE autonomy_merges (
     merge_sha TEXT,
     demoted_at TEXT
 );
-CREATE INDEX idx_autonomy_merges_project ON autonomy_merges(project_id, merged_at);
+CREATE INDEX idx_tack_merges_project ON tack_merges(project_id, merged_at);
 CREATE TABLE project_budgets (
     project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     tokens_per_day INTEGER,
@@ -228,7 +243,7 @@ CREATE TABLE prill_records (
 Then each existing `item_briefs` row becomes version 1 (`brief_sha256` = `''`).
 
 **Test (RED first):** a database at 086 with one project and one brief migrates; the project
-reads `L3`, `[]`, `0`; the brief has a version 1.
+reads `L3`, `[]`, `0`, `merge_on_done` 0; the brief has a version 1.
 **Done when:** `cargo nextest run --workspace -E 'binary(tack_db)'` and the gate are green.
 
 ### A1 — the policy as a pure function (Haiku)
@@ -243,12 +258,16 @@ reads `L3`, `[]`, `0`; the brief has a version 1.
   not) and `item_types` is empty or holds `item_type`. No match: `(L3, None)`, or `(L5, None)`
   when the project is L5. Several: the lowest level and its name.
 - `enum Check { Pass, Fail(String) }`; `enum CiState { Green, Pending, Red, Absent }`.
-- `struct Facts { decision: MergeDecision, level: Level, require: Check, attestation: Check, budget: Check, pr_open: Check, ci: CiState }`.
-- `fn evaluate(f: &Facts) -> Result<(), Hold>` in the Decided order; `Hold` has one variant per
+- `enum Trigger { Button, Done, Auto }`.
+- `struct Facts { trigger: Trigger, from_mcp: bool, decision: MergeDecision, level: Level, require: Check, attestation: Check, budget: Check, pr_open: Check, ci: CiState }`.
+- `fn evaluate(f: &Facts) -> Result<(), Hold>`: for `Button`, only `pr_open` and `ci`; for
+  `Done`, `from_mcp` (refused), `pr_open` and `ci`; for `Auto`, `from_mcp` first, then the Decided
+  order. `Hold` has one variant per
   condition and a `Display` of one plain sentence ("prill did not say merge", "CI is still running
   on <short sha>", …); `require` and the others carry their own reason through `Fail`.
 
-**Test (RED first):** one table test: a row per `Hold` variant and the all-pass row; three
+**Test (RED first):** one table test: a row per `Hold` variant, the all-pass row for each
+trigger, and a `Button` row that passes with an unsigned `review` pack; three
 `level_for` rows (one domain, two domains, none at L5).
 **Done when:** `cargo nextest run -p tack-core` and the gate are green.
 
@@ -267,7 +286,8 @@ reads `L3`, `[]`, `0`; the brief has a version 1.
    dropped `cwd` or `runner` gets a hint too.
 3. `briefing_schema.rs` validates `briefing()`'s output for every brief-v1 fixture against the
    output of `prill schema briefing` (prill ADR 0014 L-3). When `prill` is absent or has no
-   `schema` command, the test prints why and passes.
+   `schema` command, the test prints why and passes. It runs on the maintainer's machine and in
+   `scripts/docket-prill-e2e.sh`; CI has no prill (answer D) and skips it.
 **Test (RED first):** versions 1, 2, and none for an identical third upsert; the metric
 translation rows in `verify/tests.rs`.
 **Done when:** the named binaries are green; the gate is green.
@@ -279,13 +299,16 @@ translation rows in `verify/tests.rs`.
 **Do:**
 1. `pub async fn ci_state(client, base, token, repo, sha) -> anyhow::Result<CiState>` with Q4's rule.
 2. `pub async fn merge_pull_request(client, base, token, repo, number, sha) -> Result<String, MergeRefused>`:
-   the merge commit sha, or GitHub's `message` on 405/409.
+   the merge commit sha, or a refusal that says what to do: 403 "The GitHub token can't merge in
+   <repo>: give it Contents: write", 405 GitHub's message (branch protection, method not allowed),
+   409 "The branch moved since it was checked", 422 GitHub's message (conflict). Add a 403 and a
+   422 fixture beside round 0's.
 3. In `poll_repo`: a merged PR stores `merge_sha` from `merge_commit_sha`. For each merged row
    in the last 14 days: a default-branch commit whose message says `This reverts commit
    <merge_sha>` marks it reverted, beside the existing title rule; a `Red` CI on `merge_sha` sets
    `red_ci_at`. Nothing here talks to prill.
 **Test (RED first):** table tests over the fixtures: `ci_state` (seven rows), `merge_pull_request`
-(three), one poll test for each of revert-by-commit and red CI.
+(five), one poll test for each of revert-by-commit and red CI.
 **Done when:** `cargo nextest run --workspace -E 'binary(tack_api)'` and the gate are green.
 **Hand-off:** Sonnet, one layer, ceiling 100.
 
@@ -316,7 +339,7 @@ translation rows in `verify/tests.rs`.
 **Files:** new `crates/tack-db/src/repo/budgets.rs`; `crates/tack-orch/src/scheduler/{select.rs, types.rs}` and their tests; `crates/tack-api/src/handlers/executions.rs` (the waiting-reason text only).
 **Do:**
 1. Repo: get/put `project_budgets`; `spent_today(project_id)` (tokens from attempts' usage since
-   00:00 UTC); `queue_items(project_id)` (packs with no review plus held `autonomy_merges` rows);
+   00:00 UTC); `queue_items(project_id)` (packs with no review plus held `tack_merges` rows);
    `auto_merges_today(project_id)`.
 2. Scheduler: ineligibility `BudgetReached { which }` before a claim, written to `waiting_since`
    like phase 70's reasons ("This project used its tokens for today", "This project's review
@@ -331,16 +354,17 @@ translation rows in `verify/tests.rs`.
 **Files:** new `crates/tack-db/src/repo/autonomy.rs`; new `crates/tack-api/src/autonomy.rs` (`tick`); new `crates/tack-api/src/handlers/autonomy.rs`; `crates/tack-api/src/{lib.rs (one call in the poll loop), router.rs, openapi.rs}`; `crates/tack-cli/src/{main.rs, mcp.rs}`; new `crates/tack-api/tests/handlers/autonomy.rs`.
 **Do:**
 1. `GET/PUT /api/projects/{id}/autonomy`: level, domains (replace-all), `verify_require`, public
-   key, loop cap, budgets. Promotion is this PUT. `tack project autonomy <project>` prints it; MCP
+   key, loop cap, budgets, `merge_on_done`. Promotion is this PUT. `tack project autonomy <project>` prints it; MCP
    `get_autonomy` returns it.
 2. The request snapshot carries `verify_require` (the runner sends it in K2).
 3. `tick`: candidates are attempts of projects above L3 with a `merge` pack, no review and no
-   merged row. Gather `Facts` (paths from the evidence file list; `require` = `Fail` when the
+   merged row, plus held `done` rows waiting for CI (M writes them). Gather `Facts` (paths from the evidence file list; `require` = `Fail` when the
    snapshot's list is empty or the runner's report says its prill cannot require — K2 writes that
    report; until then every L4 hold reads "the runner has not reported that its prill can require
    stages"; G's `ci_state`; K1's `attest_verify`; U's budgets; `open_pull_request_for_attempt`),
-   call `evaluate`, upsert `autonomy_merges` (held reason, or merged with `merge_sha` and the policy
-   snapshot), and on a merge follow `apply_mrp_accepted`'s path and broadcast as today.
+   call `evaluate`, upsert `tack_merges` (`trigger` `auto`; held reason, or merged with
+   `merge_sha` and the policy snapshot), and on a merge follow `apply_mrp_accepted`'s path and
+   broadcast as today. The run's `origin` is in its request snapshot (M adds it).
 4. Demotion: when G marks an automatically merged PR reverted or sets `red_ci_at`, its domain (or
    project) takes `Level::demoted()`, `demoted_at` is set, an activity event names the domain, the
    levels and the PR.
@@ -350,6 +374,29 @@ domain L4→L3; plus one row each: L3 untouched, unlinked item, poll off, unsign
 `verify_require`, merge budget spent.
 **Done when:** api, db and cli binaries green; regenerated files staged; the gate is green.
 **Hand-off:** Sonnet, two layers (db + api; CLI/MCP thin), ceiling 150.
+
+### M — the Merge button, merge on Done, and MCP's mark (Sonnet)
+
+**Serves:** answers A, B and C.
+**Files:** new `crates/tack-api/src/merge.rs` (the one function every trigger calls); `crates/tack-api/src/handlers/{executions.rs (one route), items.rs (the Done hook, where `update_item_atomically` reports `Updated`)}`; `crates/tack-api/src/{router.rs, openapi.rs, middleware.rs (read the header into the request's extensions)}`; `crates/tack-cli/src/mcp.rs` and the API client it uses; one new file under `crates/tack-api/tests/handlers/`.
+**Do:**
+1. `merge::attempt(state, attempt_id, trigger) -> Result<Merged, Hold>`: opens the PR when
+   missing (`open_pull_request_for_attempt`), reads `ci_state`, calls A1's `evaluate`, and merges
+   with `sha` = the head. Every outcome writes the `tack_merges` row and an activity event with
+   the reason (answer C). A2's `tick` calls the same function for `auto`.
+2. `POST /api/attempts/{id}/merge` (the button). `GET /api/attempts/{id}` gains `merge: {enabled,
+   reason}` so the UI shows the button disabled with its reason.
+3. When an item enters a Done status and its project has `merge_on_done`, its latest succeeded
+   attempt with a pushed branch is merged with `trigger` `done`, unless the move came with
+   `X-Tack-Client: mcp` (then the activity says "Moved to Done over MCP: not merged; use Merge").
+   CI still running leaves a held row that A2's tick retries.
+4. `tack mcp` sends `X-Tack-Client: mcp` on every call and `origin: "mcp"` on `create_execution`;
+   the server stores `origin` in the request snapshot (any other value or none means a person).
+**Test (RED first):** the button merges with the head sha; disabled reasons for no PR, CI
+running, CI red, token 403; a move to Done merges, a move to Done over MCP does not, an MCP-origin
+run is refused by `done` and `auto` and accepted by the button.
+**Done when:** api and cli binaries green; regenerated files staged; the gate is green.
+**Hand-off:** Sonnet, two layers (api + a thin cli), ceiling 150.
 
 ### P — prill's figures, Tack's money (Sonnet)
 
@@ -405,16 +452,22 @@ cancelled, or the pack says `review`. The item then waits in Needs your review a
 
 ### F — the Automation panel and the held reason (Sonnet)
 
-**Files:** `frontend/src/features/settings/panels/{AutomationPanel.tsx, panels.test.tsx}`; `frontend/src/shared/runWithAgent/{MrpPanel.tsx, MrpPanel.test.tsx}`; the item activity rendering for the demotion event.
-**Do:** an **Autonomy** section: the level with one plain sentence each; domains (name, globs,
+**Files:** `frontend/src/features/settings/panels/{AutomationPanel.tsx, panels.test.tsx}`; `frontend/src/shared/runWithAgent/{MrpPanel.tsx, MrpPanel.test.tsx}`; the attempt view and the task card (`rg -ln "Needs your review" frontend/src`); the item activity rendering for the merge and demotion events.
+**Hand-off note:** the widest frontend task; ceiling 150.
+**Do:** a **Merge** button on the finished task and on its attempt, disabled with M's reason
+when it cannot merge; a "Merge when moved to Done" switch in the Automation panel; on the task
+card, a badge when a merge did not happen ("Not merged: CI failed", "Waiting for CI to merge",
+"The GitHub token can't merge") that opens the reason and what to do. Then an **Autonomy**
+section: the level with one plain sentence each; domains (name, globs,
 item types, level, and their merged / reverted counts shown before the level control); "Stages
 prill must run" with a button that fills prill's L4 example; the public key; the loop cap; the four
 budgets. L4/L5 render disabled with their reason when the board has no GitHub poll, no prill or
 no public key. The pack panel shows the held reason, or "Merged by Tack (L4, domain docs)" with
 the policy snapshot behind a disclosure; when the pack has next steps, it lists them.
-**Test (RED first):** the section saves; a disabled L4 shows its reason; both pack panel states.
+**Test (RED first):** the button enabled and disabled with its reason; the switch saves; the
+card badge; the section saves; a disabled L4 shows its reason; both pack panel states.
 **Done when:** vitest, typecheck, Playwright `--workers=2` headless and the gate are green.
-**Hand-off:** Sonnet, frontend, ceiling 100.
+**Hand-off:** Sonnet, frontend, ceiling 150.
 
 ### K2 — the runner sends the required stages and reads prill's next steps (Sonnet; waits on prill M6)
 

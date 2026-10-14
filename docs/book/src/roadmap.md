@@ -14,6 +14,13 @@ The agent brings its own model: Tack holds no model key, endpoint or catalog. Ea
 and reaches its model with its own tools, and a run names its model as one string in that agent's
 own spelling, or none.
 
+**Where this is going.** Today a person approves every change an agent makes (Level 3). Phase 72
+lets a person merge from Tack, and lets a project hand Tack the merge itself inside the parts of
+the code it authorises (Level 4) or everywhere (Level 5). Tack does that beside two tools it never
+contains: an agent runtime such as docket, which runs the work, and an independent verifier such
+as prill, which judges it and recommends. Tack decides and acts; each tool still works alone, and
+without a verifier Tack stays at Level 3.
+
 **Phase 64 closed on 2026-09-19.** Its plan and its chapter of this file are archived; what
 it left open is in Phase 65.
 
@@ -211,6 +218,59 @@ a real enrolment, and the real-`bwrap` boundary test stops skipping in CI.
 |---|---|---|
 | 1 | Why a request waits, recorded and timed out; the docket timeout test; per-harness doctor lines; the run-setting warning and the real runner-id test; `bwrap` in CI. | Sonnet, Haiku |
 | 2 | The card and the run page say why a request waits. | Sonnet |
+
+---
+
+## Phase 71 — the agent brings its own model
+
+**Status:** opened and closed 2026-10-13; every round merged into `develop`.
+**ADR:** 0078. **Plan:** [`docs/plans/phase-71.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-71.md).
+
+Tack stopped holding model keys, endpoints and catalogs: the gateway key, the "Through" control
+and the provider settings are gone. Each agent uses its own login and configuration; Tack asks it
+which models it offers and whether it is signed in. A run names its model as one string, or none
+for the agent's default, and the model field is the same in the run dialog and the Automation
+panel. The Agents page's third step is **Sign in**, read from each agent. docket runs from its
+own setup on harness contract 1.2 (docket `0.2.0-beta.5`).
+
+| Round | What lands | Who |
+|---|---|---|
+| 0–1 | Fixtures from the real agents; the runner and the app hold no model credential. | integrator, Sonnet |
+| 2–3 | One model string on the wire, in the database and in every agent's command line; each agent's models and sign-in, probed; opencode on its own login. | Sonnet |
+| 4–5 | One model field and the Sign in step; docket on contract 1.2; the docs, the changelog and `smoke.sh`. | Sonnet, integrator |
+
+---
+
+## Phase 72 — merging from Tack, by hand or by policy
+
+**Status:** proposed 2026-10-13; the owner answered every open question the same day.
+**ADR:** 0079 (amends 0069, 0071 and 0075). **Plan:** [`docs/plans/phase-72.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-72.md).
+
+A finished change can be merged from Tack in three ways: a **Merge** button on the task, a
+project option that merges when a person moves the task to Done, and, for a project that allows
+it, by Tack itself (Level 4 inside authorised paths, Level 5 everywhere). An automatic merge needs
+the verifier's `merge` under the stages the project requires, a signature bound to the exact
+commit, green CI on that commit and an unspent budget; when any is missing the task waits for a
+person and its card says why. A rejected change goes back to the agent with the verifier's next
+steps a bounded number of times first. A revert takes the level down by itself. Briefs keep their
+history, and the Factory page shows the verifier's quality figures beside Tack's own cost.
+
+Each responsibility has one owner. Tack owns the brief, the loop back to the agent, the merge,
+every GitHub read and write, the budgets and the money. The verifier owns the verdict, the
+required stages, the signature and every quality figure. The agent runtime owns running the
+work. Tack computes nothing the verifier already measures.
+
+| Round | What lands | Who |
+|---|---|---|
+| 0 | Fixtures from the real verifier and GitHub; the phase's one migration; the merge policy as a pure function. | integrator, Haiku |
+| 1–2 | Brief history; reading CI and reverts, and the merge call; signed packs; budgets that stop new work and say why. | Sonnet |
+| 3–4 | The automatic merge, its settings and demotion; the verifier's figures and Tack's prices; the Merge button and merge on Done; the loop back to the agent. | Sonnet, Haiku |
+| 5 | The Automation panel, the button and the card that says why a merge did not happen; the runner sends the required stages and reads the next steps, once the verifier ships them. | Sonnet |
+
+Waits on: the verifier's next milestone (required stages and next steps) for the automatic merge
+and the loop; until then both hand the change to a person. Directives learnt from human
+corrections wait for the verifier to propose them; Tack will apply an approved one to `AGENTS.md`
+through a pull request.
 
 ---
 
