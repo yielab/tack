@@ -1115,6 +1115,12 @@ pub(crate) async fn enqueue_resolved(
     });
     if let Some(brief) = brief {
         snapshot_value["brief"] = brief;
+        // The saved version the run was briefed with; its hash names it in the pack.
+        if let Ok(versions) = state.repo.list_item_brief_versions(item.id).await
+            && let Some(latest) = versions.last()
+        {
+            snapshot_value["brief_version"] = json!(latest.version);
+        }
     }
     if let Some(verify) = input.verify {
         snapshot_value["verify"] = json!(verify);

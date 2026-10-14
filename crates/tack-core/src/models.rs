@@ -1150,6 +1150,8 @@ pub enum AcceptanceCriterion {
         op: MetricOp,
         threshold: f64,
         unit: Option<String>,
+        command: Option<String>,
+        pattern: Option<String>,
     },
     File {
         id: String,

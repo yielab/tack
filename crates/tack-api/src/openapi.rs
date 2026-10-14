@@ -872,6 +872,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::roles::remove_role,
         // ── Briefs ────────────────────────────────────────────────────────
         handlers::briefs::get_brief,
+        handlers::briefs::list_brief_versions,
         handlers::briefs::put_brief,
         handlers::briefs::delete_brief,
         // ── MRP review ────────────────────────────────────────────────────

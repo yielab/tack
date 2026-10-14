@@ -391,28 +391,43 @@ pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Val
 }
 
 /// `brief.json` (brief-v1) as a `briefing/v1` document. A metric criterion
-/// and a `max_changed_files` constraint have no prill shape; they are named
-/// in `riskHints` rather than dropped silently.
-pub(super) fn briefing(brief: &Value) -> Value {
+/// without both a command and a pattern, a `max_changed_files` constraint and
+/// a `cwd` or `runner` prill has no field for are named in `riskHints` rather
+/// than dropped silently.
+pub fn briefing(brief: &Value) -> Value {
     let mut acceptance = Vec::new();
     let mut hints = Vec::new();
     for criterion in brief["acceptance"].as_array().into_iter().flatten() {
         let id = text(&criterion["id"]);
         let title = non_empty(&criterion["title"]).unwrap_or(&id).to_owned();
         match criterion["kind"].as_str() {
-            Some("command") => acceptance.push(json!({
-                "id": id,
-                "description": title,
-                "type": "command",
-                "command": criterion["run"],
-                "expectExitCode": criterion["expect_exit"].as_i64().unwrap_or(0),
-            })),
-            Some("test") => acceptance.push(json!({
-                "id": id,
-                "description": title,
-                "type": "test",
-                "name": criterion["name"],
-            })),
+            Some("command") => {
+                if let Some(cwd) = non_empty(&criterion["cwd"]) {
+                    hints.push(format!(
+                        "command criterion {id} ({title}) ran in `{cwd}`, which prill does not carry"
+                    ));
+                }
+                acceptance.push(json!({
+                    "id": id,
+                    "description": title,
+                    "type": "command",
+                    "command": criterion["run"],
+                    "expectExitCode": criterion["expect_exit"].as_i64().unwrap_or(0),
+                }));
+            }
+            Some("test") => {
+                if let Some(runner) = non_empty(&criterion["runner"]) {
+                    hints.push(format!(
+                        "test criterion {id} ({title}) names the runner `{runner}`, which prill does not carry"
+                    ));
+                }
+                acceptance.push(json!({
+                    "id": id,
+                    "description": title,
+                    "type": "test",
+                    "name": criterion["name"],
+                }));
+            }
             Some(kind @ ("file" | "absent")) => acceptance.push(json!({
                 "id": id,
                 "description": title,
@@ -425,10 +440,27 @@ pub(super) fn briefing(brief: &Value) -> Value {
                 "question": title,
                 "rubric": text(&criterion["text"]),
             })),
-            Some("metric") => hints.push(format!(
-                "metric criterion {id} ({}) has no prill equivalent and was not checked",
-                text(&criterion["title"])
-            )),
+            Some("metric") => {
+                let op = match criterion["op"].as_str() {
+                    Some("gte") => ">=",
+                    Some("lte") => "<=",
+                    _ => "==",
+                };
+                match (non_empty(&criterion["command"]), non_empty(&criterion["pattern"])) {
+                    (Some(command), Some(pattern)) => acceptance.push(json!({
+                        "id": id,
+                        "description": title,
+                        "type": "metric",
+                        "command": command,
+                        "pattern": pattern,
+                        "op": op,
+                        "threshold": criterion["threshold"],
+                    })),
+                    _ => hints.push(format!(
+                        "metric criterion {id} ({title}) has no command to measure it and was not checked"
+                    )),
+                }
+            }
             _ => {}
         }
     }

@@ -1011,6 +1011,7 @@ async fn an_execution_for_an_item_with_a_brief_snapshots_it_and_its_instructions
     assert_eq!(status, StatusCode::OK, "{created}");
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
     assert_eq!(snapshot["brief"], serde_json::to_value(&brief).unwrap());
+    assert_eq!(snapshot["brief_version"], 1);
     let instructions = snapshot["resolved_agent_profile"]["instructions"]
         .as_str()
         .unwrap();

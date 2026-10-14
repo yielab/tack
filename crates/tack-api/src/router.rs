@@ -325,6 +325,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(briefs::delete_brief),
         )
         .route(
+            "/items/{item_id}/brief/versions",
+            get(briefs::list_brief_versions),
+        )
+        .route(
             "/projects/{id}/metrics/factory",
             get(metrics::factory_metrics),
         )

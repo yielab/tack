@@ -5,6 +5,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
+use tack_core::brief::ItemBriefVersion;
 use tack_core::models::{ItemBrief, UpsertItemBrief};
 
 use crate::error::{ApiError, ApiResult};
@@ -44,6 +45,28 @@ pub async fn get_brief(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {item_id} has no brief")))?;
     Ok(Json(brief))
+}
+
+/// GET /api/items/:item_id/brief/versions
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{item_id}/brief/versions",
+    tag = "briefs",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "Every saved version of the item's brief, oldest first", body = Vec<tack_core::brief::ItemBriefVersion>),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn list_brief_versions(
+    State(state): State<AppState>,
+    Path(item_id): Path<Uuid>,
+) -> ApiResult<Json<Vec<ItemBriefVersion>>> {
+    require_item(&state, item_id).await?;
+    Ok(Json(state.repo.list_item_brief_versions(item_id).await?))
 }
 
 /// PUT /api/items/:item_id/brief

@@ -160,7 +160,10 @@ fn a_brief_becomes_a_briefing_with_hints_for_what_prill_cannot_check() {
         .iter()
         .map(|criterion| criterion["type"].as_str().unwrap())
         .collect();
-    assert_eq!(types, ["command", "test", "file", "absent", "manual"]);
+    assert_eq!(
+        types,
+        ["command", "test", "metric", "file", "absent", "manual"]
+    );
     assert_eq!(
         acceptance[0],
         json!({
@@ -172,7 +175,19 @@ fn a_brief_becomes_a_briefing_with_hints_for_what_prill_cannot_check() {
         })
     );
     assert_eq!(
-        acceptance[4],
+        acceptance[2],
+        json!({
+            "id": "metric_coverage",
+            "description": "Code coverage above 80%",
+            "type": "metric",
+            "command": "cargo llvm-cov --summary-only",
+            "pattern": "TOTAL.*?([0-9.]+)%",
+            "op": ">=",
+            "threshold": 80.0,
+        })
+    );
+    assert_eq!(
+        acceptance[5],
         json!({
             "id": "manual_review",
             "type": "manual",
@@ -190,7 +205,6 @@ fn a_brief_becomes_a_briefing_with_hints_for_what_prill_cannot_check() {
     assert_eq!(
         document["riskHints"],
         json!([
-            "metric criterion metric_coverage (Code coverage above 80%) has no prill equivalent and was not checked",
             "at most 10 changed files (not enforced by prill)",
             "Keep database migrations minimal",
         ])
@@ -202,6 +216,59 @@ fn a_brief_becomes_a_briefing_with_hints_for_what_prill_cannot_check() {
     assert_eq!(bare["objective"], "Item");
     assert!(bare.get("constraints").is_none());
     assert!(bare.get("riskHints").is_none());
+}
+
+#[test]
+fn a_metric_needs_a_command_and_a_pattern_and_a_dropped_field_is_named() {
+    let metric = |op: &str, extra: Value| {
+        let mut criterion = json!({
+            "kind": "metric", "id": "m", "title": "Fast", "name": "latency",
+            "op": op, "threshold": 5.0, "unit": "ms",
+        });
+        for (key, value) in extra.as_object().expect("object") {
+            criterion[key] = value.clone();
+        }
+        briefing(&json!({"acceptance": [criterion], "constraints": []}))
+    };
+    let measurable = json!({"command": "bench", "pattern": "([0-9.]+)ms"});
+    for (op, prill_op) in [("gte", ">="), ("lte", "<="), ("eq", "==")] {
+        let document = metric(op, measurable.clone());
+        assert_eq!(
+            document["acceptance"],
+            json!([{
+                "id": "m", "description": "Fast", "type": "metric",
+                "command": "bench", "pattern": "([0-9.]+)ms",
+                "op": prill_op, "threshold": 5.0,
+            }]),
+            "{op}"
+        );
+        assert!(document.get("riskHints").is_none(), "{op}");
+    }
+    let hint =
+        json!(["metric criterion m (Fast) has no command to measure it and was not checked"]);
+    for extra in [
+        json!({}),
+        json!({"command": "bench"}),
+        json!({"pattern": "([0-9.]+)ms"}),
+        json!({"command": null, "pattern": null}),
+    ] {
+        let document = metric("gte", extra.clone());
+        assert_eq!(document["acceptance"], json!([]), "{extra}");
+        assert_eq!(document["riskHints"], hint, "{extra}");
+    }
+
+    let dropped = briefing(&json!({"acceptance": [
+        {"kind": "command", "id": "c", "title": "Build", "run": "make", "expect_exit": 0, "cwd": "sub"},
+        {"kind": "test", "id": "t", "title": "Unit", "name": "unit", "runner": "pytest"},
+        {"kind": "command", "id": "c2", "title": "Build", "run": "make", "expect_exit": 0, "cwd": null},
+    ], "constraints": []}));
+    assert_eq!(
+        dropped["riskHints"],
+        json!([
+            "command criterion c (Build) ran in `sub`, which prill does not carry",
+            "test criterion t (Unit) names the runner `pytest`, which prill does not carry",
+        ])
+    );
 }
 
 #[test]

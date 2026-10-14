@@ -6,7 +6,27 @@ use std::collections::HashSet;
 
 use validator::ValidationError;
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 use crate::models::{AcceptanceCriterion, Constraint, Item, ItemBrief, MetricOp, Risk};
+
+/// One saved state of an item's brief. `brief_sha256` is the SHA-256 of the
+/// brief-v1 JSON as the runner stages it (`brief.json`); it is empty for a
+/// version recorded before hashes were kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ItemBriefVersion {
+    pub item_id: Uuid,
+    pub version: i64,
+    pub acceptance: Vec<AcceptanceCriterion>,
+    pub constraints: Vec<Constraint>,
+    pub definition_of_done: Option<String>,
+    pub risk: Option<Risk>,
+    pub brief_sha256: String,
+    pub created_at: DateTime<Utc>,
+}
 
 /// Longest `command.run` a brief accepts, in characters.
 const RUN_MAX_CHARS: usize = 2_000;
