@@ -43,6 +43,10 @@ down: a queued run says why it waits and fails after 30 minutes no runner can ta
 prints per-harness lines, the real-`bwrap` test is required in CI.
 Phase 71 (`docs/plans/phase-71.md`, ADR 0078) removed the provider layer: Tack holds no model key, endpoint
 or catalog; each agent signs in with its own tools and a run names its model as one string.
+Phase 72 (`docs/plans/phase-72.md`, ADR 0079, opened 2026-10-13) lets Tack merge: a Merge button,
+merge on Done, and an automatic merge at L4/L5 under the verifier's signed verdict. One owner per
+responsibility: prill owns the verdict, required stages and every quality figure; Tack the loop,
+the merge, GitHub and money; docket runs the agent. Its K2 waits on prill M6.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands

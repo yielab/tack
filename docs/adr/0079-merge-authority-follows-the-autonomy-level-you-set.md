@@ -1,8 +1,7 @@
 # ADR 0079: merge authority follows the autonomy level you set, and Tack stays one of three tools that work alone
 
-**Status: PROPOSED 2026-10-13, amended the same day** (see "Amendments agreed 2026-10-13" at
-the end, which win where they disagree with the table). Not yet accepted; the plan is
-`docs/plans/phase-72.md`. Amends ADR 0071
+**Status: ACCEPTED 2026-10-13, with the amendments at the end** ("Amendments agreed
+2026-10-13"), which win where they disagree with the table. The plan is `docs/plans/phase-72.md`. Amends ADR 0071
 (its parked "automatic merge" and its signature slot), ADR 0069 (a brief has no history) and ADR
 0075 (the verifier adapter). Leaves ADR 0059 (one operator) as it is and lists what that costs in
 "Questions for the owner".

@@ -1,7 +1,7 @@
 # Plan: Phase 72 — merge authority follows the autonomy level you set
 
-**Status: proposed 2026-10-13; every cut and question answered by the owner the same day,
-acceptance pending.** Serves ADR 0079
+**Status: opened 2026-10-13; ADR 0079 accepted with every cut and question answered the same
+day. Round 0 dispatched.** Serves ADR 0079
 (`docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
 "Amendments agreed 2026-10-13" wins where it disagrees with the table. Written against `develop`
 at `11de5f2e`, prill at `324842e` (ADR 0014 accepted, M6 specified, not built) and docket at
@@ -504,4 +504,4 @@ tree; `scripts/smoke.sh` fake mode.
 
 ## Status
 
-Not started.
+- **Round 0** dispatched 2026-10-13: S and A1 (Haiku); fixtures and text fixes by the integrator.
