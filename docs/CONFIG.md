@@ -23,7 +23,8 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>` to each delivery |
 | `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope). When set, item status changes are pushed back to linked GitHub issues (item done ⇄ issue closed), and the inbound poll below can start. Never logged. See `docs/GITHUB-SYNC.md` |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root — override for GitHub Enterprise or to point tests at a mock. Used by import, push-back, and the inbound poll |
-| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Also requires `TACK_GITHUB_TOKEN`. Moves a linked item through its project's ordinary workflow on a GitHub issue close/reopen — see `docs/GITHUB-SYNC.md` |
+| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Also requires `TACK_GITHUB_TOKEN`. Moves a linked item through its project's ordinary workflow on a GitHub issue close/reopen — see `docs/GITHUB-SYNC.md`. The automatic merge (Automation → Autonomy) runs on the same tick, so it needs the poll on |
+| `TACK_PRILL_PROGRAM` | `prill` | The board's own prill, looked up on `PATH`. The board runs it only to check a signed pack before an automatic merge (`prill attest verify`) and to keep prill's store of packs and outcomes (`prill record`, `prill metrics`) under `<storage>/prill/`, one per repository. Without it the board says so: no automatic merge, and the Factory page shows Tack's own figures only |
 | `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL (e.g. `https://<acct>.r2.cloudflarestorage.com`); omit for AWS S3 |
 | `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — **required** to enable remote backup |
 | `TACK_BACKUP_REGION` | `auto` | AWS/S3 region; Cloudflare R2 uses `auto` |
@@ -184,6 +185,7 @@ kind = "prill"           # "prill" (the default) or "command"
 program = "prill"        # looked up on PATH
 args = []                # prill: its own flags, such as ["--image", "<digest-pinned image>"]
 timeout_seconds = 1800
+sign_key = ""            # optional: prill's private key; the pack is then signed (see below)
 ```
 
 **`kind = "prill"`** (the default): the program is [prill](https://github.com/yielab/prill),
@@ -193,9 +195,9 @@ which reads commits only and speaks its own documents. For each attempt the runn
    index and `HEAD` are untouched, no ref is written, and the runner's markers
    (`.tack-runner/`, `.tack-attempt`, `.tack-checkout`) never enter the commit;
 2. writes prill's `attempt-evidence/v0` document from `evidence.json` and, when the item has
-   a brief, a `briefing/v1` document from `brief.json` (a metric criterion and a
-   `max_changed_files` constraint have no prill shape and are named in its `riskHints`
-   instead of being dropped);
+   a brief, a `briefing/v1` document from `brief.json` (a metric criterion becomes prill's
+   when it carries a `command` and a `pattern`; one without them, and a `max_changed_files`
+   constraint, are named in its `riskHints` instead of being dropped);
 3. runs `prill verify --repo <workspace> --evidence … [--brief …] --out <dir> --json`
    followed by `args`;
 4. translates the `mrp/v1` pack prill prints into `mrp-v1` (`auto-merge-eligible` → `merge`,
@@ -210,10 +212,18 @@ digest or an id keeps the decision at `human-review` and puts `image_not_pinned`
 local image's id is `docker image inspect <tag> --format '{{.Id}}'`), `["--no-sandbox"]` runs them on this
 machine. With neither, prill needs a container backend on this machine and the image named
 by `sandbox.image` in the repository's `prill.yaml` (prill reads that file from the attempt's base commit, so an edit the agent made to it is not applied), and refuses (`sandbox_unavailable`,
-`sandbox_image_unset`) otherwise. Anything else prill accepts (`--db`, `--sign`,
-`--config`) goes there too. prill's own `mrp.json` and
+`sandbox_image_unset`) otherwise. `--sign` is `sign_key`'s, and `--db` is not the runner's:
+the board keeps prill's store. prill's own `mrp.json` and
 `mrp.md`, and the documents it was given, stay in the attempt's scratch directory under
 `evidence/prill/` beside the translated pack; they are not uploaded.
+
+**Signing (`sign_key`).** With a path to a key made by `prill attest keygen`, the runner passes
+`--sign` and uploads prill's envelope (`mrp.intoto.json`) beside the pack, whose `signature`
+then names the envelope's digest. Keep the private key with the runner, outside any folder an
+agent works in; give the public key to the project (Automation → Autonomy), which checks the
+envelope against the exact head commit before Tack merges by itself. If prill cannot sign
+(`signing_unavailable`, the `sign` extra is missing), the verification fails with that reason;
+it is never retried unsigned. An unsigned pack is still reviewed by a person as before.
 
 **`kind = "command"`**: a program of your own that writes an `mrp-v1` pack itself. The
 runner appends `--evidence <dir> --workspace <dir> --output <dir>/mrp.json` to `args` and
