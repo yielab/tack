@@ -4,21 +4,13 @@ import type { components } from './schema.gen';
 type Schemas = components['schemas'];
 
 /** One area of the code Tack may merge in by itself. `merged` and `undone` are read only. */
-export type AutonomyDomain = Schemas['DomainSettings'] & {
-  merged?: number;
-  undone?: number;
-};
+export type AutonomyDomain = Schemas['DomainSettings'];
 
 /**
  * `GET`/`PUT /projects/{id}/autonomy`. `automatic_merge_blocked_by` and the
- * domains' counts are read only (the server ignores them on a PUT); the
- * generated schema predates them, so they are declared here.
+ * domains' counts are read only; the server ignores them on a PUT.
  */
-export type AutonomySettings = Omit<Schemas['AutonomySettings'], 'domains'> & {
-  domains: AutonomyDomain[];
-  /** Sentences saying why Tack cannot merge by itself on this board; empty when nothing stops it. */
-  automatic_merge_blocked_by?: string[];
-};
+export type AutonomySettings = Schemas['AutonomySettings'];
 
 export const autonomy = {
   get: (projectId: string) => request<AutonomySettings>(`/projects/${projectId}/autonomy`),
