@@ -432,7 +432,7 @@ without a rate card.
 
 ### P-ui — the Factory page names its sources (Haiku)
 
-**Files:** `frontend/src/features/dashboard/{FactoryMetrics.tsx, FactoryMetrics.test.tsx}`; the board-preferences settings panel (`rg -ln "local-runner" frontend/src/features/settings/panels`) for the rate card form.
+**Files:** `frontend/src/features/dashboard/{FactoryMetrics.tsx, FactoryMetrics.test.tsx}`; new `frontend/src/features/dashboard/{RateCardForm.tsx, RateCardForm.test.tsx}` (the form sits on the Factory page, beside the cost it sets; the settings panels are per project and the card is the board's).
 **Do:** a **Quality (from prill <version>)** block per repository with escalation, agreement,
 escaped defects and, when present, qualified changes; without it, one line with
 `quality_unavailable`. "Merged, not reverted" stays as Tack's own line. With `cost_usd`: cost
