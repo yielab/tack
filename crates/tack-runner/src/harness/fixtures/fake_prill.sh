@@ -15,6 +15,10 @@
 #                            exits 1 when its decision is `reject`, else 0
 #                            (default name: m2-sections).
 #
+#   TACK_FAKE_PRILL_SIGNED   when set, answers with the signed run captured in
+#                            verify/fixtures/prill/signed/ (the pack and its
+#                            in-toto envelope) instead of a contract fixture.
+#
 # Whatever it answers, it records its whole argument list, one per line, in
 # `<out>/argv` so a test can see the command line it was given.
 
@@ -37,6 +41,12 @@ if [ -n "${TACK_FAKE_PRILL_ERROR:-}" ]; then
 fi
 
 here=$(cd "$(dirname "$0")" && pwd)
+if [ -n "${TACK_FAKE_PRILL_SIGNED:-}" ]; then
+    signed="$here/../../verify/fixtures/prill/signed"
+    cp "$signed/mrp.json" "$signed/mrp.intoto.json" "$out/"
+    cat "$signed/mrp.json"
+    exit 0
+fi
 fixture="$here/../../../../../docs/contracts/mrp-v1/fixtures/prill/${TACK_FAKE_PRILL_FIXTURE:-m2-sections}.json"
 cp "$fixture" "$out/mrp.json"
 echo "# fake pack" > "$out/mrp.md"

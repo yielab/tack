@@ -208,6 +208,25 @@ pub struct ProducedBySection {
     pub version: String,
 }
 
+/// One thing the verifier says to do next.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NextStep {
+    pub code: String,
+    pub severity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// The Merge Readiness Pack.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MergeReadinessPack {
@@ -239,6 +258,9 @@ pub struct MergeReadinessPack {
     pub signature: SignatureSection,
     /// Producer identification
     pub produced_by: ProducedBySection,
+    /// What the verifier says to do next (absent when it gave none)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_steps: Option<Vec<NextStep>>,
 }
 
 /// Render the pack as Markdown for a pull-request body. One heading per

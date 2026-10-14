@@ -5,7 +5,7 @@
 use tack_core::mrp::{MergeReadinessPack, render_markdown, summary_line};
 
 /// (fixture, its bytes, FNV-1a 64 of those bytes, `summary_line`)
-const FIXTURES: [(&str, &str, u64, &str); 4] = [
+const FIXTURES: [(&str, &str, u64, &str); 5] = [
     (
         "ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/ready.json"),
@@ -28,6 +28,12 @@ const FIXTURES: [(&str, &str, u64, &str); 4] = [
         "verifier-failed",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json"),
         0x733d_cfa7_0dbd_506c,
+        "Not ready (high risk)",
+    ),
+    (
+        "signed-with-next-steps",
+        include_str!("../../../docs/contracts/mrp-v1/fixtures/signed-with-next-steps.json"),
+        0xc794_b12e_2565_8fc3,
         "Not ready (high risk)",
     ),
 ];

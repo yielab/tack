@@ -3245,6 +3245,7 @@ async fn a_verifier_stages_a_fourth_artifact_and_its_failure_is_only_an_event() 
             script.display().to_string(),
         ],
         timeout_seconds: 60,
+        sign_key: None,
     };
     let (data_protocol, _) = run_evidence_attempt(
         "verify-ok",
@@ -3309,6 +3310,7 @@ async fn a_request_may_decline_the_verifier_but_never_enable_one() {
             script.display().to_string(),
         ],
         timeout_seconds: 60,
+        sign_key: None,
     };
     let event_kinds = |run: &EvidenceRun| -> (bool, Vec<String>) {
         let state = run.data_protocol.state.lock().expect("lock");

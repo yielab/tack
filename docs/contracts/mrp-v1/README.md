@@ -37,8 +37,9 @@ The pack is defined by `schema.json` (JSON Schema 2020-12) and contains:
 - **risk**: Risk tier (low|medium|high) and reasons
 - **recommendation**: Merge decision (merge|review|reject) and rationale
 - **usage**: Verifier token consumption (tokens_in, tokens_out) — not a dollar field
-- **signature**: `{"kind": "none"}` today, or an in-toto statement hash once packs are signed
+- **signature**: `{"kind": "none"}`, or `{"kind": "in-toto", "statement_sha256"}` when the runner's `[verify] sign_key` made prill sign: the hash of the staged `mrp.intoto.json` envelope (media type `application/vnd.in-toto+json`)
 - **produced_by**: Producer identification (program, version)
+- **next_steps** (optional): what the verifier says to do next, each `{code, severity}` plus any of `stage`, `criterion_id`, `path`, `line`, `command`, `message`; absent when none
 
 ## Relationship to the brief
 
@@ -56,6 +57,7 @@ A criterion's status is never "passed" to mean "not run" — the `null` value in
 - **not-ready.json**: An attempt with build and test failures, high risk, rejected
 - **manual-only.json**: An attempt where all automated checks were skipped, awaiting manual review
 - **verifier-failed.json**: An attempt where the verifier itself failed (e.g., workspace not found)
+- **signed-with-next-steps.json**: A rejected attempt whose pack is signed and carries next steps
 
 `crates/tack-core/tests/mrp_contract.rs` reads every fixture as a `MergeReadinessPack`, writes
 it back byte-for-byte and pins its FNV-1a 64 hash, so a change to a fixture and to the types

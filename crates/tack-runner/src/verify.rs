@@ -45,6 +45,9 @@ use crate::{
 /// The media type of the staged pack.
 pub const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
+/// The media type of the staged in-toto envelope.
+pub const ATTESTATION_MEDIA_TYPE: &str = "application/vnd.in-toto+json";
+
 /// How many characters of the verifier's stderr a failure keeps.
 const STDERR_PREFIX_CHARS: usize = 512;
 
@@ -82,7 +85,7 @@ pub async fn run(
     limits: &ProcessLimits,
     workspace: &Workspace,
     scratch: &Path,
-) -> Result<serde_json::Value, VerifyFailure> {
+) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let evidence = scratch.join("evidence");
     fs::create_dir_all(&evidence)
         .map_err(|_| failure(None, "the evidence directory could not be created"))?;
@@ -100,23 +103,29 @@ pub async fn run(
 
     let attempt_id = workspace.attempt_id.as_str();
     let stager = ArtifactStager::new(scratch.join("staged"));
-    let artifact = stager
-        .stage_file(
-            attempt_id,
-            &evidence,
-            Path::new("mrp.json"),
-            "mrp",
-            MRP_MEDIA_TYPE,
-        )
-        .map_err(|_| failure(Some(0), "the pack could not be staged"))?;
-    Ok(serde_json::json!({
-        "kind": artifact.kind,
-        "name": artifact.name,
-        "media_type": artifact.media_type,
-        "size_bytes": artifact.size_bytes,
-        "sha256": artifact.sha256,
-        "staged_path": artifact.staged_path.display().to_string(),
-    }))
+    let mut files = vec![("mrp.json", "mrp", MRP_MEDIA_TYPE)];
+    if config.kind == VerifyKind::Prill && config.sign_key.is_some() {
+        files.push((
+            prill::ENVELOPE_FILE,
+            "mrp_attestation",
+            ATTESTATION_MEDIA_TYPE,
+        ));
+    }
+    let mut staged = Vec::new();
+    for (name, kind, media_type) in files {
+        let artifact = stager
+            .stage_file(attempt_id, &evidence, Path::new(name), kind, media_type)
+            .map_err(|_| failure(Some(0), format!("{name} could not be staged")))?;
+        staged.push(serde_json::json!({
+            "kind": artifact.kind,
+            "name": artifact.name,
+            "media_type": artifact.media_type,
+            "size_bytes": artifact.size_bytes,
+            "sha256": artifact.sha256,
+            "staged_path": artifact.staged_path.display().to_string(),
+        }));
+    }
+    Ok(staged)
 }
 
 /// `kind = "command"`: the program reads the evidence directory and writes

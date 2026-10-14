@@ -106,6 +106,23 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
     assert_eq!(config.verify.kind, VerifyKind::Prill);
     assert_eq!(config.verify.program, "prill");
     assert_eq!(config.verify.args.len(), 2);
+    assert_eq!(config.verify.sign_key, None);
+
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: Some(
+            r#"
+                [verify]
+                enabled = true
+                sign_key = "/home/ox/.config/prill/prill.key"
+            "#,
+        ),
+        ..RunnerConfigSources::default()
+    })
+    .expect("a [verify] table may name a signing key");
+    assert_eq!(
+        config.verify.sign_key.as_deref(),
+        Some("/home/ox/.config/prill/prill.key")
+    );
 
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: Some(
