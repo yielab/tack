@@ -2,7 +2,7 @@
 //!
 //! The board never produces a pack, only checks the attestation that came with
 //! one. `run` is the single way in; `attest_verify` is the check the autonomy
-//! levels name (`tack_core::autonomy::Check`).
+//! levels name (`tack_core::autonomy::Check`, built by the caller).
 
 use std::{
     io::Write,
@@ -12,7 +12,6 @@ use std::{
     time::Duration,
 };
 
-use tack_core::autonomy::Check;
 use tokio::process::Command;
 
 /// prill could not be started, or did not finish in time.
@@ -46,23 +45,24 @@ pub async fn run(program: &str, args: &[String], timeout: Duration) -> Result<Ou
 /// Whether `envelope` is a valid attestation, signed by `public_key_pem`, of
 /// `commit`: `prill attest verify --key <file> --commit <commit> <envelope>`
 /// with both documents in a directory only the board can read. Exit 0 is
-/// `Pass`; anything else is `Fail` with prill's reason, or a message saying
-/// prill is not installed.
+/// `Ok` with the key id prill names, which the merge record keeps; anything
+/// else is `Err` with prill's reason, or a message saying prill is not
+/// installed. The caller turns it into the policy's `Check`.
 pub async fn attest_verify(
     program: &str,
     envelope: &[u8],
     public_key_pem: &str,
     commit: &str,
-) -> Check {
+) -> Result<String, String> {
     let Some(scratch) = Scratch::new() else {
-        return Check::Fail("the board could not stage the attestation".to_owned());
+        return Err("the board could not stage the attestation".to_owned());
     };
     let key = scratch.0.join("prill.pub");
     let envelope_path = scratch.0.join("mrp.intoto.json");
     if write_private(&key, public_key_pem.as_bytes()).is_err()
         || write_private(&envelope_path, envelope).is_err()
     {
-        return Check::Fail("the board could not stage the attestation".to_owned());
+        return Err("the board could not stage the attestation".to_owned());
     }
     let args = [
         "attest".to_owned(),
@@ -74,20 +74,28 @@ pub async fn attest_verify(
         envelope_path.display().to_string(),
     ];
     match run(program, &args, ATTEST_TIMEOUT).await {
-        Ok(output) if output.status.success() => Check::Pass,
+        Ok(output) if output.status.success() => {
+            // `prill: attestation valid (keyid <id>, subject …)`
+            let said = String::from_utf8_lossy(&output.stderr);
+            Ok(said
+                .split_once("keyid ")
+                .and_then(|(_, rest)| rest.split([',', ')']).next())
+                .unwrap_or_default()
+                .to_owned())
+        }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let line = stderr.lines().next().unwrap_or_default();
             let reason = line
                 .split_once("attestation invalid: ")
                 .map_or(line.trim_start_matches("prill: "), |(_, reason)| reason);
-            Check::Fail(if reason.is_empty() {
+            Err(if reason.is_empty() {
                 format!("prill refused the attestation ({})", output.status)
             } else {
                 reason.to_owned()
             })
         }
-        Err(Unavailable) => Check::Fail(NOT_INSTALLED.to_owned()),
+        Err(Unavailable) => Err(NOT_INSTALLED.to_owned()),
     }
 }
 
@@ -167,7 +175,10 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let program = fake_prill(dir.path());
         let ok = attest_verify(&program, ENVELOPE.as_bytes(), KEY, HEAD).await;
-        assert_eq!(ok, Check::Pass);
+        assert_eq!(
+            ok,
+            Ok("f239d6c81feedf3a944a2a940f89f0ca4af0a2f05207185c19997eb09d7476f6".to_owned())
+        );
         // The key travelled in a file only the board could read.
         assert_eq!(
             fs::read_to_string(dir.path().join("key.seen")).unwrap(),
@@ -185,12 +196,12 @@ mod tests {
         );
 
         let wrong = attest_verify(&program, ENVELOPE.as_bytes(), KEY, BASE).await;
-        assert_eq!(wrong, Check::Fail("subject_mismatch".to_owned()));
+        assert_eq!(wrong, Err("subject_mismatch".to_owned()));
 
         let missing = attest_verify("tack-no-such-prill", ENVELOPE.as_bytes(), KEY, HEAD).await;
         assert_eq!(
             missing,
-            Check::Fail("prill is not installed on the board".to_owned())
+            Err("prill is not installed on the board".to_owned())
         );
     }
 }
