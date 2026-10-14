@@ -1012,6 +1012,15 @@ async fn an_execution_for_an_item_with_a_brief_snapshots_it_and_its_instructions
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
     assert_eq!(snapshot["brief"], serde_json::to_value(&brief).unwrap());
     assert_eq!(snapshot["brief_version"], 1);
+    // The runner stages the snapshot's brief, pretty-printed, as `brief.json`, and the
+    // pack names it by that file's hash: version 1 must carry the same hash.
+    let staged = serde_json::to_vec_pretty(&snapshot["brief"]).unwrap();
+    let staged_sha: String = <sha2::Sha256 as sha2::Digest>::digest(&staged)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let versions = repo.list_item_brief_versions(item_uuid).await.unwrap();
+    assert_eq!(versions[0].brief_sha256, staged_sha);
     let instructions = snapshot["resolved_agent_profile"]["instructions"]
         .as_str()
         .unwrap();
