@@ -355,7 +355,7 @@ translation rows in `verify/tests.rs`.
 
 ### A2 — the merge, the settings and demotion (Sonnet)
 
-**Files:** new `crates/tack-db/src/repo/autonomy.rs`; new `crates/tack-api/src/autonomy.rs` (`tick`); new `crates/tack-api/src/handlers/autonomy.rs`; `crates/tack-api/src/{lib.rs (one call in the poll loop), router.rs, openapi.rs}`; `crates/tack-cli/src/{main.rs, mcp.rs}`; new `crates/tack-api/tests/handlers/autonomy.rs`.
+**Files:** new `crates/tack-db/src/repo/autonomy.rs`; new `crates/tack-api/src/merge.rs` (`attempt`, the one function every trigger calls); new `crates/tack-api/src/autonomy.rs` (`tick`); new `crates/tack-api/src/handlers/autonomy.rs`; `crates/tack-api/src/{lib.rs (one call in the poll loop), router.rs, openapi.rs}`; `crates/tack-cli/src/{main.rs, mcp.rs}`; new `crates/tack-api/tests/handlers/autonomy.rs`.
 **Do:**
 1. `GET/PUT /api/projects/{id}/autonomy`: level, domains (replace-all), `verify_require`, public
    key, loop cap, budgets, `merge_on_done`. Promotion is this PUT. `tack project autonomy <project>` prints it; MCP
@@ -366,9 +366,14 @@ translation rows in `verify/tests.rs`.
    snapshot's list is empty or the runner's report says its prill cannot require — K2 writes that
    report; until then every L4 hold reads "the runner has not reported that its prill can require
    stages"; G's `ci_state`; K1's `attest_verify`, whose key id goes in `attestation_keyid`; U's budgets; `open_pull_request_for_attempt`),
-   call `evaluate`, upsert `tack_merges` (`trigger` `auto`; held reason, or merged with
-   `merge_sha` and the policy snapshot), and on a merge follow `apply_mrp_accepted`'s path and
-   broadcast as today. The run's `origin` is in its request snapshot (M adds it).
+   and call `merge::attempt(state, attempt_id, Trigger::Auto, facts_extra)`.
+   `merge::attempt` opens the PR when missing (`open_pull_request_for_attempt`), reads
+   `ci_state`, calls A1's `evaluate`, merges with `sha` = the head through G's
+   `merge_pull_request`, and writes the `tack_merges` row (held reason, or merged with
+   `merge_sha`, the policy snapshot and the key id) and an activity event either way. On an
+   `auto` merge it follows `apply_mrp_accepted`'s path and broadcasts as today. The run's
+   `origin` is read from its request snapshot (`"mcp"` sets `from_mcp`; M makes `tack mcp` send
+   it). M adds the `button` and `done` triggers on top of this function.
 4. Demotion: when G marks an automatically merged PR reverted or sets `red_ci_at`, its domain (or
    project) takes `Level::demoted()`, `demoted_at` is set, an activity event names the domain, the
    levels and the PR.
@@ -382,12 +387,10 @@ domain L4→L3; plus one row each: L3 untouched, unlinked item, poll off, unsign
 ### M — the Merge button, merge on Done, and MCP's mark (Sonnet)
 
 **Serves:** answers A, B and C.
-**Files:** new `crates/tack-api/src/merge.rs` (the one function every trigger calls); `crates/tack-api/src/handlers/{executions.rs (one route), items.rs (the Done hook, where `update_item_atomically` reports `Updated`)}`; `crates/tack-api/src/{router.rs, openapi.rs, middleware.rs (read the header into the request's extensions)}`; `crates/tack-cli/src/mcp.rs` and the API client it uses; one new file under `crates/tack-api/tests/handlers/`.
+**Files:** `crates/tack-api/src/merge.rs` (A2's; M only calls it and adds what a human trigger needs); `crates/tack-api/src/handlers/{executions.rs (one route), items.rs (the Done hook, where `update_item_atomically` reports `Updated`)}`; `crates/tack-api/src/{router.rs, openapi.rs, middleware.rs (read the header into the request's extensions)}`; `crates/tack-cli/src/mcp.rs` and the API client it uses; one new file under `crates/tack-api/tests/handlers/`.
 **Do:**
-1. `merge::attempt(state, attempt_id, trigger) -> Result<Merged, Hold>`: opens the PR when
-   missing (`open_pull_request_for_attempt`), reads `ci_state`, calls A1's `evaluate`, and merges
-   with `sha` = the head. Every outcome writes the `tack_merges` row and an activity event with
-   the reason (answer C). A2's `tick` calls the same function for `auto`.
+1. The `button` and `done` triggers go through A2's `merge::attempt`; every outcome already
+   writes the `tack_merges` row and an activity event with the reason (answer C).
 2. `POST /api/attempts/{id}/merge` (the button). `GET /api/attempts/{id}` gains `merge: {enabled,
    reason}` so the UI shows the button disabled with its reason.
 3. When an item enters a Done status and its project has `merge_on_done`, its latest succeeded
