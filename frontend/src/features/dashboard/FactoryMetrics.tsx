@@ -4,23 +4,43 @@ import { api } from '../../shared/api';
 import { Skeleton } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { JSX } from 'solid-js';
+import RateCardForm from './RateCardForm';
 
 type FactoryMetrics = components['schemas']['FactoryMetrics'];
 type Ratio = components['schemas']['Ratio'];
 type HumanMinutes = components['schemas']['HumanMinutes'];
 type VerificationTax = components['schemas']['VerificationTax'];
 type Outcomes = components['schemas']['Outcomes'];
+type Quality = components['schemas']['Quality'];
+type RepositoryQuality = components['schemas']['RepositoryQuality'];
+/** The fields of prill's `metrics/v1` document that this page shows. The schema types it as opaque. */
+type PrillMetrics = {
+  escalationRate?: number | null;
+  agreement?: { decided: number; agreed: number; rate: number | null };
+  escapedDefects?: { merged: number; escaped: number; rate: number | null };
+  qualified?: number | null;
+  qualifiedRate?: number | null;
+};
 
 /** "1 pack", "2 packs". */
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
+/** A 0–1 fraction as a percentage with one decimal. */
+function percent(v: number): string {
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+function dollars(v: number): string {
+  return `$${v.toFixed(2)}`;
+}
+
 export default function FactoryMetrics() {
   const params = useParams();
   const projectId = params.id!;
 
-  const [metrics] = createResource(() => api.metrics.factoryMetrics(projectId));
+  const [metrics, { refetch }] = createResource(() => api.metrics.factoryMetrics(projectId));
 
   return (
     <div class="flex flex-col gap-[18px]">
@@ -67,8 +87,18 @@ export default function FactoryMetrics() {
           <MetricCard title="Outcomes" data={metrics()!}>
             {(m) => <OutcomesCard outcomes={m.outcomes} />}
           </MetricCard>
+
+          <MetricCard title="Cost" data={metrics()!}>
+            {(m) => <CostCard costUsd={m.cost_usd} unpricedAttempts={m.cost_unpriced_attempts} asOf={m.rate_card_as_of} />}
+          </MetricCard>
+
+          <MetricCard title={qualityTitle(metrics()!.quality)} data={metrics()!}>
+            {(m) => <QualityCard quality={m.quality} unavailable={m.quality_unavailable} />}
+          </MetricCard>
         </div>
       </Show>
+
+      <RateCardForm onSaved={() => void refetch()} />
     </div>
   );
 }
@@ -193,10 +223,99 @@ function OutcomesCard(props: { outcomes: Outcomes }) {
           <p>{oc().reverted} reverted</p>
         </div>
         <div class="mt-2">
-          <p class="text-xs text-content-muted">Merged and not reverted</p>
+          <p class="text-xs text-content-muted">Merged and not reverted (Tack's own)</p>
           <p class="text-xs text-content-subtle">{oc().merged_not_reverted} of {oc().opened} opened</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Cost is Tack's: tokens priced by the rate card, plus human minutes at its hour rate. */
+function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | null; asOf?: string | null }) {
+  return (
+    <div class="flex flex-col gap-2">
+      <Show
+        when={props.costUsd !== null && props.costUsd !== undefined}
+        fallback={
+          <div>
+            <p class="text-sm text-content">Not measured</p>
+            <p class="text-xs text-content-muted">Enter a rate card below to see cost.</p>
+          </div>
+        }
+      >
+        <div>
+          <p class="text-2xl font-heading text-content">{dollars(props.costUsd!)}</p>
+          <div class="text-xs text-content-subtle mt-2 space-y-1">
+            <Show when={props.asOf}>
+              <p>Prices as of {props.asOf}</p>
+            </Show>
+            <Show when={props.unpricedAttempts}>
+              <p>{count(props.unpricedAttempts!, 'attempt')} not priced: the rate card does not list their model</p>
+            </Show>
+          </div>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+/** The card's title names prill's version when prill answered. */
+function qualityTitle(quality: Quality | null | undefined): string {
+  return quality ? `Quality (from prill ${quality.prill_version})` : 'Quality';
+}
+
+function QualityCard(props: { quality?: Quality | null; unavailable?: string | null }) {
+  return (
+    <div class="flex flex-col gap-2">
+      <Show
+        when={props.quality}
+        fallback={<p class="text-xs text-content-muted">{props.unavailable ?? 'Quality is not available.'}</p>}
+      >
+        {(quality) => (
+          <div class="flex flex-col gap-3">
+            <For each={quality().repositories}>{(repo) => <RepositoryQualityBlock repo={repo} />}</For>
+            <p class="text-xs text-content-subtle">Figures come from prill. Tack shows them and does not compute them.</p>
+          </div>
+        )}
+      </Show>
+    </div>
+  );
+}
+
+function RepositoryQualityBlock(props: { repo: RepositoryQuality }) {
+  const m = () => props.repo.metrics as PrillMetrics;
+
+  return (
+    <div class="text-xs text-content-subtle space-y-1">
+      <p class="text-sm text-content">{props.repo.repository}</p>
+      <Show when={m().escalationRate !== null && m().escalationRate !== undefined}>
+        <p>Escalation: {percent(m().escalationRate!)}</p>
+      </Show>
+      <Show when={m().agreement}>
+        <p>
+          Agreement: {m().agreement!.rate === null ? 'not measured' : percent(m().agreement!.rate!)} ({m().agreement!.agreed} of {m().agreement!.decided} decided)
+        </p>
+      </Show>
+      <Show when={m().escapedDefects}>
+        <p>
+          Escaped defects: {m().escapedDefects!.escaped} of {m().escapedDefects!.merged} merged
+        </p>
+      </Show>
+      <Show when={m().qualified !== null && m().qualified !== undefined}>
+        <p>
+          {count(m().qualified!, 'qualified change')}
+          <Show when={m().qualifiedRate !== null && m().qualifiedRate !== undefined}>
+            {' '}({percent(m().qualifiedRate!)})
+          </Show>
+        </p>
+      </Show>
+      <Show when={props.repo.cost_usd !== null && props.repo.cost_usd !== undefined}>
+        <p>Cost: {dollars(props.repo.cost_usd!)}</p>
+      </Show>
+      <Show when={props.repo.qualified_per_usd !== null && props.repo.qualified_per_usd !== undefined}>
+        <p>{props.repo.qualified_per_usd!.toFixed(2)} qualified per dollar</p>
+      </Show>
     </div>
   );
 }
