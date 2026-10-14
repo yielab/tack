@@ -21,6 +21,7 @@
 - [Administration & Security](user-guide/administration.md)
 - [Agent Runners & Fleet Execution](user-guide/agent-runners.md)
   - [Recovery Runbook](user-guide/recovery-runbook.md)
+- [Merging from Tack](user-guide/merging.md)
 - [What the Agent Can Reach](user-guide/what-the-agent-can-reach.md)
 - [Troubleshooting & FAQ](user-guide/troubleshooting.md)
 
