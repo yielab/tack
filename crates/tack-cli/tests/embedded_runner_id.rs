@@ -91,14 +91,22 @@ fn the_embedded_runner_reports_the_id_the_api_assigned() {
         "the API assigns runr_ ids: {enrolled}"
     );
 
-    let response = client
-        .post(format!("{}/api/local-runner/test-run", server.base_url))
-        .json(&json!({ "harness_kind": "claude-code" }))
-        .timeout(Duration::from_secs(10))
-        .send()
-        .expect("POST test-run");
-    let status = response.status();
-    let body = response.json::<Value>().unwrap_or(Value::Null);
+    // The API marks the runner `active` when it answers the enrolment; the
+    // runner persists the session it reads `runner_id()` from a moment later,
+    // so the first test-run can still find it "not enrolled". Retry only that.
+    let (status, body) = poll_until(Duration::from_secs(30), || {
+        let response = client
+            .post(format!("{}/api/local-runner/test-run", server.base_url))
+            .json(&json!({ "harness_kind": "claude-code" }))
+            .timeout(Duration::from_secs(10))
+            .send()
+            .expect("POST test-run");
+        let status = response.status();
+        let body = response.json::<Value>().unwrap_or(Value::Null);
+        let not_yet_enrolled = body["error"]["message"] == "The embedded runner is not enrolled";
+        (!not_yet_enrolled).then_some((status, body))
+    })
+    .expect("the embedded runner must persist its enrolment");
     assert!(
         status.is_success(),
         "test-run is filed against runner_id(), which the API only accepts as an enrolled runr_ id: {status} {body}"

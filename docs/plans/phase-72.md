@@ -507,4 +507,9 @@ tree; `scripts/smoke.sh` fake mode.
 
 ## Status
 
-- **Round 0** dispatched 2026-10-13: S and A1 (Haiku); fixtures and text fixes by the integrator.
+- **Round 0** closed 2026-10-13. S merged in `63b28766`, A1 in `9870fbb4`; the integrator's fixtures and text fixes in `9ed2f831`. Gate green on the merge; nextest 1232, one failure, fixed below.
+  - Fixtures from prill at `631b4cd`, which already has M6 wave 1: the `require`, `nextSteps` and `coverage` contracts and `prill schema`, but no enforcement. B's schema test can run on this machine now; K2 still waits.
+  - S, integrator fix: its test moved from a unit test in `migrations.rs` to `tests/migrations/autonomy.rs`, beside the other migration tests. The backfill of existing briefs to version 1 is one `INSERT … SELECT` the plan described in words.
+  - A1, the agent's calls, kept: an empty path list matches no domain (the vacuous "every path matches" would have given it a domain's level); a glob that does not compile matches nothing; the CI holds name no sha, since `Facts` has none.
+  - Neither Haiku task needed more than 14 tool calls.
+  - `the_embedded_runner_reports_the_id_the_api_assigned` failed 1 in 3: the API marks the runner `active` before the runner persists the session that `runner_id()` reads, so the first test-run can answer 409 "not enrolled". The test now retries only that answer; 6/6. Not caused by this phase.
