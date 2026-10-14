@@ -122,6 +122,19 @@ async fn move_to_done(b: &Board, client: Option<&str>) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // The merge on Done runs in the background: wait for its row or its word.
+    for _ in 0..100 {
+        let done: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM tack_merges WHERE trigger = 'done'")
+                .fetch_one(b.state.repo.pool())
+                .await
+                .unwrap();
+        if done > 0 || comments(b).await.contains("over MCP") {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the move to Done left no merge row and no word");
 }
 
 async fn mark_mcp(b: &Board, a: &ClaimedAttempt) {
@@ -156,11 +169,12 @@ async fn the_button_merges_with_the_head_sha() {
     assert_eq!(after["reason"], "Already merged");
 }
 
-/// One row per reason the button is disabled: the setup, whether the button was
-/// pressed first (a 403 only shows once GitHub has refused), and the words.
+/// One row per press GitHub's facts hold: the setup, whether the button stays
+/// enabled after it (CI is read on the next press; a token refusal disables it
+/// until the token changes), and the words the press and the button give.
 #[tokio::test]
-async fn the_button_is_disabled_with_its_reason() {
-    let rows: Vec<(&str, Setup, &str, u16, bool, &str)> = vec![
+async fn each_held_press_says_why_and_the_button_says_whether_to_retry() {
+    let rows: Vec<(&str, Setup, &str, u16, bool, bool, &str)> = vec![
         (
             "no pull request",
             Setup {
@@ -170,6 +184,7 @@ async fn the_button_is_disabled_with_its_reason() {
             "check-runs-all-success.json",
             200,
             false,
+            false,
             "not linked to a GitHub issue",
         ),
         (
@@ -177,6 +192,7 @@ async fn the_button_is_disabled_with_its_reason() {
             l3(),
             "check-runs-in-progress.json",
             200,
+            true,
             true,
             "CI is still running",
         ),
@@ -186,6 +202,7 @@ async fn the_button_is_disabled_with_its_reason() {
             "check-runs-one-failure.json",
             200,
             true,
+            true,
             "CI failed",
         ),
         (
@@ -194,10 +211,11 @@ async fn the_button_is_disabled_with_its_reason() {
             "check-runs-all-success.json",
             403,
             true,
+            false,
             "Contents: write",
         ),
     ];
-    for (name, setup, ci, merge_status, pressed, words) in rows {
+    for (name, setup, ci, merge_status, pressed, enabled_after, words) in rows {
         let root = tempfile::tempdir().unwrap();
         let gh = github(ci, merge_status, u64::from(pressed && merge_status == 403)).await;
         let (b, a) = finished(root.path(), &gh, setup).await;
@@ -211,7 +229,7 @@ async fn the_button_is_disabled_with_its_reason() {
             "{name}: {body}"
         );
         let merge = merge_state(&b, &a).await;
-        assert_eq!(merge["enabled"], false, "{name}: {merge}");
+        assert_eq!(merge["enabled"], enabled_after, "{name}: {merge}");
         assert!(
             merge["reason"].as_str().unwrap_or_default().contains(words),
             "{name}: {merge}"

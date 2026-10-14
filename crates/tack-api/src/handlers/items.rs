@@ -298,14 +298,17 @@ pub async fn update_item(
         && project.workflow.is_done_status(&item.status)
         && !project.workflow.is_done_status(&old_status)
     {
+        // In the background: the move answers at once, and the merge (or why it
+        // did not happen) lands on the item's activity.
         let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
-        crate::merge::on_done(
-            &state,
-            &item.id.to_string(),
-            &item.project_id.to_string(),
-            over_mcp,
-        )
-        .await;
+        let (app, item_id, project_id) = (
+            state.clone(),
+            item.id.to_string(),
+            item.project_id.to_string(),
+        );
+        tokio::spawn(async move {
+            crate::merge::on_done(&app, &item_id, &project_id, over_mcp).await;
+        });
     }
 
     let mut response = Json(serde_json::to_value(item).unwrap()).into_response();

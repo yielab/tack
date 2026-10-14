@@ -547,6 +547,8 @@ pub struct AttemptSummary {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AttemptMerge {
     pub enabled: bool,
+    /// Why the button is disabled; when it is enabled, what held its last press
+    /// (CI is read on the press, not to draw the button).
     pub reason: Option<String>,
 }
 
@@ -1529,17 +1531,14 @@ pub async fn list_execution_attempts(
     }
     let mut merges = std::collections::HashMap::new();
     for attempt in &attempts {
-        let reason = match &state.app {
-            Some(app) => crate::merge::disabled_reason(app, &attempt.id).await,
-            None => Some("Merging is not available on this board".to_owned()),
+        let (enabled, reason) = match &state.app {
+            Some(app) => crate::merge::button(app, &attempt.id).await,
+            None => (
+                false,
+                Some("Merging is not available on this board".to_owned()),
+            ),
         };
-        merges.insert(
-            attempt.id.clone(),
-            AttemptMerge {
-                enabled: reason.is_none(),
-                reason,
-            },
-        );
+        merges.insert(attempt.id.clone(), AttemptMerge { enabled, reason });
     }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()

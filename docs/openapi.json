@@ -7309,7 +7309,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Why the button is disabled; when it is enabled, what held its last press\n(CI is read on the press, not to draw the button)."
           }
         }
       },

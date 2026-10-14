@@ -259,7 +259,6 @@ pub async fn disabled_reason(state: &AppState, attempt_id: &str) -> Option<Strin
     {
         return Some("The run has not finished with a pushed branch to merge".to_owned());
     }
-    let head = git["head_commit"].as_str().unwrap_or_default();
     let Ok(Some(pr)) = pull_requests::get_for_attempt(pool, attempt_id).await else {
         let linked = match context.item_id.parse() {
             Ok(item) => state
@@ -285,40 +284,26 @@ pub async fn disabled_reason(state: &AppState, attempt_id: &str) -> Option<Strin
         return Some(reason);
     }
     let project = context.project_id.parse().unwrap_or_default();
-    let Some(token) = github_token_for_project(state, project).await else {
+    if github_token_for_project(state, project).await.is_none() {
         return Some(NO_TOKEN.to_owned());
-    };
-    let client = github_client().ok()?;
-    let ci = match ci_state(
-        &client,
-        &state.config.github_api_base,
-        &token,
-        &pr.repo,
-        head,
-    )
-    .await
-    {
-        Ok(ci) => ci,
-        Err(error) => {
-            return Some(format!(
-                "Tack could not read CI on the head commit: {error}"
-            ));
-        }
-    };
-    let extra = FactsExtra::default();
-    evaluate(&Facts {
-        trigger: Trigger::Button,
-        from_mcp: false,
-        decision: extra.decision,
-        level: extra.level,
-        require: Check::Pass,
-        attestation: Check::Pass,
-        budget: Check::Pass,
-        pr_open: Check::Pass,
-        ci,
-    })
-    .err()
-    .map(|hold| hold.to_string())
+    }
+    // CI is read when the button is pressed, never to draw it: a list of
+    // attempts would otherwise call GitHub on every refresh.
+    None
+}
+
+/// The button as the attempts list draws it: enabled when nothing local stops
+/// a merge, with what held the last press as its reason; disabled with why.
+pub async fn button(state: &AppState, attempt_id: &str) -> (bool, Option<String>) {
+    if let Some(reason) = disabled_reason(state, attempt_id).await {
+        return (false, Some(reason));
+    }
+    let last_hold = ledger::get_merge(state.repo.pool(), attempt_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.held_reason);
+    (true, last_hold)
 }
 
 /// An item entered a Done status. When its project merges on Done, the latest
