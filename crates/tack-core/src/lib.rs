@@ -5,6 +5,7 @@ pub mod error;
 pub mod models;
 pub mod mrp;
 pub mod outline;
+pub mod rate_card;
 pub mod rich_text;
 pub mod vocabulary;
 pub mod workflow;

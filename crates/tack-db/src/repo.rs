@@ -11,6 +11,7 @@ pub mod items;
 pub mod metrics;
 pub mod projects;
 pub mod pull_requests;
+pub mod rate_card;
 pub mod roles;
 pub mod sprints;
 pub mod templates;

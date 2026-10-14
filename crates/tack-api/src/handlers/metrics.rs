@@ -10,6 +10,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::AssertSqlSafe;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
@@ -231,8 +232,8 @@ async fn token_spend(
     project: &str,
     since: Option<&str>,
 ) -> Result<Vec<(Option<String>, Option<String>, i64, i64, i64)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT r.requested_model, p.repo,
+    sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT {model} AS model, p.repo,
                 COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)), 0),
                 COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0),
                 COUNT(*)
@@ -241,8 +242,9 @@ async fn token_spend(
          JOIN items i ON i.id = r.item_id
          LEFT JOIN pull_requests p ON p.attempt_id = a.id
          WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
-         GROUP BY r.requested_model, p.repo",
-    )
+         GROUP BY model, p.repo",
+        model = tack_db::repo::rate_card::RUN_MODEL_SQL
+    )))
     .bind(project)
     .bind(since)
     .bind(since)
