@@ -1088,6 +1088,24 @@ export interface paths {
         patch: operations["update_project"];
         trace?: never;
     };
+    "/api/projects/{id}/autonomy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/:id/autonomy */
+        get: operations["get_autonomy"];
+        /** PUT /api/projects/:id/autonomy */
+        put: operations["put_autonomy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}/export": {
         parameters: {
             query?: never;
@@ -3086,6 +3104,24 @@ export interface components {
             usage_economics: components["schemas"]["UsageEconomicsSchema"];
             workspace_id?: string | null;
         };
+        AutonomySettings: {
+            /** @description PEM public key the signed pack is checked against. */
+            attestation_public_key?: string | null;
+            budgets: components["schemas"]["BudgetSettings"];
+            /** @description Replaces the project's domains. */
+            domains: components["schemas"]["DomainSettings"][];
+            /** @description `L3` (a person merges), `L4` (Tack merges inside the domains) or `L5` (everywhere). */
+            level: string;
+            /** @description Merge when a person moves the task to Done. */
+            merge_on_done: boolean;
+            /**
+             * Format: int64
+             * @description How many times a rejected change goes back to the agent; 0 is never.
+             */
+            verify_loop_max_attempts: number;
+            /** @description The verification stages prill must require before Tack merges alone. */
+            verify_require: string[];
+        };
         Board: {
             /** Format: date-time */
             created_at: string;
@@ -3138,6 +3174,17 @@ export interface components {
         BoardViewResponse: {
             board: components["schemas"]["Board"];
             columns: components["schemas"]["BoardColumnWithItems"][];
+        };
+        /** @description The project's daily limits; `null` is no limit. */
+        BudgetSettings: {
+            /** Format: int64 */
+            auto_merges_per_day?: number | null;
+            /** Format: int64 */
+            queue_items_max?: number | null;
+            /** Format: int64 */
+            tokens_per_day?: number | null;
+            /** Format: double */
+            usd_per_day?: number | null;
         };
         /**
          * @description Response body for `POST /api/executions/{id}/cancel`. `state` is
@@ -3513,6 +3560,16 @@ export interface components {
         };
         /** @enum {string} */
         DependencyType: "blocks" | "is_blocked_by" | "relates_to" | "duplicates";
+        /** @description One named area of the repository with its own level. */
+        DomainSettings: {
+            /** @description Item types the domain covers; empty means any. */
+            item_types?: string[];
+            /** @description `L3`, `L4` or `L5`. */
+            level: string;
+            name: string;
+            /** @description Globs a change's every path must match (`**` crosses directories). */
+            path_globs: string[];
+        };
         ErrorBody: {
             /**
              * @description Stable, machine-readable error code. Present on a narrow set of
@@ -7058,6 +7115,83 @@ export interface operations {
                 };
             };
             /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_autonomy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project's autonomy settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutonomySettings"];
+                };
+            };
+            /** @description No such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    put_autonomy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutonomySettings"];
+            };
+        };
+        responses: {
+            /** @description The settings now in force */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutonomySettings"];
+                };
+            };
+            /** @description An unknown level, a nameless or repeated domain, a negative limit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No such project */
             404: {
                 headers: {
                     [name: string]: unknown;
