@@ -179,7 +179,7 @@ fn error(
 }
 
 #[derive(Clone)]
-struct FixedExecutionClock(DateTime<Utc>);
+pub(crate) struct FixedExecutionClock(pub(crate) DateTime<Utc>);
 
 impl ExecutionClock for FixedExecutionClock {
     fn now(&self) -> DateTime<Utc> {
