@@ -1084,6 +1084,11 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     }));
     let machine = sandbox::detect(Some(std::ffi::OsStr::new(&path)), Some(&home));
     for (label, sandboxed) in [("unsandboxed", false), ("sandboxed", true)] {
+        // Without bwrap the sandboxed run is refused; that refusal has its own test.
+        if sandboxed && machine.kind != sandbox::SandboxKind::Bwrap {
+            println!("skipped the sandboxed run: bwrap is not on PATH");
+            continue;
+        }
         let state = dir.path().join(label);
         let harness = LocalProcessHarness::discover(
             LoginGrammar(descriptor),
