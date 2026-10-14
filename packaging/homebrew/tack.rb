@@ -10,31 +10,26 @@ class Tack < Formula
   # `brew audit` rejects an explicit version wherever the scan already agrees.
   on_macos do
     on_arm do
-      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.9/tack-v0.1.0-beta.9-macos-aarch64.tar.gz"
-      sha256 "ee7d2fb469d97350374e2d277832fada933b96e233f8e9e34c53729c56f9ff9c"
+      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.10/tack-v0.1.0-beta.10-macos-aarch64.tar.gz"
+      sha256 "9444af5a557fe177e7d2914a21b0ac3de4230a08d959c6315b6cf3dd491541a7"
     end
     on_intel do
-      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.9/tack-v0.1.0-beta.9-macos-x86_64.tar.gz"
-      sha256 "f58564fe80302b3581936d83b01d6ba08b54db8235b0ce993513a22adccde6d2"
-      version "0.1.0-beta.9"
+      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.10/tack-v0.1.0-beta.10-macos-x86_64.tar.gz"
+      sha256 "5a4d5a55eecd7dd708ab6cc9d37e265fe915b897e74f70078a0db34ca526129e"
+      version "0.1.0-beta.10"
     end
   end
 
   on_linux do
     on_arm do
-      # tack-packaging:linux-aarch64 — sync-packaging.sh maintains this
-      # branch. release.yml's build matrix has no linux-aarch64 leg yet, so
-      # there is no asset this formula could point at; fail clearly instead
-      # of serving the x86_64 binary to an incompatible CPU. Once a release
-      # publishes tack-<tag>-linux-aarch64.tar.gz, sync-packaging.sh replaces
-      # this odie with a url/sha256 pair, and restores it here if a later
-      # release ever drops that asset again.
-      odie "tack has no published Linux ARM64 build yet."
+      # tack-packaging:linux-aarch64 — sync-packaging.sh maintains this branch.
+      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.10/tack-v0.1.0-beta.10-linux-aarch64.tar.gz"
+      sha256 "74ca910dab26ab16c900f45e147d482657e714b5188bfb2db1e1519eaddfe0a7"
     end
     on_intel do
-      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.9/tack-v0.1.0-beta.9-linux-x86_64.tar.gz"
-      sha256 "30a70b4c97cf2b52aae86ca5d461776c312974a2408e43e993fc756853efdab4"
-      version "0.1.0-beta.9"
+      url "https://github.com/yielab/tack/releases/download/v0.1.0-beta.10/tack-v0.1.0-beta.10-linux-x86_64.tar.gz"
+      sha256 "fc79508828cd7bc41150110ca35c1b13f57f325f2e72c0f21bdd09775ffbf19a"
+      version "0.1.0-beta.10"
     end
   end
 

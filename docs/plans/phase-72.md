@@ -261,10 +261,13 @@ reads `L3`, `[]`, `0`, `merge_on_done` 0; the brief has a version 1.
 - `enum Trigger { Button, Done, Auto }`.
 - `struct Facts { trigger: Trigger, from_mcp: bool, decision: MergeDecision, level: Level, require: Check, attestation: Check, budget: Check, pr_open: Check, ci: CiState }`.
 - `fn evaluate(f: &Facts) -> Result<(), Hold>`: for `Button`, only `pr_open` and `ci`; for
-  `Done`, `from_mcp` (refused), `pr_open` and `ci`; for `Auto`, `from_mcp` first, then the Decided
-  order. `Hold` has one variant per
-  condition and a `Display` of one plain sentence ("prill did not say merge", "CI is still running
-  on <short sha>", …); `require` and the others carry their own reason through `Fail`.
+  `Done`, `from_mcp` (refused), `pr_open` and `ci`; for `Auto`, in this order: `from_mcp`,
+  `decision == Merge`, `level >= L4` (`level` is the change's level from `level_for`), `require`,
+  `attestation`, `budget`, `pr_open`, `ci == Green`. `Hold` has one variant per condition
+  (`FromMcp`, `NotMerge`, `LevelBelowL4`, `Require(String)`, `Attestation(String)`,
+  `Budget(String)`, `PrNotOpen(String)`, `CiPending`, `CiRed`, `CiAbsent`) and a `Display` of one
+  plain sentence ("This run came through MCP; merge it with the Merge button", "prill did not say
+  merge", "CI is still running on the head commit", …); a `Fail(reason)` passes its reason through.
 
 **Test (RED first):** one table test: a row per `Hold` variant, the all-pass row for each
 trigger, and a `Button` row that passes with an unsigned `review` pack; three

@@ -1,10 +1,10 @@
 {
-    "version": "0.1.0-beta.9",
+    "version": "0.1.0-beta.10",
     "description": "Single-binary project manager with an agent-execution runner",
     "homepage": "https://github.com/yielab/tack",
     "license": "MIT",
-    "url": "https://github.com/yielab/tack/releases/download/v0.1.0-beta.9/tack-v0.1.0-beta.9-windows-x86_64.zip",
-    "hash": "3e4347ceca829334457aadc2938d7ee0a5dedde9ca8216cfdaf9de43f74c0293",
+    "url": "https://github.com/yielab/tack/releases/download/v0.1.0-beta.10/tack-v0.1.0-beta.10-windows-x86_64.zip",
+    "hash": "ee3c37d3d8253d7ea432f514a482b7de440a7fa7599401d4213b1b5c3e8afe2d",
     "extract_dir": "tack-v0.1.0-beta.9-windows-x86_64",
     "bin": "tack.exe",
     "checkver": {
