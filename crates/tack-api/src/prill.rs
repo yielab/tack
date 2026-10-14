@@ -100,10 +100,10 @@ pub async fn attest_verify(
 }
 
 /// A `0700` directory under the OS temp dir, removed on drop.
-struct Scratch(PathBuf);
+pub(crate) struct Scratch(pub(crate) PathBuf);
 
 impl Scratch {
-    fn new() -> Option<Self> {
+    pub(crate) fn new() -> Option<Self> {
         #[allow(clippy::disallowed_methods)]
         let root = std::env::temp_dir();
         let path = root.join(format!("tack-attest-{}", uuid::Uuid::new_v4()));
@@ -121,7 +121,7 @@ impl Drop for Scratch {
     }
 }
 
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

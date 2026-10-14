@@ -2,12 +2,15 @@
 //! minutes and tokens, and what became of its pull requests. Every number is
 //! computed from rows; every ratio carries its numerator and denominator, and a
 //! figure with nothing to measure is `null` with its reason (`denominator_zero`
-//! or `not_measured`), never 0. No dollar figure is read or summed here.
+//! or `not_measured`), never 0. Quality figures are prill's, read from its
+//! store and named as prill's. Dollars are Tack's: tokens priced by the
+//! operator's rate card; a harness's own `cost_usd` is never read or summed.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::AssertSqlSafe;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
@@ -85,10 +88,36 @@ pub struct Outcomes {
     pub merged: i64,
     pub closed: i64,
     pub reverted: i64,
-    /// Merged and not reverted.
-    pub pqc: i64,
-    /// `pqc` ÷ `opened`.
-    pub pqc_rate: Ratio,
+    /// Merged and not reverted at the time of the query: no CI, defect or
+    /// window behind it, so it is not a quality figure (prill's `quality` is).
+    pub merged_not_reverted: i64,
+}
+
+/// One repository's figures from prill's store.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RepositoryQuality {
+    /// `owner/repo`.
+    pub repository: String,
+    /// prill's `metrics/v1` document, as prill printed it.
+    #[schema(value_type = Object)]
+    pub metrics: serde_json::Value,
+    /// Tokens of the attempts that opened this repository's pull requests,
+    /// priced by the rate card. Absent without a card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    /// prill's `qualified` ÷ `cost_usd`. Absent without a card, without a
+    /// `qualified` count, or when the cost is zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qualified_per_usd: Option<f64>,
+}
+
+/// What prill measured. Present only when prill answered.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct Quality {
+    /// Always `prill`.
+    pub source: String,
+    pub prill_version: String,
+    pub repositories: Vec<RepositoryQuality>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -107,6 +136,20 @@ pub struct FactoryMetrics {
     /// accepted ÷ reviewed.
     pub mrp_acceptance_rate: Ratio,
     pub outcomes: Outcomes,
+    /// prill's figures; absent when `quality_unavailable` says why.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<Quality>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_unavailable: Option<String>,
+    /// Tokens priced by the rate card, plus the human minutes at its hour
+    /// rate. Absent without a rate card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_card_as_of: Option<String>,
+    /// Attempts whose model the rate card does not list, so not in `cost_usd`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_unpriced_attempts: Option<i64>,
 }
 
 fn ratio(numerator: i64, denominator: i64, null_reason: &str) -> Ratio {
@@ -182,6 +225,72 @@ async fn pack_tokens(storage: &ArtifactStorage, reference: Option<&str>) -> Opti
     Some(usage.get("tokens_in")?.as_i64()? + usage.get("tokens_out")?.as_i64()?)
 }
 
+/// Tokens (in, out) of the project's attempts in the window by model and by the
+/// repository of the pull request each opened (`None` when it opened none).
+async fn token_spend(
+    pool: &sqlx::SqlitePool,
+    project: &str,
+    since: Option<&str>,
+) -> Result<Vec<(Option<String>, Option<String>, i64, i64, i64)>, sqlx::Error> {
+    sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT {model} AS model, p.repo,
+                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)), 0),
+                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0),
+                COUNT(*)
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         LEFT JOIN pull_requests p ON p.attempt_id = a.id
+         WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
+         GROUP BY model, p.repo",
+        model = tack_db::repo::rate_card::RUN_MODEL_SQL
+    )))
+    .bind(project)
+    .bind(since)
+    .bind(since)
+    .fetch_all(pool)
+    .await
+}
+
+/// prill's figures for each repository the project opened pull requests in
+/// that has a store, or why there are none.
+async fn prill_quality(
+    state: &AppState,
+    project: &str,
+) -> Result<(String, Vec<(String, serde_json::Value)>), String> {
+    let program = &state.config.prill_program;
+    let version = crate::prill_store::version(program).await?;
+    let repos: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT p.repo FROM pull_requests p
+         JOIN execution_attempts a ON a.id = p.attempt_id
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ? ORDER BY p.repo",
+    )
+    .bind(project)
+    .fetch_all(state.pool())
+    .await
+    .map_err(|_| "the board could not list the project's repositories".to_owned())?;
+    let mut found = Vec::new();
+    let mut failure = None;
+    for repo in repos {
+        let Some(db) = crate::prill_store::store_path(&state.config.storage_dir, &repo) else {
+            continue;
+        };
+        if !db.is_file() {
+            continue;
+        }
+        match crate::prill_store::metrics(program, &db).await {
+            Ok(metrics) => found.push((repo, metrics)),
+            Err(reason) => failure = Some(reason),
+        }
+    }
+    if found.is_empty() {
+        return Err(failure.unwrap_or_else(|| "no repository has a prill store yet".to_owned()));
+    }
+    Ok((version, found))
+}
+
 /// GET /api/projects/:id/metrics/factory
 #[instrument(skip(state))]
 #[utoipa::path(
@@ -250,6 +359,68 @@ pub async fn factory_metrics(
             DENOMINATOR_ZERO
         };
 
+    let card = crate::rate_card::load(pool).await;
+    let spend = token_spend(pool, &project, since).await?;
+    let (mut cost, mut unpriced) = (0.0, 0);
+    let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    if let Some(card) = &card {
+        for (model, repo, tokens_in, tokens_out, attempts) in &spend {
+            let priced = model
+                .as_deref()
+                .and_then(|m| crate::rate_card::price(card, m, *tokens_in, *tokens_out));
+            let Some(priced) = priced else {
+                unpriced += attempts;
+                continue;
+            };
+            cost += priced;
+            if let Some(repo) = repo {
+                *repo_cost.entry(repo.clone()).or_default() += priced;
+            }
+        }
+        let minutes: f64 = decision_waits
+            .iter()
+            .chain(&mrp_waits)
+            .filter_map(|w| {
+                minutes_between(
+                    w.viewed_at.as_deref().unwrap_or(&w.created_at),
+                    &w.resolved_at,
+                )
+            })
+            .sum();
+        cost += minutes / 60.0 * card.human_hour;
+    }
+    let (quality, quality_unavailable) = match prill_quality(&state, &project).await {
+        Ok((version, found)) => {
+            let repositories = found
+                .into_iter()
+                .map(|(repository, metrics)| {
+                    let cost_usd = card
+                        .as_ref()
+                        .map(|_| repo_cost.get(&repository).copied().unwrap_or(0.0));
+                    let qualified_per_usd = cost_usd
+                        .zip(metrics.get("qualified").and_then(serde_json::Value::as_f64))
+                        .filter(|(cost, _)| *cost > 0.0)
+                        .map(|(cost, qualified)| qualified / cost);
+                    RepositoryQuality {
+                        repository,
+                        metrics,
+                        cost_usd,
+                        qualified_per_usd,
+                    }
+                })
+                .collect();
+            (
+                Some(Quality {
+                    source: "prill".into(),
+                    prill_version: version,
+                    repositories,
+                }),
+                None,
+            )
+        }
+        Err(reason) => (None, Some(reason)),
+    };
+
     Ok(Json(FactoryMetrics {
         since: since.map(str::to_owned),
         attempts: totals.attempts,
@@ -280,8 +451,12 @@ pub async fn factory_metrics(
             merged: prs.merged,
             closed: prs.closed,
             reverted: prs.reverted,
-            pqc: prs.merged,
-            pqc_rate: ratio(prs.merged, prs.opened, DENOMINATOR_ZERO),
+            merged_not_reverted: prs.merged,
         },
+        quality,
+        quality_unavailable,
+        cost_usd: card.as_ref().map(|_| cost),
+        rate_card_as_of: card.as_ref().map(|c| c.as_of.clone()),
+        cost_unpriced_attempts: card.as_ref().map(|_| unpriced),
     }))
 }

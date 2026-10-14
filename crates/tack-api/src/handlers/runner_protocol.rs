@@ -2196,6 +2196,14 @@ pub async fn submit_completion(
     if matches!(result, CompletionResult::Committed(_)) && terminal_state == "succeeded" {
         apply_status_map_policy(&state.repo, state.app.as_ref(), &attempt_id).await;
     }
+    if matches!(result, CompletionResult::Committed(_))
+        && let Some(app) = state.app.clone()
+    {
+        // The pack goes to prill's store; the runner does not wait for it, and
+        // a failure is retried when the pull request is next followed.
+        let attempt_id = attempt_id.clone();
+        tokio::spawn(async move { crate::prill_store::record_mrp(&app, &attempt_id).await });
+    }
 
     match result {
         CompletionResult::Committed(resp) => Ok(Json(json!({

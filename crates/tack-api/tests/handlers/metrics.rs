@@ -368,7 +368,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
         (Some(3), Some(1))
     );
     close(&m["mrp_acceptance_rate"]["value"], 0.5);
-    // 4 pull requests opened in the window; PQC is the one merged and not reverted.
+    // 4 pull requests opened in the window; one is merged and not reverted.
     let o = &m["outcomes"];
     assert_eq!(
         (
@@ -376,11 +376,18 @@ async fn seeded_rows_yield_the_expected_ratios() {
             o["merged"].as_i64(),
             o["closed"].as_i64(),
             o["reverted"].as_i64(),
-            o["pqc"].as_i64()
+            o["merged_not_reverted"].as_i64()
         ),
         (Some(4), Some(1), Some(1), Some(1), Some(1))
     );
-    close(&o["pqc_rate"]["value"], 0.25);
+    assert!(!m.to_string().contains("pqc"), "{m}");
+    // No prill and no rate card: no quality, its reason, and no dollar.
+    assert!(m.get("quality").is_none(), "{m}");
+    assert_eq!(
+        m["quality_unavailable"],
+        "prill is not installed on the board"
+    );
+    assert!(m.get("cost_usd").is_none(), "{m}");
     // No dollar figure anywhere, though the seeded usage carries one.
     assert!(!m.to_string().contains("cost"), "{m}");
 
@@ -392,7 +399,6 @@ async fn seeded_rows_yield_the_expected_ratios() {
         &e["escalation_rate"],
         &e["verification_tax"]["ratio"],
         &e["mrp_acceptance_rate"],
-        &e["outcomes"]["pqc_rate"],
     ] {
         assert!(ratio["value"].is_null(), "{ratio}");
         assert_eq!(ratio["null_reason"], "denominator_zero");
@@ -404,4 +410,164 @@ async fn seeded_rows_yield_the_expected_ratios() {
         assert!(minutes["median_minutes"].is_null() && minutes["p90_minutes"].is_null());
         assert_eq!(minutes["null_reason"], "not_measured");
     }
+}
+
+/// A prill that answers `--version` and `metrics` from the captured output,
+/// with `qualified` raised to 2 so the per-dollar figure is not zero.
+fn fake_prill(dir: &std::path::Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prill");
+    let metrics = std::fs::read_to_string(fixtures.join("metrics-merged.stdout"))
+        .unwrap()
+        .replace("\"qualified\": 0,", "\"qualified\": 2,");
+    std::fs::write(dir.join("metrics.json"), metrics).unwrap();
+    std::fs::create_dir_all(dir.join("bin")).unwrap();
+    let script = dir.join("bin/prill");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] && {{ echo 'prill 0.1.0'; exit 0; }}\n\
+             [ \"$1\" = \"metrics\" ] && {{ cat '{}/metrics.json'; exit 0; }}\nexit 2\n",
+            dir.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    script.display().to_string()
+}
+
+#[tokio::test]
+async fn quality_is_prills_and_cost_is_the_rate_cards() {
+    let root = tempfile::tempdir().unwrap();
+    let pool = init_pool("sqlite::memory:").await.unwrap();
+    migrations::run_all(&pool).await.unwrap();
+    let workspace_id = Uuid::new_v4();
+    exec(
+        &pool,
+        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'P', '{}')",
+        &[&workspace_id.to_string()],
+    )
+    .await;
+    let repo = Repository::new(pool.clone());
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = |program: String| AppState {
+        repo: repo.clone(),
+        config: AppConfig {
+            api_token: Some(TOKEN.into()),
+            database_url: "sqlite::memory:".into(),
+            storage_dir: root.path().to_string_lossy().into_owned(),
+            prill_program: program,
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx.clone(),
+        webhook: None,
+        local_runner: None,
+    };
+    let (project_id, item) = project_with_item(&repo, workspace_id, "P").await;
+    exec(
+        &pool,
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'p', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+        &[],
+    )
+    .await;
+    exec(
+        &pool,
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+           request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+           repository_snapshot, permission_policy, metadata, requested_model, created_at, updated_at)
+         VALUES ('R1', ?, 's', 'R1', 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}', 'opaque/model',
+           '2026-09-10T08:00:00Z', '2026-09-10T08:00:00Z')",
+        &[&item],
+    )
+    .await;
+    let used = usage(1_000_000, 100_000);
+    exec(
+        &pool,
+        "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+           lease_issued_at, lease_expires_at, created_at, updated_at, usage)
+         VALUES ('A1', 'R1', 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
+           '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z', ?)",
+        &[&used],
+    )
+    .await;
+    exec(
+        &pool,
+        "INSERT INTO pull_requests (attempt_id, repo, number, url, state, opened_at)
+         VALUES ('A1', 'o/r', 1, 'u', 'merged', '2026-09-10T13:00:00Z')",
+        &[],
+    )
+    .await;
+    let headers = [("authorization", "Bearer g1a-metrics-token")];
+    let uri = format!("/api/projects/{project_id}/metrics/factory");
+    let get = |program: String| {
+        let app = crate::common::with_default_host(build_router(state(program)));
+        let (uri, headers) = (uri.clone(), headers);
+        async move {
+            let (status, body) = common::send(&app, "GET", &uri, Value::Null, &headers).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            (app, body)
+        }
+    };
+
+    // prill installed, but no repository has a store yet.
+    let program = fake_prill(root.path());
+    let (_, m) = get(program.clone()).await;
+    assert!(m.get("quality").is_none(), "{m}");
+    assert_eq!(
+        m["quality_unavailable"],
+        "no repository has a prill store yet"
+    );
+
+    // With a store: prill's figures, named as prill's, with its version.
+    std::fs::create_dir_all(root.path().join("prill")).unwrap();
+    std::fs::write(root.path().join("prill/o__r.db"), "").unwrap();
+    let (app, m) = get(program.clone()).await;
+    assert!(m.get("quality_unavailable").is_none(), "{m}");
+    assert_eq!(m["quality"]["source"], "prill");
+    assert_eq!(m["quality"]["prill_version"], "0.1.0");
+    let repos = m["quality"]["repositories"].as_array().unwrap();
+    assert_eq!(repos.len(), 1, "{m}");
+    assert_eq!(repos[0]["repository"], "o/r");
+    assert_eq!(repos[0]["metrics"]["qualified"], 2);
+    // No rate card: no dollar anywhere, whatever the usage carried.
+    assert!(!m.to_string().contains("cost_usd"), "{m}");
+    assert!(repos[0].get("qualified_per_usd").is_none(), "{m}");
+
+    // The rate card: $3 in and $15 out per million tokens, 1M in and 100k out = $4.50.
+    let card = json!({
+        "as_of": "2026-10-01",
+        "models": {"opaque/model": {"input_per_mtok": 3.0, "output_per_mtok": 15.0}},
+        "ci_minute": 0.008,
+        "human_hour": 60.0,
+    });
+    let (status, saved) = common::send(
+        &app,
+        "PUT",
+        "/api/settings/rate-card",
+        card.clone(),
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let (status, read) = common::send(
+        &app,
+        "GET",
+        "/api/settings/rate-card",
+        Value::Null,
+        &headers,
+    )
+    .await;
+    assert_eq!((status, &read), (StatusCode::OK, &card));
+    let (_, m) = get(program).await;
+    close(&m["cost_usd"], 4.5);
+    assert_eq!(m["rate_card_as_of"], "2026-10-01");
+    close(&m["quality"]["repositories"][0]["cost_usd"], 4.5);
+    close(
+        &m["quality"]["repositories"][0]["qualified_per_usd"],
+        2.0 / 4.5,
+    );
+    // The harness's own figure is never summed.
+    assert!(!m.to_string().contains("9.99"), "{m}");
 }

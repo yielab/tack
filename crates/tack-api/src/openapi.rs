@@ -929,6 +929,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Settings ──────────────────────────────────────────────────────
         handlers::settings::get_backup_settings,
         handlers::settings::put_backup_settings,
+        crate::rate_card::get_rate_card,
+        crate::rate_card::put_rate_card,
         // ── Embedded runner control (ADR 0061 decisions 2 and 6) ────────────
         handlers::local_runner::get_local_runner,
         handlers::local_runner::put_local_runner,
@@ -975,6 +977,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::metrics::HumanMinutes,
         handlers::metrics::VerificationTax,
         handlers::metrics::Outcomes,
+        handlers::metrics::Quality,
+        handlers::metrics::RepositoryQuality,
+        crate::rate_card::RateCard,
+        crate::rate_card::ModelPrice,
         handlers::mrp::MrpResponse,
         handlers::mrp::MrpVerdict,
         handlers::mrp::MrpReviewRequest,

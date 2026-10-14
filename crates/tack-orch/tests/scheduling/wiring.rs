@@ -757,8 +757,29 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
             Some(1),
             Some("This project's review queue is full (1 waiting)"),
         ),
+        (
+            "dollars, once a rate card prices the model",
+            None,
+            None,
+            Some("This project used its dollars for today"),
+        ),
     ];
     for (case, tokens, queue, expect) in cases {
+        if case.starts_with("dollars") {
+            // 110 tokens at $1 per token is far over the $0.01 a day set_budgets allows.
+            tack_db::repo::rate_card::save(
+                repo.pool(),
+                &serde_json::from_value(serde_json::json!({
+                    "as_of": "2026-10-13",
+                    "models": {"opaque/model-alpha": {"input_per_mtok": 1e6, "output_per_mtok": 1e6}},
+                    "ci_minute": 0.0,
+                    "human_hour": 0.0
+                }))
+                .unwrap(),
+            )
+            .await
+            .expect("rate card");
+        }
         if case == "no row" {
             // no project_budgets row at all
         } else {

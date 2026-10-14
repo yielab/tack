@@ -586,6 +586,94 @@ fn artifact_body(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// A completion that carries a pack hands it to prill once: `prill record mrp
+/// --db <storage>/prill/acme__widgets.db mrp.json`, and a second try does not
+/// run prill again.
+#[tokio::test]
+async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut fx = Fixture::new().await;
+    let root = tempfile::tempdir().unwrap();
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prill");
+    let log = root.path().join("prill.log");
+    std::fs::create_dir_all(root.path().join("bin")).unwrap();
+    let script = root.path().join("bin/prill");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho \"$@\" >> '{}'\ncat '{}/record-mrp.stderr' >&2\n",
+            log.display(),
+            fixtures.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let blobs = root.path().join("execution-artifacts");
+    std::fs::create_dir_all(&blobs).unwrap();
+    std::fs::copy(fixtures.join("mrp.json"), blobs.join("pack.json")).unwrap();
+
+    fx.repo
+        .set_github_link(fx.item_id.parse().unwrap(), "acme/widgets", 42)
+        .await
+        .unwrap();
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
+    let app = tack_api::AppState {
+        repo: fx.repo.clone(),
+        config: tack_api::config::AppConfig {
+            storage_dir: root.path().to_string_lossy().into_owned(),
+            prill_program: script.display().to_string(),
+            ..tack_api::config::AppConfig::default()
+        },
+        workspace_id: Uuid::new_v4(),
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    };
+    fx.app = runner_protocol::routes(
+        runner_protocol::RunnerProtocolState::new(fx.repo.clone(), Arc::new(fx.clock.clone()))
+            .with_artifact_storage_root(&blobs)
+            .with_app_state(app.clone()),
+        usize::MAX,
+    );
+
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
+    sqlx::query(
+        "INSERT INTO execution_artifacts (id, attempt_id, artifact_id, kind, name, media_type,
+           size_bytes, sha256, content_reference, created_at)
+         VALUES ('x1', ?, 'mrp-1', 'mrp', 'mrp.json', 'application/vnd.tack.mrp+json', 1, 'x',
+           'pack.json', '2026-08-06T12:00:00Z')",
+    )
+    .bind(&attempt_id)
+    .execute(fx.repo.pool())
+    .await
+    .unwrap();
+    let (status, completed) = fx
+        .complete_default(&attempt_id, fencing_token, "complete-mrp")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{completed}");
+    // The pack is handed over after the response, off the runner's clock.
+    for _ in 0..100 {
+        if log.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let db = root.path().join("prill/acme__widgets.db");
+    let logged = std::fs::read_to_string(&log).unwrap();
+    let prefix = format!("record mrp --db {} ", db.display());
+    assert_eq!(logged.lines().count(), 1, "{logged}");
+    assert!(logged.starts_with(&prefix), "{logged}");
+    assert!(logged.trim_end().ends_with("/mrp.json"), "{logged}");
+
+    // The attempt is recorded; asking again, or replaying the completion, runs nothing.
+    tack_api::prill_store::record_mrp(&app, &attempt_id).await;
+    let (_, replayed) = fx
+        .complete_default(&attempt_id, fencing_token, "complete-mrp")
+        .await;
+    assert_eq!(replayed["replayed"], true);
+    assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 1);
+}
+
 fn completion_body(
     runner_id: &str,
     attempt_id: &str,

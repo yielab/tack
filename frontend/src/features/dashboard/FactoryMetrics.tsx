@@ -192,13 +192,10 @@ function OutcomesCard(props: { outcomes: Outcomes }) {
           <p>{oc().closed} closed</p>
           <p>{oc().reverted} reverted</p>
         </div>
-        <Show when={oc().pqc_rate.value !== null && oc().pqc_rate.value !== undefined}>
-          <div class="mt-2">
-            <p class="text-xs text-content-muted">Quality (merged & not reverted)</p>
-            <p class="text-lg font-heading text-content">{(oc().pqc_rate.value! * 100).toFixed(1)}%</p>
-            <p class="text-xs text-content-subtle">{oc().pqc} PQC / {oc().opened} opened</p>
-          </div>
-        </Show>
+        <div class="mt-2">
+          <p class="text-xs text-content-muted">Merged and not reverted</p>
+          <p class="text-xs text-content-subtle">{oc().merged_not_reverted} of {oc().opened} opened</p>
+        </div>
       </div>
     </div>
   );

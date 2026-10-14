@@ -2314,3 +2314,96 @@ async fn github_poll_records_red_ci_on_the_merge_commit() {
     assert_eq!(stored.state, "merged");
     assert!(stored.red_ci_at.is_some(), "red CI must be recorded");
 }
+
+/// A revert is told to prill once: the merged PR's `outcome/v1` files (merged,
+/// then reverted, `source: "tack"`, the PR's URL) reach `prill record outcome`
+/// once each, however many polls see it.
+#[tokio::test]
+async fn github_poll_records_a_revert_in_prills_store_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let gh = wiremock::MockServer::start().await;
+    let mut state = pull_request_poll_state(gh.uri()).await;
+    let root = tempfile::tempdir().unwrap();
+    let log = root.path().join("prill.log");
+    std::fs::create_dir_all(root.path().join("bin")).unwrap();
+    let script = root.path().join("bin/prill");
+    // The fake keeps every outcome file it is handed, one line each.
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho \"$1 $2\" >> '{log}'\nfor last; do :; done\ncat \"$last\" >> '{log}'\necho >> '{log}'\n",
+            log = log.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    state.config.storage_dir = root.path().to_string_lossy().into_owned();
+    state.config.prill_program = script.display().to_string();
+    // The pull request belongs to a real attempt that pushed a head commit.
+    let head = "ad0eea1455de382abb4f7c41129d524a14ddcbf5";
+    let item: String = sqlx::query_scalar("SELECT id FROM items LIMIT 1")
+        .fetch_one(state.pool())
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'p', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+    )
+    .execute(state.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+           request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+           repository_snapshot, permission_policy, metadata, created_at, updated_at)
+         VALUES ('R1', ?, 's', 'R1', 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}',
+           '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+    )
+    .bind(&item)
+    .execute(state.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+           lease_issued_at, lease_expires_at, created_at, updated_at, actual_execution)
+         VALUES ('attempt-1', 'R1', 1, 'run', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z',
+           '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', ?)",
+    )
+    .bind(json!({"git": {"pushed": true, "branch": "agent/x", "head_commit": head}}).to_string())
+    .execute(state.pool())
+    .await
+    .unwrap();
+    merge_seeded_pull_request(&state).await;
+    let commits = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/github/commits-default-branch-with-revert.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    mount_merged_pull_request(&gh, &commits).await;
+
+    let mut etags = std::collections::HashMap::new();
+    for _ in 0..2 {
+        tack_api::github_sync::poll_once(&state, &mut etags)
+            .await
+            .expect("poll_once");
+    }
+    let logged = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = logged.lines().collect();
+    assert_eq!(lines.len(), 4, "{logged}");
+    assert_eq!(lines[0], "record outcome");
+    assert_eq!(lines[2], "record outcome");
+    let outcome = |line: &str| serde_json::from_str::<Value>(line).unwrap();
+    let (merged, reverted) = (outcome(lines[1]), outcome(lines[3]));
+    assert_eq!(merged["kind"], "merged");
+    assert_eq!(reverted["kind"], "reverted");
+    for file in [&merged, &reverted] {
+        assert_eq!(file["contract"], "outcome/v1");
+        assert_eq!(file["source"], "tack");
+        assert_eq!(file["headCommit"], head);
+        assert_eq!(file["reference"], "https://github.com/acme/widgets/pull/7");
+    }
+    assert!(
+        root.path().join("prill").is_dir(),
+        "the store directory is made"
+    );
+}
