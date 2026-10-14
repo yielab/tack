@@ -27,11 +27,13 @@ pub struct DomainSettings {
     /// `L3`, `L4` or `L5`.
     pub level: String,
     /// Read only: changes Tack merged by itself in this domain.
-    #[serde(default, skip_deserializing)]
+    #[serde(default)]
+    #[schema(read_only)]
     pub merged: i64,
     /// Read only: of those, how many were reverted or turned CI red (each one
     /// took the domain down a level).
-    #[serde(default, skip_deserializing)]
+    #[serde(default)]
+    #[schema(read_only)]
     pub undone: i64,
 }
 
@@ -62,7 +64,8 @@ pub struct AutonomySettings {
     /// Read only: why Tack could not merge by itself here, whatever the level
     /// (GitHub polling off, no prill on the board, no public key); empty when
     /// nothing on this board stops it.
-    #[serde(default, skip_deserializing)]
+    #[serde(default)]
+    #[schema(read_only)]
     pub automatic_merge_blocked_by: Vec<String>,
 }
 

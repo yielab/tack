@@ -7559,6 +7559,14 @@
             ],
             "description": "PEM public key the signed pack is checked against."
           },
+          "automatic_merge_blocked_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "readOnly": true
+            },
+            "description": "Read only: why Tack could not merge by itself here, whatever the level\n(GitHub polling off, no prill on the board, no public key); empty when\nnothing on this board stops it."
+          },
           "budgets": {
             "$ref": "#/components/schemas/BudgetSettings"
           },
@@ -9060,6 +9068,12 @@
             "type": "string",
             "description": "`L3`, `L4` or `L5`."
           },
+          "merged": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Read only: changes Tack merged by itself in this domain.",
+            "readOnly": true
+          },
           "name": {
             "type": "string"
           },
@@ -9069,6 +9083,12 @@
               "type": "string"
             },
             "description": "Globs a change's every path must match (`**` crosses directories)."
+          },
+          "undone": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Read only: of those, how many were reverted or turned CI red (each one\ntook the domain down a level).",
+            "readOnly": true
           }
         }
       },

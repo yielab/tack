@@ -3159,6 +3159,12 @@ export interface components {
         AutonomySettings: {
             /** @description PEM public key the signed pack is checked against. */
             attestation_public_key?: string | null;
+            /**
+             * @description Read only: why Tack could not merge by itself here, whatever the level
+             *     (GitHub polling off, no prill on the board, no public key); empty when
+             *     nothing on this board stops it.
+             */
+            automatic_merge_blocked_by?: string[];
             budgets: components["schemas"]["BudgetSettings"];
             /** @description Replaces the project's domains. */
             domains: components["schemas"]["DomainSettings"][];
@@ -3624,9 +3630,20 @@ export interface components {
             item_types?: string[];
             /** @description `L3`, `L4` or `L5`. */
             level: string;
+            /**
+             * Format: int64
+             * @description Read only: changes Tack merged by itself in this domain.
+             */
+            readonly merged?: number;
             name: string;
             /** @description Globs a change's every path must match (`**` crosses directories). */
             path_globs: string[];
+            /**
+             * Format: int64
+             * @description Read only: of those, how many were reverted or turned CI red (each one
+             *     took the domain down a level).
+             */
+            readonly undone?: number;
         };
         ErrorBody: {
             /**
