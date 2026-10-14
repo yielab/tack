@@ -451,8 +451,9 @@ string plus CI minute and human hour, and the date.
 same item, harness, profile and model, with `metadata.rework_of` = the original request and the
 next steps appended, one per line (`message`, `path:line`, `command`), inside ADR 0077 decision
 13's fenced block. No follow-up when: the pack has no `next_steps`, the last two packs carry the
-same set of `code`s (no progress), a budget of U is reached, the previous follow-up was
-cancelled, or the pack says `review`. The item then waits in Needs your review as today.
+same set of `code`s (no progress), the previous follow-up was cancelled, or the pack says
+`review`. Budgets are the scheduler's (U): a follow-up over a budget is enqueued and waits with
+the budget's reason, never checked here. The item then waits in Needs your review as today.
 **Test (RED first):** one table test, a row per stop condition plus the loop row.
 **Done when:** the api binary and the gate are green.
 **Hand-off:** Sonnet, one layer, ceiling 100.
