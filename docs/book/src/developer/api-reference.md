@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (94 paths, 130 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (95 paths, 132 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1228,6 +1228,25 @@ save cloud-backup configuration.
 |---|---|---|
 | 200 | Updated config (secret masked) | — |
 | 422 | Validation error | `ErrorEnvelope` |
+
+#### `GET /api/settings/rate-card`
+
+card
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The rate card, or null when none was entered | `null` | `RateCard` |
+
+#### `PUT /api/settings/rate-card`
+
+card
+
+**Request body:** `RateCard`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The saved rate card | `RateCard` |
+| 422 | A price is negative or not a number | `ErrorEnvelope` |
 
 ---
 
