@@ -126,6 +126,7 @@ pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill
 /// What a scenario changes from the all-green acceptance setup.
 pub(crate) struct Setup {
     pub(crate) domain_level: &'static str,
+    pub(crate) domain_globs: &'static str,
     pub(crate) linked: bool,
     pub(crate) github: bool,
     pub(crate) signed: bool,
@@ -137,6 +138,7 @@ impl Default for Setup {
     fn default() -> Self {
         Setup {
             domain_level: "L4",
+            domain_globs: "src/**",
             linked: true,
             github: true,
             signed: true,
@@ -153,7 +155,7 @@ pub(crate) async fn put_autonomy(b: &Board, setup: &Setup) -> (StatusCode, Value
         &format!("/api/projects/{}/autonomy", b.project_id),
         json!({
             "level": "L3",
-            "domains": [{"name": "core", "path_globs": ["src/**"], "item_types": [], "level": setup.domain_level}],
+            "domains": [{"name": "core", "path_globs": [setup.domain_globs], "item_types": [], "level": setup.domain_level}],
             "verify_require": setup.verify_require,
             "attestation_public_key": include_str!("../fixtures/prill/prill.pub"),
             "verify_loop_max_attempts": 2,
@@ -456,6 +458,14 @@ async fn holds_table() {
             "L3 is untouched",
             Setup {
                 domain_level: "L3",
+                ..Setup::default()
+            },
+            None,
+        ),
+        (
+            "a change outside the L4 domain is L3: nothing held, nothing said",
+            Setup {
+                domain_globs: "docs/**",
                 ..Setup::default()
             },
             None,

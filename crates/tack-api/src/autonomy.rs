@@ -137,8 +137,10 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
         }),
         ..FactsExtra::default()
     };
+    // Outside every domain authorised for automatic merge the change is L3, as
+    // today: a person reviews it, and there is nothing to hold or to say.
     if level < tack_core::autonomy::Level::L4 {
-        return Some(extra);
+        return None;
     }
 
     let snapshot: Value = serde_json::from_str(&context.request_snapshot).unwrap_or(Value::Null);
