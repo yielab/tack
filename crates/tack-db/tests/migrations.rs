@@ -7,6 +7,8 @@ mod common;
 
 #[path = "migrations/automation_tables.rs"]
 mod automation_tables;
+#[path = "migrations/autonomy.rs"]
+mod autonomy;
 #[path = "migrations/bridge_tables_dropped.rs"]
 mod bridge_tables_dropped;
 #[path = "migrations/factory_loop_tables.rs"]

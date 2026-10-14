@@ -148,6 +148,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("084_attempt_start_report", &MIGRATION_084[..]),
         ordinary("085_request_waiting", &MIGRATION_085[..]),
         ordinary("086_one_model_string", &MIGRATION_086[..]),
+        ordinary("087_autonomy", &MIGRATION_087[..]),
     ]
 }
 
@@ -1817,4 +1818,73 @@ const MIGRATION_086: [&str; 8] = [
         WHERE default_model IS NOT NULL",
     "UPDATE items SET run_settings = json_remove(CASE WHEN json_extract(run_settings, '$.model_id') IS NOT NULL THEN json_set(run_settings, '$.model', json_extract(run_settings, '$.model_id')) ELSE run_settings END, '$.model_provider', '$.model_id')
         WHERE run_settings IS NOT NULL AND json_valid(run_settings) AND json_type(run_settings) = 'object'",
+];
+
+// 087: autonomy level and merge authority per project, path/type domains, the merge ledger,
+// budgets, brief versions, and the pull-request merge facts prill records.
+const MIGRATION_087: [&str; 14] = [
+    "ALTER TABLE projects ADD COLUMN autonomy_level TEXT NOT NULL DEFAULT 'L3'
+        CHECK (autonomy_level IN ('L3','L4','L5'))",
+    "ALTER TABLE projects ADD COLUMN verify_require TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE projects ADD COLUMN attestation_public_key TEXT",
+    "ALTER TABLE projects ADD COLUMN verify_loop_max_attempts INTEGER NOT NULL DEFAULT 0
+        CHECK (verify_loop_max_attempts >= 0)",
+    "ALTER TABLE projects ADD COLUMN merge_on_done INTEGER NOT NULL DEFAULT 0
+        CHECK (merge_on_done IN (0,1))",
+    "CREATE TABLE autonomy_domains (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        path_globs TEXT NOT NULL DEFAULT '[]',
+        item_types TEXT NOT NULL DEFAULT '[]',
+        level TEXT NOT NULL CHECK (level IN ('L3','L4','L5')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(project_id, name)
+    )",
+    "CREATE TABLE tack_merges (
+        attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        trigger TEXT NOT NULL CHECK (trigger IN ('button','done','auto')),
+        domain TEXT,
+        level TEXT,
+        policy_snapshot TEXT,
+        pack_artifact_id TEXT,
+        attestation_keyid TEXT,
+        ci_state TEXT,
+        held_reason TEXT,
+        checked_at TEXT NOT NULL,
+        merged_at TEXT,
+        merge_sha TEXT,
+        demoted_at TEXT
+    )",
+    "CREATE INDEX idx_tack_merges_project ON tack_merges(project_id, merged_at)",
+    "CREATE TABLE project_budgets (
+        project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        tokens_per_day INTEGER,
+        usd_per_day REAL,
+        auto_merges_per_day INTEGER,
+        queue_items_max INTEGER
+    )",
+    "CREATE TABLE item_brief_versions (
+        item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        acceptance TEXT NOT NULL,
+        constraints TEXT NOT NULL,
+        definition_of_done TEXT,
+        risk TEXT,
+        brief_sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(item_id, version)
+    )",
+    "INSERT INTO item_brief_versions (item_id, version, acceptance, constraints, definition_of_done, risk, brief_sha256, created_at)
+        SELECT item_id, 1, acceptance, constraints, definition_of_done, risk, '', created_at FROM item_briefs",
+    "ALTER TABLE pull_requests ADD COLUMN merge_sha TEXT",
+    "ALTER TABLE pull_requests ADD COLUMN red_ci_at TEXT",
+    "CREATE TABLE prill_records (
+        attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('mrp','merged','closed','reverted','red_ci')),
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY(attempt_id, kind)
+    )",
 ];
