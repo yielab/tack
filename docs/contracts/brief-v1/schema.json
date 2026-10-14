@@ -68,6 +68,12 @@
               "threshold": {"type": "number"},
               "unit": {
                 "type": ["string", "null"]
+              },
+              "command": {
+                "type": ["string", "null"]
+              },
+              "pattern": {
+                "type": ["string", "null"]
               }
             }
           },

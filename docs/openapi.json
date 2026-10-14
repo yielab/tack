@@ -2386,6 +2386,52 @@
         }
       }
     },
+    "/api/items/{item_id}/brief/versions": {
+      "get": {
+        "tags": [
+          "briefs"
+        ],
+        "summary": "GET /api/items/:item_id/brief/versions",
+        "operationId": "list_brief_versions",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every saved version of the item's brief, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ItemBriefVersion"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/items/{item_id}/comments": {
       "get": {
         "tags": [
@@ -6705,6 +6751,12 @@
               "kind"
             ],
             "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "type": "string"
               },
@@ -6719,6 +6771,12 @@
               },
               "op": {
                 "$ref": "#/components/schemas/MetricOp"
+              },
+              "pattern": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "threshold": {
                 "type": "number",
@@ -9356,6 +9414,63 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ItemBriefVersion": {
+        "type": "object",
+        "description": "One saved state of an item's brief. `brief_sha256` is the SHA-256 of the\nbrief-v1 JSON as the runner stages it (`brief.json`); it is empty for a\nversion recorded before hashes were kept.",
+        "required": [
+          "item_id",
+          "version",
+          "acceptance",
+          "constraints",
+          "brief_sha256",
+          "created_at"
+        ],
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceCriterion"
+            }
+          },
+          "brief_sha256": {
+            "type": "string"
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Constraint"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "risk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Risk"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

@@ -65,6 +65,10 @@ pub async fn export_project(
     let sprints = state.repo.list_sprints(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
     let briefs = state.repo.list_item_briefs_for_project(project_id).await?;
+    let brief_versions = state
+        .repo
+        .list_item_brief_versions_for_project(project_id)
+        .await?;
 
     // Shared snapshot used by the structured (JSON / YAML) formats. Keys serialize
     // in a stable order, so YAML/JSON exports produce clean, git-diffable text.
@@ -74,6 +78,7 @@ pub async fn export_project(
         "sprints": sprints,
         "dependencies": dependencies,
         "briefs": briefs,
+        "brief_versions": brief_versions,
         "metadata": {
             "exported_at": chrono::Utc::now().to_rfc3339(),
             "version": env!("CARGO_PKG_VERSION"),
@@ -185,6 +190,8 @@ struct ImportPayload {
     dependencies: Vec<Dependency>,
     #[serde(default)]
     briefs: Vec<ItemBrief>,
+    #[serde(default)]
+    brief_versions: Vec<tack_core::brief::ItemBriefVersion>,
 }
 
 /// POST /api/projects/import
@@ -402,6 +409,23 @@ async fn run_import(
                 .upsert_item_brief(new_item, upsert)
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
+            // An export from before versions were kept has none: the upsert's own stands.
+            let mut versions: Vec<_> = data
+                .brief_versions
+                .iter()
+                .filter(|v| v.item_id == brief.item_id)
+                .cloned()
+                .collect();
+            if !versions.is_empty() {
+                for version in &mut versions {
+                    version.item_id = new_item;
+                }
+                state
+                    .repo
+                    .restore_item_brief_versions(new_item, &versions)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+            }
             briefs_imported += 1;
         }
     }

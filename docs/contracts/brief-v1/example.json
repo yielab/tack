@@ -23,7 +23,9 @@
       "name": "coverage",
       "op": "gte",
       "threshold": 80.0,
-      "unit": "%"
+      "unit": "%",
+      "command": "cargo llvm-cov --summary-only",
+      "pattern": "TOTAL.*?([0-9.]+)%"
     },
     {
       "kind": "file",

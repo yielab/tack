@@ -56,6 +56,8 @@ tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
 # The fake model endpoint the real docket is pointed at, through its own setup.
 wiremock = { workspace = true }
+# Validates the briefing adapter's output against the schema `prill schema briefing` prints.
+jsonschema = { version = "0.33", default-features = false }
 
 [lints]
 workspace = true

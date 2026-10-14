@@ -33,6 +33,9 @@ the brief, and a human-readable `title`.
   - `op`: `"lte"`, `"gte"`, or `"eq"`
   - `threshold`: Numeric threshold value
   - `unit`: Optional unit of measurement (e.g., "%", "ms")
+  - `command`: Optional command whose output carries the measurement
+  - `pattern`: Optional regular expression whose first group captures the number in that output
+  - Without both `command` and `pattern` nothing can measure the metric; the verifier is told so, not given a guess
 - **file**: Verifies a file exists at a path
   - `path`: File path to check
 - **absent**: Verifies a file does NOT exist at a path

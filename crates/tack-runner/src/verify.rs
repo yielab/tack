@@ -20,6 +20,9 @@
 
 mod prill;
 
+/// The brief adapter, public so `tests/briefing_schema.rs` can check it against prill's schema.
+pub use prill::briefing;
+
 use std::{
     collections::BTreeMap,
     fs,

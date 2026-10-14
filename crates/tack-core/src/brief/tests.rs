@@ -6,7 +6,7 @@ use crate::models::UpsertItemBrief;
 const EXAMPLE: &str = include_str!("../../../../docs/contracts/brief-v1/example.json");
 
 /// FNV-1a 64 of the example's bytes, pinned like the other contract fixtures.
-const EXAMPLE_FNV1A64: u64 = 0xc522_828c_401d_7700;
+const EXAMPLE_FNV1A64: u64 = 0x18ea_5ce5_947f_d676;
 
 fn fnv1a64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {

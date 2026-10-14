@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (92 paths, 127 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (93 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -498,6 +498,19 @@ PUT /api/items/:item_id/brief
 |---|---|---|
 | 200 | The brief as stored | `ItemBrief` |
 | 400 | Validation error | `ErrorEnvelope` |
+| 404 | Item not found | `ErrorEnvelope` |
+
+#### `GET /api/items/{item_id}/brief/versions`
+
+GET /api/items/:item_id/brief/versions
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `item_id` | path | `string` | yes | Item ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every saved version of the item's brief, oldest first | `ItemBriefVersion`[] |
 | 404 | Item not found | `ErrorEnvelope` |
 
 ---
