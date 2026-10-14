@@ -177,7 +177,10 @@ async fn claim_next(b: &Board, first: &ClaimedAttempt) -> ClaimedAttempt {
     .await;
     assert_eq!(status, StatusCode::OK, "{claimed}");
     ClaimedAttempt {
-        request_id: claimed["request"]["request_id"].as_str().unwrap_or_else(|| panic!("{claimed}")).to_owned(),
+        request_id: claimed["request"]["request_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{claimed}"))
+            .to_owned(),
         attempt_id: claimed["lease"]["attempt_id"].as_str().unwrap().to_owned(),
         runner_id: first.runner_id.clone(),
         fencing_token: claimed["lease"]["fencing_token"].as_i64().unwrap(),
