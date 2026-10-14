@@ -328,9 +328,10 @@ translation rows in `verify/tests.rs`.
    (fixture first) and `MergeReadinessPack.next_steps: Option<Vec<NextStep>>`. K1 does not fill
    it from prill (K2 does).
 4. `crates/tack-api/src/prill.rs`: one `run(args, timeout) -> Result<Output, Unavailable>` for the
-   board's prill, and `attest_verify(envelope, public_key_pem, commit) -> Check` (key in a 0600
-   temp file, 20-second timeout; exit 0 is `Pass` with the key id from stdout; anything else, or
-   no binary, is `Fail` with prill's reason or "prill is not installed on the board").
+   board's prill, and `attest_verify(program, envelope, public_key_pem, commit) -> Result<String, String>`
+   (key in a 0600 temp file, 20-second timeout; exit 0 is `Ok(key id)` read from prill's line;
+   anything else, or no binary, is `Err` with prill's reason or "prill is not installed on the
+   board"). The caller maps it to the policy's `Check` and keeps the key id.
 **Test (RED first):** with the round-0 signed fixture, the adapter stages two artifacts and an
 `InToto` signature; `attest_verify` with a fake prill gives `Pass`, `Fail(subject_mismatch)` and
 `Fail(not installed)`; a runner file with `sign_key` parses.
@@ -364,7 +365,7 @@ translation rows in `verify/tests.rs`.
    merged row, plus held `done` rows waiting for CI (M writes them). Gather `Facts` (paths from the evidence file list; `require` = `Fail` when the
    snapshot's list is empty or the runner's report says its prill cannot require — K2 writes that
    report; until then every L4 hold reads "the runner has not reported that its prill can require
-   stages"; G's `ci_state`; K1's `attest_verify`; U's budgets; `open_pull_request_for_attempt`),
+   stages"; G's `ci_state`; K1's `attest_verify`, whose key id goes in `attestation_keyid`; U's budgets; `open_pull_request_for_attempt`),
    call `evaluate`, upsert `tack_merges` (`trigger` `auto`; held reason, or merged with
    `merge_sha` and the policy snapshot), and on a merge follow `apply_mrp_accepted`'s path and
    broadcast as today. The run's `origin` is in its request snapshot (M adds it).
