@@ -498,7 +498,7 @@ section: the level with one plain sentence each; domains (name, globs,
 item types, level, and their merged / reverted counts shown before the level control); "Stages
 prill must run" with a button that fills prill's L4 example; the public key; the loop cap; the four
 budgets. L4/L5 render disabled with their reason when the board has no GitHub poll, no prill or
-no public key. The pack panel shows the held reason, or "Merged by Tack (L4, domain docs)" with
+no public key. The pack panel shows the held reason, or, from the attempt's `merge.merged` (F0), "Merged by Tack (L4, domain docs)" or "Merged by you" with
 the policy snapshot behind a disclosure; when the pack has next steps, it lists them.
 **Test (RED first):** the button enabled and disabled with its reason; the switch saves; the
 card badge; the section saves; a disabled L4 shows its reason; both pack panel states.
