@@ -224,3 +224,89 @@ describe('FactoryMetrics', () => {
     expect(container.textContent).toContain('Verification:');
   });
 });
+
+describe('FactoryMetrics sources and cost', () => {
+  const PRILL_QUALITY = {
+    source: 'prill',
+    prill_version: '0.4.2',
+    repositories: [
+      {
+        repository: 'acme/app',
+        metrics: {
+          contract: 'metrics/v1',
+          escalationRate: 0.1,
+          agreement: { decided: 10, agreed: 9, rate: 0.9 },
+          escapedDefects: { merged: 10, escaped: 1, rate: 0.1 },
+          qualified: 3,
+          qualifiedRate: 0.3,
+        },
+        cost_usd: 12.5,
+        qualified_per_usd: 0.24,
+      },
+    ],
+  } as unknown as FactoryMetrics['quality'];
+
+  it('without quality, one line says why and no prill block is shown', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      quality: null,
+      quality_unavailable: 'prill is not configured on this board.',
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain('prill is not configured on this board.');
+    expect(container.textContent).not.toContain('Quality (from prill');
+  });
+
+  it('with quality, each repository shows prill figures under the prill version', async () => {
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY, cost_usd: 12.5, rate_card_as_of: '2026-10-01' });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('Quality (from prill 0.4.2)');
+    expect(text).toContain('acme/app');
+    expect(text).toContain('Escalation');
+    expect(text).toContain('10.0%');
+    expect(text).toContain('Agreement');
+    expect(text).toContain('90.0%');
+    expect(text).toContain('Escaped defects');
+    expect(text).toContain('3 qualified');
+    expect(text).toContain('0.24 qualified per dollar');
+  });
+
+  it('with cost_usd, shows the cost and the date the prices were read', async () => {
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: 12.5, cost_unpriced_attempts: 2, rate_card_as_of: '2026-10-01' });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('$12.50');
+    expect(text).toContain('Prices as of 2026-10-01');
+    expect(text).toContain('2 attempts not priced');
+  });
+
+  it('without cost_usd, says the cost is not measured because there is no rate card', async () => {
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: null });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain('Enter a rate card below to see cost.');
+    expect(container.textContent).toContain('Not measured');
+    expect(container.textContent).not.toContain('$12.50');
+  });
+
+  it("labels merged-not-reverted as Tack's own figure", async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain("Merged and not reverted (Tack's own)");
+  });
+});
