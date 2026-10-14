@@ -1,5 +1,6 @@
 pub mod attachments;
 pub mod attempt_lists;
+pub mod autonomy;
 pub mod backup;
 pub mod boards_multi;
 pub mod briefs;

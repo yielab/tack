@@ -59,10 +59,10 @@ fn mcp_tool_names() -> Vec<String> {
 }
 
 #[test]
-fn tools_list_advertises_all_sixteen() {
-    // 10 item/project tools plus 6 execution/fleet/profile tools.
+fn tools_list_advertises_all_seventeen() {
+    // 10 item/project tools, 6 execution/fleet/profile tools and get_autonomy.
     let names = mcp_tool_names();
-    assert_eq!(names.len(), 16);
+    assert_eq!(names.len(), 17);
     for expected in [
         "list_projects",
         "create_project",
@@ -75,6 +75,7 @@ fn tools_list_advertises_all_sixteen() {
         "get_execution",
         "cancel_execution",
         "create_execution",
+        "get_autonomy",
     ] {
         assert!(names.iter().any(|n| n == expected), "missing {expected}");
     }

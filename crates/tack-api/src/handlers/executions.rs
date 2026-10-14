@@ -1125,6 +1125,14 @@ pub(crate) async fn enqueue_resolved(
     if let Some(verify) = input.verify {
         snapshot_value["verify"] = json!(verify);
     }
+    // The stages prill must require for this project; the runner sends them as
+    // its `--config` layer. Absent means the project requires none.
+    if let Ok(Some(settings)) =
+        tack_db::repo::autonomy::get_settings(state.repo.pool(), &item.project_id.to_string()).await
+        && !settings.verify_require.is_empty()
+    {
+        snapshot_value["verify_require"] = json!(settings.verify_require);
+    }
     if let Some(push_branch) = input.push_branch {
         snapshot_value["push_branch"] = json!(push_branch);
     }

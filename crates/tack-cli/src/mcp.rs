@@ -108,6 +108,10 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             let projects = call(client.get("/projects"))?;
             Ok(project_list(&projects))
         }
+        "get_autonomy" => {
+            let project_id = require_id(args, "project_id")?;
+            call(client.get(&format!("/projects/{project_id}/autonomy")))
+        }
         "list_items" => {
             let project_id = require_id(args, "project_id")?;
             let mut qs = Vec::new();
@@ -589,6 +593,15 @@ fn tool_specs() -> Value {
             "List all projects.",
             json!({
                 "type": "object", "properties": {}
+            })
+        ),
+        tool(
+            "get_autonomy",
+            "Read how far Tack may merge a project's changes on its own: level, domains, required verification stages, budgets. Read-only.",
+            json!({
+                "type": "object",
+                "properties": { "project_id": { "type": "string", "description": "Project UUID" } },
+                "required": ["project_id"]
             })
         ),
         tool(

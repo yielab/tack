@@ -15,9 +15,10 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
-const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
-const READY: &str = include_str!("../../../../docs/contracts/mrp-v1/fixtures/ready.json");
+pub(crate) const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+pub(crate) const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
+pub(crate) const READY: &str =
+    include_str!("../../../../docs/contracts/mrp-v1/fixtures/ready.json");
 
 async fn setup(
     storage_root: &std::path::Path,
@@ -97,7 +98,7 @@ async fn setup(
     (app, repo, item.id.to_string(), events)
 }
 
-fn operator_headers() -> Vec<(&'static str, &'static str)> {
+pub(crate) fn operator_headers() -> Vec<(&'static str, &'static str)> {
     vec![("authorization", "Bearer e2-mrp-operator-token")]
 }
 
@@ -105,7 +106,7 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
@@ -163,7 +164,7 @@ async fn enroll_runner(app: &axum::Router, name: &str) -> (String, [(String, Str
     )
 }
 
-fn headers_ref(owned: &[(String, String); 1]) -> Vec<(&str, &str)> {
+pub(crate) fn headers_ref(owned: &[(String, String); 1]) -> Vec<(&str, &str)> {
     owned
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -213,19 +214,19 @@ fn execution_request_body(
 
 /// One real, claimed attempt with everything a caller needs to act as its
 /// owning runner afterward (report events, manifest/upload an artifact).
-struct ClaimedAttempt {
-    request_id: String,
-    attempt_id: String,
-    runner_id: String,
-    fencing_token: i64,
-    auth: [(String, String); 1],
+pub(crate) struct ClaimedAttempt {
+    pub(crate) request_id: String,
+    pub(crate) attempt_id: String,
+    pub(crate) runner_id: String,
+    pub(crate) fencing_token: i64,
+    pub(crate) auth: [(String, String); 1],
 }
 
 /// Creates an execution request and claims it — enough state to report
 /// events directly; artifacts additionally need [`accept_and_start`] before
 /// they can be manifested. Returns everything a caller needs to act as the
 /// owning runner afterward.
-async fn request_and_claim(
+pub(crate) async fn request_and_claim(
     app: &axum::Router,
     item_id: &str,
     label: &str,
@@ -271,7 +272,7 @@ async fn request_and_claim(
 /// the artifact manifest route accepts anything (it rejects a merely
 /// `leased` attempt with a named `conflict`, stricter than the repository's
 /// own eligibility check).
-async fn accept_and_start(app: &axum::Router, attempt: &ClaimedAttempt) {
+pub(crate) async fn accept_and_start(app: &axum::Router, attempt: &ClaimedAttempt) {
     let auth = headers_ref(&attempt.auth);
     let (status, accepted, _) = common::send_with_raw(
         app,
@@ -483,7 +484,7 @@ async fn accept_without_the_policy_does_not_move_the_item() {
     assert_eq!(item_status(&repo, &item_id).await, "To Do");
 }
 
-fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
+pub(crate) fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
     json!({
         "protocol_version": 1,
         "runner_id": attempt.runner_id,
@@ -520,7 +521,7 @@ fn completion_with_pushed_branch(attempt: &ClaimedAttempt) -> Value {
 
 /// Mounts the fake GitHub for `acme/widgets`; the pull-request POST must be
 /// called exactly `posts` times (checked when the server drops).
-async fn fake_github(posts: u64) -> wiremock::MockServer {
+pub(crate) async fn fake_github(posts: u64) -> wiremock::MockServer {
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

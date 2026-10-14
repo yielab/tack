@@ -37,6 +37,18 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum ProjectCommands {
+    /// Show how far Tack may merge this project's changes on its own
+    Autonomy {
+        /// Project ID
+        project: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// Start the Tack server and web UI (this is the default when you run
     /// `tack` with no subcommand)
@@ -99,6 +111,12 @@ enum Commands {
         /// Output raw JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// A project's settings
+    Project {
+        #[command(subcommand)]
+        action: ProjectCommands,
     },
 
     /// Add a new item to a project
@@ -960,6 +978,10 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Projects { json } => cmd_projects(&client, json),
 
+        Commands::Project {
+            action: ProjectCommands::Autonomy { project, json },
+        } => cmd_project_autonomy(&client, &project, json),
+
         Commands::Add {
             title,
             project,
@@ -1365,6 +1387,64 @@ fn cmd_import(
     }
     for warning in resp["warnings"].as_array().into_iter().flatten() {
         println!("  warning: {}", warning.as_str().unwrap_or("?"));
+    }
+    Ok(())
+}
+
+fn cmd_project_autonomy(client: &TackClient, project: &str, as_json: bool) -> anyhow::Result<()> {
+    let a = client.get(&format!("/projects/{project}/autonomy"))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&a)?);
+        return Ok(());
+    }
+    let list = |v: &serde_json::Value| {
+        let items: Vec<&str> = v
+            .as_array()
+            .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
+        if items.is_empty() {
+            "-".to_owned()
+        } else {
+            items.join(", ")
+        }
+    };
+    let limit = |v: &serde_json::Value| v.as_f64().map_or("-".to_owned(), |n| n.to_string());
+    println!(
+        "Level:               {}",
+        a["level"].as_str().unwrap_or("?")
+    );
+    println!(
+        "Merge on Done:       {}",
+        a["merge_on_done"].as_bool().unwrap_or(false)
+    );
+    println!("Required stages:     {}", list(&a["verify_require"]));
+    println!(
+        "Signing key:         {}",
+        if a["attestation_public_key"].is_string() {
+            "set"
+        } else {
+            "none"
+        }
+    );
+    println!("Loop cap:            {}", a["verify_loop_max_attempts"]);
+    let b = &a["budgets"];
+    println!(
+        "Budgets per day:     tokens {}, usd {}, auto merges {}, review queue {}",
+        limit(&b["tokens_per_day"]),
+        limit(&b["usd_per_day"]),
+        limit(&b["auto_merges_per_day"]),
+        limit(&b["queue_items_max"])
+    );
+    println!("Domains:");
+    let empty = vec![];
+    for d in a["domains"].as_array().unwrap_or(&empty) {
+        println!(
+            "  {}  {}  paths: {}  types: {}",
+            d["level"].as_str().unwrap_or("?"),
+            d["name"].as_str().unwrap_or("?"),
+            list(&d["path_globs"]),
+            list(&d["item_types"])
+        );
     }
     Ok(())
 }

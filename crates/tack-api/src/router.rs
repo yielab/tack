@@ -21,10 +21,10 @@ use crate::handlers::local_runner::LocalRunnerControl;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    attachments, attempt_lists, backup, boards_multi, briefs, comments, custom_fields, decisions,
-    dependencies, executions, export, import_github, import_linear, items, local_runner, metrics,
-    mrp, outline, projects, roles, runner_admin, runner_protocol, settings, sprints, templates,
-    websocket,
+    attachments, attempt_lists, autonomy, backup, boards_multi, briefs, comments, custom_fields,
+    decisions, dependencies, executions, export, import_github, import_linear, items, local_runner,
+    metrics, mrp, outline, projects, roles, runner_admin, runner_protocol, settings, sprints,
+    templates, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, refuse_cross_site, require_host, require_token, set_session_cookie,
@@ -327,6 +327,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/items/{item_id}/brief/versions",
             get(briefs::list_brief_versions),
+        )
+        .route(
+            "/projects/{id}/autonomy",
+            get(autonomy::get_autonomy).put(autonomy::put_autonomy),
         )
         .route(
             "/projects/{id}/metrics/factory",

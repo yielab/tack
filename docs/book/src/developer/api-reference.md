@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (93 paths, 128 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (94 paths, 130 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -378,6 +378,41 @@ Roles / specialties and their assignment to items.
 |---|---|---|
 | 200 | Deleted | — |
 | 404 | Role not found | `ErrorEnvelope` |
+
+---
+
+## Autonomy
+
+How far Tack may merge a project's changes on its own.
+
+#### `GET /api/projects/{id}/autonomy`
+
+GET /api/projects/:id/autonomy
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project's autonomy settings | `AutonomySettings` |
+| 404 | No such project | `ErrorEnvelope` |
+
+#### `PUT /api/projects/{id}/autonomy`
+
+PUT /api/projects/:id/autonomy
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+**Request body:** `AutonomySettings`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The settings now in force | `AutonomySettings` |
+| 400 | An unknown level, a nameless or repeated domain, a negative limit | `ErrorEnvelope` |
+| 404 | No such project | `ErrorEnvelope` |
 
 ---
 
