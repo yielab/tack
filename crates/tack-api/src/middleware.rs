@@ -285,10 +285,12 @@ pub async fn require_token(
     }
 
     let Some(ref expected) = state.config.api_token else {
-        // No token configured: pure-local mode, allow everything. A
-        // non-loopback bind reaching this branch is refused earlier, at
-        // startup, by `AppConfig::validate_security` — this function never
-        // has to tell "no token, loopback" apart from "no token, exposed".
+        // No token configured. A loopback bind always has one
+        // (`AppConfig::ensure_api_token` creates it), and a non-loopback bind
+        // without one is refused at startup by `AppConfig::validate_security`,
+        // so this branch is reached only when the operator bound a
+        // non-loopback address with TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1
+        // and accepted an open API.
         return Ok(next.run(req).await);
     };
 

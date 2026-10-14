@@ -1,0 +1,44 @@
+{
+  "contract": "metrics/v1",
+  "computedAt": "2026-10-14T00:17:24Z",
+  "since": null,
+  "counts": {
+    "mrps": 1,
+    "autoMergeEligible": 1,
+    "humanReview": 0,
+    "reject": 0
+  },
+  "verificationTax": {
+    "tokens": {
+      "input": 0,
+      "output": 0
+    },
+    "seconds": 1.567,
+    "perChange": {
+      "inputTokens": 0.0,
+      "outputTokens": 0.0,
+      "seconds": 1.567
+    }
+  },
+  "escalationRate": 0.0,
+  "outcomes": {
+    "merged": 1,
+    "closed": 0,
+    "reverted": 1,
+    "redCi": 0
+  },
+  "escapedDefects": {
+    "merged": 1,
+    "escaped": 1,
+    "rate": 1.0
+  },
+  "agreement": {
+    "decided": 1,
+    "agreed": 1,
+    "rate": 1.0,
+    "humanReviewMerged": 0,
+    "humanReviewClosed": 0
+  },
+  "qualified": 0,
+  "qualifiedRate": null
+}

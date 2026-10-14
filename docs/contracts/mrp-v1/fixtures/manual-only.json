@@ -70,7 +70,7 @@
     "kind": "none"
   },
   "produced_by": {
-    "program": "assay",
+    "program": "prill",
     "version": "0.1.0"
   }
 }

@@ -1,0 +1,345 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "cli-ad0eea1455de",
+      "digest": {
+        "gitCommit": "ad0eea1455de382abb4f7c41129d524a14ddcbf5"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/yielab/prill/mrp/v1",
+  "predicate": {
+    "contract": "mrp/v1",
+    "createdAt": "2026-10-14T00:17:11Z",
+    "prill": {
+      "name": "prill",
+      "version": "0.1.0"
+    },
+    "attempt": {
+      "attemptId": "cli-ad0eea1455de",
+      "harness": {
+        "name": "unknown",
+        "version": null
+      },
+      "baseCommit": "d705833ec4b0ee5a4ec97e5c8bb2a88f0521922f",
+      "headCommit": "ad0eea1455de382abb4f7c41129d524a14ddcbf5",
+      "trajectory": null
+    },
+    "brief": {
+      "sha256": "23acb61f3edf3b0b56e027802181cf2a17409e731adccc9c36e1fd8447e54477",
+      "id": "add-sub",
+      "objective": "Add sub() to calc."
+    },
+    "config": {
+      "version": 1,
+      "layers": [
+        {
+          "source": "base",
+          "sha256": "b791e16bae1e55fbe4ba26748b258041fbeb64f509915f781f1804f3aeee1ea7"
+        },
+        {
+          "source": "cli",
+          "sha256": null
+        }
+      ],
+      "effectiveSha256": "737004fbc96c254cea0d77a3970999573e7ceb3615c244e89a467aa49a122dde",
+      "changedInHead": false
+    },
+    "sandbox": {
+      "backend": "docker",
+      "image": "sha256:3bb5d92883ee1b23602601d2e5c91c08695064f852f3158e4a0a300037c1ca50",
+      "imageId": "sha256:3bb5d92883ee1b23602601d2e5c91c08695064f852f3158e4a0a300037c1ca50",
+      "imagePinned": true,
+      "network": "none",
+      "limits": {
+        "cpus": 2.0,
+        "memoryMb": 2048,
+        "pids": 512,
+        "tmpfsMb": 512,
+        "commandTimeoutS": 600,
+        "totalTimeoutS": 3600,
+        "outputTailBytes": 65536
+      },
+      "prepare": null
+    },
+    "diff": {
+      "filesChanged": 2,
+      "insertions": 9,
+      "deletions": 0,
+      "files": [
+        {
+          "path": "src/calc.py",
+          "status": "modified",
+          "insertions": 4,
+          "deletions": 0,
+          "changedLines": [
+            {
+              "start": 3,
+              "end": 6
+            }
+          ]
+        },
+        {
+          "path": "tests/test_calc.py",
+          "status": "modified",
+          "insertions": 5,
+          "deletions": 0,
+          "changedLines": [
+            {
+              "start": 7,
+              "end": 11
+            }
+          ]
+        }
+      ]
+    },
+    "stages": [
+      {
+        "name": "checkout",
+        "status": "passed",
+        "reason": null,
+        "detail": null,
+        "durationS": 0.009,
+        "tokens": null
+      },
+      {
+        "name": "criteria",
+        "status": "passed",
+        "reason": null,
+        "detail": null,
+        "durationS": 0.465,
+        "tokens": null
+      },
+      {
+        "name": "anti_tautology",
+        "status": "passed",
+        "reason": null,
+        "detail": null,
+        "durationS": 0.729,
+        "tokens": null
+      },
+      {
+        "name": "suite",
+        "status": "passed",
+        "reason": null,
+        "detail": null,
+        "durationS": 0.364,
+        "tokens": null
+      },
+      {
+        "name": "coverage",
+        "status": "not_applicable",
+        "reason": "no_coverage_command",
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      },
+      {
+        "name": "mutation",
+        "status": "not_applicable",
+        "reason": "no_mutation_tool",
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      },
+      {
+        "name": "static_analysis",
+        "status": "not_applicable",
+        "reason": "no_static_tools",
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      },
+      {
+        "name": "complexity",
+        "status": "not_applicable",
+        "reason": "no_complexity_tool",
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      },
+      {
+        "name": "judge",
+        "status": "not_applicable",
+        "reason": "no_judge",
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      },
+      {
+        "name": "risk",
+        "status": "passed",
+        "reason": null,
+        "detail": null,
+        "durationS": 0.0,
+        "tokens": null
+      }
+    ],
+    "criteria": [
+      {
+        "id": "unit",
+        "type": "command",
+        "status": "pass",
+        "reason": null,
+        "evidence": {
+          "kind": "command",
+          "command": "python -m pytest -q",
+          "exitCode": 0,
+          "expectedExitCode": 0,
+          "timedOut": false,
+          "outputTail": "..                                                                       [100%]\n2 passed in 0.10s\n",
+          "truncated": false,
+          "durationS": 0.465
+        },
+        "value": null
+      }
+    ],
+    "antiTautology": {
+      "tests": [
+        {
+          "path": "tests/test_calc.py",
+          "suite": "python",
+          "change": "modified",
+          "base": "fail",
+          "head": "pass",
+          "verdict": "discriminating",
+          "granularity": "testcase",
+          "evidence": {
+            "base": {
+              "kind": "command",
+              "command": "python -m pytest -q tests/test_calc.py --junitxml=.prill-antitaut-1-base.xml",
+              "exitCode": 1,
+              "expectedExitCode": 0,
+              "timedOut": false,
+              "outputTail": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n___________________________________ test_sub ___________________________________\n\n    def test_sub():\n>       from calc import sub\nE       ImportError: cannot import name 'sub' from 'calc' (/work/src/calc.py)\n\ntests/test_calc.py:10: ImportError\n=========================== short test summary info ============================\nFAILED tests/test_calc.py::test_sub - ImportError: cannot import name 'sub' from 'calc' (/work/src/calc.py)\n1 failed, 1 passed in 0.09s\n",
+              "truncated": false,
+              "durationS": 0.364
+            },
+            "head": {
+              "kind": "command",
+              "command": "python -m pytest -q tests/test_calc.py --junitxml=.prill-antitaut-1-head.xml",
+              "exitCode": 0,
+              "expectedExitCode": 0,
+              "timedOut": false,
+              "outputTail": "..                                                                       [100%]\n2 passed in 0.08s\n",
+              "truncated": false,
+              "durationS": 0.365
+            }
+          },
+          "cases": [
+            {
+              "id": "tests.test_calc::test_add",
+              "base": "pass",
+              "head": "pass",
+              "verdict": "tautological"
+            },
+            {
+              "id": "tests.test_calc::test_sub",
+              "base": "fail",
+              "head": "pass",
+              "verdict": "discriminating"
+            }
+          ]
+        }
+      ],
+      "skippedTests": [],
+      "deletedTests": []
+    },
+    "constraints": [],
+    "suite": {
+      "command": {
+        "kind": "command",
+        "command": "python -m pytest -q --junitxml=.prill-junit.xml",
+        "exitCode": 0,
+        "expectedExitCode": 0,
+        "timedOut": false,
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.08s\n",
+        "truncated": false,
+        "durationS": 0.364
+      },
+      "report": "present",
+      "totals": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "failedCases": []
+    },
+    "coverage": {
+      "command": null,
+      "format": null,
+      "report": null,
+      "measured": null,
+      "covered": null,
+      "share": null,
+      "minChanged": null,
+      "uncovered": []
+    },
+    "mutation": {
+      "tool": null,
+      "files": [],
+      "totals": null,
+      "score": null,
+      "survivors": []
+    },
+    "staticAnalysis": {
+      "tools": [],
+      "newFindings": [],
+      "fixed": 0
+    },
+    "complexity": {
+      "commands": [],
+      "reportHead": null,
+      "reportBase": null,
+      "files": [],
+      "functions": [],
+      "delta": null,
+      "maxCcnHead": null,
+      "budgets": []
+    },
+    "judge": {
+      "model": null,
+      "family": null,
+      "generatorFamily": null,
+      "verdicts": [],
+      "filesSent": 0,
+      "filesOmitted": 0,
+      "diffBytes": 0
+    },
+    "risk": {
+      "level": "low",
+      "changedLines": 9,
+      "signals": []
+    },
+    "claims": null,
+    "flags": [],
+    "recommendation": {
+      "decision": "auto-merge-eligible",
+      "reasons": [
+        {
+          "severity": "info",
+          "code": "all_gates_passed",
+          "detail": ""
+        }
+      ]
+    },
+    "nextSteps": [],
+    "tools": [
+      {
+        "name": "git",
+        "version": "2.43.0"
+      },
+      {
+        "name": "python",
+        "version": "3.13.12"
+      },
+      {
+        "name": "docker",
+        "version": "29.8.1"
+      }
+    ]
+  }
+}

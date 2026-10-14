@@ -48,7 +48,7 @@
     }
   ],
   "verify": {
-    "command": "assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json",
+    "command": "prill verify --repo /tmp/work --evidence /tmp/evidence --out /tmp/out --json",
     "exit_code": 1,
     "output_tail": "FAILED: Build failed\nFAILED: Tests failed\n",
     "duration_s": 5.2
@@ -99,7 +99,7 @@
     "kind": "none"
   },
   "produced_by": {
-    "program": "assay",
+    "program": "prill",
     "version": "0.1.0"
   }
 }

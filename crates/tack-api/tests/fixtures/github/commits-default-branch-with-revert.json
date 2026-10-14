@@ -1,0 +1,20 @@
+[
+  {
+    "sha": "1f2e3d4c5b6a79881726354a5b6c7d8e9f0a1b2c",
+    "commit": {
+      "message": "Revert \"Add sub to calc\"\n\nThis reverts commit e5bd3914e2e596debea16f433f57875b5b90bcd6.",
+      "author": {
+        "date": "2026-10-14T09:00:00Z"
+      }
+    }
+  },
+  {
+    "sha": "e5bd3914e2e596debea16f433f57875b5b90bcd6",
+    "commit": {
+      "message": "Merge pull request #7 from example/tack/add-sub\n\nAdd sub to calc",
+      "author": {
+        "date": "2026-10-13T18:00:00Z"
+      }
+    }
+  }
+]

@@ -9,25 +9,25 @@ const FIXTURES: [(&str, &str, u64, &str); 4] = [
     (
         "ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/ready.json"),
-        0x99c7_e26e_3263_2dfe,
+        0xc2b1_f791_13ac_3662,
         "Ready to merge (low risk)",
     ),
     (
         "not-ready",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/not-ready.json"),
-        0x516a_3523_3e5e_da30,
+        0x96cc_27df_71b8_f2b6,
         "Not ready (high risk)",
     ),
     (
         "manual-only",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/manual-only.json"),
-        0xad4d_4323_c513_84ac,
+        0x55b4_80c5_4c35_00c2,
         "Needs review (medium risk)",
     ),
     (
         "verifier-failed",
         include_str!("../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json"),
-        0x19d3_92e3_00d9_48da,
+        0x733d_cfa7_0dbd_506c,
         "Not ready (high risk)",
     ),
 ];
@@ -86,7 +86,7 @@ All criteria passed, risk is low, ready for merge
 
 ## Verification
 
-**Command:** `assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json`
+**Command:** `prill verify --repo /tmp/work --evidence /tmp/evidence --out /tmp/out --json`
 
 **Exit code:** 0
 
@@ -131,5 +131,5 @@ All criteria passed
 
 ## Produced By
 
-assay 0.1.0
+prill 0.1.0
 "#;

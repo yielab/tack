@@ -1,0 +1,1 @@
+{"contract": "briefing/v1", "id": "add-sub", "objective": "Add sub() to calc.", "acceptance": [{"type": "command", "id": "unit", "command": "python -m pytest -q"}]}

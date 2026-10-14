@@ -1,0 +1,5 @@
+{
+  "message": "At least 1 approving review is required by reviewers with write access.",
+  "documentation_url": "https://docs.github.com/articles/about-protected-branches",
+  "status": "405"
+}

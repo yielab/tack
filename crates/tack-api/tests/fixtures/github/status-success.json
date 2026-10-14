@@ -1,0 +1,12 @@
+{
+  "state": "success",
+  "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+  "total_count": 1,
+  "statuses": [
+    {
+      "state": "success",
+      "context": "ci/legacy",
+      "description": "The build succeeded"
+    }
+  ]
+}

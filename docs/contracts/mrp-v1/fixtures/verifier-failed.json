@@ -48,7 +48,7 @@
     }
   ],
   "verify": {
-    "command": "assay --workspace /tmp/work --evidence /tmp/evidence --output /tmp/mrp.json",
+    "command": "prill verify --repo /tmp/work --evidence /tmp/evidence --out /tmp/out --json",
     "exit_code": 127,
     "output_tail": "Error: workspace not found\nCannot proceed with verification\n",
     "duration_s": 0.3
@@ -75,7 +75,7 @@
     "kind": "none"
   },
   "produced_by": {
-    "program": "assay",
+    "program": "prill",
     "version": "0.1.0"
   }
 }

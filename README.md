@@ -128,7 +128,9 @@ machines. See the [architecture](https://yielab.github.io/tack/developer/index.h
 
 Tack starts the agent on your computer, with your user's permissions. What it may do is
 set first by the agent's own permission settings, then by what you give Tack: the folder a
-project points at and the credentials the runner holds. The API requires a token.
+project points at and the credentials the runner holds. The API requires a token, unless you bind
+a non-loopback address with `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`, which turns it off on
+purpose.
 [What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) explains
 each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
