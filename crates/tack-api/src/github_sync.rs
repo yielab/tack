@@ -715,6 +715,10 @@ async fn follow_merged_inner(
     let commits: Vec<Commit> = resp.json().await?;
 
     let at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    // CI on a commit settles once it has run; reading it again for the whole
+    // 14-day window would cost two calls per merged pull request every tick.
+    let ci_cutoff =
+        (now - chrono::Duration::hours(24)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     for row in &merged {
         let Some(sha) = row.merge_sha.as_deref() else {
             continue;
@@ -726,6 +730,10 @@ async fn follow_merged_inner(
             continue;
         }
         if row.red_ci_at.is_none()
+            && row
+                .merged_at
+                .as_deref()
+                .is_some_and(|merged| merged >= ci_cutoff.as_str())
             && ci_state(client, base, token, repo, sha).await? == tack_core::autonomy::CiState::Red
         {
             tack_db::repo::pull_requests::set_red_ci_at(state.pool(), repo, row.number, &at)

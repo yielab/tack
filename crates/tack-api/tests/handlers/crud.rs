@@ -2248,17 +2248,18 @@ async fn mount_merged_pull_request(gh: &wiremock::MockServer, commits: &str) {
     }
 }
 
-/// Marks the seeded PR 7 merged yesterday, so it is inside the 14-day window.
+/// Marks the seeded PR 7 merged an hour ago: inside the 14-day revert window
+/// and the 24-hour window in which its merge commit's CI is still read.
 async fn merge_seeded_pull_request(state: &tack_api::AppState) {
-    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1))
+    let merged_at = (chrono::Utc::now() - chrono::Duration::hours(1))
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     tack_db::repo::pull_requests::observe(
         state.pool(),
         "acme/widgets",
         7,
         "merged",
-        Some(&yesterday),
-        Some(&yesterday),
+        Some(&merged_at),
+        Some(&merged_at),
     )
     .await
     .unwrap();
