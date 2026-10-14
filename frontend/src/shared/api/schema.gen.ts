@@ -166,6 +166,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attempts/{attempt_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
+         *     attempt's pull request at its head commit, opening the pull request first when
+         *     it is missing; a refusal is a `409` carrying the reason, already recorded on
+         *     the item.
+         */
+        post: operations["merge_attempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backup": {
         parameters: {
             query?: never;
@@ -3043,6 +3065,15 @@ export interface components {
             /** Format: int32 */
             protocol_version: number;
         };
+        /** @description The Merge button's state: `reason` says why it is disabled, `null` when enabled. */
+        AttemptMerge: {
+            enabled: boolean;
+            /**
+             * @description Why the button is disabled; when it is enabled, what held its last press
+             *     (CI is read on the press, not to draw the button).
+             */
+            reason?: string | null;
+        };
         /**
          * @description The pull request an attempt opened: `state` is `open`, `merged`, `closed` or
          *     `reverted`.
@@ -3089,6 +3120,8 @@ export interface components {
             last_heartbeat_at?: string | null;
             lease_expires_at: string;
             lease_issued_at: string;
+            /** @description Whether the Merge button may be pressed, and why not. */
+            merge: components["schemas"]["AttemptMerge"];
             model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
@@ -3286,6 +3319,12 @@ export interface components {
             /** Format: uuid */
             item_id: string;
             metadata: unknown;
+            /**
+             * @description `mcp` marks a run an agent started through `tack mcp`: it is never merged
+             *     automatically or by a move to Done, only by the Merge button. Any other
+             *     value, or none, means a person started it.
+             */
+            origin?: string | null;
             /**
              * @description `tack_orch::execution::PermissionPolicy` (`{tools, network,
              *     approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
@@ -4894,6 +4933,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    merge_attempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution attempt ID (opaque) */
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merged; carries the merge commit's sha */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict: the merge was held, the message says why */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
         };

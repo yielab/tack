@@ -48,6 +48,20 @@ impl Default for FactsExtra {
     }
 }
 
+const NOT_LINKED: &str =
+    "The task is not linked to a GitHub issue, so no pull request can be opened";
+const NO_TOKEN: &str = "GitHub is not reachable from this board (no GitHub token is set), so no pull request can be opened or merged";
+const ALREADY_MERGED: &str = "Already merged";
+const TOKEN_REFUSED: &str = "The GitHub token can't merge";
+
+fn github_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+}
+
 fn ci_text(ci: CiState) -> &'static str {
     match ci {
         CiState::Green => "green",
@@ -121,15 +135,7 @@ pub async fn attempt(
 
     let project = context.project_id.parse().unwrap_or_default();
     let Some(token) = github_token_for_project(state, project).await else {
-        return held(
-            state,
-            &context.item_id,
-            row,
-            previous,
-            "GitHub is not reachable from this board (no GitHub token is set), so no pull request can be opened or merged"
-                .to_owned(),
-        )
-        .await;
+        return held(state, &context.item_id, row, previous, NO_TOKEN.to_owned()).await;
     };
     let mut pr = pull_requests::get_for_attempt(pool, attempt_id)
         .await
@@ -161,19 +167,14 @@ pub async fn attempt(
     };
     let (Some(pr), Some(head)) = (pr, head) else {
         let reason = if !linked {
-            "The task is not linked to a GitHub issue, so no pull request can be opened"
+            NOT_LINKED
         } else {
             "No pull request could be opened: the branch was not pushed or GitHub refused it"
         };
         return held(state, &context.item_id, row, previous, reason.to_owned()).await;
     };
 
-    let client = match reqwest::Client::builder()
-        .user_agent("Tack/1.0 (github.com/yielab/tack)")
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-    {
+    let client = match github_client() {
         Ok(client) => client,
         Err(error) => return held(state, &context.item_id, row, previous, error.to_string()).await,
     };
@@ -225,6 +226,126 @@ pub async fn attempt(
             Ok(sha)
         }
     }
+}
+
+/// Why the Merge button cannot be pressed on this attempt now; `None` when it
+/// can. It reads the ledger, the pull request and, for an open one, CI on the
+/// head commit; it never opens a pull request or merges.
+pub async fn disabled_reason(state: &AppState, attempt_id: &str) -> Option<String> {
+    let pool = state.repo.pool();
+    let Ok(Some(context)) = ledger::attempt_context(pool, attempt_id).await else {
+        return Some("The attempt could not be read".to_owned());
+    };
+    let previous = ledger::get_merge(pool, attempt_id).await.ok().flatten();
+    if previous.as_ref().is_some_and(|row| row.merged_at.is_some()) {
+        return Some(ALREADY_MERGED.to_owned());
+    }
+    let attempt_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
+            .bind(attempt_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    let git = context
+        .actual_execution
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .map(|v| v["git"].clone())
+        .unwrap_or(Value::Null);
+    if attempt_state.as_deref() != Some("succeeded")
+        || git["pushed"] != true
+        || git["head_commit"].as_str().is_none()
+    {
+        return Some("The run has not finished with a pushed branch to merge".to_owned());
+    }
+    let Ok(Some(pr)) = pull_requests::get_for_attempt(pool, attempt_id).await else {
+        let linked = match context.item_id.parse() {
+            Ok(item) => state
+                .repo
+                .get_github_link(item)
+                .await
+                .ok()
+                .flatten()
+                .is_some(),
+            Err(_) => false,
+        };
+        return (!linked).then(|| NOT_LINKED.to_owned());
+    };
+    match pr.state.as_str() {
+        "open" => {}
+        "merged" => return Some(ALREADY_MERGED.to_owned()),
+        other => return Some(format!("The pull request is {other}")),
+    }
+    if let Some(reason) = previous
+        .and_then(|row| row.held_reason)
+        .filter(|reason| reason.starts_with(TOKEN_REFUSED))
+    {
+        return Some(reason);
+    }
+    let project = context.project_id.parse().unwrap_or_default();
+    if github_token_for_project(state, project).await.is_none() {
+        return Some(NO_TOKEN.to_owned());
+    }
+    // CI is read when the button is pressed, never to draw it: a list of
+    // attempts would otherwise call GitHub on every refresh.
+    None
+}
+
+/// The button as the attempts list draws it: enabled when nothing local stops
+/// a merge, with what held the last press as its reason; disabled with why.
+pub async fn button(state: &AppState, attempt_id: &str) -> (bool, Option<String>) {
+    if let Some(reason) = disabled_reason(state, attempt_id).await {
+        return (false, Some(reason));
+    }
+    let last_hold = ledger::get_merge(state.repo.pool(), attempt_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.held_reason);
+    (true, last_hold)
+}
+
+/// An item entered a Done status. When its project merges on Done, the latest
+/// succeeded attempt that pushed a branch is merged with the `done` trigger,
+/// unless a person did not make the move (it came over MCP): then only the
+/// item is told. CI still running leaves a held row the tick retries.
+pub async fn on_done(state: &AppState, item_id: &str, project_id: &str, moved_over_mcp: bool) {
+    let pool = state.repo.pool();
+    let wanted = ledger::get_settings(pool, project_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|settings| settings.merge_on_done);
+    if !wanted {
+        return;
+    }
+    let attempt_id: Option<String> = sqlx::query_scalar(
+        "SELECT a.id FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.item_id = ? AND a.state = 'succeeded'
+           AND json_extract(a.actual_execution, '$.git.pushed') = 1
+           AND json_extract(a.actual_execution, '$.git.head_commit') IS NOT NULL
+         ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1",
+    )
+    .bind(item_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let Some(attempt_id) = attempt_id else {
+        return;
+    };
+    if moved_over_mcp {
+        tell(
+            state,
+            item_id,
+            "Moved to Done over MCP: not merged; use Merge".to_owned(),
+        )
+        .await;
+        return;
+    }
+    let _ = attempt(state, &attempt_id, Trigger::Done, FactsExtra::default()).await;
 }
 
 /// Record that the merge did not happen, and say so on the item when the reason

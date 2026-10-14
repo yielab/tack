@@ -187,7 +187,7 @@ async fn create_agent_profile(app: &axum::Router, label: &str) -> String {
     profile["agent_profile_id"].as_str().unwrap().to_owned()
 }
 
-fn execution_request_body(
+pub(crate) fn execution_request_body(
     item_id: &str,
     key: &str,
     runner_id: &str,

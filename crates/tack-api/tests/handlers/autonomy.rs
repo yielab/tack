@@ -23,13 +23,13 @@ const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
 const ATTESTATION_MEDIA_TYPE: &str = "application/vnd.in-toto+json";
 const KEY_ID: &str = "f239d6c81feedf3a944a2a940f89f0ca4af0a2f05207185c19997eb09d7476f6";
 
-fn fixture(name: &str) -> Value {
+pub(crate) fn fixture(name: &str) -> Value {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/github/");
     serde_json::from_str(&std::fs::read_to_string(format!("{dir}{name}")).unwrap()).unwrap()
 }
 
 /// A prill that answers `attest verify` with the captured valid output.
-fn fake_prill(dir: &std::path::Path) -> String {
+pub(crate) fn fake_prill(dir: &std::path::Path) -> String {
     use std::os::unix::fs::PermissionsExt;
     let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/prill/");
     let script = dir.join("prill");
@@ -42,14 +42,14 @@ fn fake_prill(dir: &std::path::Path) -> String {
     script.display().to_string()
 }
 
-struct Board {
-    app: axum::Router,
-    state: AppState,
-    item_id: String,
-    project_id: String,
+pub(crate) struct Board {
+    pub(crate) app: axum::Router,
+    pub(crate) state: AppState,
+    pub(crate) item_id: String,
+    pub(crate) project_id: String,
 }
 
-async fn board(storage: &std::path::Path, github: Option<&str>, prill: &str) -> Board {
+pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill: &str) -> Board {
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
     let workspace_id = Uuid::new_v4();
@@ -124,13 +124,13 @@ async fn board(storage: &std::path::Path, github: Option<&str>, prill: &str) -> 
 }
 
 /// What a scenario changes from the all-green acceptance setup.
-struct Setup {
-    domain_level: &'static str,
-    linked: bool,
-    github: bool,
-    signed: bool,
-    verify_require: Vec<&'static str>,
-    merges_per_day: Option<i64>,
+pub(crate) struct Setup {
+    pub(crate) domain_level: &'static str,
+    pub(crate) linked: bool,
+    pub(crate) github: bool,
+    pub(crate) signed: bool,
+    pub(crate) verify_require: Vec<&'static str>,
+    pub(crate) merges_per_day: Option<i64>,
 }
 
 impl Default for Setup {
@@ -146,7 +146,7 @@ impl Default for Setup {
     }
 }
 
-async fn put_autonomy(b: &Board, setup: &Setup) -> (StatusCode, Value) {
+pub(crate) async fn put_autonomy(b: &Board, setup: &Setup) -> (StatusCode, Value) {
     common::send(
         &b.app,
         "PUT",
@@ -213,7 +213,7 @@ async fn upload(
 }
 
 /// A finished attempt with its pack, evidence and (when `signed`) attestation.
-async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt {
+pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt {
     if setup.linked {
         b.state
             .repo
@@ -328,7 +328,7 @@ async fn github(ci_running_first: bool, merges: u64) -> MockServer {
     gh
 }
 
-async fn merge_row(
+pub(crate) async fn merge_row(
     b: &Board,
     attempt_id: &str,
 ) -> Option<(
@@ -348,7 +348,7 @@ async fn merge_row(
     .unwrap()
 }
 
-async fn comments(b: &Board) -> String {
+pub(crate) async fn comments(b: &Board) -> String {
     sqlx::query_scalar::<_, String>(
         "SELECT content FROM comments WHERE item_id = ? AND author = 'system'",
     )

@@ -315,6 +315,11 @@ pub struct CreateExecution {
     /// configuration decides whether a push exists; `true` never enables one.
     #[serde(default)]
     pub push_branch: Option<bool>,
+    /// `mcp` marks a run an agent started through `tack mcp`: it is never merged
+    /// automatically or by a move to Done, only by the Merge button. Any other
+    /// value, or none, means a person started it.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 /// Response body for `POST /api/executions` — a newly created request or an
@@ -534,6 +539,17 @@ pub struct AttemptSummary {
     pub pull_request: Option<AttemptPullRequest>,
     /// The operator's verdict on this attempt, or `null` while unreviewed.
     pub review: Option<AttemptReview>,
+    /// Whether the Merge button may be pressed, and why not.
+    pub merge: AttemptMerge,
+}
+
+/// The Merge button's state: `reason` says why it is disabled, `null` when enabled.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptMerge {
+    pub enabled: bool,
+    /// Why the button is disabled; when it is enabled, what held its last press
+    /// (CI is read on the press, not to draw the button).
+    pub reason: Option<String>,
 }
 
 /// An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.
@@ -618,6 +634,7 @@ pub fn routes(state: OperatorExecutionState) -> Router {
             "/executions/{request_id}/attempts/{attempt_number}/events",
             get(list_execution_attempt_events),
         )
+        .route("/attempts/{attempt_id}/merge", post(merge_attempt))
         .route(
             "/executions/{request_id}/cancel",
             post(request_cancellation),
@@ -1136,6 +1153,9 @@ pub(crate) async fn enqueue_resolved(
     if let Some(push_branch) = input.push_branch {
         snapshot_value["push_branch"] = json!(push_branch);
     }
+    if input.origin.as_deref() == Some("mcp") {
+        snapshot_value["origin"] = json!("mcp");
+    }
     let typed_snapshot: ExecutionRequestSnapshot =
         serde_json::from_value(snapshot_value).map_err(|err| {
             error(
@@ -1509,6 +1529,17 @@ pub async fn list_execution_attempts(
             );
         }
     }
+    let mut merges = std::collections::HashMap::new();
+    for attempt in &attempts {
+        let (enabled, reason) = match &state.app {
+            Some(app) => crate::merge::button(app, &attempt.id).await,
+            None => (
+                false,
+                Some("Merging is not available on this board".to_owned()),
+            ),
+        };
+        merges.insert(attempt.id.clone(), AttemptMerge { enabled, reason });
+    }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
         .map(|attempt| {
@@ -1553,6 +1584,9 @@ pub async fn list_execution_attempts(
                 sandbox,
                 pull_request: pull_requests.remove(&attempt.id),
                 review: reviews.remove(&attempt.id),
+                merge: merges
+                    .remove(&attempt.id)
+                    .expect("one merge state per attempt"),
                 attempt_id: attempt.id,
                 request_id: attempt.request_id,
                 attempt_number: attempt.attempt_number,
@@ -1594,6 +1628,58 @@ pub async fn list_execution_attempts(
         protocol_version: 1,
         data,
     }))
+}
+
+/// `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
+/// attempt's pull request at its head commit, opening the pull request first when
+/// it is missing; a refusal is a `409` carrying the reason, already recorded on
+/// the item.
+#[utoipa::path(
+    post,
+    path = "/api/attempts/{attempt_id}/merge",
+    tag = "execution-operator",
+    params(("attempt_id" = String, Path, description = "Execution attempt ID (opaque)")),
+    responses(
+        (status = 200, description = "Merged; carries the merge commit's sha", body = serde_json::Value),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict: the merge was held, the message says why", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn merge_attempt(
+    State(state): State<OperatorExecutionState>,
+    Path(attempt_id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let exists: Option<String> =
+        sqlx::query_scalar("SELECT id FROM execution_attempts WHERE id = ?")
+            .bind(&attempt_id)
+            .fetch_optional(state.repo.pool())
+            .await
+            .ok()
+            .flatten();
+    let (Some(_), Some(app)) = (exists, state.app.as_ref()) else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Execution attempt does not exist",
+            json!({"resource": "execution_attempt"}),
+        ));
+    };
+    match crate::merge::attempt(
+        app,
+        &attempt_id,
+        tack_core::autonomy::Trigger::Button,
+        crate::merge::FactsExtra::default(),
+    )
+    .await
+    {
+        Ok(sha) => Ok(Json(json!({"merged": true, "merge_sha": sha}))),
+        Err(reason) => Err(error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            &reason,
+            json!({"resource": "execution_attempt"}),
+        )),
+    }
 }
 
 /// `GET /api/executions/{request_id}/attempts/{attempt_number}/events` —

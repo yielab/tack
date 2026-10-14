@@ -216,6 +216,7 @@ pub async fn update_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
+    from_mcp: Option<axum::Extension<crate::middleware::FromMcp>>,
     input: Result<Json<UpdateItem>, JsonRejection>,
 ) -> ApiResult<Response> {
     // A body that is not an `UpdateItem` (a `run_settings` that is not an
@@ -291,6 +292,24 @@ pub async fn update_item(
 
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
+
+    // Into Done: merge the finished run when the project asks for it.
+    if item.status != old_status
+        && project.workflow.is_done_status(&item.status)
+        && !project.workflow.is_done_status(&old_status)
+    {
+        // In the background: the move answers at once, and the merge (or why it
+        // did not happen) lands on the item's activity.
+        let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
+        let (app, item_id, project_id) = (
+            state.clone(),
+            item.id.to_string(),
+            item.project_id.to_string(),
+        );
+        tokio::spawn(async move {
+            crate::merge::on_done(&app, &item_id, &project_id, over_mcp).await;
+        });
+    }
 
     let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
     response.headers_mut().insert(

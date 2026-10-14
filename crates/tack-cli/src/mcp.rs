@@ -23,6 +23,7 @@ const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 ///
 /// `stdout` carries the protocol — nothing else may be written there.
 pub fn run(client: &TackClient) -> anyhow::Result<()> {
+    let client = &client.marked_mcp();
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -354,7 +355,8 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 timeout_seconds,
                 status_map_policy_id: status_map_policy_id.as_deref(),
             };
-            let body = execution::create_execution_body(&selector, values);
+            let mut body = execution::create_execution_body(&selector, values);
+            body["origin"] = json!("mcp");
             call(client.post("/executions", &body))
         }
 

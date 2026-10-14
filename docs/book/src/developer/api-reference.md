@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (95 paths, 132 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (96 paths, 133 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1316,6 +1316,20 @@ Resolve a pending decision with an operator-supplied answer
 | 404 | not_found — no decision exists for this exact (attempt_id, decision_id) pair | `RunnerV1ErrorEnvelope` |
 | 409 | decision_expired / idempotency_conflict | `RunnerV1ErrorEnvelope` |
 | 413 | payload_too_large (answer exceeds decision_answer_bytes_max, 32768 bytes) | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/attempts/{attempt_id}/merge`
+
+the Merge button. Merges the
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attempt_id` | path | `string` | yes | Execution attempt ID (opaque) |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Merged; carries the merge commit's sha | — |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict: the merge was held, the message says why | `RunnerV1ErrorEnvelope` |
 
 #### `GET /api/executions`
 
