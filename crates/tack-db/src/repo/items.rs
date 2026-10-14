@@ -16,7 +16,7 @@ use super::dependencies::insert_dependency;
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
 /// the item's latest execution request left a non-empty patch or a kept
 /// workspace, and nobody has reviewed it yet.
-const NEEDS_REVIEW_SQL: &str = "EXISTS (
+pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
     SELECT 1 FROM execution_attempts a
     LEFT JOIN attempt_reviews rv ON rv.attempt_id = a.id
     WHERE a.id = (

@@ -660,7 +660,7 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     let (repo, item_id) = setup_repo().await;
     let now = Utc::now();
     setup_codex_runner(&repo, "runner-a", 3, 3, Some(0), now).await;
-    // One run already going, with measured usage and a held merge waiting for review.
+    // One run already going, with measured usage, and one item waiting for review.
     enqueue_for_runner(
         &repo,
         &item_id,
@@ -687,17 +687,43 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         .execute(repo.pool())
         .await
         .expect("usage");
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project");
-    sqlx::query("INSERT INTO tack_merges (attempt_id, project_id, trigger, held_reason, checked_at) VALUES ('attempt', ?, 'done', 'ci pending', ?)")
-        .bind(&project_id)
-        .bind(now.to_rfc3339())
-        .execute(repo.pool())
-        .await
-        .expect("held merge");
+    // A second item whose finished run kept its workspace: it shows Needs your review.
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, status) \
+         SELECT 'item-review', project_id, 'Review me', 'In Progress' FROM items WHERE id = ?",
+    )
+    .bind(&item_id)
+    .execute(repo.pool())
+    .await
+    .expect("second item");
+    enqueue_for_runner(
+        &repo,
+        "item-review",
+        "review",
+        "runner-a",
+        Some("opaque/model-alpha"),
+        "{}",
+        now,
+    )
+    .await;
+    repo.claim_execution_idempotent_with_snapshot(
+        "runner-a",
+        "claim-review",
+        "attempt-review",
+        chrono::Duration::seconds(60),
+        &FixedClock(now),
+        RequestSelection::Scheduled(Some("review")),
+    )
+    .await
+    .expect("no db error")
+    .expect("claimed");
+    sqlx::query(
+        "UPDATE execution_attempts SET state = 'succeeded', \
+         terminal_reason = '{\"workspace_kept_at\":\"/tmp/kept\"}' WHERE id = 'attempt-review'",
+    )
+    .execute(repo.pool())
+    .await
+    .expect("finished with a kept workspace");
     enqueue_for_runner(
         &repo,
         &item_id,

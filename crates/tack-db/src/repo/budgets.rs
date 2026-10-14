@@ -2,10 +2,9 @@
 //! counts they are compared with. A project with no row has no budget.
 
 use chrono::{DateTime, Utc};
-use sqlx::{Row, SqlitePool};
+use sqlx::{AssertSqlSafe, SqlitePool};
 
 /// The media type of a Merge-Readiness Pack artifact.
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
 /// One project's limits; `None` is no limit.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -96,29 +95,18 @@ pub async fn spent_today(
     .await
 }
 
-/// What waits for a human: packs nobody has given a verdict, plus held merge
-/// rows. A pack whose attempt already has a merge row is counted once, there.
+/// What waits for a human: the project's unfinished items that show **Needs
+/// your review**, by the board's own definition, so a pack left on an item
+/// already Done, or on an attempt a newer run replaced, never fills the queue.
 pub async fn queue_items(pool: &SqlitePool, project_id: &str) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT
-           (SELECT COUNT(DISTINCT a.id)
-              FROM execution_attempts a
-              JOIN execution_requests r ON r.id = a.request_id
-              JOIN items i ON i.id = r.item_id
-              JOIN execution_artifacts x ON x.attempt_id = a.id AND x.media_type = ?
-             WHERE i.project_id = ?
-               AND NOT EXISTS (SELECT 1 FROM mrp_reviews m WHERE m.attempt_id = a.id AND m.verdict IS NOT NULL)
-               AND NOT EXISTS (SELECT 1 FROM tack_merges t WHERE t.attempt_id = a.id))
-         + (SELECT COUNT(*) FROM tack_merges t
-             WHERE t.project_id = ? AND t.held_reason IS NOT NULL AND t.merged_at IS NULL)
-           AS waiting",
-    )
-    .bind(MRP_MEDIA_TYPE)
-    .bind(project_id)
+    // The fragment is a constant of this crate; only `project_id` is bound.
+    sqlx::query_scalar(AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM items WHERE project_id = ? AND completed_at IS NULL AND {}",
+        super::items::NEEDS_REVIEW_SQL
+    )))
     .bind(project_id)
     .fetch_one(pool)
-    .await?;
-    Ok(row.get("waiting"))
+    .await
 }
 
 /// Merges Tack made on its own (`trigger = 'auto'`) since 00:00 UTC.
