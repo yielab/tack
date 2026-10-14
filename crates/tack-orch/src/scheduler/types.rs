@@ -33,6 +33,13 @@ pub enum Priority {
     High,
 }
 
+/// Which project budget stopped new work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BudgetKind {
+    Tokens,
+    ReviewQueue { waiting: u32 },
+}
+
 /// A request awaiting runner assignment. Pure data, built by whatever caller
 /// wires this module to the real `execution_requests` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +59,9 @@ pub struct SchedulingRequest {
     /// Every key/value must match the candidate's own `labels` exactly. An
     /// empty map imposes no constraint.
     pub required_labels: BTreeMap<String, String>,
+    /// Set by the caller when the request's project has used a daily budget:
+    /// no candidate is eligible while it is `Some`.
+    pub budget_reached: Option<BudgetKind>,
     /// Fairness tie-break for the batch scheduler: oldest first within the
     /// same [`Priority`]. Mirrors `execution_requests.created_at`.
     pub created_at: DateTime<Utc>,
@@ -118,6 +128,11 @@ pub enum IneligibleReason {
     /// operator's choice and run as `auto`.
     DecisionsNotSupported {
         harness: HarnessKind,
+    },
+    /// The request's project has used a daily budget; nothing new starts for
+    /// it, on any runner, until the budget has room again.
+    BudgetReached {
+        which: BudgetKind,
     },
 }
 

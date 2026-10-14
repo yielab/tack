@@ -1,6 +1,7 @@
 pub mod attachments;
 pub mod boards;
 pub mod briefs;
+pub mod budgets;
 pub mod comments;
 pub mod custom_fields;
 pub mod dependencies;

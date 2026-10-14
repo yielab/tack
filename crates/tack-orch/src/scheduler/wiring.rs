@@ -25,7 +25,8 @@ use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForSchedul
 
 use super::select::{SchedulingPolicy, select_runner};
 use super::types::{
-    IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest, SelectionOutcome,
+    BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
+    SelectionOutcome,
 };
 use crate::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
@@ -106,6 +107,7 @@ fn fleet_is_saturated(snapshot: Option<&FleetConcurrencySnapshot>) -> bool {
 /// queued and visible via `GET /executions` until fixed or requeued.
 fn build_scheduling_request(
     row: &QueuedRequestForScheduling,
+    budget_reached: Option<BudgetKind>,
     now: DateTime<Utc>,
 ) -> Option<SchedulingRequest> {
     let harness_kind = row.requested_harness_kind.as_deref()?;
@@ -126,8 +128,42 @@ fn build_scheduling_request(
         requested_model: row.requested_model.clone(),
         approvals: approvals_from_permission_policy(&row.permission_policy),
         required_labels: BTreeMap::new(),
+        budget_reached,
         created_at: parse_created_at(&row.created_at, now),
     })
+}
+
+/// The code a request held back by a project budget is recorded under. It is
+/// never failed for waiting: the budget resets, or a human clears the queue.
+const BUDGET_REACHED: &str = "budget_reached";
+
+/// Which of the project's budgets, if any, forbids starting new work now.
+/// A project with no `project_budgets` row has none.
+async fn budget_reached(
+    repo: &Repository,
+    project_id: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<BudgetKind>, sqlx::Error> {
+    use tack_db::repo::budgets;
+    let Some(limits) = budgets::get(repo.pool(), project_id).await? else {
+        return Ok(None);
+    };
+    // P wires the price: `usd_per_day` is read and ignored until then.
+    let _ = limits.usd_per_day;
+    if let Some(max) = limits.tokens_per_day
+        && budgets::spent_today(repo.pool(), project_id, now).await? >= max
+    {
+        return Ok(Some(BudgetKind::Tokens));
+    }
+    if let Some(max) = limits.queue_items_max {
+        let waiting = budgets::queue_items(repo.pool(), project_id).await?;
+        if waiting >= max {
+            return Ok(Some(BudgetKind::ReviewQueue {
+                waiting: u32::try_from(waiting).unwrap_or(u32::MAX),
+            }));
+        }
+    }
+    Ok(None)
 }
 
 /// The terminal code of a request failed for want of a runner.
@@ -181,6 +217,18 @@ fn describe_ineligible(reason: &IneligibleReason) -> (&'static str, String) {
                 "{} on the runner cannot stop to ask for a decision",
                 harness.as_str()
             ),
+        ),
+        IneligibleReason::BudgetReached {
+            which: BudgetKind::Tokens,
+        } => (
+            BUDGET_REACHED,
+            "This project used its tokens for today".to_string(),
+        ),
+        IneligibleReason::BudgetReached {
+            which: BudgetKind::ReviewQueue { waiting },
+        } => (
+            BUDGET_REACHED,
+            format!("This project's review queue is full ({waiting} waiting)"),
         ),
     }
 }
@@ -253,6 +301,7 @@ async fn record_waiting(
             .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
             .map(|value| value.with_timezone(&Utc));
         let overdue = !transient
+            && code != BUDGET_REACHED
             && policy.unclaimable_fail_after > chrono::Duration::zero()
             && waiting_since.is_some_and(|since| now - since > policy.unclaimable_fail_after);
         if overdue
@@ -336,14 +385,27 @@ pub async fn choose_request_for_runner(
         }
     }
 
-    let requests: Vec<SchedulingRequest> = queued
-        .iter()
-        .filter(|row| {
-            row.selector_kind != "fleet"
-                || !fleet_is_saturated(fleet_status.get(&row.selector_id).and_then(Option::as_ref))
-        })
-        .filter_map(|row| build_scheduling_request(row, now))
-        .collect();
+    let mut project_budgets: BTreeMap<String, Option<BudgetKind>> = BTreeMap::new();
+    let mut requests: Vec<SchedulingRequest> = Vec::new();
+    for row in queued.iter().filter(|row| {
+        row.selector_kind != "fleet"
+            || !fleet_is_saturated(fleet_status.get(&row.selector_id).and_then(Option::as_ref))
+    }) {
+        let reached = match tack_db::repo::budgets::project_of_request(repo.pool(), &row.id).await?
+        {
+            Some(project_id) => {
+                if !project_budgets.contains_key(&project_id) {
+                    let reached = budget_reached(repo, &project_id, now).await?;
+                    project_budgets.insert(project_id.clone(), reached);
+                }
+                project_budgets.get(&project_id).cloned().flatten()
+            }
+            None => None,
+        };
+        if let Some(request) = build_scheduling_request(row, reached, now) {
+            requests.push(request);
+        }
+    }
 
     let outcomes: Vec<(ExecutionRequestId, SelectionOutcome)> = if requests.len() == 1 {
         // Avoid `batch::schedule`'s capacity-ledger machinery — built for
@@ -442,7 +504,7 @@ mod tests {
             permission_policy: "{}".into(),
             waiting_since: None,
         };
-        assert!(build_scheduling_request(&row, Utc::now()).is_none());
+        assert!(build_scheduling_request(&row, None, Utc::now()).is_none());
     }
 
     #[test]
