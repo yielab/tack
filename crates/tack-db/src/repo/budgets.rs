@@ -4,8 +4,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, SqlitePool};
 
-/// The media type of a Merge-Readiness Pack artifact.
-
 /// One project's limits; `None` is no limit.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct ProjectBudgets {
