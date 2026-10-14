@@ -4,10 +4,13 @@ import type { BadgeTone } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
 import { mrpApi, type MrpCriterionStatus, type MrpReview } from '../execution/api';
+import type { AttemptMerge } from '../execution/attempts';
 
 export interface MrpPanelProps {
   requestId: string;
   attemptNumber: number;
+  /** The attempt's merge state, to say who merged it or what held the last press. */
+  merge?: AttemptMerge;
 }
 
 const STATUS_TONE: Record<MrpCriterionStatus, BadgeTone> = {
@@ -34,6 +37,41 @@ const Section: Component<{ title: string; children: JSX.Element }> = (props) => 
     {props.children}
   </section>
 );
+
+/** "Merged by Tack (L4, domain docs)" or "Merged by you"; the policy behind it is a disclosure. */
+const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
+  const label = () => {
+    const m = props.merge.merged;
+    if (!m) return null;
+    if (m.trigger === 'button') return 'Merged by you';
+    const parts = [m.level, m.domain ? `domain ${m.domain}` : null].filter(Boolean);
+    return `Merged by Tack${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
+  };
+  return (
+    <Show when={label() ?? props.merge.reason}>
+      {(text) => (
+        <div data-testid="mrp-merge-state" class="space-y-1 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+          <p>
+            <Show when={!props.merge.merged}>
+              <span class="font-semibold">Not merged: </span>
+            </Show>
+            {text()}
+          </p>
+          <Show when={props.merge.merged?.policy_snapshot}>
+            {(policy) => (
+              <details class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <summary class="cursor-pointer">The rules it was merged under</summary>
+                <pre class="overflow-x-auto rounded-[12px] p-2" style={{ ...mono, 'background-color': 'var(--color-bg-panel)' }}>
+                  {JSON.stringify(policy(), null, 2)}
+                </pre>
+              </details>
+            )}
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+};
 
 const mono = { 'font-family': 'var(--font-mono)' } as const;
 
@@ -114,6 +152,29 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                   </ul>
                 </Show>
               </div>
+
+              <Show when={props.merge}>{(m) => <MergeState merge={m()} />}</Show>
+
+              <Show when={(pack().next_steps ?? []).length > 0}>
+                <Section title="Next steps">
+                  <ul class="space-y-1 text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                    <For each={pack().next_steps}>
+                      {(s) => (
+                        <li data-testid="mrp-next-step">
+                          <Badge tone={s.severity === 'error' ? 'danger' : s.severity === 'warning' ? 'warning' : 'neutral'}>{s.severity}</Badge>{' '}
+                          <span>{s.message ?? s.code}</span>
+                          <Show when={s.path}>
+                            <span style={mono}> {s.path}{s.line != null ? `:${s.line}` : ''}</span>
+                          </Show>
+                          <Show when={s.command}>
+                            <span class="block" style={mono}>{s.command}</span>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Section>
+              </Show>
 
               <Section title="Criteria">
                 <Show when={pack().criteria.length > 0} fallback={<NotRun />}>

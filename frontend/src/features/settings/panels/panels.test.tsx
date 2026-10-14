@@ -36,6 +36,23 @@ const ctx: ProjectContextValue = {
   refetch: () => {},
 };
 
+const AUTONOMY = {
+  level: 'L3',
+  domains: [{ name: 'docs', path_globs: ['docs/**'], item_types: ['task'], level: 'L4', merged: 4, undone: 1 }],
+  verify_require: [] as string[],
+  attestation_public_key: null as string | null,
+  verify_loop_max_attempts: 2,
+  budgets: { tokens_per_day: null, usd_per_day: null, auto_merges_per_day: null, queue_items_max: null },
+  merge_on_done: false,
+  automatic_merge_blocked_by: [] as string[],
+};
+let autonomy: typeof AUTONOMY = AUTONOMY;
+const autonomyPuts = () =>
+  fetchMock.mock.calls
+    .filter((c) => (c[1] as RequestInit)?.method === 'PUT' && String(c[0]).endsWith('/api/projects/p1/autonomy'))
+    .map((c) => JSON.parse((c[1] as RequestInit).body as string));
+const withInput = (c: HTMLElement, label: string) => c.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
@@ -45,8 +62,13 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+  autonomy = structuredClone(AUTONOMY);
+  fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
+    if (url.endsWith('/api/projects/p1/autonomy')) {
+      if (init?.method === 'PUT') autonomy = JSON.parse(String(init.body));
+      return Promise.resolve(new Response(JSON.stringify(autonomy), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
     if (url.endsWith('/api/runners')) {
       const snapshot = {
         harnesses: [
@@ -342,5 +364,83 @@ describe('Settings panels', () => {
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }
+  });
+
+  describe('Autonomy', () => {
+    it('the_merge_on_done_switch_saves', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      const sw = withInput(container, 'Merge when moved to Done');
+      expect(sw.checked).toBe(false);
+      sw.click();
+      await flush();
+      expect(autonomyPuts().at(-1)).toMatchObject({ merge_on_done: true, verify_loop_max_attempts: 2 });
+    });
+
+    it('the_autonomy_section_saves_each_field_and_fills_the_prill_example', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      const cap = withInput(container, 'Times a rejected change goes back to the agent');
+      cap.value = '3';
+      cap.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1)).toMatchObject({ verify_loop_max_attempts: 3 });
+
+      const tokens = withInput(container, 'Tokens per day');
+      tokens.value = '5000';
+      tokens.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000, usd_per_day: null });
+
+      btn(container, "Fill prill's example").click();
+      await flush();
+      expect(autonomyPuts().at(-1).verify_require).toEqual(['criteria', 'suite', 'anti_tautology', 'static_analysis']);
+      expect(withInput(container, 'Stages prill must run').value).toBe('criteria, suite, anti_tautology, static_analysis');
+
+      const key = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Public key"]')!;
+      key.value = 'PEM';
+      key.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1).attestation_public_key).toBe('PEM');
+    });
+
+    it('a_domain_shows_its_merged_and_undone_counts_before_its_level_control', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      const row = container.querySelector('[data-testid="autonomy-domain"]')!;
+      expect(withInput(row as HTMLElement, 'Domain name').value).toBe('docs');
+      const counts = row.querySelector('[data-testid="domain-counts"]')!;
+      expect(counts.textContent).toContain('4 merged');
+      expect(counts.textContent).toContain('1 undone');
+      const level = row.querySelector('select')!;
+      expect(counts.compareDocumentPosition(level) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      level.value = 'L5';
+      level.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(autonomyPuts().at(-1).domains[0]).toMatchObject({ name: 'docs', level: 'L5', path_globs: ['docs/**'] });
+    });
+
+    it('a_disabled_L4_shows_its_reason', async () => {
+      autonomy.automatic_merge_blocked_by = ['GitHub polling is off on this board, so Tack cannot read CI or merge'];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      const l4 = container.querySelector<HTMLInputElement>('input[name="autonomy-level"][value="L4"]')!;
+      const l5 = container.querySelector<HTMLInputElement>('input[name="autonomy-level"][value="L5"]')!;
+      const l3 = container.querySelector<HTMLInputElement>('input[name="autonomy-level"][value="L3"]')!;
+      expect(l4.disabled).toBe(true);
+      expect(l5.disabled).toBe(true);
+      expect(l3.disabled).toBe(false);
+      expect(container.querySelector('[data-testid="autonomy-blocked"]')!.textContent).toContain('GitHub polling is off');
+    });
+
+    it('an_enabled_L4_saves_the_level', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      const l4 = container.querySelector<HTMLInputElement>('input[name="autonomy-level"][value="L4"]')!;
+      expect(l4.disabled).toBe(false);
+      l4.click();
+      await flush();
+      expect(autonomyPuts().at(-1).level).toBe('L4');
+    });
   });
 });

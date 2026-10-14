@@ -19,6 +19,7 @@ import { briefs } from './briefs';
 import { data } from './data';
 import { system } from './system';
 import { metrics } from './metrics';
+import { autonomy } from './autonomy';
 
 export const api = {
   projects,
@@ -36,6 +37,7 @@ export const api = {
   data,
   system,
   metrics,
+  autonomy,
 };
 
 export { ApiError, tokenStore, request, requestBlob, requestForm, apiUrl } from './client';

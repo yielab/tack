@@ -77,7 +77,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
             {(c) => (
               <li class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
                 <div class="mb-1 flex items-center justify-between text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                  <span class="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c.author || 'Anonymous'}</span>
+                  <span class="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c.author || (c.comment_type === 'system' ? 'Tack' : 'Anonymous')}</span>
                   <span>{relativeTime(c.created_at)}</span>
                 </div>
                 <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-primary)' }}>
