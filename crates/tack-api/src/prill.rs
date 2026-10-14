@@ -6,7 +6,6 @@
 
 use std::{
     io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::{Output, Stdio},
     time::Duration,
@@ -107,11 +106,10 @@ impl Scratch {
         #[allow(clippy::disallowed_methods)]
         let root = std::env::temp_dir();
         let path = root.join(format!("tack-attest-{}", uuid::Uuid::new_v4()));
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&path)
-            .ok()
-            .map(|()| Self(path))
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(&path).ok().map(|()| Self(path))
     }
 }
 
@@ -122,12 +120,11 @@ impl Drop for Scratch {
 }
 
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(bytes)
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)?.write_all(bytes)
 }
 
 #[cfg(test)]

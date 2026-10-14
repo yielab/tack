@@ -21,8 +21,6 @@ use std::{
     time::Duration,
 };
 
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tack_orch::execution::{
@@ -902,6 +900,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     /// cannot rule out a pid the OS has since given to something else.
     #[cfg(target_os = "linux")]
     fn process_is_this_harness(&self, pid: u32, attempt_id: &str) -> Option<bool> {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
         let (expected, _) = self.locator.resolve().ok()?;
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
         let mut args = raw.split(|byte| *byte == 0).filter(|part| !part.is_empty());
