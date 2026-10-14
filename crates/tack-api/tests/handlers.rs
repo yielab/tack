@@ -43,5 +43,7 @@ mod operator_read_routes;
 mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/rework.rs"]
+mod rework;
 #[path = "handlers/templates.rs"]
 mod templates;
