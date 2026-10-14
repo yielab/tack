@@ -3068,6 +3068,7 @@ export interface components {
         /** @description The Merge button's state: `reason` says why it is disabled, `null` when enabled. */
         AttemptMerge: {
             enabled: boolean;
+            merged?: null | components["schemas"]["MergedBy"];
             /**
              * @description Why the button is disabled; when it is enabled, what held its last press
              *     (CI is read on the press, not to draw the button).
@@ -3862,6 +3863,8 @@ export interface components {
             /** Format: uuid */
             id: string;
             item_type: components["schemas"]["ItemType"];
+            /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
+            merge_note?: string | null;
             /**
              * @description True when the latest finished attempt left a patch or a kept
              *     workspace that nobody has reviewed yet.
@@ -3995,6 +3998,18 @@ export interface components {
          * @enum {string}
          */
         MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
+        /**
+         * @description The merge that happened for an attempt: `trigger` is what asked for it
+         *     (`button`, `done`, `auto`), `merge_sha` the commit it landed on.
+         */
+        MergedBy: {
+            domain?: string | null;
+            level?: string | null;
+            merge_sha?: string | null;
+            merged_at: string;
+            policy_snapshot?: unknown;
+            trigger: string;
+        };
         /** @enum {string} */
         MetricOp: "lte" | "gte" | "eq";
         /** @description Dollars per million tokens of one model. */

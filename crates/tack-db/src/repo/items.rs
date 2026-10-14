@@ -38,6 +38,10 @@ pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
     )
 )";
 
+/// The `merge_note` of an `items` row: why the item's latest merge was held,
+/// while it has not merged.
+pub(crate) const MERGE_NOTE_SQL: &str = "(SELECT CASE WHEN t.merged_at IS NULL THEN t.held_reason END FROM tack_merges t JOIN execution_attempts a ON a.id = t.attempt_id JOIN execution_requests r ON r.id = a.request_id WHERE r.item_id = items.id ORDER BY t.checked_at DESC LIMIT 1)";
+
 /// Result of one complete item PATCH.  Unlike the older helpers this owns the
 /// WIP decision, field update, timestamps, and version increment in one
 /// transaction, so callers cannot accidentally compose partial mutations.
@@ -139,7 +143,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
              FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
@@ -170,7 +174,7 @@ impl Repository {
     pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
         let mut tx = self.pool().begin().await?;
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review FROM items WHERE id = ?"
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -227,7 +231,7 @@ impl Repository {
     ) -> Result<Vec<Item>, sqlx::Error> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -687,7 +691,7 @@ impl Repository {
         }
 
         let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review FROM items WHERE id = ?"
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_one(&mut *tx)
@@ -880,6 +884,8 @@ struct ItemRow {
     run_settings: Option<String>,
     #[sqlx(default)]
     needs_review: bool,
+    #[sqlx(default)]
+    merge_note: Option<String>,
     started_at: Option<String>,
     completed_at: Option<String>,
     created_at: String,
@@ -930,6 +936,7 @@ impl ItemRow {
                     .ok()
             }),
             needs_review: self.needs_review,
+            merge_note: self.merge_note,
             started_at: self.started_at.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
                     .ok()
@@ -1090,6 +1097,7 @@ async fn insert_item(
         source_artifact_id: input.source_artifact_id,
         run_settings: None,
         needs_review: false,
+        merge_note: None,
         created_at: now,
         updated_at: now,
     })
@@ -1159,6 +1167,7 @@ mod tests {
             source_artifact_id: None,
             run_settings: run_settings.map(str::to_owned),
             needs_review: false,
+            merge_note: None,
             started_at: None,
             completed_at: None,
             created_at: Utc::now().to_rfc3339(),

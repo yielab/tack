@@ -167,6 +167,17 @@ async fn the_button_merges_with_the_head_sha() {
     let after = merge_state(&b, &a).await;
     assert_eq!(after["enabled"], false);
     assert_eq!(after["reason"], "Already merged");
+    assert_eq!(after["merged"]["trigger"], "button");
+    let (status, item) = common::send(
+        &b.app,
+        "GET",
+        &format!("/api/items/{}", b.item_id),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{item}");
+    assert_eq!(item["item"]["merge_note"], Value::Null, "{item}");
 }
 
 /// One row per press GitHub's facts hold: the setup, whether the button stays
@@ -233,6 +244,22 @@ async fn each_held_press_says_why_and_the_button_says_whether_to_retry() {
         assert!(
             merge["reason"].as_str().unwrap_or_default().contains(words),
             "{name}: {merge}"
+        );
+        let (status, item) = common::send(
+            &b.app,
+            "GET",
+            &format!("/api/items/{}", b.item_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{name}: {item}");
+        assert!(
+            item["item"]["merge_note"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(words),
+            "{name}: {item}"
         );
     }
 }

@@ -7305,6 +7305,17 @@
           "enabled": {
             "type": "boolean"
           },
+          "merged": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MergedBy",
+                "description": "Who merged the attempt and under which policy, or `null` while it has not merged."
+              }
+            ]
+          },
           "reason": {
             "type": [
               "string",
@@ -9695,6 +9706,13 @@
           "item_type": {
             "$ref": "#/components/schemas/ItemType"
           },
+          "merge_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
+          },
           "needs_review": {
             "type": "boolean",
             "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
@@ -10034,6 +10052,41 @@
           "estimated",
           "not_measured"
         ]
+      },
+      "MergedBy": {
+        "type": "object",
+        "description": "The merge that happened for an attempt: `trigger` is what asked for it\n(`button`, `done`, `auto`), `merge_sha` the commit it landed on.",
+        "required": [
+          "trigger",
+          "merged_at"
+        ],
+        "properties": {
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merged_at": {
+            "type": "string"
+          },
+          "policy_snapshot": {},
+          "trigger": {
+            "type": "string"
+          }
+        }
       },
       "MetricOp": {
         "type": "string",
