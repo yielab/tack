@@ -371,6 +371,56 @@
         }
       }
     },
+    "/api/attempts/{attempt_id}/merge": {
+      "post": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the\nattempt's pull request at its head commit, opening the pull request first when\nit is missing; a refusal is a `409` carrying the reason, already recorded on\nthe item.",
+        "operationId": "merge_attempt",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "description": "Execution attempt ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Merged; carries the merge commit's sha",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict: the merge was held, the message says why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backup": {
       "get": {
         "tags": [
@@ -7245,6 +7295,24 @@
           }
         }
       },
+      "AttemptMerge": {
+        "type": "object",
+        "description": "The Merge button's state: `reason` says why it is disabled, `null` when enabled.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AttemptPullRequest": {
         "type": "object",
         "description": "The pull request an attempt opened: `state` is `open`, `merged`, `closed` or\n`reverted`.",
@@ -7310,7 +7378,8 @@
           "environment_names",
           "created_at",
           "updated_at",
-          "usage_economics"
+          "usage_economics",
+          "merge"
         ],
         "properties": {
           "actual_execution": {
@@ -7372,6 +7441,10 @@
           },
           "lease_issued_at": {
             "type": "string"
+          },
+          "merge": {
+            "$ref": "#/components/schemas/AttemptMerge",
+            "description": "Whether the Merge button may be pressed, and why not."
           },
           "model_provenance": {
             "oneOf": [
@@ -8072,6 +8145,13 @@
             "format": "uuid"
           },
           "metadata": {},
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`mcp` marks a run an agent started through `tack mcp`: it is never merged\nautomatically or by a move to Done, only by the Merge button. Any other\nvalue, or none, means a person started it."
+          },
           "permission_policy": {
             "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },

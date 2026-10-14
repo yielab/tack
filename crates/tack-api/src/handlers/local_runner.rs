@@ -539,6 +539,7 @@ pub async fn post_test_run(
         status_map_policy_id: None,
         verify: None,
         push_branch: None,
+        origin: None,
     };
     let operator = crate::handlers::executions::OperatorExecutionState::with_clock(
         state.repo.clone(),

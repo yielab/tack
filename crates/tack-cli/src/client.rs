@@ -8,6 +8,8 @@ pub struct TackClient {
     client: Client,
     base_url: String,
     token: Option<String>,
+    /// Sends `X-Tack-Client: mcp` on every call, so the board knows an agent made it.
+    mcp: bool,
 }
 
 impl TackClient {
@@ -19,7 +21,18 @@ impl TackClient {
             client,
             base_url: config.base_url.trim_end_matches('/').to_string(),
             token: config.token.clone(),
+            mcp: false,
         })
+    }
+
+    /// The same client, marking every call as made through `tack mcp`.
+    pub fn marked_mcp(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            base_url: self.base_url.clone(),
+            token: self.token.clone(),
+            mcp: true,
+        }
     }
 
     pub fn get(&self, path: &str) -> anyhow::Result<serde_json::Value> {
@@ -198,6 +211,9 @@ impl TackClient {
         let mut req = self.client.request(method, url);
         if let Some(token) = &self.token {
             req = req.bearer_auth(token);
+        }
+        if self.mcp {
+            req = req.header("X-Tack-Client", "mcp");
         }
         for (name, value) in extra_headers {
             req = req.header(*name, *value);

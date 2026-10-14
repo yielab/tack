@@ -359,6 +359,26 @@ pub async fn inject_operator_principal(
     next.run(req).await
 }
 
+/// Header `tack mcp` sets on every call it makes; the value `mcp` marks the call
+/// as an agent's, not a person's.
+pub const CLIENT_HEADER: &str = "x-tack-client";
+
+/// Whether the request came through `tack mcp` (`X-Tack-Client: mcp`), put in
+/// the request's extensions for the handlers that treat an agent's move differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FromMcp(pub bool);
+
+/// Reads [`CLIENT_HEADER`] into the request's extensions as [`FromMcp`].
+pub async fn read_client(mut req: Request, next: Next) -> Response {
+    let from_mcp = req
+        .headers()
+        .get(CLIENT_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("mcp"));
+    req.extensions_mut().insert(FromMcp(from_mcp));
+    next.run(req).await
+}
+
 /// Byte-wise constant-time equality. Processes all bytes without early exit
 /// so the comparison time does not reveal how many bytes matched.
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {

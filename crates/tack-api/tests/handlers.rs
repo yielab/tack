@@ -33,6 +33,8 @@ mod fleet_membership;
 mod item_concurrency;
 #[path = "handlers/local_runner.rs"]
 mod local_runner;
+#[path = "handlers/merge_button.rs"]
+mod merge_button;
 #[path = "handlers/metrics.rs"]
 mod metrics;
 #[path = "handlers/mrp.rs"]

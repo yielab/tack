@@ -27,7 +27,8 @@ use crate::handlers::{
     templates, websocket,
 };
 use crate::middleware::{
-    inject_operator_principal, refuse_cross_site, require_host, require_token, set_session_cookie,
+    inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
+    set_session_cookie,
 };
 use crate::webhook::WebhookClient;
 
@@ -440,6 +441,7 @@ pub fn build_router(state: AppState) -> Router {
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
+        .layer(middleware::from_fn(read_client))
         // Outside the token check, so a wrong host or a foreign page is
         // refused before anything about the token is revealed.
         .layer(middleware::from_fn_with_state(
