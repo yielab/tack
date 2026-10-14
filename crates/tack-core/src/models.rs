@@ -211,6 +211,9 @@ pub struct Item {
     /// workspace that nobody has reviewed yet.
     #[serde(default)]
     pub needs_review: bool,
+    /// Why the task's last merge did not happen, while it has not; `None` once merged or never tried.
+    #[serde(default)]
+    pub merge_note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

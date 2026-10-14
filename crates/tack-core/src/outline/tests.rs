@@ -356,6 +356,7 @@ fn csv_export_reimports_with_hierarchy() {
         source_artifact_id: None,
         run_settings: None,
         needs_review: false,
+        merge_note: None,
         created_at: now,
         updated_at: now,
     };

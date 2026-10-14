@@ -550,6 +550,20 @@ pub struct AttemptMerge {
     /// Why the button is disabled; when it is enabled, what held its last press
     /// (CI is read on the press, not to draw the button).
     pub reason: Option<String>,
+    /// Who merged the attempt and under which policy, or `null` while it has not merged.
+    pub merged: Option<MergedBy>,
+}
+
+/// The merge that happened for an attempt: `trigger` is what asked for it
+/// (`button`, `done`, `auto`), `merge_sha` the commit it landed on.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MergedBy {
+    pub trigger: String,
+    pub level: Option<String>,
+    pub domain: Option<String>,
+    pub merged_at: String,
+    pub merge_sha: Option<String>,
+    pub policy_snapshot: Option<serde_json::Value>,
 }
 
 /// An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.
@@ -1538,7 +1552,36 @@ pub async fn list_execution_attempts(
                 Some("Merging is not available on this board".to_owned()),
             ),
         };
-        merges.insert(attempt.id.clone(), AttemptMerge { enabled, reason });
+        let merged = match tack_db::repo::autonomy::get_merge(state.repo.pool(), &attempt.id)
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not read the attempt's merge",
+                    json!({}),
+                )
+            })? {
+            Some(row) => row.merged_at.map(|merged_at| MergedBy {
+                trigger: row.trigger,
+                level: row.level,
+                domain: row.domain,
+                merged_at,
+                merge_sha: row.merge_sha,
+                policy_snapshot: row
+                    .policy_snapshot
+                    .and_then(|raw| serde_json::from_str(&raw).ok()),
+            }),
+            None => None,
+        };
+        merges.insert(
+            attempt.id.clone(),
+            AttemptMerge {
+                enabled,
+                reason,
+                merged,
+            },
+        );
     }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
