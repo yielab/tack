@@ -781,6 +781,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/{item_id}/brief/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/items/:item_id/brief/versions */
+        get: operations["list_brief_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/{item_id}/comments": {
         parameters: {
             query?: never;
@@ -2889,11 +2906,13 @@ export interface components {
             runner?: string | null;
             title: string;
         } | {
+            command?: string | null;
             id: string;
             /** @enum {string} */
             kind: "metric";
             name: string;
             op: components["schemas"]["MetricOp"];
+            pattern?: string | null;
             /** Format: double */
             threshold: number;
             title: string;
@@ -3768,6 +3787,24 @@ export interface components {
             risk?: null | components["schemas"]["Risk"];
             /** Format: date-time */
             updated_at: string;
+        };
+        /**
+         * @description One saved state of an item's brief. `brief_sha256` is the SHA-256 of the
+         *     brief-v1 JSON as the runner stages it (`brief.json`); it is empty for a
+         *     version recorded before hashes were kept.
+         */
+        ItemBriefVersion: {
+            acceptance: components["schemas"]["AcceptanceCriterion"][];
+            brief_sha256: string;
+            constraints: components["schemas"]["Constraint"][];
+            /** Format: date-time */
+            created_at: string;
+            definition_of_done?: string | null;
+            /** Format: uuid */
+            item_id: string;
+            risk?: null | components["schemas"]["Risk"];
+            /** Format: int64 */
+            version: number;
         };
         /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
@@ -6172,6 +6209,38 @@ export interface operations {
                 content?: never;
             };
             /** @description Item not found, or it has no brief */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_brief_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item ID */
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every saved version of the item's brief, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemBriefVersion"][];
+                };
+            };
+            /** @description Item not found */
             404: {
                 headers: {
                     [name: string]: unknown;
