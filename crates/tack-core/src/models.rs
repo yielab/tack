@@ -186,6 +186,12 @@ pub struct Item {
     pub sprint_id: Option<Uuid>,
     pub assignee: Option<String>,
     pub due_date: Option<DateTime<Utc>>,
+    /// Set: closing the task creates the next one.
+    #[serde(default)]
+    pub recurrence: Option<Recurrence>,
+    /// The closed task this one was created from by its recurrence.
+    #[serde(default)]
+    pub recurrence_of: Option<Uuid>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     /// Sticky provenance marker for the prompt-injection
@@ -377,6 +383,38 @@ pub enum EstimateUnit {
     Hours,
     Days,
     Custom(String),
+}
+
+/// How often a task comes back once it is closed.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum Recurrence {
+    Weekly,
+    Monthly,
+    Quarterly,
+}
+
+impl std::fmt::Display for Recurrence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+            Self::Quarterly => "quarterly",
+        })
+    }
+}
+
+impl std::str::FromStr for Recurrence {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s.trim().to_lowercase().as_str() {
+            "weekly" => Ok(Self::Weekly),
+            "monthly" => Ok(Self::Monthly),
+            "quarterly" => Ok(Self::Quarterly),
+            _ => Err(()),
+        }
+    }
 }
 
 // ─── Dependency ──────────────────────────────────────────────
@@ -615,6 +653,10 @@ pub struct CreateItem {
     pub sprint_id: Option<Uuid>,
     #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
     pub assignee: Option<String>,
+    pub recurrence: Option<Recurrence>,
+    /// Set by the server when a recurring task is closed; never read from a request body.
+    #[serde(skip)]
+    pub recurrence_of: Option<Uuid>,
     /// Set by the server when an item is created from a plan; never read from a request body.
     #[serde(skip)]
     pub source_artifact_id: Option<String>,
@@ -654,6 +696,9 @@ pub struct UpdateItem {
     /// Omitted leaves the assignee untouched; JSON `null` clears it.
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub assignee: Option<Option<String>>,
+    /// Omitted leaves the recurrence untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub recurrence: Option<Option<Recurrence>>,
     /// Omitted leaves the run settings untouched; JSON `null` clears them.
     /// Anything but an object or `null` fails to deserialize.
     #[serde(default, with = "::serde_with::rust::double_option")]

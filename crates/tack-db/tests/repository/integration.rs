@@ -8,6 +8,8 @@ use tack_core::workflow;
 /// struct-update syntax (`CreateItem { priority: ..., ..item_input("x") }`).
 fn item_input(title: &str) -> CreateItem {
     CreateItem {
+        recurrence: None,
+        recurrence_of: None,
         title: title.into(),
         description: None,
         item_type: None,
@@ -982,6 +984,8 @@ async fn foreign_key_rejects_orphan_item() {
             bogus_project,
             "Backlog",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "orphan".into(),
                 description: None,
                 item_type: Some(ItemType::Task),

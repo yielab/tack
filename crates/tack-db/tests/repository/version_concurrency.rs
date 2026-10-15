@@ -48,6 +48,8 @@ async fn update_item_bumps_version() {
 
 fn item_titled(title: &str, item_type: ItemType, parent_id: Option<uuid::Uuid>) -> CreateItem {
     CreateItem {
+        recurrence: None,
+        recurrence_of: None,
         title: title.into(),
         description: None,
         item_type: Some(item_type),

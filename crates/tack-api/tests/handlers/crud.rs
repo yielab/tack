@@ -1710,6 +1710,8 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Fix the thing".into(),
                 description: None,
                 item_type: Some(tack_core::models::ItemType::Task),
@@ -1894,6 +1896,8 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Fix the thing".into(),
                 description: None,
                 item_type: Some(tack_core::models::ItemType::Task),
@@ -1995,6 +1999,8 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
             project.id,
             &initial_status,
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Fix the thing".into(),
                 description: None,
                 item_type: Some(tack_core::models::ItemType::Task),
@@ -2119,6 +2125,8 @@ async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
             project.id,
             &project.workflow.initial_status().unwrap(),
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Fix the thing".into(),
                 description: None,
                 item_type: Some(tack_core::models::ItemType::Task),
@@ -2472,4 +2480,68 @@ async fn github_poll_records_a_revert_in_prills_store_once() {
         root.path().join("prill").is_dir(),
         "the store directory is made"
     );
+}
+
+#[tokio::test]
+async fn closing_a_recurring_task_creates_one_successor_until_that_one_is_closed() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let list = format!("/api/projects/{pid}/items");
+    let (_, fresh) = common::send(&app, "POST", &list, json!({"title": "Plain"}), &[]).await;
+    let todo = fresh["status"].as_str().unwrap().to_owned();
+    let (_, task) = common::send(
+        &app,
+        "POST",
+        &list,
+        json!({"title": "Pay rent", "due_date": "2026-01-15T00:00:00Z", "recurrence": "monthly"}),
+        &[],
+    )
+    .await;
+    let id = task["id"].as_str().unwrap();
+    assert_eq!(task["recurrence"], "monthly");
+    let uri = format!("/api/items/{id}");
+
+    let list_ref = &list;
+    let successors = |app: Router| async move {
+        let (_, items) = common::send(&app, "GET", list_ref, Value::Null, &[]).await;
+        items["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["recurrence_of"] == id)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+
+    let (status, _) = common::send(&app, "PATCH", &uri, json!({"status": "Done"}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let made = successors(app.clone()).await;
+    assert_eq!(made.len(), 1);
+    assert_eq!(made[0]["title"], "Pay rent");
+    assert_eq!(made[0]["status"], todo);
+    assert_eq!(made[0]["recurrence"], "monthly");
+    assert!(
+        made[0]["due_date"]
+            .as_str()
+            .unwrap()
+            .starts_with("2026-02-28")
+    );
+    let (_, comments) =
+        common::send(&app, "GET", &format!("{uri}/comments"), Value::Null, &[]).await;
+    assert!(
+        comments
+            .to_string()
+            .contains("Created the next one, due 2026-02-28")
+    );
+
+    // Reopen and close again while the successor is open: no second one.
+    common::send(&app, "PATCH", &uri, json!({"status": todo}), &[]).await;
+    common::send(&app, "PATCH", &uri, json!({"status": "Done"}), &[]).await;
+    assert_eq!(successors(app.clone()).await.len(), 1);
+
+    // A plain task never repeats.
+    let plain = format!("/api/items/{}", fresh["id"].as_str().unwrap());
+    common::send(&app, "PATCH", &plain, json!({"status": "Done"}), &[]).await;
+    let (_, items) = common::send(&app, "GET", &list, Value::Null, &[]).await;
+    assert_eq!(items["data"].as_array().unwrap().len(), 3);
 }

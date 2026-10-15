@@ -76,6 +76,8 @@ pub async fn make_item(
         project.id,
         &status,
         CreateItem {
+            recurrence: None,
+            recurrence_of: None,
             title: "Test Item".into(),
             description: None,
             item_type: Some(ItemType::Task),

@@ -143,7 +143,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
              FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
@@ -174,7 +174,7 @@ impl Repository {
     pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
         let mut tx = self.pool().begin().await?;
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -231,7 +231,7 @@ impl Repository {
     ) -> Result<Vec<Item>, sqlx::Error> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -277,7 +277,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_items_for_sprint(&self, sprint_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE sprint_id = ? ORDER BY sort_order ASC"
         )
         .bind(sprint_id.to_string())
@@ -294,7 +294,7 @@ impl Repository {
         to: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items
              WHERE due_date IS NOT NULL
                AND due_date >= ?
@@ -436,6 +436,16 @@ impl Repository {
             .execute(self.pool())
             .await?;
         }
+        if let Some(recurrence) = input.recurrence {
+            sqlx::query(
+                "UPDATE items SET recurrence = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(recurrence.map(|r| r.to_string()))
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
+        }
         if let Some(estimate_unit) = input.estimate_unit {
             // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
             let value = estimate_unit.map(|u| serde_json::to_string(&u).unwrap());
@@ -519,7 +529,7 @@ impl Repository {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
 
         let current = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -550,6 +560,7 @@ impl Repository {
             || input.sprint_id.is_some()
             || input.sort_order.is_some()
             || input.assignee.is_some()
+            || input.recurrence.is_some()
             || input.run_settings.is_some();
         // Match the pre-A2 no-op PATCH behavior: without an addressed field
         // there is no logical mutation and therefore no version to consume.
@@ -647,6 +658,11 @@ impl Repository {
                     .push("assignee = ")
                     .push_bind_unseparated(assignee.as_deref());
             }
+            if let Some(recurrence) = input.recurrence.as_ref() {
+                fields
+                    .push("recurrence = ")
+                    .push_bind_unseparated(recurrence.map(|r| r.to_string()));
+            }
             if let Some(run_settings) = input.run_settings.as_ref() {
                 fields.push("run_settings = ").push_bind_unseparated(
                     run_settings
@@ -691,7 +707,7 @@ impl Repository {
         }
 
         let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_one(&mut *tx)
@@ -736,7 +752,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              WHERE i.project_id = ? AND items_fts MATCH ?
@@ -758,7 +774,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
@@ -777,7 +793,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
         )
         .bind(project_id.to_string())
@@ -823,7 +839,7 @@ impl Repository {
     ) -> Result<bool, sqlx::Error> {
         // Get all children of this parent
         let children = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE parent_id = ?"
         )
         .bind(parent_id.to_string())
@@ -879,6 +895,8 @@ struct ItemRow {
     sprint_id: Option<String>,
     assignee: Option<String>,
     due_date: Option<String>,
+    recurrence: Option<String>,
+    recurrence_of: Option<String>,
     source: String,
     source_artifact_id: Option<String>,
     run_settings: Option<String>,
@@ -914,6 +932,8 @@ impl ItemRow {
                     .ok()
                     .map(|d| d.with_timezone(&Utc))
             }),
+            recurrence: self.recurrence.and_then(|s| s.parse().ok()),
+            recurrence_of: self.recurrence_of.and_then(|s| Uuid::parse_str(&s).ok()),
             // `FromStr` for `ItemSource` is infallible (unrecognised text
             // degrades to `Unknown`, i.e. untrusted) — see its own doc
             // comment for why that's the safe direction.
@@ -1048,8 +1068,8 @@ async fn insert_item(
     let source_str = source.to_string();
 
     sqlx::query(
-            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, source_artifact_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(project_id.to_string())
@@ -1066,6 +1086,8 @@ async fn insert_item(
         .bind(input.sprint_id.map(|s| s.to_string()))
         .bind(&input.assignee)
         .bind(input.due_date.map(|d| d.to_rfc3339()))
+        .bind(input.recurrence.map(|r| r.to_string()))
+        .bind(input.recurrence_of.map(|r| r.to_string()))
         .bind(&source_str)
         .bind(&input.source_artifact_id)
         .bind(&now_str)
@@ -1091,6 +1113,8 @@ async fn insert_item(
         sprint_id: input.sprint_id,
         assignee: input.assignee,
         due_date: input.due_date,
+        recurrence: input.recurrence,
+        recurrence_of: input.recurrence_of,
         started_at: None,
         completed_at: None,
         source,
@@ -1163,6 +1187,8 @@ mod tests {
             sprint_id: None,
             assignee: None,
             due_date: None,
+            recurrence: None,
+            recurrence_of: None,
             source: "human".to_owned(),
             source_artifact_id: None,
             run_settings: run_settings.map(str::to_owned),

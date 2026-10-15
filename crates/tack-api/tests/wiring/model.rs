@@ -66,6 +66,8 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Prove the model-policy/provenance wiring".into(),
                 description: None,
                 item_type: None,

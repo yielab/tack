@@ -52,6 +52,8 @@ async fn project_with_item(repo: &Repository, workspace_id: Uuid, name: &str) ->
             project.id,
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "work".into(),
                 description: None,
                 item_type: None,

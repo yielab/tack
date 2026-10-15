@@ -141,6 +141,9 @@ enum Commands {
         /// Sprint ID
         #[arg(short, long)]
         sprint: Option<String>,
+        /// Repeat the task when it is closed
+        #[arg(long, value_parser = ["weekly", "monthly", "quarterly"])]
+        recurrence: Option<String>,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -1008,9 +1011,11 @@ fn main() -> anyhow::Result<()> {
             parent,
             assignee,
             sprint,
+            recurrence,
             json,
         } => cmd_add(
-            &client, title, project, item_type, priority, parent, assignee, sprint, json,
+            &client, title, project, item_type, priority, parent, assignee, sprint, recurrence,
+            json,
         ),
 
         Commands::List {
@@ -1497,6 +1502,7 @@ fn cmd_add(
     parent: Option<String>,
     assignee: Option<String>,
     sprint: Option<String>,
+    recurrence: Option<String>,
     as_json: bool,
 ) -> anyhow::Result<()> {
     let mut body = json!({
@@ -1512,6 +1518,9 @@ fn cmd_add(
     }
     if let Some(s) = sprint {
         body["sprint_id"] = json!(s);
+    }
+    if let Some(r) = recurrence {
+        body["recurrence"] = json!(r);
     }
     let resp = client.post(&format!("/projects/{project}/items"), &body)?;
     if as_json {

@@ -96,6 +96,9 @@ export const ItemCard: Component<{
       <Show when={props.item.needs_review}>
         <div><Badge tone="warning">Needs your review</Badge></div>
       </Show>
+      <Show when={props.item.recurrence}>
+        <div><Badge>Repeats</Badge></div>
+      </Show>
       <MergeNoteBadge note={props.item.merge_note} />
       <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px' }}>
         <Show when={props.item.priority !== 'none'}>

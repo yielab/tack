@@ -48,6 +48,7 @@ export type ItemDetail = Schemas['ItemDetail'];
 export type ItemType = Schemas['ItemType'];
 export type Priority = Schemas['Priority'];
 export type EstimateUnit = Schemas['EstimateUnit'];
+export type Recurrence = Schemas['Recurrence'];
 
 // NB: the backend `CreateItem` has **no `status`** (creates land in the first
 // workflow column) and **does** accept `assignee` — both reconciled here by

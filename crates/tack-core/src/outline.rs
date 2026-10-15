@@ -97,6 +97,9 @@ pub struct OutlineItem {
     pub due_date: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// weekly, monthly or quarterly; absent: the task does not repeat.
+    #[serde(default)]
+    pub recurrence: Option<String>,
     /// Another item's `ref` or exact title; when adding to an existing
     /// project, also the id of an item already in it.
     #[serde(
@@ -487,6 +490,16 @@ fn item_input(
             }
         },
     };
+    let recurrence = trimmed(item.recurrence.as_deref()).and_then(|wanted| {
+        let parsed = wanted.parse().ok();
+        if parsed.is_none() {
+            warnings.push(format!(
+                "{at}: recurrence \"{wanted}\" is not weekly, monthly or quarterly, so the \
+                 task does not repeat"
+            ));
+        }
+        parsed
+    });
     let tags: Vec<String> = item
         .tags
         .iter()
@@ -506,6 +519,8 @@ fn item_input(
         due_date,
         sprint_id: None,
         assignee: trimmed(item.assignee.as_deref()).map(str::to_string),
+        recurrence,
+        recurrence_of: None,
         source_artifact_id: None,
     };
     if let Err(e) = input.validate() {

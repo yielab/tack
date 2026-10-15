@@ -224,3 +224,37 @@ async fn csv_into_existing_project_marks_rows_csv_import() {
         "a CSV-imported row must be recorded with source: csv_import (untrusted for dispatch)"
     );
 }
+
+#[tokio::test]
+async fn the_csv_export_round_trips_recurrence() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/items"),
+        json!({"title": "Weekly review", "recurrence": "weekly"}),
+        &[],
+    )
+    .await;
+    let (_, _, csv) = common::send_with_raw(
+        &app,
+        "GET",
+        &format!("/api/projects/{pid}/export?format=csv"),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert!(csv.lines().next().unwrap().contains("recurrence"), "{csv}");
+
+    let (status, out) = post_raw(
+        &app,
+        "/api/projects/import-csv?name=Again&project_type=web",
+        "text/csv",
+        &csv,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    let items = items_of(&app, out["project"]["id"].as_str().unwrap()).await;
+    assert_eq!(by_title(&items, "Weekly review")["recurrence"], "weekly");
+}

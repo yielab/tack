@@ -290,6 +290,9 @@ pub async fn update_item(
     // Auto-propagate parent status when all siblings reach Done
     propagate_parent_completion(&state, &item, &old_status).await;
 
+    // A recurring task that was just closed makes the next one.
+    create_next_recurrence(&state, &project.workflow, &item, &old_status).await;
+
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
 
@@ -317,6 +320,76 @@ pub async fn update_item(
         HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
     );
     Ok(response)
+}
+
+/// When a task with a `recurrence` enters Done from a status that was not Done and
+/// no task made from it is unfinished, create the next one (with the same roles)
+/// and note it on the closed one. Errors are ignored: the close has already happened.
+async fn create_next_recurrence(
+    state: &AppState,
+    workflow: &tack_core::workflow::WorkflowConfig,
+    item: &Item,
+    old_status: &str,
+) {
+    use tack_core::workflow::StatusCategory;
+    let Some(recurrence) = item.recurrence else {
+        return;
+    };
+    if !workflow.is_done_status(&item.status) || workflow.is_done_status(old_status) {
+        return;
+    }
+    let Ok(made) =
+        sqlx::query_scalar::<_, String>("SELECT status FROM items WHERE recurrence_of = ?")
+            .bind(item.id.to_string())
+            .fetch_all(state.repo.pool())
+            .await
+    else {
+        return;
+    };
+    if made.iter().any(|status| !workflow.is_done_status(status)) {
+        return;
+    }
+    let Some(first_todo) = workflow
+        .statuses
+        .iter()
+        .filter(|s| s.category == StatusCategory::Todo)
+        .min_by_key(|s| s.order)
+        .map(|s| s.name.clone())
+        .or_else(|| workflow.initial_status().ok())
+    else {
+        return;
+    };
+    let from = item.due_date.unwrap_or_else(Utc::now).date_naive();
+    let due = tack_core::recurrence::next_due(from, recurrence);
+    let input = tack_core::recurrence::clone_for_next(item, due);
+    let Ok(next) = state
+        .repo
+        .create_item(item.project_id, &first_todo, input)
+        .await
+    else {
+        return;
+    };
+    if let Ok(roles) = state.repo.get_roles_for_item(item.id).await {
+        for role in roles {
+            let _ = state.repo.assign_role_to_item(next.id, role.id).await;
+        }
+    }
+    let _ = state
+        .repo
+        .create_system_comment(
+            item.id,
+            format!("Created the next one, due {due}"),
+            tack_core::models::CommentType::System,
+        )
+        .await;
+    websocket::broadcast_event(
+        state,
+        BoardEvent::ItemCreated {
+            project_id: next.project_id,
+            item_id: next.id,
+            status: next.status.clone(),
+        },
+    );
 }
 
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the

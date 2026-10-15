@@ -49,6 +49,8 @@ async fn setup() -> (axum::Router, Repository, String) {
             project.id,
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "I".into(),
                 description: None,
                 item_type: None,
@@ -611,6 +613,8 @@ async fn list_executions_scoped_to_item_id_excludes_other_items_rows() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Other".into(),
                 description: None,
                 item_type: None,
@@ -752,6 +756,8 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Noise".into(),
                 description: None,
                 item_type: None,
@@ -834,6 +840,8 @@ async fn list_executions_item_ids_returns_latest_row_per_item() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "B".into(),
                 description: None,
                 item_type: None,
@@ -917,6 +925,8 @@ async fn list_executions_item_ids_take_precedence_over_id_and_limit() {
             Uuid::parse_str(&project_id).expect("project id parses"),
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "B".into(),
                 description: None,
                 item_type: None,

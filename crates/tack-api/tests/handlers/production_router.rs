@@ -82,6 +82,8 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
             project.id,
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Prove the mounted router".into(),
                 description: None,
                 item_type: None,
