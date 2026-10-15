@@ -4857,6 +4857,66 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "update_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Role ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRole"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or unknown agent profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Role not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/runner-fleets": {
@@ -7157,6 +7217,12 @@
           "builtin": {
             "type": "boolean"
           },
+          "fleet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "instructions": {
             "type": "string"
           },
@@ -8141,10 +8207,6 @@
         "required": [
           "item_id",
           "idempotency_key",
-          "selector_kind",
-          "selector_id",
-          "agent_profile_id",
-          "requested_harness_kind",
           "permission_policy",
           "budgets",
           "environment",
@@ -8153,7 +8215,11 @@
         ],
         "properties": {
           "agent_profile_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted, the server picks one: run settings, the item's role, the project's\ndefault, the implementer, and records which in `metadata.profile_source`."
           },
           "budgets": {},
           "environment": {},
@@ -8186,7 +8252,11 @@
             "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
           },
           "requested_harness_kind": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted, the resolved profile's agent (`tool_policy.agent`), else the\nproject's default agent; with neither, `select_an_agent`."
           },
           "requested_model": {
             "type": [
@@ -8196,10 +8266,17 @@
             "description": "The one model string the agent is asked to use, passed verbatim.\nAbsent, the project's default model applies when this run's agent is\nthe project's default agent; otherwise the agent chooses."
           },
           "selector_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "selector_kind": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`exact_runner` or `fleet`. Omitted (with `selector_id`), the agent profile's fleet,\nelse the only active runner; with neither, `select_where_this_runs`."
           },
           "status_map_policy_id": {
             "type": [
@@ -8447,6 +8524,13 @@
           "instructions"
         ],
         "properties": {
+          "fleet_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The fleet a run with this profile goes to when it names no selector."
+          },
           "instructions": {
             "type": "string"
           },
@@ -11022,6 +11106,13 @@
           "created_at"
         ],
         "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent profile a task with this role runs with, when none is named."
+          },
           "color": {
             "type": "string"
           },
@@ -11724,6 +11815,13 @@
       "UpdateProfile": {
         "type": "object",
         "properties": {
+          "fleet_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves the fleet untouched; JSON `null` clears it."
+          },
           "instructions": {
             "type": [
               "string",
@@ -11862,6 +11960,36 @@
               {
                 "$ref": "#/components/schemas/WorkspaceMode"
               }
+            ]
+          }
+        }
+      },
+      "UpdateRole": {
+        "type": "object",
+        "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves the profile untouched; JSON `null` clears it."
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

@@ -16,24 +16,24 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
     let args = CreateExecutionArgs {
         item_id: "11111111-1111-1111-1111-111111111111",
         idempotency_key: Some("fixed-key"),
-        agent_profile_id: "ap_1",
-        requested_harness_kind: "claude_code",
+        agent_profile_id: Some("ap_1"),
+        requested_harness_kind: Some("claude_code"),
         requested_model: Some("claude-sonnet"),
         permission_policy: PERMISSION_POLICY_JSON,
         timeout_seconds: 3600,
         ..Default::default()
     };
-    let body = build_create_execution_body(&selector, &args).unwrap();
+    let body = build_create_execution_body(Some(&selector), &args).unwrap();
     assert_eq!(body["selector_kind"], "exact_runner");
     assert_eq!(body["selector_id"], "runr_1");
     assert_eq!(body["idempotency_key"], "fixed-key");
 
     let typed: CreateExecution = serde_json::from_value(body)
         .expect("CLI-built create_execution body must deserialize into CreateExecution");
-    assert_eq!(typed.selector_kind, "exact_runner");
-    assert_eq!(typed.selector_id, "runr_1");
-    assert_eq!(typed.agent_profile_id, "ap_1");
-    assert_eq!(typed.requested_harness_kind, "claude_code");
+    assert_eq!(typed.selector_kind.as_deref(), Some("exact_runner"));
+    assert_eq!(typed.selector_id.as_deref(), Some("runr_1"));
+    assert_eq!(typed.agent_profile_id.as_deref(), Some("ap_1"));
+    assert_eq!(typed.requested_harness_kind.as_deref(), Some("claude_code"));
     assert_eq!(typed.timeout_seconds, 3600);
 }
 
@@ -55,13 +55,13 @@ fn create_execution_body_defaults_optional_blobs_to_empty() {
     let selector = Selector::Fleet("fleet_1".into());
     let args = CreateExecutionArgs {
         item_id: "22222222-2222-2222-2222-222222222222",
-        agent_profile_id: "ap_1",
-        requested_harness_kind: "codex",
+        agent_profile_id: Some("ap_1"),
+        requested_harness_kind: Some("codex"),
         permission_policy: PERMISSION_POLICY_JSON,
         timeout_seconds: 60,
         ..Default::default()
     };
-    let body = build_create_execution_body(&selector, &args).unwrap();
+    let body = build_create_execution_body(Some(&selector), &args).unwrap();
     assert_eq!(body["budgets"], json!({}));
     assert_eq!(body["environment"], json!({}));
     assert_eq!(body["metadata"], json!({}));
@@ -78,14 +78,14 @@ fn create_execution_rejects_invalid_json_in_a_named_field() {
     let selector = Selector::ExactRunner("r".into());
     let args = CreateExecutionArgs {
         item_id: "id",
-        agent_profile_id: "ap",
-        requested_harness_kind: "codex",
+        agent_profile_id: Some("ap"),
+        requested_harness_kind: Some("codex"),
         permission_policy: PERMISSION_POLICY_JSON,
         budgets: Some("not json"),
         timeout_seconds: 1,
         ..Default::default()
     };
-    let err = build_create_execution_body(&selector, &args).unwrap_err();
+    let err = build_create_execution_body(Some(&selector), &args).unwrap_err();
     assert!(err.contains("--budgets"), "unexpected: {err}");
 }
 
@@ -94,27 +94,83 @@ fn create_execution_args_require_policy() {
     let selector = Selector::ExactRunner("r".into());
     let missing_policy = CreateExecutionArgs {
         item_id: "id",
-        agent_profile_id: "ap",
-        requested_harness_kind: "codex",
+        agent_profile_id: Some("ap"),
+        requested_harness_kind: Some("codex"),
         permission_policy: "",
         timeout_seconds: 1,
         ..Default::default()
     };
-    assert!(build_create_execution_body(&selector, &missing_policy).is_err());
+    assert!(build_create_execution_body(Some(&selector), &missing_policy).is_err());
 }
 
 #[test]
-fn selector_from_flags_requires_exactly_one() {
-    assert!(selector_from_flags(None, None).is_err());
+fn selector_from_flags_takes_at_most_one() {
+    assert!(selector_from_flags(None, None).unwrap().is_none());
     assert!(selector_from_flags(Some("r"), Some("f")).is_err());
     assert!(matches!(
         selector_from_flags(Some("r"), None).unwrap(),
-        Selector::ExactRunner(id) if id == "r"
+        Some(Selector::ExactRunner(id)) if id == "r"
     ));
     assert!(matches!(
         selector_from_flags(None, Some("f")).unwrap(),
-        Selector::Fleet(id) if id == "f"
+        Some(Selector::Fleet(id)) if id == "f"
     ));
+}
+
+/// One row per key the server resolves when it is absent: the key is omitted
+/// from the body (not sent as `null`), and the body still deserializes.
+#[test]
+fn create_execution_omits_each_key_the_server_resolves() {
+    let selector = Selector::Fleet("fleet_1".into());
+    let full = |profile, harness| CreateExecutionArgs {
+        item_id: "33333333-3333-3333-3333-333333333333",
+        agent_profile_id: profile,
+        requested_harness_kind: harness,
+        permission_policy: PERMISSION_POLICY_JSON,
+        timeout_seconds: 60,
+        ..Default::default()
+    };
+    // (selector, profile, harness, keys that must be absent)
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(Option<&Selector>, Option<&str>, Option<&str>, Vec<&str>)> = vec![
+        (
+            Some(&selector),
+            None,
+            Some("codex"),
+            vec!["agent_profile_id"],
+        ),
+        (
+            Some(&selector),
+            Some("ap_1"),
+            None,
+            vec!["requested_harness_kind"],
+        ),
+        (
+            None,
+            Some("ap_1"),
+            Some("codex"),
+            vec!["selector_kind", "selector_id"],
+        ),
+        (
+            None,
+            None,
+            None,
+            vec![
+                "agent_profile_id",
+                "requested_harness_kind",
+                "selector_kind",
+                "selector_id",
+            ],
+        ),
+    ];
+    for (i, (sel, profile, harness, absent)) in rows.into_iter().enumerate() {
+        let body = build_create_execution_body(sel, &full(profile, harness)).unwrap();
+        for key in absent {
+            assert!(body.get(key).is_none(), "row {i}: {key} must be omitted");
+        }
+        let _typed: CreateExecution = serde_json::from_value(body)
+            .unwrap_or_else(|e| panic!("row {i} must deserialize: {e}"));
+    }
 }
 
 #[test]

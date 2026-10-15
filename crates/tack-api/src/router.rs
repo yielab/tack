@@ -317,7 +317,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
-        .route("/roles/{id}", delete(roles::delete_role))
+        .route(
+            "/roles/{id}",
+            patch(roles::update_role).delete(roles::delete_role),
+        )
         .route("/items/{item_id}/roles/{role_id}", put(roles::assign_role))
         .route(
             "/items/{item_id}/roles/{role_id}",

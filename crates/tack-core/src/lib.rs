@@ -7,6 +7,7 @@ pub mod mrp;
 pub mod outline;
 pub mod rate_card;
 pub mod rich_text;
+pub mod run_defaults;
 pub mod vocabulary;
 pub mod workflow;
 

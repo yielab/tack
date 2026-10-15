@@ -867,6 +867,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // ── Roles ─────────────────────────────────────────────────────────
         handlers::roles::create_role,
         handlers::roles::list_roles,
+        handlers::roles::update_role,
         handlers::roles::delete_role,
         handlers::roles::assign_role,
         handlers::roles::remove_role,
@@ -1101,6 +1102,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         tack_core::models::RunSettings,
         CreateSprint,
         CreateRole,
+        tack_core::models::UpdateRole,
         CreateComment,
         CreateDependency,
         CreateProjectTemplate,

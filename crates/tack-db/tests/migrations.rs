@@ -17,3 +17,5 @@ mod factory_loop_tables;
 mod item_source_migration;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
+#[path = "migrations/role_profile_fleet.rs"]
+mod role_profile_fleet;

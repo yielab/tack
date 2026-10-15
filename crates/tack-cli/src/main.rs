@@ -455,6 +455,19 @@ enum RoleAction {
         /// Hex color (e.g. #4A90D9)
         #[arg(long)]
         color: Option<String>,
+        /// Agent profile ID a task with this role runs with
+        #[arg(long)]
+        profile: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set or clear the agent profile a role runs with
+    SetProfile {
+        /// Role ID
+        role: String,
+        /// Agent profile ID, or "none" to clear
+        profile: String,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -594,18 +607,20 @@ struct ExecutionCreateArgs {
     /// value to safely retry the exact same request)
     #[arg(long)]
     idempotency_key: Option<String>,
-    /// Run on this exact runner ID (mutually exclusive with --fleet)
+    /// Run on this exact runner ID (mutually exclusive with --fleet; with
+    /// neither, the profile's fleet, else the only active runner)
     #[arg(long)]
     runner: Option<String>,
     /// Run on any eligible runner in this fleet (mutually exclusive with --runner)
     #[arg(long)]
     fleet: Option<String>,
-    /// Agent profile ID
+    /// Agent profile ID (omit to use the item's role, else the project's default)
     #[arg(long)]
-    agent_profile: String,
-    /// Requested harness kind (e.g. codex, claude_code)
+    agent_profile: Option<String>,
+    /// Requested harness kind, e.g. codex, claude-code (omit to use the
+    /// profile's agent, else the project's default agent)
     #[arg(long)]
-    harness: String,
+    harness: Option<String>,
     /// The model to run, passed to the agent as given (omit to use the project's
     /// default for its default agent, else the agent's own choice)
     #[arg(long)]
@@ -855,6 +870,9 @@ enum AgentProfileAction {
         /// Limits, as a JSON object (default: {})
         #[arg(long)]
         limits: Option<String>,
+        /// Fleet ID runs with this profile go to when they name no runner or fleet
+        #[arg(long)]
+        fleet: Option<String>,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -1064,20 +1082,7 @@ fn main() -> anyhow::Result<()> {
             } => cmd_template_create_from(&client, id, name, description, json),
         },
 
-        Commands::Role { action } => match action {
-            RoleAction::List { project, json } => cmd_role_list(&client, project, json),
-            RoleAction::Create {
-                name,
-                project,
-                color,
-                json,
-            } => cmd_role_create(&client, name, project, color, json),
-            RoleAction::Delete { id, json } => cmd_role_delete(&client, id, json),
-            RoleAction::Assign { item, role, json } => cmd_role_assign(&client, item, role, json),
-            RoleAction::Unassign { item, role, json } => {
-                cmd_role_unassign(&client, item, role, json)
-            }
-        },
+        Commands::Role { action } => cmd_role(&client, action),
 
         Commands::Comment { action } => match action {
             CommentAction::List { item, json } => cmd_comment_list(&client, item, json),
@@ -1213,8 +1218,17 @@ fn main() -> anyhow::Result<()> {
                 instructions,
                 tool_policy,
                 limits,
+                fleet,
                 json,
-            } => cmd_agent_profile_create(&client, name, instructions, tool_policy, limits, json),
+            } => cmd_agent_profile_create(
+                &client,
+                name,
+                instructions,
+                tool_policy,
+                limits,
+                fleet,
+                json,
+            ),
             AgentProfileAction::List { json } => cmd_agent_profile_list(&client, json),
         },
 
@@ -2047,22 +2061,77 @@ fn cmd_role_list(client: &TackClient, project: String, as_json: bool) -> anyhow:
     Ok(())
 }
 
+fn cmd_role(client: &TackClient, action: RoleAction) -> anyhow::Result<()> {
+    match action {
+        RoleAction::List { project, json } => cmd_role_list(client, project, json),
+        RoleAction::Create {
+            name,
+            project,
+            color,
+            profile,
+            json,
+        } => cmd_role_create(client, name, project, color, profile, json),
+        RoleAction::SetProfile {
+            role,
+            profile,
+            json,
+        } => cmd_role_set_profile(client, role, profile, json),
+        RoleAction::Delete { id, json } => cmd_role_delete(client, id, json),
+        RoleAction::Assign { item, role, json } => cmd_role_assign(client, item, role, json),
+        RoleAction::Unassign { item, role, json } => cmd_role_unassign(client, item, role, json),
+    }
+}
+
 fn cmd_role_create(
     client: &TackClient,
     name: String,
     project: String,
     color: Option<String>,
+    profile: Option<String>,
     as_json: bool,
 ) -> anyhow::Result<()> {
     let body = json!({ "name": name, "color": color });
     let resp = client.post(&format!("/projects/{project}/roles"), &body)?;
+    let id = resp["id"].as_str().unwrap_or("?").to_owned();
+    // The create body carries no profile; a second call sets it.
+    let resp = match profile {
+        Some(profile) => client.patch(
+            &format!("/roles/{id}"),
+            &json!({ "agent_profile_id": profile }),
+        )?,
+        None => resp,
+    };
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
         return Ok(());
     }
-    let id = resp["id"].as_str().unwrap_or("?");
     println!("Created role: {} ({})", name, &id[..8.min(id.len())]);
     println!("  id:    {id}");
+    Ok(())
+}
+
+fn cmd_role_set_profile(
+    client: &TackClient,
+    role: String,
+    profile: String,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let profile = (profile != "none").then_some(profile);
+    let resp = client.patch(
+        &format!("/roles/{role}"),
+        &json!({ "agent_profile_id": profile }),
+    )?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    match resp["agent_profile_id"].as_str() {
+        Some(id) => println!(
+            "Role {} runs with agent profile {id}",
+            &role[..8.min(role.len())]
+        ),
+        None => println!("Role {} has no agent profile", &role[..8.min(role.len())]),
+    }
     Ok(())
 }
 
@@ -2295,8 +2364,8 @@ struct ExecutionCreateOpts {
     idempotency_key: Option<String>,
     runner: Option<String>,
     fleet: Option<String>,
-    agent_profile: String,
-    harness: String,
+    agent_profile: Option<String>,
+    harness: Option<String>,
     model: Option<String>,
     permission_policy: String,
     budgets: Option<String>,
@@ -2316,8 +2385,8 @@ fn cmd_execution_create(
     let args = execution::CreateExecutionArgs {
         item_id: &opts.item_id,
         idempotency_key: opts.idempotency_key.as_deref(),
-        agent_profile_id: &opts.agent_profile,
-        requested_harness_kind: &opts.harness,
+        agent_profile_id: opts.agent_profile.as_deref(),
+        requested_harness_kind: opts.harness.as_deref(),
         requested_model: opts.model.as_deref(),
         permission_policy: &opts.permission_policy,
         budgets: opts.budgets.as_deref(),
@@ -2326,8 +2395,8 @@ fn cmd_execution_create(
         timeout_seconds: opts.timeout_seconds,
         status_map_policy_id: opts.status_map_policy.as_deref(),
     };
-    let body =
-        execution::build_create_execution_body(&selector, &args).map_err(|e| anyhow::anyhow!(e))?;
+    let body = execution::build_create_execution_body(selector.as_ref(), &args)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let resp = client.post("/executions", &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2618,15 +2687,19 @@ fn cmd_agent_profile_create(
     instructions: String,
     tool_policy: Option<String>,
     limits: Option<String>,
+    fleet: Option<String>,
     as_json: bool,
 ) -> anyhow::Result<()> {
-    let body = execution::build_create_agent_profile_body(
+    let mut body = execution::build_create_agent_profile_body(
         &name,
         &instructions,
         tool_policy.as_deref(),
         limits.as_deref(),
     )
     .map_err(|e| anyhow::anyhow!(e))?;
+    if let Some(fleet) = fleet {
+        body["fleet_id"] = json!(fleet);
+    }
     let resp = client.post("/agent-profiles", &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);

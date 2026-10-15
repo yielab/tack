@@ -1645,3 +1645,212 @@ async fn a_queued_request_reads_no_runner_is_online_until_a_runner_is() {
     let (_, body) = snd(&app, "GET", &list, String::new()).await;
     assert_eq!(reason(&body), json!("codex needs a model named"), "{body}");
 }
+
+fn bare_body(item_id: &str, key: &str) -> Value {
+    let mut body: Value = serde_json::from_str(&create_body(item_id)).unwrap();
+    body["idempotency_key"] = json!(key);
+    body.as_object_mut().unwrap().remove("agent_profile_id");
+    body.as_object_mut().unwrap().remove("selector_kind");
+    body.as_object_mut().unwrap().remove("selector_id");
+    body
+}
+
+async fn add_profile(repo: &Repository, id: &str) {
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id,
+            name: id,
+            instructions: "x",
+            tool_policy: "{}",
+            limits: "{}",
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("profile");
+}
+
+async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<&str>) {
+    let item = repo
+        .get_item(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    let role = repo
+        .create_role(
+            item.project_id,
+            tack_core::models::CreateRole {
+                name: name.into(),
+                color: None,
+                icon: None,
+            },
+        )
+        .await
+        .unwrap();
+    sqlx::query("UPDATE roles SET agent_profile_id = ? WHERE id = ?")
+        .bind(profile)
+        .bind(role.id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    repo.assign_role_to_item(item.id, role.id).await.unwrap();
+}
+
+// A run created without a profile or a selector takes them from the item's role, else the
+// project default, else says it is ambiguous; a missing selector falls to the only active runner.
+#[tokio::test]
+async fn a_run_without_a_profile_resolves_it_from_the_role_then_the_project_default() {
+    let (app, repo, item_id) = setup().await;
+    add_profile(&repo, "profile-content").await;
+    add_profile(&repo, "profile-qa").await;
+    let item = repo
+        .get_item(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query("UPDATE projects SET default_profile_id = 'profile-c1' WHERE id = ?")
+        .bind(item.project_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+
+    let (status, created) = snd(
+        &app,
+        "POST",
+        "/executions",
+        bare_body(&item_id, "k-default").to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
+    assert_eq!(snapshot["metadata"]["profile_source"], "project_default");
+    assert_eq!(snapshot["selector"]["runner_id"], "runner-active");
+
+    add_role(&repo, &item_id, "Content", Some("profile-content")).await;
+    let (_, created) = snd(
+        &app,
+        "POST",
+        "/executions",
+        bare_body(&item_id, "k-role").to_string(),
+    )
+    .await;
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["agent_profile_id"], "profile-content");
+    assert_eq!(snapshot["metadata"]["profile_source"], "role:Content");
+
+    add_role(&repo, &item_id, "QA", Some("profile-qa")).await;
+    let (_, created) = snd(
+        &app,
+        "POST",
+        "/executions",
+        bare_body(&item_id, "k-two").to_string(),
+    )
+    .await;
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
+    assert_eq!(snapshot["metadata"]["profile_source"], "ambiguous");
+}
+
+#[tokio::test]
+async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
+    let (app, repo, item_id) = setup().await;
+    let mut body = bare_body(&item_id, "k-one");
+    body["agent_profile_id"] = json!("profile-c1");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+
+    repo.register_runner(
+        NewRunner {
+            id: "runner-second",
+            name: "Second",
+            credential_hash: "hash-two",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("second runner");
+    body["idempotency_key"] = json!("k-two-runners");
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["reason"], "select_where_this_runs");
+}
+
+async fn add_profile_naming_agent(repo: &Repository, id: &str, agent: &str) {
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id,
+            name: id,
+            instructions: "x",
+            tool_policy: &json!({ "agent": agent }).to_string(),
+            limits: "{}",
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("profile");
+}
+
+// A run that names no agent takes it from the resolved profile's `tool_policy.agent`, else the
+// project's default agent, else says to select one.
+#[tokio::test]
+async fn a_run_without_an_agent_takes_the_profiles_then_the_projects_then_asks() {
+    let (app, repo, item_id) = setup().await;
+    let item = repo
+        .get_item(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut body = bare_body(&item_id, "k-no-agent");
+    body.as_object_mut()
+        .unwrap()
+        .remove("requested_harness_kind");
+
+    // Nothing names an agent: asked to select one.
+    body["agent_profile_id"] = json!("profile-c1");
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["reason"], "select_an_agent");
+
+    // The project's default agent.
+    sqlx::query("UPDATE projects SET default_harness = 'opencode' WHERE id = ?")
+        .bind(item.project_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    body["idempotency_key"] = json!("k-project-agent");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["requested_harness_kind"], "opencode");
+
+    // The role's profile names its agent, which beats the project's.
+    add_profile_naming_agent(&repo, "profile-writer", "claude-code").await;
+    add_role(&repo, &item_id, "Content", Some("profile-writer")).await;
+    body.as_object_mut().unwrap().remove("agent_profile_id");
+    body["idempotency_key"] = json!("k-role-agent");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(snapshot["agent_profile_id"], "profile-writer");
+    assert_eq!(snapshot["requested_harness_kind"], "claude-code");
+}
+
+#[tokio::test]
+async fn a_profile_whose_agent_is_not_a_known_harness_is_refused() {
+    let (app, _repo, _item_id) = setup().await;
+    let (status, err) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Odd", "instructions": "x", "tool_policy": {"agent": "emacs"}}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["field"], "tool_policy.agent");
+}

@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (96 paths, 133 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (96 paths, 134 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -377,6 +377,20 @@ Roles / specialties and their assignment to items.
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Deleted | — |
+| 404 | Role not found | `ErrorEnvelope` |
+
+#### `PATCH /api/roles/{id}`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Role ID |
+
+**Request body:** `UpdateRole`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Role updated | `Role` |
+| 400 | Validation error or unknown agent profile | `ErrorEnvelope` |
 | 404 | Role not found | `ErrorEnvelope` |
 
 ---

@@ -2,7 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use tack_core::models::{CreateRole, Role};
+use tack_core::models::{CreateRole, Role, UpdateRole};
 
 use super::Repository;
 
@@ -38,14 +38,69 @@ impl Repository {
             name: input.name,
             color,
             icon: input.icon,
+            agent_profile_id: None,
             created_at: now,
         })
+    }
+
+    /// Applies the fields `input` names; `None` when no such role exists.
+    #[instrument(skip(self))]
+    pub async fn update_role(
+        &self,
+        id: Uuid,
+        input: UpdateRole,
+    ) -> Result<Option<Role>, sqlx::Error> {
+        let (set_profile, profile) = match input.agent_profile_id {
+            Some(value) => (1, value),
+            None => (0, None),
+        };
+        let result = sqlx::query(
+            "UPDATE roles SET name = COALESCE(?, name), color = COALESCE(?, color),
+                 icon = COALESCE(?, icon),
+                 agent_profile_id = CASE WHEN ? = 1 THEN ? ELSE agent_profile_id END
+             WHERE id = ?",
+        )
+        .bind(&input.name)
+        .bind(&input.color)
+        .bind(&input.icon)
+        .bind(set_profile)
+        .bind(&profile)
+        .bind(id.to_string())
+        .execute(self.pool())
+        .await?;
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+        let row = sqlx::query_as::<_, RoleRow>(
+            "SELECT id, project_id, name, color, icon, agent_profile_id, created_at
+             FROM roles WHERE id = ?",
+        )
+        .bind(id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+        Ok(Some(row.into_role()))
+    }
+
+    /// The item's roles, each with the profile it names: `(role name, profile id)`, by name.
+    #[instrument(skip(self))]
+    pub async fn profiles_for_item(
+        &self,
+        item_id: Uuid,
+    ) -> Result<Vec<(String, Option<String>)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT r.name, r.agent_profile_id FROM roles r
+             JOIN item_roles ir ON r.id = ir.role_id
+             WHERE ir.item_id = ? ORDER BY r.name",
+        )
+        .bind(item_id.to_string())
+        .fetch_all(self.pool())
+        .await
     }
 
     #[instrument(skip(self))]
     pub async fn list_roles(&self, project_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
         let rows = sqlx::query_as::<_, RoleRow>(
-            "SELECT id, project_id, name, color, icon, created_at
+            "SELECT id, project_id, name, color, icon, agent_profile_id, created_at
              FROM roles WHERE project_id = ? ORDER BY name",
         )
         .bind(project_id.to_string())
@@ -86,7 +141,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_roles_for_item(&self, item_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
         let rows = sqlx::query_as::<_, RoleRow>(
-            "SELECT r.id, r.project_id, r.name, r.color, r.icon, r.created_at
+            "SELECT r.id, r.project_id, r.name, r.color, r.icon, r.agent_profile_id, r.created_at
              FROM roles r
              JOIN item_roles ir ON r.id = ir.role_id
              WHERE ir.item_id = ?
@@ -116,6 +171,7 @@ struct RoleRow {
     name: String,
     color: String,
     icon: Option<String>,
+    agent_profile_id: Option<String>,
     created_at: String,
 }
 
@@ -127,6 +183,7 @@ impl RoleRow {
             name: self.name,
             color: self.color,
             icon: self.icon,
+            agent_profile_id: self.agent_profile_id,
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),

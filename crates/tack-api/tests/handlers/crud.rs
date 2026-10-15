@@ -844,6 +844,72 @@ async fn create_and_list_roles() {
     assert_eq!(roles[0]["name"], "Backend Dev");
 }
 
+#[tokio::test]
+async fn patch_role_sets_and_clears_its_profile() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let (_, role) = common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/roles"),
+        json!({"name":"Content"}),
+        &[],
+    )
+    .await;
+    let id = role["id"].as_str().unwrap().to_owned();
+    assert_eq!(role["agent_profile_id"], Value::Null);
+    let (_, made) = common::send_as_operator(
+        &app,
+        "POST",
+        "/api/agent-profiles",
+        json!({"name": "Mine", "instructions": "x"}).to_string(),
+    )
+    .await;
+    let profile = made["agent_profile_id"].as_str().unwrap().to_owned();
+
+    let (status, set) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/roles/{id}"),
+        json!({"agent_profile_id": profile, "name": "Writer"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{set}");
+    assert_eq!(set["agent_profile_id"], profile);
+    assert_eq!(set["name"], "Writer");
+
+    let (_, cleared) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/roles/{id}"),
+        json!({"agent_profile_id": null}),
+        &[],
+    )
+    .await;
+    assert_eq!(cleared["agent_profile_id"], Value::Null);
+    assert_eq!(cleared["name"], "Writer");
+
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/roles/{id}"),
+        json!({"agent_profile_id": "ap_missing"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/roles/{}", uuid::Uuid::new_v4()),
+        json!({"name": "x"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 // ─── Comment CRUD ─────────────────────────────────────────────────────────────
 
 #[tokio::test]

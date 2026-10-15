@@ -1411,7 +1411,7 @@ export interface paths {
         delete: operations["delete_role"];
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["update_role"];
         trace?: never;
     };
     "/api/runner-fleets": {
@@ -3017,6 +3017,7 @@ export interface components {
         AgentProfileSummary: {
             agent_profile_id: string;
             builtin: boolean;
+            fleet_id?: string | null;
             instructions: string;
             kind: string;
             limits: unknown;
@@ -3319,7 +3320,11 @@ export interface components {
             target_item_id: string;
         };
         CreateExecution: {
-            agent_profile_id: string;
+            /**
+             * @description Omitted, the server picks one: run settings, the item's role, the project's
+             *     default, the implementer, and records which in `metadata.profile_source`.
+             */
+            agent_profile_id?: string | null;
             budgets: unknown;
             environment: unknown;
             idempotency_key: string;
@@ -3353,15 +3358,23 @@ export interface components {
              *     is `invalid_request` (`details.reason = "project_has_no_code"`).
              */
             repository_snapshot?: unknown;
-            requested_harness_kind: string;
+            /**
+             * @description Omitted, the resolved profile's agent (`tool_policy.agent`), else the
+             *     project's default agent; with neither, `select_an_agent`.
+             */
+            requested_harness_kind?: string | null;
             /**
              * @description The one model string the agent is asked to use, passed verbatim.
              *     Absent, the project's default model applies when this run's agent is
              *     the project's default agent; otherwise the agent chooses.
              */
             requested_model?: string | null;
-            selector_id: string;
-            selector_kind: string;
+            selector_id?: string | null;
+            /**
+             * @description `exact_runner` or `fleet`. Omitted (with `selector_id`), the agent profile's fleet,
+             *     else the only active runner; with neither, `select_where_this_runs`.
+             */
+            selector_kind?: string | null;
             /**
              * @description `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
              *     with `invalid_request`. Omitted leaves the item's status untouched.
@@ -3447,6 +3460,8 @@ export interface components {
             token_id: string;
         };
         CreateProfile: {
+            /** @description The fleet a run with this profile goes to when it names no selector. */
+            fleet_id?: string | null;
             instructions: string;
             limits?: unknown;
             name: string;
@@ -4368,6 +4383,8 @@ export interface components {
         /** @enum {string} */
         Risk: "low" | "medium" | "high";
         Role: {
+            /** @description The agent profile a task with this role runs with, when none is named. */
+            agent_profile_id?: string | null;
             color: string;
             /** Format: date-time */
             created_at: string;
@@ -4619,6 +4636,8 @@ export interface components {
             enabled: boolean;
         };
         UpdateProfile: {
+            /** @description Omitted leaves the fleet untouched; JSON `null` clears it. */
+            fleet_id?: string | null;
             instructions?: string | null;
             limits?: unknown;
             name?: string | null;
@@ -4655,6 +4674,13 @@ export interface components {
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
             workspace_mode?: null | components["schemas"]["WorkspaceMode"];
+        };
+        UpdateRole: {
+            /** @description Omitted leaves the profile untouched; JSON `null` clears it. */
+            agent_profile_id?: string | null;
+            color?: string | null;
+            icon?: string | null;
+            name?: string | null;
         };
         /**
          * @description A full replacement of a sprint's editable fields. Every field is written as
@@ -8132,6 +8158,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Role not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Role ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRole"];
+            };
+        };
+        responses: {
+            /** @description Role updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            /** @description Validation error or unknown agent profile */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Role not found */
