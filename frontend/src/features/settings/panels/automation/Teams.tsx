@@ -98,7 +98,7 @@ const Teams: Component<Props> = (props) => {
           Apply the repository's teams
         </button>
         <span id="apply-teams-why" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          This project's folder has no .docket/teams
+          Tack cannot reach the team's machine from here yet. In the project's folder, run: docket init --name &lt;team&gt;
         </span>
       </div>
     </div>

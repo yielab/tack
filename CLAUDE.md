@@ -48,6 +48,11 @@ merge on Done, and an automatic merge at L4/L5 under the verifier's signed verdi
 responsibility: prill owns the verdict, required stages and every quality figure; Tack the loop,
 the merge (and whether its evidence is enough), GitHub and money; docket runs the agent. K2 closed
 2026-10-14 without waiting for prill: Tack reads the required stages and what to fix off the pack.
+Phase 73 (`docs/plans/phase-73.md`, ADR 0080, opened 2026-10-14) sends every docket run to a
+long-lived team over docket's HTTP API version 5 (tested against an in-process fake until docket
+0.2.0-beta.6 exists), lets a role choose the profile and a task start by itself, caps the automatic
+merge at the team's ceiling, keeps usage per model, lets a task repeat, and puts a project's
+automation on one screen: Settings → Automation as a ladder of four rungs.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
