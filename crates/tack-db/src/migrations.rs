@@ -149,6 +149,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("085_request_waiting", &MIGRATION_085[..]),
         ordinary("086_one_model_string", &MIGRATION_086[..]),
         ordinary("087_autonomy", &MIGRATION_087[..]),
+        ordinary("088_role_profile_fleet", &MIGRATION_088[..]),
     ]
 }
 
@@ -1887,4 +1888,10 @@ const MIGRATION_087: [&str; 14] = [
         recorded_at TEXT NOT NULL,
         PRIMARY KEY(attempt_id, kind)
     )",
+];
+
+// 088: a role may name the agent profile its tasks run with; a profile may name the fleet it runs on.
+const MIGRATION_088: [&str; 2] = [
+    "ALTER TABLE roles ADD COLUMN agent_profile_id TEXT REFERENCES agent_profiles(id) ON DELETE SET NULL",
+    "ALTER TABLE agent_profiles ADD COLUMN fleet_id TEXT REFERENCES agent_fleets(id) ON DELETE SET NULL",
 ];

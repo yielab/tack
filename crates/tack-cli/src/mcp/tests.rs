@@ -451,18 +451,7 @@ async fn mcp_get_item_fences_the_card_description_and_comments() {
 }
 
 #[test]
-fn create_execution_requires_exactly_one_selector() {
-    // Neither runner_id nor fleet_id.
-    let mut args = create_execution_min_args();
-    args.as_object_mut().unwrap().remove("fleet_id");
-    let line = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
-        args
-    );
-    let resp = handle_line(&test_client(), &line).unwrap();
-    let v: Value = serde_json::from_str(&resp).unwrap();
-    assert_eq!(v["result"]["isError"], true);
-
+fn create_execution_takes_at_most_one_selector() {
     // Both runner_id and fleet_id.
     let mut both = create_execution_min_args();
     both["runner_id"] = json!("runr_1");
@@ -517,6 +506,42 @@ async fn mcp_create_execution_posts_the_expected_body() {
     );
     let text = v["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("exec_1"), "unexpected: {text}");
+}
+
+/// With no profile, harness or selector the keys are absent from the posted
+/// body (not `null`), so the server resolves them.
+#[tokio::test]
+async fn mcp_create_execution_omits_the_keys_the_server_resolves() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/api/executions"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "protocol_version": 1, "request_id": "exec_1", "state": "queued", "replayed": false
+        })))
+        .mount(&server)
+        .await;
+
+    let uri = server.uri();
+    let line = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+        json!({ "item_id": "item-1", "timeout_seconds": 3600 })
+    );
+    let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_str(&resp).unwrap();
+    assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
+    let requests = server.received_requests().await.unwrap();
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    for key in [
+        "agent_profile_id",
+        "requested_harness_kind",
+        "selector_kind",
+        "selector_id",
+    ] {
+        assert!(body.get(key).is_none(), "{key} must be omitted: {body}");
+    }
+    assert_eq!(body["item_id"], "item-1");
 }
 
 #[tokio::test]

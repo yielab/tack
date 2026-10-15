@@ -4,7 +4,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::CreateRole;
+use tack_core::models::{CreateRole, UpdateRole};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -95,6 +95,49 @@ pub async fn remove_role(
 ) -> ApiResult<Json<serde_json::Value>> {
     state.repo.remove_role_from_item(item_id, role_id).await?;
     Ok(Json(serde_json::json!({"removed": true})))
+}
+
+#[instrument(skip(state))]
+#[utoipa::path(
+    patch,
+    path = "/api/roles/{id}",
+    tag = "roles",
+    params(
+        ("id" = Uuid, Path, description = "Role ID"),
+    ),
+    request_body = tack_core::models::UpdateRole,
+    responses(
+        (status = 200, description = "Role updated", body = tack_core::models::Role),
+        (status = 400, description = "Validation error or unknown agent profile", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Role not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn update_role(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateRole>,
+) -> ApiResult<Json<serde_json::Value>> {
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    if let Some(Some(profile_id)) = &input.agent_profile_id {
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_profiles WHERE id = ?)")
+                .bind(profile_id)
+                .fetch_one(state.repo.pool())
+                .await?;
+        if !exists {
+            return Err(ApiError::BadRequest(format!(
+                "agent_profile_id {profile_id} names no agent profile"
+            )));
+        }
+    }
+    let role = state
+        .repo
+        .update_role(id, input)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Role {id} not found")))?;
+    Ok(Json(serde_json::to_value(role).unwrap()))
 }
 
 #[instrument(skip(state))]

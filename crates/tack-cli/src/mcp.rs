@@ -329,8 +329,8 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 opt_str(args, "runner_id").as_deref(),
                 opt_str(args, "fleet_id").as_deref(),
             )?;
-            let agent_profile_id = require_str(args, "agent_profile_id")?;
-            let harness = require_str(args, "harness")?;
+            let agent_profile_id = opt_str(args, "agent_profile_id");
+            let harness = opt_str(args, "harness");
             for key in ["environment", "repository", "agent_profile_snapshot"] {
                 if args.get(key).is_some() {
                     return Err(format!("unknown argument: {key}"));
@@ -344,8 +344,8 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             let values = execution::CreateExecutionValues {
                 item_id: &item_id,
                 idempotency_key: idempotency_key.as_deref(),
-                agent_profile_id: &agent_profile_id,
-                requested_harness_kind: &harness,
+                agent_profile_id: agent_profile_id.as_deref(),
+                requested_harness_kind: harness.as_deref(),
                 requested_model: model.as_deref(),
                 // Fixed: a run over MCP always asks before each action, with no network.
                 permission_policy: json!({ "approvals": "ask", "network": false }),
@@ -355,7 +355,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 timeout_seconds,
                 status_map_policy_id: status_map_policy_id.as_deref(),
             };
-            let mut body = execution::create_execution_body(&selector, values);
+            let mut body = execution::create_execution_body(selector.as_ref(), values);
             body["origin"] = json!("mcp");
             call(client.post("/executions", &body))
         }
@@ -808,17 +808,19 @@ fn tool_specs() -> Value {
             "Starts a run that asks the person before every action. Creates \
              (or idempotently replays, if idempotency_key repeats) an \
              execution request that assigns a Tack item to a coding-harness \
-             runner or fleet. Exactly one of runner_id/fleet_id is required. \
+             runner or fleet. At most one of runner_id/fleet_id; omitted, the \
+             server picks the agent profile (the item's role, else the project's \
+             default), its agent and where it runs. \
              Use list_fleets/list_agent_profiles first to \
              discover valid ids.",
             json!({
                 "type": "object",
                 "properties": {
                     "item_id": { "type": "string" },
-                    "runner_id": { "type": "string", "description": "Exact runner id (mutually exclusive with fleet_id)" },
-                    "fleet_id": { "type": "string", "description": "Fleet id (mutually exclusive with runner_id)" },
-                    "agent_profile_id": { "type": "string" },
-                    "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code" },
+                    "runner_id": { "type": "string", "description": "Exact runner id (at most one of runner_id/fleet_id)" },
+                    "fleet_id": { "type": "string", "description": "Fleet id (at most one of runner_id/fleet_id)" },
+                    "agent_profile_id": { "type": "string", "description": "Omit to use the item's role profile, else the project default" },
+                    "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude-code. Omit to use the profile's agent, else the project's default agent" },
                     "timeout_seconds": { "type": "integer" },
                     "model": { "type": "string", "description": "The model to run, passed to the agent as given. Omit to use the project's default for its default agent, else the agent's own choice" },
                     "budgets": { "type": "object", "description": "Default: {}" },
@@ -828,8 +830,6 @@ fn tool_specs() -> Value {
                 },
                 "required": [
                     "item_id",
-                    "agent_profile_id",
-                    "harness",
                     "timeout_seconds"
                 ]
             })

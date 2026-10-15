@@ -25,6 +25,8 @@ use tack_orch::usage_provenance::derive_attempt_facts;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
+
 use crate::AppState;
 
 /// Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
@@ -272,10 +274,20 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::E
 pub struct CreateExecution {
     pub item_id: Uuid,
     pub idempotency_key: String,
-    pub selector_kind: String,
-    pub selector_id: String,
-    pub agent_profile_id: String,
-    pub requested_harness_kind: String,
+    /// `exact_runner` or `fleet`. Omitted (with `selector_id`), the agent profile's fleet,
+    /// else the only active runner; with neither, `select_where_this_runs`.
+    #[serde(default)]
+    pub selector_kind: Option<String>,
+    #[serde(default)]
+    pub selector_id: Option<String>,
+    /// Omitted, the server picks one: run settings, the item's role, the project's
+    /// default, the implementer, and records which in `metadata.profile_source`.
+    #[serde(default)]
+    pub agent_profile_id: Option<String>,
+    /// Omitted, the resolved profile's agent (`tool_policy.agent`), else the
+    /// project's default agent; with neither, `select_an_agent`.
+    #[serde(default)]
+    pub requested_harness_kind: Option<String>,
     /// The one model string the agent is asked to use, passed verbatim.
     /// Absent, the project's default model applies when this run's agent is
     /// the project's default agent; otherwise the agent chooses.
@@ -871,7 +883,7 @@ fn project_repository(
 pub async fn create_execution(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
-    Json(input): Json<CreateExecution>,
+    Json(mut input): Json<CreateExecution>,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     principal(&headers)?;
     if let Some(id) = input.status_map_policy_id.as_deref()
@@ -905,19 +917,152 @@ pub async fn create_execution(
     };
     let project = load_project(&state.repo, item.project_id).await?;
     let repository = resolve_repository(&project, input.repository_snapshot.clone())?;
-    let profile = load_profile(&state.repo, &input).await?;
+    let resolved = resolve_profile(
+        &state.repo,
+        &item,
+        &project,
+        input.agent_profile_id.as_deref(),
+    )
+    .await?
+    .ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "No agent profile was named and none could be chosen",
+            json!({"field": "agent_profile_id"}),
+        )
+    })?;
+    if input.agent_profile_id.is_none() {
+        let source = match &resolved.source {
+            Source::Explicit => None,
+            Source::RunSettings => Some("run_settings".to_owned()),
+            Source::Role(name) => Some(format!("role:{name}")),
+            Source::ProjectDefault => Some("project_default".to_owned()),
+            Source::Implementer => Some("implementer".to_owned()),
+            Source::Ambiguous => Some("ambiguous".to_owned()),
+        };
+        if let (Some(source), Some(metadata)) = (source, input.metadata.as_object_mut()) {
+            metadata.insert("profile_source".into(), json!(source));
+        }
+        input.agent_profile_id = Some(resolved.profile_id.clone());
+    }
+    if input.requested_harness_kind.is_none() {
+        input.requested_harness_kind = resolved
+            .harness
+            .clone()
+            .or_else(|| project.default_harness.clone());
+    }
+    if input.requested_harness_kind.is_none() {
+        return Err(select_an_agent());
+    }
+    if input.selector_kind.is_none() && input.selector_id.is_none() {
+        let (kind, id) = default_selector(&state.repo, resolved.fleet_id).await?;
+        input.selector_kind = Some(kind);
+        input.selector_id = Some(id);
+    }
+    let profile = load_profile(&state.repo, &resolved.profile_id, &input).await?;
     enqueue_resolved(state, headers, input, profile, repository).await
+}
+
+fn select_an_agent() -> (StatusCode, Json<Value>) {
+    error(
+        StatusCode::BAD_REQUEST,
+        StableErrorCode::InvalidRequest,
+        "Name the agent this runs with: the agent profile names none and the project has no default agent",
+        json!({"field": "requested_harness_kind", "reason": "select_an_agent"}),
+    )
+}
+
+/// The profile a run with no named profile gets, and the fleet that profile names.
+async fn resolve_profile(
+    repo: &tack_db::Repository,
+    item: &tack_core::models::Item,
+    project: &tack_core::models::Project,
+    explicit: Option<&str>,
+) -> Result<Option<Resolved>, (StatusCode, Json<Value>)> {
+    let internal = |_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not resolve the agent profile",
+            json!({}),
+        )
+    };
+    let roles = repo.profiles_for_item(item.id).await.map_err(internal)?;
+    let implementer: Option<String> =
+        sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")
+            .fetch_optional(repo.pool())
+            .await
+            .map_err(internal)?;
+    let profiles: Vec<Candidate> = sqlx::query_as::<_, (String, Option<String>, String)>(
+        "SELECT id, fleet_id, tool_policy FROM agent_profiles",
+    )
+    .fetch_all(repo.pool())
+    .await
+    .map_err(internal)?
+    .into_iter()
+    .map(|(profile_id, fleet_id, tool_policy)| Candidate {
+        profile_id,
+        fleet_id,
+        harness: serde_json::from_str::<Value>(&tool_policy)
+            .ok()
+            .and_then(|p| p.get("agent")?.as_str().map(str::to_owned)),
+    })
+    .collect();
+    Ok(resolve(
+        explicit,
+        item.run_settings
+            .as_ref()
+            .and_then(|r| r.agent_profile_id.as_deref()),
+        &roles,
+        project.default_profile_id.as_deref(),
+        implementer.as_deref(),
+        &profiles,
+    ))
+}
+
+/// Where a run that names no selector goes: its profile's fleet, else the only active runner.
+async fn default_selector(
+    repo: &tack_db::Repository,
+    fleet_id: Option<String>,
+) -> Result<(String, String), (StatusCode, Json<Value>)> {
+    if let Some(fleet_id) = fleet_id {
+        return Ok(("fleet".to_owned(), fleet_id));
+    }
+    let runners: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM agent_runners WHERE state = 'active' AND revoked_at IS NULL",
+    )
+    .fetch_all(repo.pool())
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not list runners",
+            json!({}),
+        )
+    })?;
+    match <[String; 1]>::try_from(runners) {
+        Ok([only]) => Ok(("exact_runner".to_owned(), only)),
+        Err(_) => Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "Name the runner or fleet this runs on: the agent profile has no fleet and there is not exactly one active runner",
+            json!({"field": "selector_kind", "reason": "select_where_this_runs"}),
+        )),
+    }
 }
 
 /// The agent profile as the database has it now, shaped as the snapshot the
 /// request records.
 async fn load_profile(
     repo: &tack_db::Repository,
+    profile_id: &str,
     input: &CreateExecution,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
     let row: Option<(String, String, String)> =
         sqlx::query_as("SELECT name, instructions, tool_policy FROM agent_profiles WHERE id = ?")
-            .bind(&input.agent_profile_id)
+            .bind(profile_id)
             .fetch_optional(repo.pool())
             .await
             .map_err(|_| {
@@ -965,6 +1110,21 @@ pub(crate) async fn enqueue_resolved(
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let authenticated_principal = principal(&headers)?;
     let idempotency_scope = format!("operator:{authenticated_principal}");
+    let (Some(selector_kind), Some(selector_id), Some(agent_profile_id)) = (
+        input.selector_kind.clone(),
+        input.selector_id.clone(),
+        input.agent_profile_id.clone(),
+    ) else {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "selector_kind, selector_id and agent_profile_id must be resolved before enqueue",
+            json!({"field": "selector_kind"}),
+        ));
+    };
+    let Some(requested_harness_kind) = input.requested_harness_kind.clone() else {
+        return Err(select_an_agent());
+    };
     let Some(item) = state.repo.get_item(input.item_id).await.map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -994,9 +1154,9 @@ pub(crate) async fn enqueue_resolved(
     })?;
     // An exact retry must be allowed to reach the durable replay record even
     // if a mutable runner status changed after the original create.
-    if existing_snapshot.is_none() && input.selector_kind == "exact_runner" {
+    if existing_snapshot.is_none() && selector_kind == "exact_runner" {
         let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runners WHERE id = ? AND state = 'active' AND revoked_at IS NULL)")
-            .bind(&input.selector_id).fetch_one(state.repo.pool()).await
+            .bind(&selector_id).fetch_one(state.repo.pool()).await
             .map_err(|_| {
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1010,11 +1170,11 @@ pub(crate) async fn enqueue_resolved(
                 StatusCode::CONFLICT,
                 StableErrorCode::RunnerRevoked,
                 "The selected runner is unavailable or revoked",
-                json!({"runner_id": input.selector_id}),
+                json!({"runner_id": selector_id}),
             ));
         }
     }
-    if !matches!(input.selector_kind.as_str(), "exact_runner" | "fleet") {
+    if !matches!(selector_kind.as_str(), "exact_runner" | "fleet") {
         return Err(error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -1027,7 +1187,7 @@ pub(crate) async fn enqueue_resolved(
     let resolved_model = resolve_request_model_policy(
         &state.repo,
         item.project_id,
-        &input.requested_harness_kind,
+        &requested_harness_kind,
         input.requested_model.as_deref(),
     )
     .await
@@ -1106,9 +1266,9 @@ pub(crate) async fn enqueue_resolved(
         ),
     };
     let item_id = input.item_id.to_string();
-    let selector = match input.selector_kind.as_str() {
-        "exact_runner" => json!({"kind":"exact_runner","runner_id":input.selector_id}),
-        "fleet" => json!({"kind":"fleet","fleet_id":input.selector_id}),
+    let selector = match selector_kind.as_str() {
+        "exact_runner" => json!({"kind":"exact_runner","runner_id":selector_id}),
+        "fleet" => json!({"kind":"fleet","fleet_id":selector_id}),
         _ => unreachable!("selector kind was validated"),
     };
     let (mut agent_profile_snapshot, brief) = with_item_context(
@@ -1132,9 +1292,9 @@ pub(crate) async fn enqueue_resolved(
         "created_by": {"source":"operator_api","subject_id":authenticated_principal},
         "created_at": created_at.to_rfc3339(),
         "selector": selector,
-        "agent_profile_id": input.agent_profile_id,
+        "agent_profile_id": agent_profile_id,
         "resolved_agent_profile": agent_profile_snapshot,
-        "requested_harness_kind": input.requested_harness_kind,
+        "requested_harness_kind": requested_harness_kind,
         "requested_model": resolved_model.clone(),
         "repository": repository_snapshot,
         "permission_policy": input.permission_policy,
@@ -1225,11 +1385,11 @@ pub(crate) async fn enqueue_resolved(
                 idempotency_scope: &idempotency_scope,
                 idempotency_key: &input.idempotency_key,
                 request_fingerprint: &request_fingerprint,
-                selector_kind: &input.selector_kind,
-                selector_id: &input.selector_id,
-                agent_profile_id: Some(&input.agent_profile_id),
+                selector_kind: &selector_kind,
+                selector_id: &selector_id,
+                agent_profile_id: Some(&agent_profile_id),
                 agent_profile_snapshot: &agent_profile_snapshot,
-                requested_harness_kind: Some(&input.requested_harness_kind),
+                requested_harness_kind: Some(&requested_harness_kind),
                 requested_model: resolved_model.as_deref(),
                 repository_snapshot: &repository_snapshot,
                 permission_policy: &permission_policy,
@@ -2032,17 +2192,15 @@ pub async fn get_item_agent_context(
             )
         })?;
 
-    // Load the profile: use the project's default_profile_id if set and found,
-    // otherwise use the implementer profile
-    let profile_id = query
-        .profile_id
-        .as_deref()
-        .or(project.default_profile_id.as_deref());
-    let profile = if let Some(default_profile_id) = profile_id {
+    // The profile the run would get: the one named, else run settings, the item's role,
+    // the project's default, then the implementer.
+    let resolved =
+        resolve_profile(&state.repo, &item, &project, query.profile_id.as_deref()).await?;
+    let profile = if let Some(resolved) = resolved {
         let profile: Option<(String, String, String, String)> = sqlx::query_as(
             "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE id = ?",
         )
-        .bind(default_profile_id)
+        .bind(&resolved.profile_id)
         .fetch_optional(state.repo.pool())
         .await
         .map_err(|_| {
@@ -2053,55 +2211,25 @@ pub async fn get_item_agent_context(
                 json!({}),
             )
         })?;
-
-        if let Some((id, name, instructions, tool_policy)) = profile {
+        profile.map(|(id, name, instructions, tool_policy)| {
             serde_json::json!({
                 "agent_profile_id": id,
                 "name": name,
                 "instructions": instructions,
                 "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
             })
-        } else {
-            // Profile ID specified but not found, return empty
-            serde_json::json!({
-                "agent_profile_id": "",
-                "name": "Default",
-                "instructions": "",
-                "tool_policy": serde_json::json!({}),
-            })
-        }
+        })
     } else {
-        // Look up the implementer profile by kind
-        let implementer: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE kind = 'implementer'",
-        )
-        .fetch_optional(state.repo.pool())
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not look up implementer profile",
-                json!({}),
-            )
-        })?;
-
-        if let Some((id, name, instructions, tool_policy)) = implementer {
-            serde_json::json!({
-                "agent_profile_id": id,
-                "name": name,
-                "instructions": instructions,
-                "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
-            })
-        } else {
-            serde_json::json!({
-                "agent_profile_id": "",
-                "name": "Default",
-                "instructions": "",
-                "tool_policy": serde_json::json!({}),
-            })
-        }
-    };
+        None
+    }
+    .unwrap_or_else(|| {
+        serde_json::json!({
+            "agent_profile_id": "",
+            "name": "Default",
+            "instructions": "",
+            "tool_policy": serde_json::json!({}),
+        })
+    });
 
     let profile_instructions = profile
         .get("instructions")

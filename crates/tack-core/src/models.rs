@@ -422,6 +422,8 @@ pub struct Role {
     pub name: String,
     pub color: String,
     pub icon: Option<String>,
+    /// The agent profile a task with this role runs with, when none is named.
+    pub agent_profile_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -698,6 +700,18 @@ pub struct CreateRole {
     pub name: String,
     pub color: Option<String>,
     pub icon: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateRole {
+    #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    /// Omitted leaves the profile untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub agent_profile_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize, Validate)]

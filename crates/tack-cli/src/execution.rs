@@ -55,7 +55,7 @@ pub fn new_opaque_key(prefix: &str) -> String {
 // ── Execution request bodies ───────────────────────────────────────────────
 
 /// One selector value from `--runner <id>` / `--fleet <id>` (mutually
-/// exclusive; `main.rs`'s `clap::ArgGroup` enforces exactly one is given).
+/// exclusive; with neither, the server picks where the run goes).
 pub enum Selector {
     ExactRunner(String),
     Fleet(String),
@@ -79,8 +79,10 @@ impl Selector {
 pub struct CreateExecutionArgs<'a> {
     pub item_id: &'a str,
     pub idempotency_key: Option<&'a str>,
-    pub agent_profile_id: &'a str,
-    pub requested_harness_kind: &'a str,
+    /// Omitted, the server resolves the profile (and so the fleet).
+    pub agent_profile_id: Option<&'a str>,
+    /// Omitted, the server uses the profile's agent, else the project's.
+    pub requested_harness_kind: Option<&'a str>,
     pub requested_model: Option<&'a str>,
     /// JSON object matching `tack_orch::execution::PermissionPolicy`:
     /// `{network: bool, tools: [string] (optional, default [])}`. Required
@@ -104,8 +106,10 @@ pub struct CreateExecutionArgs<'a> {
 pub struct CreateExecutionValues<'a> {
     pub item_id: &'a str,
     pub idempotency_key: Option<&'a str>,
-    pub agent_profile_id: &'a str,
-    pub requested_harness_kind: &'a str,
+    /// Omitted, the server resolves the profile (and so the fleet).
+    pub agent_profile_id: Option<&'a str>,
+    /// Omitted, the server uses the profile's agent, else the project's.
+    pub requested_harness_kind: Option<&'a str>,
     pub requested_model: Option<&'a str>,
     pub permission_policy: Value,
     pub budgets: Value,
@@ -120,18 +124,17 @@ pub struct CreateExecutionValues<'a> {
 /// (`CreateExecution`'s exact field set) from already-parsed values. See
 /// [`CreateExecutionValues`] for why both the CLI and MCP entry points call
 /// this instead of building the `json!` object independently.
-pub fn create_execution_body(selector: &Selector, values: CreateExecutionValues<'_>) -> Value {
+pub fn create_execution_body(
+    selector: Option<&Selector>,
+    values: CreateExecutionValues<'_>,
+) -> Value {
     let idempotency_key = values
         .idempotency_key
         .map(str::to_owned)
         .unwrap_or_else(|| new_opaque_key("cli-exec"));
-    json!({
+    let mut body = json!({
         "item_id": values.item_id,
         "idempotency_key": idempotency_key,
-        "selector_kind": selector.kind(),
-        "selector_id": selector.id(),
-        "agent_profile_id": values.agent_profile_id,
-        "requested_harness_kind": values.requested_harness_kind,
         "requested_model": values.requested_model,
         "permission_policy": values.permission_policy,
         "budgets": values.budgets,
@@ -139,14 +142,26 @@ pub fn create_execution_body(selector: &Selector, values: CreateExecutionValues<
         "metadata": values.metadata,
         "timeout_seconds": values.timeout_seconds,
         "status_map_policy_id": values.status_map_policy_id,
-    })
+    });
+    // An absent key is omitted, not sent as null: the server resolves it.
+    if let Some(selector) = selector {
+        body["selector_kind"] = json!(selector.kind());
+        body["selector_id"] = json!(selector.id());
+    }
+    if let Some(profile) = values.agent_profile_id {
+        body["agent_profile_id"] = json!(profile);
+    }
+    if let Some(harness) = values.requested_harness_kind {
+        body["requested_harness_kind"] = json!(harness);
+    }
+    body
 }
 
 /// Builds the `POST /api/executions` body from the CLI's argv-string flags,
 /// parsing each JSON-blob flag and then delegating to
 /// [`create_execution_body`] — see that function's doc for why.
 pub fn build_create_execution_body(
-    selector: &Selector,
+    selector: Option<&Selector>,
     args: &CreateExecutionArgs<'_>,
 ) -> Result<Value, String> {
     let values = CreateExecutionValues {
@@ -165,11 +180,14 @@ pub fn build_create_execution_body(
     Ok(create_execution_body(selector, values))
 }
 
-pub fn selector_from_flags(runner: Option<&str>, fleet: Option<&str>) -> Result<Selector, String> {
+pub fn selector_from_flags(
+    runner: Option<&str>,
+    fleet: Option<&str>,
+) -> Result<Option<Selector>, String> {
     match (runner, fleet) {
-        (Some(r), None) => Ok(Selector::ExactRunner(r.to_string())),
-        (None, Some(f)) => Ok(Selector::Fleet(f.to_string())),
-        (None, None) => Err("exactly one of --runner or --fleet is required".to_string()),
+        (Some(r), None) => Ok(Some(Selector::ExactRunner(r.to_string()))),
+        (None, Some(f)) => Ok(Some(Selector::Fleet(f.to_string()))),
+        (None, None) => Ok(None),
         (Some(_), Some(_)) => Err("--runner and --fleet are mutually exclusive".to_string()),
     }
 }
