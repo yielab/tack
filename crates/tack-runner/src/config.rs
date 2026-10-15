@@ -75,6 +75,54 @@ pub struct RunnerConfig {
     /// The `[environment]` table: variables every run gets, whatever its
     /// request says. A request cannot override one.
     pub environment: BTreeMap<String, EnvValue>,
+    /// The `[docket]` table: where this runner reaches docket's operator API.
+    pub docket: DocketConfig,
+}
+
+/// The `[docket]` table. docket runs as a daemon beside the runner and the
+/// runner speaks to it over HTTP; nothing here makes the runner spawn a
+/// model call of its own.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocketConfig {
+    /// The daemon's `DOCKET_HOME`; the operator's own when unset.
+    pub home: Option<PathBuf>,
+    /// The port the daemon listens on, on loopback.
+    pub port: u16,
+    /// The file holding the daemon's bearer token.
+    pub token_file: Option<PathBuf>,
+    /// The docket binary; naming one registers the harness.
+    pub binary: Option<PathBuf>,
+    /// A daemon that is already running at this URL. When set, the runner
+    /// uses it as it is and spawns nothing.
+    pub base_url: Option<String>,
+}
+
+impl Default for DocketConfig {
+    fn default() -> Self {
+        Self {
+            home: None,
+            port: 7399,
+            token_file: None,
+            binary: None,
+            base_url: None,
+        }
+    }
+}
+
+impl DocketConfig {
+    /// Where the operator API answers: `base_url`, else loopback on `port`.
+    pub fn url(&self) -> String {
+        self.base_url
+            .as_deref()
+            .map(|url| url.trim_end_matches('/').to_owned())
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", self.port))
+    }
+
+    /// Whether this runner is set up to use docket at all.
+    pub fn configured(&self) -> bool {
+        self.binary.is_some() || self.base_url.is_some()
+    }
 }
 
 /// The `[secrets]` table.
@@ -179,6 +227,7 @@ struct FileConfig {
     git: Option<GitConfig>,
     secrets: Option<SecretsConfig>,
     environment: Option<BTreeMap<String, EnvValue>>,
+    docket: Option<DocketConfig>,
 }
 
 impl RunnerConfig {
@@ -193,6 +242,7 @@ impl RunnerConfig {
             git: GitConfig::default(),
             secrets: SecretsConfig::default(),
             environment: BTreeMap::new(),
+            docket: DocketConfig::default(),
         }
     }
 
@@ -223,6 +273,9 @@ impl RunnerConfig {
             }
             if let Some(environment) = file.environment {
                 config.environment = environment;
+            }
+            if let Some(docket) = file.docket {
+                config.docket = docket;
             }
             config.apply(ConfigOverrides {
                 api_base_url: file.api_base_url,

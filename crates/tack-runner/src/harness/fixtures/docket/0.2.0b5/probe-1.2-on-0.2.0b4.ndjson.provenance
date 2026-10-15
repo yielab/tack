@@ -1,5 +1,0 @@
-captured
-docket 0.2.0b4 (the released install, ~/.local/bin/docket)
-
-The same probe as probe-1.2.ndjson, against a docket that predates contract 1.2: exit 2 on a
-`v: "1.0.0"` refusal whose error begins `--contract must be one of`.

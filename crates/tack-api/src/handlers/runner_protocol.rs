@@ -2381,6 +2381,18 @@ async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result
     root_object.insert("created_at".into(), json!(created_at.to_rfc3339()));
     let mut metadata = root_object.get("metadata").cloned().unwrap_or(json!({}));
     metadata["rework_of"] = json!(root);
+    // The branch the attempt just rejected left in the user's repository: a
+    // harness that works on branches starts the follow-up from it.
+    let rejected_branch: Option<String> = sqlx::query_scalar(
+        "SELECT json_extract(actual_execution, '$.git.branch') FROM execution_attempts WHERE id = ?",
+    )
+    .bind(attempt_id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+    if let Some(branch) = rejected_branch.filter(|branch| !branch.is_empty()) {
+        metadata["rework_base"] = json!(branch);
+    }
     root_object.insert("metadata".into(), metadata);
     if let Some(Value::String(instructions)) = root_object
         .get_mut("resolved_agent_profile")

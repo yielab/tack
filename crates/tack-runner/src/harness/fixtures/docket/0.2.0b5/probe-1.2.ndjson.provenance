@@ -1,6 +1,0 @@
-captured
-docket 0.2.0b5 (scratch venv install of rack-cli branch harness-contract-1.2 @ 67665c58, which contains 4aa51b4e "harness contract 1.2")
-
-`env -i PATH=/usr/bin:/bin docket exec --workspace . --task probe --contract 1.2`: the
-contract 1.2 probe (harness-mode spec, "Contract 1.2" section 6). With no DOCKET_HOME it refuses
-before any network call, exit 2, on a `v: "1.2.0"` line.

@@ -214,6 +214,7 @@ pub fn discover(
     secrets: &SecretStore,
     request_may_reference: &[String],
     own_environment: &BTreeMap<String, String>,
+    docket: &crate::config::DocketConfig,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
     let (path, home) = locate::snapshot();
@@ -228,8 +229,27 @@ pub fn discover(
     );
     install(&mut found, machine, codex::CodexGrammar);
     install(&mut found, machine, claude_code::ClaudeCodeGrammar);
-    install(&mut found, machine, docket::DocketGrammar);
     install(&mut found, machine, opencode::OpencodeGrammar);
+    // docket is a daemon, not a process this runner spawns: it is registered
+    // when the runner is told where it is.
+    if docket.configured() {
+        let state_dir = staging_root.parent().unwrap_or(staging_root).to_path_buf();
+        if found
+            .0
+            .register(docket::DocketAdapter::new(docket.clone(), state_dir))
+            .is_err()
+        {
+            tracing::warn!(
+                harness = docket::DESCRIPTOR.kind,
+                "rejected at registration"
+            );
+        }
+    } else {
+        found.1.insert(
+            docket::DESCRIPTOR.kind.to_owned(),
+            "docket is not configured: add a [docket] table with its binary or base_url".to_owned(),
+        );
+    }
     found
 }
 
@@ -326,8 +346,9 @@ impl AdapterRegistry {
     ) -> Result<(), HarnessRegistrationError> {
         let declared = probe.declared_capabilities();
         let kind = probe.harness_kind();
-        let reports_groups = descriptor(kind.as_str()).is_some_and(|d| d.reports_process_groups);
-        if declared.cancel.support == CapabilitySupport::Supported && !reports_groups {
+        let reaches_work = descriptor(kind.as_str())
+            .is_some_and(|d| d.reports_process_groups || d.cancels_over_api);
+        if declared.cancel.support == CapabilitySupport::Supported && !reaches_work {
             return Err(HarnessRegistrationError::OverclaimedCancelSupport {
                 kind: kind.as_str().to_owned(),
                 support: declared.cancel.support,

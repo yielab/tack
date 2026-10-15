@@ -1,128 +1,180 @@
-//! What the located `docket` binary can do, measured once. The probe is an
-//! `exec` invocation that docket refuses before any network call, because
-//! `DOCKET_HOME` is deliberately left unset: zero spend, no model endpoint,
-//! no state written. Why this probe and not another is in
-//! `fixtures/docket/README.md`.
+//! What a running docket reports about itself: its API version, its teams and
+//! what keeps each from running lights-out. Everything is read over HTTP;
+//! nothing here starts docket or spends a token.
 
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::collections::BTreeSet;
 
-/// How long one probe may take; a refusal is immediate, so this only bounds
-/// a binary that is not docket at all.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+use chrono::Utc;
+use tack_orch::execution::{
+    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
+    SignInReport, SignInState, TeamReport, TeamViolation,
+};
 
-/// The harness contract this grammar writes, and the version of docket that
-/// first speaks it.
-pub const CONTRACT: &str = "1.2";
-pub const FIRST_VERSION: &str = "0.2.0-beta.5";
+use super::client::Client;
 
-/// The default is what an unprobed or unlocatable docket is treated as: one
-/// that does not speak the contract.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DocketFeatures {
-    /// docket answered the contract 1.2 probe with a 1.2 refusal.
-    pub speaks_contract: bool,
-    /// What `docket --version` printed, or empty when it printed nothing
-    /// recognizable. Reported, never compared.
-    pub version: String,
+/// The only operator API version this harness speaks.
+pub const API_VERSION: &str = "5";
+
+/// The profile a team must hold to run without a person.
+const LIGHTS_OUT: &str = "lights-out";
+
+fn needs_beta_6(found: &str) -> String {
+    format!("needs docket 0.2.0-beta.6 (API {API_VERSION}); this docket answers API {found}")
 }
 
-impl DocketFeatures {
-    /// A docket that speaks contract 1.2, for tests and for a probe that
-    /// found one.
-    pub fn speaking(version: &str) -> Self {
-        Self {
-            speaks_contract: true,
-            version: version.to_owned(),
+/// `GET /status.json`: the model ids its team members run on, or the sentence
+/// saying why this docket cannot be used.
+pub(super) async fn status(client: &Client) -> Result<Vec<String>, String> {
+    let reply = client
+        .status()
+        .await
+        .map_err(|why| format!("docket is not answering at {}: {why}", client.base()))?;
+    if reply.status != 200 {
+        return Err(format!(
+            "docket is not answering at {}: {}",
+            client.base(),
+            reply.error()
+        ));
+    }
+    let found = reply.body["apiVersion"].as_str().unwrap_or("unknown");
+    if found != API_VERSION {
+        return Err(needs_beta_6(found));
+    }
+    let models: BTreeSet<String> = reply.body["agents"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|agent| agent["model"].as_str())
+        .filter(|model| !model.is_empty())
+        .map(str::to_owned)
+        .collect();
+    Ok(models.into_iter().collect())
+}
+
+/// The teams docket reports, each with its profile's violations.
+pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
+    let list = client.pods().await?;
+    if list.status != 200 {
+        return Err(list.error());
+    }
+    let mut teams = Vec::new();
+    for pod in list.body["pods"].as_array().into_iter().flatten() {
+        let Some(name) = pod["name"].as_str() else {
+            continue;
+        };
+        let report = client.pod(name).await?;
+        if report.status != 200 {
+            return Err(report.error());
         }
+        let profile = &report.body["profile"];
+        teams.push(TeamReport {
+            name: name.to_owned(),
+            profile: profile["name"]
+                .as_str()
+                .or_else(|| pod["profile"].as_str())
+                .unwrap_or_default()
+                .to_owned(),
+            violations: profile["violations"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|violation| TeamViolation {
+                    requirement: violation["requirement"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    fix: violation["fix"].as_str().unwrap_or_default().to_owned(),
+                })
+                .collect(),
+        });
     }
+    Ok(teams)
+}
 
-    /// Runs `program --version` and the contract probe. A docket that
-    /// implements contract 1.2 refuses `--contract 1.2` with no `DOCKET_HOME`
-    /// on a `v: "1.2.0"` line; an older one refuses it on a `1.0.0` line
-    /// whose error begins `--contract must be one of`.
-    pub fn probe(program: &Path) -> Self {
-        let version = run(program, &["--version"])
-            .and_then(|out| {
-                super::super::local_process::parse_version(out.trim()).map(str::to_owned)
-            })
-            .unwrap_or_default();
-        Self {
-            speaks_contract: speaks(run(
-                program,
-                &[
-                    "exec",
-                    "--workspace",
-                    ".",
-                    "--task",
-                    "probe",
-                    "--contract",
-                    CONTRACT,
-                ],
-            )),
-            version,
+/// A team that needs a person during a run: attended, or with a violation.
+fn capped(team: &TeamReport) -> bool {
+    team.profile != LIGHTS_OUT || !team.violations.is_empty()
+}
+
+pub(super) async fn probe(
+    client: &Client,
+    decisions: tack_orch::execution::CapabilityValue,
+) -> HarnessCapability {
+    let mut capability = HarnessCapability {
+        harness_kind: DomainHarnessKind::new(super::DESCRIPTOR.kind),
+        installed_version: String::new(),
+        probe_error: None,
+        probed_at: Utc::now(),
+        decisions: Some(decisions),
+        requires_model: false,
+        requires_model_reason: None,
+        models: None,
+        default_model: None,
+        sign_in: None,
+        docs: Some(DocsLinks {
+            models: super::DESCRIPTOR.models_docs.to_owned(),
+            sign_in: super::DESCRIPTOR.sign_in_docs.to_owned(),
+        }),
+        autonomy_ceiling: None,
+        teams: None,
+        additional: [
+            ("sandbox".to_owned(), serde_json::json!("harness")),
+            (
+                "sandbox_reason".to_owned(),
+                serde_json::json!("docket confines its own agents in a jail it sets up"),
+            ),
+        ]
+        .into(),
+    };
+    let models = match status(client).await {
+        Ok(models) => models,
+        Err(why) => {
+            // An answer from the wrong API version still says which one.
+            if why.starts_with("needs docket") {
+                capability.installed_version = why
+                    .rsplit("answers API ")
+                    .next()
+                    .map_or_else(String::new, |n| format!("API {n}"));
+            }
+            capability.probe_error = Some(why);
+            return capability;
         }
-    }
-
-    /// Why this docket cannot run here, or `None`.
-    pub fn unsupported(&self) -> Option<String> {
-        (!self.speaks_contract).then(|| {
-            let found = if self.version.is_empty() {
-                String::new()
-            } else {
-                format!("; this one is {}", self.version)
-            };
-            format!(
-                "needs docket {FIRST_VERSION} or later, which reads its own setup \
-                 (harness contract {CONTRACT}){found}"
-            )
-        })
-    }
-}
-
-/// Whether `stdout` ends with docket's refused result line for contract 1.2.
-pub(super) fn speaks(stdout: Option<String>) -> bool {
-    let Some(stdout) = stdout else {
-        return false;
     };
-    let Some(line) = stdout.lines().rev().find(|line| line.starts_with('{')) else {
-        return false;
-    };
-    serde_json::from_str::<serde_json::Value>(line).is_ok_and(|result| {
-        result["status"] == "refused" && result["v"] == format!("{CONTRACT}.0").as_str()
-    })
-}
-
-/// Stdout of `program args`, run with only `PATH` in its environment. Any
-/// exit status counts: a refusal is a non-zero exit.
-fn run(program: &Path, args: &[&str]) -> Option<String> {
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .env_clear()
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    if let Some(path) = std::env::var_os("PATH") {
-        command.env("PATH", path);
-    }
-    let mut child = command.spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut stdout, &mut text)
-            .ok()
-            .map(|_| text)
+    capability.installed_version = format!("API {API_VERSION}");
+    let signed_in = !models.is_empty();
+    capability.sign_in = Some(SignInReport {
+        state: if signed_in {
+            SignInState::SignedIn
+        } else {
+            SignInState::Unknown
+        },
+        detail: if signed_in {
+            format!("docket's team members run on {}", models.join(", "))
+        } else {
+            "docket reports no model for its team members".to_owned()
+        },
+        command: None,
     });
-    let started = Instant::now();
-    while child.try_wait().ok()?.is_none() {
-        if started.elapsed() > PROBE_TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
-            break;
+    capability.models = Some(ModelsReport {
+        source: if signed_in {
+            ModelListSource::Listed
+        } else {
+            ModelListSource::None
+        },
+        reason: (!signed_in).then(|| "docket reports no model for its team members".to_owned()),
+        ids: models,
+    });
+    match teams(client).await {
+        Ok(teams) => {
+            if !teams.is_empty() {
+                capability.autonomy_ceiling =
+                    Some(if teams.iter().any(capped) { "L3" } else { "L5" }.to_owned());
+            }
+            capability.teams = Some(teams);
         }
-        std::thread::sleep(Duration::from_millis(20));
+        Err(why) => {
+            capability.probe_error = Some(format!("docket's teams could not be read: {why}"))
+        }
     }
-    reader.join().ok()?
+    capability
 }

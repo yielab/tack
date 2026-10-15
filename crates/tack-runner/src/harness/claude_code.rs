@@ -35,6 +35,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     )],
     credential_note: "Claude Code signs in with its own login; Tack holds no model credential.",
     reports_process_groups: false,
+    cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[".claude"],
     readiness: Some(readiness::check),
