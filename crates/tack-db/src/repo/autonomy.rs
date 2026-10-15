@@ -246,6 +246,59 @@ pub async fn attempt_context(
     .await
 }
 
+/// What the team's ceiling is read from, for one attempt: the capability
+/// snapshot of the runner that ran it, the harness the request asked for and the
+/// docket team its resolved profile names.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AttemptCeilingInputs {
+    pub capability_snapshot: String,
+    pub harness_kind: Option<String>,
+    pub team: Option<String>,
+}
+
+pub async fn attempt_ceiling_inputs(
+    pool: &SqlitePool,
+    attempt_id: &str,
+) -> Result<Option<AttemptCeilingInputs>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT ru.capability_snapshot AS capability_snapshot,
+                json_extract(r.request_snapshot, '$.requested_harness_kind') AS harness_kind,
+                json_extract(r.request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team') AS team
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN agent_runners ru ON ru.id = a.runner_id
+         WHERE a.id = ?",
+    )
+    .bind(attempt_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// The profiles a project's roles point at, as (profile name, docket team).
+pub async fn role_profile_teams(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<Vec<(String, Option<String>)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT DISTINCT p.name, json_extract(p.tool_policy, '$.docket.team')
+         FROM roles r JOIN agent_profiles p ON p.id = r.agent_profile_id
+         WHERE r.project_id = ? ORDER BY p.name",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// The capability snapshot of every active, unrevoked runner.
+pub async fn active_runner_snapshots(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT capability_snapshot FROM agent_runners
+         WHERE state = 'active' AND revoked_at IS NULL ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Attempts the automatic merge looks at: succeeded, with a merge-readiness
 /// pack, no human review and no merge yet, in a project (or a domain of one)
 /// above L3. An attempt whose ledger row belongs to a human trigger is theirs.

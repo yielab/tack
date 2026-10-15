@@ -10,6 +10,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
     ("cancellation.response.json", 0x25ac_7703_2f24_298f),
     ("capabilities.json", 0xb739_3eb1_1586_191b),
+    ("capabilities.with-teams.json", 0xb624_77f3_7afd_d225),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
     ("claim.response.json", 0x942c_27a6_690a_a0da),
@@ -109,7 +110,7 @@ pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn every_json_fixture_parses_and_value_round_trips_without_loss() {
     let paths = fixture_paths();
-    assert_eq!(paths.len(), 47, "the frozen fixture manifest changed");
+    assert_eq!(paths.len(), 48, "the frozen fixture manifest changed");
 
     for path in paths {
         let name = fixture_name(&path);

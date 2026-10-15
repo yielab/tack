@@ -77,6 +77,11 @@ activity says so. Only you raise a level again.
   automatic merge runs on the poll's tick.
 - A task linked to a GitHub issue, since that is how its pull request is opened.
 
+The team that ran the change sets a ceiling too. A team whose runner reports it needs a person
+during a run (it is attended, with the fix named) keeps its tasks at L3 however high the
+project's level is: the automatic merge holds them and says so, and the Autonomy section lists
+the team and what to change. The Merge button is not held by the ceiling.
+
 ## Sending a rejected change back to the agent
 
 A project can let a change the verifier rejects go back to the agent first, with the

@@ -86,3 +86,26 @@ fn embedded_capability_snapshot_parses_full_and_sparse_fixtures() {
         "unrecognised keys on an embedded snapshot must survive a round trip"
     );
 }
+
+#[test]
+fn team_ceiling_fields_are_optional_and_round_trip() {
+    let old: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/capabilities.json"
+    ))
+    .expect("capabilities fixture JSON");
+    let parsed: RunnerCapabilities = serde_json::from_value(old.clone()).expect("old snapshot");
+    assert_eq!(parsed.harnesses[0].autonomy_ceiling, None);
+    assert_eq!(parsed.harnesses[0].teams, None);
+    assert_eq!(serde_json::to_value(&parsed).expect("serialize"), old);
+
+    let with: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/capabilities.with-teams.json"
+    ))
+    .expect("with-teams fixture JSON");
+    let parsed: RunnerCapabilities = serde_json::from_value(with.clone()).expect("with teams");
+    let harness = &parsed.harnesses[0];
+    assert_eq!(harness.autonomy_ceiling.as_deref(), Some("L3"));
+    let teams = harness.teams.as_ref().expect("teams reported");
+    assert_eq!(teams[0].violations[0].fix, "run it lights-out");
+    assert_eq!(serde_json::to_value(&parsed).expect("serialize"), with);
+}

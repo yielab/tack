@@ -7636,6 +7636,11 @@
           "budgets": {
             "$ref": "#/components/schemas/BudgetSettings"
           },
+          "ceiling": {
+            "type": "string",
+            "description": "Read only: the most autonomy the teams this project's roles use allow,\n`L5`, `L4` or `L3`.",
+            "readOnly": true
+          },
           "domains": {
             "type": "array",
             "items": {
@@ -7650,6 +7655,13 @@
           "merge_on_done": {
             "type": "boolean",
             "description": "Merge when a person moves the task to Done."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamLine"
+            },
+            "description": "Read only: the teams that cap it, one line each."
           },
           "verify_loop_max_attempts": {
             "type": "integer",
@@ -11504,6 +11516,33 @@
               "null"
             ],
             "minimum": 0
+          }
+        }
+      },
+      "TeamLine": {
+        "type": "object",
+        "description": "A team a role's profile runs that needs a person during a run.",
+        "required": [
+          "name",
+          "profile",
+          "caps_at",
+          "fix"
+        ],
+        "properties": {
+          "caps_at": {
+            "type": "string",
+            "description": "The level the team's tasks stay at."
+          },
+          "fix": {
+            "type": "string",
+            "description": "What to change so the team runs lights-out."
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string",
+            "description": "The Tack agent profile that names the team."
           }
         }
       },

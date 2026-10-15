@@ -1309,6 +1309,8 @@ where
                 models: descriptor.models_docs.to_owned(),
                 sign_in: descriptor.sign_in_docs.to_owned(),
             }),
+            autonomy_ceiling: None,
+            teams: None,
             additional,
         }
     }

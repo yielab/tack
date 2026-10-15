@@ -3167,12 +3167,19 @@ export interface components {
              */
             automatic_merge_blocked_by?: string[];
             budgets: components["schemas"]["BudgetSettings"];
+            /**
+             * @description Read only: the most autonomy the teams this project's roles use allow,
+             *     `L5`, `L4` or `L3`.
+             */
+            readonly ceiling?: string;
             /** @description Replaces the project's domains. */
             domains: components["schemas"]["DomainSettings"][];
             /** @description `L3` (a person merges), `L4` (Tack merges inside the domains) or `L5` (everywhere). */
             level: string;
             /** @description Merge when a person moves the task to Done. */
             merge_on_done: boolean;
+            /** @description Read only: the teams that cap it, one line each. */
+            teams?: components["schemas"]["TeamLine"][];
             /**
              * Format: int64
              * @description How many times a rejected change goes back to the agent; 0 is never.
@@ -4545,6 +4552,16 @@ export interface components {
             /** Format: int32 */
             order: number;
             wip_limit?: number | null;
+        };
+        /** @description A team a role's profile runs that needs a person during a run. */
+        TeamLine: {
+            /** @description The level the team's tasks stay at. */
+            caps_at: string;
+            /** @description What to change so the team runs lights-out. */
+            fix: string;
+            name: string;
+            /** @description The Tack agent profile that names the team. */
+            profile: string;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional

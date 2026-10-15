@@ -144,6 +144,8 @@ pub struct Facts {
     pub budget: Check,
     pub pr_open: Check,
     pub ci: CiState,
+    /// The most autonomy the team that ran the change allows; `None` when unknown.
+    pub ceiling: Option<Level>,
 }
 
 /// The first condition that stops a merge. One variant per condition; the
@@ -153,6 +155,7 @@ pub enum Hold {
     FromMcp,
     NotMerge,
     LevelBelowL4,
+    HarnessCeiling { ceiling: Level, wanted: Level },
     Require(String),
     Attestation(String),
     Budget(String),
@@ -171,6 +174,10 @@ impl fmt::Display for Hold {
             Hold::NotMerge => f.write_str("prill did not say merge"),
             Hold::LevelBelowL4 => f.write_str(
                 "This change's domain is not authorised for automatic merge (needs L4 or L5)",
+            ),
+            Hold::HarnessCeiling { ceiling, .. } => write!(
+                f,
+                "The team that ran this stays at {ceiling}: it needs a person during a run"
             ),
             Hold::Require(reason)
             | Hold::Attestation(reason)
@@ -210,6 +217,12 @@ pub fn evaluate(f: &Facts) -> Result<(), Hold> {
             if f.level < Level::L4 {
                 return Err(Hold::LevelBelowL4);
             }
+            if let Some(ceiling) = f.ceiling.filter(|ceiling| *ceiling < f.level) {
+                return Err(Hold::HarnessCeiling {
+                    ceiling,
+                    wanted: f.level,
+                });
+            }
             check(&f.require).map_err(Hold::Require)?;
             check(&f.attestation).map_err(Hold::Attestation)?;
             check(&f.budget).map_err(Hold::Budget)?;
@@ -240,6 +253,7 @@ mod tests {
             budget: Check::Pass,
             pr_open: Check::Pass,
             ci: CiState::Green,
+            ceiling: None,
         };
         let fail = |s: &str| Check::Fail(s.to_string());
         let rows: Vec<(&str, Facts, Result<(), Hold>)> = vec![
@@ -391,6 +405,33 @@ mod tests {
                     ..base(Trigger::Auto)
                 },
                 Err(Hold::CiAbsent),
+            ),
+            (
+                "auto, the team's ceiling is below the level",
+                Facts {
+                    ceiling: Some(Level::L3),
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::HarnessCeiling {
+                    ceiling: Level::L3,
+                    wanted: Level::L4,
+                }),
+            ),
+            (
+                "auto, the team's ceiling allows the level",
+                Facts {
+                    ceiling: Some(Level::L5),
+                    ..base(Trigger::Auto)
+                },
+                Ok(()),
+            ),
+            (
+                "button, the team's ceiling does not hold the Merge button",
+                Facts {
+                    ceiling: Some(Level::L3),
+                    ..base(Trigger::Button)
+                },
+                Ok(()),
             ),
             (
                 "auto, MCP wins over every later failure",

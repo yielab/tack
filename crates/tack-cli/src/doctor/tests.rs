@@ -20,6 +20,8 @@ fn capability(kind: &str, installed_version: &str, probe_error: Option<&str>) ->
         default_model: None,
         sign_in: None,
         docs: None,
+        autonomy_ceiling: None,
+        teams: None,
         additional: Default::default(),
     }
 }

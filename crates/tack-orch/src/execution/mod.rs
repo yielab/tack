@@ -14,7 +14,7 @@ mod types;
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
-    ModelsReport, RunnerCapabilities, SignInReport, SignInState,
+    ModelsReport, RunnerCapabilities, SignInReport, SignInState, TeamReport, TeamViolation,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{

@@ -183,7 +183,12 @@ file and the executions file), `crates/tack-cli/tests/` (the existing execution/
 
   Order: explicit → run settings → the one role profile (two roles with different profiles →
   the project default with `Source::Ambiguous`) → project default → implementer → `None`.
-  `fleet_id` is the resolved profile's.
+  `fleet_id` is the resolved profile's. **Owner addition (2026-10-14):** `Candidate.harness`
+  and `Resolved.harness`, from the profile's optional `tool_policy.agent` (a known harness kind,
+  validated in `runner_admin.rs`); `CreateExecution.harness` becomes optional and falls back to
+  the resolved profile's agent, then the project's `default_harness`, else 400
+  `select_an_agent`. Fabulada needs it: Security and the Planner run on Claude Code, the rest on
+  docket teams.
 - `CreateExecution.agent_profile_id: Option<String>`, `selector_kind`/`selector_id` optional.
   When the profile is absent, `create_execution` resolves it with `resolve` and writes
   `metadata.profile_source` (`"role:Content"`, `"project_default"`, `"run_settings"`,
@@ -448,8 +453,10 @@ replaced by captures when beta.6 exists).
     criteria as acceptance prose), `externalRef = "<item_id>/attempt-<n>"`, `idempotencyKey =
     attempt_id`, `baseRef` (`metadata.rework_base` when present, else the attempt's
     `base_commit`), `pipeline` (`tool_policy.docket.pipeline_by_type[item_type]` when present),
-    `gate` (`{command: definition_of_done | the brief's first command/test criterion, timeoutS}`;
-    `file`/`absent`/`metric` criteria become an `sh -c` test; `manual` stays in Tack), `maxTokens`
+    `gate` (`{command, timeoutS}` from the brief's first `command` or `test` criterion;
+    `file`/`absent`/`metric` criteria become an `sh -c` test; `manual` stays in Tack; the
+    project's definition of done is prose and goes into `description`, never into `gate`),
+    `maxTokens`
     (`budgets.tokens` when > 0), `restrictions` (`deniedTools` from the profile's denied list for
     docket; `network: "none"` when web tools are off), `priority` (critical/high → high,
     medium → normal, else low), `trusted` as today. `201`/`200` → `LocalRunHandle { process_id:
@@ -622,3 +629,34 @@ still a control shown with its reason.
 ## Status
 
 - **Round 0** closed 2026-10-14: ADR 0080, this plan, the roadmap section.
+- **Round 1**, 2026-10-14, first pass. R and T each stopped at files the task list missed and
+  were finished by a second agent on the same worktree (R2, T2), not resumed.
+  - T's calls, kept: `tack role create --profile` is a POST then a PATCH (`CreateRole` carries no
+    profile); a profile's `fleet_id` is written by an UPDATE in the handler, since
+    `NewAgentProfile` is shared with unlisted tests; `set_or_clear` is a private deserializer
+    because tack-api has no `serde_with`. T2 adds the CLI/MCP optional keys (the file is
+    `crates/tack-cli/src/execution.rs`, missed by the list) and the owner addition
+    (`tool_policy.agent`).
+  - R's calls, kept: after a `NoWork` answer the claim pause is a deadline on new claims even
+    while other slots are busy, otherwise an immediately answering server spins the loop; the
+    engine's renewal test was deleted with the arm it tested. R2 adds the `/api/local-runner`
+    fields and the Agents line (the handler is in `crates/tack-api/src/handlers/local_runner.rs`,
+    not tack-cli, as the list said), a cancel that reaches a process during `wait`
+    (`local_process.rs` took it out of `running`), the named-field config error, and a test of
+    the slot loop. The in-place rule needs no code: `workspace.rs:219` already locks the folder.
+  - A message to a running agent was refused by the session's permission classifier, so an
+    addition mid-task goes into the plan and to a fresh agent, never to the running one.
+  - **T closed** 2026-10-14 in `9e3001d8` (T + T2 squashed). Gate green on develop; nextest over
+    core, db, api and cli: 822 passed, 1 skipped. T2's calls, kept: the request field keeps its
+    name `requested_harness_kind` (optional now); `HARNESS_KINDS` is a constant of
+    `runner_admin.rs`, since tack-api does not depend on tack-runner, so a new harness is added
+    there too; `enqueue_resolved` guards `select_an_agent` a second time.
+  - **R closed** 2026-10-14 (R + R2 squashed). Gate green on develop; nextest over the runner,
+    the contract, the handlers and the CLI: 702 passed, 2 skipped. R2's calls, kept: a
+    `ProcessCanceller` in `process.rs` lets a cancel reach a process already taken by `wait`,
+    which then returns `Cancelled`; `ConfigError::InvalidField { field, reason }`; the
+    `ActiveAttempts` handle is passed into the embedded runner's spawn rather than returned
+    from it; `GET /api/local-runner` stays an untyped JSON body, so nothing regenerated.
+- **Round 2** opened 2026-10-14: C stopped at the `HarnessCapability` literals in five crates
+  and `merge.rs`'s `Facts`; C2 finishes it with those files authorised. M cut from develop
+  after R.

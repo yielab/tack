@@ -597,3 +597,116 @@ async fn a_finished_item_or_a_replaced_run_is_never_merged_by_itself() {
         assert!(row.is_none(), "{case}: {row:?}");
     }
 }
+
+fn reviewers_snapshot(kind: &str) -> String {
+    json!({"harnesses": [{
+        "harness_kind": kind, "installed_version": "0.2.0", "probe_error": null,
+        "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
+        "teams": [{"name": "reviewers", "profile": "default", "violations": [
+            {"requirement": "no operator prompts during a run", "fix": "run it lights-out"}]}],
+    }]})
+    .to_string()
+}
+
+/// A succeeded attempt whose runner reports the request's team attended is held
+/// for the team's ceiling, not merged.
+#[tokio::test]
+async fn an_attended_team_holds_the_automatic_merge_at_its_ceiling() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let gh = github(false, 0).await;
+    let b = board(root.path(), Some(&gh.uri()), &prill).await;
+    let setup = Setup::default();
+    let (status, put) = put_autonomy(&b, &setup).await;
+    assert_eq!(status, StatusCode::OK, "{put}");
+    let a = finished_attempt(&b, &setup).await;
+    let pool = b.state.repo.pool();
+    let kind: String = sqlx::query_scalar(
+        "SELECT json_extract(request_snapshot, '$.requested_harness_kind') FROM execution_requests WHERE id = ?",
+    )
+    .bind(&a.request_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', 'reviewers') WHERE id = ?",
+    )
+    .bind(&a.request_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = ?")
+        .bind(reviewers_snapshot(&kind))
+        .bind(&a.runner_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+    tack_api::autonomy::tick(&b.state).await;
+    let row = merge_row(&b, &a.attempt_id).await.expect("a held row");
+    let held = row.3.unwrap_or_default();
+    assert!(
+        held.contains("The team that ran this stays at L3: it needs a person during a run"),
+        "{held:?}"
+    );
+    assert!(row.4.is_none(), "merged");
+}
+
+/// A role pointing at a profile whose team runs attended is said on the settings
+/// page, and a PUT answers the same words as the GET.
+#[tokio::test]
+async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let url = format!("/api/projects/{}/autonomy", b.project_id);
+    let get = || async {
+        common::send(&b.app, "GET", &url, Value::Null, &operator_headers())
+            .await
+            .1
+    };
+    let before = get().await;
+    assert_eq!(before["ceiling"], "L5", "{before}");
+    assert_eq!(before["teams"], json!([]), "{before}");
+
+    let pool = b.state.repo.pool();
+    for sql in [
+        "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) VALUES ('p1', 'Reviewer', 'x', '{\"docket\":{\"team\":\"reviewers\"}}', '{}', 'now', 'now')",
+    ] {
+        sqlx::query(sql).execute(pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO roles (id, project_id, name, agent_profile_id) VALUES ('r1', ?, 'review', 'p1')")
+        .bind(&b.project_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agent_runners (id, name, credential_hash, capability_snapshot, protocol_version, created_at, updated_at) VALUES ('ru1', 'ru', 'h', ?, 1, 'now', 'now')")
+        .bind(reviewers_snapshot("docket"))
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let got = get().await;
+    let sentence = "The team reviewers runs attended: its tasks stay at L3. Fix: run it lights-out";
+    assert!(
+        got["automatic_merge_blocked_by"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line == sentence),
+        "{got}"
+    );
+    assert_eq!(got["ceiling"], "L3", "{got}");
+    assert_eq!(got["teams"][0]["name"], "reviewers", "{got}");
+    assert_eq!(got["teams"][0]["profile"], "Reviewer", "{got}");
+    assert_eq!(got["teams"][0]["caps_at"], "L3", "{got}");
+
+    let (status, put) = put_autonomy(&b, &Setup::default()).await;
+    assert_eq!(status, StatusCode::OK, "{put}");
+    assert_eq!(
+        put["automatic_merge_blocked_by"],
+        get().await["automatic_merge_blocked_by"],
+        "{put}"
+    );
+    assert_eq!(put["ceiling"], "L3", "{put}");
+}
