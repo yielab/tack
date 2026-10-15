@@ -359,6 +359,9 @@ fn csv_export_reimports_with_hierarchy() {
         run_settings: None,
         needs_review: false,
         merge_note: None,
+        started_by: None,
+        team: None,
+        merged_by: None,
         created_at: now,
         updated_at: now,
     };

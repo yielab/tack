@@ -68,6 +68,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [form, setForm] = createStore<RunForm>(initialForm());
   // Set only by a click on a profile pill: an auto-selected profile is not remembered.
   const [profilePicked, setProfilePicked] = createSignal(false);
+  // The profile the server would choose for this item and why; the dialog does not choose it.
+  const [resolved] = createResource(
+    () => (props.isOpen ? props.itemId : undefined),
+    (id) => api.briefs.agentContext(id).then((r) => ({ id: r.profile_id ?? null, source: r.profile_source ?? null }), () => null),
+  );
   const [agentContext] = createResource(
     () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
     ({ id, profileId }) => api.briefs.agentContext(id, profileId || undefined).then((r) => r.text, () => undefined),
@@ -129,14 +134,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => {
     if (!props.isOpen || form.agentProfileId) return;
     const profiles = agentProfilesData();
-    // The project's default profile, else the built-in Implementer (ADR 0074
-    // decision 5), else the only profile there is.
-    const preferred =
-      profiles.find((p) => p.agent_profile_id === project()?.default_profile_id) ??
-      profiles.find((p) => p.kind === 'implementer');
-    if (preferred) setForm('agentProfileId', preferred.agent_profile_id);
-    else if (profiles.length === 1) setForm('agentProfileId', profiles[0].agent_profile_id);
+    const chosen = resolved()?.id;
+    if (chosen && profiles.some((p) => p.agent_profile_id === chosen)) setForm('agentProfileId', chosen);
   });
+
+  /** Where the shown profile came from, while it is still the server's choice. */
+  const profileSource = () => (resolved()?.id === form.agentProfileId ? resolved()?.source ?? null : null);
 
   const createDefaultProfile = async () => {
     setCreatingProfile(true);
@@ -352,6 +355,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             gate={modelGate}
             project={project}
             agentContext={() => agentContext()}
+            profileSource={profileSource}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => runModel() ?? (modelsReport().requiresModel ? 'no model chosen' : "the agent's default")}

@@ -942,14 +942,7 @@ pub(crate) async fn create_as(
         )
     })?;
     if input.agent_profile_id.is_none() {
-        let source = match &resolved.source {
-            Source::Explicit => None,
-            Source::RunSettings => Some("run_settings".to_owned()),
-            Source::Role(name) => Some(format!("role:{name}")),
-            Source::ProjectDefault => Some("project_default".to_owned()),
-            Source::Implementer => Some("implementer".to_owned()),
-            Source::Ambiguous => Some("ambiguous".to_owned()),
-        };
+        let source = profile_source_label(&resolved.source);
         if let (Some(source), Some(metadata)) = (source, input.metadata.as_object_mut()) {
             metadata.insert("profile_source".into(), json!(source));
         }
@@ -980,6 +973,18 @@ fn select_an_agent() -> (StatusCode, Json<Value>) {
         "Name the agent this runs with: the agent profile names none and the project has no default agent",
         json!({"field": "requested_harness_kind", "reason": "select_an_agent"}),
     )
+}
+
+/// The `profile_source` word for where a resolved profile came from; `None` when it was named.
+fn profile_source_label(source: &Source) -> Option<String> {
+    match source {
+        Source::Explicit => None,
+        Source::RunSettings => Some("run_settings".to_owned()),
+        Source::Role(name) => Some(format!("role:{name}")),
+        Source::ProjectDefault => Some("project_default".to_owned()),
+        Source::Implementer => Some("implementer".to_owned()),
+        Source::Ambiguous => Some("ambiguous".to_owned()),
+    }
 }
 
 /// The profile a run with no named profile gets, and the fleet that profile names.
@@ -2148,6 +2153,12 @@ pub async fn requeue_needs_operator(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AgentContextResponse {
     pub text: String,
+    /// The profile the server resolved for this item (the one named, else the role's, the
+    /// project's default or the implementer); `null` when none could be chosen.
+    pub profile_id: Option<String>,
+    /// Where that profile came from: `role:{name}`, `project_default`, `run_settings`,
+    /// `implementer` or `ambiguous`; `null` when `profile_id` was named in the query.
+    pub profile_source: Option<String>,
 }
 
 /// Query parameters for `GET /api/items/{id}/agent-context`.
@@ -2222,6 +2233,10 @@ pub async fn get_item_agent_context(
     // the project's default, then the implementer.
     let resolved =
         resolve_profile(&state.repo, &item, &project, query.profile_id.as_deref()).await?;
+    let answered_profile_id = resolved.as_ref().map(|r| r.profile_id.clone());
+    let answered_source = resolved
+        .as_ref()
+        .and_then(|r| profile_source_label(&r.source));
     let profile = if let Some(resolved) = resolved {
         let profile: Option<(String, String, String, String)> = sqlx::query_as(
             "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE id = ?",
@@ -2290,5 +2305,9 @@ pub async fn get_item_agent_context(
         project.definition_of_done.as_deref(),
     );
 
-    Ok(Json(AgentContextResponse { text: composed }))
+    Ok(Json(AgentContextResponse {
+        text: composed,
+        profile_id: answered_profile_id,
+        profile_source: answered_source,
+    }))
 }

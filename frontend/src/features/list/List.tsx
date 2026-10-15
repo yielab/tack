@@ -1,5 +1,6 @@
 import { createSignal, For, Show, createMemo, onMount, onCleanup } from 'solid-js';
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
+import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
 import {
   DragDropProvider,
@@ -422,6 +423,7 @@ function ItemRow(props: {
           <Badge tone="warning" class="flex-shrink-0">Needs your review</Badge>
         </Show>
         <MergeNoteBadge note={props.item.merge_note} />
+        <AutomationBadge startedBy={props.item.started_by} team={props.item.team} mergedBy={props.item.merged_by} />
 
         {/* Tags */}
         <Show when={props.item.tags && props.item.tags.length > 0}>

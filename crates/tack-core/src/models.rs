@@ -227,6 +227,15 @@ pub struct Item {
     /// Why the task's last merge did not happen, while it has not; `None` once merged or never tried.
     #[serde(default)]
     pub merge_note: Option<String>,
+    /// `auto_start` when the newest request was started by the project's own rule, else `None`.
+    #[serde(default)]
+    pub started_by: Option<String>,
+    /// The docket team named by the newest request's resolved profile, else `None`.
+    #[serde(default)]
+    pub team: Option<String>,
+    /// How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged.
+    #[serde(default)]
+    pub merged_by: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

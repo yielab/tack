@@ -7174,6 +7174,20 @@
           "text"
         ],
         "properties": {
+          "profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile the server resolved for this item (the one named, else the role's, the\nproject's default or the implementer); `null` when none could be chosen."
+          },
+          "profile_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where that profile came from: `role:{name}`, `project_default`, `run_settings`,\n`implementer` or `ambiguous`; `null` when `profile_id` was named in the query."
+          },
           "text": {
             "type": "string"
           }
@@ -9947,6 +9961,13 @@
             ],
             "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
           },
+          "merged_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged."
+          },
           "needs_review": {
             "type": "boolean",
             "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
@@ -10024,6 +10045,13 @@
             ],
             "format": "date-time"
           },
+          "started_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`auto_start` when the newest request was started by the project's own rule, else `None`."
+          },
           "status": {
             "type": "string"
           },
@@ -10032,6 +10060,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The docket team named by the newest request's resolved profile, else `None`."
           },
           "title": {
             "type": "string"
@@ -11744,21 +11779,25 @@
       },
       "TeamLine": {
         "type": "object",
-        "description": "A team a role's profile runs that needs a person during a run.",
+        "description": "A team one of the project's roles runs, and whether it caps the project's autonomy.",
         "required": [
           "name",
-          "profile",
-          "caps_at",
-          "fix"
+          "profile"
         ],
         "properties": {
           "caps_at": {
-            "type": "string",
-            "description": "The level the team's tasks stay at."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The level the team's tasks stay at; `null` for a team that runs lights-out."
           },
           "fix": {
-            "type": "string",
-            "description": "What to change so the team runs lights-out."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What to change so the team runs lights-out; `null` for a team that already does."
           },
           "name": {
             "type": "string"

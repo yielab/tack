@@ -54,6 +54,8 @@ export interface RunFlowProps {
   project: Accessor<Project | undefined>;
   /** What the agent will read, from `GET /items/{id}/agent-context`. */
   agentContext: Accessor<string | undefined>;
+  /** Where the shown profile came from (`GET /items/{id}/agent-context`'s `profile_source`); null once the person picked another. */
+  profileSource?: Accessor<string | null | undefined>;
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
   profileTools: Accessor<string[]>;
   harnessLabel: Accessor<string>;
@@ -76,6 +78,19 @@ const PILL = { 'background-color': 'var(--color-bg-app)', color: 'var(--color-te
 const LINK = { color: 'var(--color-accent-ink)' };
 const SUMMARY_CLASS = 'cursor-pointer font-heading text-lg';
 const KIND_ORDER = ['implementer', 'reviewer', 'researcher', 'planner'];
+
+/** The dialog's sentence for the server's `profile_source`. */
+export function describeProfileSource(source: string | null | undefined): string | null {
+  if (!source) return null;
+  if (source.startsWith('role:')) return `Chosen by the role ${source.slice(5)}`;
+  switch (source) {
+    case 'project_default': return 'Project default';
+    case 'run_settings': return 'Saved on this task';
+    case 'implementer': return 'The built-in Implementer';
+    case 'ambiguous': return 'More than one role has a profile, so the project default is used';
+    default: return null;
+  }
+}
 
 /** The home prefix of an absolute path, shown as `~`. */
 const tilde = (path: string) => path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, '~');
@@ -132,6 +147,12 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
         </Show>
       </p>
+
+      <Show when={describeProfileSource(props.profileSource?.())}>
+        {(text) => (
+          <p data-testid="profile-source" class="-mt-3 px-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>
+        )}
+      </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
         <p data-testid="no-tools" class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>

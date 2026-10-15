@@ -702,6 +702,62 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(got["teams"][0]["name"], "reviewers", "{got}");
     assert_eq!(got["teams"][0]["profile"], "Reviewer", "{got}");
     assert_eq!(got["teams"][0]["caps_at"], "L3", "{got}");
+    assert_eq!(got["teams"][0]["fix"], "run it lights-out", "{got}");
+
+    // A second role on a lights-out team is listed too, without a cap; a team no runner reports is "unknown".
+    sqlx::query("INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) VALUES ('p2', 'Writer', 'x', '{\"docket\":{\"team\":\"writers\"}}', '{}', 'now', 'now'), ('p3', 'Ghost', 'x', '{\"docket\":{\"team\":\"ghosts\"}}', '{}', 'now', 'now')")
+        .execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO roles (id, project_id, name, agent_profile_id) VALUES ('r2', ?, 'write', 'p2'), ('r3', ?, 'haunt', 'p3')")
+        .bind(&b.project_id).bind(&b.project_id).execute(pool).await.unwrap();
+    sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = 'ru1'")
+        .bind(json!({"harnesses": [{
+            "harness_kind": "docket", "installed_version": "0.2.0", "probe_error": null,
+            "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
+            "teams": [
+                {"name": "reviewers", "profile": "default", "violations": [{"requirement": "r", "fix": "run it lights-out"}]},
+                {"name": "writers", "profile": "lights-out", "violations": []}],
+        }]}).to_string())
+        .execute(pool).await.unwrap();
+    let got = get().await;
+    let lines: Vec<(String, Value, Value)> = got["teams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["name"].as_str().unwrap().to_owned(),
+                t["caps_at"].clone(),
+                t["fix"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(lines.len(), 3, "{got}");
+    let line = |n: &str| {
+        lines
+            .iter()
+            .find(|l| l.0 == n)
+            .unwrap_or_else(|| panic!("{n} missing: {got}"))
+    };
+    assert_eq!(line("writers").1, Value::Null, "{got}");
+    assert_eq!(line("writers").2, Value::Null, "{got}");
+    assert_eq!(line("ghosts").1, "L3", "{got}");
+    assert_eq!(line("ghosts").2, "No runner reports this team yet", "{got}");
+    assert_eq!(
+        got["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "ghosts")
+            .unwrap()["profile"],
+        "unknown"
+    );
+    let blocked = got["automatic_merge_blocked_by"].as_array().unwrap();
+    assert!(
+        !blocked
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("writers")),
+        "{got}"
+    );
 
     let (status, put) = put_autonomy(&b, &Setup::default()).await;
     assert_eq!(status, StatusCode::OK, "{put}");

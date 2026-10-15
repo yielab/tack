@@ -283,3 +283,30 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
   modal = await openModal();
   await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
 });
+
+test('Board: the run dialog opens with the role\'s profile on an item with a role, and says so', async ({
+  page,
+  request,
+}) => {
+  const projectId = await createRunnableProject(request, `RWA role project ${Date.now()}`);
+  const itemId = await createFreshItem(request, projectId, `RWA role item ${Date.now()}`);
+  const profileName = `Content profile ${Date.now()}`;
+  const profileId = await createAgentProfile(request, profileName);
+  await createAgentProfile(request, `Other profile ${Date.now()}`);
+  await enrollRunner(request, `RWA role runner ${Date.now()}`, 'opaque/model-alpha');
+
+  // A role "Content" that works with the profile, assigned to the item.
+  const role = await request.post(`${API}/projects/${projectId}/roles`, { data: { name: 'Content', color: '#7c3aed' } });
+  expect(role.ok(), `create role failed: ${role.status()}`).toBeTruthy();
+  const roleId = (await role.json()).id as string;
+  expect((await request.patch(`${API}/roles/${roleId}`, { data: { agent_profile_id: profileId } })).ok()).toBeTruthy();
+  expect((await request.put(`${API}/items/${itemId}/roles/${roleId}`)).ok()).toBeTruthy();
+
+  await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+  await waitForApp(page);
+  await page.getByRole('dialog').getByRole('button', { name: 'Run with agent' }).click();
+
+  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  await expect(modal.getByRole('button', { name: profileName, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(modal.getByTestId('profile-source')).toHaveText('Chosen by the role Content');
+});
