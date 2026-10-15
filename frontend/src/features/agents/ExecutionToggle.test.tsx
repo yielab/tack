@@ -15,6 +15,8 @@ const STOPPED_STATUS = {
   enabled: false,
   state: 'stopped',
   since: null,
+  max_concurrent_attempts: 1,
+  active_attempts: 0,
 };
 
 function mockFetch(initial: Record<string, unknown>, opts: { status?: number } = {}) {
@@ -47,6 +49,17 @@ describe('ExecutionToggle', () => {
 
     expect(container.textContent).toContain('Stopped');
     expect(container.textContent).toContain('Turn on');
+  });
+
+  it.each([
+    [{ max_concurrent_attempts: 3, active_attempts: 2 }, 'Up to 3 runs at a time on this computer · 2 running'],
+    [{ max_concurrent_attempts: 1, active_attempts: 0 }, 'Up to 1 run at a time on this computer · 0 running'],
+  ])('shows the runner capacity under the status line (%j)', async (capacity, line) => {
+    mockFetch({ ...STOPPED_STATUS, ...capacity });
+    const { container } = mount();
+    await flush();
+
+    expect(container.textContent).toContain(line);
   });
 
   it('turning it on PUTs enabled:true and reflects the new state', async () => {

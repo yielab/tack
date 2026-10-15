@@ -61,6 +61,7 @@ in that order):
 | `TACK_RUNNER_ENROLLMENT_TOKEN` | One-time operator-issued token; exchanged for a durable credential and never persisted |
 | `TACK_RUNNER_ID` | Runner identity once enrolled |
 | `TACK_RUNNER_STATE_DIR` | Owner-only directory for the journal and credential |
+| `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` | How many attempts the runner works at once (TOML `max_concurrent_attempts`, flag `--max-concurrent-attempts`). Default `1`; below `1` is refused. A folder worked in place runs one attempt at a time whatever this says; parallel attempts need a branch or a clone |
 | `TACK_RUNNER_SECRET_VALUE` | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable — the store keeps it (OS keychain, or an owner-only file where none answers within `PLATFORM_STORE_TIMEOUT`; `tack runner doctor` reports which backend a given boot picked) |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is

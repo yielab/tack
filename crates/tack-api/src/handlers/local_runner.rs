@@ -87,6 +87,10 @@ pub enum RuntimeState {
 pub struct RuntimeStatus {
     pub state: RuntimeState,
     pub since: Option<DateTime<Utc>>,
+    /// How many attempts the runner works at once, as configured.
+    pub max_concurrent_attempts: u32,
+    /// How many attempts it is working on right now; 0 while stopped.
+    pub active_attempts: u32,
 }
 
 /// Every variant names an operation and, where the backend gave one, its own
@@ -170,6 +174,8 @@ pub async fn get_local_runner(State(state): State<AppState>) -> ApiResult<Json<V
         "enabled": enabled,
         "state": runtime_state_str(status.state),
         "since": status.since,
+        "max_concurrent_attempts": status.max_concurrent_attempts,
+        "active_attempts": status.active_attempts,
     })))
 }
 

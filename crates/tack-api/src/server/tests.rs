@@ -286,6 +286,8 @@ impl LocalRunnerControl for RecordingControl {
         crate::handlers::local_runner::RuntimeStatus {
             state: crate::handlers::local_runner::RuntimeState::Stopped,
             since: None,
+            max_concurrent_attempts: 1,
+            active_attempts: 0,
         }
     }
     async fn start(&self) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {

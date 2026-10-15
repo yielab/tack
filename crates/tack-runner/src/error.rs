@@ -17,6 +17,10 @@ pub enum ConfigError {
     Unreadable,
     #[error("runner id must not be empty")]
     EmptyRunnerId,
+    /// A setting that is present and wrong, named so the operator knows
+    /// which one to fix.
+    #[error("runner configuration field {field} is invalid: {reason}")]
+    InvalidField { field: &'static str, reason: String },
 }
 
 #[derive(Debug, Error)]

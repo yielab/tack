@@ -2,6 +2,7 @@
 //! script through a grammar that adds nothing of its own.
 
 use super::*;
+use crate::active::ActiveAttempts;
 use crate::harness::DecisionOption;
 use crate::harness::test_support::{
     FixedClock, fake_harness, harness_for, scratch, script, secret_store, set_env,
@@ -718,6 +719,39 @@ async fn cancel_stops_the_process_and_forgets_it() {
     ));
 }
 
+/// A cancel that arrives while `wait` is pending kills the process group and
+/// makes `wait` return the cancelled outcome.
+#[cfg(unix)]
+#[tokio::test]
+async fn cancel_during_wait_kills_the_process_and_wait_returns_cancelled() {
+    let state = scratch("cancel-during-wait");
+    let harness = harness(state.path());
+    let (handle, pid) = start_hanging(&harness, state.path()).await;
+
+    // `wait` is polled first and takes the process out of `running`; the
+    // cancel retries until it can reach it, bounded.
+    let cancel = async {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match harness.cancel(&handle).await {
+                    Ok(evidence) => return evidence,
+                    Err(_) => tokio::task::yield_now().await,
+                }
+            }
+        })
+        .await
+        .expect("a cancel during wait reaches the harness")
+    };
+    let (outcome, evidence) = tokio::join!(
+        tokio::time::timeout(Duration::from_secs(10), harness.wait(&handle)),
+        cancel
+    );
+    assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
+    let outcome = outcome.expect("wait returns").expect("wait outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
+    assert!(!crate::harness::process::process_alive(pid));
+}
+
 fn journal(process_id: Option<&str>) -> AttemptJournal {
     use crate::client::journal::{JournalState, WorkspaceJournal};
     AttemptJournal {
@@ -827,4 +861,82 @@ fn usage_detail_names_only_what_the_harness_reported() {
         serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"]})
     );
     assert!(UsageDetail::default().into_additional().is_empty());
+}
+
+/// N = 2: two claims run at once, every heartbeat carries both leases with
+/// no capacity left, and a cancel the heartbeat answer names reaches only
+/// the attempt it names.
+#[cfg(unix)]
+#[tokio::test]
+async fn two_attempts_run_at_once_and_a_cancel_reaches_only_the_one_named() {
+    use crate::client::{
+        AttemptId, Checkpoint, FencingToken, HeartbeatRequest, LeaseResult, Timestamp,
+    };
+    let fixture: HeartbeatRequest = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/heartbeat.request.two-active.json"
+    ))
+    .expect("two-active fixture");
+    let state = scratch("two-attempts");
+    let harness = harness(state.path());
+    let active = ActiveAttempts::new(2);
+
+    // (attempt, fencing token, last checkpoint): the two claims.
+    let claims = [
+        ("att_01J00000000000000000000001", 7, Some("checkpoint-0003")),
+        ("att_01J00000000000000000000002", 3, None),
+    ];
+    let mut running = Vec::new();
+    for (attempt, token, checkpoint) in claims {
+        let mut request = spec(KIND, state.path());
+        set_env(&mut request, &[("TACK_FAKE_HARNESS_MODE", "spawn_child")]);
+        request.work.lease.attempt_id = AttemptId::new(attempt);
+        request.workspace.attempt_id = AttemptId::new(attempt);
+        let handle = harness.start(&request).await.expect("start");
+        let pid = handle_pid(&handle.process_id).expect("the handle carries the pid");
+        let mut record = journal(Some(&handle.process_id));
+        record.attempt_id = AttemptId::new(attempt);
+        record.fencing_token = FencingToken(token);
+        record.last_event_checkpoint = checkpoint.map(Checkpoint::new);
+        running.push((handle, pid, active.register(&record)));
+    }
+    assert_eq!(active.free(), 0);
+    assert_eq!(active.snapshot(), fixture.active_attempts);
+    assert_eq!(fixture.available_capacity, 0);
+
+    active.apply(&[LeaseResult {
+        attempt_id: AttemptId::new(claims[1].0),
+        fencing_token: FencingToken(3),
+        lease_expires_at: Timestamp::new("2026-08-06T12:21:15Z"),
+        cancellation_requested: true,
+    }]);
+    let asked: Vec<bool> = running
+        .iter()
+        .map(|(_, _, cancel)| *cancel.borrow())
+        .collect();
+    assert_eq!(asked, [false, true]);
+
+    // The cancel arrives while the named attempt's `wait` is pending, as the
+    // engine's arm delivers it.
+    let cancel = async {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match harness.cancel(&running[1].0).await {
+                    Ok(evidence) => return evidence,
+                    Err(_) => tokio::task::yield_now().await,
+                }
+            }
+        })
+        .await
+        .expect("a cancel during wait reaches the harness")
+    };
+    let (outcome, evidence) = tokio::join!(
+        tokio::time::timeout(Duration::from_secs(10), harness.wait(&running[1].0)),
+        cancel
+    );
+    assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
+    let outcome = outcome.expect("wait returns").expect("wait outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
+    assert!(!crate::harness::process::process_alive(running[1].1));
+    assert!(crate::harness::process::process_alive(running[0].1));
+    harness.cancel(&running[0].0).await.expect("cancel");
 }

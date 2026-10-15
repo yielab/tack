@@ -44,11 +44,15 @@ impl LocalRunnerControl for FakeControl {
             RuntimeStatus {
                 state: RuntimeState::Running,
                 since: Some(Utc::now()),
+                max_concurrent_attempts: 2,
+                active_attempts: 1,
             }
         } else {
             RuntimeStatus {
                 state: RuntimeState::Stopped,
                 since: None,
+                max_concurrent_attempts: 2,
+                active_attempts: 0,
             }
         }
     }
@@ -178,6 +182,8 @@ async fn loopback_bind_with_control_mounts_routes_and_starts_it() {
     assert_eq!(body["enabled"], false);
     assert_eq!(body["state"], "stopped");
     assert!(body["since"].is_null());
+    assert_eq!(body["max_concurrent_attempts"], 2);
+    assert_eq!(body["active_attempts"], 0);
 
     let put_response = app
         .clone()

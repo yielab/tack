@@ -36,6 +36,9 @@ struct Cli {
     /// Enrollment credential. Prefer TACK_RUNNER_ENROLLMENT_TOKEN so it is not visible in shell history.
     #[arg(long, hide_env_values = true)]
     enrollment_token: Option<String>,
+    /// How many attempts to work at once. Overrides file and environment configuration.
+    #[arg(long)]
+    max_concurrent_attempts: Option<u32>,
 }
 
 #[tokio::main]
@@ -60,6 +63,8 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
             runner_id: cli.runner_id,
             state_dir: cli.state_dir,
             enrollment_credential: cli.enrollment_token.map(EnrollmentCredential::new),
+            max_concurrent_attempts: cli.max_concurrent_attempts,
+            invalid: None,
         },
     })?;
 

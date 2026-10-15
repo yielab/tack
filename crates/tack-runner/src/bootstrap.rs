@@ -51,6 +51,18 @@ pub async fn build_runtime(
     config: RunnerConfig,
     limits: RunnerLimits,
 ) -> Result<ProductionRunnerRuntime, RunnerError> {
+    let active = crate::active::ActiveAttempts::new(config.max_concurrent_attempts);
+    build_runtime_with_active(config, limits, active).await
+}
+
+/// [`build_runtime`] working against `active`, a registry the caller keeps a
+/// clone of to read how many attempts are in flight. Its total must be
+/// `config.max_concurrent_attempts`.
+pub async fn build_runtime_with_active(
+    config: RunnerConfig,
+    limits: RunnerLimits,
+    active: crate::active::ActiveAttempts,
+) -> Result<ProductionRunnerRuntime, RunnerError> {
     config.require_enrollment_credential()?;
 
     // The real transport replaces `UnavailableProtocolClient`, the stub
@@ -70,7 +82,8 @@ pub async fn build_runtime(
         &config.secrets.request_may_reference,
         &own_environment,
     );
-    let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
+    let mut capabilities =
+        report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts).await;
     // Whether this runner has a verifier and a branch push at all; a request
     // may decline either, never enable one that is off here.
     capabilities.additional.insert(
@@ -107,7 +120,8 @@ pub async fn build_runtime(
     // would never run in the production binary even though it compiles.
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>)
     .with_verify(config.verify.clone(), limits.harness_process.clone())
-    .with_git(config.git.clone());
+    .with_git(config.git.clone())
+    .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
     Ok(RunnerRuntime::new(
@@ -129,6 +143,20 @@ pub async fn run(
     shutdown: Shutdown,
 ) -> Result<(), RunnerError> {
     build_runtime(config, limits).await?.run(shutdown).await
+}
+
+/// [`run`] against a registry the caller also holds; see
+/// [`build_runtime_with_active`].
+pub async fn run_with_active(
+    config: RunnerConfig,
+    limits: RunnerLimits,
+    shutdown: Shutdown,
+    active: crate::active::ActiveAttempts,
+) -> Result<(), RunnerError> {
+    build_runtime_with_active(config, limits, active)
+        .await?
+        .run(shutdown)
+        .await
 }
 
 /// What probing this machine's harness installations found: a
@@ -163,7 +191,7 @@ pub async fn probe(
 ) -> DiscoveryReport {
     let (adapters, missing_harnesses) =
         crate::harness::discover(process_limits, staging_root, secrets, &[], &BTreeMap::new());
-    let capabilities = report_capabilities(&adapters, &SystemClock).await;
+    let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();
     DiscoveryReport {
         capabilities,
@@ -194,6 +222,7 @@ pub async fn probe(
 async fn report_capabilities<C: Clock>(
     adapters: &AdapterRegistry,
     clock: &C,
+    total: u32,
 ) -> RunnerCapabilities {
     let harnesses = adapters.capabilities().await;
     let feature = |support, reason: Option<&str>| CapabilityValue {
@@ -210,8 +239,8 @@ async fn report_capabilities<C: Clock>(
             ("arch".to_owned(), std::env::consts::ARCH.to_owned()),
         ]),
         concurrency: Concurrency {
-            total: 1,
-            available: 1,
+            total,
+            available: total,
             additional: BTreeMap::new(),
         },
         harnesses,

@@ -600,6 +600,14 @@ impl SupervisedProcess {
         Ok((outcome, groups))
     }
 
+    /// A handle that can stop this process while `wait_with_capture*` owns it.
+    pub fn canceller(&self) -> ProcessCanceller {
+        ProcessCanceller {
+            pid: self.pid,
+            groups: Arc::clone(&self.groups),
+        }
+    }
+
     /// The announced groups still live, never the main one.
     fn live_groups(&self) -> BTreeSet<u32> {
         let mut groups = self
@@ -609,6 +617,52 @@ impl SupervisedProcess {
             .unwrap_or_default();
         groups.remove(&self.pid);
         groups
+    }
+}
+
+/// Stops a process that another task is waiting on: the main group, then
+/// every announced group still live. The waiter reaps the leader and sees it
+/// end, so this only signals and watches the groups.
+#[derive(Clone)]
+pub struct ProcessCanceller {
+    pid: u32,
+    groups: Arc<Mutex<BTreeSet<u32>>>,
+}
+
+impl ProcessCanceller {
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    pub async fn stop(
+        &self,
+        grace: Duration,
+    ) -> Result<(CancelOutcome, ProcessGroups), ProcessError> {
+        #[cfg(unix)]
+        {
+            unix::signal_group(self.pid, unix::SIGTERM).map_err(|_| ProcessError::Signal)?;
+            let mut alive = wait_until_gone(BTreeSet::from([self.pid]), grace).await;
+            let outcome = if alive.is_empty() {
+                CancelOutcome::Stopped
+            } else {
+                unix::signal_group(self.pid, unix::SIGKILL).map_err(|_| ProcessError::Signal)?;
+                alive = wait_until_gone(alive, Duration::from_secs(5)).await;
+                CancelOutcome::Killed
+            };
+            let _ = alive;
+            let mut groups = self
+                .groups
+                .lock()
+                .map(|set| set.clone())
+                .unwrap_or_default();
+            groups.remove(&self.pid);
+            Ok((outcome, kill_groups(groups, grace).await))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = grace;
+            Err(ProcessError::Signal)
+        }
     }
 }
 

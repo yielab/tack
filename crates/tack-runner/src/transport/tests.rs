@@ -990,3 +990,331 @@ fn an_idle_runner_paces_its_claims_by_the_servers_hint() {
         assert_eq!(idle_pause(retry_after, claim_took), expected);
     }
 }
+
+// -----------------------------------------------------------------
+// The slot loop: N = 2 attempts at once, one heartbeat for all of them.
+// -----------------------------------------------------------------
+
+mod slot_loop {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use tack_orch::execution::{ActualExecution, Usage, WorkspaceId as DomainWorkspaceId};
+    use tokio::sync::{Semaphore, mpsc};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate, matchers::any};
+
+    use super::*;
+    use crate::client::workspace::{Workspace, WorkspaceError, WorkspaceManager};
+    use crate::client::{
+        CancelObservation, CancellationEvidence, HarnessAdapter, LocalRunHandle,
+        WorktreeProvisioner,
+    };
+    use crate::harness::{ExecutionSpec, HarnessError, HarnessOutcome, RecoveryObservation};
+
+    /// A harness whose runs end only when the test releases them.
+    struct GatedAdapter {
+        /// One permit lets one running attempt finish.
+        release: Arc<Semaphore>,
+        running: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl HarnessAdapter for GatedAdapter {
+        async fn validate(&self, _spec: &ExecutionSpec) -> Result<(), HarnessError> {
+            Ok(())
+        }
+
+        async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
+            // The handle carries what `wait` needs to describe the run.
+            Ok(LocalRunHandle {
+                process_id: format!(
+                    "{}|{}|{}",
+                    spec.work.lease.attempt_id.as_str(),
+                    spec.workspace.id.as_str(),
+                    spec.workspace.base_revision
+                ),
+            })
+        }
+
+        async fn cancel(
+            &self,
+            _handle: &LocalRunHandle,
+        ) -> Result<CancellationEvidence, HarnessError> {
+            Ok(CancellationEvidence {
+                observation: CancelObservation::ProcessStopped,
+                observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
+                details: serde_json::Map::new(),
+            })
+        }
+
+        async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+            self.running.fetch_add(1, Ordering::SeqCst);
+            let permit = self.release.acquire().await.expect("gate stays open");
+            permit.forget();
+            self.running.fetch_sub(1, Ordering::SeqCst);
+            let mut parts = handle.process_id.split('|');
+            let (_, workspace_id, base_revision) = (parts.next(), parts.next(), parts.next());
+            let mut actual: ActualExecution = serde_json::from_value(json!({
+                "harness_kind": "fake",
+                "harness_version": "1.0.0",
+                "model": "test-model", "model_source": "reported",
+                "capability_snapshot": {
+                    "cancel": {"support": "supported", "reason": null},
+                    "resume": {"support": "unsupported", "reason": "no resume"},
+                    "decisions": {"support": "supported", "reason": null},
+                    "artifacts": {"support": "supported", "reason": null},
+                    "usage": {"support": "advisory", "reason": "partial"}
+                },
+                "workspace_id": "ws_placeholder",
+                "base_revision": "placeholder",
+                "started_at": "2026-08-06T12:20:00Z",
+                "ended_at": "2026-08-06T12:25:00Z"
+            }))
+            .expect("actual execution");
+            actual.workspace_id = DomainWorkspaceId::new(workspace_id.unwrap_or_default());
+            actual.base_revision = base_revision.unwrap_or_default().to_owned();
+            let usage: Usage = serde_json::from_value(json!({
+                "tokens_in": {"value": 1, "source": "measured"},
+                "tokens_out": {"value": 2, "source": "measured"},
+                "duration_ms": {"value": 3, "source": "measured"},
+                "cost_usd": {"value": null, "source": "not_measured"}
+            }))
+            .expect("usage");
+            Ok(HarnessOutcome {
+                terminal_state: AttemptState::Succeeded,
+                terminal_reason: json!({"code": "ok", "message": "done"}),
+                final_checkpoint: None,
+                actual_execution: actual,
+                usage,
+            })
+        }
+
+        async fn reconcile(
+            &self,
+            _journal: &crate::client::journal::AttemptJournal,
+        ) -> Result<RecoveryObservation, HarnessError> {
+            Ok(RecoveryObservation::ProcessStopped)
+        }
+
+        async fn decision_channels(
+            &self,
+            _handle: &LocalRunHandle,
+        ) -> Option<(
+            mpsc::Receiver<crate::harness::Question>,
+            mpsc::Sender<crate::harness::DecisionAnswer>,
+        )> {
+            None
+        }
+    }
+
+    #[derive(Clone)]
+    struct NoCheckout;
+
+    #[async_trait]
+    impl WorktreeProvisioner for NoCheckout {
+        async fn provision(
+            &self,
+            _workspace: &Workspace,
+            _repository: &crate::client::RepositorySpec,
+        ) -> Result<(), WorkspaceError> {
+            Ok(())
+        }
+
+        async fn provision_scratch(&self, _workspace: &Workspace) -> Result<(), WorkspaceError> {
+            Ok(())
+        }
+    }
+
+    /// The server: enrolls, hands out the first two claims, answers every
+    /// attempt call with its echo, and records each heartbeat it receives.
+    fn respond(
+        request: &Request,
+        claims: &AtomicUsize,
+        heartbeats: &Mutex<Vec<Value>>,
+        unexpected: &Mutex<Vec<String>>,
+    ) -> ResponseTemplate {
+        let path = request.url.path().to_owned();
+        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let ok = |value: Value| ResponseTemplate::new(200).set_body_json(value);
+        let from_fixture =
+            |name: &str| -> Value { serde_json::from_str(&fixture(name)).expect("fixture parses") };
+        let attempt_in_path = path
+            .split('/')
+            .skip_while(|part| *part != "attempts")
+            .nth(1)
+            .unwrap_or_default()
+            .to_owned();
+        match path.rsplit('/').next().unwrap_or_default() {
+            "enroll" => ok(from_fixture("enrollment.response.json")),
+            "claim" => {
+                let nth = claims.fetch_add(1, Ordering::SeqCst);
+                if nth >= 2 {
+                    let mut none = from_fixture("claim.no-work.response.json");
+                    none["claim_request_id"] = body["claim_request_id"].clone();
+                    none["retry_after_ms"] = json!(60_000);
+                    return ok(none);
+                }
+                let mut work = from_fixture("claim.response.json");
+                let attempt = format!("att_01J0000000000000000000000{}", nth + 1);
+                work["claim_request_id"] = body["claim_request_id"].clone();
+                work["lease"]["attempt_id"] = json!(attempt);
+                work["lease"]["fencing_token"] = json!(7 + nth);
+                work["attempt"]["attempt_id"] = json!(attempt);
+                work["request"]["request_id"] = json!(format!("exec_{}", nth + 1));
+                work["attempt"]["request_id"] = work["request"]["request_id"].clone();
+                work["attempt"]["fencing_token"] = json!(7 + nth);
+                ok(work)
+            }
+            "heartbeat" => {
+                heartbeats.lock().expect("heartbeats").push(body.clone());
+                let results: Vec<Value> = body["active_attempts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|lease| {
+                        json!({
+                            "attempt_id": lease["attempt_id"],
+                            "fencing_token": lease["fencing_token"],
+                            "lease_expires_at": "2026-08-06T12:21:16Z",
+                            "cancellation_requested": false,
+                        })
+                    })
+                    .collect();
+                ok(json!({
+                    "protocol_version": 1,
+                    "heartbeat_id": body["heartbeat_id"],
+                    "accepted_at": "2026-08-06T12:20:16Z",
+                    "lease_results": results,
+                }))
+            }
+            "accept" | "start" => {
+                let mut reply = from_fixture(if path.ends_with("accept") {
+                    "accept.response.json"
+                } else {
+                    "start.response.json"
+                });
+                reply["attempt_id"] = json!(attempt_in_path);
+                ok(reply)
+            }
+            "completion" => {
+                let mut reply = from_fixture("completion.response.json");
+                reply["attempt_id"] = json!(attempt_in_path);
+                reply["completion_id"] = body["completion_id"].clone();
+                ok(reply)
+            }
+            _ => {
+                unexpected.lock().expect("unexpected").push(path);
+                ResponseTemplate::new(500)
+            }
+        }
+    }
+
+    fn lease_count(heartbeat: &Value) -> usize {
+        heartbeat["active_attempts"].as_array().map_or(0, Vec::len)
+    }
+
+    #[tokio::test]
+    async fn two_slots_run_two_attempts_and_the_heartbeat_follows_the_free_capacity() {
+        let claims = Arc::new(AtomicUsize::new(0));
+        let heartbeats = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let unexpected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        {
+            let (claims, heartbeats, unexpected) = (
+                Arc::clone(&claims),
+                Arc::clone(&heartbeats),
+                Arc::clone(&unexpected),
+            );
+            Mock::given(any())
+                .respond_with(move |request: &Request| {
+                    respond(request, &claims, &heartbeats, &unexpected)
+                })
+                .mount(&server)
+                .await;
+        }
+
+        let root = tempfile::tempdir().expect("state dir");
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let release = Arc::new(Semaphore::new(0));
+        let running = Arc::new(AtomicUsize::new(0));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::clone(&release),
+                running: Arc::clone(&running),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
+            WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
+        )
+        .with_concurrency(2);
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.path().join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = Some(EnrollmentCredential::new(SECRET_ENROLLMENT));
+        config.max_concurrent_attempts = 2;
+        let runner =
+            HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+                .with_renewal_interval(Duration::from_millis(50));
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let serving = tokio::spawn(async move { runner.serve(shutdown).await });
+
+        let budget = Duration::from_secs(30);
+        let seen = |wanted: fn(&Value) -> bool| {
+            let heartbeats = Arc::clone(&heartbeats);
+            async move {
+                tack_test_support::poll_until(budget, async || {
+                    heartbeats
+                        .lock()
+                        .expect("heartbeats")
+                        .iter()
+                        .find(|heartbeat| wanted(heartbeat))
+                        .cloned()
+                })
+                .await
+            }
+        };
+
+        // Two attempts at once, and the heartbeat that says so.
+        let both = seen(|hb| lease_count(hb) == 2 && hb["available_capacity"] == 0).await;
+        assert!(
+            both.is_some(),
+            "no heartbeat carried two leases with no capacity left: {:?} unexpected: {:?}",
+            heartbeats.lock().expect("heartbeats"),
+            unexpected.lock().expect("unexpected"),
+        );
+        let ids: std::collections::BTreeSet<String> =
+            both.as_ref()
+                .map_or_else(std::collections::BTreeSet::new, |hb| {
+                    hb["active_attempts"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|lease| lease["attempt_id"].as_str().unwrap_or_default().to_owned())
+                        .collect()
+                });
+        assert_eq!(ids.len(), 2, "the two leases are two different attempts");
+        let both_running = tack_test_support::poll_until(budget, async || {
+            (running.load(Ordering::SeqCst) == 2).then_some(())
+        })
+        .await;
+        assert!(both_running.is_some(), "both harnesses are running at once");
+
+        // One ends: the next heartbeat holds one lease and one free slot.
+        release.add_permits(1);
+        let one = seen(|hb| lease_count(hb) == 1 && hb["available_capacity"] == 1).await;
+        assert!(
+            one.is_some(),
+            "no heartbeat carried one lease with one slot free: {:?}",
+            heartbeats.lock().expect("heartbeats"),
+        );
+        assert!(unexpected.lock().expect("unexpected").is_empty());
+
+        shutdown_handle.request();
+        release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(30), serving)
+            .await
+            .expect("serve stops on shutdown")
+            .expect("serve task")
+            .expect("serve result");
+    }
+}

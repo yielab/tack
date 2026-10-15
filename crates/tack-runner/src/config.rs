@@ -42,6 +42,10 @@ pub struct ConfigOverrides {
     pub runner_id: Option<String>,
     pub state_dir: Option<PathBuf>,
     pub enrollment_credential: Option<EnrollmentCredential>,
+    pub max_concurrent_attempts: Option<u32>,
+    /// A value in this source that could not be read at all; the load is
+    /// refused naming it.
+    pub invalid: Option<ConfigError>,
 }
 
 #[derive(Default)]
@@ -59,6 +63,9 @@ pub struct RunnerConfig {
     pub runner_id: String,
     pub state_dir: PathBuf,
     pub enrollment_credential: Option<EnrollmentCredential>,
+    /// How many attempts this runner works at once. At least 1; a folder
+    /// worked in place still runs one at a time whatever this says.
+    pub max_concurrent_attempts: u32,
     /// The `[verify]` table: a program run after a succeeded attempt.
     pub verify: VerifyConfig,
     /// The `[git]` table: whether a succeeded attempt's branch is pushed.
@@ -167,6 +174,7 @@ struct FileConfig {
     runner_id: Option<String>,
     state_dir: Option<PathBuf>,
     enrollment_credential: Option<String>,
+    max_concurrent_attempts: Option<u32>,
     verify: Option<VerifyConfig>,
     git: Option<GitConfig>,
     secrets: Option<SecretsConfig>,
@@ -180,6 +188,7 @@ impl RunnerConfig {
             runner_id: DEFAULT_RUNNER_ID.to_owned(),
             state_dir: PathBuf::from(DEFAULT_STATE_DIR),
             enrollment_credential: None,
+            max_concurrent_attempts: 1,
             verify: VerifyConfig::default(),
             git: GitConfig::default(),
             secrets: SecretsConfig::default(),
@@ -220,13 +229,24 @@ impl RunnerConfig {
                 runner_id: file.runner_id,
                 state_dir: file.state_dir,
                 enrollment_credential: file.enrollment_credential.map(EnrollmentCredential::new),
+                max_concurrent_attempts: file.max_concurrent_attempts,
+                invalid: None,
             });
+        }
+        if let Some(error) = sources.environment.invalid.clone() {
+            return Err(error);
         }
         config.apply(sources.environment);
         config.apply(sources.command_line);
 
         if config.runner_id.trim().is_empty() {
             return Err(ConfigError::EmptyRunnerId);
+        }
+        if config.max_concurrent_attempts < 1 {
+            return Err(ConfigError::InvalidField {
+                field: "max_concurrent_attempts",
+                reason: "must be at least 1".to_owned(),
+            });
         }
         Ok(config)
     }
@@ -239,7 +259,31 @@ impl RunnerConfig {
             enrollment_credential: std::env::var("TACK_RUNNER_ENROLLMENT_TOKEN")
                 .ok()
                 .map(EnrollmentCredential::new),
+            ..Self::attempts_from_environment(
+                std::env::var("TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS")
+                    .ok()
+                    .as_deref(),
+            )
         }
+    }
+
+    /// The overrides `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` carries: its
+    /// number, or the refusal for a value that is not one.
+    pub fn attempts_from_environment(raw: Option<&str>) -> ConfigOverrides {
+        let mut overrides = ConfigOverrides::default();
+        if let Some(raw) = raw {
+            match raw.trim().parse() {
+                Ok(value) => overrides.max_concurrent_attempts = Some(value),
+                Err(_) => {
+                    overrides.invalid = Some(ConfigError::InvalidField {
+                        field: "max_concurrent_attempts",
+                        reason: "TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS must be a whole number"
+                            .to_owned(),
+                    });
+                }
+            }
+        }
+        overrides
     }
 
     pub fn require_enrollment_credential(&self) -> Result<&EnrollmentCredential, RunnerError> {
@@ -268,6 +312,9 @@ impl RunnerConfig {
         }
         if let Some(value) = overrides.enrollment_credential {
             self.enrollment_credential = Some(value);
+        }
+        if let Some(value) = overrides.max_concurrent_attempts {
+            self.max_concurrent_attempts = value;
         }
     }
 }
