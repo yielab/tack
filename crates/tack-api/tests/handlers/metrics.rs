@@ -401,6 +401,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
         &e["escalation_rate"],
         &e["verification_tax"]["ratio"],
         &e["mrp_acceptance_rate"],
+        &e["lights_off_rate"],
     ] {
         assert!(ratio["value"].is_null(), "{ratio}");
         assert_eq!(ratio["null_reason"], "denominator_zero");
@@ -412,6 +413,125 @@ async fn seeded_rows_yield_the_expected_ratios() {
         assert!(minutes["median_minutes"].is_null() && minutes["p90_minutes"].is_null());
         assert_eq!(minutes["null_reason"], "not_measured");
     }
+}
+
+// How runs began and how merges came about: a person's request, rework, one started by itself;
+// the button and the automatic merge. Only the second task's newest merged run began by itself
+// and asked nothing, so lights-off is 1 of the 2 merged; the first task answered a decision.
+#[tokio::test]
+async fn start_triggers_and_lights_off_are_counted_from_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let pool = init_pool("sqlite::memory:").await.unwrap();
+    migrations::run_all(&pool).await.unwrap();
+    let workspace_id = Uuid::new_v4();
+    exec(
+        &pool,
+        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'P73', '{}')",
+        &[&workspace_id.to_string()],
+    )
+    .await;
+    let repo = Repository::new(pool.clone());
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let app = crate::common::with_default_host(build_router(AppState {
+        repo: repo.clone(),
+        config: AppConfig {
+            api_token: Some(TOKEN.into()),
+            database_url: "sqlite::memory:".into(),
+            storage_dir: root.path().to_string_lossy().into_owned(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: None,
+    }));
+    let (project_id, first) = project_with_item(&repo, workspace_id, "P73 starts").await;
+    let second = repo
+        .create_item(
+            project_id,
+            "To Do",
+            CreateItem {
+                title: "by itself".into(),
+                ..CreateItem::default()
+            },
+        )
+        .await
+        .unwrap()
+        .id
+        .to_string();
+    exec(
+        &pool,
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'p73', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+        &[],
+    )
+    .await;
+    // R1 a person's, R2 its rework, R3 started by itself on the second task.
+    for (id, item, metadata) in [
+        ("R1", &first, "{}"),
+        ("R2", &first, r#"{"rework_of":"R1"}"#),
+        ("R3", &second, r#"{"started_by":"auto_start"}"#),
+    ] {
+        exec(
+            &pool,
+            "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+               request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+               repository_snapshot, permission_policy, metadata, created_at, updated_at)
+             VALUES (?, ?, 's', ?, 'f', 'exact_runner', 'run', '{}', '{}', '{}', ?,
+               '2026-09-10T08:00:00Z', '2026-09-10T08:00:00Z')",
+            &[id, item, id, metadata],
+        )
+        .await;
+    }
+    for (attempt, request) in [("R1a", "R1"), ("R2a", "R2"), ("R3a", "R3")] {
+        exec(
+            &pool,
+            "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+               lease_issued_at, lease_expires_at, created_at, updated_at)
+             VALUES (?, ?, 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
+               '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z')",
+            &[attempt, request],
+        )
+        .await;
+    }
+    exec(
+        &pool,
+        "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, created_at,
+           updated_at, resolved_at)
+         VALUES ('D1', 'R1a', 'D1', 'choice', 'p', '2026-09-10T09:10:00Z', '2026-09-10T09:10:00Z',
+           '2026-09-10T09:20:00Z')",
+        &[],
+    )
+    .await;
+    let project = project_id.to_string();
+    exec(
+        &pool,
+        "INSERT INTO tack_merges (attempt_id, project_id, trigger, checked_at, merged_at) VALUES
+           ('R2a', ?, 'button', '2026-09-10T10:00:00Z', '2026-09-10T10:00:00Z'),
+           ('R3a', ?, 'auto', '2026-09-10T11:00:00Z', '2026-09-10T11:00:00Z')",
+        &[&project, &project],
+    )
+    .await;
+
+    let headers = [("authorization", "Bearer g1a-metrics-token")];
+    let uri = format!("/api/projects/{project_id}/metrics/factory");
+    let (status, m) = common::send(&app, "GET", &uri, Value::Null, &headers).await;
+    assert_eq!(status, StatusCode::OK, "{m}");
+    assert_eq!(
+        m["runs_by_start"],
+        json!({"person": 1, "auto": 1, "rework": 1})
+    );
+    assert_eq!(
+        m["merges_by_trigger"],
+        json!({"button": 1, "done": 0, "auto": 1})
+    );
+    assert_eq!(m["decisions_answered"], 1);
+    let lights = &m["lights_off_rate"];
+    assert_eq!(
+        (lights["numerator"].as_i64(), lights["denominator"].as_i64()),
+        (Some(1), Some(2))
+    );
+    close(&lights["value"], 0.5);
 }
 
 /// A prill that answers `--version` and `metrics` from the captured output,

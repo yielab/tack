@@ -151,6 +151,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("087_autonomy", &MIGRATION_087[..]),
         ordinary("088_role_profile_fleet", &MIGRATION_088[..]),
         ordinary("089_item_recurrence", &MIGRATION_089[..]),
+        ordinary("090_auto_start", &MIGRATION_090[..]),
     ]
 }
 
@@ -1901,4 +1902,11 @@ const MIGRATION_088: [&str; 2] = [
 const MIGRATION_089: [&str; 2] = [
     "ALTER TABLE items ADD COLUMN recurrence TEXT CHECK (recurrence IN ('weekly','monthly','quarterly'))",
     "ALTER TABLE items ADD COLUMN recurrence_of TEXT REFERENCES items(id) ON DELETE SET NULL",
+];
+
+// 090: a project may start its own tasks: the status they wait in, and how many runs it keeps open.
+const MIGRATION_090: [&str; 3] = [
+    "ALTER TABLE projects ADD COLUMN auto_start_enabled INTEGER NOT NULL DEFAULT 0 CHECK (auto_start_enabled IN (0,1))",
+    "ALTER TABLE projects ADD COLUMN auto_start_status TEXT",
+    "ALTER TABLE projects ADD COLUMN auto_start_max_open INTEGER NOT NULL DEFAULT 3 CHECK (auto_start_max_open >= 1)",
 ];

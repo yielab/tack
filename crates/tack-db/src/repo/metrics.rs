@@ -248,3 +248,118 @@ pub async fn pull_request_totals(
         reverted: row.get("reverted"),
     })
 }
+
+/// Requests with an attempt in the window, by how they began: rework (`metadata.rework_of`
+/// names another request), by itself (`metadata.started_by = auto_start`), or by a person.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StartTotals {
+    pub person: i64,
+    pub auto: i64,
+    pub rework: i64,
+}
+
+/// Merges recorded in the window, by what triggered them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MergeTriggers {
+    pub button: i64,
+    pub done: i64,
+    pub auto: i64,
+}
+
+pub async fn runs_by_start(
+    pool: &SqlitePool,
+    project_id: &str,
+    since: Option<&str>,
+) -> Result<StartTotals, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT CASE WHEN json_extract(r.metadata, '$.rework_of') IS NOT NULL
+                          AND json_extract(r.metadata, '$.rework_of') != r.id THEN 'rework'
+                     WHEN json_extract(r.metadata, '$.started_by') = 'auto_start' THEN 'auto'
+                     ELSE 'person' END AS bucket,
+                COUNT(DISTINCT r.id) AS runs
+         FROM execution_requests r
+         JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ? AND EXISTS (
+             SELECT 1 FROM execution_attempts a
+             WHERE a.request_id = r.id AND (? IS NULL OR julianday(a.created_at) >= julianday(?)))
+         GROUP BY bucket",
+    )
+    .bind(project_id)
+    .bind(since)
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
+    let mut totals = StartTotals::default();
+    for row in rows {
+        let runs = row.get("runs");
+        match row.get::<String, _>("bucket").as_str() {
+            "rework" => totals.rework = runs,
+            "auto" => totals.auto = runs,
+            _ => totals.person = runs,
+        }
+    }
+    Ok(totals)
+}
+
+pub async fn merges_by_trigger(
+    pool: &SqlitePool,
+    project_id: &str,
+    since: Option<&str>,
+) -> Result<MergeTriggers, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT trigger, COUNT(*) AS merges FROM tack_merges
+         WHERE project_id = ? AND merged_at IS NOT NULL
+           AND (? IS NULL OR julianday(merged_at) >= julianday(?))
+         GROUP BY trigger",
+    )
+    .bind(project_id)
+    .bind(since)
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
+    let mut totals = MergeTriggers::default();
+    for row in rows {
+        let merges = row.get("merges");
+        match row.get::<String, _>("trigger").as_str() {
+            "button" => totals.button = merges,
+            "done" => totals.done = merges,
+            _ => totals.auto = merges,
+        }
+    }
+    Ok(totals)
+}
+
+/// Of the items merged in the window, how many had their newest merged attempt begin by
+/// itself while none of the item's requests ever had a resolved decision.
+/// Returns `(lights_off, merged_items)`.
+pub async fn lights_off(
+    pool: &SqlitePool,
+    project_id: &str,
+    since: Option<&str>,
+) -> Result<(i64, i64), sqlx::Error> {
+    let row = sqlx::query(
+        "WITH newest AS (
+             SELECT i.id AS item_id, r.metadata AS metadata,
+                    ROW_NUMBER() OVER (PARTITION BY i.id ORDER BY t.merged_at DESC) AS rn
+             FROM tack_merges t
+             JOIN execution_attempts a ON a.id = t.attempt_id
+             JOIN execution_requests r ON r.id = a.request_id
+             JOIN items i ON i.id = r.item_id
+             WHERE t.project_id = ? AND t.merged_at IS NOT NULL
+               AND (? IS NULL OR julianday(t.merged_at) >= julianday(?)))
+         SELECT COUNT(*) AS merged_items,
+                COALESCE(SUM(json_extract(metadata, '$.started_by') = 'auto_start'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM execution_decisions d
+                        JOIN execution_attempts a2 ON a2.id = d.attempt_id
+                        JOIN execution_requests r2 ON r2.id = a2.request_id
+                        WHERE r2.item_id = newest.item_id AND d.resolved_at IS NOT NULL)), 0) AS lights_off
+         FROM newest WHERE rn = 1",
+    )
+    .bind(project_id)
+    .bind(since)
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
+    Ok((row.get("lights_off"), row.get("merged_items")))
+}

@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::error::CoreError;
 use crate::models::DependencyType;
+use crate::workflow::WorkflowConfig;
 
 /// Lightweight edge representation for the dependency graph.
 #[derive(Debug, Clone)]
@@ -81,6 +82,21 @@ impl DependencyGraph {
             .get(&item_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// The items that block `item` and are not yet Done. A blocker whose status is
+    /// unknown (`status_of` answers `None`) counts as unfinished.
+    pub fn unfinished_blockers(
+        &self,
+        item: Uuid,
+        status_of: &dyn Fn(Uuid) -> Option<String>,
+        workflow: &WorkflowConfig,
+    ) -> Vec<Uuid> {
+        self.blockers_of(item)
+            .into_iter()
+            .map(|(blocker, _)| blocker)
+            .filter(|blocker| !status_of(*blocker).is_some_and(|s| workflow.is_done_status(&s)))
+            .collect()
     }
 
     /// Get all items that the given item directly blocks.

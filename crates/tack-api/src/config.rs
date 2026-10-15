@@ -65,6 +65,11 @@ pub struct AppConfig {
     #[serde(default)]
     pub github_poll_seconds: u64,
 
+    /// How often the board looks for tasks a project starts by itself, in seconds.
+    /// `0` is off. Env: `TACK_AUTO_START_SECONDS`.
+    #[serde(default = "default_auto_start_seconds")]
+    pub auto_start_seconds: u64,
+
     // ── Remote backup (S3-compatible object storage) ──────────────────────────
     /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
     /// Example: `https://<account>.r2.cloudflarestorage.com`
@@ -169,6 +174,10 @@ pub struct AppConfig {
     pub allow_unauthenticated_nonloopback: bool,
 }
 
+fn default_auto_start_seconds() -> u64 {
+    30
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -187,6 +196,7 @@ impl Default for AppConfig {
             github_token: None,
             github_api_base: default_github_api_base(),
             github_poll_seconds: 0,
+            auto_start_seconds: default_auto_start_seconds(),
             backup_endpoint: None,
             backup_bucket: None,
             backup_region: default_backup_region(),
@@ -451,6 +461,9 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("TACK_GITHUB_POLL_SECONDS") {
             config.github_poll_seconds = v.parse().unwrap_or(0);
+        }
+        if let Ok(v) = std::env::var("TACK_AUTO_START_SECONDS") {
+            config.auto_start_seconds = v.parse().unwrap_or_else(|_| default_auto_start_seconds());
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_ENDPOINT")
             && !v.is_empty()

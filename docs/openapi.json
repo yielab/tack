@@ -9532,6 +9532,10 @@
           "mrp_unreviewed",
           "mrp_acceptance_rate",
           "outcomes",
+          "runs_by_start",
+          "merges_by_trigger",
+          "decisions_answered",
+          "lights_off_rate",
           "cost_by_model",
           "cost_by_team"
         ],
@@ -9574,6 +9578,11 @@
             "type": "integer",
             "format": "int64"
           },
+          "decisions_answered": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Decisions created in the window that a person has answered."
+          },
           "escalation_rate": {
             "$ref": "#/components/schemas/Ratio",
             "description": "decisions ÷ attempts."
@@ -9583,6 +9592,13 @@
           },
           "human_minutes_per_mrp": {
             "$ref": "#/components/schemas/HumanMinutes"
+          },
+          "lights_off_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "Tasks merged in the window whose newest merged run began by itself and whose\nrequests never had a resolved decision, over the tasks merged in the window."
+          },
+          "merges_by_trigger": {
+            "$ref": "#/components/schemas/MergesByTrigger"
           },
           "mrp_acceptance_rate": {
             "$ref": "#/components/schemas/Ratio",
@@ -9622,6 +9638,9 @@
               "string",
               "null"
             ]
+          },
+          "runs_by_start": {
+            "$ref": "#/components/schemas/RunsByStart"
           },
           "since": {
             "type": [
@@ -10322,6 +10341,29 @@
           }
         }
       },
+      "MergesByTrigger": {
+        "type": "object",
+        "description": "Merges in the window, by what triggered them.",
+        "required": [
+          "button",
+          "done",
+          "auto"
+        ],
+        "properties": {
+          "auto": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "button": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "done": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "MetricOp": {
         "type": "string",
         "enum": [
@@ -10739,11 +10781,35 @@
           "archived",
           "code_origin",
           "workspace_mode",
-          "push_after_run"
+          "push_after_run",
+          "auto_start_enabled",
+          "auto_start_max_open"
         ],
         "properties": {
           "archived": {
             "type": "boolean"
+          },
+          "auto_start_disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why auto-start switched itself off (the project dropped to L3); read, never written."
+          },
+          "auto_start_enabled": {
+            "type": "boolean",
+            "description": "The project starts a task by itself when it reaches `auto_start_status`."
+          },
+          "auto_start_max_open": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many runs the project keeps open at once on its own."
+          },
+          "auto_start_status": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "code_origin": {
             "$ref": "#/components/schemas/CodeOrigin",
@@ -11523,6 +11589,29 @@
           }
         }
       },
+      "RunsByStart": {
+        "type": "object",
+        "description": "Requests with an attempt in the window, by how they began. Rework wins over the other two.",
+        "required": [
+          "person",
+          "auto",
+          "rework"
+        ],
+        "properties": {
+          "auto": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "person": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rework": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "SaveAsTemplateRequest": {
         "type": "object",
         "required": [
@@ -12036,6 +12125,26 @@
               "boolean",
               "null"
             ]
+          },
+          "auto_start_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "auto_start_max_open": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "auto_start_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A status of the project's workflow; JSON `null` clears it."
           },
           "code_origin": {
             "oneOf": [

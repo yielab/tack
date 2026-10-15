@@ -177,3 +177,23 @@ fn topo_order_empty_input() {
     let graph = DependencyGraph::new();
     assert_eq!(graph.topological_order(&[]).unwrap(), Vec::<Uuid>::new());
 }
+
+#[test]
+fn unfinished_blockers_ignores_a_done_blocker() {
+    let mut graph = DependencyGraph::new();
+    graph.add_edge(id(1), id(3), DependencyType::Blocks);
+    graph.add_edge(id(2), id(3), DependencyType::Blocks);
+    let workflow = crate::workflow::simple_workflow();
+    let done = workflow.find_first_done_status().unwrap().to_owned();
+    let status_of = |item: Uuid| (item == id(1)).then(|| done.clone());
+    // id(1) is Done; id(2) has no known status and so still blocks.
+    assert_eq!(
+        graph.unfinished_blockers(id(3), &status_of, &workflow),
+        vec![id(2)]
+    );
+    assert!(
+        graph
+            .unfinished_blockers(id(1), &status_of, &workflow)
+            .is_empty()
+    );
+}

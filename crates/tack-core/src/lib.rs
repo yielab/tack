@@ -1,3 +1,4 @@
+pub mod auto_start;
 pub mod autonomy;
 pub mod brief;
 pub mod dependency;

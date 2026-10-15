@@ -883,9 +883,18 @@ fn project_repository(
 pub async fn create_execution(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
-    Json(mut input): Json<CreateExecution>,
+    Json(input): Json<CreateExecution>,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    principal(&headers)?;
+    create_as(state, principal(&headers)?, input).await
+}
+
+/// `create_execution` for a caller that is the server itself: the principal is a string,
+/// not a header, and the profile, agent and machine are resolved as for any other run.
+pub(crate) async fn create_as(
+    state: OperatorExecutionState,
+    principal: String,
+    mut input: CreateExecution,
+) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     if let Some(id) = input.status_map_policy_id.as_deref()
         && let Err(message) = id.parse::<tack_core::workflow::StatusMapPolicy>()
     {
@@ -961,7 +970,7 @@ pub async fn create_execution(
         input.selector_id = Some(id);
     }
     let profile = load_profile(&state.repo, &resolved.profile_id, &input).await?;
-    enqueue_resolved(state, headers, input, profile, repository).await
+    enqueue_as(state, principal, input, profile, repository).await
 }
 
 fn select_an_agent() -> (StatusCode, Json<Value>) {
@@ -974,7 +983,7 @@ fn select_an_agent() -> (StatusCode, Json<Value>) {
 }
 
 /// The profile a run with no named profile gets, and the fleet that profile names.
-async fn resolve_profile(
+pub(crate) async fn resolve_profile(
     repo: &tack_db::Repository,
     item: &tack_core::models::Item,
     project: &tack_core::models::Project,
@@ -1022,7 +1031,7 @@ async fn resolve_profile(
 }
 
 /// Where a run that names no selector goes: its profile's fleet, else the only active runner.
-async fn default_selector(
+pub(crate) async fn default_selector(
     repo: &tack_db::Repository,
     fleet_id: Option<String>,
 ) -> Result<(String, String), (StatusCode, Json<Value>)> {
@@ -1108,7 +1117,24 @@ pub(crate) async fn enqueue_resolved(
     profile: Value,
     repository_snapshot: Value,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    let authenticated_principal = principal(&headers)?;
+    enqueue_as(
+        state,
+        principal(&headers)?,
+        input,
+        profile,
+        repository_snapshot,
+    )
+    .await
+}
+
+/// `enqueue_resolved` with the principal as a string.
+pub(crate) async fn enqueue_as(
+    state: OperatorExecutionState,
+    authenticated_principal: String,
+    input: CreateExecution,
+    profile: Value,
+    repository_snapshot: Value,
+) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let idempotency_scope = format!("operator:{authenticated_principal}");
     let (Some(selector_kind), Some(selector_id), Some(agent_profile_id)) = (
         input.selector_kind.clone(),

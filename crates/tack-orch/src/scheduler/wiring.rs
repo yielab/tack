@@ -139,7 +139,7 @@ const BUDGET_REACHED: &str = "budget_reached";
 
 /// Which of the project's budgets, if any, forbids starting new work now.
 /// A project with no `project_budgets` row has none.
-async fn budget_reached(
+pub async fn budget_reached(
     repo: &Repository,
     project_id: &str,
     now: DateTime<Utc>,

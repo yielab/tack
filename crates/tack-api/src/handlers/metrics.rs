@@ -120,6 +120,22 @@ pub struct Quality {
     pub repositories: Vec<RepositoryQuality>,
 }
 
+/// Requests with an attempt in the window, by how they began. Rework wins over the other two.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RunsByStart {
+    pub person: i64,
+    pub auto: i64,
+    pub rework: i64,
+}
+
+/// Merges in the window, by what triggered them.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MergesByTrigger {
+    pub button: i64,
+    pub done: i64,
+    pub auto: i64,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FactoryMetrics {
     pub since: Option<String>,
@@ -136,6 +152,13 @@ pub struct FactoryMetrics {
     /// accepted ÷ reviewed.
     pub mrp_acceptance_rate: Ratio,
     pub outcomes: Outcomes,
+    pub runs_by_start: RunsByStart,
+    pub merges_by_trigger: MergesByTrigger,
+    /// Decisions created in the window that a person has answered.
+    pub decisions_answered: i64,
+    /// Tasks merged in the window whose newest merged run began by itself and whose
+    /// requests never had a resolved decision, over the tasks merged in the window.
+    pub lights_off_rate: Ratio,
     /// prill's figures; absent when `quality_unavailable` says why.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<Quality>,
@@ -378,6 +401,9 @@ pub async fn factory_metrics(
     let mrp_waits = rows::mrp_waits(pool, &project, since).await?;
     let mrp = rows::mrp_totals(pool, &project, MRP_MEDIA_TYPE, since).await?;
     let prs = rows::pull_request_totals(pool, &project, since).await?;
+    let starts = rows::runs_by_start(pool, &project, since).await?;
+    let triggers = rows::merges_by_trigger(pool, &project, since).await?;
+    let (lights_off, merged_items) = rows::lights_off(pool, &project, since).await?;
 
     let storage = ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
     let (mut verification_tokens, mut verification_packs, mut unmeasured_packs) = (0, 0, 0);
@@ -516,6 +542,18 @@ pub async fn factory_metrics(
             reverted: prs.reverted,
             merged_not_reverted: prs.merged,
         },
+        runs_by_start: RunsByStart {
+            person: starts.person,
+            auto: starts.auto,
+            rework: starts.rework,
+        },
+        merges_by_trigger: MergesByTrigger {
+            button: triggers.button,
+            done: triggers.done,
+            auto: triggers.auto,
+        },
+        decisions_answered: i64::try_from(decision_waits.len()).unwrap_or(i64::MAX),
+        lights_off_rate: ratio(lights_off, merged_items, DENOMINATOR_ZERO),
         quality,
         quality_unavailable,
         cost_usd: card.as_ref().map(|_| cost),
