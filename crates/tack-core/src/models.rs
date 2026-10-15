@@ -56,6 +56,13 @@ pub struct Project {
     pub default_profile_id: Option<String>,
     pub on_finish_status: Option<String>,
     pub definition_of_done: Option<String>,
+    /// The project starts a task by itself when it reaches `auto_start_status`.
+    pub auto_start_enabled: bool,
+    pub auto_start_status: Option<String>,
+    /// How many runs the project keeps open at once on its own.
+    pub auto_start_max_open: i64,
+    /// Why auto-start switched itself off (the project dropped to L3); read, never written.
+    pub auto_start_disabled_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -632,6 +639,12 @@ pub struct UpdateProject {
     pub on_finish_status: Option<Option<String>>,
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub definition_of_done: Option<Option<String>>,
+    pub auto_start_enabled: Option<bool>,
+    /// A status of the project's workflow; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub auto_start_status: Option<Option<String>>,
+    #[validate(range(min = 1, message = "auto_start_max_open must be at least 1"))]
+    pub auto_start_max_open: Option<i64>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

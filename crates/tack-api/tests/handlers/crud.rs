@@ -279,6 +279,31 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(status, StatusCode::OK);
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert!(body["repository"].is_null());
+
+    // Auto-start: off, three runs open, no status until set; the status must be the workflow's.
+    assert_eq!(body["auto_start_enabled"], false);
+    assert_eq!(body["auto_start_max_open"], 3);
+    assert!(body["auto_start_status"].is_null());
+    let patch =
+        json!({"auto_start_enabled": true, "auto_start_status": "To Do", "auto_start_max_open": 5});
+    let (status, _) = common::send(&app, "PATCH", &uri, patch, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(body["auto_start_enabled"], true);
+    assert_eq!(body["auto_start_status"], "To Do");
+    assert_eq!(body["auto_start_max_open"], 5);
+    for patch in [
+        json!({"auto_start_status": "Nowhere"}),
+        json!({"auto_start_max_open": 0}),
+    ] {
+        let (status, _) = common::send(&app, "PATCH", &uri, patch, &[]).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let (status, _) =
+        common::send(&app, "PATCH", &uri, json!({"auto_start_status": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["auto_start_status"].is_null());
 }
 
 #[tokio::test]

@@ -660,3 +660,35 @@ still a control shown with its reason.
 - **Round 2** opened 2026-10-14: C stopped at the `HarnessCapability` literals in five crates
   and `merge.rs`'s `Facts`; C2 finishes it with those files authorised. M cut from develop
   after R.
+  - **C closed** 2026-10-14 (C + C2 squashed). Gate green; nextest over core, orch, db, handlers,
+    contract, cli and runner: 1063 passed, 3 skipped after one integrator fix: R and C each added
+    a runner-v1 fixture and each raised the count to 47; the merged tree has 48. C2's calls,
+    kept: `TeamReport` and `TeamViolation` are re-exported from `tack_orch::execution`; the
+    settings' `ceiling` is L3 when any role's team is attended, else L5; the ledger's `policy`
+    JSON does not record the ceiling. Integrator fix: C2 read "attended" as "has a violation";
+    `is_attended` now also holds when the team's `profile` is not `lights-out`, as the plan says.
+  - **M closed** 2026-10-14. Gate green; nextest over runner, db, orch and handlers: 817 passed,
+    3 skipped; Vitest on the Factory page 15/15. M's calls, kept: `SpendRow.team` so one query
+    serves the by-team table too; a `by_model` row counts its attempt once per model, so the
+    `attempts` column summed across models can exceed the attempt count; a team's `usd` is
+    omitted when any of its rows is unpriced; a row without a model reads "No model named";
+    `token_spend` is gone. The LEFT JOIN on `pull_requests` cannot double count: its primary key
+    is `attempt_id`.
+- **Round 3** opened 2026-10-14: A and Q cut from develop at `64854f00`.
+  - **Q closed** 2026-10-14. Gate green; nextest over core, db, handlers, cli and orch: 724
+    passed, 1 skipped; Vitest 74/74. Integrator fixes: `clone_for_next` lost the unused status
+    parameter the plan's signature carried (`CreateItem` has no status; the handler passes the
+    first to-do status to the repository); the squash brought Q's `schema.gen.ts`, cut before M,
+    over M's fields, so the generated files are regenerated on develop after every squash from
+    now on. Q's calls, kept: an unknown recurrence word in a CSV is a warning; the successor
+    search is one SQL on `recurrence_of`, not the paged list; `recurrence_of` is not kept across
+    a JSON import (no id map in pass 1); no List row test, since `ItemRow` is not exported.
+  - **A** finished by its agent the same day; integrator fix before the squash: the tick sent no
+    `approvals`, which the wire reads as `auto` even for an agent the machine does not sandbox.
+    It now follows the Run dialog's rule: `auto` when every eligible machine reports the agent
+    as `bwrap` or `harness`, `ask` otherwise; the tick test pins it. A's calls, kept:
+    `Candidate.has_machine` (the plan's struct could not produce `Skip::NoMachine`);
+    `Project.auto_start_disabled_reason` computed in the SELECT from the demotion comment; the
+    demotion note is a system comment on the demoted item, since comments are per item; a
+    blocker outside the project counts as unfinished; `timeout_seconds` 3600 and `network:
+    false`, the dialog's defaults; `runs_by_start` counts rework over auto.

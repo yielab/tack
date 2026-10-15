@@ -146,6 +146,15 @@ pub async fn update_project(
     if let Some(message) = repository_problem(code_origin, repository) {
         return repository_rejected(message);
     }
+    if let Some(Some(status)) = &input.auto_start_status {
+        let workflow = input.workflow.as_ref().unwrap_or(&current.workflow);
+        if !workflow.statuses.iter().any(|s| &s.name == status) {
+            return ApiError::BadRequest(format!(
+                "auto_start_status {status:?} is not a status of the project's workflow"
+            ))
+            .into_response();
+        }
+    }
     match state.repo.update_project(id, input).await {
         Ok(Some(project)) => Json(serde_json::to_value(project).unwrap()).into_response(),
         Ok(None) => ApiError::NotFound(format!("Project {id} not found")).into_response(),

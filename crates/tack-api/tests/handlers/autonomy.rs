@@ -712,3 +712,76 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     );
     assert_eq!(put["ceiling"], "L3", "{put}");
 }
+
+// A project-level demotion to L3 switches auto-start off and the project says why.
+#[tokio::test]
+async fn a_demotion_to_l3_switches_auto_start_off() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let gh = github(false, 1).await;
+    let b = board(root.path(), Some(&gh.uri()), &prill).await;
+    let setup = Setup::default();
+    let (status, put) = common::send(
+        &b.app,
+        "PUT",
+        &format!("/api/projects/{}/autonomy", b.project_id),
+        json!({
+            "level": "L5", "domains": [], "verify_require": ["criteria", "suite"],
+            "attestation_public_key": include_str!("../fixtures/prill/prill.pub"),
+            "verify_loop_max_attempts": 2,
+            "budgets": {"tokens_per_day": null, "usd_per_day": null, "auto_merges_per_day": 5, "queue_items_max": null},
+            "merge_on_done": false,
+        }),
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{put}");
+    let uri = format!("/api/projects/{}", b.project_id);
+    let (status, _) = common::send(
+        &b.app,
+        "PATCH",
+        &uri,
+        json!({"auto_start_enabled": true, "auto_start_status": "To Do"}),
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let a = finished_attempt(&b, &setup).await;
+    tack_api::autonomy::tick(&b.state).await;
+    tack_api::autonomy::tick(&b.state).await;
+    assert_eq!(merge_row(&b, &a.attempt_id).await.unwrap().0, "auto");
+    let (_, project) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
+    assert_eq!(project["auto_start_enabled"], true, "{project}");
+
+    // The project had already dropped a level when this merge is reverted: L4 to L3.
+    sqlx::query("UPDATE projects SET autonomy_level = 'L4' WHERE id = ?")
+        .bind(&b.project_id)
+        .execute(b.state.repo.pool())
+        .await
+        .unwrap();
+    tack_db::repo::pull_requests::mark_reverted(b.state.repo.pool(), "acme/widgets", 7, Some(9))
+        .await
+        .unwrap();
+    tack_api::autonomy::tick(&b.state).await;
+    let (_, project) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
+    let (_, got) = common::send(
+        &b.app,
+        "GET",
+        &format!("/api/projects/{}/autonomy", b.project_id),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(got["level"], "L3", "{got}");
+    assert_eq!(project["auto_start_enabled"], false, "{project}");
+    assert_eq!(
+        project["auto_start_disabled_reason"], "Auto-start is off: the project dropped to L3",
+        "{project}"
+    );
+    assert!(
+        comments(&b)
+            .await
+            .contains("Auto-start is off: the project dropped to L3")
+    );
+}

@@ -3804,10 +3804,21 @@ export interface components {
             cost_usd?: number | null;
             /** Format: int64 */
             decisions: number;
+            /**
+             * Format: int64
+             * @description Decisions created in the window that a person has answered.
+             */
+            decisions_answered: number;
             /** @description decisions ÷ attempts. */
             escalation_rate: components["schemas"]["Ratio"];
             human_minutes_per_decision: components["schemas"]["HumanMinutes"];
             human_minutes_per_mrp: components["schemas"]["HumanMinutes"];
+            /**
+             * @description Tasks merged in the window whose newest merged run began by itself and whose
+             *     requests never had a resolved decision, over the tasks merged in the window.
+             */
+            lights_off_rate: components["schemas"]["Ratio"];
+            merges_by_trigger: components["schemas"]["MergesByTrigger"];
             /** @description accepted ÷ reviewed. */
             mrp_acceptance_rate: components["schemas"]["Ratio"];
             /**
@@ -3821,6 +3832,7 @@ export interface components {
             quality?: null | components["schemas"]["Quality"];
             quality_unavailable?: string | null;
             rate_card_as_of?: string | null;
+            runs_by_start: components["schemas"]["RunsByStart"];
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
         };
@@ -4091,6 +4103,15 @@ export interface components {
             policy_snapshot?: unknown;
             trigger: string;
         };
+        /** @description Merges in the window, by what triggered them. */
+        MergesByTrigger: {
+            /** Format: int64 */
+            auto: number;
+            /** Format: int64 */
+            button: number;
+            /** Format: int64 */
+            done: number;
+        };
         /** @enum {string} */
         MetricOp: "lte" | "gte" | "eq";
         /** @description Dollars per million tokens of one model. */
@@ -4251,6 +4272,16 @@ export interface components {
         Priority: "critical" | "high" | "medium" | "low" | "none";
         Project: {
             archived: boolean;
+            /** @description Why auto-start switched itself off (the project dropped to L3); read, never written. */
+            auto_start_disabled_reason?: string | null;
+            /** @description The project starts a task by itself when it reaches `auto_start_status`. */
+            auto_start_enabled: boolean;
+            /**
+             * Format: int64
+             * @description How many runs the project keeps open at once on its own.
+             */
+            auto_start_max_open: number;
+            auto_start_status?: string | null;
             /**
              * @description Where the project's code comes from; `repository` is a URL for
              *     `url` and an absolute path for `folder`/`new_folder`.
@@ -4565,6 +4596,15 @@ export interface components {
         RunnerV1ErrorEnvelope: {
             error: components["schemas"]["RunnerV1Error"];
         };
+        /** @description Requests with an attempt in the window, by how they began. Rework wins over the other two. */
+        RunsByStart: {
+            /** Format: int64 */
+            auto: number;
+            /** Format: int64 */
+            person: number;
+            /** Format: int64 */
+            rework: number;
+        };
         SaveAsTemplateRequest: {
             description?: string | null;
             name: string;
@@ -4713,6 +4753,11 @@ export interface components {
         };
         UpdateProject: {
             archived?: boolean | null;
+            auto_start_enabled?: boolean | null;
+            /** Format: int64 */
+            auto_start_max_open?: number | null;
+            /** @description A status of the project's workflow; JSON `null` clears it. */
+            auto_start_status?: string | null;
             code_origin?: null | components["schemas"]["CodeOrigin"];
             default_branch?: string | null;
             default_harness?: string | null;

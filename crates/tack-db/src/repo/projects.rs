@@ -2,6 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
+use tack_core::auto_start::DROPPED_TO_L3;
 use tack_core::models::{CreateProject, Project, ProjectType, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
@@ -73,6 +74,10 @@ impl Repository {
             default_profile_id: None,
             on_finish_status: None,
             definition_of_done: None,
+            auto_start_enabled: false,
+            auto_start_status: None,
+            auto_start_max_open: 3,
+            auto_start_disabled_reason: None,
         })
     }
 
@@ -80,9 +85,16 @@ impl Repository {
     pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
         let row = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
-                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
+                    auto_start_enabled, auto_start_status, auto_start_max_open,
+                    CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
+                        SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
+                        WHERE i.project_id = projects.id AND c.content = ?
+                    ) THEN ? END AS auto_start_disabled_reason
              FROM projects WHERE id = ?"
         )
+        .bind(DROPPED_TO_L3)
+        .bind(DROPPED_TO_L3)
         .bind(id.to_string())
         .fetch_optional(self.pool())
         .await?;
@@ -94,9 +106,16 @@ impl Repository {
     pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
-                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
+                    auto_start_enabled, auto_start_status, auto_start_max_open,
+                    CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
+                        SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
+                        WHERE i.project_id = projects.id AND c.content = ?
+                    ) THEN ? END AS auto_start_disabled_reason
              FROM projects WHERE workspace_id = ? AND archived = 0 ORDER BY updated_at DESC"
         )
+        .bind(DROPPED_TO_L3)
+        .bind(DROPPED_TO_L3)
         .bind(workspace_id.to_string())
         .fetch_all(self.pool())
         .await?;
@@ -180,6 +199,24 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
+        for (column, value) in [
+            (
+                "auto_start_enabled",
+                input.auto_start_enabled.map(i64::from),
+            ),
+            ("auto_start_max_open", input.auto_start_max_open),
+        ] {
+            if let Some(value) = value {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE projects SET {column} = ?, updated_at = ? WHERE id = ?"
+                )))
+                .bind(value)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+            }
+        }
         // A new default agent starts without the old one's model.
         if let Some(ref harness) = input.default_harness {
             sqlx::query(
@@ -209,6 +246,7 @@ impl Repository {
             ("on_finish_status", input.on_finish_status),
             ("definition_of_done", input.definition_of_done),
             ("default_model", input.default_model),
+            ("auto_start_status", input.auto_start_status),
         ] {
             if let Some(value) = value {
                 sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -260,6 +298,10 @@ struct ProjectRow {
     default_profile_id: Option<String>,
     on_finish_status: Option<String>,
     definition_of_done: Option<String>,
+    auto_start_enabled: i32,
+    auto_start_status: Option<String>,
+    auto_start_max_open: i64,
+    auto_start_disabled_reason: Option<String>,
 }
 
 impl ProjectRow {
@@ -294,6 +336,10 @@ impl ProjectRow {
             default_profile_id: self.default_profile_id,
             on_finish_status: self.on_finish_status,
             definition_of_done: self.definition_of_done,
+            auto_start_enabled: self.auto_start_enabled != 0,
+            auto_start_status: self.auto_start_status,
+            auto_start_max_open: self.auto_start_max_open,
+            auto_start_disabled_reason: self.auto_start_disabled_reason,
         })
     }
 }

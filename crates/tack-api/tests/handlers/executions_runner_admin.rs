@@ -1864,3 +1864,132 @@ async fn a_profile_whose_agent_is_not_a_known_harness_is_refused() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
     assert_eq!(err["error"]["details"]["field"], "tool_policy.agent");
 }
+
+async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
+    let (_app, repo, item_id) = setup().await;
+    add_role(&repo, &item_id, "Content", Some("profile-c1")).await;
+    let item = repo
+        .get_item(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query(
+        "UPDATE projects SET auto_start_enabled = 1, auto_start_status = 'To Do', default_harness = 'codex' WHERE id = ?",
+    )
+    .bind(item.project_id.to_string())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let workspace: String = sqlx::query_scalar("SELECT id FROM workspaces")
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = tack_api::AppState {
+        repo: repo.clone(),
+        config: tack_api::config::AppConfig {
+            database_url: "sqlite::memory:".into(),
+            ..tack_api::config::AppConfig::default()
+        },
+        workspace_id: workspace.parse().unwrap(),
+        broadcast_tx,
+        webhook: None,
+        local_runner: None,
+    };
+    (repo, state, item_id, item.project_id)
+}
+
+async fn add_item(repo: &Repository, project: Uuid, title: &str) -> String {
+    repo.create_item(
+        project,
+        "To Do",
+        CreateItem {
+            title: title.into(),
+            ..CreateItem::default()
+        },
+    )
+    .await
+    .unwrap()
+    .id
+    .to_string()
+}
+
+async fn requests_of(repo: &Repository, item_id: &str) -> Vec<(String, String, String)> {
+    sqlx::query_as(
+        "SELECT idempotency_scope, idempotency_key, metadata FROM execution_requests WHERE item_id = ?",
+    )
+    .bind(item_id)
+    .fetch_all(repo.pool())
+    .await
+    .unwrap()
+}
+
+async fn status_of(repo: &Repository, item_id: &str) -> String {
+    sqlx::query_scalar("SELECT status FROM items WHERE id = ?")
+        .bind(item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap()
+}
+
+// A task that reaches the auto-start status with a role is started once and moved; one
+// without a role stays; a project at its cap starts nothing more.
+#[tokio::test]
+async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap() {
+    let (repo, state, item_id, project_id) = auto_start_board().await;
+    let bare = add_item(&repo, project_id, "no role").await;
+    let version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+
+    tack_api::auto_start::tick(&state).await;
+    tack_api::auto_start::tick(&state).await;
+
+    let started = requests_of(&repo, &item_id).await;
+    assert_eq!(started.len(), 1, "{started:?}");
+    assert_eq!(started[0].0, "operator:auto_start");
+    assert_eq!(started[0].1, format!("auto-start:{item_id}:{version}"));
+    let metadata: Value = serde_json::from_str(&started[0].2).unwrap();
+    assert_eq!(metadata["started_by"], "auto_start");
+    assert_eq!(metadata["profile_source"], "role:Content");
+    assert_eq!(status_of(&repo, &item_id).await, "In Progress");
+    // The only runner reports no sandbox for the agent, so the run asks before each action.
+    let approvals: Option<String> = sqlx::query_scalar(
+        "SELECT json_extract(request_snapshot, '$.permission_policy.approvals') \
+         FROM execution_requests WHERE item_id = ?",
+    )
+    .bind(&item_id)
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(approvals.as_deref(), Some("ask"));
+    let said: Vec<String> =
+        sqlx::query_scalar("SELECT content FROM comments WHERE item_id = ? AND author = 'system'")
+            .bind(&item_id)
+            .fetch_all(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        said.iter()
+            .filter(|c| c.as_str() == "Started by itself: it reached To Do with the role Content")
+            .count(),
+        1,
+        "{said:?}"
+    );
+    assert!(requests_of(&repo, &bare).await.is_empty());
+    assert_eq!(status_of(&repo, &bare).await, "To Do");
+
+    // One run is open and the project keeps one: the next ready task waits.
+    sqlx::query("UPDATE projects SET auto_start_max_open = 1 WHERE id = ?")
+        .bind(project_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    let next = add_item(&repo, project_id, "next").await;
+    add_role(&repo, &next, "QA", Some("profile-c1")).await;
+    tack_api::auto_start::tick(&state).await;
+    assert!(requests_of(&repo, &next).await.is_empty());
+    assert_eq!(status_of(&repo, &next).await, "To Do");
+}

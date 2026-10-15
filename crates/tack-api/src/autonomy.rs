@@ -65,6 +65,24 @@ async fn demote(state: &AppState, pending: &store::PendingDemotion) {
                 ),
             )
             .await;
+            // A project that drops to L3 no longer starts its own work.
+            if pending.domain.is_none()
+                && to == Level::L3
+                && sqlx::query(
+                    "UPDATE projects SET auto_start_enabled = 0 WHERE id = ? AND auto_start_enabled = 1",
+                )
+                .bind(&pending.project_id)
+                .execute(state.repo.pool())
+                .await
+                .is_ok_and(|done| done.rows_affected() > 0)
+            {
+                merge::tell(
+                    state,
+                    &pending.item_id,
+                    tack_core::auto_start::DROPPED_TO_L3.to_owned(),
+                )
+                .await;
+            }
         }
         Ok(None) => {}
         Err(error) => tracing::warn!(%error, "autonomy: demotion failed"),
