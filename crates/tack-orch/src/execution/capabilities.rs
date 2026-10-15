@@ -87,8 +87,31 @@ pub struct HarnessCapability {
     /// Where the agent's own documentation covers its models and its login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs: Option<DocsLinks>,
+    /// The most autonomy the harness's teams allow, `"L3"`; absent when the
+    /// runner did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy_ceiling: Option<String>,
+    /// Each team the harness runs, with what keeps it from running lights-out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams: Option<Vec<TeamReport>>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+/// One team a harness runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamReport {
+    pub name: String,
+    pub profile: String,
+    #[serde(default)]
+    pub violations: Vec<TeamViolation>,
+}
+
+/// One thing that makes a team need a person during a run, and how to fix it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamViolation {
+    pub requirement: String,
+    pub fix: String,
 }
 
 /// Where a harness's model ids came from.

@@ -1135,7 +1135,7 @@ fn start_report(body: &Value) -> Value {
     let sandbox = body
         .get("sandbox")
         .and_then(Value::as_str)
-        .filter(|sandbox| matches!(*sandbox, "bwrap" | "none"));
+        .filter(|sandbox| matches!(*sandbox, "bwrap" | "harness" | "none"));
     json!({"environment_names": names, "sandbox": sandbox})
 }
 

@@ -345,6 +345,8 @@ impl HarnessProbe for FakeProbe {
             default_model: None,
             sign_in: None,
             docs: None,
+            autonomy_ceiling: None,
+            teams: None,
             additional: Default::default(),
         }
     }

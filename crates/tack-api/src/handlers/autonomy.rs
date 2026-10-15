@@ -67,6 +67,31 @@ pub struct AutonomySettings {
     #[serde(default)]
     #[schema(read_only)]
     pub automatic_merge_blocked_by: Vec<String>,
+    /// Read only: the most autonomy the teams this project's roles use allow,
+    /// `L5`, `L4` or `L3`.
+    #[serde(default = "full_ceiling")]
+    #[schema(read_only)]
+    pub ceiling: String,
+    /// Read only: the teams that cap it, one line each.
+    #[serde(default)]
+    #[schema(read_only)]
+    pub teams: Vec<TeamLine>,
+}
+
+fn full_ceiling() -> String {
+    Level::L5.to_string()
+}
+
+/// A team a role's profile runs that needs a person during a run.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamLine {
+    pub name: String,
+    /// The Tack agent profile that names the team.
+    pub profile: String,
+    /// The level the team's tasks stay at.
+    pub caps_at: String,
+    /// What to change so the team runs lights-out.
+    pub fix: String,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -96,6 +121,8 @@ impl From<Settings> for AutonomySettings {
             },
             merge_on_done: s.merge_on_done,
             automatic_merge_blocked_by: Vec::new(),
+            ceiling: full_ceiling(),
+            teams: Vec::new(),
         }
     }
 }
@@ -169,12 +196,54 @@ pub async fn get_autonomy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<AutonomySettings>> {
-    let project_id = id.to_string();
-    let mut settings: AutonomySettings = store::get_settings(state.repo.pool(), &project_id)
+    Ok(Json(current(&state, &id.to_string()).await?))
+}
+
+/// The teams the project's roles run that an active runner reports attended.
+async fn attended_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
+    let pool = state.repo.pool();
+    let profiles = store::role_profile_teams(pool, project_id).await?;
+    if profiles.iter().all(|(_, team)| team.is_none()) {
+        return Ok(Vec::new());
+    }
+    let reported: Vec<_> = store::active_runner_snapshots(pool)
+        .await?
+        .iter()
+        .flat_map(|snapshot| crate::autonomy::harnesses_of(snapshot))
+        .flat_map(|harness| harness.teams.unwrap_or_default())
+        .collect();
+    let mut lines = Vec::new();
+    for (profile, team) in profiles {
+        let Some(team) = team else { continue };
+        let Some(report) = reported
+            .iter()
+            .find(|t| t.name == team && crate::autonomy::is_attended(t))
+        else {
+            continue;
+        };
+        if lines.iter().any(|line: &TeamLine| line.name == team) {
+            continue;
+        }
+        lines.push(TeamLine {
+            name: team,
+            profile,
+            caps_at: Level::L3.to_string(),
+            fix: report.violations.first().map_or_else(
+                || "run it lights-out".to_owned(),
+                |violation| violation.fix.clone(),
+            ),
+        });
+    }
+    Ok(lines)
+}
+
+/// The settings as they stand, with everything only the board can read.
+async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettings> {
+    let mut settings: AutonomySettings = store::get_settings(state.repo.pool(), project_id)
         .await?
         .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
         .into();
-    let counts = store::domain_counts(state.repo.pool(), &project_id).await?;
+    let counts = store::domain_counts(state.repo.pool(), project_id).await?;
     for domain in &mut settings.domains {
         if let Some((merged, undone)) = counts.get(&domain.name) {
             (domain.merged, domain.undone) = (*merged, *undone);
@@ -192,8 +261,19 @@ pub async fn get_autonomy(
     if settings.attestation_public_key.is_none() {
         blocked.push("The project has no public key to check prill's signature against".to_owned());
     }
+    let teams = attended_teams(state, project_id).await?;
+    for team in &teams {
+        blocked.push(format!(
+            "The team {} runs attended: its tasks stay at {}. Fix: {}",
+            team.name, team.caps_at, team.fix
+        ));
+    }
+    if !teams.is_empty() {
+        settings.ceiling = Level::L3.to_string();
+    }
+    settings.teams = teams;
     settings.automatic_merge_blocked_by = blocked;
-    Ok(Json(settings))
+    Ok(settings)
 }
 
 /// PUT /api/projects/:id/autonomy
@@ -219,5 +299,5 @@ pub async fn put_autonomy(
     if !store::put_settings(state.repo.pool(), &id.to_string(), &settings).await? {
         return Err(ApiError::NotFound("Project not found".into()));
     }
-    Ok(Json(settings.into()))
+    Ok(Json(current(&state, &id.to_string()).await?))
 }

@@ -28,6 +28,8 @@ pub struct FactsExtra {
     pub attestation_keyid: Option<String>,
     pub budget: Check,
     pub pack_artifact_id: Option<String>,
+    /// The most autonomy the team that ran the change allows; `None` when unknown.
+    pub ceiling: Option<Level>,
     /// The settings that decided, kept with the row.
     pub policy: Value,
 }
@@ -43,6 +45,7 @@ impl Default for FactsExtra {
             attestation_keyid: None,
             budget: Check::Pass,
             pack_artifact_id: None,
+            ceiling: None,
             policy: Value::Null,
         }
     }
@@ -126,6 +129,7 @@ pub async fn attempt(
         budget: extra.budget,
         pr_open: Check::Pass,
         ci: CiState::Green,
+        ceiling: extra.ceiling,
     };
 
     // Everything that does not need GitHub first, in the policy's order.

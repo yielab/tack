@@ -4,10 +4,11 @@
 
 use chrono::Utc;
 use serde_json::{Value, json};
-use tack_core::autonomy::{Check, Trigger, level_for};
+use tack_core::autonomy::{Check, Level, Trigger, level_for};
 use tack_core::mrp::{MergeDecision, MergeReadinessPack};
 use tack_db::repo::autonomy as store;
 use tack_db::repo::budgets;
+use tack_orch::execution::{HarnessCapability, TeamReport};
 use tokio::io::AsyncReadExt;
 
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
@@ -76,6 +77,50 @@ async fn read_artifact(state: &AppState, reference: &str) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).await.ok()?;
     Some(bytes)
+}
+
+/// The harnesses a stored capability snapshot reports; an entry or a snapshot
+/// that does not parse (an old or sparse one) reports nothing.
+pub(crate) fn harnesses_of(snapshot: &str) -> Vec<HarnessCapability> {
+    serde_json::from_str::<Value>(snapshot)
+        .ok()
+        .and_then(|value| value.get("harnesses").and_then(Value::as_array).cloned())
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| serde_json::from_value(entry).ok())
+        .collect()
+}
+
+pub(crate) fn kind_is(harness: &HarnessCapability, kind: &str) -> bool {
+    serde_json::to_value(&harness.harness_kind)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .is_some_and(|name| name == kind)
+}
+
+/// A team that needs a person during a run: its profile is not lights-out, or it
+/// reports a violation of the one it names.
+pub(crate) fn is_attended(team: &TeamReport) -> bool {
+    team.profile != "lights-out" || !team.violations.is_empty()
+}
+
+/// The most autonomy the team that ran an attempt allows. The named team's when
+/// the runner reports teams (attended means L3); otherwise the harness's own
+/// ceiling; otherwise unknown.
+fn ceiling_of(snapshot: &str, kind: Option<&str>, team: Option<&str>) -> Option<Level> {
+    let kind = kind?;
+    let harness = harnesses_of(snapshot)
+        .into_iter()
+        .find(|harness| kind_is(harness, kind))?;
+    let named = harness
+        .teams
+        .as_ref()
+        .zip(team)
+        .and_then(|(teams, name)| teams.iter().find(|t| t.name == name));
+    match named {
+        Some(team) => is_attended(team).then_some(Level::L3),
+        None => harness.autonomy_ceiling.as_deref()?.parse().ok(),
+    }
 }
 
 fn fail(reason: &str) -> Check {
@@ -208,6 +253,14 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
     };
 
     extra.budget = budget(state, &context.project_id, &settings).await;
+    extra.ceiling = match store::attempt_ceiling_inputs(pool, attempt_id).await {
+        Ok(Some(inputs)) => ceiling_of(
+            &inputs.capability_snapshot,
+            inputs.harness_kind.as_deref(),
+            inputs.team.as_deref(),
+        ),
+        _ => None,
+    };
     Some(extra)
 }
 

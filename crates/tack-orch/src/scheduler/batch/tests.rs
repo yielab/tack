@@ -31,6 +31,8 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
             default_model: None,
             sign_in: None,
             docs: None,
+            autonomy_ceiling: None,
+            teams: None,
             additional: BTreeMap::new(),
         }],
     }

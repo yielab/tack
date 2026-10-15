@@ -34,6 +34,8 @@ fn harness(kind: &str) -> HarnessCapability {
         default_model: None,
         sign_in: None,
         docs: None,
+        autonomy_ceiling: None,
+        teams: None,
         additional: BTreeMap::new(),
     }
 }
