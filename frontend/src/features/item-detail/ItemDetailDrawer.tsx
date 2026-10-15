@@ -11,6 +11,7 @@ import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
 import ItemHeader from './ItemHeader';
+import AutomationRow from './AutomationRow';
 import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
 import DependenciesTab from './tabs/DependenciesTab';
@@ -140,6 +141,8 @@ const ItemDetailDrawer: Component = () => {
                 onCreated={() => setActiveTab('execution')}
               />
             </div>
+
+            <AutomationRow item={it()} />
 
             <Tabs tabs={BASE_TABS} active={activeTab()} onChange={setActiveTab}>
               <Show when={activeTab() === 'details'}>

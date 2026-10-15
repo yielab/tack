@@ -1706,6 +1706,55 @@ async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<
     repo.assign_role_to_item(item.id, role.id).await.unwrap();
 }
 
+// The item read model says whether its newest request started by itself and which team it named.
+#[tokio::test]
+async fn the_item_carries_started_by_and_team_from_its_newest_request() {
+    let (app, repo, item_id) = setup().await;
+    let read = || async {
+        repo.get_item(item_id.parse().unwrap())
+            .await
+            .unwrap()
+            .unwrap()
+    };
+    let item = read().await;
+    assert_eq!((&item.started_by, &item.team), (&None, &None));
+    sqlx::query("UPDATE projects SET default_profile_id = 'profile-c1' WHERE id = ?")
+        .bind(item.project_id.to_string())
+        .execute(repo.pool())
+        .await
+        .unwrap();
+
+    let (_, created) = snd(
+        &app,
+        "POST",
+        "/executions",
+        bare_body(&item_id, "k-team").to_string(),
+    )
+    .await;
+    sqlx::query(
+        "UPDATE execution_requests SET metadata = '{\"started_by\":\"auto_start\"}', \
+         request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', 'fab-content') \
+         WHERE id = ?",
+    )
+    .bind(created["request_id"].as_str().unwrap())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let item = read().await;
+    assert_eq!(item.started_by.as_deref(), Some("auto_start"));
+    assert_eq!(item.team.as_deref(), Some("fab-content"));
+
+    assert_eq!(item.merged_by, None);
+    let now = Utc::now().to_rfc3339();
+    sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES ('attempt-m',?,1,'runner-active',1,'succeeded',?,?,?,?)")
+        .bind(created["request_id"].as_str().unwrap()).bind(&now).bind(&now).bind(&now).bind(&now)
+        .execute(repo.pool()).await.unwrap();
+    sqlx::query("INSERT INTO tack_merges (attempt_id, project_id, trigger, checked_at, merged_at) VALUES ('attempt-m', ?, 'auto', ?, ?)")
+        .bind(item.project_id.to_string()).bind(&now).bind(&now)
+        .execute(repo.pool()).await.unwrap();
+    assert_eq!(read().await.merged_by.as_deref(), Some("auto"));
+}
+
 // A run created without a profile or a selector takes them from the item's role, else the
 // project default, else says it is ambiguous; a missing selector falls to the only active runner.
 #[tokio::test]

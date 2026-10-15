@@ -46,7 +46,8 @@ const AUTONOMY = {
   merge_on_done: false,
   automatic_merge_blocked_by: [] as string[],
 };
-let autonomy: typeof AUTONOMY = AUTONOMY;
+let autonomy: Record<string, unknown> = AUTONOMY;
+let roles: unknown[] = [];
 const autonomyPuts = () =>
   fetchMock.mock.calls
     .filter((c) => (c[1] as RequestInit)?.method === 'PUT' && String(c[0]).endsWith('/api/projects/p1/autonomy'))
@@ -63,6 +64,7 @@ afterEach(() => {
 
 beforeEach(() => {
   autonomy = structuredClone(AUTONOMY);
+  roles = [];
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     if (url.endsWith('/api/projects/p1/autonomy')) {
@@ -86,7 +88,7 @@ beforeEach(() => {
       return Promise.resolve(new Response(JSON.stringify({ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.includes('/export')) return Promise.resolve(new Response('x', { status: 200 }));
-    if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response('[]', { status: 200 }));
+    if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response(JSON.stringify(roles), { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
     if (url.includes('/api/projects/p1/import-csv')) {
       const result = { dry_run: url.includes('dry_run'), created: 3, skipped: 0, dependencies: 0, warnings: [], items: [] };
@@ -364,6 +366,88 @@ describe('Settings panels', () => {
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }
+  });
+
+  describe('The ladder', () => {
+    const rung = (c: HTMLElement, name: string) => c.querySelector<HTMLElement>(`[data-testid="rung-${name}"]`)!;
+    const ROLE = { id: 'role-1', project_id: 'p1', name: 'Content', color: '#fff', icon: null, created_at: '', agent_profile_id: null };
+
+    it('renders_the_four_rungs_in_order', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const order = Array.from(container.querySelectorAll('[data-testid^="rung-"]')).map((e) => e.getAttribute('data-testid'));
+      expect(order).toEqual(['rung-teams', 'rung-start', 'rung-merge', 'rung-ceiling']);
+    });
+
+    it('the_start_switch_is_disabled_with_its_reason_while_no_role_has_a_profile', async () => {
+      roles = [ROLE];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const start = rung(container, 'start');
+      expect(start.querySelector<HTMLInputElement>('[role="switch"]')!.disabled).toBe(true);
+      expect(start.textContent).toContain('Choose a profile for at least one role in Teams');
+      expect(rung(container, 'teams').querySelector<HTMLButtonElement>('button[disabled]')!.textContent).toBe("Apply the repository's teams");
+    });
+
+    it('the_start_switch_works_once_a_role_has_a_profile', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const sw = rung(container, 'start').querySelector<HTMLInputElement>('[role="switch"]')!;
+      expect(sw.disabled).toBe(false);
+      sw.click();
+      await flush();
+      expect(lastModelPatch()).toEqual({ auto_start_enabled: true });
+    });
+
+    it('choosing_a_profile_for_a_role_patches_the_role', async () => {
+      roles = [ROLE];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const select = container.querySelector<HTMLSelectElement>('select[aria-label="Profile for Content"]')!;
+      select.value = 'prof1';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/api/roles/role-1'))!;
+      expect((call[1] as RequestInit).method).toBe('PATCH');
+      expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({ agent_profile_id: 'prof1' });
+    });
+
+    it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {
+      autonomy.teams = [{ name: 'fab-content', profile: 'Content', caps_at: null, fix: null }];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const lines = Array.from(rung(container, 'ceiling').querySelectorAll('[data-testid="ceiling-team"]')).map((e) => e.textContent);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('✓');
+      expect(lines[0]).not.toContain('✗');
+    });
+
+    it('a_team_line_with_a_fix_renders_in_the_ceiling', async () => {
+      autonomy.ceiling = 'L3';
+      autonomy.teams = [{ name: 'fab-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
+      autonomy.automatic_merge_blocked_by = [
+        'The team fab-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
+        'The project has no public key to check prill\'s signature against',
+      ];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const ceiling = rung(container, 'ceiling');
+      expect(ceiling.textContent).toContain('This project can reach L3.');
+      const lines = Array.from(ceiling.querySelectorAll('[data-testid="ceiling-team"]')).map((e) => e.textContent);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('✗');
+      expect(lines[0]).toContain('Turn on lights-out in the team file');
+      expect(Array.from(ceiling.querySelectorAll('[data-testid="ceiling-blocker"]')).map((e) => e.textContent)).toEqual([
+        "✗ The project has no public key to check prill's signature against",
+      ]);
+    });
   });
 
   describe('Autonomy', () => {

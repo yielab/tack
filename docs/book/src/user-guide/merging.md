@@ -1,5 +1,20 @@
 # Merging from Tack
 
+## The ladder
+
+Settings → Automation ends with four steps, in the order you climb them:
+
+1. **Teams**: choose a profile for each role. A task takes the profile of its role; a task
+   with no role takes the project's default. The profile names the team and the machine.
+2. **Start**: turn on *Start a task by itself*, pick the status that starts it and how many
+   runs may be open at once. It stays off, and says why, until a role or the project has a
+   profile.
+3. **Merge**: how much Tack may merge without you (L3, L4, L5), described below.
+4. **Ceiling**: the most this project can reach. A team that needs a person during a run
+   keeps its tasks at L3; the line for that team says what to change.
+
+On a task, the badges *Started by itself* and *Team: name* show what Tack did on its own.
+
 When an agent's run finishes on a branch and its pull request is open, you can merge it
 from Tack instead of going to GitHub. There are three ways, and a project uses as many of
 them as you turn on.

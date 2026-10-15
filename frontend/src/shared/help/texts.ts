@@ -18,6 +18,13 @@ export const HELP = {
   webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network.", href: BOOK.runDialog },
   sandbox: { text: "Where this computer can sandbox an agent, it only reaches its workspace. Without a sandbox an agent has your user's access, so it must be able to ask before it acts; one that can't ask doesn't run.", href: `${BOOK_BASE}user-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
+  ladderTeams: { text: 'Each role works with an agent profile, and the profile names the team that runs it. A task takes the profile of its role; one with no role takes the project default.', href: BOOK.automation },
+  ladderStart: { text: 'When a task reaches the status you choose, Tack starts a run by itself, up to the number you set. It needs a profile to run with.', href: BOOK.automation },
+  ladderCeiling: { text: 'The most Tack can merge by itself here. A team that needs a person during a run keeps its tasks at L3 until it is fixed.', href: BOOK.automation },
+  startedByItself: { text: 'Tack started this run on its own, because the task reached the status the project chose.', href: BOOK.automation },
+  teamBadge: { text: 'The team that ran this task, named by the profile the run used.', href: BOOK.automation },
+  mergedByItself: { text: 'Tack merged this change on its own, under the verifier\'s signed verdict.', href: BOOK.automation },
+  automationRow: { text: 'What happens to this task without you: whether it starts by itself, which team takes it, and how far Tack may merge it.', href: BOOK.automation },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
 

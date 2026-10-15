@@ -3007,6 +3007,16 @@ export interface components {
         };
         /** @description Response body for `GET /api/items/{id}/agent-context`. */
         AgentContextResponse: {
+            /**
+             * @description The profile the server resolved for this item (the one named, else the role's, the
+             *     project's default or the implementer); `null` when none could be chosen.
+             */
+            profile_id?: string | null;
+            /**
+             * @description Where that profile came from: `role:{name}`, `project_default`, `run_settings`,
+             *     `implementer` or `ambiguous`; `null` when `profile_id` was named in the query.
+             */
+            profile_source?: string | null;
             text: string;
         };
         AgentProfileListResponse: {
@@ -3952,6 +3962,8 @@ export interface components {
             item_type: components["schemas"]["ItemType"];
             /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
             merge_note?: string | null;
+            /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
+            merged_by?: string | null;
             /**
              * @description True when the latest finished attempt left a patch or a kept
              *     workspace that nobody has reviewed yet.
@@ -3990,8 +4002,12 @@ export interface components {
             sprint_id?: string | null;
             /** Format: date-time */
             started_at?: string | null;
+            /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
+            started_by?: string | null;
             status: string;
             tags: string[];
+            /** @description The docket team named by the newest request's resolved profile, else `None`. */
+            team?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -4642,12 +4658,12 @@ export interface components {
             order: number;
             wip_limit?: number | null;
         };
-        /** @description A team a role's profile runs that needs a person during a run. */
+        /** @description A team one of the project's roles runs, and whether it caps the project's autonomy. */
         TeamLine: {
-            /** @description The level the team's tasks stay at. */
-            caps_at: string;
-            /** @description What to change so the team runs lights-out. */
-            fix: string;
+            /** @description The level the team's tasks stay at; `null` for a team that runs lights-out. */
+            caps_at?: string | null;
+            /** @description What to change so the team runs lights-out; `null` for a team that already does. */
+            fix?: string | null;
             name: string;
             /** @description The Tack agent profile that names the team. */
             profile: string;

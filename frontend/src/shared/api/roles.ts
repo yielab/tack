@@ -1,5 +1,6 @@
 import { request } from './client';
 import type { Role, CreateRole } from '../types';
+import type { components } from './schema.gen';
 
 export const roles = {
   /** Roles/specialties defined for a project. */
@@ -11,6 +12,10 @@ export const roles = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /** `PATCH /roles/{id}` — rename, recolor, or set the profile a task with this role runs with. */
+  update: (roleId: string, data: components['schemas']['UpdateRole']) =>
+    request<Role>(`/roles/${roleId}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   remove: (roleId: string) =>
     request<void>(`/roles/${roleId}`, { method: 'DELETE' }),

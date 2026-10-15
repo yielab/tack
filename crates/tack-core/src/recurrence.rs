@@ -118,6 +118,9 @@ mod tests {
             run_settings: None,
             needs_review: true,
             merge_note: None,
+            started_by: None,
+            team: None,
+            merged_by: None,
             created_at: now,
             updated_at: now,
         };

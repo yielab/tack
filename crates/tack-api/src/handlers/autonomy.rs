@@ -82,16 +82,16 @@ fn full_ceiling() -> String {
     Level::L5.to_string()
 }
 
-/// A team a role's profile runs that needs a person during a run.
+/// A team one of the project's roles runs, and whether it caps the project's autonomy.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeamLine {
     pub name: String,
     /// The Tack agent profile that names the team.
     pub profile: String,
-    /// The level the team's tasks stay at.
-    pub caps_at: String,
-    /// What to change so the team runs lights-out.
-    pub fix: String,
+    /// The level the team's tasks stay at; `null` for a team that runs lights-out.
+    pub caps_at: Option<String>,
+    /// What to change so the team runs lights-out; `null` for a team that already does.
+    pub fix: Option<String>,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -199,8 +199,9 @@ pub async fn get_autonomy(
     Ok(Json(current(&state, &id.to_string()).await?))
 }
 
-/// The teams the project's roles run that an active runner reports attended.
-async fn attended_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
+/// Every team the project's roles run: attended ones cap at L3 with the runner's fix,
+/// lights-out ones carry neither, and one no runner reports is `unknown` and capped.
+async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
     let pool = state.repo.pool();
     let profiles = store::role_profile_teams(pool, project_id).await?;
     if profiles.iter().all(|(_, team)| team.is_none()) {
@@ -215,23 +216,32 @@ async fn attended_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<Tea
     let mut lines = Vec::new();
     for (profile, team) in profiles {
         let Some(team) = team else { continue };
-        let Some(report) = reported
-            .iter()
-            .find(|t| t.name == team && crate::autonomy::is_attended(t))
-        else {
-            continue;
-        };
         if lines.iter().any(|line: &TeamLine| line.name == team) {
             continue;
         }
+        let known = reported.iter().find(|t| t.name == team);
+        let attended = known.filter(|t| crate::autonomy::is_attended(t));
+        let (profile, caps_at, fix) = match (known, attended) {
+            (None, _) => (
+                "unknown".to_owned(),
+                Some(Level::L3.to_string()),
+                Some("No runner reports this team yet".to_owned()),
+            ),
+            (Some(_), Some(report)) => (
+                profile,
+                Some(Level::L3.to_string()),
+                Some(report.violations.first().map_or_else(
+                    || "run it lights-out".to_owned(),
+                    |violation| violation.fix.clone(),
+                )),
+            ),
+            (Some(_), None) => (profile, None, None),
+        };
         lines.push(TeamLine {
             name: team,
             profile,
-            caps_at: Level::L3.to_string(),
-            fix: report.violations.first().map_or_else(
-                || "run it lights-out".to_owned(),
-                |violation| violation.fix.clone(),
-            ),
+            caps_at,
+            fix,
         });
     }
     Ok(lines)
@@ -261,14 +271,17 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
     if settings.attestation_public_key.is_none() {
         blocked.push("The project has no public key to check prill's signature against".to_owned());
     }
-    let teams = attended_teams(state, project_id).await?;
-    for team in &teams {
+    let teams = role_teams(state, project_id).await?;
+    let reported_attended = |team: &TeamLine| team.profile != "unknown" && team.caps_at.is_some();
+    for team in teams.iter().filter(|t| reported_attended(t)) {
         blocked.push(format!(
             "The team {} runs attended: its tasks stay at {}. Fix: {}",
-            team.name, team.caps_at, team.fix
+            team.name,
+            team.caps_at.as_deref().unwrap_or_default(),
+            team.fix.as_deref().unwrap_or_default()
         ));
     }
-    if !teams.is_empty() {
+    if teams.iter().any(reported_attended) {
         settings.ceiling = Level::L3.to_string();
     }
     settings.teams = teams;

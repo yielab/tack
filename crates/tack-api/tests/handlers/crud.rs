@@ -2570,3 +2570,42 @@ async fn closing_a_recurring_task_creates_one_successor_until_that_one_is_closed
     let (_, items) = common::send(&app, "GET", &list, Value::Null, &[]).await;
     assert_eq!(items["data"].as_array().unwrap().len(), 3);
 }
+
+// The run dialog asks the server which profile an item gets and why.
+#[tokio::test]
+async fn agent_context_names_the_resolved_profile_and_its_source() {
+    let (app, _) = common::test_app().await;
+    let project = common::create_project(&app, "Ctx", "software").await;
+    let item = common::create_item(&app, project, "Write").await;
+    let (status, profile) = common::send(
+        &app,
+        "POST",
+        "/api/agent-profiles",
+        serde_json::json!({"name": "Writer", "instructions": "write"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{profile}");
+    let id = profile["agent_profile_id"].as_str().unwrap();
+    let (status, body) = common::send(
+        &app,
+        "PATCH",
+        &format!("/api/projects/{project}"),
+        serde_json::json!({"default_profile_id": id}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{body}");
+
+    let (status, ctx) = common::send(
+        &app,
+        "GET",
+        &format!("/api/items/{item}/agent-context"),
+        serde_json::Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{ctx}");
+    assert_eq!(ctx["profile_id"], id, "{ctx}");
+    assert_eq!(ctx["profile_source"], "project_default", "{ctx}");
+}

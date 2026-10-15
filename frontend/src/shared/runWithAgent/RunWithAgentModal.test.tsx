@@ -88,6 +88,8 @@ function mockFetch(
     agentProfiles?: unknown[];
     project?: unknown;
     agentContext?: string;
+    /** What the server resolved for the item: the profile and where it came from. */
+    resolved?: { profile_id: string | null; profile_source: string | null };
     runSettings?: Record<string, unknown> | null;
     /** Holds the item back, so the runners land before the project's settings are applied. */
     itemDelayMs?: number;
@@ -114,7 +116,13 @@ function mockFetch(
       if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
       return new Response(JSON.stringify({ item: { id: 'item-1', run_settings: opts.runSettings ?? null }, id: 'item-1', run_settings: opts.runSettings ?? null }), { status: 200, headers: { ETag: '"1"' } });
     }
-    if (url.includes('/agent-context')) return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.' }), { status: 200 });
+    if (url.includes('/agent-context')) {
+      // As the server resolves it: the project's default, else the only profile there is.
+      const fallback = (project as { default_profile_id?: string | null }).default_profile_id
+        ?? (agentProfiles.length === 1 ? (agentProfiles[0] as { agent_profile_id: string }).agent_profile_id : null);
+      const resolved = opts.resolved ?? { profile_id: fallback, profile_source: fallback ? 'project_default' : null };
+      return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', ...resolved }), { status: 200 });
+    }
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
       lastCreateBody = JSON.parse(String(init.body));
@@ -238,6 +246,23 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(field('Timeout').value).toBe('120');
+  });
+
+  it('asks_the_server_for_the_profile_and_says_who_chose_it', async () => {
+    mount({}, {
+      runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, PROFILE_2],
+      project: { ...PROJECT, default_profile_id: 'profile-1' },
+      resolved: { profile_id: 'profile-2', profile_source: 'role:Content' },
+    });
+    await flush();
+    await flush();
+    const pill = Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Fixer') as HTMLButtonElement;
+    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-testid="profile-source"]')?.textContent).toBe('Chosen by the role Content');
+    // A profile the person picks instead is theirs, not the server's.
+    (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Reviewer') as HTMLButtonElement).click();
+    await flush();
+    expect(document.querySelector('[data-testid="profile-source"]')).toBeNull();
   });
 
   it('only_a_picked_profile_is_remembered_on_the_task', async () => {
