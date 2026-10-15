@@ -116,7 +116,8 @@ fn spec(scene: &Scene, attempt: &str, number: u32) -> ExecutionSpec {
         ))
         .expect("brief"),
     );
-    request.metadata = json!({"item_type": "feature", "item_priority": "critical"});
+    request.metadata =
+        json!({"item": {"type": "feature", "priority": "critical", "trusted": true}});
     request.repository.base_revision = git(&scene.repository, &["rev-parse", "main"]);
     request
         .repository
@@ -383,8 +384,25 @@ async fn the_task_body_is_the_specs_example_key_by_key() {
             "maxTokens": 200000,
             "restrictions": {"deniedTools": ["fetch"], "network": "none"},
             "priority": "high",
+            "trusted": true,
         })
     );
+}
+
+#[tokio::test]
+async fn a_profile_with_no_team_runs_in_the_default_pod_named_for_the_folder() {
+    let fake = FakeDocket::start().await;
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let mut unteamed = spec(&scene, "attempt-1", 1);
+    unteamed.work.request.resolved_agent_profile.tool_policy =
+        json!({"docket": {"pipeline_by_type": {"feature": "tdd"}}});
+    // The folder is `repository`; the slug is its lowercase `[a-z0-9-]` form.
+    run_to_end(&adapter, &unteamed).await;
+    let ensures = fake.requests_to("POST", "/pods");
+    assert_eq!(ensures.len(), 1, "{ensures:?}");
+    assert_eq!(ensures[0].body["name"], json!("repository"));
+    assert_eq!(fake.requests_to("POST", "/tasks/repository").len(), 1);
 }
 
 #[tokio::test]
@@ -862,4 +880,19 @@ async fn every_request_carries_the_bearer_token() {
         capability.probe_error.is_some(),
         "no token, no pods: {capability:?}"
     );
+}
+
+#[test]
+fn the_default_pod_is_the_folders_slug() {
+    use tack_runner::harness::docket::default_pod;
+    let long = format!("/work/{}", "A".repeat(100));
+    for (folder, pod) in [
+        ("/work/My Repo_2", "my-repo-2"),
+        ("/work/--odd--name--", "odd-name"),
+        ("/work/ünï", "n"),
+        ("/", "default"),
+        (long.as_str(), &"a".repeat(64)),
+    ] {
+        assert_eq!(default_pod(Path::new(folder)), pod, "{folder}");
+    }
 }

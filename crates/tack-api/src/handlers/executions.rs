@@ -926,6 +926,22 @@ pub(crate) async fn create_as(
     };
     let project = load_project(&state.repo, item.project_id).await?;
     let repository = resolve_repository(&project, input.repository_snapshot.clone())?;
+    // What the item is, written by the server: a harness that picks a pipeline, a
+    // priority or a trust level reads it here, never from the board and never
+    // from what the caller sent.
+    if input.metadata.is_null() {
+        input.metadata = json!({});
+    }
+    if let Some(metadata) = input.metadata.as_object_mut() {
+        metadata.insert(
+            "item".into(),
+            json!({
+                "type": item.item_type.to_string(),
+                "priority": item.priority.to_string(),
+                "trusted": item.source.is_trusted(),
+            }),
+        );
+    }
     let resolved = resolve_profile(
         &state.repo,
         &item,

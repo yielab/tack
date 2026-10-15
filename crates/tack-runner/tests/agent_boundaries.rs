@@ -1132,3 +1132,60 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         assert!(stdout.contains("[REDACTED]"), "{label}: {stdout}");
     }
 }
+
+/// The docket daemon is started with `PATH`, `HOME` and `DOCKET_HOME` and
+/// nothing else the runner holds: no model key, no enrollment credential, no
+/// variable a request or the operator's shell carried in.
+#[tokio::test]
+async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
+    use std::os::unix::fs::PermissionsExt;
+    use tack_runner::{config::DocketConfig, harness::docket::daemon};
+
+    let dir = root("docket-daemon-env");
+    let script = dir.path().join("docket");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nenv > '{}/env.txt'\nexec sleep 30\n",
+            dir.path().display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = DocketConfig {
+        binary: Some(script),
+        home: Some(dir.path().join("docket-home")),
+        port: 1,
+        ..DocketConfig::default()
+    };
+    let explicit: std::collections::BTreeSet<String> = daemon::command(&config)
+        .get_envs()
+        .map(|(name, _)| name.to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        explicit.is_subset(&["PATH", "HOME", "DOCKET_HOME"].map(String::from).into()),
+        "{explicit:?}"
+    );
+
+    let options = daemon::Options {
+        ready_timeout: Duration::from_millis(600),
+        backoff: Duration::from_secs(60),
+        grace: Duration::from_secs(5),
+    };
+    let handle = daemon::ensure_running_with(&config, &dir.path().join("logs"), options).await;
+    let seen = std::fs::read_to_string(dir.path().join("env.txt")).expect("the daemon started");
+    let names: std::collections::BTreeSet<&str> = seen
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(name, _)| name))
+        .collect();
+    // What a shell adds to its own environment is not the runner's to answer for.
+    let shell = ["PWD", "OLDPWD", "SHLVL", "_"];
+    for name in &names {
+        assert!(
+            ["PATH", "HOME", "DOCKET_HOME"].contains(name) || shell.contains(name),
+            "the daemon got {name}"
+        );
+    }
+    assert!(names.contains("DOCKET_HOME"), "{names:?}");
+    handle.shutdown().await;
+}

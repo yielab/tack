@@ -34,19 +34,25 @@ const PROCESS_LIMITS: ProcessLimits =
 /// whatever a real enrollment or refresh sent a server.
 pub fn run(as_json: bool) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
-    let (report, verify) = runtime.block_on(probe());
+    let (report, verify, daemon) = runtime.block_on(probe());
 
     if as_json {
         println!("{}", serde_json::to_string_pretty(&report.capabilities)?);
         return Ok(());
     }
 
-    render(&report);
+    render(&report, daemon.as_ref());
     render_verify(&verify);
     Ok(())
 }
 
-async fn probe() -> (bootstrap::DiscoveryReport, tack_runner::VerifyConfig) {
+/// The report, the `[verify]` table, and how the docket daemon answers when
+/// docket is configured at all.
+async fn probe() -> (
+    bootstrap::DiscoveryReport,
+    tack_runner::VerifyConfig,
+    Option<Result<String, String>>,
+) {
     // A doctor run never claims or executes an attempt, so the only thing
     // this path feeds — `wait()`'s artifact-staging directory — is never
     // reached; nothing is created or written under it.
@@ -58,14 +64,24 @@ async fn probe() -> (bootstrap::DiscoveryReport, tack_runner::VerifyConfig) {
     // use (honors `--state-dir`/`TACK_RUNNER_STATE_DIR`), so the backend
     // this reports is the one a live runner would actually pick — never a
     // second, independently derived guess.
+    // The runner's own file too, so the `[docket]` table the live runner reads
+    // is the one this probes.
+    let file_toml = crate::local_runner::runner_config_path()
+        .and_then(|path| std::fs::read_to_string(path).ok());
     let config = RunnerConfig::from_sources(RunnerConfigSources {
+        file_toml: file_toml.as_deref(),
         environment: RunnerConfig::environment_overrides(),
         ..RunnerConfigSources::default()
     })
     .unwrap_or_else(|_| RunnerConfig::defaults());
     let secrets = SecretStore::open(&config.secret_store_path());
-    let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets).await;
-    (report, config.verify)
+    let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.docket).await;
+    let daemon = if config.docket.configured() {
+        Some(tack_runner::harness::docket::daemon::describe(&config.docket).await)
+    } else {
+        None
+    };
+    (report, config.verify, daemon)
 }
 
 /// The `[verify]` table as this runner would read it. The board never runs
@@ -133,7 +149,7 @@ fn classify<'a>(
     }
 }
 
-fn render(report: &bootstrap::DiscoveryReport) {
+fn render(report: &bootstrap::DiscoveryReport, daemon: Option<&Result<String, String>>) {
     let capabilities = &report.capabilities;
     println!("Tack runner doctor — harness discovery for this machine");
     println!();
@@ -168,6 +184,11 @@ fn render(report: &bootstrap::DiscoveryReport) {
             .find(|h| h.harness_kind.as_str() == kind)
         {
             render_sandbox(capability);
+            if let (true, Some(daemon)) = (kind == "docket", daemon) {
+                for line in docket_lines(capability, daemon) {
+                    println!("{line}");
+                }
+            }
             for line in readiness_lines(capability) {
                 println!("{line}");
             }
@@ -332,3 +353,38 @@ fn support_label(support: CapabilitySupport) -> &'static str {
 #[cfg(test)]
 #[path = "doctor/tests.rs"]
 mod tests;
+
+/// The lines under the `docket` block: the API it speaks, whether its daemon
+/// answers, and one line per team. `daemon` is what
+/// [`tack_runner::harness::docket::daemon::describe`] found.
+fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>) -> Vec<String> {
+    let version = capability
+        .installed_version
+        .strip_prefix("API ")
+        .unwrap_or("unknown");
+    let api = match &capability.probe_error {
+        Some(reason) => format!("{version} ({reason})"),
+        None => version.to_owned(),
+    };
+    let mut lines = vec![
+        format!("  api:         {api}"),
+        format!(
+            "  daemon:      {}",
+            match daemon {
+                Ok(running) | Err(running) => running,
+            }
+        ),
+    ];
+    for team in capability.teams.iter().flatten() {
+        let fixes: Vec<&str> = team.violations.iter().map(|v| v.fix.as_str()).collect();
+        let state = if team.profile == "lights-out" && fixes.is_empty() {
+            "lights-out".to_owned()
+        } else if fixes.is_empty() {
+            "attended".to_owned()
+        } else {
+            format!("attended (fix: {})", fixes.join("; "))
+        };
+        lines.push(format!("  team {}: {state}", team.name));
+    }
+    lines
+}

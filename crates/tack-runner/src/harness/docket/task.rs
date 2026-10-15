@@ -114,9 +114,14 @@ fn gate(acceptance: &[Value]) -> Option<Value> {
     Some(json!({"command": command, "timeoutS": GATE_TIMEOUT_SECONDS}))
 }
 
+/// What the server recorded about the item: `metadata.item`.
+fn item(request: &ExecutionRequestSnapshot) -> Option<&Value> {
+    request.metadata.get("item").filter(|item| item.is_object())
+}
+
 /// Tack's item priority in docket's three.
 fn priority(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
-    Some(match text(&request.metadata, "item_priority")? {
+    Some(match text(item(request)?, "priority")? {
         "critical" | "high" => "high",
         "medium" => "normal",
         _ => "low",
@@ -174,10 +179,8 @@ pub(super) fn body(
             body.insert("gate".into(), gate);
         }
     }
-    if let Some(pipeline) = request
-        .metadata
-        .get("item_type")
-        .and_then(Value::as_str)
+    if let Some(pipeline) = item(request)
+        .and_then(|item| text(item, "type"))
         .and_then(|kind| docket?.get("pipeline_by_type")?.get(kind)?.as_str())
     {
         body.insert("pipeline".into(), json!(pipeline));
@@ -206,6 +209,9 @@ pub(super) fn body(
     }
     if let Some(priority) = priority(request) {
         body.insert("priority".into(), json!(priority));
+    }
+    if let Some(trusted) = item(request).and_then(|item| item.get("trusted")?.as_bool()) {
+        body.insert("trusted".into(), json!(trusted));
     }
     Value::Object(body)
 }
