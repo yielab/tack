@@ -168,6 +168,10 @@ pub struct HarnessDescriptor {
     /// can stop a group the main one does not contain and say whether it
     /// did. Only a grammar that does may declare `cancel: Supported`.
     pub reports_process_groups: bool,
+    /// Whether a cancellation reaches this harness as a call to its own API
+    /// rather than a signal to a process. Only a harness whose daemon stops
+    /// its own work may declare `cancel: Supported` on this ground.
+    pub cancels_over_api: bool,
     /// Whether this CLI's stdout carries steps worth showing while the run
     /// is going (`StreamSignal::Progress`). A grammar that does is read line
     /// by line on every run, not only one kept open to be asked questions.

@@ -1,715 +1,965 @@
-//! The docket CLI as a harness: its command line, how its NDJSON result
-//! line is read, and what it supports. The lifecycle is
-//! [`crate::harness::local_process`].
+//! docket as a harness: a daemon the runner talks to over HTTP, not a process
+//! it spawns. [`DocketAdapter`] implements [`HarnessAdapter`] and
+//! [`HarnessProbe`] directly against docket's operator API (version 5): it
+//! posts the attempt as a task to the team the profile names, follows the
+//! task's hops on the trace, carries docket's approvals and questions to the
+//! person, and brings the finished branch into the runner's own worktree so
+//! evidence, the verifier and the push read it unchanged.
 //!
-//! Vendor findings — what is measured, what is a documented guess, and at
-//! which version — are in `fixtures/docket/README.md`.
+//! What the API and the fake that stands in for it are built on is in
+//! `fixtures/docket/v5/README.md`.
 
-use std::collections::BTreeMap;
-use std::sync::OnceLock;
-
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
-
-use crate::client::engine::{Progress, Question, StreamSignal};
-use crate::harness::{
-    DecisionAnswer, DecisionOption, HarnessError,
-    local_process::{
-        HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        RunContext, RunReport, capability, policy_capability,
-    },
-    process::{ProcessExit, ProcessResult},
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde_json::{Value, json};
+use tack_orch::execution::{
+    ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, Usage,
+    WorkspaceId as DomainWorkspaceId,
+};
+use tokio::sync::{Mutex, mpsc};
+
+use crate::{
+    client::{AttemptState, Timestamp},
+    config::DocketConfig,
+    harness::{
+        AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, DecisionOption,
+        ExecutionSpec, HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
+        ModelSource, Progress, Question, RecoveryObservation,
+        local_process::{HarnessDescriptor, ModelSelection, capability, policy_capability},
+    },
+};
+
+mod client;
+mod probe;
+mod task;
+
+use client::Client;
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "docket",
     program: "docket",
-    // A request naming no model runs on docket's own setup default; the
-    // readiness check says when there is none.
+    // A request naming no model runs on the team's own configuration.
     model_selection: ModelSelection::Optional,
-    inherited_env: &["PATH"],
+    inherited_env: &[],
     probe_notes: &[],
-    credential_note: "docket reads its provider and credential from its own setup (docket \
-                      setup); Tack holds no model credential.",
-    reports_process_groups: true,
+    credential_note: "docket holds its own model credentials in its home; Tack holds none and \
+                      reaches docket with the daemon's bearer token.",
+    reports_process_groups: false,
+    cancels_over_api: true,
     reports_progress: true,
     sandbox_binds: &[],
-    readiness: Some(readiness::check),
+    readiness: None,
     models_docs: "https://github.com/yielab/docket/blob/develop/docs/CONFIGURATION.md#31-choose-which-model-each-agent-runs-on",
     sign_in_docs: "https://github.com/yielab/docket/blob/develop/docs/MODEL-GATEWAYS.md",
 };
 
-/// The files of docket's setup home a contract 1.2 run reads, and nothing
-/// else there: its provider catalog, its model registry and its credential
-/// store (harness-mode spec, "Contract 1.2" section 2).
-const SETUP_FILES: [&str; 3] = [
-    "docket-providers.json",
-    "docket-models.json",
-    "secrets.json",
-];
+/// How often a running task's trace, inbox and record are read.
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-mod probe;
-mod readiness;
+/// Progress lines the engine has not yet taken, before more are dropped.
+const PROGRESS_BUFFER: usize = 256;
 
-pub use probe::DocketFeatures;
+/// What a person reads when an attempt fails before docket ran anything.
+const WRONG_WORKSPACE: &str =
+    "the docket team works on a branch of your folder; choose that under Settings → Automation";
 
-pub struct DocketGrammar;
-
-/// What the located binary can do, measured the first time anything asks
-/// (registration reads `capabilities` at boot) and never again. Nothing
-/// located is a docket that does not speak the contract, which never runs.
-fn features() -> &'static DocketFeatures {
-    static FEATURES: OnceLock<DocketFeatures> = OnceLock::new();
-    FEATURES.get_or_init(|| {
-        crate::harness::locate::locate_installed(DESCRIPTOR.program)
-            .map(|program| DocketFeatures::probe(&program))
-            .unwrap_or_default()
-    })
+/// The task states in which docket will do nothing more by itself.
+fn terminal(status: &str) -> bool {
+    matches!(status, "done" | "failed" | "blocked" | "cancelled")
 }
-
-pub type DocketAdapter<C = crate::SystemClock> = LocalProcessHarness<DocketGrammar, C>;
 
 fn rejected(reason: String) -> HarnessError {
     tracing::warn!(
         reason,
         harness = DESCRIPTOR.kind,
-        "request rejected before spawn"
+        "request rejected before start"
     );
     HarnessError::Rejected { reason }
 }
 
-fn bounded_prefix(text: &str, max_chars: usize) -> String {
-    text.chars().take(max_chars).collect()
-}
-
-/// The line `docket exec` prints last, on success or failure. Every
-/// other stdout line is an NDJSON progress event this adapter does not read.
-#[derive(serde::Deserialize)]
-struct ResultLine {
-    token: String,
-    status: String,
-    stop_reason: String,
-    error: String,
-    blocked: Option<serde_json::Value>,
-    model: ResultModel,
-    usage: ResultUsage,
-    #[serde(default)]
-    files: Vec<ResultFile>,
-    limits: Option<ResultLimits>,
-    #[serde(default)]
-    task: Option<serde_json::Value>,
-}
-
-/// A path docket reports a run wrote (`op` is `write`, `edit`, `delete` or
-/// `unknown`).
-#[derive(serde::Deserialize, serde::Serialize)]
-struct ResultFile {
-    path: String,
-    op: String,
-}
-
-/// The ceilings docket echoes back.
-#[derive(serde::Deserialize)]
-struct ResultLimits {
-    #[serde(rename = "maxTokens")]
-    max_tokens: Option<u64>,
-}
-
-/// `served` is what the endpoint's response named.
-#[derive(serde::Deserialize)]
-struct ResultModel {
-    served: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ResultUsage {
-    input_tokens: u64,
-    output_tokens: u64,
-}
-
-/// One of docket's progress events: a `bash` call's process group when it
-/// starts and when it is gone
-/// (`fixtures/docket/contract-1.1/cancelled-process.ndjson`), and the tool
-/// calls, tool results and model calls a run makes
-/// (`fixtures/docket/contract-1.1/asked-answered.ndjson`).
-#[derive(serde::Deserialize)]
-struct ProgressLine {
-    event: Option<ProgressEvent>,
-}
-
-#[derive(serde::Deserialize)]
-struct ProgressEvent {
-    event_type: String,
-    #[serde(default)]
-    payload: serde_json::Value,
-}
-
-/// The event types [`DocketGrammar::signal`] reads past the approval and the
-/// result line; a line naming none of them is never parsed.
-const READ_EVENTS: [&str; 4] = [
-    "\"process_",
-    "\"tool_call\"",
-    "\"tool_result\"",
-    "\"llm_call\"",
-];
-
-/// How much of a step's text reaches the timeline.
-const STEP_TEXT_CHARS: usize = 400;
-
-/// A docket event worth a line on the attempt's timeline: a tool call and
-/// what it runs, a call docket refused, a model call and what it cost.
-fn step(event: &ProgressEvent) -> Option<Progress> {
-    let payload = &event.payload;
-    let text_of = |key: &str| payload.get(key).and_then(serde_json::Value::as_str);
-    let count = |key: &str| payload.get(key).and_then(serde_json::Value::as_u64);
-    let tool = text_of("tool").unwrap_or("a tool");
-    let (kind, text) = match event.event_type.as_str() {
-        "tool_call" => {
-            // `arguments` is the call's arguments as the model sent them: a
-            // JSON object in a string.
-            let arguments = text_of("arguments").unwrap_or_default();
-            let parsed = serde_json::from_str::<serde_json::Value>(arguments).ok();
-            let command = parsed
-                .as_ref()
-                .and_then(|value| value.get("command"))
-                .and_then(serde_json::Value::as_str);
-            let text = match command {
-                Some(command) => format!("{tool}: {command}"),
-                None if arguments.trim().is_empty() || arguments.trim() == "{}" => tool.to_owned(),
-                None => format!("{tool} {arguments}"),
-            };
-            ("agent.tool_call", text)
-        }
-        "tool_result" if text_of("decision") == Some("deny") => {
-            let reason = text_of("reason").unwrap_or("no reason given");
-            (
-                "agent.tool_refused",
-                format!("{tool} was refused: {reason}"),
-            )
-        }
-        "llm_call" if payload.get("ok") == Some(&serde_json::Value::Bool(false)) => {
-            let why = text_of("failureKind").unwrap_or("no reason given");
-            ("agent.model_turn", format!("A model call failed: {why}"))
-        }
-        "llm_call" => {
-            let turn = count("iteration")
-                .map(|n| format!(" {n}"))
-                .unwrap_or_default();
-            let tokens = match (count("inputTokens"), count("outputTokens")) {
-                (Some(input), Some(output)) => format!(": {input} tokens in, {output} out"),
-                _ => String::new(),
-            };
-            ("agent.model_turn", format!("Model turn{turn}{tokens}"))
-        }
-        _ => return None,
-    };
-    Some(Progress {
-        kind: kind.to_owned(),
-        text: bounded_prefix(&text, STEP_TEXT_CHARS),
-    })
-}
-
-/// No parseable result line at all: the exit status and a prefix of what
-/// was printed are all that is left as evidence.
-fn malformed(result: &ProcessResult) -> RunReport {
-    RunReport::verdict(
-        false,
-        serde_json::json!({
-            "code": "malformed_output",
-            "detail": "docket produced no parseable terminal result line",
-            "exit": format!("{:?}", result.exit),
-            "stdout_prefix": bounded_prefix(&result.stdout.text, 500),
-        }),
-    )
-}
-
-/// docket's own tool names, the only ones a `tool:` predicate can match
-/// (`core/tools.py`); the request's tool list names tools of this harness.
-const DOCKET_TOOLS: &[&str] = &[
-    "read", "write", "edit", "glob", "grep", "bash", "fetch", "skill", "consult",
-];
-
-/// The `kind: policy` document (`docs/contracts/config-v1/policy.schema.json`
-/// in docket) that blocks every docket tool the request does not allow:
-/// the tools its list leaves out, and `fetch` when `network` is false.
-/// `Ok(None)` when nothing needs blocking. A request this shape cannot
-/// express is refused naming the field, never narrowed.
-fn policy_document(policy: &PermissionPolicy) -> Result<Option<String>, HarnessError> {
-    if let Some(field) = policy.additional.keys().next() {
-        return Err(rejected(format!(
-            "permission_policy.{field} cannot be expressed as a docket policy document"
-        )));
-    }
-    // Every tool, less `fetch` when the network is denied.
-    if policy.allows_all_tools() {
-        let mut all = policy.clone();
-        all.tools = DOCKET_TOOLS
-            .iter()
-            .filter(|tool| policy.network || **tool != "fetch")
-            .map(|tool| (*tool).to_owned())
-            .collect();
-        return policy_document(&all);
-    }
-    let allowed: Vec<String> = policy
-        .tools
-        .iter()
-        .map(|tool| tool.to_ascii_lowercase())
-        .collect();
-    if let Some(unknown) = policy
-        .tools
-        .iter()
-        .find(|tool| !DOCKET_TOOLS.contains(&tool.to_ascii_lowercase().as_str()))
-    {
-        return Err(rejected(format!(
-            "permission_policy.tools names {unknown:?}, which is not a docket tool \
-             ({}); a docket policy document can only name those",
-            DOCKET_TOOLS.join(", ")
-        )));
-    }
-    if !policy.network && allowed.iter().any(|tool| tool == "fetch") {
-        return Err(rejected(
-            "permission_policy.network is false but permission_policy.tools allows docket's \
-             network tool `fetch`, a self-contradictory request"
-                .to_owned(),
-        ));
-    }
-    let denied: Vec<&str> = DOCKET_TOOLS
-        .iter()
-        .copied()
-        .filter(|tool| !allowed.iter().any(|name| name == tool))
-        .collect();
-    if denied.is_empty() {
-        return Ok(None);
-    }
-    let predicates: String = denied
-        .iter()
-        .map(|tool| format!("    - tool: {tool}\n"))
-        .collect();
-    Ok(Some(format!(
-        "kind: policy\n\
-         name: tack-permission-policy\n\
-         description: The tools this Tack request does not allow.\n\
-         appliesTo:\n  - \"*\"\n\
-         on: toolCall\n\
-         when:\n  anyOf:\n{predicates}\
-         then: block\n\
-         message: this tool is not allowed by the Tack request's permission_policy\n"
-    )))
-}
-
-/// The setup home docket would read on its own: `~/.docket` of the
-/// runner's user.
-fn person_setup_home() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".docket"))
-}
-
-/// Every string in docket's credential store, to strip from what the run
-/// prints. The store maps a credential's name to its value; a name kept in
-/// the keyring has an empty one.
-fn stored_credentials(secrets: &std::path::Path) -> Vec<String> {
-    fn strings(value: &serde_json::Value, out: &mut Vec<String>) {
-        match value {
-            serde_json::Value::String(text) if !text.trim().is_empty() => out.push(text.clone()),
-            serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
-            serde_json::Value::Object(map) => map.values().for_each(|item| strings(item, out)),
-            _ => {}
-        }
-    }
-    let mut out = Vec::new();
-    if let Some(value) = std::fs::read(secrets)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-    {
-        strings(&value, &mut out);
-    }
-    out
-}
-
-/// One `docket exec --contract 1.2` run. docket reaches its model through
-/// its own setup: `DOCKET_SETUP_HOME` is a directory in the scratch that
-/// holds exactly [`SETUP_FILES`] of `setup_home`, each shared read-only.
-/// `--model` is passed only when the request names one; otherwise docket's
-/// setup default for the role answers. `permission_policy.tools` and
-/// `.network` become a `--policy` file, and `budgets.tokens` a
-/// `--max-tokens`.
-fn invocation(
-    run: &RunContext<'_>,
-    setup_home: Option<&std::path::Path>,
-) -> Result<Invocation, HarnessError> {
-    let request = &run.spec.work.request;
-    if let Some(recipe) = request
-        .resolved_agent_profile
-        .tool_policy
-        .get("docket")
-        .and_then(|v| v.get("recipe"))
-        .and_then(serde_json::Value::as_str)
-        .filter(|recipe| !recipe.is_empty())
-    {
-        return Err(rejected(format!(
-            "the profile names docket recipe {recipe:?}, but docket runs a recipe only under \
-             harness contract 1.1, which needs a model endpoint Tack does not hold"
-        )));
-    }
-
-    let workspace_root = &run.spec.workspace.path;
-    let mut env = BTreeMap::new();
-    env.insert(
-        "DOCKET_HOME".to_owned(),
-        run.scratch.join("docket-home").display().to_string(),
-    );
-
-    let setup_dir = run.scratch.join("docket-setup");
-    std::fs::create_dir_all(&setup_dir)
-        .map_err(|_| rejected("docket's setup directory could not be made".to_owned()))?;
-    env.insert(
-        "DOCKET_SETUP_HOME".to_owned(),
-        setup_dir.display().to_string(),
-    );
-    let read_only_files: Vec<_> = setup_home
-        .into_iter()
-        .flat_map(|home| SETUP_FILES.map(|name| (home.join(name), setup_dir.join(name))))
-        .filter(|(source, _)| source.is_file())
-        .collect();
-    let secrets = setup_home
-        .map(|home| stored_credentials(&home.join("secrets.json")))
-        .unwrap_or_default();
-
-    let task_file = run.scratch.join("task.md");
-    std::fs::write(&task_file, &request.resolved_agent_profile.instructions)
-        .map_err(|_| rejected("the task file could not be written".to_owned()))?;
-
-    let mut args: Vec<String> = [
-        "exec",
-        "--contract",
-        probe::CONTRACT,
-        "--workspace",
-        &workspace_root.display().to_string(),
-        "--task-file",
-        &task_file.display().to_string(),
-        "--agent-id",
-        run.spec.work.lease.attempt_id.as_str(),
-        "--timeout",
-        &request.timeout_seconds.to_string(),
-        "--token-file",
-        &run.scratch.join("token.json").display().to_string(),
-    ]
-    .map(str::to_owned)
-    .into();
-    if let Some(model) = &request.requested_model {
-        args.extend(["--model".to_owned(), model.clone()]);
-    }
-
-    // An `ask` request pauses each gated call on stdin
-    // (`fixtures/docket/contract-1.1/asked-answered.ndjson`); any other
-    // request keeps docket's refusal posture.
-    let ask = matches!(request.permission_policy.approvals, Some(Approvals::Ask));
-    if ask {
-        args.extend(["--answers".to_owned(), "stdin".to_owned()]);
-    }
-    if let Some(tokens) = request
-        .budgets
-        .get("tokens")
-        .and_then(serde_json::Value::as_u64)
-        .filter(|tokens| *tokens > 0)
-    {
-        args.extend(["--max-tokens".to_owned(), tokens.to_string()]);
-    }
-    if let Some(document) = policy_document(&request.permission_policy)? {
-        let path = run.scratch.join("policy.yaml");
-        std::fs::write(&path, document)
-            .map_err(|_| rejected("the policy file could not be written".to_owned()))?;
-        args.extend(["--policy".to_owned(), path.display().to_string()]);
-    }
-
-    Ok(Invocation {
-        args,
-        env,
-        stdin_stays_open: ask,
-        secrets,
-        read_only_files,
-        ..Default::default()
-    })
-}
-
-impl HarnessGrammar for DocketGrammar {
-    fn descriptor(&self) -> &'static HarnessDescriptor {
-        &DESCRIPTOR
-    }
-
-    fn unsupported(&self) -> Option<String> {
-        features().unsupported()
-    }
-
-    fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
-        invocation(run, person_setup_home().as_deref())
-    }
-
-    /// The task is a file under the scratch directory, so stdin carries
-    /// only answers.
-    fn prompt(&self, _prompt: String, _stdin_stays_open: bool) -> Vec<u8> {
-        Vec::new()
-    }
-
-    fn report(&self, _run: &RunContext<'_>, result: &ProcessResult) -> RunReport {
-        let mut results = result
-            .stdout
-            .text
-            .lines()
-            .filter_map(|line| serde_json::from_str::<ResultLine>(line.trim()).ok());
-        let Some(parsed) = results.next() else {
-            return malformed(result);
-        };
-        for _ in results {
-            tracing::debug!(harness = DESCRIPTOR.kind, "terminal_line_ignored");
-        }
-        let mut report = RunReport {
-            succeeded: parsed.status == "ok",
-            terminal_reason: serde_json::json!({
-                "code": parsed.status,
-                "message": parsed.error,
-                "stop_reason": parsed.stop_reason,
-                "blocked": parsed.blocked,
-                "token": parsed.token,
-                "files": parsed
-                    .files
-                    .iter()
-                    .filter(|file| !file.path.starts_with(".tack-runner/"))
-                    .collect::<Vec<_>>(),
-                "max_tokens": parsed.limits.and_then(|limits| limits.max_tokens),
-                "task": parsed.task,
-            }),
-            harness_version: None,
-            // What the endpoint named, never `model.requested`: a run that
-            // stopped before any reply had no model answer it.
-            observed_model: (!parsed.model.served.is_empty()).then_some(parsed.model.served),
-            tokens_in: Some(parsed.usage.input_tokens),
-            tokens_out: Some(parsed.usage.output_tokens),
-            duration_ms: None,
-            cost_usd: None,
-            usage_detail: Default::default(),
-        };
-        if report.succeeded && !matches!(result.exit, ProcessExit::Exited(0)) {
-            report.succeeded = false;
-            report.terminal_reason = serde_json::json!({
-                "reason": "exit_status",
-                "exit": format!("{:?}", result.exit),
-                "stream": report.terminal_reason,
-            });
-        }
-        report
-    }
-
-    fn signal(&self, _run: &RunContext<'_>, line: &str) -> Option<StreamSignal> {
-        if line.contains("\"approval_requested\"") {
-            return approval_question(line);
-        }
-        // The result line is the only one with a top-level `status` and no
-        // `event`; it ends the conversation so docket's stdin can close.
-        if line.contains("\"status\"") && is_result_line(line) {
-            return Some(StreamSignal::Finished);
-        }
-        if !READ_EVENTS.iter().any(|name| line.contains(name)) {
-            return None;
-        }
-        let event = serde_json::from_str::<ProgressLine>(line).ok()?.event?;
-        let pgid = || {
-            event
-                .payload
-                .get("pgid")
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|pgid| u32::try_from(pgid).ok())
-        };
-        match event.event_type.as_str() {
-            "process_started" => Some(StreamSignal::ProcessStarted { pgid: pgid()? }),
-            "process_exited" => Some(StreamSignal::ProcessExited { pgid: pgid()? }),
-            _ => step(&event).map(StreamSignal::Progress),
-        }
-    }
-
-    /// One `AnswerLine` (`fixtures/docket/contract-1.1/`, stamped with the
-    /// contract this grammar speaks, which docket checks): `accept`
-    /// releases the call, anything else, including an option this grammar
-    /// never offered, is `decline`.
-    fn answer(&self, question: &Question, answer: &DecisionAnswer) -> Vec<u8> {
-        let action = if answer.option_id.as_deref() == Some("accept") {
-            "accept"
+fn measurement<T>(value: Option<T>) -> Measurement<T> {
+    Measurement {
+        source: if value.is_some() {
+            MeasurementSource::Measured
         } else {
-            "decline"
-        };
-        let payload = serde_json::json!({
-            "v": format!("{}.0", probe::CONTRACT),
-            "token": question.metadata.get("token"),
-            "answer": {
-                "approvalToken": question.vendor_id,
-                "action": action,
-                "content": null,
-            },
-        });
-        serde_json::to_vec(&payload).unwrap_or_default()
-    }
-
-    fn capabilities(&self) -> FeatureCapabilities {
-        capabilities(features())
+            MeasurementSource::NotMeasured
+        },
+        value,
+        additional: BTreeMap::new(),
     }
 }
 
-fn is_result_line(line: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(line.trim())
-        .is_ok_and(|value| value.get("status").is_some() && value.get("event").is_none())
+/// What docket offers over its API.
+fn capabilities() -> FeatureCapabilities {
+    FeatureCapabilities {
+        cancel: capability(
+            CapabilitySupport::Supported,
+            "a cancellation is a call to docket's own cancel route, which stops the running hop \
+             and its process group",
+        ),
+        resume: capability(
+            CapabilitySupport::Unsupported,
+            "a runner that restarts reads the task's state and reports it; it does not \
+             reattach to the hop",
+        ),
+        decisions: capability(
+            CapabilitySupport::Supported,
+            "a tool call docket's policy gates, and a question a step parks on, reach the \
+             person through the inbox and are answered over docket's approvals and answer routes",
+        ),
+        artifacts: capability(
+            CapabilitySupport::Supported,
+            "the task's branch is brought into the runner's worktree, so the evidence is the \
+             diff of what docket committed",
+        ),
+        usage: capability(
+            CapabilitySupport::Supported,
+            "the task record carries the tokens used, in total and by model",
+        ),
+        additional: policy_capability(
+            CapabilitySupport::Supported,
+            "the profile's denied tools and the network flag become the task's restrictions, \
+             which docket applies on top of the team's own",
+        ),
+    }
 }
 
-/// An `approval_requested` event: the approval's own token is `payload.token`
-/// and the line's own `token` is the run's, which every answer must name.
-fn approval_question(line: &str) -> Option<StreamSignal> {
-    let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    let event = value.get("event")?;
-    if event.get("event_type")?.as_str()? != "approval_requested" {
-        return None;
+/// The per-attempt facts `start` fixes and `wait` reads.
+struct RunInfo {
+    pod: String,
+    task: String,
+    attempt_id: String,
+    workspace: PathBuf,
+    started_at: DateTime<Utc>,
+    timeout: Duration,
+    /// docket refused the task with this sentence; there is nothing to follow.
+    refused: Option<String>,
+}
+
+/// The ends of the channels `wait` drives.
+struct WaitSide {
+    questions: mpsc::Sender<Question>,
+    answers: mpsc::Receiver<DecisionAnswer>,
+    progress: mpsc::Sender<Progress>,
+}
+
+struct Live {
+    info: Arc<RunInfo>,
+    decisions: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
+    progress: Option<mpsc::Receiver<Progress>>,
+    wait: Option<WaitSide>,
+}
+
+/// What a person's answer will be posted as.
+enum Pending {
+    Approval { token: String },
+    Consult { task: String, property: String },
+}
+
+pub struct DocketAdapter {
+    client: Client,
+    state_dir: PathBuf,
+    ensured: Mutex<HashSet<String>>,
+    live: Mutex<HashMap<String, Live>>,
+}
+
+impl DocketAdapter {
+    /// An adapter for the docket `config` names. `state_dir` is the runner's
+    /// own, where each attempt's trace cursor is kept.
+    pub fn new(config: DocketConfig, state_dir: PathBuf) -> Self {
+        Self {
+            client: Client::new(&config),
+            state_dir,
+            ensured: Mutex::new(HashSet::new()),
+            live: Mutex::new(HashMap::new()),
+        }
     }
-    let payload = event.get("payload")?;
-    let approval = payload.get("token")?.as_str()?;
-    let run_token = value.get("token")?.as_str()?;
-    let tool = payload.get("tool").and_then(serde_json::Value::as_str);
-    let call_id = payload.get("callId").and_then(serde_json::Value::as_str);
-    let action = payload.get("action").and_then(serde_json::Value::as_str);
-    let rationale = payload
-        .get("rationale")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|rationale| !rationale.is_empty());
-    let prompt = approval_prompt(tool, call_id, action, rationale);
-    let option = |option_id: &str, label: &str| DecisionOption {
-        option_id: option_id.to_owned(),
+
+    fn cursor_path(&self, attempt_id: &str) -> PathBuf {
+        let safe: String = attempt_id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        self.state_dir.join("docket").join(format!("{safe}.cursor"))
+    }
+
+    fn read_cursor(&self, attempt_id: &str) -> String {
+        std::fs::read_to_string(self.cursor_path(attempt_id))
+            .map(|text| text.trim().to_owned())
+            .unwrap_or_default()
+    }
+
+    /// Written after the page it follows has been delivered, through a rename
+    /// so a crash leaves the old cursor or the new one, never half of one.
+    fn write_cursor(&self, attempt_id: &str, cursor: &str) {
+        let path = self.cursor_path(attempt_id);
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| {
+                let partial = path.with_extension("cursor.partial");
+                std::fs::write(&partial, cursor)?;
+                std::fs::rename(&partial, &path)
+            });
+        if written.is_err() {
+            tracing::warn!(
+                harness = DESCRIPTOR.kind,
+                "the trace cursor could not be saved"
+            );
+        }
+    }
+
+    /// The team a profile names.
+    fn team(spec: &ExecutionSpec) -> Result<String, HarnessError> {
+        spec.work
+            .request
+            .resolved_agent_profile
+            .tool_policy
+            .get("docket")
+            .and_then(|docket| docket.get("team"))
+            .and_then(Value::as_str)
+            .filter(|team| !team.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                rejected(
+                    "the agent profile names no docket team; choose one under Agents".to_owned(),
+                )
+            })
+    }
+
+    async fn run_info(&self, process_id: &str) -> Option<Arc<RunInfo>> {
+        self.live
+            .lock()
+            .await
+            .get(process_id)
+            .map(|live| Arc::clone(&live.info))
+    }
+
+    /// `git reset --hard` of the runner's worktree onto the task's branch.
+    async fn bring_in(workspace: &Path, branch: &str) -> Result<(), String> {
+        if branch.is_empty() || branch.starts_with('-') {
+            return Err("docket named no usable branch for the task".to_owned());
+        }
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(workspace)
+            .args(["reset", "--hard", &format!("refs/heads/{branch}")])
+            .output()
+            .await
+            .map_err(|_| "git could not be run".to_owned())?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "the task's branch could not be brought into the worktree: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
+        }
+    }
+
+    /// The commit the runner's worktree stands on, which is where the task
+    /// branch is cut; the request's own base revision when git cannot say.
+    async fn base_commit(spec: &ExecutionSpec) -> String {
+        let head = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&spec.workspace.path)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .await
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .filter(|head| !head.is_empty());
+        head.unwrap_or_else(|| spec.workspace.base_revision.clone())
+    }
+}
+
+fn hop_role(payload: &Value) -> String {
+    let role = payload["role"].as_str().unwrap_or("agent");
+    let mut chars = role.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
+
+/// The timeline line a `hop_started` or `hop_finished` record makes.
+fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
+    let who = format!(
+        "{} ({})",
+        hop_role(payload),
+        payload["model"].as_str().unwrap_or("no model named")
+    );
+    match event_type {
+        "hop_started" => Some(Progress {
+            kind: "agent.hop_started".to_owned(),
+            text: format!("{who} started"),
+        }),
+        "hop_finished" => {
+            let mut parts = vec![match payload["verdict"].as_str() {
+                Some(verdict) => verdict.to_owned(),
+                None if payload["ok"] == json!(false) => match payload["error"].as_str() {
+                    Some(error) if !error.is_empty() => format!("failed: {error}"),
+                    _ => "failed".to_owned(),
+                },
+                None => "done".to_owned(),
+            }];
+            if let Some(cycle) = payload["cycle"].as_u64().filter(|cycle| *cycle > 0) {
+                parts.push(format!("cycle {cycle}"));
+            }
+            if let Some(gate) = payload["gate"].as_str() {
+                parts.push(format!("gate {gate}"));
+            }
+            if let (Some(input), Some(output)) = (
+                payload["usage"]["input"].as_u64(),
+                payload["usage"]["output"].as_u64(),
+            ) {
+                parts.push(format!("{input} tokens in, {output} out"));
+            }
+            Some(Progress {
+                kind: "agent.hop_finished".to_owned(),
+                text: format!("{who}: {}", parts.join(", ")),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn approval_question(view: &Value) -> Option<Question> {
+    let token = view["token"].as_str()?;
+    let tool = view["tool"].as_str();
+    let action = view["action"].as_str();
+    let prompt = match (tool, action) {
+        (Some(tool), Some(action)) => format!("Allow {tool}? docket's policy: {action}"),
+        (Some(tool), None) => format!("Allow {tool}?"),
+        _ => "Allow a gated tool call?".to_owned(),
+    };
+    let option = |id: &str, label: &str| DecisionOption {
+        option_id: id.to_owned(),
         label: label.to_owned(),
         description: None,
         risks: None,
         estimated_tokens: None,
     };
     let mut metadata = serde_json::Map::new();
-    metadata.insert("token".to_owned(), run_token.into());
     metadata.insert("tool".to_owned(), tool.into());
-    metadata.insert("callId".to_owned(), call_id.into());
-    Some(StreamSignal::Question(Question {
-        vendor_id: approval.to_owned(),
-        kind: "tool_permission".to_owned(),
+    metadata.insert("role".to_owned(), view["role"].clone());
+    metadata.insert("policy".to_owned(), view["policy"].clone());
+    Some(Question {
+        vendor_id: token.to_owned(),
+        kind: "approval".to_owned(),
         prompt,
-        options: vec![option("accept", "Allow"), option("decline", "Deny")],
+        options: vec![
+            option("approve_once", "Allow once"),
+            option("approve_task", "Allow for this task"),
+            option("deny", "Deny"),
+        ],
         recommendation: None,
         metadata,
-    }))
+    })
 }
 
-/// What the person reads before answering: the call itself, why docket's
-/// policy stopped it, and the model's own reason when it gave one.
-///
-/// docket's `action` is `tool call '<tool>': <reason>; call=<tool> <key>=<json> …`,
-/// the render its `pre_tool_call` policies match, cut at 1000 characters. A
-/// bash call's single `command` is shown as the bare command; any other call
-/// shows its rendered arguments as they are. An `action` in another shape is
-/// shown whole, and no `action` at all falls back to the tool and call id.
-fn approval_prompt(
-    tool: Option<&str>,
-    call_id: Option<&str>,
-    action: Option<&str>,
-    rationale: Option<&str>,
-) -> String {
-    let asked = match (tool, action) {
-        (Some(tool), Some(action)) => Some(match parse_action(tool, action) {
-            Some((reason, call)) => format!("Allow {tool}{call}? docket's policy: {reason}."),
-            None => format!("Allow {tool}? {action}"),
-        }),
-        (None, Some(action)) => Some(format!("Allow a gated tool call? {action}")),
-        _ => None,
+/// The one property a parked question asks for, which its answer fills.
+fn consult_property(question: &Value) -> String {
+    question["requestedSchema"]["properties"]
+        .as_object()
+        .and_then(|properties| properties.keys().next().cloned())
+        .unwrap_or_else(|| "answer".to_owned())
+}
+
+fn consult_question(view: &Value) -> Option<(Question, Pending)> {
+    let question = view
+        .get("question")
+        .filter(|question| question.is_object())?;
+    let option = |id: &str, label: &str| DecisionOption {
+        option_id: id.to_owned(),
+        label: label.to_owned(),
+        description: None,
+        risks: None,
+        estimated_tokens: None,
     };
-    let mut prompt = asked.unwrap_or_else(|| match (tool, call_id) {
-        (Some(tool), Some(call)) => format!("Allow {tool} (call {call})?"),
-        (Some(tool), None) => format!("Allow {tool}?"),
-        _ => "Allow a gated tool call?".to_owned(),
-    });
-    if let Some(rationale) = rationale {
-        prompt.push_str(&format!(" The agent says: \"{rationale}\""));
-    }
-    prompt
+    let task = view["id"].as_str()?.to_owned();
+    Some((
+        Question {
+            vendor_id: question["id"].as_str()?.to_owned(),
+            kind: "consult".to_owned(),
+            prompt: question["message"]
+                .as_str()
+                .unwrap_or("docket asks a question")
+                .to_owned(),
+            options: vec![option("accept", "Answer"), option("decline", "Decline")],
+            recommendation: None,
+            metadata: serde_json::Map::new(),
+        },
+        Pending::Consult {
+            task,
+            property: consult_property(question),
+        },
+    ))
 }
 
-/// `(reason, call)` out of docket's `action`, the call worded to follow the
-/// tool's name: a bash `command` decoded from its JSON and quoted, any other
-/// arguments as rendered, nothing for a call without arguments.
-fn parse_action<'a>(tool: &str, action: &'a str) -> Option<(&'a str, String)> {
-    let rest = action.strip_prefix(&format!("tool call '{tool}': "))?;
-    let (reason, call) = rest.split_once("; call=")?;
-    let arguments = call.strip_prefix(tool)?.trim_start();
-    let call = match arguments.strip_prefix("command=") {
-        Some(command) => {
-            let command = serde_json::from_str::<String>(command)
-                .unwrap_or_else(|_| command.trim_start_matches('"').to_owned());
-            format!(" to run \"{command}\"")
+impl DocketAdapter {
+    /// What this task needs from a person, if anything and not yet asked.
+    async fn next_question(
+        &self,
+        info: &RunInfo,
+        asked: &HashSet<String>,
+    ) -> Option<(Question, Pending)> {
+        let reply = self.client.inbox().await.ok().filter(|r| r.status == 200)?;
+        for item in reply.body["needsYou"].as_array().into_iter().flatten() {
+            if item["pod"] != json!(info.pod) {
+                continue;
+            }
+            if item.get("token").is_some() && item["taskId"] == json!(info.task) {
+                if let Some(question) = approval_question(item)
+                    && !asked.contains(&question.vendor_id)
+                {
+                    let token = question.vendor_id.clone();
+                    return Some((question, Pending::Approval { token }));
+                }
+            } else if item["id"] == json!(info.task)
+                && item["status"] == json!("waiting_input")
+                && let Some((question, pending)) = consult_question(item)
+                && !asked.contains(&question.vendor_id)
+            {
+                return Some((question, pending));
+            }
         }
-        None if arguments.is_empty() => String::new(),
-        None => format!(" with {arguments}"),
-    };
-    Some((reason, call))
-}
+        None
+    }
 
-/// What docket offers under contract 1.2. Every option this grammar passes
-/// is part of that contract, so only the probe's version is added.
-fn capabilities(features: &DocketFeatures) -> FeatureCapabilities {
-    let negotiated = if features.speaks_contract && !features.version.is_empty() {
-        format!(
-            "; contract {} against docket {}",
-            probe::CONTRACT,
-            features.version
-        )
-    } else {
-        String::new()
-    };
-    FeatureCapabilities {
-        cancel: capability(
-            CapabilitySupport::Supported,
-            &format!(
-                "docket stops cooperatively on SIGTERM and reports a cancelled result; it also \
-                 reports each process group its bash calls start and end, so a cancellation \
-                 stops the groups still live and says whether they went{negotiated}"
+    /// Posts the person's answer where docket reads it. A `409` means docket
+    /// had already resolved it, which is not a failure.
+    async fn deliver(
+        &self,
+        info: &RunInfo,
+        pending: &Pending,
+        answer: &DecisionAnswer,
+    ) -> Option<String> {
+        let reply = match pending {
+            Pending::Approval { token } => {
+                let reason = answer.text.clone().unwrap_or_default();
+                let body = match answer.option_id.as_deref() {
+                    Some(option @ ("approve_once" | "approve_task")) => {
+                        json!({"action": "grant", "channel": "tack", "option": option, "reason": reason})
+                    }
+                    _ => json!({"action": "deny", "channel": "tack", "reason": reason}),
+                };
+                self.client.approve(token, body).await
+            }
+            Pending::Consult { task, property } => {
+                let body = if answer.option_id.as_deref() == Some("accept") {
+                    json!({"pod": info.pod, "action": "accept", "actor": "tack",
+                           "content": {property: answer.text.clone().unwrap_or_default()}})
+                } else {
+                    json!({"pod": info.pod, "action": "decline", "actor": "tack"})
+                };
+                self.client.answer(task, body).await
+            }
+        };
+        match reply {
+            Ok(reply) if reply.status == 200 || reply.status == 409 => None,
+            Ok(reply) => Some(format!("docket did not take the answer: {}", reply.error())),
+            Err(why) => Some(format!("the answer could not reach docket: {why}")),
+        }
+    }
+
+    fn outcome(
+        &self,
+        info: &RunInfo,
+        state: AttemptState,
+        reason: Value,
+        task: &Value,
+        model: Option<String>,
+    ) -> HarnessOutcome {
+        let usage = &task["usage"];
+        let by_model: BTreeMap<String, Value> = usage["byModel"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(name, used)| {
+                (
+                    name.clone(),
+                    json!({"input": used["input"].as_u64().unwrap_or(0),
+                           "output": used["output"].as_u64().unwrap_or(0)}),
+                )
+            })
+            .collect();
+        let mut additional = BTreeMap::new();
+        if !by_model.is_empty() {
+            additional.insert("by_model".to_owned(), json!(by_model));
+        }
+        let ended_at = Utc::now();
+        let elapsed =
+            u64::try_from((ended_at - info.started_at).num_milliseconds().max(0)).unwrap_or(0);
+        HarnessOutcome {
+            terminal_state: state,
+            terminal_reason: reason,
+            final_checkpoint: None,
+            actual_execution: ActualExecution {
+                harness_kind: DomainHarnessKind::new(DESCRIPTOR.kind),
+                harness_version: format!("API {}", probe::API_VERSION),
+                model_source: if model.is_some() {
+                    ModelSource::Reported
+                } else {
+                    ModelSource::AgentDefault
+                }
+                .as_str()
+                .to_owned(),
+                model,
+                capability_snapshot: capabilities(),
+                // Overwritten by the engine, which owns workspace facts.
+                workspace_id: DomainWorkspaceId::new(""),
+                base_revision: String::new(),
+                started_at: info.started_at,
+                ended_at,
+                additional: BTreeMap::from([("team".to_owned(), json!(info.pod))]),
+            },
+            usage: Usage {
+                tokens_in: measurement(usage["input"].as_u64()),
+                tokens_out: measurement(usage["output"].as_u64()),
+                duration_ms: measurement(Some(elapsed)),
+                cost_usd: measurement(None),
+                additional,
+            },
+        }
+    }
+
+    /// The task has ended: what that makes of the attempt.
+    async fn finish(
+        &self,
+        info: &RunInfo,
+        task: &Value,
+        model: Option<String>,
+        progress: &mpsc::Sender<Progress>,
+    ) -> HarnessOutcome {
+        let status = task["status"].as_str().unwrap_or_default();
+        let error = task["error"].as_str().unwrap_or_default();
+        let (state, reason) = match status {
+            "done" => {
+                let branch = task["worktree"]["branch"].as_str().unwrap_or_default();
+                match Self::bring_in(&info.workspace, branch).await {
+                    Ok(()) => {
+                        if let Ok(diff) = self.client.task_diff(&info.pod, &info.task).await
+                            && diff.status == 200
+                            && let Some(count) = diff.body["untracked"]
+                                .as_array()
+                                .map(Vec::len)
+                                .filter(|count| *count > 0)
+                        {
+                            let text = if count == 1 {
+                                "1 file docket did not commit is not in the evidence".to_owned()
+                            } else {
+                                format!(
+                                    "{count} files docket did not commit are not in the evidence"
+                                )
+                            };
+                            let _ = progress.try_send(Progress {
+                                kind: "agent.untracked".to_owned(),
+                                text,
+                            });
+                        }
+                        (
+                            AttemptState::Succeeded,
+                            json!({"code": "done", "team": info.pod, "task": info.task,
+                                   "branch": branch,
+                                   "base_commit": task["worktree"]["baseCommit"]}),
+                        )
+                    }
+                    Err(message) => (
+                        AttemptState::Failed,
+                        json!({"code": "branch_not_applied", "message": message,
+                               "task": info.task}),
+                    ),
+                }
+            }
+            "cancelled" => (
+                AttemptState::Cancelled,
+                json!({"code": "cancelled", "task": info.task}),
             ),
-        ),
-        resume: capability(
-            CapabilitySupport::Unsupported,
-            "harness mode is one synchronous run to completion; no reattachment interface \
-             is documented or observed",
-        ),
-        decisions: capability(
-            CapabilitySupport::Supported,
-            &format!(
-                "with --answers, a tool call docket's policy gates pauses the run on an \
-                 approval_requested event and waits for one answer line on stdin (accept or \
-                 decline), as measured in fixtures/docket/contract-1.1/asked-answered.ndjson\
-                 {negotiated}"
+            "blocked" => (
+                AttemptState::Failed,
+                json!({"code": "blocked", "message": error, "task": info.task}),
             ),
-        ),
-        artifacts: capability(
-            CapabilitySupport::Supported,
-            &format!(
-                "docket's result lists the files a run wrote, kept in the terminal reason \
-                 (paths under .tack-runner/ are dropped), beside the staged stdout/stderr \
-                 log{negotiated}"
+            _ => (
+                AttemptState::Failed,
+                json!({"code": task["failureKind"].as_str().unwrap_or("failed"),
+                       "message": error, "task": info.task}),
             ),
-        ),
-        usage: capability(
-            CapabilitySupport::Advisory,
-            "the result line's usage.input_tokens/output_tokens are real measurements, and \
-             budgets.tokens is passed as --max-tokens, but cost_usd is always null, so cost \
-             is never reported",
-        ),
-        additional: policy_capability(
-            CapabilitySupport::Supported,
-            &format!(
-                "the request's tool list and network flag are passed as one kind: policy \
-                 document blocking every docket tool they do not allow, and a request that \
-                 document cannot express is refused before spawn{negotiated}"
-            ),
-        ),
+        };
+        self.outcome(info, state, reason, task, model)
     }
 }
 
-#[cfg(test)]
-#[path = "docket/tests.rs"]
-mod tests;
+#[async_trait]
+impl HarnessProbe for DocketAdapter {
+    fn harness_kind(&self) -> DomainHarnessKind {
+        DomainHarnessKind::new(DESCRIPTOR.kind)
+    }
+
+    async fn probe(&self) -> HarnessCapability {
+        probe::probe(&self.client, capabilities().decisions).await
+    }
+
+    fn declared_capabilities(&self) -> FeatureCapabilities {
+        capabilities()
+    }
+}
+
+#[async_trait]
+impl HarnessAdapter for DocketAdapter {
+    async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
+        let repository = spec
+            .work
+            .workspace_repository()
+            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        if repository.workspace_mode != crate::client::WorkspaceMode::LocalBranch {
+            return Err(rejected(WRONG_WORKSPACE.to_owned()));
+        }
+        let team = Self::team(spec)?;
+        // The version first: a docket that is not API 5 gets no task.
+        probe::status(&self.client).await.map_err(rejected)?;
+        let teams = probe::teams(&self.client)
+            .await
+            .map_err(|why| rejected(format!("docket's teams could not be read: {why}")))?;
+        if !teams.iter().any(|known| known.name == team) {
+            return Err(rejected(format!(
+                "docket does not report the team {team:?}; check the profile's team"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
+        let request = &spec.work.request;
+        let attempt_id = spec.work.lease.attempt_id.as_str().to_owned();
+        let pod = Self::team(spec)?;
+        let repository = spec
+            .work
+            .workspace_repository()
+            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        let location = repository
+            .repository_path
+            .as_deref()
+            .unwrap_or(&spec.workspace.path)
+            .display()
+            .to_string();
+
+        // Once per team per process; docket answers 200 for one it has.
+        let mut ensured = self.ensured.lock().await;
+        if !ensured.contains(&pod) {
+            match self.client.ensure_pod(&pod, &location).await {
+                Ok(reply) if reply.status == 200 || reply.status == 201 => {
+                    ensured.insert(pod.clone());
+                }
+                Ok(reply) => {
+                    return Err(rejected(format!(
+                        "docket did not accept the team {pod:?}: {}",
+                        reply.error()
+                    )));
+                }
+                Err(why) => {
+                    tracing::warn!(why, "docket could not be reached to ensure the team");
+                    return Err(HarnessError::Process);
+                }
+            }
+        }
+        drop(ensured);
+
+        let base_ref = match request.metadata.get("rework_base").and_then(Value::as_str) {
+            Some(branch) if !branch.is_empty() => branch.to_owned(),
+            _ => Self::base_commit(spec).await,
+        };
+        let body = task::body(
+            request,
+            &attempt_id,
+            spec.work.lease.attempt_number,
+            &base_ref,
+        );
+        let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
+            tracing::warn!(why, "docket could not be reached to post the task");
+            HarnessError::Process
+        })?;
+        let (task, refused) = match reply.status {
+            200 | 201 => match reply.body["task"].as_str() {
+                Some(id) => (id.to_owned(), None),
+                None => return Err(HarnessError::Process),
+            },
+            // The task is never retried: the attempt fails with docket's words.
+            400 | 422 => (format!("rejected-{attempt_id}"), Some(reply.error())),
+            401 => return Err(rejected("docket refused the runner's token".to_owned())),
+            _ => {
+                return Err(rejected(format!(
+                    "docket refused the task: {}",
+                    reply.error()
+                )));
+            }
+        };
+
+        let process_id = format!("{pod}/{task}");
+        let (questions_tx, questions_rx) = mpsc::channel(1);
+        let (answers_tx, answers_rx) = mpsc::channel(1);
+        let (progress_tx, progress_rx) = mpsc::channel(PROGRESS_BUFFER);
+        let info = Arc::new(RunInfo {
+            pod,
+            task,
+            attempt_id,
+            workspace: spec.workspace.path.clone(),
+            started_at: Utc::now(),
+            timeout: Duration::from_secs(request.timeout_seconds),
+            refused,
+        });
+        self.live.lock().await.insert(
+            process_id.clone(),
+            Live {
+                info,
+                decisions: Some((questions_rx, answers_tx)),
+                progress: Some(progress_rx),
+                wait: Some(WaitSide {
+                    questions: questions_tx,
+                    answers: answers_rx,
+                    progress: progress_tx,
+                }),
+            },
+        );
+        Ok(LocalRunHandle { process_id })
+    }
+
+    async fn decision_channels(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        self.live
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .decisions
+            .take()
+    }
+
+    async fn sandbox(&self, _handle: &LocalRunHandle) -> Option<String> {
+        Some("harness".to_owned())
+    }
+
+    async fn progress_channel(&self, handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
+        self.live
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .progress
+            .take()
+    }
+
+    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
+        let info = self
+            .run_info(&handle.process_id)
+            .await
+            .ok_or(HarnessError::Process)?;
+        let observation = if info.refused.is_some() {
+            CancelObservation::AlreadyTerminal
+        } else {
+            match self
+                .client
+                .cancel_task(&info.pod, &info.task, "cancelled from Tack")
+                .await
+            {
+                Ok(reply) if reply.status == 200 => CancelObservation::ProcessStopped,
+                Ok(reply) if reply.status == 409 => CancelObservation::AlreadyTerminal,
+                _ => CancelObservation::Ambiguous,
+            }
+        };
+        Ok(CancellationEvidence {
+            observation,
+            observed_at: Timestamp::new(
+                Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            ),
+            details: serde_json::Map::from_iter([
+                ("team".to_owned(), json!(info.pod)),
+                ("task".to_owned(), json!(info.task)),
+            ]),
+        })
+    }
+
+    async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+        let (info, side) = {
+            let mut live = self.live.lock().await;
+            let entry = live
+                .get_mut(&handle.process_id)
+                .ok_or(HarnessError::Process)?;
+            (
+                Arc::clone(&entry.info),
+                entry.wait.take().ok_or(HarnessError::Process)?,
+            )
+        };
+        let outcome = self.follow(&info, side).await;
+        self.live.lock().await.remove(&handle.process_id);
+        outcome
+    }
+
+    async fn reconcile(
+        &self,
+        journal: &AttemptJournal,
+    ) -> Result<RecoveryObservation, HarnessError> {
+        let Some(process_id) = journal.process_id.as_deref() else {
+            return Ok(RecoveryObservation::ProcessStopped);
+        };
+        let Some((pod, task)) = process_id.split_once('/') else {
+            return Err(HarnessError::RecoveryUnavailable);
+        };
+        if task.starts_with("rejected-") {
+            return Ok(RecoveryObservation::ProcessStopped);
+        }
+        Ok(match self.client.task(pod, task).await {
+            Ok(reply) if reply.status == 200 => {
+                if terminal(reply.body["status"].as_str().unwrap_or_default()) {
+                    RecoveryObservation::ProcessStopped
+                } else {
+                    RecoveryObservation::ProcessRunning
+                }
+            }
+            _ => RecoveryObservation::Ambiguous,
+        })
+    }
+}
+
+impl DocketAdapter {
+    /// Follows one task until it ends: trace page, inbox, record, then wait
+    /// for the next poll or for the person's answer, whichever comes first.
+    async fn follow(
+        &self,
+        info: &RunInfo,
+        mut side: WaitSide,
+    ) -> Result<HarnessOutcome, HarnessError> {
+        if let Some(error) = &info.refused {
+            let _ = side.progress.try_send(Progress {
+                kind: "agent.refused".to_owned(),
+                text: error.clone(),
+            });
+            return Ok(self.outcome(
+                info,
+                AttemptState::Failed,
+                json!({"code": "rejected", "message": error}),
+                &Value::Null,
+                None,
+            ));
+        }
+        let deadline = tokio::time::Instant::now() + info.timeout;
+        let mut cursor = self.read_cursor(&info.attempt_id);
+        let mut served_model: Option<String> = None;
+        let mut asked: HashSet<String> = HashSet::new();
+        let mut pending: Option<Pending> = None;
+        loop {
+            // The hops since the cursor.
+            if let Ok(page) = self.client.traces(&info.pod, &cursor).await
+                && page.status == 200
+            {
+                for line in page.body["events"].as_array().into_iter().flatten() {
+                    let Some(event) = line
+                        .as_str()
+                        .and_then(|l| serde_json::from_str::<Value>(l).ok())
+                    else {
+                        continue;
+                    };
+                    let payload = &event["payload"];
+                    if payload["task"] != json!(info.task) {
+                        continue;
+                    }
+                    let kind = event["event_type"].as_str().unwrap_or_default();
+                    if kind == "hop_finished"
+                        && payload["role"] == json!("implementer")
+                        && let Some(model) = payload["model"].as_str().filter(|m| !m.is_empty())
+                    {
+                        served_model = Some(model.to_owned());
+                    }
+                    if let Some(step) = hop_progress(kind, payload)
+                        && side.progress.try_send(step).is_err()
+                    {
+                        tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");
+                    }
+                }
+                if let Some(next) = page.body["next"]
+                    .as_str()
+                    .filter(|n| !n.is_empty() && *n != cursor)
+                {
+                    self.write_cursor(&info.attempt_id, next);
+                    cursor = next.to_owned();
+                }
+            }
+
+            // Whatever needs a person.
+            if pending.is_none()
+                && let Some((question, ask)) = self.next_question(info, &asked).await
+                && side.questions.try_send(question.clone()).is_ok()
+            {
+                asked.insert(question.vendor_id);
+                pending = Some(ask);
+            }
+
+            let task = match self.client.task(&info.pod, &info.task).await {
+                Ok(reply) if reply.status == 200 => reply.body,
+                Ok(reply) => {
+                    tracing::warn!(status = reply.status, "the task could not be read");
+                    Value::Null
+                }
+                Err(why) => {
+                    tracing::warn!(why, "docket could not be reached");
+                    Value::Null
+                }
+            };
+            if terminal(task["status"].as_str().unwrap_or_default()) {
+                let model = served_model.or_else(|| {
+                    task["hops"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .rev()
+                        .find(|hop| hop["role"] == json!("implementer"))
+                        .and_then(|hop| hop["model"].as_str())
+                        .map(str::to_owned)
+                });
+                return Ok(self.finish(info, &task, model, &side.progress).await);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                let _ = self
+                    .client
+                    .cancel_task(&info.pod, &info.task, "the attempt's time ran out")
+                    .await;
+                return Ok(self.outcome(
+                    info,
+                    AttemptState::Failed,
+                    json!({"code": "timeout", "task": info.task}),
+                    &task,
+                    served_model,
+                ));
+            }
+
+            tokio::select! {
+                () = tokio::time::sleep(POLL_INTERVAL) => {}
+                answer = side.answers.recv(), if pending.is_some() => {
+                    if let (Some(answer), Some(ask)) = (answer, pending.take())
+                        && let Some(problem) = self.deliver(info, &ask, &answer).await
+                    {
+                        let _ = side.progress.try_send(Progress {
+                            kind: "agent.answer_failed".to_owned(),
+                            text: problem,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}

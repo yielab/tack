@@ -19,6 +19,7 @@ const BASE: HarnessDescriptor = HarnessDescriptor {
     probe_notes: &[("note", "attached to every probe")],
     credential_note: "",
     reports_process_groups: false,
+    cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
     readiness: None,

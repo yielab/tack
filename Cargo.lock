@@ -3717,6 +3717,7 @@ version = "0.1.0-beta.10"
 dependencies = [
  "apple-native-keyring-store",
  "async-trait",
+ "axum",
  "chrono",
  "clap",
  "jsonschema",

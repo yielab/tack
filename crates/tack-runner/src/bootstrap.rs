@@ -81,6 +81,7 @@ pub async fn build_runtime_with_active(
         &secrets,
         &config.secrets.request_may_reference,
         &own_environment,
+        &config.docket,
     );
     let mut capabilities =
         report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts).await;
@@ -189,8 +190,14 @@ pub async fn probe(
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
 ) -> DiscoveryReport {
-    let (adapters, missing_harnesses) =
-        crate::harness::discover(process_limits, staging_root, secrets, &[], &BTreeMap::new());
+    let (adapters, missing_harnesses) = crate::harness::discover(
+        process_limits,
+        staging_root,
+        secrets,
+        &[],
+        &BTreeMap::new(),
+        &crate::config::DocketConfig::default(),
+    );
     let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();
     DiscoveryReport {

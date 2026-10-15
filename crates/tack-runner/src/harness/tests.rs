@@ -523,6 +523,7 @@ static CONFIGURED: local_process::HarnessDescriptor = local_process::HarnessDesc
     probe_notes: &[],
     credential_note: "",
     reports_process_groups: false,
+    cancels_over_api: false,
     reports_progress: false,
     sandbox_binds: &[],
     readiness: None,

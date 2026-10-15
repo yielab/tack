@@ -692,3 +692,30 @@ still a control shown with its reason.
     demotion note is a system comment on the demoted item, since comments are per item; a
     blocker outside the project counts as unfinished; `timeout_seconds` 3600 and `network:
     false`, the dialog's defaults; `runs_by_start` counts rework over auto.
+  - **A closed** 2026-10-14 in `0f54c611`. Gate green after one conflict in `migrations.rs`
+    (Q's 089 and A's 090 on the same lines, both kept); nextest over core, db, handlers, orch and
+    cli: 729 passed, 1 skipped; type-check clean after regenerating.
+- **Round 4** opened 2026-10-14: D1 cut from develop at `560923bd`, U at `0f54c611`.
+  - **U** finished by its agent the same day with two backend gaps it could not fill: nothing on
+    the item says who merged it (`merge_note` is the held reason, null once merged), and the
+    autonomy endpoint's `teams` lists only the attended ones, so the Ceiling rung never shows a
+    ✓. U2 adds `Item.merged_by` (from `tack_merges.trigger`, computed like `merge_note`) and
+    lists every team a role points at with `caps_at` only on the attended ones. U's calls,
+    kept: `AgentContextResponse` answers `profile_id` and `profile_source`, and the dialog asks
+    the server instead of picking the profile itself; `Item.started_by` and `Item.team` are
+    computed from the newest request; the drawer's Automation row takes its team from the
+    roles' profiles, since `item.team` exists only after a run; four sections collapse into
+    `<details>`, not three (the plan miscounted).
+  - **D1** finished by its agent the same day: 18 tests against the in-process fake, gate green.
+    D1's calls, kept: `process_id` is `<pod>/<task id>` so `reconcile` knows the pod; a 400/422
+    on `POST /tasks` makes `wait` end the attempt Failed with the body's text, since the engine
+    fails cleanly only on a `validate` rejection; `description` is the composed instructions the
+    server already built; `validate` checks API 5 and the team before anything is posted;
+    `autonomy_ceiling` is L3 when any team is not lights-out; the gate is the first `command`
+    criterion with exit 0, else the first `test`, else `file`/`absent` as `sh -c 'test -e'`,
+    `metric` is not a gate; `deniedTools` come from `tool_policy.docket.denied_tools` only. Left
+    for D2: a profile without a team must fall to the project's default pod (D1 rejects it);
+    the server writes nothing about the item's type, priority or trust into the request, so
+    `pipeline`, `priority` and `trusted` are omitted; the `rework_base` assertion; the
+    `DocketSetupReader` boundary test went with the subprocess grammar and the daemon's
+    environment rule replaces it; docs that still describe a real-binary docket test.

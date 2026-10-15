@@ -234,3 +234,34 @@ fn max_concurrent_attempts_defaults_to_one_is_refused_below_one_and_follows_prec
         }
     }
 }
+
+#[test]
+fn the_docket_table_reads_and_defaults_to_the_loopback_port() {
+    let load = |toml: Option<&str>| {
+        RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: toml,
+            ..RunnerConfigSources::default()
+        })
+    };
+    let unset = load(None).expect("defaults").docket;
+    assert_eq!(unset.port, 7399);
+    assert_eq!(unset.url(), "http://127.0.0.1:7399");
+    assert!(!unset.configured());
+
+    let set = load(Some(
+        "[docket]\nport = 7400\ntoken_file = \"/run/docket.token\"\nbinary = \"/usr/bin/docket\"\n",
+    ))
+    .expect("a docket table")
+    .docket;
+    assert_eq!(set.url(), "http://127.0.0.1:7400");
+    assert_eq!(set.token_file, Some("/run/docket.token".into()));
+    assert!(set.configured());
+
+    let fake = load(Some("[docket]\nbase_url = \"http://127.0.0.1:9/\"\n"))
+        .expect("a base url")
+        .docket;
+    assert_eq!(fake.url(), "http://127.0.0.1:9");
+    assert!(fake.configured());
+
+    assert!(load(Some("[docket]\nprovider = \"x\"\n")).is_err());
+}
