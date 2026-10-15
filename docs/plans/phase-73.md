@@ -1,0 +1,624 @@
+# Plan: Phase 73 — every run goes to a team, and automation is one ladder
+
+**Status: opened 2026-10-14.** Serves ADR 0080
+(`docs/adr/0080-every-run-goes-to-a-team-and-automation-is-one-ladder.md`). Written against
+`develop` at `6565415f` and docket at `e880bbfd` (ADR 0027 accepted, Phase 43 planned, API
+version 5 specified and not yet implemented). Re-run `rg -n` before trusting a line number.
+
+What this phase builds, in one paragraph. The runner can run several attempts at once. A
+project role points at an agent profile, and a profile names its docket team and the machines
+it runs on; a run that names no profile gets the role's. A project can let a task start by
+itself when it reaches a status. Tack's automatic merge reads one more fact, the ceiling the
+team sets, and the settings page shows what blocks the project and why. Usage is kept per model
+and a task can repeat. The docket harness is rewritten against docket's HTTP API version 5:
+it supervises `docket start --dispatch`, posts each attempt as a task in the team's pod, follows
+the trace, answers approvals and questions through Tack's inbox, and brings the task's branch
+into the runner's worktree so evidence, verification and push stay as they are. Until docket
+0.2.0-beta.6 exists, every docket test runs against a fake docket on loopback that implements
+the spec key by key. Settings → Automation becomes a ladder of four rungs on one screen.
+
+## Who owns what
+
+| Responsibility | Owner | What the others do |
+|---|---|---|
+| What is done, in which order, with what priority and budget | **Tack** | docket takes the task; prill judges it |
+| Which profile, and through it which team, takes a task | **Tack** (the role, then the project default) | docket keeps the team's members, models per role, pipeline, gates, policies |
+| Starting a run (by a person, by a rule, or as rework) | **Tack** | docket never enqueues on its own |
+| Running the agent and its team; the hop; the jail; the per-task limits | **docket** | Tack passes `maxTokens`, `gate`, `restrictions`; never a model, never a hop |
+| Approvals and consultations inside a run | **docket** raises them; **Tack** shows them and sends the answer | the inbox is Tack's; the answer route is docket's |
+| The verdict, the stages, the signature | **prill** | Tack reads the pack; docket's reviewer verdicts are timeline lines, not Tack's verdict |
+| Push, pull request, merge, level, domains, ceiling, money | **Tack** | docket records the branch; prill signs |
+| Parallelism | **Tack's runner** (N attempts) and **docket's pods** (one task per pod) | a pod never runs two tasks; more parallelism is more pods |
+
+## Decided — not re-opened by any task
+
+Every row of ADR 0080's table and its "Questions for the maintainer, with the default built",
+plus:
+
+| Question | Decision |
+|---|---|
+| Migrations | One per wave that needs one, numbered now so parallel waves cannot collide: `088_role_profile_fleet` (T), `089_item_recurrence` (Q), `090_auto_start` (A). A task never edits another wave's migration; a missing shape is a finding. |
+| The docket harness's shape | A `DocketAdapter` that implements `HarnessAdapter + HarnessProbe` directly (engine.rs:351, harness/mod.rs:151) and is registered with `AdapterRegistry::register`. Not a `HarnessGrammar`: there is no stdout to parse and no stdin to write. |
+| The docket workspace | The runner provisions its worktree as for every agent (`local_branch`), records `base_commit`, and sends it as `baseRef`. When the task ends, `git reset --hard <task.worktree.branch>` in that worktree; then evidence, prill and push run unchanged. `in_place` and `clone` are refused at `validate` with a sentence. |
+| The trace cursor | A file `<state_dir>/docket/<attempt_id>.cursor` the adapter owns, written after each page is delivered. The journal does not change. |
+| Decision kinds | `approval` for docket's `approval_required` (answer → `POST /approvals/<token>` with `channel: "tack"`), `consult` for a parked question (answer → `POST /tasks/<id>/answer`). Both ride the existing `decision_channels`; the inbox already renders any kind. |
+| Docket's sandbox word | `sandbox: "harness"`, accepted by the server beside `bwrap` and `none`, rendered "Sandboxed by docket in its own jail". |
+| The ceiling at merge time | `autonomy::gather` reads the attempt's runner capability snapshot and the request's resolved profile team; `Facts.ceiling: Option<Level>`; `Hold::HarnessCeiling { ceiling, wanted }` checked right after `LevelBelowL4`. Nothing is added to the request snapshot. |
+| The resolver's selector | Profile `fleet_id` → `Fleet`; else, when exactly one active runner exists, `ExactRunner`; else no selector: a manual run asks "Select where this runs" as today, auto-start skips the item and says so. |
+| Auto-start's loop | Its own `tokio::spawn` beside the GitHub poll (`server.rs:123`), `TACK_AUTO_START_SECONDS` (default 30; 0 off), because the GitHub loop does not run without a token. The tick enqueues through `enqueue_resolved` with principal `auto_start` (the path `post_test_run` already uses), never through the HTTP router. |
+| The ladder UI | One task (U) builds the four rungs, the badges, the activity lines, the drawer row and the pre-filled dialog, after T, C and A have landed, because they all touch `AutomationPanel.tsx`. Each backend wave ships its own API and its tests; U ships the screen. |
+| Usage per model | `Usage.additional["by_model"]`: a JSON object `{ "<model>": {"input": n, "output": n, "cache_read": n?, "cache_write": n?} }`. One SQL in `tack_db::repo::rate_card` serves `token_spend` and `dollars_today`: `json_each(by_model)` when present, else `RUN_MODEL_SQL` with `tokens_in`/`tokens_out`. |
+| Recurrence | Columns on `items`; the next task is created in `update_item` when a task with `recurrence` enters Done from a status that was not Done, and no open task has `recurrence_of = this id`. `next_due` is the end of the next period (month end, leap years) from the task's `due_date`, or from today when it has none. |
+| The e2e script | `scripts/docket-prill-e2e.sh` checks `apiVersion == "5"` and dies naming `docket 0.2.0-beta.6`. Until beta.6 exists it is not run; the fake docket is the proof. |
+| Generated files | Each task regenerates and stages them (`./scripts/regen-generated.sh`); on a conflict the integrator regenerates. |
+
+## Rounds
+
+At most two agents building cargo at once (`feedback_agent_load_caps`); a frontend-only task
+runs beside them. Worktrees under `/var/tmp/tack-worktrees/p73-<id>` from `develop`,
+`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>` (`/home` is at 96 %, `/` has 81 G).
+
+| Round | Tasks | Needs |
+|---|---|---|
+| 0 | ADR, this plan, the roadmap section (integrator) | approval (given 2026-10-14) |
+| 1 | R (runner, N at a time), T (role → profile → fleet) | — |
+| 2 | C (ceiling), M (usage per model) | T merged (C reads the profile's team) |
+| 3 | A (auto-start), Q (recurrence) | T (A) |
+| 4 | D1 (fake docket + adapter); U (the ladder) beside | T, C, R (D1); T, C, A (U) |
+| 5 | D2 (daemon, config, doctor, deletions, e2e) | D1 |
+| 6 | Z (integrator) | everything |
+
+Ceilings: Haiku 60 calls; Sonnet one layer 100, two layers 150. One that reaches it hands off
+and is replaced fresh with a shorter brief.
+
+## How a task is handed to an agent
+
+As `docs/plans/phase-67.md` § "How a task is handed to an agent": one agent, one task, one
+branch from `develop` named `phase73/<id>`; the brief is the task's section of this file plus
+these lines, and nothing else:
+
+```
+Task <id> from docs/plans/phase-73.md. Read that section and the files it lists, nothing wider.
+The ADR is docs/adr/0080-every-run-goes-to-a-team-and-automation-is-one-ladder.md; its table and this plan's "Decided" table are the decision, do not re-open them.
+Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
+Add only the tests the task names. Prefer a row in an existing table test over a new function.
+Do not add a type, trait, option, flag or helper the task does not name.
+Never call a real model endpoint, never run the real docket against a real model: every run goes to a loopback fake, zero spend.
+Never run docket, or any CLI, against the operator's own HOME or ~/.docket; use a scratch HOME and an isolated DOCKET_HOME.
+Every contract change is a fixture first (docs/contracts/<name>/), then the type that reads it, then the pin.
+Tack's words on every screen: agent, profile, team, this computer, folder, branch; never pod, harness, hop, runner, dispatch.
+Build and test with CARGO_TARGET_DIR=<given>, --build-jobs 4, --test-threads 4; only the binary you change while working: cargo nextest run --workspace -E 'binary(<name>)'.
+Finish by running PATH=$HOME/.cargo/bin:$PATH .githooks/pre-push once and reporting its real output. Do not commit.
+Report: what changed, per file, in one line each; what you measured; what you could not do; your tool-call count.
+```
+
+## The tasks
+
+### R — the runner runs N attempts at a time (Sonnet, two layers)
+
+**Files:** `crates/tack-runner/src/config.rs`, `main.rs`, `bootstrap.rs`, `transport.rs`,
+`engine.rs` (the heartbeat arms only), a new `crates/tack-runner/src/active.rs`,
+`crates/tack-runner/tests/crash_matrix.rs`, `crates/tack-runner/src/harness/local_process/tests.rs`
+(one table row), `docs/contracts/runner-v1/heartbeat.request.json` and a new
+`heartbeat.request.two-active.json`, `crates/tack-orch/tests/runner_contract/fixtures.rs`,
+`crates/tack-cli/src/local_runner.rs` (`get_local_runner` only), `frontend/src/features/agents/ExecutionToggle.tsx`,
+`frontend/src/features/agents/api.ts`, `docs/CONFIG.md` (the runner table).
+
+**Do:**
+
+- `RunnerConfig.max_concurrent_attempts: u32` (default 1, refused below 1 with the field named),
+  from the TOML top level, `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` and `--max-concurrent-attempts`,
+  through `ConfigOverrides` (the same precedence as `runner_id`).
+- `bootstrap.rs`: `Concurrency { total: N, available: N }`.
+- `active.rs`: `ActiveAttempts`, a shared registry of the leases in flight (attempt id,
+  fencing token, journal state, last checkpoint, a `watch::Sender<bool>` for cancellation).
+  `transport.rs::serve`: a `JoinSet` with N slots; recovery before the first claim as today;
+  a claim is sent only while a slot is free, with `available_capacity = free slots`; pacing
+  (`idle_pause`) only when every slot is idle; the idle heartbeat sends `total` and no leases.
+- One ticker per runner (`LEASE_RENEWAL_INTERVAL`, 20 s) sends one `heartbeat` with every
+  active lease (the server takes up to 64, `limits.json`) and `available_capacity = free slots`;
+  for each `lease_results` row with `cancellation_requested` it flips that attempt's watch.
+  The three `renewal.tick()` arms in `engine.rs` (`wait_with_lease_renewal`, the verifier loop,
+  the publish loop) are removed; the attempt reads its watch where it read the first
+  heartbeat's answer (`engine.rs:682-703`) and inside `wait_with_lease_renewal`, so a cancel
+  asked mid-run cancels the harness.
+- `GET /api/local-runner` gains `max_concurrent_attempts` and `active_attempts` (a count);
+  the Agents page line reads "Up to N runs at a time on this computer · M running".
+- `docs/CONFIG.md`: the field, its default, and the sentence "a folder worked in place runs one
+  attempt at a time whatever this says; parallel attempts need a branch or a clone".
+
+**Tests (RED first):**
+
+- `local_process/tests.rs`: with `fake_harness.sh` and N = 2, two claims run at once; every
+  heartbeat carries both leases and `available_capacity = 0`; cancelling one through the
+  heartbeat answer cancels only that one. One table with the three claims.
+- `crash_matrix.rs`: one new row, two journals unresolved after a crash, both recovered.
+- `heartbeat.request.two-active.json` under `docs/contracts/runner-v1/` with two
+  `active_attempts`; pinned in `fixtures.rs` (FNV-1a 64 of the bytes) and the file count
+  46 → 47.
+- `config.rs` tests: default 1; `0` refused; env and flag precedence, one table.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner) + binary(runner_contract)'`
+and the gate are green.
+
+### T — a role chooses the profile and the fleet (Sonnet, two layers)
+
+**Files:** `crates/tack-db/src/migrations.rs`, `crates/tack-db/tests/migrations/` (one file,
+beside `autonomy.rs`), `crates/tack-core/src/models.rs` (`Role`, new `UpdateRole`),
+a new `crates/tack-core/src/run_defaults.rs` (+ `lib.rs`), `crates/tack-db/src/repo/roles.rs`,
+`crates/tack-db/src/repo/execution.rs` (the profile row and `NewExecutionRequest` only),
+`crates/tack-api/src/handlers/roles.rs`, `runner_admin.rs`, `executions.rs`
+(`create_execution`, `enqueue_resolved`, `get_item_agent_context`), `router.rs`, `openapi.rs`,
+`crates/tack-cli/src/main.rs` (`RoleAction`, `AgentProfileAction`, `ExecutionCreateArgs`),
+`crates/tack-cli/src/mcp.rs` (`create_execution`), `crates/tack-api/tests/handlers/` (the roles
+file and the executions file), `crates/tack-cli/tests/` (the existing execution/MCP files).
+
+**Do:**
+
+- Migration `088_role_profile_fleet`, exactly:
+
+  ```sql
+  ALTER TABLE roles ADD COLUMN agent_profile_id TEXT REFERENCES agent_profiles(id) ON DELETE SET NULL;
+  ALTER TABLE agent_profiles ADD COLUMN fleet_id TEXT REFERENCES agent_fleets(id) ON DELETE SET NULL;
+  ```
+
+- `Role.agent_profile_id: Option<String>`; `UpdateRole { name?, color?, icon?,
+  agent_profile_id?: Option<Option<String>> }`; `Repository::update_role`,
+  `profiles_for_item(item_id) -> Vec<(role_name, Option<profile_id>)>`;
+  `PATCH /api/roles/{id}` (404 on no role, 400 on a profile id that does not exist).
+- `CreateProfile.fleet_id` and `UpdateProfile.fleet_id` (`Option<Option<String>>`), returned on
+  every profile read; a `fleet_id` naming no fleet is 400. `tool_policy.docket.team`, when
+  present, must be a string matching `^[a-z0-9][a-z0-9-]{0,63}$` (docket's project id), else
+  400 naming the key.
+- `run_defaults.rs`, pure:
+
+  ```rust
+  pub struct Candidate { pub profile_id: String, pub fleet_id: Option<String> }
+  pub enum Source { Explicit, RunSettings, Role(String), ProjectDefault, Implementer, Ambiguous }
+  pub struct Resolved { pub profile_id: String, pub fleet_id: Option<String>, pub source: Source }
+  pub fn resolve(explicit: Option<&str>, run_settings: Option<&str>,
+                 roles: &[(String, Option<String>)], project_default: Option<&str>,
+                 implementer: Option<&str>, profiles: &[Candidate]) -> Option<Resolved>
+  ```
+
+  Order: explicit → run settings → the one role profile (two roles with different profiles →
+  the project default with `Source::Ambiguous`) → project default → implementer → `None`.
+  `fleet_id` is the resolved profile's.
+- `CreateExecution.agent_profile_id: Option<String>`, `selector_kind`/`selector_id` optional.
+  When the profile is absent, `create_execution` resolves it with `resolve` and writes
+  `metadata.profile_source` (`"role:Content"`, `"project_default"`, `"run_settings"`,
+  `"implementer"`, `"ambiguous"`). When the selector is absent: the profile's fleet, else the
+  only active runner, else 400 `select_where_this_runs`. `get_item_agent_context` uses the same
+  resolver. MCP `create_execution` and `tack execution create --agent-profile` become optional
+  the same way; `tack role create --profile <id>`, `tack role set-profile <role> <id|none>`,
+  `tack agent-profile create --fleet <id>`.
+- `./scripts/regen-generated.sh`, stage the result.
+
+**Tests (RED first):**
+
+- `run_defaults.rs`: one table, one row per source and the ambiguous case.
+- Migration test: a database at 087 with a role and a profile migrates; both columns read `NULL`.
+- Handler tests: `PATCH /api/roles/{id}` sets and clears the profile; a run created without a
+  profile on an item with one role resolves to the role's profile and records
+  `metadata.profile_source`; without a role, the project default; with two roles and two
+  profiles, the project default and `ambiguous`; no selector with one active runner → that
+  runner; no selector with two → 400.
+- CLI/MCP: the existing create tests gain a row without `--agent-profile`.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-db) + binary(handlers) + package(tack-cli)'`
+and the gate are green.
+
+### C — the automatic merge respects the team's ceiling (Sonnet, two layers)
+
+**Files:** `crates/tack-orch/src/execution/capabilities.rs`, `crates/tack-core/src/autonomy.rs`
+(+ its tests), `crates/tack-api/src/autonomy.rs` (`gather`), `crates/tack-api/src/handlers/autonomy.rs`,
+`crates/tack-api/src/handlers/runner_protocol.rs` (the `sandbox` check at 1135-1138 only),
+`crates/tack-api/tests/handlers/` (the autonomy file), `docs/contracts/runner-v1/` (the
+capability fixture that carries a harness, plus a new `capabilities.with-teams.json`),
+`crates/tack-orch/tests/runner_contract/fixtures.rs`, `docs/book/src/user-guide/merging.md`.
+
+**Do:**
+
+- `HarnessCapability.autonomy_ceiling: Option<String>` (`"L3"`) and
+  `teams: Option<Vec<TeamReport>>`, `TeamReport { name: String, profile: String, violations:
+  Vec<TeamViolation> }`, `TeamViolation { requirement: String, fix: String }`; all
+  `#[serde(default, skip_serializing_if = "Option::is_none")]`, so an old runner's snapshot
+  deserializes.
+- `Facts.ceiling: Option<Level>`; `Hold::HarnessCeiling { ceiling: Level, wanted: Level }`,
+  displayed "The team that ran this stays at {ceiling}: it needs a person during a run"; checked
+  in `evaluate` after `LevelBelowL4`, for `Trigger::Auto` only.
+- `gather`: read the attempt's runner (`execution_attempts.runner_id` →
+  `agent_runners.capability_snapshot`), the harness entry of the attempt's kind, and the
+  request's `resolved_agent_profile.tool_policy.docket.team`; the ceiling is the named team's
+  (`attended` or any violation → L3) when teams are reported, else the harness's
+  `autonomy_ceiling`, else `None`.
+- `get_autonomy`: for every profile a role of this project points at, whose team is reported
+  `attended` or with violations by any active runner, one sentence in
+  `automatic_merge_blocked_by`: "The team {name} runs attended: its tasks stay at L3. Fix: {fix}"
+  (the first violation's fix, or "run it lights-out" when docket gives none). Add
+  `ceiling: String` (`"L5"`, `"L4"` or `"L3"`) and `teams: Vec<TeamLine { name, profile, caps_at,
+  fix }>` to `AutonomySettings`, `#[schema(read_only)]`, for the Ceiling rung.
+- `put_autonomy` answers with what `get_autonomy` would (today it answers an empty
+  `automatic_merge_blocked_by` and zero counts, so the radios enable until a reload).
+- The server accepts `sandbox: "harness"` beside `bwrap` and `none`.
+- `merging.md`: under "Automatic merge → What it needs", one paragraph: the team's ceiling.
+- `./scripts/regen-generated.sh`, stage the result.
+
+**Tests (RED first):**
+
+- `autonomy.rs` tests: one table: ceiling L3 and level L4 → `HarnessCeiling`; no ceiling →
+  as today; ceiling L3 at `Trigger::Button` → no hold.
+- `capabilities.rs`: a capability JSON without the two fields deserializes; one with them
+  round-trips.
+- `runner_contract`: `capabilities.with-teams.json` pinned; count +1.
+- Handler: a project whose role points at a profile with an attended team lists the sentence
+  and `ceiling: "L3"`; `PUT` returns the same `automatic_merge_blocked_by` as `GET`.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-orch) + binary(handlers) + binary(runner_contract)'`
+and the gate are green.
+
+### M — usage per model, priced through one SQL (Sonnet, two layers)
+
+**Files:** `crates/tack-runner/src/harness/local_process.rs` (`UsageDetail`),
+`crates/tack-runner/src/harness/claude_code.rs` (`result_usage`),
+`crates/tack-db/src/repo/rate_card.rs`, `crates/tack-api/src/handlers/metrics.rs`,
+`crates/tack-orch/src/scheduler/wiring.rs` (`dollars_today`), `crates/tack-db/tests/repository/`
+(the rate-card or metrics file), `frontend/src/features/dashboard/FactoryMetrics.tsx`,
+`frontend/src/features/dashboard/FactoryMetrics.test.tsx`.
+
+**Do:**
+
+- `UsageDetail.by_model: BTreeMap<String, ModelUsage>`, `ModelUsage { input: u64, output: u64,
+  cache_read: Option<u64>, cache_write: Option<u64> }`; `into_additional` writes it under
+  `by_model`. `claude_code.rs` keeps each `modelUsage` entry instead of summing; `models` stays
+  as the ordered name list.
+- `rate_card.rs`: `pub async fn spend_by_model(pool, project, since: Option<&str>) ->
+  Vec<SpendRow { model: Option<String>, repo: Option<String>, tokens_in: i64, tokens_out: i64,
+  attempts: i64 }>`: one query that unions the attempts with `by_model` (`json_each`) and the
+  rest (`RUN_MODEL_SQL`), grouped by model and `p.repo`. `token_spend` and `dollars_today` call
+  it and keep no SQL of their own.
+- `FactoryMetrics.cost_by_model: Vec<{ model, tokens_in, tokens_out, attempts, usd? }>`
+  and `cost_by_team: Vec<{ team, tokens_in, tokens_out, attempts, usd? }>` (team from
+  `request_snapshot.resolved_agent_profile.tool_policy.docket.team`, absent rows under
+  "No team"). The page shows one table "Cost by model" and, when any team exists, "By team".
+
+**Tests (RED first):**
+
+- `claude_code.rs`: the existing `modelUsage` test asserts `by_model` keeps two models apart.
+- Repository: `spend_by_model` over three attempts (one with `by_model` of two models, two
+  without) gives three rows with the right sums; `dollars_today` prices them with a card.
+- Frontend: the table renders rows and "Not measured" for an unpriced model.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner) + package(tack-db) + package(tack-orch) + binary(handlers)'`,
+`npx vitest run FactoryMetrics` and the gate are green.
+
+### Q — a task can repeat (Sonnet, two layers)
+
+**Files:** `crates/tack-db/src/migrations.rs`, `crates/tack-db/tests/migrations/`, a new
+`crates/tack-core/src/recurrence.rs` (+ `lib.rs`), `crates/tack-core/src/models.rs` (`Item`,
+`CreateItem`, `UpdateItem`), `crates/tack-core/src/outline.rs`, `outline/csv.rs`,
+`crates/tack-db/src/repo/items.rs` (the row and the create/update binds),
+`crates/tack-api/src/handlers/items.rs` (`update_item`), `crates/tack-api/src/handlers/export.rs`,
+`crates/tack-api/tests/handlers/` (items), `crates/tack-cli/src/main.rs` (`tack add`),
+`frontend/src/features/item-detail/ItemHeader.tsx`, `frontend/src/features/board/Board.tsx`
+(`ItemCard`), `frontend/src/features/list/List.tsx` (`ItemRow`), `frontend/src/shared/types.ts`.
+
+**Do:**
+
+- Migration `089_item_recurrence`, exactly:
+
+  ```sql
+  ALTER TABLE items ADD COLUMN recurrence TEXT CHECK (recurrence IN ('weekly','monthly','quarterly'));
+  ALTER TABLE items ADD COLUMN recurrence_of TEXT REFERENCES items(id) ON DELETE SET NULL;
+  ```
+
+- `Recurrence` enum (`Weekly`, `Monthly`, `Quarterly`) on `Item`, `CreateItem`, `UpdateItem`,
+  `OutlineItem` (`recurrence`), the CSV column `recurrence` on import and export.
+- `recurrence.rs`, pure: `next_due(from: NaiveDate, r: Recurrence) -> NaiveDate` (weekly: +7
+  days; monthly: last day of the next month; quarterly: last day of the quarter after the one
+  `from` is in) and `clone_for_next(item: &Item, first_todo: &str, due: NaiveDate) -> CreateItem`
+  (title, description, type, priority, tags, parent, estimate and unit; status = `first_todo`;
+  `recurrence` kept; `recurrence_of = item.id`; no sprint, no assignee).
+- `update_item`: after `propagate_parent_completion`, when the old status was not Done, the new
+  one is, the item has `recurrence`, and no item with `recurrence_of = id` is unfinished:
+  create the next one (roles copied with `assign_role_to_item`), and a system comment on the
+  closed one: "Created the next one, due {date}".
+- `tack add --recurrence weekly|monthly|quarterly`.
+- UI: a "Repeats" select (Never, Weekly, Monthly, Quarterly) in `ItemHeader`'s grid; a badge
+  "Repeats" on the card and the row when set.
+
+**Tests (RED first):**
+
+- `recurrence.rs`: one table for `next_due` (a month end, February in a leap year, a quarter
+  end); `clone_for_next` copies what the plan lists and nothing else.
+- Handler: closing a recurring task creates one successor; closing it again (reopen, close)
+  while the successor is open creates none; the CSV export → import round-trips `recurrence`.
+- Frontend: the select patches `recurrence`; the badge renders.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-db) + binary(handlers) + package(tack-cli)'`,
+`npx vitest run ItemHeader Board List` and the gate are green.
+
+### A — a task starts by itself (Sonnet, two layers)
+
+**Files:** `crates/tack-db/src/migrations.rs`, `crates/tack-db/tests/migrations/`,
+`crates/tack-core/src/models.rs` (`Project`, `UpdateProject`), a new
+`crates/tack-core/src/auto_start.rs` (+ `lib.rs`), `crates/tack-core/src/dependency.rs`
+(`unfinished_blockers`), a new `crates/tack-api/src/auto_start.rs` (+ `lib.rs`, `server.rs`),
+`crates/tack-api/src/config.rs` (`auto_start_seconds`), `crates/tack-api/src/handlers/executions.rs`
+(a `pub(crate)` entry that takes a principal string instead of headers, used by
+`enqueue_resolved` and by the tick), `crates/tack-api/src/autonomy.rs` (`demote`),
+`crates/tack-api/src/handlers/metrics.rs`, `crates/tack-db/src/repo/metrics.rs`,
+`crates/tack-api/tests/handlers/` (projects, executions, metrics), `docs/CONFIG.md`.
+
+**Do:**
+
+- Migration `090_auto_start`, exactly:
+
+  ```sql
+  ALTER TABLE projects ADD COLUMN auto_start_enabled INTEGER NOT NULL DEFAULT 0 CHECK (auto_start_enabled IN (0,1));
+  ALTER TABLE projects ADD COLUMN auto_start_status TEXT;
+  ALTER TABLE projects ADD COLUMN auto_start_max_open INTEGER NOT NULL DEFAULT 3 CHECK (auto_start_max_open >= 1);
+  ```
+
+  On `Project` and `UpdateProject` (`PATCH /projects/{id}`); `auto_start_status` must be a
+  status of the project's workflow or 400.
+- `dependency.rs`: `pub fn unfinished_blockers(&self, item: Uuid, status_of: &dyn Fn(Uuid) ->
+  Option<String>, workflow: &WorkflowConfig) -> Vec<Uuid>`: the `blockers_of` whose status is
+  not Done.
+- `auto_start.rs` (core), pure:
+
+  ```rust
+  pub struct Candidate { pub item_id: Uuid, pub priority: Priority, pub sort_order: i32,
+      pub version: i64, pub has_open_request: bool, pub unfinished_blockers: usize,
+      pub profile: Option<Resolved> /* run_defaults */ }
+  pub struct Limits { pub max_open: usize, pub open_now: usize, pub budget_reached: bool,
+      pub wip_room: Option<usize> /* None = no limit on the in-progress column */ }
+  pub enum Skip { OpenRequest, Blocked(usize), NoProfile, NoMachine, Wip, Budget, MaxOpen }
+  pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid, Skip)>)
+  ```
+
+  Ordered by priority (critical first), then `sort_order`; stops at `max_open - open_now`.
+- `auto_start.rs` (api): `run_auto_start_task(state)`, an interval of
+  `TACK_AUTO_START_SECONDS` (default 30, 0 returns at once), spawned in `server.rs` beside the
+  GitHub poll. One `tick`: for each project with `auto_start_enabled`, the items in
+  `auto_start_status` with at least one role; the candidates from `profiles_for_item`,
+  `run_defaults::resolve`, the open requests (`queued|leased|preparing|running|waiting_decision`),
+  `unfinished_blockers`, `budget_reached` (made `pub` in `tack_orch::scheduler::wiring`), the
+  WIP room of the first in-progress status. For each pick: enqueue through the resolved entry
+  with principal `auto_start`, `idempotency_key = "auto-start:{item_id}:{version}"`, no profile,
+  no selector, `metadata.started_by = "auto_start"`, `permission_policy` = the project's
+  defaults as the dialog sends them; on `Created`, move the item to the first in-progress
+  status with a system comment "Started by itself: it reached {status} with the role {role}".
+  A skip is logged at `debug`, never a comment.
+- `demote`: when the demotion leaves `projects.autonomy_level` at L3 and `auto_start_enabled`
+  was 1, set it to 0 and add a system comment on the project's activity: "Auto-start is off:
+  the project dropped to L3". The GET of the project carries `auto_start_disabled_reason`
+  (read from that comment's existence today; a column is not needed).
+- Metrics: `FactoryMetrics.runs_by_start { person, auto, rework }` (`metadata.started_by`,
+  `metadata.rework_of`), `merges_by_trigger { button, done, auto }` (`tack_merges.trigger`),
+  `decisions_answered`, and `lights_off_rate`: items whose newest merged attempt belongs to a
+  request with `started_by = auto_start` and whose requests have zero resolved decisions, over
+  items merged in the window. All `GROUP BY` over existing columns.
+- `docs/CONFIG.md`: `TACK_AUTO_START_SECONDS`.
+
+**Tests (RED first):**
+
+- `auto_start.rs` (core): one table, one row per `Skip` variant and the ordering.
+- `dependency.rs`: `unfinished_blockers` ignores a Done blocker.
+- Handler: two ticks over one item create one request (the key dedupes) with
+  `profile_source` and `started_by`; the item moved once; an item without a role stays; a
+  project at its cap starts nothing; a demotion to L3 switches the project off.
+- Metrics: a request with `started_by = auto_start` counts under `auto`.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-db) + binary(handlers) + package(tack-orch)'`
+and the gate are green.
+
+### D1 — the docket harness over HTTP, against a fake docket (Sonnet, two layers)
+
+**Files:** `crates/tack-runner/src/harness/docket.rs` (rewritten), `docket/probe.rs`
+(rewritten), `docket/readiness.rs` (deleted), a new `docket/client.rs` (the HTTP calls, one
+function per route), a new `docket/task.rs` (the task body from a request), `harness/mod.rs`
+(`discover`, `check_declared_cancel`, `DESCRIPTORS`), `crates/tack-runner/src/config.rs`
+(`[docket]`), `crates/tack-runner/Cargo.toml` (dev-dependency `axum` at the workspace version),
+a new `crates/tack-runner/tests/fake_docket/` (`mod.rs` + the test file `docket_v5.rs`),
+`crates/tack-api/src/handlers/runner_protocol.rs` (`enqueue_rework`: `metadata.rework_base`),
+`crates/tack-runner/src/harness/fixtures/docket/` (deleted: `0.2.0b1/`, `0.2.0b5/`,
+`contract-1.1/`, `README.md`; a new `v5/README.md` saying the fixtures are the fake's, to be
+replaced by captures when beta.6 exists).
+
+**Do:**
+
+- `[docket]` in `RunnerConfig`: `home: Option<PathBuf>` (the daemon's `DOCKET_HOME`; the
+  operator's own by default, never in tests), `port: u16` (default 7399), `token_file:
+  Option<PathBuf>`, `binary: Option<PathBuf>`, `base_url: Option<String>` (set by tests to the
+  fake; when set, nothing is spawned). D2 adds the supervision; D1 reads `base_url` or
+  `http://127.0.0.1:{port}` and the token.
+- `DocketAdapter` implements `HarnessProbe` (`probe`: `GET /status.json` → `apiVersion`; only
+  `"5"` is valid; otherwise `probe_error = "needs docket 0.2.0-beta.6 (API 5); this docket
+  answers API {n}"`; then `GET /pods` and `GET /pods/<p>` fill `teams` and `autonomy_ceiling`
+  as C defines; `sandbox: "harness"`; `sign_in` from `/status.json`'s model block when present)
+  and `HarnessAdapter`:
+  - `validate`: `workspace_mode != local_branch` → `Rejected("the docket team works on a
+    branch of your folder; choose that under Settings → Automation")`; a `tool_policy.docket.team`
+    that is not reported by `GET /pods` → `Rejected` naming it.
+  - `start`: ensure the pod (`POST /pods {name, location: <project repository path>,
+    blueprint: "software", ensure: true}`; 200/201 both fine, once per pod per process); then
+    `POST /tasks/<pod>` with the body of `task.rs`: `description` (title + description + "For
+    the agent"), `brief` (objective/acceptance/context/constraints from Tack's brief; manual
+    criteria as acceptance prose), `externalRef = "<item_id>/attempt-<n>"`, `idempotencyKey =
+    attempt_id`, `baseRef` (`metadata.rework_base` when present, else the attempt's
+    `base_commit`), `pipeline` (`tool_policy.docket.pipeline_by_type[item_type]` when present),
+    `gate` (`{command: definition_of_done | the brief's first command/test criterion, timeoutS}`;
+    `file`/`absent`/`metric` criteria become an `sh -c` test; `manual` stays in Tack), `maxTokens`
+    (`budgets.tokens` when > 0), `restrictions` (`deniedTools` from the profile's denied list for
+    docket; `network: "none"` when web tools are off), `priority` (critical/high → high,
+    medium → normal, else low), `trusted` as today. `201`/`200` → `LocalRunHandle { process_id:
+    task id }`. `400`/`422` → the attempt fails before spawn with the body's `error` on the
+    timeline, never retried.
+  - `wait`: every 2 s `GET /traces/<pod>?since=<cursor>`; the cursor file is written after each
+    page; `hop_started` → `Progress("agent.hop_started", "Implementer (local/local-model)
+    started")`; `hop_finished` → `Progress("agent.hop_finished", "Reviewer (anthropic/…):
+    REQUEST-CHANGES, cycle 1")` with usage; `approval_required` (from the inbox) → a
+    `Question { kind: "approval" }` whose answer goes to `POST /approvals/<token> {action,
+    channel: "tack", option, reason}`; a parked question → `Question { kind: "consult" }`
+    answered with `POST /tasks/<id>/answer`; then `GET /tasks/<pod>/<id>` until terminal.
+    `done` → `git reset --hard <worktree.branch>` in the runner's worktree, `GET .../diff`'s
+    `untracked` listed on the timeline as "N files docket did not commit are not in the
+    evidence"; usage from `usage.byModel` into `by_model` (M), `actual_execution.model` = the
+    last implementer hop's model, `additional.team = <pod>`. `failed` with `failureKind`
+    `base_ref|pipeline|budget` → the attempt fails with that word and docket's `error`;
+    `blocked` → the same with docket's text; `cancelled` → cancelled.
+  - `cancel`: `POST /tasks/<pod>/<id>/cancel {reason}`.
+  - `reconcile`: `GET /tasks/<pod>/<id>`: running → `ProcessRunning`; terminal →
+    `ProcessStopped`; 404 → `Ambiguous`.
+- `enqueue_rework` writes `metadata.rework_base = <the previous attempt's
+  actual_execution.git.branch>` beside `rework_of`.
+- `harness/mod.rs`: `discover` registers `DocketAdapter` with `register` when the binary or
+  `base_url` is configured; `check_declared_cancel` accepts a probe whose descriptor says
+  `cancels_over_api: true` (a new descriptor field, `true` only for docket, `reports_process_groups`
+  becomes `false` for it).
+- The fake docket (`tests/fake_docket/mod.rs`): an `axum` server on a bind-then-drop loopback
+  port implementing, key by key from the spec: `GET /status.json` (configurable `apiVersion`),
+  `GET /health`, `GET /pods`, `GET /pods/<p>`, `POST /pods` (ensure), `POST /tasks/<pod>`
+  (idempotency, 400, 422 on a widening restriction), `GET /tasks/<pod>/<id>`, `POST .../cancel`,
+  `GET .../diff`, `GET /traces/<pod>?since=`, `GET /inbox`, `POST /approvals/<token>`,
+  `POST /tasks/<id>/answer`. A scripted task: the test tells the fake which trace events and
+  terminal state to produce; the fake records every request body for assertion. It commits a
+  file on a branch in the test's scratch repository so `reset --hard` has something to bring.
+
+**Tests (RED first), in `tests/docket_v5.rs`:** probe on `apiVersion: "4"` → `probe_error`
+naming beta.6 and no run; ensure is posted once for two attempts; the task body, asserted key
+by key against the spec's example; a `422` fails the attempt with the body's text and no second
+`POST /tasks`; the cursor survives a second adapter over the same state dir (the second poll
+starts at the saved cursor); an approval round trip (`approval_required` → a `Question` of kind
+`approval` → `POST /approvals/<token>` with `channel: "tack"`); a consult round trip; cancel
+posts `cancel`; a `done` task brings the branch into the worktree and the evidence lists the
+committed file; a rework request posts `baseRef = rework_base`.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner)'` and the gate are
+green, with zero processes named `docket` spawned (the fake is in-process).
+
+### U — the ladder, the badges, the sentences (Sonnet, frontend)
+
+**Files:** `frontend/src/features/settings/panels/AutomationPanel.tsx` (split: the ladder in
+a new `panels/automation/Ladder.tsx` with one file per rung: `Teams.tsx`, `Start.tsx`,
+`Merge.tsx` (today's `AutonomySection`, moved), `Ceiling.tsx`), `frontend/src/shared/help/texts.ts`,
+`frontend/src/shared/runWithAgent/RunFlow.tsx` and `RunWithAgentModal.tsx` (the summary line
+and the source), `frontend/src/features/board/Board.tsx`, `features/list/List.tsx`,
+`features/table/` (the review column), a new `frontend/src/shared/ui/AutomationBadge.tsx`,
+`frontend/src/features/item-detail/ItemDetailDrawer.tsx` (the Automation row),
+`frontend/src/features/settings/panels/panels.test.tsx`, `frontend/e2e/run-with-agent.spec.ts`
+(one step), `docs/book/src/user-guide/merging.md` (a short "The ladder" section at the top, or
+a new `automation.md` page linked from `SUMMARY.md` if `merging.md` is the wrong home).
+
+**Do:** the screen of ADR 0080 decision 8, with these rules:
+
+- The ladder sits under the three existing sections, which collapse into `<details>` with a
+  one-line summary each.
+- **Teams**: one row per project role (`GET /projects/{id}/roles`): a select of profiles
+  (`PATCH /roles/{id}`), then the profile's team and machine read-only ("fab-content ·
+  lights-out · this computer", from the runner capability's `teams` and the profile's
+  `fleet_id`), a last row "No role" bound to the project's default profile. "Manage profiles →"
+  to `/agents#profiles`. The button "Apply the repository's teams" is shown disabled with
+  "This project's folder has no .docket/teams" until D2 reports one; it stays disabled in this
+  task.
+- **Start**: the switch (`PATCH /projects/{id}` `auto_start_enabled`), the status select
+  (workflow statuses, default the first to-do), the number (`auto_start_max_open`). Disabled
+  with "Choose a profile for at least one role in Teams" while no role has a profile. Under
+  it, when `auto_start_disabled_reason` is set, the sentence.
+- **Merge**: today's section, unchanged in content, moved here; L4/L5 disabled with the
+  sentences of `automatic_merge_blocked_by` (which now include the teams).
+- **Ceiling**: "This project can reach {ceiling}." then one line per `teams[]` entry (✓ or ✗
+  with `fix`) and one per remaining blocker.
+- `RunFlow`'s summary line gains "Chosen by the role {name}" / "Project default" / "Saved on
+  this task" from `metadata.profile_source` of the dry resolution (`GET /items/{id}/agent-context`
+  already resolves; expose `profile_source` on its response in T's shape, or read the
+  resolver's answer from the modal's own pre-fill logic replaced by the server's: the modal
+  no longer picks the profile itself; it asks the server and shows the source).
+- Badges: `AutomationBadge` renders "Started by itself" (`metadata.started_by`), "Team: {name}"
+  (the request's team), "Merged by itself" (`merge_note` with trigger `auto`), beside
+  `MergeNoteBadge` on the card, the row and the table's review column.
+- The drawer's Automation row: "Starts by itself when it reaches {status} · Team {name} ·
+  Merge {level}" or "By hand: the role {name} has no profile", from the project's settings and
+  the item's roles.
+- Every new text through `HELP` with a `(?)`; Tack's words only.
+
+**Tests (RED first):** `panels.test.tsx`: the four rungs render in order; the Start switch is
+disabled with its reason when no role has a profile; a team line with a fix renders in
+Ceiling; `RunFlow` shows "Chosen by the role Content". E2E: the run dialog opens with the
+role's profile on an item with a role.
+
+**Done when:** `npm run type-check && npm test && npm run lint:tokens && npm run build` and
+the gate are green.
+
+### D2 — the daemon, the doctor, the deletions, the e2e (Sonnet, two layers)
+
+**Files:** a new `crates/tack-runner/src/harness/docket/daemon.rs`, `harness/docket.rs`
+(the start-up hook), `crates/tack-runner/src/bootstrap.rs` (start and stop the daemon with the
+runner), `crates/tack-cli/src/doctor.rs` (a `teams:` block for a capability that carries
+teams), `crates/tack-runner/tests/agent_boundaries.rs` (one rule: the daemon's environment),
+`scripts/docket-prill-e2e.sh`, `frontend/e2e/docket-prill.spec.ts`, `docs/CONFIG.md`,
+`docs/book/src/user-guide/agent-runners.md` (the docket paragraph),
+`docs/book/src/user-guide/what-the-agent-can-reach.md` (one paragraph: docket's jail is
+docket's), `crates/tack-api/src/handlers/runner_admin.rs` and `router.rs` (one route:
+`POST /api/agent-profiles/{id}/apply-team {directory?, dryRun, accept?}` that forwards to the
+profile's runner; refused with the runner's answer; the 409 body with `reviewCode` passed
+through), `frontend/src/features/settings/panels/automation/Teams.tsx` (the Apply button is
+enabled when the capability reports `repoConfigDir`, posts, and shows the review code to paste).
+
+**Do:**
+
+- `daemon.rs`: `ensure_running(config) -> DaemonHandle`: `GET /health`; when nothing answers,
+  spawn `docket start --dispatch --bind 127.0.0.1 --port <n> --token-file <f>` with
+  `DOCKET_HOME = config.home` (the operator's own when unset), `PATH` only, stdout/stderr to
+  the runner's log directory; wait for `/health` with a bound; on exit, restart with a backoff
+  and a `warn`; on runner shutdown, one `SIGTERM` (docket finishes the running task and claims
+  no other, ADR 0027 §9). Never spawned when `base_url` is set.
+- `tack runner doctor` prints, under docket: `api: 5`, `daemon: running on 127.0.0.1:7399`
+  (or why not), and one line per team: `team fab-content: lights-out` / `team fab-research:
+  attended (fix: docket pod set network none)`.
+- The apply route, as ADR 0080 decision 2 and the spec's `POST /pods/<p>/apply`: the runner
+  exposes it through its protocol as a runner-admin action (`/api/runner/v1` gains nothing: the
+  board asks the runner over the existing admin channel, or, if none exists, the task reports
+  it as a finding and the button stays disabled with "Apply from the terminal: docket init
+  --name <pod>").
+- Deletions: `docket/readiness.rs`; every `0.2.0b*`, `contract-1.1` fixture and its
+  `.provenance`; the `DOCKET_SETUP_HOME` sharing (`SETUP_FILES`); every doc sentence that says
+  `docket exec`, `contract 1.2`, `docket setup harness`, `0.2.0-beta.5` (`rg -n 'docket exec|contract 1\.[12]|setup harness|beta\.5' docs README.md crates frontend scripts`).
+- `scripts/docket-prill-e2e.sh`: starts `docket start --dispatch` itself in the scratch HOME
+  with an isolated `DOCKET_HOME`, two pods (`fab-code`, `fab-content`) over the fixture
+  repository, dies before building when `GET /status.json` does not answer `apiVersion: "5"`
+  ("needs docket 0.2.0-beta.6"); the spec adds two items at once (one code, one content), a
+  rejection with a rework, and a screenshot of the ladder.
+
+**Tests (RED first):** `daemon.rs` tests against a fake `docket` script on `PATH` that serves
+`/health` after a delay: spawned once, restarted once after it exits, sent `SIGTERM` on
+shutdown; never spawned when `base_url` is set. `agent_boundaries.rs`: the daemon's
+environment carries only `PATH`, `DOCKET_HOME` and `HOME`. Doctor: a capability with teams
+prints the lines.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner) + package(tack-cli) + binary(agent_boundaries)'`
+and the gate are green; `scripts/docket-prill-e2e.sh` exits early naming beta.6 on this machine.
+
+### Z — docs and the integrated gate (integrator)
+
+- `CHANGELOG.md`: an `[Unreleased]` section written by hand (git-cliff skips `Add:`/`Fix:`
+  commits), one line per wave.
+- `docs/CONFIG.md`: `max_concurrent_attempts`, `[docket]`, `TACK_AUTO_START_SECONDS`.
+- `docs/book/src/roadmap.md`: the Phase 73 section's status.
+- `CLAUDE.md`'s "What's next": one sentence.
+- On the merged `develop`: `PATH=$HOME/.cargo/bin:$PATH .githooks/pre-push`, `cargo nextest
+  run --workspace`, `cd frontend && npm run type-check && npm test`, and the counts quoted.
+
+## Open questions
+
+Blocking: none.
+
+Not blocking, decided by the defaults in ADR 0080's last section. One more found while
+writing: the apply-team route (D2) needs the board to reach the runner; if no admin channel
+exists, D2 reports it and the button stays disabled with the terminal command, which is
+still a control shown with its reason.
+
+## Status
+
+- **Round 0** closed 2026-10-14: ADR 0080, this plan, the roadmap section.

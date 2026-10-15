@@ -272,6 +272,36 @@ and the loop; until then both hand the change to a person. Directives learnt fro
 corrections wait for the verifier to propose them; Tack will apply an approved one to `AGENTS.md`
 through a pull request.
 
+## Phase 73 — every run goes to a team, and automation is one ladder
+
+**Status:** opened 2026-10-14; the owner approved the index and the screen the same day.
+**ADR:** 0080 (amends 0078 decision 7 and 0074 decision 1). **Plan:** [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
+
+Every run of the docket agent goes to a team that already exists and keeps existing, over
+docket's HTTP API, instead of a throwaway agent per run. A project role says which profile, and
+through it which team, takes its tasks. A task can start by itself when it reaches a status the
+project chooses. Tack's automatic merge never rises above what the team allows: a team that
+needs a person during a run keeps its tasks at Level 3. Usage is kept per model, and a task can
+repeat weekly, monthly or quarterly. All of it is set on one screen, Settings → Automation, as a
+ladder of four rungs: Teams, Start, Merge, Ceiling. A control that cannot be used is shown with
+its reason, never hidden.
+
+Tack still decides what is done, with what priority and budget, and owns the push, the pull
+request, the merge and the level. The agent runtime runs the agent and its team: members,
+models per role, pipeline, gates, approvals. The verifier signs the verdict. Nothing is computed
+twice.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | The runner runs several attempts at once; a role chooses the profile and the fleet. | Sonnet |
+| 2 | The team's ceiling on the automatic merge; usage per model priced through one SQL. | Sonnet |
+| 3 | A task starts by itself; a task can repeat. | Sonnet |
+| 4–5 | The docket harness over HTTP against a fake docket, then the daemon, the doctor and the deletions; the ladder screen beside. | Sonnet |
+
+Waits on: docket 0.2.0-beta.6 (API version 5) for the live proof. Until it ships, every docket
+test runs against a fake that implements the published contract key by key, and the live
+end-to-end script says which version it needs.
+
 ---
 
 ## Archived
