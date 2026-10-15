@@ -335,6 +335,8 @@ fn csv_export_reimports_with_hierarchy() {
     use crate::models::{EstimateUnit, Item};
     let now = Utc::now();
     let base = |title: &str, parent: Option<Uuid>| Item {
+        recurrence: None,
+        recurrence_of: None,
         id: Uuid::new_v4(),
         project_id: Uuid::nil(),
         parent_id: parent,

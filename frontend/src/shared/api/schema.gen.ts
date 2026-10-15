@@ -3301,6 +3301,37 @@ export interface components {
             kind: "note";
             text: string;
         };
+        /** @description One model's tokens in the window. */
+        CostByModel: {
+            /** Format: int64 */
+            attempts: number;
+            /** @description Absent for attempts that reported no model and asked for none. */
+            model?: string | null;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /**
+             * Format: double
+             * @description Absent without a rate card or when it does not list the model.
+             */
+            usd?: number | null;
+        };
+        /** @description One docket team's tokens in the window. */
+        CostByTeam: {
+            /** Format: int64 */
+            attempts: number;
+            team: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /**
+             * Format: double
+             * @description Absent without a rate card or when any of the team's models is unlisted.
+             */
+            usd?: number | null;
+        };
         CreateBoard: {
             description?: string | null;
             filters?: unknown;
@@ -3435,6 +3466,7 @@ export interface components {
             /** Format: uuid */
             parent_id?: string | null;
             priority?: null | components["schemas"]["Priority"];
+            recurrence?: null | components["schemas"]["Recurrence"];
             /** Format: uuid */
             sprint_id?: string | null;
             tags?: string[] | null;
@@ -3755,6 +3787,10 @@ export interface components {
         FactoryMetrics: {
             /** Format: int64 */
             attempts: number;
+            /** @description Tokens and attempts per model, priced when a card lists it. */
+            cost_by_model: components["schemas"]["CostByModel"][];
+            /** @description Tokens and attempts per docket team; `No team` for runs that name none. */
+            cost_by_team: components["schemas"]["CostByTeam"][];
             /**
              * Format: int64
              * @description Attempts whose model the rate card does not list, so not in `cost_usd`.
@@ -3914,6 +3950,12 @@ export interface components {
             priority: components["schemas"]["Priority"];
             /** Format: uuid */
             project_id: string;
+            recurrence?: null | components["schemas"]["Recurrence"];
+            /**
+             * Format: uuid
+             * @description The closed task this one was created from by its recurrence.
+             */
+            recurrence_of?: string | null;
             run_settings?: null | components["schemas"]["RunSettings"];
             /** Format: int32 */
             sort_order: number;
@@ -4133,6 +4175,8 @@ export interface components {
             parent?: string | null;
             /** @description critical, high, medium (the default), low or none. */
             priority?: string | null;
+            /** @description weekly, monthly or quarterly; absent: the task does not repeat. */
+            recurrence?: string | null;
             /**
              * @description A name other items use in `parent` and `depends_on`. Any text or
              *     number, unique within the outline.
@@ -4303,6 +4347,11 @@ export interface components {
             reason: string;
             recovery_key: string;
         };
+        /**
+         * @description How often a task comes back once it is closed.
+         * @enum {string}
+         */
+        Recurrence: "weekly" | "monthly" | "quarterly";
         /** @description One repository's figures from prill's store. */
         RepositoryQuality: {
             /**
@@ -4640,6 +4689,7 @@ export interface components {
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: null | components["schemas"]["ItemType"];
             priority?: null | components["schemas"]["Priority"];
+            recurrence?: null | components["schemas"]["Recurrence"];
             run_settings?: null | components["schemas"]["RunSettings"];
             /** Format: int32 */
             sort_order?: number | null;

@@ -29,6 +29,7 @@ enum Column {
     Estimate,
     DueDate,
     Tags,
+    Recurrence,
     Parent,
     DependsOn,
     /// A column an export writes that an import has no field for.
@@ -47,6 +48,7 @@ fn column(header: &str) -> Option<Column> {
         "estimate" => Column::Estimate,
         "due_date" | "due" => Column::DueDate,
         "tags" | "labels" => Column::Tags,
+        "recurrence" | "repeats" => Column::Recurrence,
         "parent" | "parent_id" | "parent_ref" => Column::Parent,
         "depends_on" | "blocked_by" => Column::DependsOn,
         "created_at" => Column::Ignored,
@@ -140,6 +142,7 @@ pub fn items_from_csv(text: &str) -> Result<CsvOutline, OutlineError> {
                 },
                 Some(Column::DueDate) => item.due_date = text,
                 Some(Column::Tags) => item.tags = split_list(cell),
+                Some(Column::Recurrence) => item.recurrence = text,
                 Some(Column::Parent) => item.parent = text,
                 Some(Column::DependsOn) => item.depends_on = split_list(cell),
                 Some(Column::Ignored) | None => {}
@@ -190,6 +193,7 @@ pub fn items_to_csv(items: &[Item]) -> String {
         "estimate",
         "due_date",
         "tags",
+        "recurrence",
         "parent_id",
         "created_at",
     ];
@@ -209,6 +213,7 @@ pub fn items_to_csv(items: &[Item]) -> String {
                 item.estimate.map(|e| e.to_string()).unwrap_or_default(),
                 item.due_date.map(due_date_cell).unwrap_or_default(),
                 item.tags.join(";"),
+                item.recurrence.map(|r| r.to_string()).unwrap_or_default(),
                 item.parent_id.map(|p| p.to_string()).unwrap_or_default(),
                 item.created_at.to_rfc3339(),
             ])

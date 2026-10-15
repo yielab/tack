@@ -99,6 +99,8 @@ pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Add sub".into(),
                 description: None,
                 item_type: None,

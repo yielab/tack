@@ -150,6 +150,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("086_one_model_string", &MIGRATION_086[..]),
         ordinary("087_autonomy", &MIGRATION_087[..]),
         ordinary("088_role_profile_fleet", &MIGRATION_088[..]),
+        ordinary("089_item_recurrence", &MIGRATION_089[..]),
     ]
 }
 
@@ -1894,4 +1895,10 @@ const MIGRATION_087: [&str; 14] = [
 const MIGRATION_088: [&str; 2] = [
     "ALTER TABLE roles ADD COLUMN agent_profile_id TEXT REFERENCES agent_profiles(id) ON DELETE SET NULL",
     "ALTER TABLE agent_profiles ADD COLUMN fleet_id TEXT REFERENCES agent_fleets(id) ON DELETE SET NULL",
+];
+
+// 089: a task may repeat; its successor remembers the task it came from.
+const MIGRATION_089: [&str; 2] = [
+    "ALTER TABLE items ADD COLUMN recurrence TEXT CHECK (recurrence IN ('weekly','monthly','quarterly'))",
+    "ALTER TABLE items ADD COLUMN recurrence_of TEXT REFERENCES items(id) ON DELETE SET NULL",
 ];

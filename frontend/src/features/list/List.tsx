@@ -392,6 +392,9 @@ function ItemRow(props: {
             <Show when={hasChildren}>
               <Badge class="flex-shrink-0">{props.item.children.length}</Badge>
             </Show>
+            <Show when={props.item.recurrence}>
+              <Badge class="flex-shrink-0">Repeats</Badge>
+            </Show>
           </div>
           <Show when={props.item.description}>
             <p class="text-xs text-content-subtle truncate">

@@ -85,6 +85,8 @@ async fn fixture() -> Fixture {
             project.id,
             &status,
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Crash-boundary work".into(),
                 description: None,
                 item_type: Some(ItemType::Task),

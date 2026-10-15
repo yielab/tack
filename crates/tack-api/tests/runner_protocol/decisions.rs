@@ -105,6 +105,8 @@ async fn seed_workspace(pool: sqlx::SqlitePool) -> (Repository, FakeClock, Strin
             project.id,
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "I".into(),
                 description: None,
                 item_type: None,

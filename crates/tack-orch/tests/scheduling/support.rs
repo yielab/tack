@@ -55,6 +55,8 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
             project.id,
             &status,
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Scheduling fixture item".into(),
                 description: None,
                 item_type: Some(ItemType::Task),

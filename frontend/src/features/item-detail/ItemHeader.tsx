@@ -4,7 +4,7 @@ import { Field, Select, Badge, TypeBadge, typeKey, Icons } from '../../shared/ui
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { api } from '../../shared/api';
-import type { Item, UpdateItem, Priority } from '../../shared/types';
+import type { Item, UpdateItem, Priority, Recurrence } from '../../shared/types';
 import { estimateUnitLabel } from '../../shared/estimateUnit';
 
 const shortId = (id: string) => id.replace(/-/g, '').slice(0, 6).toUpperCase();
@@ -15,6 +15,13 @@ const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'medium', label: '➡️ Medium' },
   { value: 'low', label: '⬇️ Low' },
   { value: 'none', label: '➖ None' },
+];
+
+const RECURRENCES: { value: '' | Recurrence; label: string }[] = [
+  { value: '', label: 'Never' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
 ];
 
 export interface ItemHeaderProps {
@@ -140,6 +147,15 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
           onChange={(e) =>
             props.onPatch({ due_date: e.currentTarget.value || undefined })
           }
+        />
+
+        <Select
+          label="Repeats"
+          value={props.item.recurrence ?? ''}
+          onChange={(e) =>
+            props.onPatch({ recurrence: (e.currentTarget.value || null) as Recurrence | null })
+          }
+          options={RECURRENCES}
         />
 
         <Select

@@ -96,6 +96,8 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
             project.id,
             "To Do",
             CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "I".into(),
                 description: None,
                 item_type: None,

@@ -62,4 +62,11 @@ describe('Board ItemCard', () => {
     const plain = await mount(makeItem({ needs_review: false }));
     expect(plain.textContent).not.toContain('Needs your review');
   });
+
+  it('a_card_shows_repeats_only_for_a_recurring_task', async () => {
+    const repeating = await mount(makeItem({ recurrence: 'weekly' }));
+    expect(repeating.textContent).toContain('Repeats');
+    const plain = await mount(makeItem());
+    expect(plain.textContent).not.toContain('Repeats');
+  });
 });

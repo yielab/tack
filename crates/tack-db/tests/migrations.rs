@@ -13,6 +13,8 @@ mod autonomy;
 mod bridge_tables_dropped;
 #[path = "migrations/factory_loop_tables.rs"]
 mod factory_loop_tables;
+#[path = "migrations/item_recurrence.rs"]
+mod item_recurrence;
 #[path = "migrations/item_source_migration.rs"]
 mod item_source_migration;
 #[path = "migrations/one_model_string.rs"]

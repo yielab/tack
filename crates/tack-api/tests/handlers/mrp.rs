@@ -79,6 +79,8 @@ async fn setup(
             project.id,
             "To Do",
             tack_core::models::CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: "Review the merge-readiness pack".into(),
                 description: None,
                 item_type: None,

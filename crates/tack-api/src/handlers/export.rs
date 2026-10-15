@@ -344,6 +344,8 @@ async fn run_import(
                     due_date: item.due_date,
                     sprint_id: item.sprint_id.and_then(|s| sprint_id_map.get(&s).copied()),
                     assignee: item.assignee.clone(),
+                    recurrence: item.recurrence,
+                    recurrence_of: None,
                     source_artifact_id: item.source_artifact_id.clone(),
                 },
                 source,

@@ -245,6 +245,8 @@ pub async fn import_linear(
             let priority = linear_priority_to_tack(issue.priority);
 
             let data = CreateItem {
+                recurrence: None,
+                recurrence_of: None,
                 title: format!("[{id}] {title}", id = issue.identifier, title = issue.title),
                 description: Some(build_description(issue)),
                 item_type: Some(ItemType::Task),
