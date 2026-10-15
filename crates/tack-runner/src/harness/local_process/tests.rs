@@ -855,10 +855,20 @@ fn usage_detail_names_only_what_the_harness_reported() {
         cache_write_tokens: None,
         model_calls: Some(6),
         models: vec!["claude-sonnet-5-5".into()],
+        by_model: BTreeMap::from([(
+            "claude-sonnet-5-5".to_owned(),
+            ModelUsage {
+                input: 12,
+                output: 3_284,
+                cache_read: Some(791_447),
+                cache_write: None,
+            },
+        )]),
     };
     assert_eq!(
         serde_json::to_value(detail.into_additional()).expect("json"),
-        serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"]})
+        serde_json::json!({"cache_read_tokens": 791_447, "model_calls": 6, "models": ["claude-sonnet-5-5"],
+            "by_model": {"claude-sonnet-5-5": {"input": 12, "output": 3_284, "cache_read": 791_447}}})
     );
     assert!(UsageDetail::default().into_additional().is_empty());
 }

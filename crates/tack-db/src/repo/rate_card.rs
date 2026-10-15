@@ -1,7 +1,7 @@
 //! Where the rate card is kept (`app_meta`, key `rate_card`), and which model
 //! a run is priced as.
 
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 use tack_core::rate_card::RateCard;
 
 const KEY: &str = "rate_card";
@@ -32,4 +32,69 @@ pub async fn save(pool: &SqlitePool, card: &RateCard) -> Result<(), sqlx::Error>
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// One model's tokens in a repository and team, over the attempts counted.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct SpendRow {
+    /// `None` for a run that reported no model and asked for none.
+    pub model: Option<String>,
+    /// The repository of the pull request the attempts opened.
+    pub repo: Option<String>,
+    /// The docket team of the attempts' resolved agent profile.
+    pub team: Option<String>,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub attempts: i64,
+}
+
+/// The project's attempts created since `since` (all time when `None`), by
+/// model, pull-request repository and team. An attempt that carries
+/// `usage.by_model` counts once per model in it, with its cache reads and
+/// writes in `tokens_in`; any other counts under [`RUN_MODEL_SQL`] with its
+/// `tokens_in` and `tokens_out`.
+pub async fn spend_by_model(
+    pool: &SqlitePool,
+    project: &str,
+    since: Option<&str>,
+) -> Result<Vec<SpendRow>, sqlx::Error> {
+    // The fragments are constants of this crate; only values are bound.
+    let from = "FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         LEFT JOIN pull_requests p ON p.attempt_id = a.id";
+    let team =
+        "json_extract(r.request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team')";
+    let filter = "i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))";
+    sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT model, repo, team,
+                COALESCE(SUM(tokens_in), 0) AS tokens_in,
+                COALESCE(SUM(tokens_out), 0) AS tokens_out,
+                COUNT(*) AS attempts
+         FROM (
+           SELECT m.key AS model, p.repo AS repo, {team} AS team,
+                  COALESCE(json_extract(m.value, '$.input'), 0)
+                    + COALESCE(json_extract(m.value, '$.cache_read'), 0)
+                    + COALESCE(json_extract(m.value, '$.cache_write'), 0) AS tokens_in,
+                  COALESCE(json_extract(m.value, '$.output'), 0) AS tokens_out
+           {from}, json_each(a.usage, '$.by_model') m
+           WHERE json_type(a.usage, '$.by_model') = 'object' AND {filter}
+           UNION ALL
+           SELECT {model} AS model, p.repo AS repo, {team} AS team,
+                  COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0) AS tokens_in,
+                  COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0) AS tokens_out
+           {from}
+           WHERE json_type(a.usage, '$.by_model') IS NOT 'object' AND {filter}
+         )
+         GROUP BY model, repo, team",
+        model = RUN_MODEL_SQL
+    )))
+    .bind(project)
+    .bind(since)
+    .bind(since)
+    .bind(project)
+    .bind(since)
+    .bind(since)
+    .fetch_all(pool)
+    .await
 }

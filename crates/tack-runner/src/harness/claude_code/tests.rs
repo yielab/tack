@@ -308,6 +308,26 @@ fn tokens_in_counts_the_cache_and_model_usage_names_every_model() {
             cache_write_tokens: Some(286_414),
             model_calls: Some(6),
             models: vec!["claude-sonnet-5-5".into(), "claude-haiku-4-5".into()],
+            by_model: BTreeMap::from([
+                (
+                    "claude-haiku-4-5".to_owned(),
+                    ModelUsage {
+                        input: 300,
+                        output: 40,
+                        cache_read: Some(0),
+                        cache_write: Some(0),
+                    }
+                ),
+                (
+                    "claude-sonnet-5-5".to_owned(),
+                    ModelUsage {
+                        input: 12,
+                        output: 3_284,
+                        cache_read: Some(791_447),
+                        cache_write: Some(286_414),
+                    }
+                ),
+            ]),
         }
     );
 

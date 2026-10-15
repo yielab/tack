@@ -17,7 +17,6 @@
 //! yet ([`priority_from_metadata`]), and no cross-runner fleet concurrency
 //! ceiling in the pure scheduler's eligibility model ([`fleet_is_saturated`]).
 
-use sqlx::AssertSqlSafe;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
@@ -188,26 +187,12 @@ async fn dollars_today(
         .expect("midnight exists")
         .and_utc()
         .to_rfc3339();
-    // The model fragment is a constant of tack-db; only values are bound.
-    let spend: Vec<(Option<String>, i64, i64)> = sqlx::query_as(AssertSqlSafe(format!(
-        "SELECT {model} AS model,
-                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)), 0),
-                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0)
-         FROM execution_attempts a
-         JOIN execution_requests r ON r.id = a.request_id
-         JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)
-         GROUP BY model",
-        model = tack_db::repo::rate_card::RUN_MODEL_SQL
-    )))
-    .bind(project_id)
-    .bind(day_start)
-    .fetch_all(repo.pool())
-    .await?;
+    let spend =
+        tack_db::repo::rate_card::spend_by_model(repo.pool(), project_id, Some(&day_start)).await?;
     Ok(spend
         .into_iter()
-        .filter_map(|(model, tokens_in, tokens_out)| {
-            tack_core::rate_card::price(&card, model.as_deref()?, tokens_in, tokens_out)
+        .filter_map(|row| {
+            tack_core::rate_card::price(&card, row.model.as_deref()?, row.tokens_in, row.tokens_out)
         })
         .sum())
 }

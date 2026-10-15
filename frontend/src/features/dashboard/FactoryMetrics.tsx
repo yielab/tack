@@ -98,7 +98,53 @@ export default function FactoryMetrics() {
         </div>
       </Show>
 
+      <Show when={!metrics.loading && metrics()}>
+        <CostTable
+          title="Cost by model"
+          label="Model"
+          rows={metrics()!.cost_by_model.map((r) => ({ ...r, name: r.model ?? 'No model named' }))}
+        />
+        <Show when={metrics()!.cost_by_team.some((r) => r.team !== 'No team')}>
+          <CostTable title="By team" label="Team" rows={metrics()!.cost_by_team.map((r) => ({ ...r, name: r.team }))} />
+        </Show>
+      </Show>
+
       <RateCardForm onSaved={() => void refetch()} />
+    </div>
+  );
+}
+
+type CostRow = { name: string; tokens_in: number; tokens_out: number; attempts: number; usd?: number | null };
+
+/** Tokens and attempts per name; dollars only where the rate card priced the row. */
+function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
+  return (
+    <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
+      <h2 class="text-lg text-content">{props.title}</h2>
+      <table class="w-full text-left text-xs text-content-subtle">
+        <thead>
+          <tr class="text-content-muted">
+            <th class="font-normal">{props.label}</th>
+            <th class="font-normal">Tokens in</th>
+            <th class="font-normal">Tokens out</th>
+            <th class="font-normal">Attempts</th>
+            <th class="font-normal">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={props.rows}>
+            {(row) => (
+              <tr>
+                <td class="text-content">{row.name}</td>
+                <td>{row.tokens_in}</td>
+                <td>{row.tokens_out}</td>
+                <td>{row.attempts}</td>
+                <td>{row.usd === null || row.usd === undefined ? 'Not measured' : dollars(row.usd)}</td>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
     </div>
   );
 }
