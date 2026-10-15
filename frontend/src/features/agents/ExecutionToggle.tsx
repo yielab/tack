@@ -93,6 +93,12 @@ const ExecutionToggle: Component = () => {
             </Show>
           </span>
         </div>
+        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          Up to {status()!.max_concurrent_attempts}{' '}
+          {status()!.max_concurrent_attempts === 1 ? 'run' : 'runs'} at a time on this computer
+          {' · '}
+          {status()!.active_attempts} running
+        </p>
       </Show>
     </section>
   );

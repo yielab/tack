@@ -16,12 +16,16 @@ fn config_precedence_is_defaults_file_environment_then_cli() {
             runner_id: Some("environment".into()),
             state_dir: Some(PathBuf::from("environment-state")),
             enrollment_credential: Some(EnrollmentCredential::new("environment-secret")),
+            max_concurrent_attempts: None,
+            invalid: None,
         },
         command_line: ConfigOverrides {
             api_base_url: Some("https://cli.invalid".into()),
             runner_id: Some("cli".into()),
             state_dir: Some(PathBuf::from("cli-state")),
             enrollment_credential: Some(EnrollmentCredential::new("cli-secret")),
+            max_concurrent_attempts: None,
+            invalid: None,
         },
     })
     .expect("configuration should load");
@@ -150,4 +154,83 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
     })
     .expect_err("an unknown verify kind is rejected");
     assert_eq!(error, ConfigError::Invalid);
+}
+
+#[test]
+fn max_concurrent_attempts_defaults_to_one_is_refused_below_one_and_follows_precedence() {
+    let overrides = |value: Option<u32>| ConfigOverrides {
+        max_concurrent_attempts: value,
+        ..ConfigOverrides::default()
+    };
+    let refused = |reason: &str| {
+        Some(ConfigError::InvalidField {
+            field: "max_concurrent_attempts",
+            reason: reason.to_owned(),
+        })
+    };
+    // (label, file, raw environment value, command line, what loads, the
+    // refusal when it is refused)
+    let rows = [
+        ("default", None, None, None, Some(1), None),
+        (
+            "file",
+            Some("max_concurrent_attempts = 3"),
+            None,
+            None,
+            Some(3),
+            None,
+        ),
+        (
+            "environment beats file",
+            Some("max_concurrent_attempts = 3"),
+            Some("4"),
+            None,
+            Some(4),
+            None,
+        ),
+        (
+            "flag beats environment",
+            Some("max_concurrent_attempts = 3"),
+            Some("4"),
+            Some(2),
+            Some(2),
+            None,
+        ),
+        (
+            "zero in the file",
+            Some("max_concurrent_attempts = 0"),
+            None,
+            None,
+            None,
+            refused("must be at least 1"),
+        ),
+        (
+            "zero on the command line",
+            None,
+            Some("4"),
+            Some(0),
+            None,
+            refused("must be at least 1"),
+        ),
+        (
+            "an environment value that is not a number",
+            Some("max_concurrent_attempts = 3"),
+            Some("many"),
+            None,
+            None,
+            refused("TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS must be a whole number"),
+        ),
+    ];
+    for (label, file, environment, command_line, expected, refusal) in rows {
+        let loaded = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: file,
+            environment: RunnerConfig::attempts_from_environment(environment),
+            command_line: overrides(command_line),
+        })
+        .map(|config| config.max_concurrent_attempts);
+        assert_eq!(loaded.clone().ok(), expected, "{label}");
+        if let Some(refusal) = refusal {
+            assert_eq!(loaded, Err(refusal), "{label}");
+        }
+    }
 }

@@ -47,10 +47,11 @@ use tack_orch::execution::{
     ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
     RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
 };
+use tokio::task::JoinSet;
 
 use crate::{
     Clock, EnrollmentCredential, RunnerConfig, RunnerError, Shutdown,
-    client::engine::{RunCycle, RunnerEngine},
+    client::engine::{EngineError, LEASE_RENEWAL_INTERVAL, RunCycle, RunnerEngine},
     client::{
         AttemptId, AttemptLease, AttemptState, CancellationReport, CancellationResponse,
         Checkpoint, ClaimRequest, ClaimRequestId, ClaimResult, ClaimedWork, CompletionReport,
@@ -1091,11 +1092,13 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
 /// unresolved journal records, then claim and heartbeat until shutdown.
 pub struct HttpRunnerClient<A, W, C> {
     protocol: Arc<HttpPullProtocol>,
-    engine: RunnerEngine<Arc<HttpPullProtocol>, A, W, C>,
+    engine: Arc<RunnerEngine<Arc<HttpPullProtocol>, A, W, C>>,
     config: RunnerConfig,
     clock: C,
     capabilities: RunnerCapabilities,
     sequence: AtomicU64,
+    /// How often the one ticker heartbeats every lease held.
+    renewal_interval: Duration,
 }
 
 impl<A, W, C> HttpRunnerClient<A, W, C>
@@ -1113,12 +1116,20 @@ where
     ) -> Self {
         Self {
             protocol,
-            engine,
+            engine: Arc::new(engine),
             config,
             clock,
             capabilities,
             sequence: AtomicU64::new(0),
+            renewal_interval: LEASE_RENEWAL_INTERVAL,
         }
+    }
+
+    /// A shorter heartbeat period, so a test need not wait out the real one.
+    #[cfg(test)]
+    fn with_renewal_interval(mut self, interval: Duration) -> Self {
+        self.renewal_interval = interval;
+        self
     }
 
     fn now_rfc3339(&self) -> String {
@@ -1195,21 +1206,27 @@ where
         Ok(enrolled.session)
     }
 
-    /// Keeps `agent_runners.last_heartbeat_at` fresh while the runner holds
-    /// no attempt. The engine heartbeats for attempts it is running; nothing
-    /// else does, and a runner that never heartbeats is excluded from
-    /// scheduling once `max_heartbeat_age` passes.
-    async fn idle_heartbeat(&self, session: &RunnerSession) -> Result<(), ProtocolClientError> {
-        let sent_at = self.now_rfc3339();
+    /// The runner's one heartbeat: every lease it holds, and as much
+    /// capacity as it has slots free. It also keeps
+    /// `agent_runners.last_heartbeat_at` fresh while no attempt runs, and
+    /// carries each cancellation the answer names to the attempt it names.
+    async fn heartbeat_all(
+        &self,
+        session: &RunnerSession,
+        slots_taken: usize,
+    ) -> Result<(), ProtocolClientError> {
+        let active = self.engine.active();
+        let taken = u32::try_from(slots_taken).unwrap_or(u32::MAX);
         let request = HeartbeatRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
             heartbeat_id: self.next_id("hb"),
-            sent_at: Timestamp::new(sent_at),
-            available_capacity: 1,
-            active_attempts: Vec::new(),
+            sent_at: Timestamp::new(self.now_rfc3339()),
+            available_capacity: active.total().saturating_sub(taken),
+            active_attempts: active.snapshot(),
         };
-        self.protocol.heartbeat(session, request).await?;
+        let response = self.protocol.heartbeat(session, request).await?;
+        active.apply(&response.lease_results);
         Ok(())
     }
 }
@@ -1238,52 +1255,72 @@ where
         }
 
         let claim_wait = Duration::from_secs(10);
+        let total = self.engine.active().total().max(1) as usize;
+        // One slot per attempt the runner may work at once. A slot is taken
+        // from the moment it asks for work, so a claim is only ever sent
+        // while one is free.
+        let mut slots: JoinSet<(Result<RunCycle, EngineError>, tokio::time::Instant)> =
+            JoinSet::new();
+        let mut ticker = tokio::time::interval(self.renewal_interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut claim_not_before = tokio::time::Instant::now();
         loop {
             if shutdown.is_requested() {
                 return Ok(());
             }
-            let asked_at = tokio::time::Instant::now();
-            let claim = ClaimRequest {
-                claim_request_id: ClaimRequestId::new(self.next_id("claim")),
-                available_capacity: 1,
-                wait: claim_wait,
-            };
-            let cycle = tokio::select! {
+            let taken = slots.len();
+            let now = tokio::time::Instant::now();
+            if taken < total && now >= claim_not_before {
+                let engine = Arc::clone(&self.engine);
+                let session = session.clone();
+                let claim = ClaimRequest {
+                    claim_request_id: ClaimRequestId::new(self.next_id("claim")),
+                    available_capacity: u32::try_from(total - taken).unwrap_or(u32::MAX),
+                    wait: claim_wait,
+                };
+                slots.spawn(async move {
+                    let asked_at = tokio::time::Instant::now();
+                    (engine.run_once(&session, claim).await, asked_at)
+                });
+                continue;
+            }
+            tokio::select! {
                 biased;
                 () = shutdown.requested() => return Ok(()),
-                cycle = self.engine.run_once(&session, claim) => cycle,
-            };
-            match cycle {
-                Ok(RunCycle::NoWork { retry_after }) => {
-                    if let Err(error) = self.idle_heartbeat(&session).await {
-                        // Same rationale as the `Err(error)` arm below: a
-                        // failing idle heartbeat paired with a claim that
-                        // returns immediately (nothing queued) would
-                        // otherwise spin this loop as fast as the server can
-                        // reject each attempt.
-                        tracing::warn!(%error, "idle heartbeat failed");
-                        tokio::time::sleep(self.protocol.retry.max_backoff).await;
-                    }
-                    // The server says when to ask again. `wait` only asks it
-                    // to hold the claim open, which it is free not to do, so
-                    // without this pause an idle runner claims as fast as the
-                    // server can answer. Time a held claim already took counts.
-                    let pause = idle_pause(retry_after, asked_at.elapsed());
-                    tokio::select! {
-                        biased;
-                        () = shutdown.requested() => return Ok(()),
-                        () = tokio::time::sleep(pause) => {}
+                _ = ticker.tick() => {
+                    if let Err(error) = self.heartbeat_all(&session, taken).await {
+                        tracing::warn!(%error, "heartbeat failed");
                     }
                 }
-                Ok(outcome) => tracing::info!(?outcome, "run cycle finished"),
-                Err(error) => {
-                    // A failed cycle is logged and paced, never retried
-                    // immediately: the engine has already journaled whatever
-                    // durable state the attempt reached, and a tight retry
-                    // loop against a failing server is itself a fault.
-                    tracing::warn!(%error, "run cycle failed");
-                    tokio::time::sleep(self.protocol.retry.max_backoff).await;
-                }
+                Some(joined) = slots.join_next(), if !slots.is_empty() => match joined {
+                    Ok((Ok(RunCycle::NoWork { retry_after }), asked_at)) => {
+                        // The server says when to ask again. `wait` only asks
+                        // it to hold the claim open, which it is free not to
+                        // do, so without this pause an idle runner claims as
+                        // fast as the server can answer. Time a held claim
+                        // already took counts.
+                        claim_not_before = tokio::time::Instant::now()
+                            + idle_pause(retry_after, asked_at.elapsed());
+                    }
+                    Ok((Ok(outcome), _)) => tracing::info!(?outcome, "run cycle finished"),
+                    Ok((Err(error), _)) => {
+                        // A failed cycle is logged and paced, never retried
+                        // immediately: the engine has already journaled
+                        // whatever durable state the attempt reached, and a
+                        // tight retry loop against a failing server is
+                        // itself a fault.
+                        tracing::warn!(%error, "run cycle failed");
+                        claim_not_before =
+                            tokio::time::Instant::now() + self.protocol.retry.max_backoff;
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "a run slot ended abnormally");
+                        claim_not_before =
+                            tokio::time::Instant::now() + self.protocol.retry.max_backoff;
+                    }
+                },
+                () = tokio::time::sleep_until(claim_not_before),
+                    if taken < total && now < claim_not_before => {}
             }
         }
     }

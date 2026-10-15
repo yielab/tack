@@ -591,6 +591,43 @@ async fn before_spawn_worktree_crash_recovers_without_respawn() {
 }
 
 #[tokio::test]
+async fn two_unresolved_journals_after_a_crash_are_both_recovered() {
+    let root_dir = root("two-journals");
+    let root = root_dir.path();
+    let adapter = FakeAdapter::new(RecoveryObservation::ProcessStopped);
+    let journal = OwnerOnlyJournal::new(root);
+    let protocol = FakeProtocol::new(work(), FailurePoint::None, false);
+
+    // Two attempts held leases when the runner crashed.
+    for attempt in ["attempt-crash", "attempt-crash-2"] {
+        let mut crashed_work = work();
+        crashed_work.lease.attempt_id = AttemptId::new(attempt);
+        crashed_work.attempt.attempt_id = DomainAttemptId::new(attempt);
+        let crashed = FakeProtocol::new(crashed_work, FailurePoint::None, false);
+        let crashed = engine(&crashed, &adapter, &journal, root, FakeWorktree::fails());
+        assert!(crashed.run_once(&session(), claim()).await.is_err());
+    }
+    assert_eq!(journal.unresolved().expect("unresolved").len(), 2);
+
+    let recovered = engine(
+        &protocol,
+        &adapter,
+        &journal,
+        root,
+        FakeWorktree::succeeds(),
+    );
+    let outcomes = recovered.recover(&session()).await.expect("recover");
+    assert!(matches!(
+        outcomes.as_slice(),
+        [RunCycle::Completed { .. }, RunCycle::Completed { .. }]
+    ));
+    assert_eq!(adapter.starts(), 0, "recovery cannot respawn the harness");
+    assert_eq!(adapter.reconciles(), 2);
+    assert_eq!(protocol.event_count("recovery:ProcessStopped"), 2);
+    assert!(journal.unresolved().expect("unresolved").is_empty());
+}
+
+#[tokio::test]
 async fn spawn_ack_loss_quarantines_as_ambiguous_without_retry() {
     let (root_dir, protocol, adapter, journal) = ambiguous_ack_scenario("spawn-before-ack");
     let root = root_dir.path();

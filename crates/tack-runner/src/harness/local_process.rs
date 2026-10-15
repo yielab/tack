@@ -17,7 +17,10 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -39,8 +42,8 @@ use crate::{
         HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelSource,
         Progress, Question, RecoveryObservation, StreamSignal,
         process::{
-            CancelOutcome, ProcessExit, ProcessGroups, ProcessLimits, ProcessResult, ProcessSpec,
-            SupervisedProcess,
+            CancelOutcome, ProcessCanceller, ProcessExit, ProcessGroups, ProcessLimits,
+            ProcessResult, ProcessSpec, SupervisedProcess,
         },
         redact::SecretMaterial,
         sandbox::{self, Sandbox},
@@ -454,6 +457,17 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     probed_version: std::sync::Mutex<Option<String>>,
     next_handle: AtomicU64,
     pub(crate) running: tokio::sync::Mutex<BTreeMap<String, RunningProcess>>,
+    /// Runs a `wait` currently owns: a `cancel` that finds its handle here
+    /// kills the process group and `wait` returns the cancelled outcome.
+    waiting: std::sync::Mutex<BTreeMap<String, Arc<WaitingRun>>>,
+}
+
+/// What a `cancel` needs to stop a run that `wait` has taken.
+struct WaitingRun {
+    canceller: ProcessCanceller,
+    cancelled: AtomicBool,
+    grace: Duration,
+    pid: u32,
 }
 
 impl<G: HarnessGrammar> LocalProcessHarness<G> {
@@ -507,6 +521,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             probed_version: std::sync::Mutex::new(None),
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
+            waiting: std::sync::Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -920,6 +935,65 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     #[cfg(not(target_os = "linux"))]
     fn process_is_this_harness(&self, _pid: u32, _attempt_id: &str) -> Option<bool> {
         None
+    }
+
+    /// A cancel for a run `wait` already owns: stop its groups from outside
+    /// and flag it, so `wait` returns the cancelled outcome and removes the
+    /// scratch directory itself.
+    async fn cancel_waiting(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Result<CancellationEvidence, HarnessError> {
+        let waiting = self
+            .waiting
+            .lock()
+            .ok()
+            .and_then(|map| map.get(&handle.process_id).cloned())
+            .ok_or_else(|| {
+                tracing::warn!(
+                    process_id = handle.process_id,
+                    harness = self.kind(),
+                    "handle not tracked"
+                );
+                HarnessError::Process
+            })?;
+        waiting.cancelled.store(true, Ordering::SeqCst);
+        let (observation, process_outcome, groups) =
+            match waiting.canceller.stop(waiting.grace).await {
+                Ok((CancelOutcome::Stopped, groups)) => {
+                    (CancelObservation::ProcessStopped, "stopped", groups)
+                }
+                Ok((CancelOutcome::Killed, groups)) => {
+                    (CancelObservation::ProcessStopped, "killed", groups)
+                }
+                Err(error) => {
+                    tracing::warn!(?error, harness = self.kind(), "cancel signal failed");
+                    (
+                        CancelObservation::Ambiguous,
+                        "signal_failed",
+                        ProcessGroups::default(),
+                    )
+                }
+            };
+        Ok(CancellationEvidence {
+            observation,
+            observed_at: crate::client::Timestamp::new(rfc3339(self.clock.now())),
+            details: serde_json::Map::from_iter([
+                ("pid".to_owned(), serde_json::json!(waiting.pid)),
+                (
+                    "process_outcome".to_owned(),
+                    serde_json::json!(process_outcome),
+                ),
+                (
+                    "groups".to_owned(),
+                    serde_json::json!({
+                        "tracked": groups.tracked,
+                        "killed": groups.killed,
+                        "survived": groups.survived,
+                    }),
+                ),
+            ]),
+        })
     }
 
     async fn take_running(&self, process_id: &str) -> Result<RunningProcess, HarnessError> {
@@ -1345,7 +1419,10 @@ where
     /// error: the process may or may not still be running, and the engine's
     /// recovery path is what resolves that.
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
-        let running = self.take_running(&handle.process_id).await?;
+        let removed = self.running.lock().await.remove(&handle.process_id);
+        let Some(running) = removed else {
+            return self.cancel_waiting(handle).await;
+        };
         let pid = running.process.pid();
         let run_context = RunContext {
             spec: &running.record.spec,
@@ -1405,6 +1482,15 @@ where
             mut record,
             ..
         } = self.take_running(&handle.process_id).await?;
+        let waiting = Arc::new(WaitingRun {
+            canceller: process.canceller(),
+            cancelled: AtomicBool::new(false),
+            grace: record.limits.termination_grace,
+            pid: process.pid(),
+        });
+        if let Ok(mut map) = self.waiting.lock() {
+            map.insert(handle.process_id.clone(), Arc::clone(&waiting));
+        }
         let questions = record.interactive.take();
         let progress = record.progress.take();
         let result = if questions.is_some() || progress.is_some() {
@@ -1431,10 +1517,17 @@ where
         .map_err(|error| {
             tracing::warn!(?error, harness = self.kind(), "capture failed");
             HarnessError::Process
-        })?;
+        });
+        if let Ok(mut map) = self.waiting.lock() {
+            map.remove(&handle.process_id);
+        }
+        let result = result?;
         let ended_at = DateTime::<Utc>::from(self.clock.now());
         let probed_version = self.known_version().await;
-        let outcome = self.outcome(&record, ended_at, &result, probed_version);
+        let mut outcome = self.outcome(&record, ended_at, &result, probed_version);
+        if waiting.cancelled.load(Ordering::SeqCst) {
+            outcome.terminal_state = AttemptState::Cancelled;
+        }
         self.remove_scratch(&record.scratch, record.spec.work.lease.attempt_id.as_str());
         Ok(outcome)
     }

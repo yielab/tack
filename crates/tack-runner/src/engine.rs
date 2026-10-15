@@ -17,10 +17,10 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 use super::{
-    ActiveAttempt, ArtifactManifestItem, ArtifactManifestReport, AttemptDataProtocol, AttemptId,
-    AttemptState, CancellationReport, CancellationRequestId, Checkpoint, ClaimRequest, ClaimResult,
-    ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport, CompletionResponse,
-    DecisionAnswer, DecisionCreateReport, DecisionOption, DecisionPollReport, EnrollmentRequest,
+    ArtifactManifestItem, ArtifactManifestReport, AttemptDataProtocol, AttemptId, AttemptState,
+    CancellationReport, CancellationRequestId, Checkpoint, ClaimRequest, ClaimResult, ClaimedWork,
+    ClaimedWorkError, CompletionId, CompletionReport, CompletionResponse, DecisionAnswer,
+    DecisionCreateReport, DecisionOption, DecisionPollReport, EnrollmentRequest,
     EnrollmentResponse, EventBatchReport, HeartbeatRequest, PendingTerminalReport,
     PendingTerminalReportKind, ProtocolClientError, ProtocolEvent, PullProtocol, Recommendation,
     RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
@@ -80,13 +80,12 @@ pub enum StreamSignal {
     ProcessExited { pgid: u32 },
 }
 
-/// How often [`RunnerEngine::wait_with_lease_renewal`] re-heartbeats a
-/// still-running attempt. Must stay comfortably under the server's
+/// How often the runner's one ticker re-heartbeats every attempt it holds. Must stay comfortably under the server's
 /// lease-grant window (`request_timeout_seconds_max` allows harness runs far
 /// longer than any single lease) so a heartbeat lands well before the
 /// previous one's grant would expire, including a missed cycle or two under
 /// transient network trouble.
-const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+pub(crate) const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// A decision this runner has asked the operator about and not yet answered.
 struct PendingDecision {
@@ -430,6 +429,8 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     )>,
     /// The `[git]` table; a disabled table pushes nothing.
     git: crate::config::GitConfig,
+    /// The leases in flight, which the runner's ticker renews together.
+    active: crate::active::ActiveAttempts,
 }
 
 impl<P, A, W> RunnerEngine<P, A, W, crate::SystemClock>
@@ -473,7 +474,26 @@ where
             data_protocol: None,
             verify: None,
             git: crate::config::GitConfig::default(),
+            active: crate::active::ActiveAttempts::new(1),
         }
+    }
+
+    /// Sets how many attempts this engine works at once.
+    pub fn with_concurrency(mut self, total: u32) -> Self {
+        self.active = crate::active::ActiveAttempts::new(total);
+        self
+    }
+
+    /// Works against a registry the caller also holds, so something outside
+    /// the engine (the Agents page) can read how many attempts are running.
+    pub fn with_active(mut self, active: crate::active::ActiveAttempts) -> Self {
+        self.active = active;
+        self
+    }
+
+    /// The leases in flight.
+    pub fn active(&self) -> &crate::active::ActiveAttempts {
+        &self.active
     }
 
     /// Attaches the events/decisions/artifacts transport. A
@@ -530,7 +550,12 @@ where
     ) -> Result<RunCycle, EngineError> {
         match self.protocol.claim(session, claim).await? {
             ClaimResult::NoWork { retry_after, .. } => Ok(RunCycle::NoWork { retry_after }),
-            ClaimResult::Work(work) => self.run_claimed(session, *work).await,
+            ClaimResult::Work(work) => {
+                let attempt_id = work.lease.attempt_id.clone();
+                let cycle = self.run_claimed(session, *work).await;
+                self.active.remove(&attempt_id);
+                cycle
+            }
         }
     }
 
@@ -609,6 +634,7 @@ where
         // This is the hard ownership boundary: no worktree or adapter method
         // with a local side effect is called before create+fsync succeeds.
         self.journal.persist_before_spawn(&record)?;
+        let mut cancel = self.active.register(&record);
         self.protocol
             .report_start(
                 session,
@@ -655,6 +681,7 @@ where
         let handle = self.adapter.start(&spec).await?;
         record.state = JournalState::ProcessObservedRunning;
         record.process_id = Some(handle.process_id.clone());
+        self.active.sync(&record);
         if self.journal.update(&record).is_err() {
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
@@ -693,15 +720,19 @@ where
         {
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
-        let lease = heartbeat.lease_results.into_iter().find(|result| {
+        // One answer covers every lease this runner holds: each cancellation
+        // it names goes to its own attempt, this one included.
+        self.active.apply(&heartbeat.lease_results);
+        let lease = heartbeat.lease_results.iter().find(|result| {
             result.attempt_id == record.attempt_id && result.fencing_token == record.fencing_token
         });
-        let Some(lease) = lease else {
+        if lease.is_none() {
             return self.quarantine_after_spawn(session, &record, &handle).await;
-        };
+        }
 
-        if lease.cancellation_requested {
+        if *cancel.borrow_and_update() {
             record.state = JournalState::CancellationRequested;
+            self.active.sync(&record);
             if self.journal.update(&record).is_err() {
                 return self.quarantine_after_spawn(session, &record, &handle).await;
             }
@@ -771,7 +802,7 @@ where
         }
 
         let outcome = match self
-            .wait_with_lease_renewal(session, &mut record, &handle, &spec)
+            .wait_with_lease_renewal(session, &mut record, &handle, &spec, &mut cancel)
             .await
         {
             Ok(outcome) => outcome,
@@ -970,6 +1001,7 @@ where
         session: &RunnerSession,
         record: &AttemptJournal,
     ) -> HeartbeatRequest {
+        self.active.sync(record);
         let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         HeartbeatRequest {
@@ -977,14 +1009,8 @@ where
             runner_id: session.runner_id.clone(),
             heartbeat_id: Self::heartbeat_id(record, &sent_at),
             sent_at: Timestamp::new(sent_at),
-            available_capacity: 0,
-            active_attempts: vec![ActiveAttempt {
-                attempt_id: record.attempt_id.clone(),
-                fencing_token: record.fencing_token,
-                state: AttemptState::Running,
-                journal_state: record.state,
-                last_event_checkpoint: record.last_event_checkpoint.clone(),
-            }],
+            available_capacity: self.active.free(),
+            active_attempts: self.active.snapshot(),
         }
     }
 
@@ -1005,35 +1031,29 @@ where
         format!("hb_{opaque}")
     }
 
-    /// Runs `self.adapter.wait(handle)` to completion while sending a
-    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`],
-    /// carrying any question the harness asks out to the operator through a
-    /// decision, and sending the steps it reports to the attempt's timeline
-    /// every [`PROGRESS_FLUSH_INTERVAL`] and once more when it ends.
+    /// Runs `self.adapter.wait(handle)` to completion, carrying any question
+    /// the harness asks out to the operator through a decision, and sending
+    /// the steps it reports to the attempt's timeline every
+    /// [`PROGRESS_FLUSH_INTERVAL`] and once more when it ends.
     ///
-    /// The lease is granted for a bounded window at claim time and only
-    /// extended by a heartbeat naming the attempt. A harness run can take up
-    /// to the request's own `timeout_seconds` (bounded at 86,400), so waiting
-    /// without heartbeating would let the lease expire long before the
-    /// process exits — the completion report is then rejected as a stale
-    /// lease, with nothing durably retrying it (a runner restart replays the
-    /// journaled record with the same now-expired fencing token), leaving the
-    /// attempt stuck `running` forever. A failed renewal is logged and does
-    /// not interrupt the wait: the harness keeps running regardless, and the
-    /// worst case is the same stale-lease outcome this loop exists to avoid.
+    /// The lease is not renewed here: the runner's one ticker heartbeats every
+    /// lease it holds each [`LEASE_RENEWAL_INTERVAL`], and flips `cancel` for
+    /// an attempt whose answer asks for it. When it flips mid-run the harness
+    /// is cancelled and the attempt ends `cancelled`.
     ///
-    /// A question is polled for resolution on the same heartbeat tick, never
-    /// its own timer: `spec`'s own `timeout_seconds` is the one deadline
-    /// governing the whole attempt, and a decision that outlives it is
-    /// answered as the question's own deny option — same as a create that
-    /// never succeeded or an answer channel that was dropped — so a harness
-    /// waiting on stdin is never left waiting forever.
+    /// A question is polled for resolution on its own short timer, never past
+    /// `spec`'s own `timeout_seconds`, the one deadline governing the whole
+    /// attempt: a decision that outlives it is answered as the question's own
+    /// deny option — same as a create that never succeeded or an answer
+    /// channel that was dropped — so a harness waiting on stdin is never left
+    /// waiting forever.
     async fn wait_with_lease_renewal(
         &self,
         session: &RunnerSession,
         record: &mut AttemptJournal,
         handle: &LocalRunHandle,
         spec: &ExecutionSpec,
+        cancel: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<HarnessOutcome, HarnessError> {
         let prompt = spec
             .work
@@ -1050,14 +1070,7 @@ where
         let mut steps: Vec<Progress> = Vec::new();
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
-        // An interval, not a `sleep` rebuilt every turn of the loop: the
-        // decision poll below wakes the loop far more often than a lease
-        // needs renewing, and must not keep pushing the renewal back.
-        let mut renewal = tokio::time::interval_at(
-            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
-            LEASE_RENEWAL_INTERVAL,
-        );
-        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut stopped_by_cancel = false;
         let mut flush = tokio::time::interval_at(
             tokio::time::Instant::now() + PROGRESS_FLUSH_INTERVAL,
             PROGRESS_FLUSH_INTERVAL,
@@ -1081,7 +1094,12 @@ where
                         }
                     }
                     self.submit_progress(session, record, &mut steps, prompt).await;
-                    return outcome;
+                    return outcome.map(|mut outcome| {
+                        if stopped_by_cancel {
+                            outcome.terminal_state = AttemptState::Cancelled;
+                        }
+                        outcome
+                    });
                 }
                 Some(question) = next_question(state.decisions, state.pending.is_some()) => {
                     self.open_decision(session, record, &mut state, question, prompt).await;
@@ -1093,14 +1111,17 @@ where
                 _ = flush.tick(), if !steps.is_empty() => {
                     self.submit_progress(session, record, &mut steps, prompt).await;
                 }
-                _ = renewal.tick() => {
-                    let request = self.heartbeat_request(session, record);
-                    if let Err(error) = self.protocol.heartbeat(session, request).await {
-                        tracing::warn!(
+                Ok(()) = cancel.changed(), if !stopped_by_cancel => {
+                    match self.adapter.cancel(handle).await {
+                        Ok(evidence) => {
+                            stopped_by_cancel =
+                                evidence.observation == CancelObservation::ProcessStopped;
+                        }
+                        Err(error) => tracing::warn!(
                             %error,
                             attempt_id = record.attempt_id.as_str(),
-                            "lease-renewal heartbeat failed while the harness is still running"
-                        );
+                            "a cancellation asked mid-run could not reach the harness"
+                        ),
                     }
                 }
                 () = tokio::time::sleep(DECISION_POLL_INTERVAL), if waiting_for_an_answer => {
@@ -1298,32 +1319,9 @@ where
         if !captured {
             return;
         }
-        // The verifier may run for its whole `timeout_seconds`; the lease is
-        // renewed meanwhile on the same interval as during the harness run,
-        // or the completion would be rejected as a stale lease.
-        let verification = crate::verify::run(config, limits, &spec.workspace, scratch);
-        tokio::pin!(verification);
-        let mut renewal = tokio::time::interval_at(
-            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
-            LEASE_RENEWAL_INTERVAL,
-        );
-        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let result = loop {
-            tokio::select! {
-                biased;
-                result = &mut verification => break result,
-                _ = renewal.tick() => {
-                    let request = self.heartbeat_request(session, record);
-                    if let Err(error) = self.protocol.heartbeat(session, request).await {
-                        tracing::warn!(
-                            %error,
-                            attempt_id = record.attempt_id.as_str(),
-                            "lease-renewal heartbeat failed while the verifier is running"
-                        );
-                    }
-                }
-            }
-        };
+        // The verifier may run for its whole `timeout_seconds`; the runner's
+        // ticker renews the lease meanwhile.
+        let result = crate::verify::run(config, limits, &spec.workspace, scratch).await;
         match result {
             Ok(artifacts) => staged.extend(artifacts),
             Err(error) => {
@@ -1414,8 +1412,8 @@ where
             item.split('-').next().unwrap_or(item),
             spec.work.lease.attempt_number
         );
-        // A push to a slow remote can outlast the lease; renew it meanwhile,
-        // exactly as while the verifier runs.
+        // A push to a slow remote can outlast the lease; the runner's ticker
+        // renews it meanwhile.
         let remote = record.push_remote.clone();
         let publishing = self.workspaces.publish_branch(
             &spec.workspace,
@@ -1425,28 +1423,7 @@ where
             captured,
             head,
         );
-        tokio::pin!(publishing);
-        let mut renewal = tokio::time::interval_at(
-            tokio::time::Instant::now() + LEASE_RENEWAL_INTERVAL,
-            LEASE_RENEWAL_INTERVAL,
-        );
-        renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let result = loop {
-            tokio::select! {
-                biased;
-                result = &mut publishing => break result,
-                _ = renewal.tick() => {
-                    let request = self.heartbeat_request(session, record);
-                    if let Err(error) = self.protocol.heartbeat(session, request).await {
-                        tracing::warn!(
-                            %error,
-                            attempt_id = record.attempt_id.as_str(),
-                            "lease-renewal heartbeat failed while the branch is being pushed"
-                        );
-                    }
-                }
-            }
-        };
+        let result = publishing.await;
         let published = match result {
             Ok(Some(published)) if published.head_commit == captured => published,
             // What would be pushed is not what was verified: the attempt

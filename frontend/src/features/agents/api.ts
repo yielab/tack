@@ -38,6 +38,10 @@ export interface LocalRunnerStatus {
   enabled: boolean;
   state: LocalRunnerState;
   since: string | null;
+  /** How many runs this computer works at once. */
+  max_concurrent_attempts: number;
+  /** How many it is running right now. */
+  active_attempts: number;
 }
 
 export interface UpdateLocalRunnerBody {

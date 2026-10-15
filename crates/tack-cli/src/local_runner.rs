@@ -154,6 +154,7 @@ pub fn run_standalone(
             runner_id,
             state_dir,
             enrollment_credential: enrollment_token.map(EnrollmentCredential::new),
+            ..ConfigOverrides::default()
         },
         config_path.as_deref(),
     )?;
@@ -244,6 +245,8 @@ struct Running {
     shutdown_handle: ShutdownHandle,
     runner_task: JoinHandle<Result<(), RunnerError>>,
     since: DateTime<Utc>,
+    /// The leases the runner holds now, shared with its engine.
+    active: tack_runner::active::ActiveAttempts,
 }
 
 struct State {
@@ -322,14 +325,19 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
         {
             state.running = None;
         }
+        let max_concurrent_attempts = state.runner_config.max_concurrent_attempts;
         match &state.running {
             Some(running) => RuntimeStatus {
                 state: RuntimeState::Running,
                 since: Some(running.since),
+                max_concurrent_attempts,
+                active_attempts: u32::try_from(running.active.len()).unwrap_or(u32::MAX),
             },
             None => RuntimeStatus {
                 state: RuntimeState::Stopped,
                 since: None,
+                max_concurrent_attempts,
+                active_attempts: 0,
             },
         }
     }
@@ -389,10 +397,13 @@ impl EmbeddedRunnerControl {
             .map_err(|error| LocalRunnerControlError::StartFailed(error.to_string()))?;
 
         let (shutdown, shutdown_handle) = Shutdown::channel();
-        let runner_task = tokio::spawn(bootstrap::run(
+        let active =
+            tack_runner::active::ActiveAttempts::new(runner_config.max_concurrent_attempts);
+        let runner_task = tokio::spawn(bootstrap::run_with_active(
             runner_config.clone(),
             runner_limits(),
             shutdown,
+            active.clone(),
         ));
         // Remembered so a later stop-then-start reuses whatever credential
         // resolution just produced (a stored session, or the fresh
@@ -402,6 +413,7 @@ impl EmbeddedRunnerControl {
             shutdown_handle,
             runner_task,
             since: Utc::now(),
+            active,
         });
         Ok(())
     }

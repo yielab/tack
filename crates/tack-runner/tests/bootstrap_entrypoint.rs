@@ -123,6 +123,7 @@ async fn composition_root_stops_on_injected_shutdown_without_a_signal() {
             runner_id: Some("bootstrap-entrypoint-test".into()),
             state_dir: Some(state_dir.path().to_path_buf()),
             enrollment_credential: Some(EnrollmentCredential::new("test-only-credential")),
+            ..ConfigOverrides::default()
         },
         ..RunnerConfigSources::default()
     })
@@ -163,6 +164,7 @@ async fn build_runtime_fails_fast_on_a_missing_enrollment_credential() {
             runner_id: Some("bootstrap-entrypoint-test".into()),
             state_dir: Some(state_dir.path().to_path_buf()),
             enrollment_credential: None,
+            ..ConfigOverrides::default()
         },
         ..RunnerConfigSources::default()
     })

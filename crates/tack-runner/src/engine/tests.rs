@@ -1005,6 +1005,7 @@ async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
     );
     let claimed = work();
     let record = claimed_record(&claimed.lease, root);
+    engine.active().register(&record);
     let first = engine.heartbeat_request(&session(), &record);
     let second = engine.heartbeat_request(&session(), &record);
 
@@ -1040,52 +1041,6 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
     assert_eq!(heartbeats[0].protocol_version, ProtocolVersion::v1());
     assert_eq!(heartbeats[0].runner_id.as_str(), "runner");
     assert_eq!(heartbeats[0].sent_at.as_str(), "2026-08-06T12:20:15Z");
-    std::fs::remove_dir_all(root).expect("remove temporary root");
-}
-
-/// Acceptance: a harness that outlives several lease-renewal intervals
-/// still gets its lease renewed throughout, not just once at the start.
-/// Uses tokio's paused clock plus [`clock_advancing_from_12_20_15`] so the
-/// wait genuinely spans multiple [`LEASE_RENEWAL_INTERVAL`] ticks without
-/// the test itself taking minutes; `FakeAdapter::wait`'s own sleep and the
-/// engine's renewal sleep race on the same virtual clock, so the assertion
-/// is exercising the real `tokio::select!` loop, not a mocked timer.
-#[tokio::test(start_paused = true)]
-async fn wait_periodically_renews_the_lease_while_still_running() {
-    let (root_dir, journal) = fresh_journal("lease-renewal");
-    let root = root_dir.path();
-    let protocol = protocol(work(), false, false);
-    let long_running_adapter = FakeAdapter {
-        wait_delay: LEASE_RENEWAL_INTERVAL * 3 + std::time::Duration::from_secs(1),
-        ..adapter(journal.journal_path(&AttemptId::new("attempt")))
-    };
-    let engine = runner_engine_with_clock(
-        protocol.clone(),
-        long_running_adapter,
-        journal.clone(),
-        root,
-        clock_advancing_from_12_20_15(),
-    );
-
-    assert!(matches!(
-        engine
-            .run_once(&session(), claim_request())
-            .await
-            .expect("cycle"),
-        RunCycle::Completed { .. }
-    ));
-
-    // One heartbeat right after start, plus at least three renewals
-    // while `wait()` was still pending.
-    let heartbeat_count = protocol
-        .received_heartbeats
-        .lock()
-        .expect("fake protocol lock")
-        .len();
-    assert!(
-        heartbeat_count >= 4,
-        "expected the lease to be renewed periodically during a long wait, got {heartbeat_count} heartbeat(s)"
-    );
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
