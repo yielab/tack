@@ -10,13 +10,13 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::AssertSqlSafe;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use tack_db::repo::metrics::{self as rows, WaitRow};
+use tack_db::repo::rate_card::SpendRow;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
@@ -150,6 +150,76 @@ pub struct FactoryMetrics {
     /// Attempts whose model the rate card does not list, so not in `cost_usd`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_unpriced_attempts: Option<i64>,
+    /// Tokens and attempts per model, priced when a card lists it.
+    pub cost_by_model: Vec<CostByModel>,
+    /// Tokens and attempts per docket team; `No team` for runs that name none.
+    pub cost_by_team: Vec<CostByTeam>,
+}
+
+/// One model's tokens in the window.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CostByModel {
+    /// Absent for attempts that reported no model and asked for none.
+    pub model: Option<String>,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub attempts: i64,
+    /// Absent without a rate card or when it does not list the model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usd: Option<f64>,
+}
+
+/// One docket team's tokens in the window.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CostByTeam {
+    pub team: String,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub attempts: i64,
+    /// Absent without a rate card or when any of the team's models is unlisted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usd: Option<f64>,
+}
+
+const NO_TEAM: &str = "No team";
+
+fn priced_row(card: &crate::rate_card::RateCard, row: &SpendRow) -> Option<f64> {
+    crate::rate_card::price(card, row.model.as_deref()?, row.tokens_in, row.tokens_out)
+}
+
+struct CostLine {
+    key: Option<String>,
+    tokens_in: i64,
+    tokens_out: i64,
+    attempts: i64,
+    usd: Option<f64>,
+}
+
+/// The spend rows folded by `key`, each line priced only when every row in it is.
+fn cost_lines(
+    spend: &[SpendRow],
+    card: Option<&crate::rate_card::RateCard>,
+    key: impl Fn(&SpendRow) -> Option<String>,
+) -> Vec<CostLine> {
+    let mut lines: std::collections::BTreeMap<Option<String>, CostLine> = Default::default();
+    for row in spend {
+        let k = key(row);
+        let line = lines.entry(k.clone()).or_insert(CostLine {
+            key: k,
+            tokens_in: 0,
+            tokens_out: 0,
+            attempts: 0,
+            usd: card.map(|_| 0.0),
+        });
+        line.tokens_in += row.tokens_in;
+        line.tokens_out += row.tokens_out;
+        line.attempts += row.attempts;
+        line.usd = line
+            .usd
+            .zip(card.and_then(|card| priced_row(card, row)))
+            .map(|(sum, usd)| sum + usd);
+    }
+    lines.into_values().collect()
 }
 
 fn ratio(numerator: i64, denominator: i64, null_reason: &str) -> Ratio {
@@ -223,33 +293,6 @@ async fn pack_tokens(storage: &ArtifactStorage, reference: Option<&str>) -> Opti
     let pack: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     let usage = pack.get("usage")?;
     Some(usage.get("tokens_in")?.as_i64()? + usage.get("tokens_out")?.as_i64()?)
-}
-
-/// Tokens (in, out) of the project's attempts in the window by model and by the
-/// repository of the pull request each opened (`None` when it opened none).
-async fn token_spend(
-    pool: &sqlx::SqlitePool,
-    project: &str,
-    since: Option<&str>,
-) -> Result<Vec<(Option<String>, Option<String>, i64, i64, i64)>, sqlx::Error> {
-    sqlx::query_as(AssertSqlSafe(format!(
-        "SELECT {model} AS model, p.repo,
-                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)), 0),
-                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0),
-                COUNT(*)
-         FROM execution_attempts a
-         JOIN execution_requests r ON r.id = a.request_id
-         JOIN items i ON i.id = r.item_id
-         LEFT JOIN pull_requests p ON p.attempt_id = a.id
-         WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
-         GROUP BY model, p.repo",
-        model = tack_db::repo::rate_card::RUN_MODEL_SQL
-    )))
-    .bind(project)
-    .bind(since)
-    .bind(since)
-    .fetch_all(pool)
-    .await
 }
 
 /// prill's figures for each repository the project opened pull requests in
@@ -360,20 +403,17 @@ pub async fn factory_metrics(
         };
 
     let card = crate::rate_card::load(pool).await;
-    let spend = token_spend(pool, &project, since).await?;
+    let spend = tack_db::repo::rate_card::spend_by_model(pool, &project, since).await?;
     let (mut cost, mut unpriced) = (0.0, 0);
     let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
     if let Some(card) = &card {
-        for (model, repo, tokens_in, tokens_out, attempts) in &spend {
-            let priced = model
-                .as_deref()
-                .and_then(|m| crate::rate_card::price(card, m, *tokens_in, *tokens_out));
-            let Some(priced) = priced else {
-                unpriced += attempts;
+        for row in &spend {
+            let Some(priced) = priced_row(card, row) else {
+                unpriced += row.attempts;
                 continue;
             };
             cost += priced;
-            if let Some(repo) = repo {
+            if let Some(repo) = &row.repo {
                 *repo_cost.entry(repo.clone()).or_default() += priced;
             }
         }
@@ -389,6 +429,29 @@ pub async fn factory_metrics(
             .sum();
         cost += minutes / 60.0 * card.human_hour;
     }
+    let cost_by_model = cost_lines(&spend, card.as_ref(), |row| row.model.clone());
+    let cost_by_team = cost_lines(&spend, card.as_ref(), |row| {
+        Some(row.team.clone().unwrap_or_else(|| NO_TEAM.into()))
+    })
+    .into_iter()
+    .map(|line| CostByTeam {
+        team: line.key.unwrap_or_default(),
+        tokens_in: line.tokens_in,
+        tokens_out: line.tokens_out,
+        attempts: line.attempts,
+        usd: line.usd,
+    })
+    .collect();
+    let cost_by_model = cost_by_model
+        .into_iter()
+        .map(|line| CostByModel {
+            model: line.key,
+            tokens_in: line.tokens_in,
+            tokens_out: line.tokens_out,
+            attempts: line.attempts,
+            usd: line.usd,
+        })
+        .collect();
     let (quality, quality_unavailable) = match prill_quality(&state, &project).await {
         Ok((version, found)) => {
             let repositories = found
@@ -458,5 +521,7 @@ pub async fn factory_metrics(
         cost_usd: card.as_ref().map(|_| cost),
         rate_card_as_of: card.as_ref().map(|c| c.as_of.clone()),
         cost_unpriced_attempts: card.as_ref().map(|_| unpriced),
+        cost_by_model,
+        cost_by_team,
     }))
 }

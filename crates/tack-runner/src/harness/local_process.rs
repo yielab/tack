@@ -253,6 +253,20 @@ pub struct UsageDetail {
     pub model_calls: Option<u64>,
     /// Every model the run used, the main one first.
     pub models: Vec<String>,
+    /// What each model used, by name.
+    pub by_model: BTreeMap<String, ModelUsage>,
+}
+
+/// One model's share of a run, in the harness's own counting: `input` is
+/// the input the cache did not serve, `cache_read` and `cache_write` come on top.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ModelUsage {
+    pub input: u64,
+    pub output: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<u64>,
 }
 
 impl UsageDetail {
@@ -268,6 +282,12 @@ impl UsageDetail {
         put("model_calls", self.model_calls);
         if !self.models.is_empty() {
             out.insert("models".to_owned(), self.models.into());
+        }
+        if !self.by_model.is_empty() {
+            out.insert(
+                "by_model".to_owned(),
+                serde_json::to_value(self.by_model).expect("model usage serializes"),
+            );
         }
         out
     }

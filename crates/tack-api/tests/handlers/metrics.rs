@@ -389,7 +389,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     );
     assert!(m.get("cost_usd").is_none(), "{m}");
     // No dollar figure anywhere, though the seeded usage carries one.
-    assert!(!m.to_string().contains("cost"), "{m}");
+    assert!(!m.to_string().contains("usd"), "{m}");
 
     // A project with no rows: every ratio is null with its reason, never 0.
     let uri = format!("/api/projects/{empty_id}/metrics/factory");

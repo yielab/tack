@@ -74,6 +74,8 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
   },
   mrp_produced: 2,
   mrp_unreviewed: 2,
+  cost_by_model: [],
+  cost_by_team: [],
   outcomes: {
     opened: 15,
     merged: 12,
@@ -299,6 +301,41 @@ describe('FactoryMetrics sources and cost', () => {
     expect(container.textContent).toContain('Enter a rate card below to see cost.');
     expect(container.textContent).toContain('Not measured');
     expect(container.textContent).not.toContain('$12.50');
+  });
+
+  it('Cost by model lists each model, and an unpriced one says Not measured', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      cost_by_model: [
+        { model: 'claude-sonnet-5-5', tokens_in: 1000, tokens_out: 200, attempts: 3, usd: 1.25 },
+        { model: 'opaque/unlisted', tokens_in: 40, tokens_out: 5, attempts: 1 },
+      ],
+      cost_by_team: [{ team: 'platform', tokens_in: 1040, tokens_out: 205, attempts: 4 }],
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('Cost by model');
+    expect(text).toContain('claude-sonnet-5-5');
+    expect(text).toContain('$1.25');
+    const unlisted = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('opaque/unlisted'));
+    expect(unlisted?.textContent).toContain('Not measured');
+    expect(text).toContain('By team');
+  });
+
+  it('By team is left out when no run names a team', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      cost_by_model: [{ model: 'm', tokens_in: 1, tokens_out: 1, attempts: 1 }],
+      cost_by_team: [{ team: 'No team', tokens_in: 1, tokens_out: 1, attempts: 1 }],
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    expect(container.textContent).not.toContain('By team');
   });
 
   it("labels merged-not-reverted as Tack's own figure", async () => {

@@ -14,7 +14,7 @@ use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        RunContext, RunReport, UsageDetail, capability, policy_capability,
+        ModelUsage, RunContext, RunReport, UsageDetail, capability, policy_capability,
     },
     process::{ProcessExit, ProcessResult},
 };
@@ -125,6 +125,19 @@ fn result_usage(result: &Value, init_model: Option<&str>) -> ResultUsage {
                 .unwrap_or(0);
             (Some(name.as_str()) != init_model, std::cmp::Reverse(output))
         });
+        let by_model = per_model
+            .iter()
+            .map(|(name, usage)| {
+                let field = |key: &str| usage.get(key).and_then(Value::as_u64);
+                let entry = ModelUsage {
+                    input: field("inputTokens").unwrap_or(0),
+                    output: field("outputTokens").unwrap_or(0),
+                    cache_read: field("cacheReadInputTokens"),
+                    cache_write: field("cacheCreationInputTokens"),
+                };
+                (name.clone(), entry)
+            })
+            .collect();
         return ResultUsage {
             input: sum("inputTokens"),
             output: sum("outputTokens"),
@@ -133,6 +146,7 @@ fn result_usage(result: &Value, init_model: Option<&str>) -> ResultUsage {
                 cache_write_tokens: sum("cacheCreationInputTokens"),
                 model_calls,
                 models,
+                by_model,
             },
         };
     }
@@ -149,6 +163,7 @@ fn result_usage(result: &Value, init_model: Option<&str>) -> ResultUsage {
             cache_write_tokens: field("cache_creation_input_tokens"),
             model_calls,
             models: init_model.map(str::to_owned).into_iter().collect(),
+            by_model: BTreeMap::new(),
         },
     }
 }
