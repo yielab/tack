@@ -133,7 +133,7 @@ enroll` call, no token to copy anywhere.
   | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
   | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
   | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch `HOME`, with the `provider`, `model` and `small_model` keys copied from `opencode debug config`. Its MCP servers, plugins and permissions do not reach the run |
-  | docket | `docket setup` ([docket](https://github.com/yielab/docket)) | `~/.docket` | `docket-providers.json`, `docket-models.json` and `secrets.json` of `~/.docket`, read-only; nothing else there. A key kept in the OS keyring is not reachable inside the sandbox: use docket's file backend. Needs docket 0.2.0-beta.5 or later; an older docket does not run |
+  | docket | docket's own sign-in, in its own home ([docket](https://github.com/yielab/docket)) | docket's `DOCKET_HOME` | Nothing: docket is a daemon the runner talks to over HTTP and it confines its agents in its own jail (`sandbox: harness`). See `[docket]` below |
 
   The runner forwards no new environment variables into a run. A key that lives only in a
   shell variable does not reach an agent: use the agent's own login or config file.
@@ -282,6 +282,28 @@ repository's git configuration changed during the run.
 As with the verifier, a run request can decline the push for one run but never enable it; asking
 for a push from a runner with `push_branches = false` changes nothing and the attempt records an
 `attempt.push_skipped` event.
+
+## docket (`[docket]`)
+
+docket runs as a daemon beside the runner and the runner talks to its operator API (version 5,
+docket 0.2.0-beta.6). Naming a `binary` or a `base_url` registers the harness; neither means no
+docket on this runner.
+
+```toml
+[docket]
+home = "/home/me/.docket"      # the daemon's DOCKET_HOME; docket's own default when unset
+port = 7399                    # where the daemon listens, on 127.0.0.1
+token_file = "/home/me/.docket/token"   # the daemon's bearer token
+binary = "docket"              # starts `docket start --dispatch` with the runner
+# base_url = "http://127.0.0.1:7399"   # a daemon someone else runs; the runner starts nothing
+```
+
+With `binary` the runner looks at `GET /health` first and starts the daemon only when nothing
+answers, with `PATH`, `HOME` and `DOCKET_HOME` as its whole environment, its output in
+`<state_dir>/logs/docket-daemon.log`, a restart with a growing wait when it exits, and one
+`SIGTERM` when the runner stops. With `base_url` the runner never starts a daemon. The token is
+read from `token_file` on every call. `tack runner doctor` prints the API version, whether the
+daemon answers and one line per team.
 
 ## Debugging
 

@@ -110,7 +110,7 @@ you've already picked one.
 |---|---|---|---|---|---|---|
 | `codex` | Its own install, see [Codex](https://developers.openai.com/codex/auth) | `codex login`, Codex's own login. Tack holds no model key; the sandbox binds `~/.codex`. A model comes from Codex's own default or the one you name. | Tokens, read from the run's own terminal line (`exec --json`'s `turn.completed`). Cost is never measured: no such field exists in the output. Under `exec` the model that served the request is never confirmed — Tack records the one you requested (`requested`), or `agent_default` when none was named; under `codex app-server` it is read from Codex (`reported`). | **Yes** — over `codex app-server`, and only when the request's permission policy sets `approvals` to `ask` and a command needs to escalate beyond the sandbox | Advisory — your tool list picks codex's sandbox mode (a write-capable tool grants `--sandbox workspace-write`, otherwise `--sandbox read-only`); your network flag and budget never reach it | Resume a session, report a cost, confirm which model served a request, or honour a network deny or a budget |
 | `claude-code` | Its own install, see [Claude Code](https://code.claude.com/docs/en/authentication) | `claude`, Claude Code's own login (a Claude subscription or its own API key). The sandbox binds `~/.claude`. | Tokens in (prompt-cache reads and writes included) and out, model calls, every model the run used, and cost, from the run's own result line — advisory, because the cost is Claude Code's own estimate at list price, not your bill. The served model is read from its own session-start line and recorded as `reported`. | **Yes** — before every tool call, when the request's permission policy sets `approvals` to `ask` | Advisory — the tool list and a cost budget are enforced through its own flags; a network deny only blocks the WebFetch/WebSearch tools by name | Reattach to an already-running attempt (`--resume` starts a new process against stored history, not the in-flight one), or guarantee a network deny holds against everything it runs |
-| `docket` | Its own install, see the [docket project](https://github.com/yielab/docket) | `docket setup`, docket's own setup, which `docket exec` reads. Needs docket 0.2.0-beta.5 or later (contract 1.2); an older docket does not run. | Tokens, genuinely read from its result line, and a served model that's a real observation of its own response, recorded as `reported`. Cost is never measured: docket always reports it `null`. The files a run wrote appear in the attempt's result (paths under `.tack-runner/` are left out). | **Yes** — when the request's permission policy sets `approvals` to `ask`, docket pauses before each tool call its own policy gates and waits for your answer; a call its policy allows runs without a question. Otherwise a gated call is refused immediately | Yes — your tool list and network flag reach it as a policy blocking every docket tool you don't allow, and your token budget reaches it as its own limit | Resume, report a cost, or run a recipe (docket runs one only on its older contract, which needs an endpoint Tack doesn't hold) |
+| `docket` | Its own install, see the [docket project](https://github.com/yielab/docket) | docket's own home: the runner starts `docket start --dispatch` beside it (or uses the daemon at `[docket].base_url`) and talks to its API. Tack holds no model key. Needs docket 0.2.0-beta.6 (API 5); another version does not run. | Tokens in and out, in total and per model, from the task record, and the model that served the last implementing step, recorded as `reported`. Cost is never measured. The task's branch is brought into the runner's worktree, so the evidence is the diff of what docket committed. | **Yes** — a tool call docket's policy gates, and a question a step parks on, reach you as decisions and are answered over docket's own approval and answer routes | Yes — your denied tools and network flag go to docket as the task's restrictions, on top of the team's own; your token budget as its own limit | Resume, report a cost, or work in place of a branch (docket works on a branch of your folder) |
 | `opencode` | Its own install, see [opencode](https://opencode.ai/docs/providers/) | `opencode auth login`, opencode's own login. A run gets its own `auth.json` and the `provider`, `model` and `small_model` from `opencode debug config`, in a scratch `HOME`; nothing else of its config (MCP servers, plugins, permissions) reaches it. | Tokens, summed across every step of the run. The served model is never confirmed — nothing in its output names what actually answered, so a run records the requested model (`requested`), or `agent_default` when none was named. Cost is never measured for a model it doesn't recognize. | **Yes** — but only over `opencode acp`, and only when the request's permission policy sets `approvals` to `ask`: each granted tool then pauses on its own request until answered | Advisory — network access and per-tool access (edit/bash/task) are each gated through its own permission block; a budget is never passed | Confirm which model served a request, or run at all against a request that denies network — see below |
 
 A few things above are easy to trip over:
@@ -120,33 +120,26 @@ A few things above are easy to trip over:
   installs about 220 MB before it does anything else. Because Tack can't make opencode
   keep a promise the CLI itself breaks, a request whose permission policy denies network
   is rejected before opencode ever spawns.
-- **docket needs docket 0.2.0-beta.5 or later.** That release speaks contract 1.2, in which
-  `docket exec` reads the endpoint, credential and default model from your own `docket setup`.
-  An older docket does not run here; the Agents page and `tack runner doctor` say so. A key that
-  lives only in a shell variable does not reach any agent, because the runner forwards no new
-  environment variables: use the agent's own login or config file.
-- **docket is asked what it can do when the runner starts.** Tack asks the installed docket
-  whether it speaks harness contract 1.2, with a call docket refuses before doing any work: no
-  model is called and nothing is written. Then `docket setup harness --json` says which models
-  docket's setup reaches and which one a run gets when you name none; that is the Agents page's
-  Sign in line and the model field's list. `tack runner doctor` prints docket's version and, with
-  `--json`, its `decisions` entry, which names the contract.
-- **docket reads three files of its setup, read-only, and nothing else of it.** A run gets its
-  provider catalog, model registry and credential store (`docket-providers.json`,
-  `docket-models.json`, `secrets.json` in `~/.docket`) and none of the pods, policies, traces or
-  audit log beside them. A key kept in the OS keyring is not reachable inside the sandbox: docket
-  refuses the run and says so; store it in docket's file backend instead.
-- **docket gets your limits and policy, and lists the files it wrote.**
-  The run's token budget goes to docket as its own limit,
-  and the run's tool list and network setting go to it as a policy that blocks every docket tool
-  the run does not allow; an empty list blocks all of them. Only docket's own tool names can be
-  used there (`read`, `write`, `edit`, `glob`, `grep`, `bash`, `fetch`, `skill`, `consult`): a run
-  that names any other tool, or allows `fetch` with network off, is refused before it starts,
-  with the field named, never quietly narrowed. docket then reports the files the run changed,
-  and they appear in the attempt's result (files under `.tack-runner/` are left out).
-- **docket recipes don't run here.** docket runs a recipe only on its contract 1.1, which needs a
-  model endpoint passed to it, and Tack holds none. An agent profile that names one
-  (`{"docket": {"recipe": "…"}}`) is refused before the run starts, with the recipe named.
+- **docket needs docket 0.2.0-beta.6 or later, API version 5.** The runner asks `GET /status.json`
+  and, when the answer is another version, the Agents page and `tack runner doctor` say "needs
+  docket 0.2.0-beta.6" and no task is posted. docket is a daemon, not a process the runner starts
+  per run: when `[docket]` names a `binary`, the runner starts `docket start --dispatch` on
+  loopback with its own environment (`PATH`, `HOME` and, if set, `DOCKET_HOME`, nothing else),
+  restarts it if it exits, and sends it one `SIGTERM` when the runner stops, so docket finishes the
+  task it is running and claims no other. With `base_url` set the runner uses that daemon and
+  starts nothing. The table is in [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md).
+- **A run goes to a team.** The agent profile's docket team is a pod; a profile that names none
+  runs in the project's default pod, named for the repository folder (lowercase letters, digits and
+  hyphens). The runner makes the pod when it does not exist. `tack runner doctor` prints docket's
+  API, whether the daemon answers, and one line per team: `lights-out`, or `attended` with the
+  command that fixes it. A team that needs a person during a run keeps its tasks at autonomy L3.
+- **docket keeps its own sign-in and its own jail.** Tack passes docket no model key, endpoint or
+  setup file. docket confines its agents itself, which Tack shows as `sandbox: harness`.
+- **docket gets your limits and policy, and the item's kind.** The run's token budget goes to docket
+  as its own limit, and the run's denied tools and network setting go to it as the task's
+  restrictions. The task carries the item's type (which picks the profile's pipeline for that type),
+  its priority and whether its text is trusted. The acceptance criteria that name a command or a
+  test become docket's gate; the rest stay in Tack.
 - **codex maps your tool list onto its sandbox mode, and says what it still can't.**
   A tool list granting `bash`, `shell`, `edit`, `write` or `apply_patch` runs codex under
   `--sandbox workspace-write`; an empty or read-only tool list runs it under
@@ -169,15 +162,12 @@ agent"** dialog this is the "Approvals" choice, "Automatic" or "Ask me"; the CLI
 API set it directly (`--permission-policy
 '{"tools":[...],"network":...,"approvals":"ask"}'`). Unset, or `"auto"`, never pauses.
 
-Claude Code, codex and opencode honour `ask`, and so does docket when the installed one accepts
-answers. Each one pauses at a different point: claude-code before every tool call, opencode
+Claude Code, codex, opencode and docket honour `ask`. Each one pauses at a different point: claude-code before every tool call, opencode
 before every call to a tool your list grants, codex only for a command that needs to escalate
 beyond its sandbox, docket before each call its own policy gates (a call its policy allows runs
-without a question). Which dockets accept answers is decided when the runner starts, by asking the
-installed one — see the docket notes above. For a harness that does not honour `ask` the dialog
+without a question). For a harness that does not honour `ask` the dialog
 disables "Ask me" and says why, and a request built by hand that asks anyway is never scheduled
-onto a runner that would ignore the choice and run as `auto`. A docket without answer support
-still refuses a gated call outright.
+onto a runner that would ignore the choice and run as `auto`.
 
 With docket, choosing "Ask me" pauses the agent before each gated call and waits for your answer
 in Tack. Allow lets the call run; Deny refuses it, and the agent is told it was refused and
@@ -805,10 +795,10 @@ confirm it — install the harness anywhere on that list, or make sure it is on 
   value with `tack runner secret set <name>` (reads `TACK_RUNNER_SECRET_VALUE` or, failing that,
   stdin — never a CLI argument, which `/proc` would make world-readable).
 - **Tack holds no model key.** Each agent signs in with its own command — `claude`,
-  `codex login`, `opencode auth login`, `docket setup` — and reaches its model with its own tools.
+  `codex login`, `opencode auth login`, and docket in its own home — and reaches its model with its own tools.
   Claude Code and Codex read their own login and settings; opencode runs with a scratch `HOME`
   that gets its own `auth.json` and only the `provider`, `model` and `small_model` of its config;
-  docket reads your `docket setup`. The runner forwards no new environment variables, so a key
+  docket keeps its own sign-in in its own home. The runner forwards no new environment variables, so a key
   that lives only in a shell variable does not reach an agent. **Tack's API and database never
   see, store, or forward a model credential.** The per-agent table is in `docs/CONFIG.md`, under
   "Agent logins".
@@ -868,20 +858,19 @@ any other probe that does, at registration time, before any attempt can referenc
 structural: a harness's own shell tool spawns its subprocess in a new session outside the
 runner's process group, so without being told the group the runner cannot promise it stopped
 (confirmed with `ps` against each real harness installation; see each harness's own
-`fixtures/<kind>/README.md`). Only docket announces its bash calls' process groups
-(`process_started` / `process_exited`), and only when its negotiated contract is 1.1, so
-`cancel` is `supported` for docket on 1.1 and `advisory` otherwise and for the other three
-harnesses. On a cancellation the runner stops the main group, then sends SIGTERM and, after the
-grace period, SIGKILL to each announced group still live. The cancellation evidence carries
+`fixtures/<kind>/README.md`). docket's cancellation is a call to its own cancel route, which stops the running step and its
+process group, so `cancel` is `supported` for docket and `advisory` for the other three
+harnesses. On a cancellation of a harness that announces process groups the runner stops the main
+group, then sends SIGTERM and, after the grace period, SIGKILL to each announced group still live. The cancellation evidence carries
 `details.groups` as `{tracked, killed, survived}`. A harness that announces nothing always shows
 `tracked: 0`, which means nothing was reported, not that nothing was left.
 
 | Feature | Ceiling in this build | Why |
 |---|---|---|
-| `cancel` | `supported` for docket on contract 1.1, `advisory` for everything else | Only a harness that announces its process groups can be held to stopping them — `AdapterRegistry::register_probe` rejects a stronger claim from any other, before any attempt can reference it |
+| `cancel` | `supported` for docket (its own cancel route), `advisory` for everything else | Only a harness that announces its process groups, or stops them over its own API, can be held to stopping them — `AdapterRegistry::register_probe` rejects a stronger claim from any other, before any attempt can reference it |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
-| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — claude-code, codex and opencode, and docket when the installed one accepts answers, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
-| `artifacts` | `supported` for docket when it reports the files a run wrote, `advisory` otherwise | The other harnesses cannot guarantee artifact discovery; downgraded from an earlier `supported` claim |
+| `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them — claude-code, codex and opencode, and docket, and only when the request asks for it; see [Asking before acting](#asking-before-acting) |
+| `artifacts` | `supported` for docket, whose task branch is brought into the worktree, `advisory` otherwise | The other harnesses cannot guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
 ---

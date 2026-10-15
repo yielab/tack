@@ -471,7 +471,7 @@ traits:
 `reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`
 implements `HarnessAdapter` by dispatching on harness kind and **refuses to register
 any probe claiming `cancel: supported`** unless its harness announces the process groups
-its tools start (only docket on contract 1.1 does) — every other harness's own shell tool
+its tools start, or stops them over its own API (only docket does) — every other harness's own shell tool
 spawns its subprocess in a new session outside the runner's process group, confirmed
 against the real binaries with `ps`. Live harness
 tests are `#[ignore]`d and never required in CI; `harness/fixtures/fake_harness.sh`,

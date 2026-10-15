@@ -123,7 +123,7 @@ fn render_does_not_panic_on_a_populated_report() {
     let mut with_models = capability("codex", "1.18.0", None);
     with_models.requires_model = true;
 
-    render(&sample_discovery_report(vec![with_models]));
+    render(&sample_discovery_report(vec![with_models]), None);
 }
 
 /// A harness with artifacts and a policy prints both lines; one without
@@ -263,4 +263,49 @@ fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
         cap.requires_model = requires;
         assert_eq!(readiness_lines(&cap), expected, "{name}");
     }
+}
+
+/// Under docket the report states the API, whether the daemon answers, and
+/// one line per team with what keeps it from running lights-out.
+#[test]
+fn docket_lines_state_the_api_the_daemon_and_each_team() {
+    use tack_orch::execution::{TeamReport, TeamViolation};
+    let mut docket = capability("docket", "API 5", None);
+    docket.teams = Some(vec![
+        TeamReport {
+            name: "fab-content".to_owned(),
+            profile: "lights-out".to_owned(),
+            violations: Vec::new(),
+        },
+        TeamReport {
+            name: "fab-research".to_owned(),
+            profile: "attended".to_owned(),
+            violations: vec![TeamViolation {
+                requirement: "network none".to_owned(),
+                fix: "docket pod set network none".to_owned(),
+            }],
+        },
+    ]);
+    assert_eq!(
+        docket_lines(&docket, &Ok("running on 127.0.0.1:7399".to_owned())),
+        vec![
+            "  api:         5",
+            "  daemon:      running on 127.0.0.1:7399",
+            "  team fab-content: lights-out",
+            "  team fab-research: attended (fix: docket pod set network none)",
+        ]
+    );
+
+    let mut wrong = capability("docket", "API 4", Some("needs docket 0.2.0-beta.6"));
+    wrong.teams = None;
+    assert_eq!(
+        docket_lines(
+            &wrong,
+            &Err("not answering at http://127.0.0.1:7399/health".to_owned())
+        ),
+        vec![
+            "  api:         4 (needs docket 0.2.0-beta.6)",
+            "  daemon:      not answering at http://127.0.0.1:7399/health",
+        ]
+    );
 }

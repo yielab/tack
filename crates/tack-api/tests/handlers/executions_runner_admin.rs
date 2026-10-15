@@ -1811,6 +1811,25 @@ async fn a_run_without_a_profile_resolves_it_from_the_role_then_the_project_defa
     assert_eq!(snapshot["metadata"]["profile_source"], "ambiguous");
 }
 
+// The server records what the item is, so a harness that picks a pipeline or a priority reads it
+// from the request and never from the board.
+#[tokio::test]
+async fn the_request_snapshot_carries_what_the_item_is() {
+    let (app, repo, item_id) = setup().await;
+    add_profile(&repo, "profile-content").await;
+    let mut body = bare_body(&item_id, "k-item");
+    body["agent_profile_id"] = json!("profile-content");
+    body["metadata"] = json!({"mine": 1});
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(
+        snapshot["metadata"]["item"],
+        json!({"type": "task", "priority": "medium", "trusted": true})
+    );
+    assert_eq!(snapshot["metadata"]["mine"], 1);
+}
+
 #[tokio::test]
 async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
     let (app, repo, item_id) = setup().await;

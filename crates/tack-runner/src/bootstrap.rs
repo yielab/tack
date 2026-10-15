@@ -19,7 +19,11 @@ use crate::{
         AttemptDataProtocol, HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy,
         RunnerEngine, WorkspaceManager, workspace::git::GitWorktreeProvisioner,
     },
-    harness::{AdapterRegistry, process::ProcessLimits},
+    harness::{
+        AdapterRegistry,
+        docket::daemon::{self, DaemonHandle},
+        process::ProcessLimits,
+    },
 };
 
 /// The concrete runtime this crate ships: the real HTTP protocol, every
@@ -143,7 +147,30 @@ pub async fn run(
     limits: RunnerLimits,
     shutdown: Shutdown,
 ) -> Result<(), RunnerError> {
-    build_runtime(config, limits).await?.run(shutdown).await
+    let daemon = start_docket(&config).await;
+    let outcome = match build_runtime(config, limits).await {
+        Ok(runtime) => runtime.run(shutdown).await,
+        Err(error) => Err(error),
+    };
+    stop_docket(daemon).await;
+    outcome
+}
+
+/// Starts the docket daemon beside the runner when `[docket]` names a binary
+/// and no `base_url`; a runner without docket configured touches nothing.
+async fn start_docket(config: &RunnerConfig) -> Option<DaemonHandle> {
+    let docket = &config.docket;
+    if docket.binary.is_none() || docket.base_url.is_some() {
+        return None;
+    }
+    Some(daemon::ensure_running(docket, &config.state_dir.join("logs")).await)
+}
+
+/// One `SIGTERM` to a daemon this runner started.
+async fn stop_docket(daemon: Option<DaemonHandle>) {
+    if let Some(daemon) = daemon {
+        daemon.shutdown().await;
+    }
 }
 
 /// [`run`] against a registry the caller also holds; see
@@ -154,10 +181,13 @@ pub async fn run_with_active(
     shutdown: Shutdown,
     active: crate::active::ActiveAttempts,
 ) -> Result<(), RunnerError> {
-    build_runtime_with_active(config, limits, active)
-        .await?
-        .run(shutdown)
-        .await
+    let daemon = start_docket(&config).await;
+    let outcome = match build_runtime_with_active(config, limits, active).await {
+        Ok(runtime) => runtime.run(shutdown).await,
+        Err(error) => Err(error),
+    };
+    stop_docket(daemon).await;
+    outcome
 }
 
 /// What probing this machine's harness installations found: a
@@ -189,6 +219,7 @@ pub async fn probe(
     staging_root: &Path,
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
+    docket: &crate::config::DocketConfig,
 ) -> DiscoveryReport {
     let (adapters, missing_harnesses) = crate::harness::discover(
         process_limits,
@@ -196,7 +227,7 @@ pub async fn probe(
         secrets,
         &[],
         &BTreeMap::new(),
-        &crate::config::DocketConfig::default(),
+        docket,
     );
     let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();

@@ -16,8 +16,8 @@ import { waitForApp } from './helpers';
 // Every screen is captured along the way.
 //
 // Run through `scripts/docket-prill-e2e.sh`, which builds tack from this
-// checkout, starts it on a fresh database, makes docket's own setup in a scratch
-// HOME (a local OpenAI-compatible endpoint as docket's provider and default
+// checkout, starts it on a fresh database, starts `docket start --dispatch` (API 5) in a scratch
+// HOME and DOCKET_HOME (a local OpenAI-compatible endpoint as docket's provider and default
 // model), writes the runner configuration (prill as `[verify]`) and passes
 // everything this spec needs in `DOCKET_PRILL_*` variables. Every run here is a
 // real model call on docket's default model; nothing is staged, and no run names
@@ -189,17 +189,18 @@ interface RunnerRow {
     harnesses?: Array<{
       harness_kind: string;
       default_model?: string | null;
+      models?: { ids?: string[] } | null;
       sign_in?: { state: string; detail: string } | null;
     }>;
   };
 }
-/** The model docket's own setup runs when a request names none, as our runner reports it. */
+/** A model docket's team members run on, and the two teams the script's daemon is asked for, as our runner reports them. */
 async function docketDefaultModel(): Promise<string> {
   const mine = (await runners()).find((r) => r.runner_id === runnerId);
   const docket = mine?.capability_snapshot?.harnesses?.find((h) => h.harness_kind === 'docket');
   expect(docket?.sign_in?.state, `docket's sign-in: ${docket?.sign_in?.detail}`).toBe('signed_in');
-  expect(docket?.default_model, "docket's setup names a default model").toBeTruthy();
-  return docket!.default_model!;
+  expect(docket?.models?.ids?.length, 'docket reports the models its team members run on').toBeGreaterThan(0);
+  return docket!.models!.ids![0];
 }
 async function runners(): Promise<RunnerRow[]> {
   return ((await apiFetch('/runners')) as { data: RunnerRow[] }).data;
@@ -564,9 +565,8 @@ test.describe.serial('docket runs, prill verifies', () => {
     await page.reload();
     await waitForApp(page);
     await expect(page.getByRole('button', { name: /^docket$/i })).toHaveAttribute('aria-pressed', 'true');
-    // docket listed its models from its own setup; the project keeps docket's own default.
+    // docket listed the models its team members run on; the project names none.
     const model = page.getByLabel('Model', { exact: true });
-    await expect(model.locator('option:checked')).toHaveText(`Agent's default (${modelId})`);
     await expect(model.locator('option', { hasText: modelId }).last()).toHaveText(modelId);
     await expect(page.getByText(/From docket on this computer\./i)).toBeVisible();
     const project = (await apiFetch(`/projects/${projectId}`)) as { workspace_mode: string; default_harness: string | null; default_model: string | null };

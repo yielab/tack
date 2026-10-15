@@ -38,6 +38,7 @@ use crate::{
 };
 
 mod client;
+pub mod daemon;
 mod probe;
 mod task;
 
@@ -223,8 +224,8 @@ impl DocketAdapter {
         }
     }
 
-    /// The team a profile names.
-    fn team(spec: &ExecutionSpec) -> Result<String, HarnessError> {
+    /// The team a profile names, when it names one.
+    fn named_team(spec: &ExecutionSpec) -> Option<String> {
         spec.work
             .request
             .resolved_agent_profile
@@ -234,11 +235,24 @@ impl DocketAdapter {
             .and_then(Value::as_str)
             .filter(|team| !team.is_empty())
             .map(str::to_owned)
-            .ok_or_else(|| {
-                rejected(
-                    "the agent profile names no docket team; choose one under Agents".to_owned(),
-                )
-            })
+    }
+
+    /// The pod a task goes to: the profile's team, else the project's default
+    /// pod, named for the repository folder.
+    fn team(spec: &ExecutionSpec) -> Result<String, HarnessError> {
+        if let Some(team) = Self::named_team(spec) {
+            return Ok(team);
+        }
+        let repository = spec
+            .work
+            .workspace_repository()
+            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        Ok(default_pod(
+            repository
+                .repository_path
+                .as_deref()
+                .unwrap_or(Path::new("")),
+        ))
     }
 
     async fn run_info(&self, process_id: &str) -> Option<Arc<RunInfo>> {
@@ -285,6 +299,33 @@ impl DocketAdapter {
             .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
             .filter(|head| !head.is_empty());
         head.unwrap_or_else(|| spec.workspace.base_revision.clone())
+    }
+}
+
+/// The name of the project's default pod: the repository folder's basename as
+/// lowercase `[a-z0-9-]`, 64 characters at most.
+pub fn default_pod(repository: &Path) -> String {
+    let name = repository
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let mut slug = String::new();
+    for c in name.chars() {
+        let c = if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            c
+        } else {
+            '-'
+        };
+        if c != '-' || !(slug.is_empty() || slug.ends_with('-')) {
+            slug.push(c);
+        }
+    }
+    let slug: String = slug.trim_end_matches('-').chars().take(64).collect();
+    let slug = slug.trim_end_matches('-').to_owned();
+    if slug.is_empty() {
+        "default".to_owned()
+    } else {
+        slug
     }
 }
 
@@ -630,9 +671,13 @@ impl HarnessAdapter for DocketAdapter {
         if repository.workspace_mode != crate::client::WorkspaceMode::LocalBranch {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
-        let team = Self::team(spec)?;
+        let team = Self::named_team(spec);
         // The version first: a docket that is not API 5 gets no task.
         probe::status(&self.client).await.map_err(rejected)?;
+        // The default pod is made when the task starts, like any other.
+        let Some(team) = team else {
+            return Ok(());
+        };
         let teams = probe::teams(&self.client)
             .await
             .map_err(|why| rejected(format!("docket's teams could not be read: {why}")))?;

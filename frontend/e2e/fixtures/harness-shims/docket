@@ -1,15 +1,8 @@
 #!/bin/sh
 # Fake `docket` binary for the e2e webServer's PATH — see ./claude's header.
 # It shadows a real docket installed on the machine running the suite, so
-# the embedded runner's probe, and the sign-in and model checks it runs, never
-# reach the operator's own install or setup. It answers the contract probe
-# the way docket 0.2.0-beta.5 does, its setup check reads as unknown, and
-# every other command prints the version.
-case "${1:-}" in
-  exec)
-    printf '{"v":"1.2.0","token":"","status":"refused","error":"DOCKET_HOME is not set; harness mode never runs against the default home"}\n'
-    exit 2 ;;
-  setup) exit 1 ;;
-esac
+# nothing the suite starts reaches the operator's own install or home. The
+# runner talks to docket over HTTP, so a binary here is only ever asked its
+# version.
 echo "docket 9.9.4"
 exit 0

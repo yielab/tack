@@ -54,7 +54,7 @@ zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
-# The fake model endpoint the real docket is pointed at, through its own setup.
+# The fake model endpoint some tests point an agent at.
 wiremock = { workspace = true }
 # The in-process fake docket (`tests/fake_docket/`) that `tests/docket_v5.rs` talks to.
 axum = { workspace = true }

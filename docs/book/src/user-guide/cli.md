@@ -332,7 +332,7 @@ commands (for example `claude auth status` and `codex login status`). A signed-o
 its own command: `signed in:   no (Not logged in) — run `codex login``. The `models:` line says
 whether the list was `listed` by the agent or `suggested` from its documentation, shows the first
 five, and ends with whether a request must name a model. Tack holds no model credential, so there
-is no provider section. docket needs docket 0.2.0-beta.5 or later; an older one reads as not
+is no provider section. docket needs docket 0.2.0-beta.6 (API 5); another version reads as not
 running here.
 
 The last line is the runner's `[verify]` table as this machine would read it: `disabled`, or

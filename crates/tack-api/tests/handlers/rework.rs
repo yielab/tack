@@ -357,6 +357,12 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
                 serde_json::from_str::<Value>(&made[0].1).unwrap()["rework_of"],
                 a1.request_id
             );
+            // The branch the rejected attempt pushed is where the follow-up starts.
+            assert_eq!(snapshot["metadata"]["rework_base"], "tack/attempt-1");
+            assert_eq!(
+                serde_json::from_str::<Value>(&made[0].1).unwrap()["rework_base"],
+                "tack/attempt-1"
+            );
             let queued: String =
                 sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
                     .bind(&made[0].0)

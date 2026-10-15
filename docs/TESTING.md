@@ -95,7 +95,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 | `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
 | `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/` | the runner-v1 execution domain: capability negotiation, request/attempt lifecycle, scheduling, model policy, usage provenance. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract.rs` in the same change |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable |
-| `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. The one exception, per open-wire harness, is a test that runs the real binary against a fake model server on loopback (docket has two: a run, and a run that asks): it proves the vendor's contract, is not billed, and returns early when the binary is absent or too old. Vendor output is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
+| `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 5 whose recorded requests the tests assert, and the daemon's supervision against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
 
 Each `tests/*.rs` file is its own binary — its own crate, its own full link, seconds of CPU
@@ -428,15 +428,16 @@ README's and the book's images and GIFs, each through its own config and its own
 The default config ignores them and CI never runs them.
 
 `docket-prill.spec.ts` is a live test, not a CI one: `scripts/docket-prill-e2e.sh` builds `tack`
-with the SPA embedded, runs docket and prill from their own source trees (`DOCKET_SRC`,
-`PRILL_SRC`), makes docket's own setup in a scratch `HOME` with a local OpenAI-compatible model as
-its provider and default model, and drives the whole workflow through the
-UI — a project, its runner enrolled on the Agents page, its settings, a bug, a feature, a task
-and a run that asks — with a screenshot per step in `frontend/test-results/docket-prill/`. It
-checks what a person would: every run's steps reach the timeline before it ends, in order; a
-question names the command it would allow; prill's pack comes back for each run and is
-reviewed. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1` when nothing in Tack changed; the script
-lists its knobs at the top.
+with the SPA embedded, runs docket (0.2.0-beta.6, API 5) and prill from their own source trees
+(`DOCKET_SRC`, `PRILL_SRC`), starts `docket start --dispatch` itself in a scratch `HOME` with an
+isolated `DOCKET_HOME` and two pods (`fab-code`, `fab-content`) over the fixture repository, and
+drives the whole workflow through the UI: a project, its runner enrolled on the Agents page, its
+settings, a code item and a content item added at once, a rejection with its rework, and a
+screenshot of the ladder, with a screenshot per step in `frontend/test-results/docket-prill/`. It
+checks what a person would: every run's steps reach the timeline before it ends, in order; prill's
+pack comes back for each run and is reviewed. The script dies before building when
+`GET /status.json` does not answer `apiVersion: "5"`. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`
+when nothing in Tack changed; the script lists its knobs at the top.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it
