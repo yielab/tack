@@ -719,3 +719,26 @@ still a control shown with its reason.
     `pipeline`, `priority` and `trusted` are omitted; the `rework_base` assertion; the
     `DocketSetupReader` boundary test went with the subprocess grammar and the daemon's
     environment rule replaces it; docs that still describe a real-binary docket test.
+  - **D1 closed** 2026-10-14 in `b3a689ae`: gate green, the whole Rust suite 1284 passed,
+    3 skipped.
+  - **U closed** 2026-10-14 in `4557834d` (U + U2 squashed): gate green; core, db and handlers
+    506 passed; type-check, Vitest 643/643, token lint and the build green. U2's call, kept: a
+    team no runner reports shows as a ✗ "unknown" line and neither caps the ceiling nor adds a
+    blocker sentence.
+- **Round 5** opened 2026-10-14: D2 cut from develop at `b3a689ae`. The `[Unreleased]` changelog
+  section and `CLAUDE.md`'s "What's next" sentence are written and wait for Z's commit.
+  - **D2** finished by its agent the same day; gate green, runner, cli, boundaries and handlers
+    696 passed. D2's calls, kept: the daemon is sent one `kill -TERM` and waited for at most
+    five seconds, docket finishing its task on its own time; the daemon's log is
+    `<state_dir>/logs/docket-daemon.log`; `scripts/smoke.sh` drops its docket shim, since the
+    fake is the proof; the doctor reads the runner config file so `[docket]` is real. Decided
+    by the integrator: the daemon starts only when `[docket]` names `binary` (never because a
+    `docket` is on `PATH`), because an unasked `docket start --dispatch` would sweep the
+    operator's own pods under their own `~/.docket`; the Agents page and the doctor say "not
+    configured: add a [docket] table". Not built, with the reason shown: the apply-team button
+    (no board-to-runner channel exists; the runner protocol is runner-initiated and the only
+    board→runner seam is the embedded runner's control), so the Teams rung says "In the
+    project's folder, run: docket init --name <team>". Not written: the e2e scenario with two
+    pods and a rework, which needs a live docket beta.6 and the ladder; the script is ready for
+    it. Known: `metadata.item` is part of the request fingerprint, so an idempotent replay after
+    the item's type or priority changed answers 409.

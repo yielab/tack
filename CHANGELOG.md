@@ -9,6 +9,65 @@ Sections from the next release on are generated from the commit history by
 
 ---
 
+## [Unreleased]
+
+Phase 73 (ADR 0080): every run of the docket agent goes to a team that already exists and keeps
+existing, and a project's automation is set on one screen.
+
+### Added
+
+- **The runner runs several attempts at once.** `max_concurrent_attempts` in the runner's
+  config, `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` and `--max-concurrent-attempts` (default 1).
+  One heartbeat per runner carries every lease, and a cancellation asked mid-run now reaches the
+  running agent. The Agents page says how many runs this computer takes at a time. A folder
+  worked in place stays one at a time.
+- **A role chooses the profile.** A project role may point at an agent profile; a profile may
+  name its team (`tool_policy.docket.team`), the agent that runs it (`tool_policy.agent`) and
+  its fleet. A run that names no profile, agent or machine is resolved on the server (the task's
+  saved settings, its role, the project default, the built-in Implementer) and records where
+  the choice came from. `PATCH /api/roles/{id}`, `tack role set-profile`, `tack agent-profile
+  create --fleet`; `tack execution create` and the MCP `create_execution` take those keys as
+  optional.
+- **A task can start by itself.** Per project, off by default: a task that reaches the status
+  you choose, with a role that resolves to a profile, starts a run when it has no open run, no
+  unfinished blocker, room under the next column's WIP limit, an unspent daily budget and fewer
+  open runs than the cap (`TACK_AUTO_START_SECONDS`, 30 s). It asks before each action unless
+  every eligible machine sandboxes the agent. A demotion that leaves the project at L3 switches
+  it off and says so. The Factory page counts runs by how they started, merges by trigger and
+  the lights-off rate.
+- **The team sets a ceiling on the automatic merge.** A runner reports each docket team's
+  profile; a team that needs a person during a run keeps its tasks at L3, and the autonomy
+  settings name the team and docket's fix. The merge policy reads the ceiling at merge time.
+- **Usage per model.** A run's usage keeps its tokens per model (Claude Code's `modelUsage`,
+  docket's `usage.byModel`); one query prices the Factory page and the daily dollar budget; the
+  page shows cost by model and, when a run names a team, by team.
+- **A task can repeat** weekly, monthly or quarterly: closing it creates the next one once, due
+  at the next period's end, in the first to-do column. In the outline, the CSV, `tack add
+  --recurrence`, the task header and a badge.
+- **Settings → Automation is a ladder of four rungs**: Teams (role → profile → team · machine),
+  Start (the switch, the status, the cap), Merge (the autonomy settings, moved up) and Ceiling
+  (what the project can reach and what blocks it, including the teams). A control that cannot
+  be used is shown disabled with its reason. The board, the list and the table carry
+  "Started by itself", "Team: …" and "Merged by itself"; the task drawer has an Automation
+  row; the run dialog says "Chosen by the role …".
+
+### Changed
+
+- **The docket agent runs through docket's HTTP API, version 5, against a long-lived team.**
+  The runner supervises `docket start --dispatch` on this computer, accepts only `apiVersion`
+  `"5"` (anything else reads "needs docket 0.2.0-beta.6"), ensures the team's pod in the
+  project's checkout, posts each attempt as one task (the brief, a gate from its command or test
+  criterion, the profile's token budget, restrictions that only narrow), follows the trace,
+  answers approvals and parked questions from Tack's inbox, cancels over HTTP, and brings the
+  finished task's branch into the runner's worktree so evidence, verification and push work as
+  for every agent. `docket exec`, the contract probe, the stdin answers, the throwaway home and
+  the generated policy are gone, with nothing kept for compatibility. Until beta.6 ships, every
+  docket test runs against an in-process fake that implements the published contract.
+- `PUT /api/projects/{id}/autonomy` answers what `GET` would: the L4/L5 radios no longer enable
+  after a save until the page is reloaded.
+
+---
+
 ## [0.1.0-beta.10] - 2026-10-14
 
 Phases 66 to 72. The version moved to `0.1.0-beta.10` on 2026-10-05 when Phase 66
