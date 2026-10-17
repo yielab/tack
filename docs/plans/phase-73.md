@@ -51,6 +51,7 @@ plus:
 | Recurrence | Columns on `items`; the next task is created in `update_item` when a task with `recurrence` enters Done from a status that was not Done, and no open task has `recurrence_of = this id`. `next_due` is the end of the next period (month end, leap years) from the task's `due_date`, or from today when it has none. |
 | The e2e script | `scripts/docket-prill-e2e.sh` checks `apiVersion == "5"` and dies naming `docket 0.2.0-beta.6`. Until beta.6 exists it is not run; the fake docket is the proof. |
 | Generated files | Each task regenerates and stages them (`./scripts/regen-generated.sh`); on a conflict the integrator regenerates. |
+| The project file (wave 7) | Every row of ADR 0081's table and its questions. The file is `tack_core::outline::Outline` with six optional sections; the check is pure (`outline::bundle::check`) and the export is pure (`outline::bundle::to_bundle`); the routes gather rows and write them. Items are never updated by a file. A file never raises a level or switches auto-start on. Profiles match by name across the board. Migration `091_template_bundle` adds `roles`, `profiles`, `automation` to `project_templates`. `tack template create-from` keeps its meaning; `tack template save` stores one. |
 
 ## Rounds
 
@@ -67,6 +68,9 @@ runs beside them. Worktrees under `/var/tmp/tack-worktrees/p73-<id>` from `devel
 | 4 | D1 (fake docket + adapter); U (the ladder) beside | T, C, R (D1); T, C, A (U) |
 | 5 | D2 (daemon, config, doctor, deletions, e2e) | D1 |
 | 6 | Z (integrator) | everything |
+| 7 | B1 (the bundle in core and the database) — wave 7, ADR 0081 | the owner's approval of the file (given 2026-10-17) |
+| 8 | B2 (the routes read and write the bundle) | B1 |
+| 9 | B3 (CLI, MCP, the Data panel, the book); then Z2 | B2 |
 
 Ceilings: Haiku 60 calls; Sonnet one layer 100, two layers 150. One that reaches it hands off
 and is replaced fresh with a shorter brief.
@@ -617,6 +621,303 @@ and the gate are green; `scripts/docket-prill-e2e.sh` exits early naming beta.6 
 - On the merged `develop`: `PATH=$HOME/.cargo/bin:$PATH .githooks/pre-push`, `cargo nextest
   run --workspace`, `cd frontend && npm run type-check && npm test`, and the counts quoted.
 
+### B1 — the bundle in core and the database (Sonnet, two layers)
+
+Wave 7, ADR 0081 (`docs/adr/0081-a-whole-project-goes-in-and-out-through-one-file.md`); the
+file is `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`, every rule commented. Read
+both before anything else.
+
+**Files:** `crates/tack-core/src/outline.rs`, a new `crates/tack-core/src/outline/bundle.rs`
+(+ `bundle/tests.rs`), `crates/tack-core/src/outline/tests.rs`, `crates/tack-core/src/workflow.rs`
+(one function), `crates/tack-core/src/models.rs` (`ProjectTemplate`, `CreateProjectTemplate`),
+`crates/tack-db/src/migrations.rs`, `crates/tack-db/tests/migrations.rs` and a new
+`crates/tack-db/tests/migrations/template_bundle.rs`, `crates/tack-db/src/repo/templates.rs`
+(+ `templates/tests.rs`), `crates/tack-db/src/repo/roles.rs`, `crates/tack-db/src/repo/custom_fields.rs`,
+`crates/tack-db/src/repo/execution.rs`, `crates/tack-db/src/repo.rs`,
+`crates/tack-db/tests/repository/integration.rs`, and the struct literals that stop
+compiling when `ProjectTemplate`/`CreateProjectTemplate` grow: `crates/tack-api/src/handlers/templates.rs`
+(`save_project_as_template`, fill the new fields with empty values; B2 fills them for real) and
+whatever `rg -n "CreateProjectTemplate \{|ProjectTemplate \{" crates/ frontend/src` finds
+(a frontend literal only gets the new keys).
+
+**Do:**
+
+- `Outline` gains, each `#[serde(default, skip_serializing_if = ...)]` so a plain outline
+  serializes as today: `fields: Vec<BundleField>`, `profiles: Vec<BundleProfile>`,
+  `roles: Vec<BundleRole>`, `sprints: Vec<BundleSprint>`, `automation: Option<BundleAutomation>`.
+  `OutlineProject` gains `vocabulary: Option<VocabularyMap>` and `workflow: Option<BundleWorkflow>`.
+  `OutlineItem` gains `roles: Vec<String>` (read with `text_list`), `sprint: Option<String>`,
+  `fields: BTreeMap<String, serde_json::Value>`, `estimate_unit: Option<String>` (story_points,
+  hours, days, any other word as custom). `PlannedItem` carries the same three names through
+  `resolve`, which does not check them (no board in its signature). Every struct is
+  `deny_unknown_fields`, `Serialize + Deserialize`, `ToSchema` under the feature, documented
+  on each field in one line. Shapes, exactly:
+
+  ```rust
+  pub struct BundleWorkflow { pub preset: Option<String>, pub statuses: Vec<BundleStatus>, pub transitions: Option<Vec<Transition>> } // preset XOR statuses
+  pub struct BundleStatus { pub name: String, pub category: String /* todo|in_progress|done */, pub wip_limit: Option<usize> }
+  pub struct BundleField { pub name: String, #[serde(rename = "type")] pub field_type: String, pub description: Option<String>, pub required: bool, pub default: Option<Value>, pub options: Vec<String>, pub validation: Option<Value> }
+  pub struct BundleProfile { pub name: String, pub kind: Option<String>, pub instructions: String, pub tool_policy: Value /* default {} */, pub limits: Value /* default {} */, pub fleet: Option<String>, pub summary: Option<String> }
+  pub struct BundleRole { pub name: String, pub color: Option<String>, pub icon: Option<String>, pub profile: Option<String> }
+  pub struct BundleSprint { pub name: String, pub goal: Option<String>, pub start: Option<String>, pub end: Option<String>, pub status: Option<String> /* planning|closed */ }
+  pub struct BundleAutomation { pub code_origin: Option<String>, pub repository: Option<String>, pub default_branch: Option<String>, pub workspace_mode: Option<String>, pub push_after_run: Option<bool>, pub default_harness: Option<String>, pub default_profile: Option<String>, pub default_model: Option<String>, pub on_finish_status: Option<String>, pub definition_of_done: Option<String>, pub autonomy: Option<BundleAutonomy>, pub auto_start: Option<BundleAutoStart> }
+  pub struct BundleAutonomy { pub level: Option<String>, pub domains: Vec<BundleDomain>, pub verify_require: Option<Vec<String>>, pub verify_loop_max_attempts: Option<i64>, pub budgets: Option<BundleBudgets>, pub merge_on_done: Option<bool> }
+  pub struct BundleDomain { pub name: String, pub paths: Vec<String>, pub item_types: Vec<String>, pub level: String }
+  pub struct BundleBudgets { pub tokens_per_day: Option<i64>, pub usd_per_day: Option<f64>, pub auto_merges_per_day: Option<i64>, pub queue_items_max: Option<i64> }
+  pub struct BundleAutoStart { pub enabled: bool, pub status: Option<String>, pub max_open: Option<i64> }
+  ```
+
+- `workflow.rs`: `pub fn preset_workflow(name: &str) -> Option<WorkflowConfig>` for scrum,
+  kanban, simple, construction, legal, research, event (any case).
+- `outline/bundle.rs`, pure, no I/O:
+
+  ```rust
+  pub struct ProfileRow { pub id: String, pub name: String, pub kind: String, pub instructions: String, pub tool_policy: Value, pub limits: Value, pub fleet_id: Option<String>, pub builtin: bool }
+  pub struct Board<'a> { pub workflow: &'a WorkflowConfig, pub fields: &'a [CustomFieldDefinition], pub profiles: &'a [ProfileRow], pub roles: &'a [(Uuid, String)], pub sprints: &'a [(Uuid, String)], pub fleets: &'a [(String, String)] /* (id, name) */, pub harness_kinds: &'a [&'a str], pub level: Level /* the project's today; L3 for a new one */, pub auto_start: bool }
+  /// The workflow a new project gets: the file's preset or statuses (checked with `WorkflowConfig::validate`), else the type's.
+  pub fn workflow_of(project: Option<&OutlineProject>, project_type: &ProjectType) -> Result<WorkflowConfig, OutlineError>;
+  pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>;
+  pub enum Upsert<T> { Create(T), Update { id: String, value: T } }
+  pub struct Plan { pub vocabulary: Option<VocabularyMap>, pub fields: Vec<Upsert<BundleField>>, pub profiles: Vec<Upsert<BundleProfile>>, pub roles: Vec<Upsert<BundleRole>>, pub sprints: Vec<Upsert<BundleSprint>>, pub automation: Option<BundleAutomation> /* levels and auto_start already lowered */, pub items: ResolvedOutline, pub sections: Vec<SectionSummary>, pub warnings: Vec<String> }
+  #[derive(Serialize, ToSchema)] pub struct SectionSummary { pub section: String, pub created: usize, pub updated: usize, pub not_mentioned: usize, pub warnings: Vec<String> }
+  pub struct Parts<'a> { pub project: &'a Project, pub fields: &'a [CustomFieldDefinition], pub profiles: &'a [ProfileRow], pub roles: &'a [Role], pub sprints: &'a [Sprint], pub autonomy: Option<BundleAutonomy>, pub auto_start: BundleAutoStart, pub items: &'a [Item], pub item_roles: &'a [(Uuid, Uuid)] /* (item, role) */, pub item_fields: &'a [CustomFieldValue], pub dependencies: &'a [Dependency], pub fleets: &'a [(String, String)] }
+  /// The export: the same file back, deterministic.
+  pub fn to_bundle(parts: &Parts<'_>) -> Outline;
+  ```
+
+  `check` rules, in this order, every problem collected before returning (ADR 0081 §1–§5):
+  a vocabulary key not in `vocabulary::validate` → problem; `preset` and `statuses` both or
+  neither-when-`workflow`-given → problem; unknown preset → problem naming the seven; a status
+  category not todo/in_progress/done → problem; a field type not one of the nine → problem; a
+  select/multi_select field without options → problem; a name repeated in one section → problem;
+  a profile `kind` not implementer/reviewer/researcher/planner/custom → problem; `tool_policy.agent`
+  not in `harness_kinds`, or `tool_policy.docket.team` not matching `^[a-z0-9][a-z0-9-]{0,63}$`
+  → problem naming the key; a `fleet` the board lacks → warning, saved without a fleet; a
+  file's profile whose name is a built-in's → warning, not changed; a role's `profile` naming
+  nothing in the file nor on the board → problem; a sprint status not planning/closed, or a
+  date that is not a date → problem; `automation`: `code_origin`/`workspace_mode` not their
+  words → problem, `repository` an absolute path for folder origins and a URL for url (the
+  same rule as `handlers/projects.rs::repository_problem`, copy the two lines) → problem,
+  `default_harness` not in `harness_kinds` → problem, `default_profile` naming nothing → problem,
+  `on_finish_status` and `auto_start.status` not in the workflow → problem, `level` and each
+  domain `level` not L3/L4/L5 → problem, a level above `board.level` → lowered to `board.level`
+  with a warning "autonomy.level asked: L4; applied: L3. Raise it from Settings → Automation"
+  (same shape per domain), `auto_start.enabled: true` when `board.auto_start` is false → applied
+  false, warning "auto_start asked: true; applied: false. Turn it on from Settings → Automation",
+  `max_open` below 1 → problem; items: `resolve` as today, then each `roles` name must be in
+  the file's roles or the board's → problem, `sprint` the same → problem, each `fields` key a
+  field of the file or the board → problem, its value checked with
+  `CustomFieldDefinition::validate_value` (build a definition from a `BundleField`) → problem
+  with the item's label and the field's name, a required field the item lacks → warning,
+  `estimate_unit` any word → ok. Matching by name is exact after trim. `sections` holds one
+  summary per section in file order, with `not_mentioned` = the board's names the file does not
+  carry (0 for a new project). `Upsert::Update.id` is the board's id.
+- `to_bundle`: `project` with `type`, `description`, `vocabulary` = only the keys that differ
+  from `vocabulary_for_type`, `workflow` as `statuses` + `transitions` (never `preset`);
+  fields sorted by name; roles in the board's order; sprints in the board's order; profiles =
+  those the roles and `default_profile` point at, in first-reference order, with `fleet` as a
+  name; `automation` from the project's columns and the given autonomy; items parents first
+  (Kahn over `parent_id`, ties in the slice's order) with `ref` `"1"`…`"n"`, `parent` and
+  `depends_on` as refs, `depends_on` only from `blocks` dependencies, `roles` sorted by role
+  name, `fields` keyed by field name, `estimate_unit` and `recurrence` as their words, every
+  optional key `skip_serializing_if` when absent. `to_bundle` then `check` on an empty board
+  must produce zero problems.
+- Migration `091_template_bundle`, exactly:
+
+  ```sql
+  ALTER TABLE project_templates ADD COLUMN roles TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE project_templates ADD COLUMN profiles TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE project_templates ADD COLUMN automation TEXT;
+  ```
+
+- `ProjectTemplate { roles: Vec<BundleRole>, profiles: Vec<BundleProfile>, automation: Option<BundleAutomation> }`
+  and the same on `CreateProjectTemplate` (`#[serde(default)]`), read and written by
+  `repo/templates.rs`. `BuiltinSpec` gains the three; three new built-ins beside the existing
+  ones, exactly these names, at L3, with no repository, English words, the type's vocabulary:
+  **"Web product with content"** (web; fields Channel select [app, newsletter, social],
+  Audience select [new, returning]; roles Content, Development, Growth, Security, Legal, Ops;
+  profiles "Content writer" (custom, `tool_policy.agent: docket`), "Product implementer"
+  (implementer, docket), "Growth" (custom, docket), and three read-only reviewers "Security
+  review", "Legal review", "Ops review" (reviewer kind, `tools: {claude-code: [Read, Grep, Glob]}`,
+  instructions that say they only read)); **"Library or CLI"** (software; fields Platform
+  multi_select [linux, macos, windows], Breaking boolean; roles Development, Docs, Security,
+  Ops; profiles "Library implementer" (implementer), "Docs writer" (custom), "Security review",
+  "Ops review"); **"Static content site"** (web; kanban preset; fields Section select [home,
+  blog, docs], Published date; roles Content, Design, Legal, Ops; profiles "Content writer",
+  "Design review" (reviewer), "Legal review", "Ops review"). A profile shared by two built-ins
+  is declared in each (the import matches by name). `automation` on each: `autonomy.level: L3`,
+  `merge_on_done: false`, nothing else.
+- Repository reads, one SQL each, on `Repository`: `item_roles_for_project(project_id) -> Vec<(Uuid, Uuid)>`,
+  `field_values_for_project(project_id) -> Vec<CustomFieldValue>`,
+  `list_agent_profile_rows() -> Vec<ProfileRow>` (ORDER BY name), `fleet_names() -> Vec<(String, String)>`;
+  one write: `write_agent_profile(row: &ProfileRow, clock) -> Result<(), sqlx::Error>` as
+  `INSERT ... ON CONFLICT(id) DO UPDATE` over name, kind, instructions, tool_policy, limits,
+  fleet_id, updated_at (never `builtin`).
+- `./scripts/regen-generated.sh`, stage the result.
+
+**Tests (RED first):**
+
+- `bundle/tests.rs`: one table over `check` with a row per problem and per warning above,
+  each asserting the message names the section, the item label or the field; one test that
+  the Fabulada fixture (`include_str!` of the api fixture path) checks clean on an empty board
+  with exactly the autonomy warnings (level, the content domain, auto-start); one test that
+  `to_bundle` of a synthetic `Parts` with two items, a role, a field value and a blocks
+  dependency gives refs `"1"`, `"2"`, `parent: "1"`, `depends_on: ["1"]`, and serializes to
+  YAML without any `id` or `_at` key; one test that `workflow_of` with `preset: kanban` equals
+  `kanban_workflow` and with statuses gives `WorkflowType::Custom`.
+- `outline/tests.rs`: one row that an item's `roles`, `sprint`, `fields`, `estimate_unit`
+  survive `resolve`.
+- Migration test: a database at 090 with a template migrates; the three columns read their
+  defaults.
+- `templates/tests.rs`: the three built-ins are listed once after two seeds, each with its
+  roles and profiles and `automation.autonomy.level == Some("L3")`.
+- `repository/integration.rs`: the four reads return what two inserts put in;
+  `write_agent_profile` twice on one id leaves one row with the second name.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-core) + package(tack-db) + binary(handlers)'`
+and the gate are green.
+
+### B2 — the routes: import, export and templates read the bundle (Sonnet, one layer)
+
+Needs B1 merged. Read ADR 0081, `bundle.rs` and the fixture first.
+
+**Files:** `crates/tack-api/src/handlers/outline.rs`, `crates/tack-api/src/handlers/export.rs`,
+`crates/tack-api/src/handlers/templates.rs`, `crates/tack-api/src/handlers/autonomy.rs` (only
+to make its settings conversions `pub(crate)`), `crates/tack-api/src/handlers/runner_admin.rs`
+(only `HARNESS_KINDS` to `pub(crate)`), `crates/tack-api/src/openapi.rs` (the new schemas),
+`crates/tack-api/tests/handlers.rs` (one `mod` line), a new `crates/tack-api/tests/handlers/bundle.rs`,
+`crates/tack-api/tests/handlers/outline.rs`, `crates/tack-api/tests/handlers/templates.rs`,
+`crates/tack-api/tests/openapi_contract.rs` only if it pins route counts.
+
+**Do:**
+
+- `OutlineResult.sections: Vec<SectionSummary>` (always present; empty for a CSV).
+- `into_new_project`: the workflow from `bundle::workflow_of`; build `Board` (no
+  fields/roles/sprints yet; the board's profiles and fleets; `harness_kinds` =
+  `runner_admin::HARNESS_KINDS`; `level: L3`, `auto_start: false`); `bundle::check`; on a
+  dry run answer the preview with `sections` without creating anything; else create the
+  project, apply the file's vocabulary (type default overlaid with the file's keys) and
+  workflow with `update_project`, then apply in order: fields (`create_field`), profiles
+  (`write_agent_profile`, the fleet name resolved, id `ap_<uuid>` for a create), roles
+  (`create_role` then `update_role` for the profile id, resolved file-first), sprints
+  (`create_sprint`, then `update_sprint_status(Closed)` when asked), automation
+  (`update_project` with only the keys given, `default_profile` resolved to an id;
+  `autonomy::store::put_settings` from the current settings overlaid with the plan's; the
+  `auto_start_*` columns), items: set each planned item's `sprint_id` from the sprint name,
+  write with `create_outline_items` as today, then `assign_role_to_item` and
+  `set_field_value` per item. Any error on a new project deletes the project; on an existing
+  one the error names the section ("roles: <db error>").
+- `into_existing_project`: `Board` from the project's rows (`list_fields_for_project`,
+  `list_roles`, `list_sprints`, the project's level from `autonomy::store::get_settings`, its
+  `auto_start_enabled`); the same apply; a `project` block is read for nothing but a warning
+  "the project's name, workflow and vocabulary are kept; change them under Settings".
+- `export_project`: `scope` query, `snapshot` (default) or `bundle`; `bundle` gathers
+  `Parts` (`list_items` with the default filter, `item_roles_for_project`,
+  `field_values_for_project`, `list_dependencies_for_project`, `list_agent_profile_rows`,
+  `fleet_names`, `get_settings`) and answers `bundle::to_bundle` as YAML or JSON, filename
+  `<name>-bundle.<ext>`; `csv` with `bundle` → 400.
+- `build_project_from_template`: build an `Outline` from the template (project name, type,
+  description, vocabulary, workflow as statuses, fields, profiles, roles, automation, no items)
+  and run the same code path as `into_new_project` (extract it as
+  `pub(crate) async fn create_from_bundle(state, outline, source) -> Result<(Project, OutlineResult), ApiError>`),
+  then the boards as today. `save_project_as_template`: `to_bundle` of the project's `Parts`,
+  store `fields` as today and `roles`, `profiles`, `automation` from the bundle.
+- `./scripts/regen-generated.sh`, stage the result.
+
+**Tests (RED first), in `handlers/bundle.rs` unless named:**
+
+- The fixture, posted as YAML to `/api/projects/outline`: 200; the project has the five
+  statuses and the vocabulary; 4 fields, 7 roles each with the profile id of the profile its
+  name says (Planner = the built-in's id), 6 profiles created and `sections` says
+  `profiles: 6 created`, 2 sprints `planning`, `default_profile_id`, `on_finish_status`,
+  `push_after_run`, `repository`; autonomy `level == "L3"` and `domains[0].level == "L3"`, with
+  the warnings in the automation section; `auto_start_enabled == false` with its warning; 20
+  items, "El zorro que no podía dormir" with role Contenido, sprint Semana 42, fields
+  Dialecto/Edad/Canal, `estimate_unit == "hours"`; "Newsletter semanal" with two roles and
+  `recurrence == "weekly"`; dependencies 5.
+- The same with `?dry_run=true`: 200, project count and profile count unchanged, `sections`
+  present.
+- Posted again to `/api/projects/{id}/outline`: roles `updated: 7`, fields `updated: 4`, items
+  40; then a role added by hand and the file posted once more: `not_mentioned: 1` and the role
+  still there.
+- A copy with `Edad: "12"` → 400 whose message names the item and the field; with
+  `roles: [Nadie]` → 400; with `workflow: {preset: agile}` → 400 naming the seven.
+- An existing project set to L5 by `PUT /autonomy`, then the fixture (L4) posted to it:
+  `level == "L4"`, no level warning.
+- Round trip: fixture → export `?scope=bundle&format=yaml` → post to `/api/projects/outline`
+  → export again → the two texts are equal; the JSON export has no key named `id`,
+  `project_id`, `created_at` or `updated_at` anywhere.
+- `handlers/templates.rs`: `POST /api/projects/from-template/{id}` of "Web product with
+  content" creates six roles with profile ids and the reviewer profiles exist by name;
+  `save-as-template` of the fixture's project stores 7 roles and 6 profiles and `automation`.
+- `handlers/outline.rs`: the existing tests still pass; one row that a CSV answers
+  `sections: []`.
+
+**Done when:** `cargo nextest run --workspace -E 'binary(handlers) + binary(openapi_contract) + binary(security)'`
+and the gate are green.
+
+### B3 — the doors: the CLI, the MCP tool, the Data panel, the book (Sonnet)
+
+Needs B2 merged (the generated types). Read ADR 0081 and `docs/book/src/user-guide/import-export.md` first.
+
+**Files:** `crates/tack-cli/src/main.rs` (a new `Export` command, `Init --template`,
+`TemplateAction::Save`, `cmd_import`'s output), `crates/tack-cli/src/mcp.rs` (`create_outline`),
+`crates/tack-cli/src/mcp/tests.rs`, `crates/tack-cli/tests/cli_test.rs`,
+`frontend/src/shared/api/data.ts`, `frontend/src/features/settings/panels/DataPanel.tsx`,
+`frontend/src/features/settings/panels/panels.test.tsx`, `frontend/src/shared/api/resources.test.ts`,
+`docs/book/src/user-guide/import-export.md`, `docs/book/src/user-guide/cli.md`, `docs/MCP.md`.
+
+**Do:**
+
+- `tack export <project> [--format json|yaml|csv] [--bundle] [-o FILE]`: `GET
+  /projects/{id}/export?format=…&scope=…` through `client.get_bytes`; `--bundle` sets
+  `scope=bundle` and the default format to yaml; `-o` writes the file, else stdout.
+- `tack init <name> --template <id or name>`: a value that is not a UUID is matched against
+  `GET /templates` by name, case-insensitive, `-` read as a space ("web-product-with-content");
+  then `POST /projects/from-template/{id}`; no match → an error listing the names.
+- `tack template save <project> --name <name> [--description]` → `POST /projects/{id}/save-as-template`.
+- `cmd_import` prints one line per entry of `sections` ("Roles: 2 new, 5 updated, 3 not
+  mentioned") before the items, and each section's warnings under it.
+- MCP `create_outline`: the body is every argument except `project_id` and `dry_run`; the tool
+  description says the file may also carry `fields`, `profiles`, `roles`, `sprints` and
+  `automation` "as in Tack's project file (Settings → Data → File format)"; the schema lists
+  the five as `array`/`object` with a one-line description each and no nested detail.
+- `data.ts`: `exportProject(projectId, format, scope?: 'snapshot' | 'bundle')`; the panel's
+  Export card gains "Export project file (YAML)" → `scope: 'bundle'`, with one sentence:
+  "The whole project — fields, roles, profiles, sprints, automation and items — as one file
+  you can edit and import again." The import preview lists `sections` when non-empty, one
+  line each ("Roles: 2 new, 5 updated, 3 not mentioned") with that section's warnings under
+  it, before the items; the items line reads "20 items will be added".
+- The book: a new "The project file" section in `import-export.md` after "The CSV": the
+  seven sections in a short YAML, a table of what each section takes, the rules (names are
+  references, in-file first; nothing deleted; what is refused and what is a warning; the
+  autonomy and auto-start rule in one sentence; built-in profiles are never changed), the
+  export (`scope=bundle`, `tack export --bundle`, the YAML button), templates (`tack init
+  --template`, `tack template save`, the three built-ins by name). `cli.md`: `tack export`,
+  `tack init --template`, `tack template save`. `docs/MCP.md`: the `create_outline` row.
+  Tack's words everywhere: project file, profile, team, agent.
+
+**Tests (RED first):**
+
+- `cli_test.rs`: `export --bundle` sends `GET /api/projects/{id}/export` with `scope=bundle`
+  and `format=yaml`; `init --template web-product-with-content` lists templates then posts to
+  `from-template/{id}`; `template save` posts to `save-as-template`.
+- `mcp/tests.rs`: `create_outline` with `roles` and `profiles` forwards both.
+- `panels.test.tsx`: the preview shows "Roles: 2 new, 5 updated, 3 not mentioned" and the
+  section warning; the Export card calls the bundle URL. `resources.test.ts`: one row for
+  `exportProject` with `scope`.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-cli)'`, `cd frontend && npm run
+type-check && npm test && npm run lint:tokens && npm run build`, and the gate are green.
+
+### Z2 — docs and the integrated gate for wave 7 (integrator)
+
+- `CHANGELOG.md` `[Unreleased]`: one "Added" entry for the project file and the templates.
+- `docs/book/src/roadmap.md`: the Phase 73 section's status and a row for wave 7.
+- `CLAUDE.md`'s "What's next": half a sentence.
+- On the merged `develop`: the gate, `cargo nextest run --workspace`, the frontend checks,
+  `scripts/check-comments.sh`, and the counts quoted.
+
 ## Open questions
 
 Blocking: none.
@@ -742,3 +1043,6 @@ still a control shown with its reason.
     pods and a rework, which needs a live docket beta.6 and the ladder; the script is ready for
     it. Known: `metadata.item` is part of the request fingerprint, so an idempotent replay after
     the item's type or priority changed answers 409.
+- **Round 7** opened 2026-10-17: the owner answered "continua" to the file schema shown
+  2026-10-14; ADR 0081 written, the fixture `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`
+  is the specification, B1 cut from develop at `b07b75a2`.
