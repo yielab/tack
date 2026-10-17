@@ -21,3 +21,5 @@ mod item_source_migration;
 mod one_model_string;
 #[path = "migrations/role_profile_fleet.rs"]
 mod role_profile_fleet;
+#[path = "migrations/template_bundle.rs"]
+mod template_bundle;

@@ -132,3 +132,32 @@ async fn seeded_vertical_workflows_enforce_transitions() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn the_three_bundle_templates_are_listed_once_with_roles_profiles_and_level_three() {
+    let pool = test_pool().await;
+    seed_builtin_templates(&pool).await.expect("seed");
+    seed_builtin_templates(&pool).await.expect("re-seed");
+    let all = list_templates(&pool, None).await.expect("list");
+
+    for (name, roles, profiles) in [
+        ("Web product with content", 6, 6),
+        ("Library or CLI", 4, 4),
+        ("Static content site", 4, 4),
+    ] {
+        assert_eq!(all.iter().filter(|t| t.name == name).count(), 1, "{name}");
+        let t = find_template(&all, name);
+        assert_eq!(t.roles.len(), roles, "{name} roles");
+        assert_eq!(t.profiles.len(), profiles, "{name} profiles");
+        let level = t.automation.as_ref().and_then(|a| a.autonomy.as_ref());
+        assert_eq!(level.and_then(|a| a.level.as_deref()), Some("L3"), "{name}");
+        assert_eq!(level.and_then(|a| a.merge_on_done), Some(false), "{name}");
+        for role in &t.roles {
+            let profile = role.profile.as_deref().expect("a role names its profile");
+            assert!(
+                t.profiles.iter().any(|p| p.name == profile),
+                "{name}: {profile}"
+            );
+        }
+    }
+}

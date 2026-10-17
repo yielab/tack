@@ -2817,6 +2817,74 @@ impl Repository {
         Ok(())
     }
 
+    /// Every agent profile, by name.
+    #[instrument(skip(self))]
+    pub async fn list_agent_profile_rows(
+        &self,
+    ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, sqlx::Error> {
+        use sqlx::Row;
+        let rows = sqlx::query(
+            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id \
+             FROM agent_profiles ORDER BY name",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        let json =
+            |text: String| serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}));
+        Ok(rows
+            .iter()
+            .map(|r| tack_core::outline::bundle::ProfileRow {
+                id: r.get("id"),
+                name: r.get("name"),
+                kind: r.get("kind"),
+                instructions: r.get("instructions"),
+                tool_policy: json(r.get("tool_policy")),
+                limits: json(r.get("limits")),
+                fleet_id: r.get("fleet_id"),
+                builtin: r.get::<i64, _>("builtin") != 0,
+            })
+            .collect())
+    }
+
+    /// Every fleet as `(id, name)`, by name.
+    #[instrument(skip(self))]
+    pub async fn fleet_names(&self) -> Result<Vec<(String, String)>, sqlx::Error> {
+        sqlx::query_as("SELECT id, name FROM agent_fleets ORDER BY name")
+            .fetch_all(self.pool())
+            .await
+    }
+
+    /// Insert the profile, or change the row with its id; `builtin` is never written.
+    #[instrument(skip(self, row, clock))]
+    pub async fn write_agent_profile(
+        &self,
+        row: &tack_core::outline::bundle::ProfileRow,
+        clock: &dyn ExecutionClock,
+    ) -> Result<(), sqlx::Error> {
+        let now = stamp(clock);
+        sqlx::query(
+            "INSERT INTO agent_profiles \
+             (id, name, instructions, tool_policy, limits, kind, fleet_id, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
+             instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
+             limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
+             updated_at = excluded.updated_at",
+        )
+        .bind(&row.id)
+        .bind(&row.name)
+        .bind(&row.instructions)
+        .bind(row.tool_policy.to_string())
+        .bind(row.limits.to_string())
+        .bind(&row.kind)
+        .bind(&row.fleet_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
     #[instrument(skip(self, input, clock))]
     pub async fn enqueue_execution(
         &self,

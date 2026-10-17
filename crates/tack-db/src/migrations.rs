@@ -152,6 +152,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("088_role_profile_fleet", &MIGRATION_088[..]),
         ordinary("089_item_recurrence", &MIGRATION_089[..]),
         ordinary("090_auto_start", &MIGRATION_090[..]),
+        ordinary("091_template_bundle", &MIGRATION_091[..]),
     ]
 }
 
@@ -1909,4 +1910,11 @@ const MIGRATION_090: [&str; 3] = [
     "ALTER TABLE projects ADD COLUMN auto_start_enabled INTEGER NOT NULL DEFAULT 0 CHECK (auto_start_enabled IN (0,1))",
     "ALTER TABLE projects ADD COLUMN auto_start_status TEXT",
     "ALTER TABLE projects ADD COLUMN auto_start_max_open INTEGER NOT NULL DEFAULT 3 CHECK (auto_start_max_open >= 1)",
+];
+
+// 091: a project template carries what a project file carries beyond the board: roles, profiles and automation.
+const MIGRATION_091: [&str; 3] = [
+    "ALTER TABLE project_templates ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE project_templates ADD COLUMN profiles TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE project_templates ADD COLUMN automation TEXT",
 ];

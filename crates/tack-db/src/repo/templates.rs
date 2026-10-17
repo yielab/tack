@@ -1,5 +1,7 @@
+use serde_json::json;
 use sqlx::{FromRow, SqlitePool};
 use tack_core::models::*;
+use tack_core::outline::{BundleAutomation, BundleAutonomy, BundleProfile, BundleRole};
 use tack_core::workflow::WorkflowConfig;
 use tracing::instrument;
 use uuid::Uuid;
@@ -14,6 +16,9 @@ struct TemplateRow {
     workflow: String,
     custom_fields: String,
     default_boards: String,
+    roles: String,
+    profiles: String,
+    automation: Option<String>,
     is_builtin: i32,
     created_at: String,
     updated_at: String,
@@ -48,8 +53,8 @@ pub async fn create_template(
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
@@ -59,6 +64,13 @@ pub async fn create_template(
     .bind(&workflow)
     .bind(&custom_fields)
     .bind(&default_boards)
+    .bind(serde_json::to_string(&data.roles).unwrap_or_else(|_| "[]".to_string()))
+    .bind(serde_json::to_string(&data.profiles).unwrap_or_else(|_| "[]".to_string()))
+    .bind(
+        data.automation
+            .as_ref()
+            .and_then(|a| serde_json::to_string(a).ok()),
+    )
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(pool)
@@ -71,7 +83,7 @@ pub async fn create_template(
 #[instrument(skip(pool))]
 pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -100,6 +112,12 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
         workflow: serde_json::from_value(workflow).unwrap(),
         custom_fields,
         default_boards,
+        roles: serde_json::from_str(&row.roles).unwrap_or_default(),
+        profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
+        automation: row
+            .automation
+            .as_deref()
+            .and_then(|a| serde_json::from_str(a).ok()),
         is_builtin: row.is_builtin != 0,
         created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
             .unwrap()
@@ -120,7 +138,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -130,7 +148,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -163,6 +181,12 @@ pub async fn list_templates(
                 workflow: serde_json::from_value(workflow).unwrap(),
                 custom_fields,
                 default_boards,
+                roles: serde_json::from_str(&row.roles).unwrap_or_default(),
+                profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
+                automation: row
+                    .automation
+                    .as_deref()
+                    .and_then(|a| serde_json::from_str(a).ok()),
                 is_builtin: row.is_builtin != 0,
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
                     .unwrap()
@@ -200,6 +224,9 @@ struct BuiltinSpec {
     workflow: Option<WorkflowConfig>,
     /// Template-level custom field definitions (empty for the base presets).
     custom_fields: Vec<CustomFieldDefinition>,
+    roles: Vec<BundleRole>,
+    profiles: Vec<BundleProfile>,
+    automation: Option<BundleAutomation>,
 }
 
 impl BuiltinSpec {
@@ -211,6 +238,9 @@ impl BuiltinSpec {
             project_type,
             workflow: None,
             custom_fields: Vec::new(),
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
         }
     }
 }
@@ -236,6 +266,85 @@ fn builtin_field(
         created_at: now,
         updated_at: now,
     }
+}
+
+fn builtin_role(name: &str, color: &str, profile: &str) -> BundleRole {
+    BundleRole {
+        name: name.to_string(),
+        color: Some(color.to_string()),
+        icon: None,
+        profile: Some(profile.to_string()),
+    }
+}
+
+/// A profile run by the docket agent.
+fn builtin_profile(name: &str, kind: &str, instructions: &str) -> BundleProfile {
+    BundleProfile {
+        name: name.to_string(),
+        kind: Some(kind.to_string()),
+        instructions: instructions.to_string(),
+        tool_policy: json!({"agent": "docket", "tools": {"docket": ["*"]}}),
+        limits: json!({}),
+        fleet: None,
+        summary: None,
+    }
+}
+
+/// A reviewer that only reads.
+fn read_only_review(name: &str, instructions: &str) -> BundleProfile {
+    BundleProfile {
+        tool_policy: json!({"agent": "claude-code", "tools": {"claude-code": ["Read", "Grep", "Glob"]}}),
+        ..builtin_profile(name, "reviewer", instructions)
+    }
+}
+
+/// The automation every built-in template ships: L3, no merge on done, no repository.
+fn level_three() -> Option<BundleAutomation> {
+    Some(BundleAutomation {
+        autonomy: Some(BundleAutonomy {
+            level: Some("L3".to_string()),
+            merge_on_done: Some(false),
+            ..BundleAutonomy::default()
+        }),
+        ..BundleAutomation::default()
+    })
+}
+
+fn security_review() -> BundleProfile {
+    read_only_review(
+        "Security review",
+        "Review for secrets, injection and permissions. You only read; you change nothing.",
+    )
+}
+
+fn legal_review() -> BundleProfile {
+    read_only_review(
+        "Legal review",
+        "Review licences, privacy and terms. You only read; you change nothing.",
+    )
+}
+
+fn ops_review() -> BundleProfile {
+    read_only_review(
+        "Ops review",
+        "Review deployment, backups and monitoring. You only read; you change nothing.",
+    )
+}
+
+fn content_writer() -> BundleProfile {
+    builtin_profile(
+        "Content writer",
+        "custom",
+        "Write and edit the project's copy and content. Keep the tone of what is already there.",
+    )
+}
+
+fn builtin_choice(name: &str, options: &[&str]) -> CustomFieldDefinition {
+    builtin_field(
+        name,
+        CustomFieldType::Select,
+        Some(options.iter().map(|o| o.to_string()).collect()),
+    )
 }
 
 /// Seed the built-in project templates if they don't exist yet.
@@ -288,6 +397,9 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
                 builtin_field("Sheathing Type", CustomFieldType::Text, None),
                 builtin_field("Shear-Wall Schedule Ref", CustomFieldType::Text, None),
             ],
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
         },
         BuiltinSpec {
             name: "Steel Frame Build",
@@ -300,6 +412,9 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
                 builtin_field("Weld Inspection Class", CustomFieldType::Text, None),
                 builtin_field("Torque Log Ref", CustomFieldType::Text, None),
             ],
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
         },
         BuiltinSpec {
             name: "SIP Panel Build",
@@ -312,6 +427,9 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
                 builtin_field("Spline Type", CustomFieldType::Text, None),
                 builtin_field("Sealant Spec", CustomFieldType::Text, None),
             ],
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
         },
         BuiltinSpec::base(
             "Personal Tasks",
@@ -348,6 +466,113 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
             "Blank template — minimal workflow with no domain-specific vocabulary.",
             ProjectType::Custom,
         ),
+        // ── Templates that come with their roles and profiles (ADR 0081) ──
+        BuiltinSpec {
+            name: "Web product with content",
+            description: "A web product with content: roles for content, development, growth, security, legal and ops, each with a profile; the reviewers only read.",
+            project_type: ProjectType::Web,
+            workflow: None,
+            custom_fields: vec![
+                builtin_choice("Channel", &["app", "newsletter", "social"]),
+                builtin_choice("Audience", &["new", "returning"]),
+            ],
+            roles: vec![
+                builtin_role("Content", "#f59e0b", "Content writer"),
+                builtin_role("Development", "#3b82f6", "Product implementer"),
+                builtin_role("Growth", "#10b981", "Growth"),
+                builtin_role("Security", "#ef4444", "Security review"),
+                builtin_role("Legal", "#8b5cf6", "Legal review"),
+                builtin_role("Ops", "#6b7280", "Ops review"),
+            ],
+            profiles: vec![
+                content_writer(),
+                builtin_profile(
+                    "Product implementer",
+                    "implementer",
+                    "Implement the change on a branch; run the project's checks before you finish.",
+                ),
+                builtin_profile(
+                    "Growth",
+                    "custom",
+                    "Draft campaigns and measure them; never publish anything yourself.",
+                ),
+                security_review(),
+                legal_review(),
+                ops_review(),
+            ],
+            automation: level_three(),
+        },
+        BuiltinSpec {
+            name: "Library or CLI",
+            description: "A library or command-line tool: roles for development, docs, security and ops, each with a profile; the reviewers only read.",
+            project_type: ProjectType::Software,
+            workflow: None,
+            custom_fields: vec![
+                builtin_field(
+                    "Platform",
+                    CustomFieldType::MultiSelect,
+                    Some(vec![
+                        "linux".to_string(),
+                        "macos".to_string(),
+                        "windows".to_string(),
+                    ]),
+                ),
+                builtin_field("Breaking", CustomFieldType::Boolean, None),
+            ],
+            roles: vec![
+                builtin_role("Development", "#3b82f6", "Library implementer"),
+                builtin_role("Docs", "#f59e0b", "Docs writer"),
+                builtin_role("Security", "#ef4444", "Security review"),
+                builtin_role("Ops", "#6b7280", "Ops review"),
+            ],
+            profiles: vec![
+                BundleProfile {
+                    tool_policy: json!({}),
+                    ..builtin_profile(
+                        "Library implementer",
+                        "implementer",
+                        "Implement the change on a branch; keep the public interface stable and run the tests before you finish.",
+                    )
+                },
+                BundleProfile {
+                    tool_policy: json!({}),
+                    ..builtin_profile(
+                        "Docs writer",
+                        "custom",
+                        "Write and correct the documentation so it matches what the code does today.",
+                    )
+                },
+                security_review(),
+                ops_review(),
+            ],
+            automation: level_three(),
+        },
+        BuiltinSpec {
+            name: "Static content site",
+            description: "A static content site on a kanban board: roles for content, design, legal and ops, each with a profile; the reviewers only read.",
+            project_type: ProjectType::Web,
+            workflow: Some(tack_core::workflow::kanban_workflow()),
+            custom_fields: vec![
+                builtin_choice("Section", &["home", "blog", "docs"]),
+                builtin_field("Published", CustomFieldType::Date, None),
+            ],
+            roles: vec![
+                builtin_role("Content", "#f59e0b", "Content writer"),
+                builtin_role("Design", "#ec4899", "Design review"),
+                builtin_role("Legal", "#8b5cf6", "Legal review"),
+                builtin_role("Ops", "#6b7280", "Ops review"),
+            ],
+            profiles: vec![
+                content_writer(),
+                read_only_review(
+                    "Design review",
+                    "Review layout, spacing and accessibility. You only read; you change nothing.",
+                ),
+                legal_review(),
+                ops_review(),
+            ],
+            automation: level_three(),
+        },
     ];
 
     for spec in &specs {
@@ -396,8 +621,8 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
 
         sqlx::query(
             "INSERT INTO project_templates
-             (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
+             (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
         )
         .bind(id.to_string())
         .bind(spec.name)
@@ -407,6 +632,13 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         .bind(serde_json::to_string(&workflow).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&spec.custom_fields).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&default_boards).unwrap_or_else(|_| "[]".to_string()))
+        .bind(serde_json::to_string(&spec.roles).unwrap_or_else(|_| "[]".to_string()))
+        .bind(serde_json::to_string(&spec.profiles).unwrap_or_else(|_| "[]".to_string()))
+        .bind(
+            spec.automation
+                .as_ref()
+                .and_then(|a| serde_json::to_string(a).ok()),
+        )
         .bind(now.to_rfc3339())
         .bind(now.to_rfc3339())
         .execute(pool)

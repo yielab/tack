@@ -12,7 +12,7 @@
 //! priority) is not a reason to refuse a file a spreadsheet produced: the item
 //! keeps the default and the result says so in `warnings`.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -21,8 +21,10 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::models::{CreateItem, ItemType, Priority, ProjectType};
-use crate::workflow::WorkflowConfig;
+use crate::vocabulary::VocabularyMap;
+use crate::workflow::{Transition, WorkflowConfig};
 
+pub mod bundle;
 mod csv;
 pub use self::csv::{CsvOutline, items_from_csv, items_to_csv};
 
@@ -39,24 +41,298 @@ pub const MAX_OUTLINE_ITEMS: usize = 1000;
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Outline {
     /// The project to create. Read only when the outline creates a project.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<OutlineProject>,
+    /// Custom fields of the project, by name (ADR 0081).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<BundleField>,
+    /// Agent profiles, by name; shared by every project of the board.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<BundleProfile>,
+    /// Project roles, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<BundleRole>,
+    /// Sprints, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sprints: Vec<BundleSprint>,
+    /// The project's automation settings; only the keys the file names change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation: Option<BundleAutomation>,
     #[serde(default)]
     pub items: Vec<OutlineItem>,
+}
+
+/// The workflow a project file asks for: a preset or its own statuses, never both.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleWorkflow {
+    /// scrum, kanban, simple, construction, legal, research or event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    /// The statuses in order, each with a category.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statuses: Vec<BundleStatus>,
+    /// Allowed moves; absent means any status can move to any other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transitions: Option<Vec<Transition>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleStatus {
+    pub name: String,
+    /// todo, in_progress or done.
+    pub category: String,
+    /// The most items the status holds at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wip_limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleField {
+    pub name: String,
+    /// text, number, date, boolean, select, multi_select, url, email or long_text.
+    #[serde(rename = "type")]
+    pub field_type: String,
+    /// One line telling a person what the field is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// A card without a value for it gets a warning.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub required: bool,
+    /// The value a new card starts with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+    /// The choices of a select or multi_select field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// Extra rules: pattern, min_length, max_length, min, max, max_items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleProfile {
+    pub name: String,
+    /// implementer, reviewer, researcher, planner or custom (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// What the agent is told before the task.
+    #[serde(default)]
+    pub instructions: String,
+    /// Which agent runs the profile (`agent`), its tools and its team.
+    #[serde(default = "empty_object", skip_serializing_if = "is_empty_object")]
+    pub tool_policy: serde_json::Value,
+    /// Budgets and the time the agent may take.
+    #[serde(default = "empty_object", skip_serializing_if = "is_empty_object")]
+    pub limits: serde_json::Value,
+    /// The name of the fleet that runs it; absent: any computer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fleet: Option<String>,
+    /// One line shown beside the profile's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleRole {
+    pub name: String,
+    /// A CSS color such as `#3b82f6`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// The profile a card with this role runs with: a name from the file, then the board.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleSprint {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(
+        default,
+        deserialize_with = "opt_text",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub start: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(
+        default,
+        deserialize_with = "opt_text",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub end: Option<String>,
+    /// planning (the default) or closed; an import never activates a sprint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleAutomation {
+    /// folder, new_folder, url or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_origin: Option<String>,
+    /// An absolute path for a folder, a URL for a url origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+    /// local_branch, in_place or clone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_after_run: Option<bool>,
+    /// The agent a run uses when none is named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_harness: Option<String>,
+    /// The name of the profile a run uses when none is named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// The status a card moves to when its run finishes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_finish_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_of_done: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomy: Option<BundleAutonomy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_start: Option<BundleAutoStart>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleAutonomy {
+    /// L3, L4 or L5; a file is applied at most at the project's own level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<BundleDomain>,
+    /// The checks a merge needs: criteria, suite, anti_tautology, static_analysis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify_require: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify_loop_max_attempts: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budgets: Option<BundleBudgets>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_on_done: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleDomain {
+    pub name: String,
+    /// Path globs of the repository the domain covers.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Item types the domain covers; empty means all.
+    #[serde(default)]
+    pub item_types: Vec<String>,
+    /// L3, L4 or L5.
+    pub level: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleBudgets {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_per_day: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usd_per_day: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_merges_per_day: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_items_max: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BundleAutoStart {
+    /// Applied as off by an import; a person turns it on from Settings → Automation.
+    #[serde(default)]
+    pub enabled: bool,
+    /// The status whose cards the project starts by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// The most runs open at once; at least 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_open: Option<i64>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn empty_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+fn is_empty_object(value: &serde_json::Value) -> bool {
+    value.as_object().is_some_and(serde_json::Map::is_empty)
+}
+
+/// A map written with its keys sorted, so the same project is the same text.
+fn sorted_map<S: serde::Serializer>(
+    map: &Option<VocabularyMap>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match map {
+        Some(map) => {
+            serializer.collect_map(map.iter().collect::<std::collections::BTreeMap<_, _>>())
+        }
+        None => serializer.serialize_none(),
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OutlineProject {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// software, web, mobile, construction, personal, homework, maintenance,
     /// legal, research, event or custom (the default).
-    #[serde(default, alias = "type")]
+    #[serde(
+        default,
+        rename = "type",
+        alias = "project_type",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub project_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Any of the 16 vocabulary keys; the rest keep the type's words.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "sorted_map"
+    )]
+    pub vocabulary: Option<VocabularyMap>,
+    /// A preset or the statuses of the project's workflow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<BundleWorkflow>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -70,35 +346,41 @@ pub struct OutlineItem {
         rename = "ref",
         alias = "id",
         alias = "key",
-        deserialize_with = "opt_text"
+        deserialize_with = "opt_text",
+        skip_serializing_if = "Option::is_none"
     )]
     pub reference: Option<String>,
     #[serde(default)]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// epic, feature, task (the default), subtask, bug, requirement, or any
     /// other word as a custom type.
-    #[serde(default, rename = "type", alias = "item_type")]
+    #[serde(
+        default,
+        rename = "type",
+        alias = "item_type",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub item_type: Option<String>,
     /// A status of the project's workflow, any case. Unknown or absent: the
     /// workflow's first status.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     /// critical, high, medium (the default), low or none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate: Option<f64>,
     /// `YYYY-MM-DD` or an RFC 3339 timestamp.
-    #[serde(default, alias = "due")]
+    #[serde(default, alias = "due", skip_serializing_if = "Option::is_none")]
     pub due_date: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// weekly, monthly or quarterly; absent: the task does not repeat.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence: Option<String>,
     /// Another item's `ref` or exact title; when adding to an existing
     /// project, also the id of an item already in it.
@@ -106,12 +388,34 @@ pub struct OutlineItem {
         default,
         alias = "parent_id",
         alias = "parent_ref",
-        deserialize_with = "opt_text"
+        deserialize_with = "opt_text",
+        skip_serializing_if = "Option::is_none"
     )]
     pub parent: Option<String>,
     /// Items that must finish before this one, by `ref` or exact title.
-    #[serde(default, alias = "blocked_by", deserialize_with = "text_list")]
+    #[serde(
+        default,
+        alias = "blocked_by",
+        deserialize_with = "text_list",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub depends_on: Vec<String>,
+    /// Names of the project's roles that work on the item.
+    #[serde(
+        default,
+        deserialize_with = "text_list",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub roles: Vec<String>,
+    /// The name of the sprint the item belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sprint: Option<String>,
+    /// Custom field values by field name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fields: BTreeMap<String, serde_json::Value>,
+    /// story_points, hours, days, or any other word as a custom unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_unit: Option<String>,
     /// Where the item came from in its file ("row 7"), for messages. Set by
     /// the CSV reader; an outline item is named by its position instead.
     #[serde(skip)]
@@ -133,6 +437,14 @@ pub struct PlannedItem {
     pub reference: Option<String>,
     pub status: String,
     pub parent: Option<PlannedParent>,
+    /// Role names, as written; checked against a board by [`bundle::check`].
+    pub roles: Vec<String>,
+    /// The sprint's name, as written.
+    pub sprint: Option<String>,
+    /// Custom field values by field name, as written.
+    pub fields: BTreeMap<String, serde_json::Value>,
+    /// The estimate's unit word, as written.
+    pub estimate_unit: Option<String>,
     /// Everything but `parent_id`, which only exists once the parent's row
     /// does.
     pub input: CreateItem,
@@ -392,6 +704,15 @@ pub fn resolve(
                 PlannedParent::Planned(j) => PlannedParent::Planned(position[j]),
                 existing => existing,
             }),
+            roles: items[old]
+                .roles
+                .iter()
+                .map(|r| r.trim().to_string())
+                .filter(|r| !r.is_empty())
+                .collect(),
+            sprint: trimmed(items[old].sprint.as_deref()).map(str::to_string),
+            fields: items[old].fields.clone(),
+            estimate_unit: trimmed(items[old].estimate_unit.as_deref()).map(str::to_string),
             input,
         });
     }

@@ -7963,6 +7963,451 @@
           }
         }
       },
+      "BundleAutoStart": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Applied as off by an import; a person turns it on from Settings → Automation."
+          },
+          "max_open": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The most runs open at once; at least 1."
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The status whose cards the project starts by itself."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleAutomation": {
+        "type": "object",
+        "properties": {
+          "auto_start": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleAutoStart"
+              }
+            ]
+          },
+          "autonomy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleAutonomy"
+              }
+            ]
+          },
+          "code_origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "folder, new_folder, url or none."
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_harness": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent a run uses when none is named."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the profile a run uses when none is named."
+          },
+          "definition_of_done": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_finish_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The status a card moves to when its run finishes."
+          },
+          "push_after_run": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An absolute path for a folder, a URL for a url origin."
+          },
+          "workspace_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "local_branch, in_place or clone."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleAutonomy": {
+        "type": "object",
+        "properties": {
+          "budgets": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleBudgets"
+              }
+            ]
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleDomain"
+            }
+          },
+          "level": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "L3, L4 or L5; a file is applied at most at the project's own level."
+          },
+          "merge_on_done": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "verify_loop_max_attempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "verify_require": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The checks a merge needs: criteria, suite, anti_tautology, static_analysis."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleBudgets": {
+        "type": "object",
+        "properties": {
+          "auto_merges_per_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "queue_items_max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "tokens_per_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "usd_per_day": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleDomain": {
+        "type": "object",
+        "required": [
+          "name",
+          "level"
+        ],
+        "properties": {
+          "item_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Item types the domain covers; empty means all."
+          },
+          "level": {
+            "type": "string",
+            "description": "L3, L4 or L5."
+          },
+          "name": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Path globs of the repository the domain covers."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleField": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "default": {
+            "description": "The value a new card starts with."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One line telling a person what the field is for."
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The choices of a select or multi_select field."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "A card without a value for it gets a warning."
+          },
+          "type": {
+            "type": "string",
+            "description": "text, number, date, boolean, select, multi_select, url, email or long_text."
+          },
+          "validation": {
+            "description": "Extra rules: pattern, min_length, max_length, min, max, max_items."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleProfile": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "fleet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the fleet that runs it; absent: any computer."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "What the agent is told before the task."
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "implementer, reviewer, researcher, planner or custom (the default)."
+          },
+          "limits": {
+            "description": "Budgets and the time the agent may take."
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One line shown beside the profile's name."
+          },
+          "tool_policy": {
+            "description": "Which agent runs the profile (`agent`), its tools and its team."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleRole": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A CSS color such as `#3b82f6`."
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile a card with this role runs with: a name from the file, then the board."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleSprint": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM-DD`."
+          },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM-DD`."
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "planning (the default) or closed; an import never activates a sprint."
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleStatus": {
+        "type": "object",
+        "required": [
+          "name",
+          "category"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "todo, in_progress or done."
+          },
+          "name": {
+            "type": "string"
+          },
+          "wip_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The most items the status holds at once.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "BundleWorkflow": {
+        "type": "object",
+        "description": "The workflow a project file asks for: a preset or its own statuses, never both.",
+        "properties": {
+          "preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "scrum, kanban, simple, construction, legal, research or event."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleStatus"
+            },
+            "description": "The statuses in order, each with a category."
+          },
+          "transitions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Transition"
+            },
+            "description": "Allowed moves; absent means any status can move to any other."
+          }
+        },
+        "additionalProperties": false
+      },
       "CancellationRequestedResponse": {
         "type": "object",
         "description": "Response body for `POST /api/executions/{id}/cancel`. `state` is\ndeliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`\nvalue — cancellation is recorded as a request only\n(`cancellation_requested_at`); the request's real lifecycle state is\nunaffected and visible via `GET /api/executions/{id}`.",
@@ -8755,6 +9200,16 @@
           "project_type"
         ],
         "properties": {
+          "automation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleAutomation"
+              }
+            ]
+          },
           "custom_fields": {
             "type": [
               "array",
@@ -8782,8 +9237,20 @@
           "name": {
             "type": "string"
           },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleProfile"
+            }
+          },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleRole"
+            }
           },
           "vocabulary": {
             "oneOf": [
@@ -10532,11 +10999,36 @@
         "type": "object",
         "description": "What `POST /api/projects/outline` and `POST /api/projects/{id}/outline`\nread, as JSON or YAML. Unknown keys are refused rather than dropped, so a\nmisspelt field is an error the writer sees instead of data that vanishes.",
         "properties": {
+          "automation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleAutomation",
+                "description": "The project's automation settings; only the keys the file names change."
+              }
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleField"
+            },
+            "description": "Custom fields of the project, by name (ADR 0081)."
+          },
           "items": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OutlineItem"
             }
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleProfile"
+            },
+            "description": "Agent profiles, by name; shared by every project of the board."
           },
           "project": {
             "oneOf": [
@@ -10548,6 +11040,20 @@
                 "description": "The project to create. Read only when the outline creates a project."
               }
             ]
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleRole"
+            },
+            "description": "Project roles, by name."
+          },
+          "sprints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleSprint"
+            },
+            "description": "Sprints, by name."
           }
         },
         "additionalProperties": false
@@ -10588,6 +11094,21 @@
             ],
             "format": "double"
           },
+          "estimate_unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "story_points, hours, days, or any other word as a custom unit."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Custom field values by field name.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "parent": {
             "type": [
               "string",
@@ -10615,6 +11136,20 @@
               "null"
             ],
             "description": "A name other items use in `parent` and `depends_on`. Any text or\nnumber, unique within the outline."
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the project's roles that work on the item."
+          },
+          "sprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the sprint the item belongs to."
           },
           "status": {
             "type": [
@@ -10657,12 +11192,34 @@
               "null"
             ]
           },
-          "project_type": {
+          "type": {
             "type": [
               "string",
               "null"
             ],
             "description": "software, web, mobile, construction, personal, homework, maintenance,\nlegal, research, event or custom (the default)."
+          },
+          "vocabulary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HashMap",
+                "description": "Any of the 16 vocabulary keys; the rest keep the type's words."
+              }
+            ]
+          },
+          "workflow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleWorkflow",
+                "description": "A preset or the statuses of the project's workflow."
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -10952,11 +11509,24 @@
           "workflow",
           "custom_fields",
           "default_boards",
+          "roles",
+          "profiles",
           "is_builtin",
           "created_at",
           "updated_at"
         ],
         "properties": {
+          "automation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BundleAutomation",
+                "description": "The automation settings a project made from the template starts with."
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -10989,8 +11559,22 @@
           "name": {
             "type": "string"
           },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleProfile"
+            },
+            "description": "The agent profiles those roles use."
+          },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleRole"
+            },
+            "description": "The roles a project made from the template starts with."
           },
           "updated_at": {
             "type": "string",
