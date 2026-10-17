@@ -91,7 +91,7 @@ beforeEach(() => {
     if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response(JSON.stringify(roles), { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
     if (url.includes('/api/projects/p1/import-csv')) {
-      const result = { dry_run: url.includes('dry_run'), created: 3, skipped: 0, dependencies: 0, warnings: [], items: [] };
+      const result = { dry_run: url.includes('dry_run'), created: 3, skipped: 0, dependencies: 0, warnings: [], items: [], sections: [{ section: 'roles', created: 2, updated: 5, not_mentioned: 3, warnings: ['Planner is built in and was not changed'] }] };
       return Promise.resolve(new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     return Promise.resolve(new Response(JSON.stringify({ id: 'p1' }), { status: 200 }));
@@ -188,6 +188,13 @@ describe('Settings panels', () => {
     expect(exported.size).toBe(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:vitest/1');
 
+    btn(container, 'Export project file (YAML)').click();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/projects/p1/export?format=yaml&scope=bundle')),
+      ).toBe(true),
+    );
+
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
     const file = new File([JSON.stringify({ project: {}, items: [] })], 'p.json', { type: 'application/json' });
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
@@ -215,7 +222,9 @@ describe('Settings panels', () => {
         .filter((c) => (c[1] as RequestInit)?.method === 'POST' && String(c[0]).includes('/api/projects/p1/import-csv'))
         .map((c) => String(c[0]));
     await vi.waitFor(() => expect(csvPosts()).toEqual(['/api/projects/p1/import-csv?dry_run=true']));
-    await vi.waitFor(() => expect(document.body.textContent).toContain('3 items'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('3 items will be added'));
+    expect(document.body.textContent).toContain('Roles: 2 new, 5 updated, 3 not mentioned');
+    expect(document.body.textContent).toContain('Planner is built in and was not changed');
 
     btn(document.body, 'Add items').click();
     await vi.waitFor(() =>

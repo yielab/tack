@@ -72,7 +72,7 @@ Then start the Tack server (`tack serve`) and the agent can call the tools below
 | `search_items` | read | `query`*, `project_id` | `GET /api/search` or `/projects/{id}/search` |
 | `create_item` | write | `project_id`*, `title`*, `description`, `item_type`, `priority`, `parent_id`, `assignee`, `due_date`, `tags` | `POST /api/projects/{id}/items` |
 | `create_project` | write | `name`*, `project_type`, `description` | `POST /api/projects` |
-| `create_outline` | write | `items`*, one of `project_id` / `project`*, `dry_run` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
+| `create_outline` | write | `items`*, one of `project_id` / `project`*, `fields`, `profiles`, `roles`, `sprints`, `automation`, `dry_run` | `POST /api/projects/{id}/outline` or `POST /api/projects/outline` |
 | `update_item` | write | `id`*, `title`, `description`, `priority`, `assignee`, `status`, `due_date` | `PATCH /api/items/{id}` |
 | `move_item` | write | `id`*, `status`* | `PATCH /api/items/{id}` |
 | `add_comment` | write | `item_id`*, `content`*, `author` | `POST /api/items/{id}/comments` |
@@ -89,6 +89,7 @@ hierarchy and dependencies. Each item takes the outline fields (`ref`, `title`,
 problem comes back in one error; nothing is written unless all of it can be. `dry_run:
 true` reports what would be created. The format and its rules are in the book's
 [import page](https://yielab.github.io/tack/user-guide/import-export.html#how-do-i-create-a-project-and-its-items-from-a-file).
+The call may also carry `fields`, `profiles`, `roles`, `sprints` and `automation`, as in Tack's project file (Settings → Data → File format); the book's [import page](https://yielab.github.io/tack/user-guide/import-export.html#the-project-file) lists what each takes, and the preview and refusal rules are the same.
 `create_project` returns the new project's id and its workflow's status names, the values
 `status` and `move_item` accept. A project is created with `project_type: custom` unless
 another is given.

@@ -77,9 +77,31 @@ enum Commands {
         /// Optional description
         #[arg(short, long)]
         description: Option<String>,
+        /// Start from a template: its id, or its name ("web-product-with-content"
+        /// reads as "Web product with content"). The template brings its roles,
+        /// profiles and automation; --type is ignored
+        #[arg(long)]
+        template: Option<String>,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// Write a project to a file or stdout: its items as JSON, YAML or CSV, or
+    /// with --bundle the whole project file (fields, roles, profiles, sprints,
+    /// automation and items) that `tack import` reads back
+    Export {
+        /// Project ID or name
+        project: String,
+        /// json, yaml or csv (default yaml with --bundle, else json)
+        #[arg(long)]
+        format: Option<String>,
+        /// Export the whole project file instead of the items alone
+        #[arg(long)]
+        bundle: bool,
+        /// Write to this file instead of stdout
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
     },
 
     /// Create a project and its items, or add items to a project, from an
@@ -427,6 +449,20 @@ enum TemplateAction {
         /// Template ID
         id: String,
         /// New project name
+        name: String,
+        /// Optional description
+        #[arg(short, long)]
+        description: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Save a project's roles, profiles, automation, workflow and vocabulary as a template
+    Save {
+        /// Project ID
+        project: String,
+        /// The template's name
+        #[arg(long)]
         name: String,
         /// Optional description
         #[arg(short, long)]
@@ -975,8 +1011,16 @@ fn main() -> anyhow::Result<()> {
             name,
             r#type,
             description,
+            template,
             json,
-        } => cmd_init(&client, name, r#type, description, json),
+        } => cmd_init(&client, name, r#type, description, template, json),
+
+        Commands::Export {
+            project,
+            format,
+            bundle,
+            output,
+        } => cmd_export(&client, &project, format, bundle, output),
 
         Commands::Import {
             file,
@@ -1074,18 +1118,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        Commands::Template { action } => match action {
-            TemplateAction::List { project_type, json } => {
-                cmd_template_list(&client, project_type, json)
-            }
-            TemplateAction::Show { id, json } => cmd_template_show(&client, id, json),
-            TemplateAction::CreateFrom {
-                id,
-                name,
-                description,
-                json,
-            } => cmd_template_create_from(&client, id, name, description, json),
-        },
+        Commands::Template { action } => cmd_template(&client, action),
 
         Commands::Role { action } => cmd_role(&client, action),
 
@@ -1307,8 +1340,13 @@ fn cmd_init(
     name: String,
     project_type: String,
     description: Option<String>,
+    template: Option<String>,
     as_json: bool,
 ) -> anyhow::Result<()> {
+    if let Some(template) = template {
+        let id = resolve_template(client, &template)?;
+        return cmd_template_create_from(client, id, name, description, as_json);
+    }
     let body = json!({
         "name": name,
         "project_type": project_type,
@@ -1323,6 +1361,80 @@ fn cmd_init(
     println!("Created project: {} ({})", name, &id[..8.min(id.len())]);
     println!("  type: {project_type}");
     println!("  id:   {id}");
+    Ok(())
+}
+
+/// A template's id from what the person typed: a UUID as it is, else a name
+/// matched against `GET /templates`, ignoring case and reading `-` as a space.
+fn resolve_template(client: &TackClient, wanted: &str) -> anyhow::Result<String> {
+    let is_uuid = wanted.len() == 36
+        && wanted.chars().enumerate().all(|(i, c)| {
+            matches!(i, 8 | 13 | 18 | 23) == (c == '-') && (c == '-' || c.is_ascii_hexdigit())
+        });
+    if is_uuid {
+        return Ok(wanted.to_string());
+    }
+    let key = wanted.replace('-', " ").to_lowercase();
+    let templates = client.get("/templates")?;
+    let templates = templates.as_array().cloned().unwrap_or_default();
+    let named = |t: &serde_json::Value| t["name"].as_str().map(str::to_owned);
+    for t in &templates {
+        if let (Some(name), Some(id)) = (named(t), t["id"].as_str())
+            && name.replace('-', " ").to_lowercase() == key
+        {
+            return Ok(id.to_string());
+        }
+    }
+    let names: Vec<String> = templates.iter().filter_map(named).collect();
+    anyhow::bail!(
+        "no template named \"{wanted}\". Templates: {}",
+        names.join(", ")
+    )
+}
+
+fn cmd_export(
+    client: &TackClient,
+    project: &str,
+    format: Option<String>,
+    bundle: bool,
+    output: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    let format = format.unwrap_or_else(|| if bundle { "yaml" } else { "json" }.to_string());
+    let mut path = format!("/projects/{project}/export?format={}", urlenc(&format));
+    if bundle {
+        path.push_str("&scope=bundle");
+    }
+    let bytes = client.get_bytes(&path)?;
+    match output {
+        Some(out) => {
+            std::fs::write(&out, &bytes)
+                .map_err(|e| anyhow::anyhow!("Cannot write {}: {e}", out.display()))?;
+            println!("Exported to {} ({} bytes)", out.display(), bytes.len());
+        }
+        None => {
+            use std::io::Write;
+            std::io::stdout().write_all(&bytes)?;
+        }
+    }
+    Ok(())
+}
+
+fn cmd_template_save(
+    client: &TackClient,
+    project: &str,
+    name: String,
+    description: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = json!({ "name": name, "description": description });
+    let resp = client.post(&format!("/projects/{project}/save-as-template"), &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let id = resp["id"].as_str().unwrap_or("?");
+    println!("Saved template: {name} ({})", &id[..8.min(id.len())]);
+    println!("  id: {id}");
     Ok(())
 }
 
@@ -1387,6 +1499,19 @@ fn cmd_import(
         println!("Created project: {name} ({})", &id[..8.min(id.len())]);
         println!("  id:   {id}");
     }
+    for section in resp["sections"].as_array().into_iter().flatten() {
+        let count = |key: &str| section[key].as_u64().unwrap_or(0);
+        println!(
+            "{}: {} new, {} updated, {} not mentioned",
+            section_title(section["section"].as_str().unwrap_or("?")),
+            count("created"),
+            count("updated"),
+            count("not_mentioned")
+        );
+        for warning in section["warnings"].as_array().into_iter().flatten() {
+            println!("  warning: {}", warning.as_str().unwrap_or("?"));
+        }
+    }
     let created = resp["created"].as_u64().unwrap_or(0);
     let dependencies = resp["dependencies"].as_u64().unwrap_or(0);
     let verb = if dry_run { "Would create" } else { "Created" };
@@ -1408,6 +1533,15 @@ fn cmd_import(
         println!("  warning: {}", warning.as_str().unwrap_or("?"));
     }
     Ok(())
+}
+
+/// A section's name as a person reads it: "roles" -> "Roles".
+fn section_title(section: &str) -> String {
+    let mut chars = section.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 fn cmd_project_autonomy(client: &TackClient, project: &str, as_json: bool) -> anyhow::Result<()> {
@@ -1929,6 +2063,27 @@ fn cmd_sprint_list(client: &TackClient, project: String, as_json: bool) -> anyho
         ]);
     }
     Ok(())
+}
+
+fn cmd_template(client: &TackClient, action: TemplateAction) -> anyhow::Result<()> {
+    match action {
+        TemplateAction::List { project_type, json } => {
+            cmd_template_list(client, project_type, json)
+        }
+        TemplateAction::Show { id, json } => cmd_template_show(client, id, json),
+        TemplateAction::CreateFrom {
+            id,
+            name,
+            description,
+            json,
+        } => cmd_template_create_from(client, id, name, description, json),
+        TemplateAction::Save {
+            project,
+            name,
+            description,
+            json,
+        } => cmd_template_save(client, &project, name, description, json),
+    }
 }
 
 fn cmd_template_list(

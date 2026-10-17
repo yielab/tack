@@ -74,6 +74,45 @@ Only `title` is required. Headers are matched in any case and use the outline's 
 
 `tags` and `depends_on` hold several values separated by `;` or `|` — never `,`, which a title may contain. Quoted cells may contain commas, quotes (written `""`) and line breaks. Rows with no title are skipped and counted. A CSV exported from Tack re-imports with its hierarchy, since its `id` and `parent_id` columns are read as `ref` and `parent`.
 
+### The project file
+
+An outline can carry more than items. A **project file** is an outline with six more sections, so a whole project — its fields, agents, roles, sprints and automation as well as its items — goes in and out as one file you can edit:
+
+```yaml
+project:    { name: Fabulada, type: web }
+fields:     [{ name: Dialect, type: select, options: [rioplatense, mexicano] }]
+profiles:   [{ name: Content writer, kind: custom, instructions: Write stories. }]
+roles:      [{ name: Content, color: "#f59e0b", profile: Content writer }]
+sprints:    [{ name: Week 42, goal: Launch the first collection }]
+automation: { default_profile: Content writer, on_finish_status: Review }
+items:      [{ ref: C1, title: First collection, type: epic, roles: [Content], sprint: Week 42 }]
+```
+
+| Section | Takes |
+|---------|-------|
+| `project` | Name, type, description, the project's vocabulary and its workflow (a preset or the statuses in order). Read only when the file creates a project. |
+| `fields` | Custom fields: name, type, options, whether required. Items give their values under `fields`. |
+| `profiles` | Agent profiles: name, kind, instructions, which agent runs it and its team, limits. |
+| `roles` | Roles: name, color and the profile each one uses. Items name their roles under `roles`. |
+| `sprints` | Name, goal, dates. A sprint is created planned or closed, never active. |
+| `automation` | The project's folder or repository, branch, how the agent works, its default profile and model, the status a finished run moves to, the definition of done, autonomy and auto-start. |
+| `items` | The items of the outline above, plus `roles`, `sprint`, `fields`, `recurrence` and `estimate_unit`. |
+
+The rules:
+
+- **Names are the references.** A role's `profile` names a profile of the same file first, then one Tack already has. An item names its roles, sprint and field values the same way. An unknown key anywhere is refused.
+- **The whole file is checked before anything is written**, and every problem is reported at once.
+- **Nothing is deleted.** Importing into an existing project adds new names and updates the names the file mentions, with the keys it gives. The project's own roles, fields, sprints and profiles that the file does not mention are counted ("3 not mentioned") and left alone. Items are always added.
+- **Built-in profiles are never changed.** A role may use Implementer, Reviewer, Researcher or Planner; a file that tries to redefine one gets a warning.
+- **A file cannot raise autonomy.** An autonomy level above L3 and `auto_start: enabled: true` are accepted and applied as L3 and off, each with a warning that says what was asked and what was applied. Turn them on from Settings → Automation.
+- **Refused:** an unknown key, a field value of the wrong type or not among the field's options, a role that names no profile, an item that names no role, sprint or status, a status the workflow does not have in `automation`. **Only a warning:** an item missing a required field, a team or machine Tack does not know.
+
+The preview lists each section before the items — "Roles: 2 new, 5 updated, 3 not mentioned" — with that section's warnings under it.
+
+**Export.** `GET /api/projects/{id}/export?scope=bundle&format=yaml` (or `json`) writes the same file back: items in written order, only the profiles the project's roles and default point at, no ids or dates, and never the signing key. Exporting, importing into a new project and exporting again gives the same text. From the command line, `tack export <project> --bundle -o project.yaml`; in the web UI, **Export project file (YAML)** on **Project settings → Data**.
+
+**Templates.** A template is a project file without items. `tack init "My site" --template web-product-with-content` creates a project from one (a name works with `-` for spaces, in any case, or use the template's id); `tack template save <project> --name "My template"` stores a project's roles, profiles, automation, workflow and vocabulary as one. Three templates come built in, each with its roles and profiles at autonomy L3: **Web product with content**, **Library or CLI** and **Static content site**.
+
 ### What is refused, and what is only a warning
 
 The file is **refused** for: an item with no title; a `ref` used twice; a `parent` or `depends_on` that names no item, or a title shared by several items (give them refs); an item that is its own parent, or parents that loop; dependencies that loop; a due date that is not a date; a value the item routes reject (a title over 500 characters, a negative estimate, more than 20 tags); a parent id that is not an item of the project; more than 1,000 items.

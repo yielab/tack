@@ -21,6 +21,8 @@ function downloadBlob(blob: Blob, filename: string) {
 /** How many items the preview names before summing up the rest. */
 const PREVIEW_ITEMS = 8;
 
+const sectionTitle = (section: string) => section.charAt(0).toUpperCase() + section.slice(1);
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** A file read, checked with a dry run, and waiting for the person to confirm. */
@@ -44,14 +46,14 @@ const DataPanel: Component = () => {
   let addItemsInput: HTMLInputElement | undefined;
   let newProjectInput: HTMLInputElement | undefined;
 
-  const exportAs = async (format: 'json' | 'yaml' | 'csv') => {
+  const exportAs = async (format: 'json' | 'yaml' | 'csv', scope?: 'snapshot' | 'bundle') => {
     const id = projectId();
     if (!id) return;
     setBusy(true);
     try {
-      const blob = await api.data.exportProject(id, format);
+      const blob = await api.data.exportProject(id, format, scope);
       const base = (project()?.name ?? 'project').replace(/\s+/g, '-');
-      downloadBlob(blob, `${base}-export.${format}`);
+      downloadBlob(blob, `${base}-${scope === 'bundle' ? 'project' : 'export'}.${format}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed');
     } finally {
@@ -163,7 +165,13 @@ const DataPanel: Component = () => {
           <Button variant="secondary" onClick={() => void exportAs('csv')} disabled={busy()}>
             Export CSV
           </Button>
+          <Button variant="secondary" onClick={() => void exportAs('yaml', 'bundle')} disabled={busy()}>
+            Export project file (YAML)
+          </Button>
         </div>
+        <p class={NOTE} style={{ color: 'var(--color-text-secondary)' }}>
+          The whole project — fields, roles, profiles, sprints, automation and items — as one file you can edit and import again.
+        </p>
       </section>
 
       <section class={CARD}>
@@ -218,13 +226,30 @@ const DataPanel: Component = () => {
           <Show when={pending()?.preview}>
             {(preview) => (
               <>
+                <Show when={(preview().sections ?? []).length > 0}>
+                  <ul class="flex flex-col gap-1">
+                    <For each={preview().sections}>
+                      {(section) => (
+                        <li>
+                          <span style={{ color: 'var(--color-text-primary)' }}>
+                            {sectionTitle(section.section)}: {section.created} new, {section.updated} updated,{' '}
+                            {section.not_mentioned} not mentioned
+                          </span>
+                          <Show when={section.warnings.length > 0}>
+                            <ul class="list-disc pl-5">
+                              <For each={section.warnings}>{(w) => <li>{w}</li>}</For>
+                            </ul>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
                 <p>
-                  <Show when={pending()?.target === 'new-project'}>
-                    A new project, with{' '}
-                  </Show>
-                  {plural(preview().created, 'item', 'items')}
+                  <Show when={pending()?.target === 'new-project'}>A new project. </Show>
+                  {plural(preview().created, 'item', 'items')} will be added
                   <Show when={preview().dependencies > 0}>
-                    {' '}and {plural(preview().dependencies, 'dependency', 'dependencies')}
+                    {' '}with {plural(preview().dependencies, 'dependency', 'dependencies')}
                   </Show>
                   .
                 </p>

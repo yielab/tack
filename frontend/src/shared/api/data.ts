@@ -33,9 +33,12 @@ function importQuery(params: Record<string, string | boolean | undefined>): stri
 
 /** Export / import (per project) and full-database backup / restore. */
 export const data = {
-  /** Download a project export (JSON snapshot or CSV item list). */
-  exportProject: (projectId: string, format: ExportFormat = 'json') =>
-    requestBlob(`/projects/${projectId}/export?format=${format}`),
+  /**
+   * Download a project export: a JSON snapshot or CSV item list, or with
+   * `scope: 'bundle'` the whole project file.
+   */
+  exportProject: (projectId: string, format: ExportFormat = 'json', scope?: 'snapshot' | 'bundle') =>
+    requestBlob(`/projects/${projectId}/export?format=${format}${scope === 'bundle' ? '&scope=bundle' : ''}`),
 
   exportUrl: (projectId: string, format: ExportFormat = 'json') =>
     apiUrl(`/projects/${projectId}/export?format=${format}`),
