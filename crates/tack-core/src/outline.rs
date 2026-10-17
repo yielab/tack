@@ -270,9 +270,10 @@ pub struct BundleBudgets {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BundleAutoStart {
-    /// Applied as off by an import; a person turns it on from Settings → Automation.
-    #[serde(default)]
-    pub enabled: bool,
+    /// Applied as off by an import that would switch it on; a person turns it on from Settings →
+    /// Automation. Absent leaves the project's switch as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// The status whose cards the project starts by itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,

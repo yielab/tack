@@ -1,6 +1,6 @@
 # Adding Features
 
-This chapter describes the three most common extension patterns: adding a new entity, adding a new workflow preset, and extending the workflow engine. Each section includes a concrete example and explains the reasoning behind the step order.
+This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page.
 
 ---
 
@@ -54,17 +54,17 @@ pub struct UpdateMilestone {
 Open `crates/tack-db/src/migrations.rs`. Migration names are numbered sequentially and
 never reused — find the highest number already in `all_migrations()` (`grep -o
 '"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs | sort -u | tail -1`) and
-pick the next one. As of this writing that's `081`, so the new migration is `082`. Find
-the `migrations` vec in `all_migrations()` and append:
+pick the next one. As of this writing that's `091`, so the new migration is `092`. Find
+the `Vec` in `all_migrations()` and append:
 
 ```rust
-("082_milestones", &MIGRATION_082[..]),
+ordinary("092_milestones", &MIGRATION_092[..]),
 ```
 
 Then add the constant near the end of the file:
 
 ```rust
-const MIGRATION_082: [&str; 2] = [
+const MIGRATION_092: [&str; 2] = [
     "CREATE TABLE IF NOT EXISTS milestones (
         id TEXT PRIMARY KEY NOT NULL,
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -127,7 +127,7 @@ pub async fn create_milestone(
 // add get_milestone, list_milestones, update_milestone, delete_milestone
 ```
 
-### Step 4: Register in `repo/mod.rs`
+### Step 4: Register in `repo.rs`
 
 Open `crates/tack-db/src/repo.rs` and add:
 
@@ -215,7 +215,7 @@ Then add the routes in the `api` router builder:
 .route("/milestones/{id}", delete(milestones::delete_milestone))
 ```
 
-At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add repository tests in `crates/tack-db/tests/repository.rs` and handler tests in `crates/tack-api/tests/handlers.rs` — each test file is its own binary, so add to the file whose subject fits rather than creating a new one (see [Testing](testing.md)).
+At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add repository tests under `crates/tack-db/tests/repository/` and handler tests under `crates/tack-api/tests/handlers/` — each `tests/*.rs` file is its own binary and the directories hold its modules, so add to the module whose subject fits rather than creating a new binary (see [Testing](testing.md)).
 
 ---
 
@@ -411,6 +411,47 @@ No migration is needed. The workflow engine is pure logic — it reads from a `W
 
 ---
 
+## Add a key to the project file
+
+**Example: a `review_required` flag on `automation`.** The project file is one type read by every door (the import routes, `tack import`, the MCP tool, Settings → Data → Import), so a key added in the right six places reaches all of them. The reference for every existing key is [The Project File Format](project-file.md).
+
+### Step 1: Add the field to the type
+
+In `crates/tack-core/src/outline.rs`, add it to `BundleAutomation`:
+
+```rust
+/// Hold every merge for a person's review.
+#[serde(default, skip_serializing_if = "Option::is_none")]
+pub review_required: Option<bool>,
+```
+
+`skip_serializing_if` keeps an export free of `null`. The type derives `deny_unknown_fields`, so until this step is done the key is refused wherever it is written.
+
+### Step 2: Check it
+
+In `crates/tack-core/src/outline/bundle.rs`, `check_automation` is where the `automation` section is validated. Push a string onto `problems` to refuse the file, or onto `warnings` to let it through. A key that could raise autonomy or switch automation on must be lowered to what the board already allows, as `lowered_level` does.
+
+### Step 3: Write it
+
+In `crates/tack-api/src/handlers/outline.rs`, `write_automation` turns the section into an `UpdateProject`. Add the field to `UpdateProject` and the column to the repository if the board does not store it yet (a migration, see above). Keep the section name in the `at("automation")` error mapping so that a failure says where it happened.
+
+### Step 4: Export it
+
+In `to_bundle` (`outline/bundle.rs`), read the value back from the project. If the key needs rows the export does not gather yet, add them to `Parts` and fill them in `bundle_response` in `crates/tack-api/src/handlers/export.rs`. The test that matters is the round trip: export, import into a new project, export again, and compare the text.
+
+### Step 5: Templates, if they should carry it
+
+A template stores `roles`, `profiles` and `automation` as JSON in `project_templates`. A key inside `automation` is carried for free once Steps 1 to 4 are done, because `build_project_from_template` and `save_project_as_template` pass the whole section. A key in a new section needs a column and both functions changed.
+
+### Step 6: Regenerate, pin and document
+
+1. `./scripts/regen-generated.sh` regenerates `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts` and the lockfiles. The OpenAPI contract test fails until you do.
+2. Add the key to `crates/tack-api/tests/fixtures/bundles/fabulada.yaml` with a comment saying what it does.
+3. Add a row to the checking tests in `crates/tack-core/src/outline/bundle/tests.rs` (an accepted case and a refused one) and a case to `crates/tack-api/tests/handlers/bundle.rs`.
+4. Add the key to the tables in [The Project File Format](project-file.md), and to [Import, Export & Project Files](../user-guide/import-export.md) if a person writes it.
+
+---
+
 ## Anti-Patterns to Avoid
 
 The crate layering is the project's load-bearing constraint. Most review feedback on new features comes down to one of these:
@@ -421,7 +462,7 @@ The crate layering is the project's load-bearing constraint. Most review feedbac
 - **Don't let `tack-cli` import `tack-db`.** The CLI is an HTTP client — all data access goes through the API so workflow rules are enforced server-side. The same applies to the MCP server.
 - **Don't edit an existing migration.** Migrations are append-only and idempotent. Changing a shipped migration corrupts databases that already applied it. Add a new numbered migration and wire it into `all_migrations()`.
 - **Don't hardcode colors in the frontend.** Components consume `--color-*` design tokens via inline `style`, never raw hex, so the theme/palette system keeps working. See [Frontend & Design System](frontend.md).
-- **Don't add an endpoint without a handler test.** Every new route gets at least a success-path and an error-path test in `crates/tack-api/tests/handlers.rs` (or the file matching the route's subject — see [Testing](testing.md)).
+- **Don't add an endpoint without a handler test.** Every new route gets at least a success-path and an error-path test in the module of `crates/tack-api/tests/handlers/` that matches the route's subject — see [Testing](testing.md).
 
 When a change feels like it needs to break one of these, that's usually a sign the logic belongs in a different layer — move it rather than bending the boundary.
 

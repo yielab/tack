@@ -12,7 +12,7 @@ focused, and ready for input.
 
 - **Type to filter.** Results are grouped into sections — **Actions** (New Item,
   New Project) and **Go to** (Board, List, Table, Calendar, Timeline, Sprint,
-  Overview, Project Settings) and **Workspace** (All Projects, Templates, Global
+  Overview, Factory metrics, Project Settings) and **Workspace** (All Projects, Templates, Global
   Settings). The available commands depend on context — item/view commands appear
   only while you're inside a project.
 - **Navigate** with `↑` / `↓`, **run** the highlighted command with `↵`, and

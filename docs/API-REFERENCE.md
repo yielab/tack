@@ -1,5 +1,7 @@
 # Tack API Reference
 
+This page is for integrators and contributors who call Tack's HTTP API. It covers what the generated reference cannot say: how the two kinds of caller authenticate, the live board channel, rules a schema cannot express, and a few worked calls. After reading it you can write a client that authenticates correctly and avoids the surprises.
+
 **Spec of record:** [`docs/openapi.json`](openapi.json), generated from the router — where this page and the spec disagree, the spec is right.
 **Base URL:** `http://localhost:3210/api`
 **WebSocket URL:** `ws://localhost:3210/api/projects/{id}/boards/live`
@@ -40,19 +42,24 @@ middleware.
 
 ### Operator surface — `/api`
 
-Authentication is **optional and off by default** (solo/small-team focus). When the
-server is started with `TACK_API_TOKEN` set, every `/api/*` route except
-`GET /api/health` requires a matching bearer token:
+Every `/api/*` route except `GET /api/health` and `GET /api/openapi.json` requires the
+server's token, as a bearer header or as the `tack_session` cookie that the page at `/`
+hands to the browser:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-Requests with a missing or wrong token receive `401 Unauthorized`. There are no
-per-user accounts — all clients share the single token. `x-tack-principal` is
+With `TACK_API_TOKEN` set, that is the token. Left unset on a loopback bind, the server
+reads or creates an `api-token` file beside its database and requires it. A non-loopback
+bind with no token is refused at startup unless `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK`
+is set. A request whose `Host` does not name this server is refused (`misdirected_host`), and so is
+a state-changing request sent by a page on another site (`cross_site_request`). Requests
+with a missing or wrong token receive `401 Unauthorized`. There are no per-user accounts —
+all clients share the single token. `x-tack-principal` is
 overwritten from server config by `middleware::inject_operator_principal` and never
 read from the request, so a trusted-looking header cannot impersonate another
-caller. See [Administration & Security](book/src/user-guide/administration.md) for
+caller. See [Administration & Security](book/src/admin-guide/administration.md) for
 setup.
 
 A privileged operator action carries its **own** token, distinct from
@@ -68,7 +75,7 @@ It is never logged.
 ### Runner protocol surface — `/api/runner/v1`
 
 The 14 `/api/runner/v1/*` paths (enroll, refresh, claim, heartbeat, and per-attempt
-accept/start/events/decisions/artifacts/completion/cancellation/recovery-observation)
+accept/start/events/decisions/decisions-poll/artifacts/artifact content/completion/cancellation/recovery-observation)
 are a **sibling** of `/api` on the outer router, not nested under it — they never
 traverse `require_token` at all. Each handler authenticates its own hashed bearer
 credential via `handlers/runner_protocol/runner_auth.rs`; a raw enrollment token is
@@ -76,14 +83,15 @@ returned exactly once, at issue time, and only its SHA-256 hash is stored.
 
 Every attempt-scoped mutation additionally validates runner id + attempt id +
 current fencing token. A stale fence returns the stable `stale_lease` error code and
-writes nothing. **Known inconsistency** (non-blocking, tracked in `CLAUDE.md`): when
+writes nothing. **Known inconsistency** (non-blocking, recorded in `docs/closed-cycles/handoffs/part-3/III-G5.md`; re-check it before relying on it): when
 an attempt was superseded by a pre-spawn recovery, the retried old fence returns
 `409 conflict` instead of `stale_lease` on heartbeat, decisions, artifacts and the
 observation routes — an earlier guard fires first. Nothing is written either way.
 
-See [Agent Runners & Fleet Execution](book/src/user-guide/agent-runners.md) for the
-operator-facing view of this surface, and the
-[Recovery Runbook](book/src/user-guide/recovery-runbook.md) for what drives a
+See [The Runner Contract](book/src/developer/runner-contract.md) for the contract behind
+this surface, [Installing and Operating Runners](book/src/admin-guide/runners.md) for the
+operator-facing view, and the
+[Recovery Runbook](book/src/admin-guide/recovery-runbook.md) for what drives a
 `needs_operator` transition.
 
 ---
@@ -160,12 +168,31 @@ per-endpoint listing precisely so they do not get duplicated by one.
 - `PATCH /api/sprints/{id}/status` — the only route that moves status; fires the
   sprint's lifecycle webhooks.
 
-**Templates & custom fields**
+**Roles, profiles, auto-start and the ceiling**
+- `PATCH /api/roles/{id}` may set `agent_profile_id`. `POST /api/executions` may omit
+  `agent_profile_id`, the agent and the selector: the server then chooses the profile
+  (the task's saved settings, its role, the project default, the built-in Implementer),
+  records which in `metadata.profile_source`, and takes the profile's fleet, else the only
+  active runner. `GET /api/items/{id}/agent-context` answers `profile_id` and `profile_source`.
+- `GET /api/projects/{id}/autonomy` carries read-only `ceiling` and `teams` (each team a
+  role uses, and `caps_at` and `fix` for one that needs a person during a run). A project's
+  auto-start is set with `PATCH /api/projects/{id}` (`auto_start_enabled`,
+  `auto_start_status`, `auto_start_max_open`); it is switched off when the project drops to L3.
+- `GET /api/settings/rate-card` and `PUT` hold the prices usage is priced with.
+
+**Templates, custom fields and the project file**
 - Built-in templates (`is_builtin: true`) cannot be deleted.
 - `POST /api/projects/from-template/{id}` applies the template's workflow,
-  vocabulary, custom field definitions and default boards to the new project.
+  vocabulary, custom field definitions, default boards, roles, profiles and automation
+  to the new project, through the same code as a project-file import.
 - `POST /api/projects/{id}/save-as-template` snapshots the project's *current*
   configuration, not the template it was created from.
+- `POST /api/projects/outline` and `POST /api/projects/{id}/outline` read the whole
+  project file (`dry_run=true` checks it and writes nothing). A refusal is a `400` listing
+  every problem. A section that fails to write is a `500` whose message names it. See
+  [The Project File Format](book/src/developer/project-file.md).
+- `GET /api/projects/{id}/export?scope=bundle&format=yaml|json` writes the project back as
+  that file; `scope=snapshot` (the default) is the database dump `POST /api/projects/import` reads.
 - Deleting a custom field definition cascades to every item's stored value for it.
 - A custom field value's shape depends on the field's `field_type` (`text`,
   `long_text`, `number`, `date`, `boolean`, `select`, `multi_select`, `url`,
@@ -240,14 +267,15 @@ Content-Type: application/json
 
 **Response `200`:** `{ "created": N, "skipped": N }`
 
-### `POST /api/executions` — dispatch an item to a runner
+### `POST /api/executions` — start a run on an item
 
-All thirteen required fields, run against a real `tack serve --with-runner` with a
+Every common field named (only `item_id`, `idempotency_key`, `permission_policy`, `budgets`,
+`environment`, `metadata` and `timeout_seconds` are required; leave out the profile, the agent and
+where to run it and the server chooses them), run against a real `tack serve --with-runner` with a
 stand-in `claude` binary standing in for a real, authenticated install — request and
 response are both copied verbatim from that run, not constructed from the schema.
-The narrative walkthrough (creating the referenced item/agent-profile/runner first,
-then polling to completion) is in [Running an item with an
-agent](book/src/user-guide/agent-runners.md#running-an-item-with-an-agent).
+The user-facing walkthrough is [Running Agents on
+Tasks](book/src/user-guide/running-agents.md).
 
 ```http
 POST /api/executions
@@ -286,10 +314,11 @@ Content-Type: application/json
 ```
 
 Polling `GET /api/executions/{request_id}/attempts` after this, on a live embedded
-runner, reached `"state": "succeeded"` in the same real run — see the agent-runners
-walkthrough linked above for the full attempt body. docket is reached the same way
+runner, reached `"state": "succeeded"` in the same real run. docket is reached the same way
 as every other harness, as `--harness docket` on a runner-v1 execution request —
-never through a Tack-side dispatch route.
+never through a Tack-side dispatch route. docket takes the attempt as one task in a team,
+over its HTTP API version 5 (see
+[Runs, Teams and Automation](book/src/developer/runs-and-teams.md#the-docket-adapter)).
 
 ---
 
@@ -301,7 +330,8 @@ Every failing response shares one shape:
 { "error": { "status": 404, "message": "Item not found" } }
 ```
 
-A narrow set of responses (e.g. stale-lease) add a `code`
+A narrow set of responses (e.g. stale-lease, `misdirected_host`, `cross_site_request`,
+`unsupported_media_type`) add a `code`
 field so a caller can branch on the reason without parsing `message`:
 
 ```json

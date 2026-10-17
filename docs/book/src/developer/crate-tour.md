@@ -1,13 +1,15 @@
 # Crate Tour
 
-This chapter walks through each of the six Rust crates in the main workspace in depth: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. `tack-core`, `tack-db`, `tack-api`, and `tack-cli` predate the Part III runner-fleet cycle; `tack-orch` and `tack-runner` were added by it. A seventh crate, `tack-desktop`, sits outside that workspace by design — its own section at the end of this chapter says why.
+This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has six product crates (`tack-core`, `tack-db`, `tack-orch`, `tack-api`, `tack-runner`, `tack-cli`) and `tack-test-support`, which holds test helpers. An eighth crate, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why.
 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
 > and the `shared/ui` component kit.
 >
-> This chapter is a per-file walkthrough, not a reference. For crate boundaries stated
-> as a condensed table, design patterns, the DB schema, the full API endpoint list, and
+> This chapter is a per-file walkthrough, not a reference. How an automatic run, a docket
+> team and the merge ceiling are built is in [Runs, Teams and Automation](runs-and-teams.md);
+> the project file is in [The Project File Format](project-file.md). For crate boundaries stated
+> as a condensed table, design patterns, the DB schema, the API structure, and
 > troubleshooting, see [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) — the
 > authority when the two disagree on a fact rather than depth.
 
@@ -17,7 +19,7 @@ This chapter walks through each of the six Rust crates in the main workspace in 
 
 **Lives in:** `crates/tack-core/src/`
 
-**Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, and the two contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness) and the merge-readiness pack (`mrp.rs`: the `mrp-v1` types and their pull-request rendering).
+**Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, the merge policy, the rules that choose a run's profile and the tasks to start, and the contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness), the merge-readiness pack (`mrp.rs`: the `mrp-v1` types and their pull-request rendering) and the project file (`outline.rs` and `outline/bundle.rs`).
 
 **Does not own:** anything that performs I/O. No `sqlx`, no `reqwest`, no file operations, no `tokio`. This is enforced by the `Cargo.toml` — the crate has no async runtime dependency at all.
 
@@ -121,6 +123,30 @@ The mapping from `CoreError` to HTTP status codes lives in `tack-api/src/error.r
 
 ---
 
+### `autonomy.rs`
+
+The merge policy as one pure function. `Level` (`L3 < L4 < L5`), `Facts` (the trigger, the level, the verifier's decision, the checks, CI and the team's `ceiling`) go in; `evaluate(&Facts)` returns `Ok` or the first `Hold` that stops the merge. `level_for` picks the level that governs a change from the project's level and its domains. Nothing here reads a clock, a database or GitHub; `tack-api` gathers the facts. See [the ceiling](runs-and-teams.md#the-ceiling).
+
+---
+
+### `run_defaults.rs` and `auto_start.rs`
+
+`run_defaults::resolve` returns the profile a run gets when the caller names none, and where it came from (`Source`): the task's saved settings, its role, the project default, the built-in Implementer. `auto_start::pick` takes the waiting tasks (`Candidate`) and the project's `Limits` and returns the ones to start now and a `Skip` reason for each other. Both are tables of cases, tested without a database. The tick that feeds them is in `tack-api/src/auto_start.rs`.
+
+---
+
+### `recurrence.rs` and `rate_card.rs`
+
+`recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it. `rate_card` prices a model's tokens against the operator's card, returning nothing for a model the card does not list.
+
+---
+
+### `outline.rs` and `outline/bundle.rs`
+
+The project file. `outline.rs` holds the serde types of every section (`Outline`, `OutlineItem`, `Bundle*`) and `resolve`, which checks the items. `outline/bundle.rs` holds `check`, which checks a whole file against a description of the board, and `to_bundle`, which writes a project back as the same file. Both are pure. See [The Project File Format](project-file.md).
+
+---
+
 ## `tack-db`
 
 **Lives in:** `crates/tack-db/src/`
@@ -164,6 +190,9 @@ Migrations are idempotent — running them on an existing database is safe. Nota
 - `078`–`081` — item briefs, the decision pack columns (options' details and risks,
   the recommendation, when a decision was first seen), merge-readiness pack reviews and
   pull requests.
+- `088`–`091` — a role's profile and a profile's fleet, a task's recurrence, a project's
+  auto-start, and the roles, profiles and automation a template carries. See
+  [Runs, Teams and Automation](runs-and-teams.md#the-migrations).
 
 Each ordinary migration runs in its own transaction with the `_migrations` record
 inserted at commit; a failing statement rolls the whole migration back. Applied
@@ -196,7 +225,9 @@ impl Repository {
 
 This design gives callers a single `repo` value to pass around while keeping each entity's SQL in its own file.
 
-**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution.rs`):
+**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution.rs`, `autonomy.rs`, `budgets.rs`, `rate_card.rs`):
+
+`rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the dollar budget both call it.
 
 - Functions take `&SqlitePool` (or `&self` for the struct-based submodules) and return `Result<T, sqlx::Error>` or `Result<T, DependencyError>`.
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.
@@ -235,7 +266,7 @@ transition is validated against **both** the state pair and which `TransitionAct
 (`Scheduler`, `Operator`, `LeaseOwner`, `RecoveryService`) is allowed to request it —
 for example, only `RecoveryService` may move an attempt into `lost` or
 `needs_operator`; a lease owner reporting the same crash cannot self-authorize it. See
-the [Recovery Runbook](../user-guide/recovery-runbook.md) for what drives those
+the [Recovery Runbook](../admin-guide/recovery-runbook.md) for what drives those
 transitions operationally.
 
 ### `execution/types.rs`
@@ -261,7 +292,7 @@ authoritative lease; only the repository's fenced claim
 live bridge: it loads real `agent_runners` / `agent_fleet_members` /
 `execution_requests` rows and calls into the pure core above, called ahead of the
 naive `ORDER BY created_at LIMIT 1` match in `tack-db`'s claim query. The only
-production caller is the `claim` handler in `tack-api`'s runner protocol.
+production caller is the `claim` handler in `tack-api`'s runner protocol. The same module fails a queued request no runner can take after `SchedulingPolicy.unclaimable_fail_after` (30 minutes by default) with the code `no_runner_can_claim`, and answers whether a project's daily budget is spent (`budget_reached`).
 
 ### `model_policy/`
 
@@ -320,7 +351,8 @@ Exposes `pub async fn serve()`, the server entry point. It does these things in 
 3. Applies any staged database restore (rename `.restore` file into place).
 4. Calls `init_pool()` and `migrations::run_all()`.
 5. Ensures a default workspace row exists (creates one if the table is empty).
-6. Builds `AppState`, calls `build_router(state)`, and starts `axum::serve` with graceful shutdown on `CTRL+C`.
+6. Spawns the background tasks: the GitHub poll, the auto-start tick (`auto_start::run_auto_start_task`, every `TACK_AUTO_START_SECONDS`), and the execution retention and observability sweeps.
+7. Builds `AppState`, calls `build_router(state)`, and starts `axum::serve` with graceful shutdown on `CTRL+C`.
 
 `tack-cli` builds a Tokio runtime and calls `serve()` when you run `tack` with no
 subcommand (or `tack serve`).
@@ -353,7 +385,9 @@ pub struct AppState {
 
 ### `handlers/`
 
-One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`) and `runner_protocol/` (the runner's own surface).
+One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `resolve_profile`, `default_selector` and `create_as`, which a run started by the board itself goes through), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
+
+Outside `handlers/`, three modules do the board's own work: `auto_start.rs` (the tick that starts waiting tasks), `autonomy.rs` (the tick that merges and demotes, and `ceiling_of`) and `merge.rs` (gathering the facts for `tack_core::autonomy::evaluate`, and the merge itself).
 
  A typical handler follows this shape:
 
@@ -397,6 +431,7 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `NotFound` | 404 |
 | `BadRequest` | 400 |
 | `Conflict` | 409 |
+| `SectionFailed` | 500, with a message that names the project-file section and says whether what came before stayed |
 | `Core(CoreError::*NotFound*)` | 404 |
 | `Core(CoreError::InvalidTransition \| WipLimitExceeded \| …)` | 400 |
 | `Database` | 500 |
@@ -414,22 +449,28 @@ The response body is always `{ "error": { "status": <code>, "message": "<text>" 
 enrollment/credential handling, the isolated per-attempt workspace, the owner-only
 attempt journal, the harness adapter layer, and the steps that follow a succeeded attempt (`evidence.rs`, `verify.rs` and the branch push in `git.rs`). **Does not own** anything the API
 must not touch: vendor credentials, workspace contents, and the harness subprocess
-never leave this crate. See [Agent Runners & Fleet Execution](../user-guide/agent-runners.md)
+never leave this crate. See [Installing and Operating Runners](../admin-guide/runners.md)
 for the operator-facing view of everything below.
 
 ### `config.rs`
 
 `RunnerConfig::from_sources` layers defaults → TOML file → environment
 (`TACK_RUNNER_API_URL`, `TACK_RUNNER_ID`, `TACK_RUNNER_STATE_DIR`,
-`TACK_RUNNER_ENROLLMENT_TOKEN`) → CLI flags. `EnrollmentCredential`'s `Debug`/
+`TACK_RUNNER_ENROLLMENT_TOKEN`, `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS`) → CLI flags. It also
+holds `max_concurrent_attempts` (default 1) and the `[docket]` table (`DocketConfig`:
+`binary`, `base_url`, `home`, `port`, `token_file`). `EnrollmentCredential`'s `Debug`/
 `Display` are hardcoded to print `[REDACTED]` — redaction here is structural, not a
 convention a future `println!` could accidentally bypass.
+
+### `active.rs`
+
+`ActiveAttempts` is the registry of the leases in flight, shared by the attempts that hold them and by the one ticker that renews them all. `register` records a lease and hands back a `watch::Receiver<bool>` that turns `true` when the server asks for a cancellation; `snapshot` and `free` feed the heartbeat; `apply` reads the `lease_results` the server answers. `transport.rs` runs up to `max_concurrent_attempts` claims at once in a `JoinSet`.
 
 ### `journal.rs` and `workspace.rs`
 
 A `WorkspaceJournal` record is written to `TACK_RUNNER_STATE_DIR` **before** any
 harness process is allowed to spawn — this ordering is what makes crash recovery
-possible (see the [Recovery Runbook](../user-guide/recovery-runbook.md)).
+possible (see the [Recovery Runbook](../admin-guide/recovery-runbook.md)).
 `JournalState` tracks `Prepared → ProcessObservedRunning → ... → Reported`; a restart
 finds this file and reports what it actually observed rather than guessing.
 `WorktreeProvisioner` is the sole trait allowed to create a workspace's git worktree —
@@ -444,7 +485,7 @@ Defines the trait the runner's runtime loop drives: `enroll`, `refresh`, `claim`
 standalone binary and the embedded runner. `UnavailableProtocolClient` remains only as
 the typed `RunnerError::ProtocolUnavailable` fallback for a runtime built without a
 client — see
-[What actually runs today](../user-guide/agent-runners.md#what-actually-runs-today).
+[What actually runs today](runner-contract.md#what-actually-runs-today).
 
 ### `evidence.rs`, `verify.rs` and the push in `git.rs`
 
@@ -461,12 +502,15 @@ event (`attempt.verify_failed`, `attempt.push_failed`) and the attempt still com
 The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
 cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and
 `local_process.rs` — the one lifecycle every local CLI harness shares: locating the
-binary, the version probe, the request policy, environment and secrets, spawn, cancel, reconcile, log staging and the outcome. A harness adds a
-`HarnessDescriptor` (data) and a four-method `HarnessGrammar` (its command line, how its
-output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. Reading output, a grammar may report a line as a step (`StreamSignal::Progress`); a harness whose descriptor sets `reports_progress` is read line by line on every run, and the engine sends its steps as runner events every two seconds and when the run ends — docket's grammar is the only one that reports any yet. Every runner event takes the attempt's next sequence, counted in the journal (`events_submitted`), because the server keeps one event per sequence. docket's contract and flags are probed when the runner starts, never assumed from its version. Adding one is a module
+binary, the version probe, the request policy, environment and secrets, spawn, cancel, reconcile, log staging and the outcome. A CLI harness adds a
+`HarnessDescriptor` (data) and a `HarnessGrammar` (its command line, how its
+output is read, what it supports, and optionally how it drives a conversation so a run can pause and ask): `codex.rs`, `claude_code.rs`, `opencode.rs`. Adding one is a module
 plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness
-vocabulary itself stays open (`HarnessKind::Other(String)`). Two engine-facing
-traits:
+vocabulary itself stays open (`HarnessKind::Other(String)`). Every runner event takes the attempt's next sequence, counted in the journal (`events_submitted`), because the server keeps one event per sequence.
+
+**docket is not a CLI harness.** It is a daemon the runner talks to over HTTP, so `docket.rs` implements the two engine-facing traits directly, with no grammar: `DocketAdapter`, helped by `docket/client.rs` (one method per route), `docket/probe.rs` (API version and teams), `docket/task.rs` (the task body) and `docket/daemon.rs` (supervising `docket start --dispatch`). It is registered by `harness::discover` only when `[docket]` names a binary or a `base_url`. [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter) has every call.
+
+The two engine-facing traits are
 `HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
 `reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`
 implements `HarnessAdapter` by dispatching on harness kind and **refuses to register
@@ -476,7 +520,7 @@ spawns its subprocess in a new session outside the runner's process group, confi
 against the real binaries with `ps`. Live harness
 tests are `#[ignore]`d and never required in CI; `harness/fixtures/fake_harness.sh`,
 driven by `TACK_FAKE_HARNESS_MODE`, is the always-runnable path every required test
-uses instead.
+uses instead. docket is tested against an in-process fake in `tests/fake_docket/`.
 
 ---
 
@@ -494,10 +538,10 @@ uses instead.
 
 Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and an **optional** `Commands` enum. Run `tack --help` for the authoritative, current list; as of this writing it is:
 
-- Board basics: `serve`, `init`, `projects`, `add`, `list`, `move`, `board`, `branch`, `search`, `sprint`, `config`, `completions`
+- Board basics: `serve`, `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `sprint`, `config`, `completions`
 - Backup/restore: `backup`, `backups`, `restore`
-- Project setup: `template`, `role`, `comment`, `field`
-- Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke execution runners), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits)
+- Project setup: `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`
+- Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits, fleet)
 
 Running `tack` with **no subcommand** — or `tack serve` — starts the server + web UI: `run_server()` builds a Tokio runtime and calls `tack_api::serve()`. This is the primary, UI-first entry point. Everything else is the CLI client.
 

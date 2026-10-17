@@ -1,19 +1,9 @@
 # Merging from Tack
 
-## The ladder
-
-Settings → Automation ends with four steps, in the order you climb them:
-
-1. **Teams**: choose a profile for each role. A task takes the profile of its role; a task
-   with no role takes the project's default. The profile names the team and the machine.
-2. **Start**: turn on *Start a task by itself*, pick the status that starts it and how many
-   runs may be open at once. It stays off, and says why, until a role or the project has a
-   profile.
-3. **Merge**: how much Tack may merge without you (L3, L4, L5), described below.
-4. **Ceiling**: the most this project can reach. A team that needs a person during a run
-   keeps its tasks at L3; the line for that team says what to change.
-
-On a task, the badges *Started by itself* and *Team: name* show what Tack did on its own.
+This page is for the person who decides how a finished run reaches the main branch. After reading it you
+can merge a run from Tack with one button, let a task merge when you move it to Done, and set the rules under
+which Tack merges by itself. The merge is the third step of the ladder in
+[Automating a Project](automation.md#merge); the rules for starting runs and for teams are there too.
 
 When an agent's run finishes on a branch and its pull request is open, you can merge it
 from Tack instead of going to GitHub. There are three ways, and a project uses as many of
@@ -22,8 +12,8 @@ them as you turn on.
 | Way | Who decides | Where |
 |---|---|---|
 | The **Merge** button | You, one change at a time | On the finished task and on its attempt |
-| **Merge when moved to Done** | You, by moving the task to Done | Settings → Automation → Autonomy |
-| **Automatic merge** (L4 or L5) | Tack, under rules you set | Settings → Automation → Autonomy |
+| **Merge when moved to Done** | You, by moving the task to Done | Settings → Automation → Merge |
+| **Automatic merge** (L4 or L5) | Tack, under rules you set | Settings → Automation → Merge |
 
 Every merge uses the exact commit the run produced, so GitHub refuses it if the branch has
 moved since. Tack never asks GitHub for more permission than its token has.
@@ -31,11 +21,12 @@ moved since. Tack never asks GitHub for more permission than its token has.
 ## The Merge button
 
 The button is enabled once the run finished with a pushed branch, the task is linked to a
-GitHub issue, and the board has a GitHub token. Tack reads CI when you press it, not before:
+GitHub issue (Tack opens the pull request from that link when there is none), and the board has a
+GitHub token. Tack reads CI when you press it, not before:
 
 - CI green: Tack merges and the task follows its workflow.
-- CI still running, or failed: nothing is merged, and the button and the task say why. Press
-  it again when CI is done.
+- CI still running, failed, or reporting nothing: nothing is merged, and the button and the task say
+  why. Press it again when CI is done.
 - The token cannot merge in that repository: the button stays disabled and says the token
   needs **Contents: write**. Fix the token on GitHub, then press again.
 - Branch protection or a conflict: GitHub's own reason is shown.
@@ -61,22 +52,27 @@ The level says how much of the merge decision Tack takes:
   domain at L4 or L5; anything else is L3.
 - **L5** — the same for the whole repository.
 
+A project at L5 treats every change as L5 unless a domain that matches it is lower. A change that
+matches several domains takes the lowest of their levels.
+
 At L4 and L5 Tack merges a finished run only when all of these hold, in this order. The first
 that does not is shown on the task, and a person reviews it as usual:
 
 1. The run did not come through MCP.
 2. The verifier said the change can merge.
 3. The change's domain is at L4 or L5.
-4. The verifier's pack lists every stage the project requires ("Stages the verifier must
-   run"; at least one is needed) as passed. A stage it skipped as not applicable does not
+4. The team that ran the change does not need a person during a run (see [The ceiling](#the-ceiling-of-a-team)).
+5. The verifier's pack lists every stage the project requires (at least one is needed) as
+   passed. A stage it skipped as not applicable does not
    count.
-5. The verifier's pack is signed, and the signature checks against the exact commit.
-6. No daily budget of the project is spent.
-7. The pull request is open, and CI on that commit is green.
+6. The verifier's pack is signed, and the signature checks against the exact commit.
+7. The project has not used up its tokens or its automatic merges for today.
+8. The pull request is open, and CI on that commit is green.
 
-The Autonomy section says what on this board stops an automatic merge — GitHub polling off,
-no verifier installed where the board runs, no public key — and shows each domain's merged
-and undone changes before its level.
+The Merge step says what on this board stops an automatic merge: GitHub polling off, no verifier
+installed where the board runs, no public key, a team that needs a person. While any of them holds,
+L4 and L5 are shown disabled with the reasons ("L4 and L5 are off: …"). Each domain shows its merged and
+undone changes beside its level.
 
 **Demotion is automatic; promotion is yours.** When a change Tack merged by itself is
 reverted, or CI fails on its merge commit, its domain drops one level and the task's
@@ -84,18 +80,24 @@ activity says so. Only you raise a level again.
 
 ### What it needs
 
-- The verifier (prill) on the runner, with a signing key (`[verify] sign_key`, see the
-  [Configuration reference](../developer/configuration-reference.md)), and on the machine the
-  board runs on, to check signatures.
-- The project's public key in the Autonomy section.
-- The board's GitHub token and poll (`TACK_GITHUB_TOKEN`, `TACK_GITHUB_POLL_SECONDS`): the
-  automatic merge runs on the poll's tick.
-- A task linked to a GitHub issue, since that is how its pull request is opened.
+An administrator sets most of this up; see
+[Installing and Operating Runners](../admin-guide/runners.md#after-a-succeeded-attempt) and the
+[Configuration reference](../admin-guide/configuration-reference.md).
 
-The team that ran the change sets a ceiling too. A team whose runner reports it needs a person
-during a run (it is attended, with the fix named) keeps its tasks at L3 however high the
-project's level is: the automatic merge holds them and says so, and the Autonomy section lists
-the team and what to change. The Merge button is not held by the ceiling.
+- A verifier on the runner, set to sign its packs, and the same verifier on the machine the board runs
+  on, to check the signatures.
+- The project's public key, which you paste into **Public key** in the Merge step.
+- The board's GitHub token and polling. The automatic merge runs on each poll.
+- A task linked to a GitHub issue, since that is how its pull request is opened.
+- The required stages filled in (the box labelled "Stages prill must run"). It starts empty, and at least one
+  stage is needed. **Fill prill's example** puts in a starting set.
+
+### The ceiling of a team
+
+The team that ran the change sets a ceiling too. A team that needs a person during a run keeps its tasks at
+L3 however high the project's level is: the automatic merge holds them and says "The team that ran this
+stays at L3: it needs a person during a run", and the Ceiling step lists the team and what to change; see
+[Ceiling](automation.md#ceiling). The Merge button is not held by the ceiling.
 
 ## Sending a rejected change back to the agent
 
@@ -107,6 +109,15 @@ review with every attempt kept.
 
 ## Budgets
 
-Each project can cap, per day: tokens, dollars (priced from the rate card on the Factory
-page), automatic merges, and items waiting for your review. A spent budget stops new runs from
-starting, and the card says which budget; runs already going finish.
+Each project can cap four things, set under **Daily limits** in the Merge step. Leave a box empty for no
+limit.
+
+| Limit | What happens when it is reached |
+|---|---|
+| **Tokens per day** | New runs do not start, and no automatic merge happens |
+| **Dollars per day** | New runs do not start. Dollars are priced from the [rate card](reviewing-runs.md#the-rate-card) on the Factory metrics page; a run that cannot be priced does not count |
+| **Items waiting at once** | New runs do not start while that many tasks wait for your review |
+| **Automatic merges per day** | No further automatic merge happens that day |
+
+A limit that stops new runs says which one on the task; runs already going finish. A day starts at midnight
+UTC.

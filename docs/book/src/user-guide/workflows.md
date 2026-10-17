@@ -7,7 +7,7 @@ A **workflow** is the set of named status columns that items move through in a p
 - **WIP limit** — optional cap on how many items can be in this column at once
 - **Order** — left-to-right position on the board
 
-Every project stores exactly one `WorkflowConfig` as JSON — no schema migration needed to change it.
+Every project has exactly one workflow, and you can change it at any time. A workflow can also restrict which moves are allowed; see [Strict transitions](#strict-transitions).
 
 ---
 
@@ -19,62 +19,75 @@ When you create a project, its type determines the starting workflow. Everything
 |---|---|---|
 | `software`, `web`, `mobile` | Scrum | Backlog → To Do → In Progress → In Review → Done |
 | `construction` | Phase-based, **strict** | Permit → Procurement → Build → Inspect → Handover |
-| `legal` | Phase-based | Intake → Discovery → Drafting → Review → Closed |
+| `legal` | Phase-based, **strict** | Intake → Discovery → Drafting → Review → Closed |
 | `research` | Kanban | Hypothesis → Design → Experiment → Analysis → Published |
 | `event` | Phase-based | Ideas → Booked → In Progress → Confirmed → Done |
 | `personal`, `homework` | Simple | To Do → Doing → Done |
-| `maintenance` | Kanban | Backlog → In Progress → Done (no sprints) |
+| `maintenance` | Kanban | Queue → In Progress → Review → Done |
 | `custom` | Simple | To Do → Doing → Done (fully editable) |
 
 ---
 
-## Strict Transitions (Construction Workflow)
+## Strict transitions
 
-Most workflows let you move an item to any column. The construction workflow enforces **strict linear transitions**: items must move through columns in order.
+Most workflows let you move an item to any column. A workflow can instead list the moves it allows. The construction and legal types start that way, and a move that is not listed is refused with an error that names both statuses.
 
-| From | Only allowed next step |
+The construction workflow allows:
+
+| From | Allowed next step |
 |---|---|
 | Permit | Procurement |
 | Procurement | Build |
 | Build | Inspect |
-| Inspect | Handover |
+| Inspect | Handover, or back to Build for rework |
 
-Attempting to move a "Build" item directly to "Handover" is rejected by the API (`422 Unprocessable Entity`). This prevents accidentally skipping required phases — regulatory sign-offs, physical dependencies, multi-party hand-offs.
+So a "Build" item cannot jump to "Handover". This keeps required phases, such as regulatory sign-offs and physical dependencies, from being skipped. The legal workflow is the same kind of chain, with a step from Review back to Drafting.
 
-Enable or disable strict transitions on any workflow from **Settings → Workflow → Strict transitions** toggle.
+The Workflow settings page edits columns, categories and WIP limits, and it keeps whatever moves the workflow already allows. To set or remove the allowed moves, put `transitions` in a [project file](import-export.md#the-project-file) or send them through the API, as below.
 
 ---
 
-## Changing a Workflow After Creation
+## Changing a workflow after creation
 
-**In the UI:** Settings → Workflow → add/remove/rename columns, set WIP limits, toggle strict transitions → Save.
+**In the UI.** **Settings → Workflow**: rename columns, change their category, set WIP limits, **Add Status**, then **Save workflow**.
 
-Existing items keep their current status name. If you rename a column, items in the old status are not migrated automatically — update them via the board or the API.
+Existing items keep their current status name. If you rename a column, items in the old status are not moved automatically; move them on the board.
 
-**Via API:**
+**In a project file.** The `project.workflow` key takes a preset (`scrum`, `kanban`, `simple`, `construction`, `legal`, `research` or `event`) or the statuses in order, with optional `transitions`. A workflow in a file must have at least one `todo`, one `in_progress` and one `done` status and no repeated names, and the file applies it only when it creates a project.
+
+**Through the API.**
 
 ```sh
 curl -X PATCH http://localhost:3210/api/projects/{id} \
   -H "Content-Type: application/json" \
   -d '{
     "workflow": {
-      "columns": [
+      "workflow_type": "construction",
+      "statuses": [
         {"name":"Permit",      "category":"todo",        "wip_limit":null, "order":0},
-        {"name":"Procurement", "category":"in_progress", "wip_limit":2,    "order":1},
+        {"name":"Procurement", "category":"todo",        "wip_limit":null, "order":1},
         {"name":"Build",       "category":"in_progress", "wip_limit":3,    "order":2},
         {"name":"Inspect",     "category":"in_progress", "wip_limit":1,    "order":3},
         {"name":"Handover",    "category":"done",        "wip_limit":null, "order":4}
       ],
-      "strict_transitions": true
+      "transitions": [
+        {"from":"Permit","to":"Procurement"},
+        {"from":"Procurement","to":"Build"},
+        {"from":"Build","to":"Inspect"},
+        {"from":"Inspect","to":"Handover"},
+        {"from":"Inspect","to":"Build"}
+      ]
     }
   }'
 ```
+
+Leave out `transitions` (or send `null`) to allow every move.
 
 ---
 
 ## WIP Limits
 
-A WIP limit caps the number of items in a column. Adding a card beyond the limit is blocked in the UI (the card snaps back) and rejected by the API.
+A WIP limit caps the number of items in a column. A move into a full column is refused (the card snaps back in the UI), and the API answers with an error that names the column and its limit.
 
 WIP limits are enforced on new moves, not retroactively. If you set a limit of 3 on a column that already has 5 items, the existing 5 are unaffected — but no more can enter until the count drops below 3.
 

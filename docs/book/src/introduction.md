@@ -54,22 +54,28 @@ Six terms recur throughout this documentation:
 | **Workflow** | The set of named status columns an item moves through (e.g. To Do → Doing → Done), each with a category and an optional WIP limit. See [Workflows & Statuses](user-guide/workflows.md). |
 | **Project type** | A template chosen at creation that pre-loads a matching workflow *and* vocabulary (software, construction, legal, …). Everything stays editable afterward. |
 | **Vocabulary** | Per-project label overrides that rename built-in terms to your domain — "Task" → "Work Order", "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Vocabulary](user-guide/vocabulary.md). |
-| **Runner** | A small worker process that lives where your code and credentials already are, pulls eligible items from the board, launches a coding-agent harness, and reports back. See [Agent Runners](user-guide/agent-runners.md). |
+| **Runner** | A small worker process that lives where your code and credentials already are, pulls eligible items from the board, launches a coding-agent harness, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
 | **Run** (attempt) | One execution of an item by a runner — leased under a fencing token so at most one attempt is ever active, and recorded as durable history: events, decisions, artifacts, and measured cost. |
 
 ## How this documentation is organized
 
-| Section | For whom |
-|---------|----------|
-| **User Guide** | Anyone running Tack: setup, views, CLI, configuration |
-| **Developer Guide** | Contributors and people extending the codebase |
-| **Learning Path** | Developers new to Rust, Axum, or SolidJS; explains the stack with analogies |
-| **Roadmap** | What each development phase set out to do, and what came of it |
+The book has three guides, one for each way of meeting Tack. Start with the one that matches
+what you are doing today; each page links across to the others instead of repeating them.
+
+| Guide | For whom | You will find |
+|-------|----------|---------------|
+| **[User Guide](user-guide/quick-start.md)** | Anyone who works in Tack: managing projects, running agents on tasks, reviewing and merging their work | The board and its views, items, workflows, running an agent, reviewing a run, automating a project (teams, starting by itself, repeating tasks), merging, project files, the CLI |
+| **[Administrator Guide](admin-guide/index.md)** | Whoever installs, secures and operates a board and its runners | Deployment, configuration and the full variable reference, tokens and network exposure, installing runners and agents, what an agent can reach, backup, restore and recovery |
+| **[Developer Guide](developer/index.md)** | Contributors and integrators | Architecture and crates, how runs, teams and automation are built, the runner contract, the project file format, the API and MCP, testing, the decisions behind it |
+| **Learning Path** | Developers new to Rust, Axum or SolidJS | The stack explained with analogies |
+| **[Roadmap](roadmap.md)** | Everyone | What each development phase set out to do, and what came of it |
 
 ## Quick links
 
-- [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Claude Code, Codex, docket, or opencode
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
+- [Running Agents on Tasks](user-guide/running-agents.md) — handing a board item to Claude Code, Codex, docket, or opencode
+- [Automating a Project](user-guide/automation.md) — teams, starting tasks by itself, repeating tasks, merging
+- [Administrator Guide](admin-guide/index.md) — deploy, configure, secure and operate
 - [Architecture Overview](developer/index.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit
 - [Rust Primer](developer/learning/rust-primer.md) — start here if Rust is new to you
@@ -87,8 +93,9 @@ page opens the file directly on GitHub.
 
 ```
 docs/book/src/
-├── user-guide/        ← user-facing docs
-├── developer/         ← contributor docs
+├── user-guide/        ← people who work in Tack
+├── admin-guide/       ← people who install and operate it
+├── developer/         ← contributors and integrators
 │   └── learning/      ← stack explanation with analogies
 └── roadmap.md
 ```

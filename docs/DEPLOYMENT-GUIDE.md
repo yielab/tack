@@ -1,8 +1,11 @@
 # Tack Deployment Guide
 
-This guide covers deploying Tack to production.
+This guide is for the person who installs Tack on a server or a workstation. After reading it you can
+get the binary, run it as a service behind HTTPS, set up backups and monitoring, and keep it updated.
+Attaching machines that run agents is a separate step, in
+[Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html).
 
-Tack is a **single, self-contained binary** (about 21 MiB — see [Benchmarks](https://github.com/yielab/tack/blob/develop/docs/BENCHMARKS.md)) with the SolidJS SPA
+Tack is a **single, self-contained binary** with the SolidJS SPA
 embedded. One process serves the REST API (`/api/*`), the WebSocket, and the web
 UI — same-origin, so there is no separate frontend service, no CORS to configure
 for the bundled UI, and no static host to run. All state lives in one SQLite
@@ -37,8 +40,9 @@ behind a reverse proxy."
 Prebuilt binaries for Linux (x86_64), macOS (Intel + Apple Silicon), and Windows
 are attached to each [GitHub Release](https://github.com/yielab/tack/releases).
 Each archive contains the single `tack` executable, `LICENSE`, `README.md`, and a
-`QUICKSTART.txt`. From v0.1.0-beta.7 on, releases also ship a `SHA256SUMS` file,
-build provenance attestations, and an SBOM — verify before deploying:
+`QUICKSTART.txt`. Each release also has a separate `tack-runner` archive, for machines that only run
+agents. Releases ship a `SHA256SUMS` file, build provenance attestations, and an SBOM — verify before
+deploying:
 
 ```bash
 sha256sum -c SHA256SUMS            # checksums
@@ -57,8 +61,7 @@ curl --proto '=https' --tlsv1.2 -fsSL \
 Fetches the installer from the release it installs and installs `tack` from that release. It
 verifies the archive against that release's own `SHA256SUMS` before extracting
 anything, and refuses to install on a mismatch — Option A's manual check, done
-for you. Releases before `v0.1.0-beta.7` predate that file; installing one of
-those needs `TACK_SKIP_CHECKSUM=1`, which is the only way to skip the check.
+for you. `TACK_SKIP_CHECKSUM=1` skips the check and is the only way to do so.
 
 ### Option C — build from source
 
@@ -110,6 +113,11 @@ TACK_STORAGE_DIR="/var/lib/tack/storage" \
 The same binary is also the CLI client (`./tack --help`, `./tack add`,
 `./tack list`, …) — it talks to a running server over HTTP, never the DB directly.
 
+**The token.** On a loopback bind with no `TACK_API_TOKEN`, the server creates a token file named
+`api-token` next to the database on its first start (mode `0600`) and requires it on every API
+request. The web page gets it as a cookie; the CLI finds it on the same machine. See
+[Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#authentication).
+
 > **Security note:** bind to `127.0.0.1` and put a reverse proxy in front. If you
 > must bind a non-loopback address (`TACK_HOST=0.0.0.0`), set `TACK_API_TOKEN` —
 > otherwise the API (including the "download the whole database" endpoint) is open
@@ -152,7 +160,8 @@ Environment=TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc
 Environment=TACK_STORAGE_DIR=/var/lib/tack/storage
 Environment=TACK_LOG_LEVEL=info
 Environment=TACK_LOG_JSON=true
-# Uncomment to require a bearer token on every API request:
+# The server creates /var/lib/tack/api-token on first start and requires it.
+# To choose the token yourself instead:
 # Environment=TACK_API_TOKEN=change-me-to-a-long-random-secret
 ExecStart=/usr/local/bin/tack serve
 Restart=always
@@ -177,6 +186,10 @@ sudo systemctl status tack
 
 Logs go to the journal: `sudo journalctl -u tack -f`.
 
+This unit runs the board only. It hides `/home` from the process, and the embedded runner needs your
+agents' sign-ins and projects, so do not add `--with-runner` to it. Attach runners as described in
+[Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html).
+
 ---
 
 ## Per-user service (no root)
@@ -194,8 +207,35 @@ tack service status       # prints the unit's state and the health URL
 tack service uninstall    # stops and removes the unit; the data root is left untouched
 ```
 
-See [`tack service`](https://yielab.github.io/tack/user-guide/cli.html#service) for real output from all three
-commands. Prefer the system-level unit above for a shared or internet-facing deployment —
+```text
+Created symlink ~/.config/systemd/user/default.target.wants/tack.service → ~/.config/systemd/user/tack.service.
+Installed and started the tack user service.
+  Unit file: ~/.config/systemd/user/tack.service
+  Data root: ~/.local/share/tack
+  Health:    http://127.0.0.1:3210/api/health
+```
+
+`tack service status` prints:
+
+```text
+State:  active
+Health: http://127.0.0.1:3210/api/health
+```
+
+`tack service uninstall` prints:
+
+```text
+Removed "~/.config/systemd/user/default.target.wants/tack.service".
+Removed the tack user service. The data root was left untouched.
+```
+
+The data root holds `tack.db`, `storage/`, `runner/` and `logs/tack.log`, in a folder only your user can
+open. The unit runs `tack serve --with-runner`, so agents can run on this computer at once, and sets
+`TACK_DATABASE_URL`, `TACK_STORAGE_DIR`, `TACK_RUNNER_STATE_DIR` and `TACK_LOG_FILE` to paths under the
+data root. It runs in the data root, so a `tack.toml` from the directory where you ran the command is not read. To give the runner a
+settings file, add `Environment=TACK_LOCAL_RUNNER_CONFIG=<path>` to the unit and reload it.
+`uninstall` stops the service and removes its unit file but never touches the data root, so a later
+`install` picks the same database back up. Prefer the system-level unit above for a shared or internet-facing deployment —
 this one runs as your own user and stops when your user session's systemd instance does
 (`loginctl enable-linger` keeps it running across logouts).
 
@@ -279,9 +319,10 @@ docker run -d --name tack -p 3210:3210 -v tack-data:/data tack:latest
 ```
 
 The container binds `0.0.0.0` internally and stores everything under `/data`
-(`/data/tack.db` + `/data/storage`), persisted by the named volume. If you
-publish the port beyond localhost, set `TACK_API_TOKEN` in `docker-compose.yml`
-(a commented example is included there). The distroless image has no shell, so
+(`/data/tack.db` + `/data/storage`), persisted by the named volume. Because that bind is not
+loopback, **the container refuses to start until you set `TACK_API_TOKEN`** (uncomment the example in
+`docker-compose.yml`) or `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`. The container has no runner;
+attach runners from other machines. The distroless image has no shell, so
 health-check the container from the host (`curl .../api/health`) or via a proxy.
 
 ---
@@ -300,7 +341,7 @@ TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc
 TACK_STORAGE_DIR=/var/lib/tack/storage               # attachments
 
 # Auth & CORS
-TACK_API_TOKEN=<long-random-secret>                  # require Authorization: Bearer <token>
+TACK_API_TOKEN=<long-random-secret>                  # Authorization: Bearer <token>; generated on loopback when unset
 TACK_ALLOWED_ORIGINS=https://tack.example.com        # comma-separated CORS allow-list
 
 # Logging
@@ -316,8 +357,9 @@ TACK_MAX_BODY_SIZE=2097152                           # 2 MB default (upload endp
 client at the API. The bundled SPA is same-origin and needs no CORS config. There
 is **no** `TACK_CORS_ORIGIN` variable — the allow-list is `TACK_ALLOWED_ORIGINS`.
 
-Optional integrations (outbound webhooks, GitHub sync, and S3-compatible
-cloud backup) are configured with their own `TACK_*` variables — see CLAUDE.md.
+Optional integrations (outbound webhooks, GitHub sync, S3-compatible cloud backup, tasks that
+projects start by themselves) are configured with their own `TACK_*` variables — see the
+[configuration reference](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md).
 
 ### Configuration file (tack.toml)
 
@@ -329,8 +371,13 @@ storage_dir = "/var/lib/tack/storage"
 log_level = "info"
 log_json = true
 log_file = "/var/log/tack/tack.log"
-allowed_origins = "https://tack.example.com"
+allowed_origins = ["https://tack.example.com"]
+max_body_size_bytes = 2097152
 ```
+
+A `tack.toml` that cannot be parsed is ignored without an error, and the defaults apply. A key it does
+not know is ignored too. After editing, confirm the change took effect, for example with
+`GET /api/debug/info`, which reports the host, port and log level.
 
 ---
 
@@ -343,15 +390,17 @@ manually.
 
 ```bash
 # Download a consistent snapshot (VACUUM INTO) over the API
-curl -s http://127.0.0.1:3210/api/backup -o tack-backup.db
+curl -s -H "Authorization: Bearer $TACK_API_TOKEN" http://127.0.0.1:3210/api/backup -o tack-backup.db
 
 # Or via the CLI
-tack backup > tack-backup.db          # writes a snapshot
-tack restore tack-backup.db           # stages a restore (applied on next restart)
+tack backup /var/backups/tack/tack.db   # saves a snapshot (default file: tack-backup.db)
+tack restore /var/backups/tack/tack.db  # stages a restore (applied on next restart)
 ```
 
-Restore is **staged**: the uploaded DB is written next to the live one and swapped
-in atomically on the next server start. Restart the service after restoring.
+Restore is **staged**: the uploaded DB is written next to the live one (as `<db>.restore`) and
+swapped in on the next server start. The previous database is kept beside it as a timestamped
+`<db>.bak-<time>`. Restart the service after restoring. The
+[Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html) page has the details.
 
 ### File-level backup (systemd host)
 
@@ -369,7 +418,7 @@ Automate with cron or a systemd timer, and prune old files with
 
 Tack can back up the **database plus attachments** as one `.tar.zst` bundle to any
 S3-compatible store (Cloudflare R2, Backblaze B2, AWS S3, self-hosted MinIO). Set
-the `TACK_BACKUP_*` variables (see CLAUDE.md) or configure it at runtime under
+the `TACK_BACKUP_*` variables (see the configuration reference) or configure it at runtime under
 **Settings → Cloud Backup**, then:
 
 ```bash
@@ -399,11 +448,11 @@ staging, snapshot the current state first, and roll back if the swap fails.
 
 ```bash
 curl http://127.0.0.1:3210/api/health
-# {"status":"ok","version":"0.1.0-beta.7","migrations_applied":18}
+# {"status":"ok","version":"<version>","migrations_applied":<count>}
 ```
 
 Point uptime monitoring (Uptime Kuma, Healthchecks.io, a load-balancer probe) at
-`/api/health` and alert on non-200 or a stalled `migrations_applied` count.
+`/api/health`, which needs no token, and alert on non-200.
 
 ### Logs
 
@@ -467,13 +516,11 @@ Tack is a single-writer SQLite application, designed for a solo developer or a
 small team. There is no horizontal write scaling — that is a deliberate design
 choice, not a gap. Practical guidance:
 
-- **Vertical:** the binary is tiny (~12 MB idle RSS) and reads are sub-millisecond;
-  a modest VM handles a small team comfortably.
+- **Vertical:** the binary is small and a modest VM handles a small team comfortably.
 - **Write throughput:** SQLite serializes writes. This is fine at small-team scale;
   it is the first thing you would feel under heavy concurrent writes.
 - **Concurrency:** the DB runs in WAL mode for better read/write concurrency.
-- Multi-user auth, per-user identity, and Postgres are explicitly **out of scope**
-  for the current design (see the roadmap's "Future / Optional").
+- Multi-user auth, per-user identity, and Postgres are out of scope for the current design.
 
 ---
 
@@ -511,7 +558,7 @@ from a backup if needed.
 
 ```bash
 # 1. Back up first
-tack backup > /var/backups/tack/pre-upgrade-$(date +%F).db
+tack backup /var/backups/tack/pre-upgrade-$(date +%F).db
 
 # 2. Replace the binary (download a new release or rebuild)
 sudo install -m 0755 tack /usr/local/bin/tack

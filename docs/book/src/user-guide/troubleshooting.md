@@ -1,174 +1,151 @@
-# Troubleshooting and FAQ
+# Troubleshooting & FAQ
 
-This page covers the problems you are most likely to hit while running Tack, and answers common questions about how it stores and protects your data. Tack is a single self-hosted binary backed by a local SQLite database, so most issues come down to the server process, the database file, or a few environment variables.
-
----
-
-## Troubleshooting
-
-Work through the matrix below first, then read the detailed sections for the commands and SQL you need.
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Server exits immediately on start | Port `3210` already in use | Change `TACK_PORT` or stop the conflicting process |
-| `database is locked` errors | Another process is holding `tack.db` | Run a single server; close other connections |
-| Errors mentioning a failed migration | Interrupted/partial migration | Inspect `_migrations`; restore or restage a backup |
-| Board or UI never loads | API server not running | Check `GET /api/health` |
-| `401 Unauthorized` on every request | `TACK_API_TOKEN` set, but no/wrong `Authorization` header | Send `Authorization: Bearer <token>` |
-| Browser console shows CORS errors | Origin not in the allow-list | Add it to `TACK_ALLOWED_ORIGINS` |
-| Uploads rejected (`413` / too large) | File over the size limit | Stay under 50 MB; raise `TACK_MAX_BODY_SIZE` for non-attachments |
-| Search returns nothing | SQLite built without FTS5 | Use a SQLite/binary with FTS5 enabled |
-| Vocabulary or theme "didn't change" | Stale page state | Refresh; theme/palette live in `localStorage` |
+This page is for people who use Tack every day and hit something unexpected. Each entry gives the symptom, what causes it, and what to do. Problems with installing, exposing, securing or recovering the server belong to whoever runs it; this page points them to the [Administrator Guide](../admin-guide/index.md).
 
 ---
 
-### Server won't start / "port already in use"
+## Find your symptom
 
-**Cause.** By default the server binds to `127.0.0.1:3210`. If another process (often a previous Tack instance that did not exit) already holds that port, startup fails.
-
-**Fix.** Either free the port or run Tack on a different one. The port comes from `TACK_PORT` (default `3210`); the bind address comes from `TACK_HOST` (default `127.0.0.1`).
-
-```sh
-# See what is using the default port
-lsof -i :3210        # macOS / Linux
-
-# Start on a different port
-TACK_PORT=4000 tack serve
-```
-
-Open the UI at the host and port you started with, for example `http://127.0.0.1:4000`. See [Configuration](configuration.md) for the full list of variables.
-
----
-
-### "Database is locked"
-
-**Cause.** SQLite allows only one writer at a time. This error means another process already has `tack.db` open for writing — usually a second `tack serve` instance, an open `sqlite3` shell, or a database GUI.
-
-**Fix.** Run exactly one Tack server against a given database file. Close any other process that has the file open (other `tack` instances, `sqlite3` sessions, DB browsers). The default connection string already uses read-write-create mode (`sqlite:tack.db?mode=rwc`), so you should not need to change it.
-
-If you genuinely need a second instance, point it at a different database with `TACK_DATABASE_URL`.
+| Symptom | Go to |
+|---|---|
+| The page is blank, or the board never loads | [The board or UI won't load](#the-board-or-ui-wont-load) |
+| A label or the theme "didn't change" | [A vocabulary or theme change did not apply](#a-vocabulary-or-theme-change-did-not-apply) |
+| The Run with agent button says execution is off | [Agent execution is off](#agent-execution-is-off) |
+| A run succeeded but there is no pull request, pack or branch | [A run succeeded, but there is no pull request, pack or branch](#a-run-succeeded-but-there-is-no-pull-request-pack-or-branch) |
+| The Start switch is greyed out, or auto-start turned itself off | [Auto-start is off, and says why](#auto-start-is-off-and-says-why) |
+| A task reached the Start column and nothing happened | [A task did not start by itself](#a-task-did-not-start-by-itself) |
+| `tack runner doctor` says "needs docket 0.2.0-beta.6" | [docket says it needs 0.2.0-beta.6](#docket-says-it-needs-020-beta6) |
+| The project never merges by itself, and Settings names a team | [A team runs attended and the project stays at L3](#a-team-runs-attended-and-the-project-stays-at-l3) |
+| An import says "This file cannot be imported" | [A project file was refused](#a-project-file-was-refused) |
+| An import says a section could not be written | [A section failed to write](#a-section-failed-to-write) |
+| Port in use, database locked, failed migration, `401`, CORS, upload limits | [Server problems](#server-problems) |
 
 ---
 
-### Migrations failed on startup
+## The board or UI won't load
 
-**Cause.** Tack runs its schema migrations automatically when the server starts and records each applied migration in the `_migrations` table. If the process is killed mid-migration, or the database file is from an incompatible build, startup can fail with a migration error.
+**Cause.** The web page and the API come from the same server. A blank page, a loading skeleton that never ends, or network errors almost always mean the server is not running at the address you opened.
 
-**Fix.** Inspect which migrations were recorded:
-
-```sh
-sqlite3 tack.db
-```
-
-```sql
-SELECT * FROM _migrations;
-```
-
-If a migration is recorded as applied but the schema is clearly incomplete, the safest recovery is to restore a known-good backup rather than hand-editing the schema. See [Backup and Restore](backup-restore.md). For the full upgrade path — what runs automatically, when Tack takes its own pre-upgrade snapshot, and how to safely enable the Part III runner-fleet execution features — see [`docs/MIGRATION-GUIDE.md`](https://github.com/yielab/tack/blob/develop/docs/MIGRATION-GUIDE.md).
-
-**How staged restore interacts with this.** A restore is *staged*, not applied live: Tack writes the uploaded database next to the live file as `<db>.restore` and tells you to restart. On the next startup, before opening the database, Tack swaps the files atomically:
-
-- the current database is moved aside to `<db>.bak`,
-- the staged `<db>.restore` becomes the live database.
-
-So after a restore your previous database is preserved as `tack.db.bak`. If a restore leaves you worse off, stop the server and move `tack.db.bak` back to `tack.db` to return to the prior state.
+**What to do.** Open `http://127.0.0.1:3210/api/health` (or the address you started Tack on). A running server answers `{"status":"ok", …}`. If nothing answers, start it with `tack serve`, or reopen the desktop app, and read the console for the reason. If you run Tack as a background service, `tack service status` says whether it is active. If the address answers but the page still fails, see [Server problems](#server-problems).
 
 ---
 
-### Board or UI won't load
+## A vocabulary or theme change did not apply
 
-**Cause.** The web UI is served by the same binary as the API. If the page is blank, stuck on a skeleton loader, or shows network errors, the API server is almost always down or unreachable.
+**Cause.** Light or dark mode and the colour palette are saved in your browser, not on the server, so they follow the browser rather than your account. Vocabulary is saved per project on the server, but a tab that was already open can still show the old words.
 
-**Fix.** Confirm the server is up with the health endpoint:
-
-```sh
-curl http://127.0.0.1:3210/api/health
-```
-
-A healthy server responds with `200 OK`. If the request hangs or is refused, the server is not running on that host/port — start it with `tack serve` and check the console for errors. If you changed `TACK_HOST`/`TACK_PORT`, query the address you actually bound to.
-
-The `/api/health` endpoint is intentionally exempt from the API-token gate, so it always works even when `TACK_API_TOKEN` is set — making it a reliable liveness check.
+**What to do.** Refresh the page, with a hard refresh if needed. If a theme looks wrong only in one browser, clearing that browser's data for Tack returns it to the defaults. See [Appearance](appearance.md) and [Vocabulary](vocabulary.md).
 
 ---
 
-### 401 Unauthorized / "token rejected"
+## Agent execution is off
 
-**Cause.** When `TACK_API_TOKEN` is set on the server, every `/api/*` route except `/api/health` requires a matching Bearer token. A `401` means the header is missing, malformed, or does not match the configured token.
+**Cause.** Tack is a project manager first. Until a runner is active on this computer, the **Run with agent** button shows "Agent execution is off" instead of a form.
 
-**Fix.** Send the token on every request:
-
-```sh
-curl -H "Authorization: Bearer <token>" http://127.0.0.1:3210/api/projects
-```
-
-The header value must be exactly `Bearer ` followed by the same string you set in `TACK_API_TOKEN`. If you are using the web UI behind a token, make sure the UI is configured with the same token. If you did not intend to require a token, unset `TACK_API_TOKEN` and restart. See [Administration & Security](administration.md).
+**What to do.** Open **Agents** in the sidebar and press **Turn on**, then sign in to the agent you want from its own command. [Running Agents on Tasks](running-agents.md) walks through it. To attach runners on other computers, see [Installing and Operating Runners](../admin-guide/runners.md).
 
 ---
 
-### CORS errors in the browser console
+## A run succeeded, but there is no pull request, pack or branch
 
-**Cause.** The browser blocks requests from an origin that the server has not allow-listed. Tack's CORS allow-list defaults to local origins only:
+**Cause.** Everything after a succeeded run is optional and best-effort, and none of it changes the run's result. The run's timeline says which step was skipped and why: verification not set up, the branch not pushed, git without credentials for the remote, or a task that is not linked to a GitHub issue, which a pull request needs.
 
-```
-http://localhost:8080
-http://127.0.0.1:8080
-http://localhost:3210
-http://127.0.0.1:3210
-https://tack.test
-```
-
-If you serve the UI from a different host, port, or scheme, the browser reports a CORS failure.
-
-**Fix.** Add your origin to `TACK_ALLOWED_ORIGINS` (comma-separated) and restart:
-
-```sh
-TACK_ALLOWED_ORIGINS="https://tack.example.com,http://127.0.0.1:8080" tack serve
-```
-
-Use the exact scheme, host, and port the browser sends — `http://` and `https://`, and a non-default port, are all distinct origins.
+**What to do.** Read the skipped step on the run's timeline. Verification, pushing and pull requests are set up on the runner, by whoever installed it; see [After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt). On the computer that runs the agent, `tack runner doctor` shows whether verification is on and found. To open pull requests, link the task to its issue and ask the administrator to set a GitHub token. Then run the task again.
 
 ---
 
-### Uploads failing
+## Auto-start is off, and says why
 
-**Cause.** There are two separate limits. File attachments have a fixed maximum of **50 MB**. All other (non-attachment) request bodies are capped by `TACK_MAX_BODY_SIZE`, which defaults to **2 MB** (`2097152` bytes). A request over its limit is rejected (typically `413 Payload Too Large`).
+**What you see.** In **Settings → Automation**, the Start rung's switch **Start a task by itself** is greyed out with the line "Choose a profile for at least one role in Teams". Or the switch was on and is now off, with a line such as "Auto-start is off: the project dropped to L3".
 
-**Fix.** For attachments, keep individual files under 50 MB. For large JSON imports or other big non-attachment payloads, raise the global limit and restart:
+**Cause and fix.**
 
-```sh
-# Allow 10 MB request bodies for non-attachment endpoints
-TACK_MAX_BODY_SIZE=10485760 tack serve
-```
+- **No profile.** Auto-start only starts a task whose role leads to a profile. Until at least one role has a profile, or the project has a default profile, the switch stays off. Choose a profile for a role in the Teams rung, then switch Start on.
+- **The project dropped to L3.** When a pull request Tack merged by itself is reverted, or goes red on its merge commit, Tack takes the merge level down to L3 and switches auto-start off. The task's activity says which pull request. Look into that merge, raise the level again under **Settings → Automation**, then switch Start on again.
 
-Note that raising `TACK_MAX_BODY_SIZE` does not change the 50 MB attachment ceiling.
+Auto-start is off by default for every project. A project file never switches it on; see [A project file was refused](#a-project-file-was-refused).
 
 ---
 
-### Search / FTS5 not working
+## A task did not start by itself
 
-**Cause.** Full-text search is built on SQLite's FTS5 extension. If your SQLite library was compiled without FTS5, the search index cannot be created or queried.
+**Cause.** Tack starts a task only when all of these are true:
 
-**Fix.** Verify FTS5 is available in the SQLite your environment uses:
+1. The Start switch is on, and the task is in the status you chose in **Settings → Automation → Start**.
+2. The task has at least one role.
+3. A profile resolves for the task (its role's profile, else the project's default profile, else the built-in Implementer), and an agent is named by that profile or by the project.
+4. A machine can run it: the profile's fleet, or exactly one active runner.
+5. The task has no open run, and no unfinished blocker.
+6. The first in-progress column has room under its WIP limit.
+7. The project's daily budget is not used up.
+8. Fewer runs are open than the cap in "Keep at most N runs open".
 
-```sh
-sqlite3 tack.db "PRAGMA compile_options;" | grep FTS5
-```
+Tack looks every 30 seconds by default, so the start can lag a little. An administrator can change the interval or switch the check off; see [Configuration](../admin-guide/configuration.md).
 
-If `ENABLE_FTS5` is not listed, use a SQLite build (or a Tack binary) with FTS5 enabled. The official Tack binaries ship with FTS5 support.
+**What to do.** Walk down the list. The task's **Automation** row in its drawer says what happens to it: "Starts by itself when it reaches …", or "By hand: this project doesn't start tasks by itself", or that a role has no profile. When it starts, the task is moved to the first in-progress column and its activity reads "Started by itself: it reached … with the role …". If it still waits, start it by hand with **Run with agent**.
 
 ---
 
-### Vocabulary or theme change "didn't apply"
+## docket says it needs 0.2.0-beta.6
 
-**Cause.** Two different things are at play. Display preferences — the light/dark mode and the colour palette — are stored in your browser's `localStorage`, not on the server, so they are per-browser and persist locally. Vocabulary changes are saved server-side per project, but an already-open tab may still show cached labels.
+**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 5, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
 
-**Fix.** Refresh the page (a hard refresh if needed). Theme and palette will reload from `localStorage`; vocabulary labels will reload from the server. If a theme looks wrong only in one browser, clearing that browser's site data resets it to defaults. See [Appearance](appearance.md) and [Vocabulary](vocabulary.md).
+**What to do.** Install docket 0.2.0-beta.6 on the computer that runs the agent, then check it with `tack runner doctor`: the docket block should show `api: 5`. The administrator's steps are in [Installing and Operating Runners](../admin-guide/runners.md).
 
-### An agent attempt succeeded, but there is no pull request, pack or branch
+---
 
-**Cause.** Everything after a succeeded attempt is opt-in and best-effort, and none of it changes the attempt's outcome. Look at the attempt's event timeline: `attempt.verify_skipped`, `attempt.verify_failed`, `attempt.push_skipped` and `attempt.push_failed` each say why a step did not happen. The usual reasons are that the runner has no `[verify]` section enabled or no `[git] push_branches = true`, the verifier program is not on the runner's `PATH`, git has no credentials for the remote, or the item is not linked to a GitHub issue or no GitHub token is configured (a pull request needs both).
+## A team runs attended and the project stays at L3
 
-**Fix.** Run `tack runner doctor` on the runner's machine: its last lines report whether the verifier is enabled and found. Set the sections as described in [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md), link the item to its issue and set `TACK_GITHUB_TOKEN`, then run the item again. See [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt).
+**What you see.** The project's merge level is higher than L3, yet its tasks do not merge by themselves. **Settings → Automation → Ceiling** lists a team with "keeps its tasks at L3" and a fix.
+
+**Cause.** A docket team that needs a person during a run is called *attended*. Tack caps the automatic merge at what the team allows, so tasks run by an attended team stay at L3 however high the project's level. The **Merge** button is not held back; only the automatic merge is.
+
+**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team fab-research: attended (fix: docket pod set network none)`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
+
+---
+
+## A project file was refused
+
+**What you see.** Importing a file shows **This file cannot be imported** and a list, or `tack import` prints the problems and writes nothing.
+
+**Cause.** The whole file is checked before anything is written, and every problem is listed at once. Each line names the place and what is wrong, for example `roles: "Contenido" names profile "Writer", which is in neither the file nor the board`.
+
+**What to do.** Fix the lines, top to bottom, and import again. The usual ones:
+
+- an unknown key, which is usually a misspelling;
+- a name used twice in one section, or a name that points at nothing (a role's profile, an item's role, sprint or field);
+- a status the workflow does not have in `on_finish_status` or the auto-start status;
+- a field value that is not among the field's options.
+
+The full list of refusals, and the warnings that do not stop an import, is in [Import, Export & Project Files](import-export.md#what-is-refused-and-what-is-only-a-warning). A file that asks for a higher merge level or for auto-start is not refused: Tack applies the level it can and leaves auto-start off, and the preview says so.
+
+---
+
+## A section failed to write
+
+**What you see.** The import answers "The roles section could not be written", or names another section.
+
+**Cause.** The file was valid, but writing one section failed, for example because the database was busy or the disk was full.
+
+**What to do.** Read the rest of the message. For a new project it says "so nothing was created": fix the cause and import again. For an existing project it says what the file wrote before that section stays, and "importing it again finishes the job": sections written so far match by name and are updated, and the items are written last, in one step. If it fails again, ask the administrator to look at the server log.
+
+---
+
+## Server problems
+
+These belong to whoever runs the server. If you run it yourself, the [Administrator Guide](../admin-guide/index.md) has the steps.
+
+A server that exits at once, a locked or damaged database, a failed migration, `401 Unauthorized` on every request, CORS errors in the browser console, uploads rejected as too large and a restore that did not apply are server-side problems. The [Troubleshooting page of the Administrator Guide](../admin-guide/troubleshooting.md) has an entry for each:
+
+- [The server says the port is in use](../admin-guide/troubleshooting.md#the-server-says-the-port-is-in-use);
+- [The database is locked](../admin-guide/troubleshooting.md#the-database-is-locked);
+- [Startup fails with a migration error](../admin-guide/troubleshooting.md#startup-fails-with-a-migration-error);
+- [Every request answers 401](../admin-guide/troubleshooting.md#every-request-answers-401);
+- [The browser reports a CORS error, 421 or 403](../admin-guide/troubleshooting.md#the-browser-reports-a-cors-error-421-or-403);
+- [An upload or import is rejected as too large](../admin-guide/troubleshooting.md#an-upload-or-import-is-rejected-as-too-large);
+- [A staged restore did not apply](../admin-guide/troubleshooting.md#a-staged-restore-did-not-apply).
+
+For ports, tokens and allowed origins, [Administration & Security](../admin-guide/administration.md) has the settings; for a damaged database or a failed upgrade, see the [Recovery Runbook](../admin-guide/recovery-runbook.md) and [Backup & Restore](../admin-guide/backup-restore.md).
 
 ---
 
@@ -176,43 +153,32 @@ If `ENABLE_FTS5` is not listed, use a SQLite build (or a Tack binary) with FTS5 
 
 ### Is my data sent anywhere?
 
-No. Tack is fully self-hosted. All your projects, items, and comments live in a local SQLite database on the machine you run it on. Nothing is sent to Anthropic or to any Tack-operated service. Outbound traffic only happens for features you explicitly configure — for example a webhook URL, a GitHub/Linear import, or an S3-compatible cloud backup you set up yourself.
+Tack itself sends nothing to Anthropic or to any Tack-operated service. Projects, items and comments live in a database on the machine that runs the server. Outbound traffic happens only for features you set up: a webhook, a GitHub or Linear import, a cloud backup. When you run an agent, that agent talks to its own provider with its own sign-in, as it would if you ran it by hand; Tack holds no model key.
 
 ### Can I use Tack offline?
 
-Yes, in the local-first sense. Tack runs entirely on your own machine or LAN, with no dependency on an external service. The one requirement is that the Tack server process is running: the web UI and CLI both talk to it over HTTP. As long as the server is up on your machine (or a machine on your network), you can work without any internet connection.
+Yes, as far as Tack goes. It runs on your own machine or network and needs no outside service. The server has to be running, because the web UI and the CLI both talk to it. An agent you run needs whatever connection its provider needs.
 
 ### Where is my data stored?
 
-In two places, both local:
-
-- **Database** — a single SQLite file. By default `TACK_DATABASE_URL` is `sqlite:tack.db?mode=rwc`, i.e. a `tack.db` file in the directory you run the server from.
-- **Attachments** — uploaded files live under `TACK_STORAGE_DIR`, which defaults to `./storage`, organised by item.
-
-To relocate either, set the corresponding variable (see [Configuration](configuration.md)) and restart.
+In two places on the machine that runs the server: a database, and a folder of attachments, organised by item. By default both sit in the folder you started the server from; a background service started with `tack service install` uses your per-user application-data folder. The [Administrator Guide](../admin-guide/configuration.md) says how to move them.
 
 ### How do I back up my data?
 
-Use Tack's backup features rather than copying the live database while the server is running. You can download a local backup, or push a copy to an S3-compatible cloud store, and stage a restore that applies on the next restart. See [Backup and Restore](backup-restore.md) for the full workflow.
+Use Tack's backup rather than copying the database file while the server runs. See [Backup & Restore](../admin-guide/backup-restore.md). For one project's items, [export a snapshot](import-export.md#snapshots-and-csv-export).
 
-### Is Tack for a single user or a team?
+### Is Tack for one person or a team?
 
-Both, with a focus on solo developers and small teams. Multiple people can work against the same server, and board changes propagate live to all connected clients over a WebSocket connection, so updates appear without manual refreshes.
+Both. Several people can use the same server, and changes on the board reach every connected browser at once.
 
 ### Which platforms does it run on?
 
-Tack ships as a single self-contained binary for Linux, macOS, and Windows. There is no separate runtime to install; the web UI can be embedded in the binary so one file serves both the API and the SPA.
+Linux, macOS and Windows, as a single binary or as the desktop app. [Quick Start](quick-start.md) has the install lines.
 
-### How do I secure Tack on a network?
+### How do I put Tack on a network safely?
 
-Tack defaults to `127.0.0.1` for local-only use. Before exposing it beyond your machine:
+That is the administrator's job: require a token, limit the allowed origins and put HTTPS in front. See [Administration & Security](../admin-guide/administration.md).
 
-1. **Require a token.** Set `TACK_API_TOKEN` so all `/api/*` routes (except `/api/health`) demand `Authorization: Bearer <token>`.
-2. **Restrict origins.** Set `TACK_ALLOWED_ORIGINS` to only the hostnames that should reach the UI.
-3. **Terminate TLS at a reverse proxy.** Tack itself serves plain HTTP; put it behind a reverse proxy (such as Caddy or nginx) that provides HTTPS, and bind Tack to a private address.
+### Does Tack work with GitHub or Linear?
 
-See [Administration & Security](administration.md) for step-by-step setup.
-
-### Does Tack integrate with GitHub or Linear?
-
-Yes. You can import issues from GitHub and from Linear into a project. GitHub integration also keeps linked issues and items in sync in both directions when a GitHub token is configured, and opens a pull request for an agent's pushed branch. See [Import and Export](import-export.md) for setup, filters, and token requirements.
+Yes. You can import issues from both, and with a GitHub token the administrator sets, linked issues and items stay in sync both ways. See [Import, Export & Project Files](import-export.md#importing-github-and-linear-issues).

@@ -7976,8 +7976,11 @@
         "type": "object",
         "properties": {
           "enabled": {
-            "type": "boolean",
-            "description": "Applied as off by an import; a person turns it on from Settings → Automation."
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Applied as off by an import that would switch it on; a person turns it on from Settings →\nAutomation. Absent leaves the project's switch as it is."
           },
           "max_open": {
             "type": [

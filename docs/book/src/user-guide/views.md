@@ -19,7 +19,8 @@ Kanban columns driven by the project's workflow statuses.
 - Each column corresponds to one workflow status. Names, order, and WIP limits come from **Settings → Workflow**. Columns derive directly from the workflow — no "create a board" step is needed.
 - **Drag and drop** a card to change its status. Changes save immediately with optimistic UI.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
-- **Click a card** to open the item detail drawer (Details, Fields, Dependencies, Activity, Files tabs).
+- **Click a card** to open the item detail drawer (tabs such as Details, Activity, Execution, Dependencies, Files and Fields).
+- **Badges on a card** say what has happened to it. **Needs your review** means a finished run is waiting for you to accept or reject it. **Repeats** means closing the task creates the next one. Three more show what Tack did without you: **Started by itself**, **Team: name** (the docket team that ran it) and **Merged by itself**. The List and Table views show the three automation badges too. See [Automating a Project](automation.md).
 - **Add an item** via the `+` button inside a column header (pre-sets the status) or the toolbar **+ New** button.
 - Board state syncs in real time via WebSocket — changes in one browser tab appear in another.
 - Empty projects show a three-step onboarding checklist until the first item is created.
@@ -103,9 +104,11 @@ Read-only project statistics — accessible from the sidebar.
 
 Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
 going on this project: how often a run needed a person, how long the person took, what verification
-cost in tokens, how often a merge-readiness pack was accepted, and how many pull requests agents
-opened, merged, closed or had reverted. A card whose input does not exist yet says **Not measured**
-and why, never `0`; no card shows money. Every number, its definition and the counts behind it are in
-[Factory metrics](agent-runners.md#factory-metrics) in the Agent Runners chapter.
+cost in tokens, how often a merge-readiness pack was accepted, how many pull requests agents
+opened, merged, closed or had reverted, and what the runs cost. A card whose input does not exist
+yet says **Not measured** and why, never `0`. The **Cost** card, the **Cost by model** table and,
+when runs went to named teams, the **By team** table price the tokens from one rate card; a run
+that cannot be priced reads **Not measured**. Every number, its definition and the counts behind it
+are in [Factory metrics](reviewing-runs.md#factory-metrics).
 
 <img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, and pull-request outcomes.">

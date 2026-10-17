@@ -1,33 +1,69 @@
 # Architecture Overview
 
+This is the front door of the Developer Guide. It is for contributors who change Tack and integrators who build on it. After reading it you will know how the code is layered, where the other two guides stop and this one starts, and which page to read next.
+
+## How the three guides fit
+
+| Guide | Reader | Where it stops |
+|---|---|---|
+| [User Guide](../user-guide/quick-start.md) | Someone who works in Tack every day | It says what a control does and what you will see. It never names a crate, a file or a function |
+| [Administrator Guide](../admin-guide/index.md) | Someone who installs, secures, runs and recovers Tack and its runners | It says how to set it up and fix it. It points here for why a rule exists |
+| Developer Guide (this one) | A contributor or integrator | It says how the code is built, what the contract is, how to extend it and why it was decided |
+
+A user page that needs a setting points to the Administrator Guide for how to set it. An administrator page that needs a rule points here for why. This guide never repeats step-by-step instructions for end users.
+
+## A map of this guide
+
+| Page | Read it to |
+|---|---|
+| This page | See the layering, the item model, a request's path and the directory map |
+| [Crate Tour](crate-tour.md) | Find the file that owns a behaviour, crate by crate |
+| [Runs, Teams and Automation](runs-and-teams.md) | Follow an automatic run from a waiting task to a merge, and see how docket teams, the ceiling, usage and recurrence are built |
+| [The Runner Contract](runner-contract.md) | Write or change a runner, or an adapter for an agent |
+| [The Project File Format](project-file.md) | Produce, check or extend the file that carries a whole project |
+| [Frontend & Design System](frontend.md) | Work on the SolidJS app and its design tokens |
+| [Adding Features](adding-features.md) | Follow a recipe for a new entity, a workflow preset or a project-file key |
+| [MCP Server](mcp.md) | Use or extend the stdio server for assistants |
+| [API Reference](api-reference.md) | Look up a route (generated from `docs/openapi.json`) |
+| [Testing](testing.md) | Run the suites and know where a new test belongs |
+| [Architecture Decisions](decisions.md) | Find the ADR behind a behaviour |
+| [Learning Path](learning/README.md) | Learn Rust, async, Axum, sqlx and SolidJS as you need them |
+
+## Where to start
+
+1. Read this page to the end.
+2. Skim the [Crate Tour](crate-tour.md) for the crate you will touch.
+3. Read [Runs, Teams and Automation](runs-and-teams.md) if you work on runs, agents or merging, or [The Project File Format](project-file.md) if you work on import and export.
+4. Read the six records listed in [Architecture Decisions](decisions.md#reading-order-for-newcomers).
+5. Before your first change, read [Testing](testing.md) and run `.githooks/pre-push`.
+
+> `docs/ARCHITECTURE.md` condenses the crate boundaries, the API structure and the database highlights in one file, and is the authority on any fact the two disagree on. This page is the narrative walkthrough.
+
+## Why a board and a runner
+
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its
-> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board — its
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board: its
 > lease expires and its fencing token stops writing. A board that restarts cannot lose a
-> run — the runner's journal knows what it started. **One developer runs both in one
+> run: the runner's journal knows what it started. **One developer runs both in one
 > process with one command**, on the same contract, with the same recovery.
 
-You have read the quick-start and can run the server. This document explains *why* the code is structured the way it is — the reasoning behind each layer, how a request actually travels through the system, and where the interesting domain logic lives.
-
-> This page is a narrative walkthrough, not a reference. For the condensed crate-boundary
-> table, the full API endpoint list, the database schema, and troubleshooting, see
-> [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) — the authority on any fact the two
-> disagree on.
+The rest of this page explains why the code is structured the way it is: the reasoning behind each layer, how a request travels through the system, and where the interesting domain logic lives.
 
 ---
 
 ## 1. The Layering Rule
 
-Tack enforces a strict one-way dependency graph across the workspace's six crates:
+Tack enforces a strict one-way dependency graph across the workspace's crates:
 
 ```
 tack-core  ←  tack-db  ←  tack-orch  ←  tack-api  ←  tack-cli
 
-tack-runner  (a separate binary, sibling to this graph — talks to tack-api
-              over the runner-v1 HTTP contract, not through any Rust dependency)
+tack-runner  (a separate binary, built on tack-core and tack-orch only —
+              it talks to tack-api over the runner-v1 HTTP contract)
 ```
 
-Each arrow means "depends on". No reverse arrows are allowed. A seventh crate,
+Each arrow means "depends on". No reverse arrows are allowed. `tack-test-support` holds test helpers and is a dependency of the others' tests only. An eighth crate,
 `tack-desktop`, is deliberately excluded from this workspace (its own `Cargo.toml`
 and lockfile) because Tauri drags GTK/WebKit/glib into whatever workspace holds it —
 see the [Crate Tour](crate-tour.md#tack-desktop) for how it supervises `tack` instead
@@ -39,8 +75,8 @@ of linking against it.
 - `tack-db` knows about `tack-core` (it persists those structs), but it knows nothing about HTTP, routing, or config files.
 - `tack-orch` knows about `tack-core` and `tack-db` but nothing about HTTP — it is the neutral runner-v1 execution domain, usable without Axum. See [Crate Tour](crate-tour.md#tack-orch).
 - `tack-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet. It depends on `tack-orch` to run the scheduler/retention/observability tasks and expose the execution routes.
-- `tack-cli` is the single `tack` binary. It depends on `tack-api` so that `tack serve` can start the server in-process, but its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
-- `tack-runner` is a separate binary entirely. It never depends on any of the crates above; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
+- `tack-cli` is the single `tack` binary. It depends on `tack-api` so that `tack serve` can start the server in-process, and on `tack-runner` so that `--with-runner` and `tack runner doctor` can use the runner's code. Its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
+- `tack-runner` is a separate binary entirely. It depends on `tack-core` and `tack-orch` for the shared protocol types, and never on `tack-db` or `tack-api`; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
 
 **Why bother?** The layering prevents the kind of "everything knows about everything" entanglement that makes codebases brittle. It also means:
 
@@ -80,13 +116,15 @@ Axum router (tack-api/src/router.rs)
     │  Extracts: Path(item_id), State(AppState), Json(UpdateItem)
     ▼
 Handler: update_item (tack-api/src/handlers/items.rs)
-    │  1. Calls repo.get_item(id) to load current item
-    │  2. Calls repo.get_project(project_id) to load workflow
-    │  3. Calls workflow.validate_transition(old_status, new_status)  ← pure, no I/O
-    │  4. Calls workflow.check_wip_limit(new_status, current_count)  ← pure, no I/O
-    │  5. Calls repo.update_item(id, patch)  ← writes to DB
-    │  6. Calls repo.check_and_update_parent_status(...)  ← best-effort parent cascade
-    │  7. Calls broadcast_event(ItemUpdated { ... })  ← fires WebSocket event
+    │  1. Validates the body, then loads repo.get_item_snapshot(id) and checks If-Match
+    │  2. Calls repo.get_project(project_id) to load the workflow
+    │  3. Calls repo.update_item_atomically(id, input, &workflow, expected_version), which
+    │     inside one transaction calls workflow.validate_transition(old, new) and
+    │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
+    │  4. Calls broadcast_event(ItemUpdated { ... })  ← fires WebSocket event
+    │  5. Calls propagate_parent_completion(...)  ← best-effort parent cascade
+    │  6. Calls create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
+    │  7. Calls maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
     ▼
 Repository (tack-db/src/repo/items.rs)
     │  Runs parameterised SQL via sqlx
@@ -103,7 +141,7 @@ HTTP client receives JSON
 
 A few things worth noting:
 
-- Steps 3 and 4 call pure functions in `tack-core`. No database round-trip is needed to validate the transition — the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct.
+- Step 3 calls pure functions in `tack-core`. No extra database round-trip is needed to validate the transition: the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct. The repository runs them in the same transaction as the write, so a rejected move leaves the item's version untouched.
 - The handler owns the orchestration. It decides the order of validation, persistence, and notification. The repository and the core crate do not know about each other.
 - Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `tack-api/src/error.rs`) implements `IntoResponse`, mapping each `CoreError` variant to the appropriate HTTP status code.
 
@@ -131,7 +169,7 @@ Because it is a business rule, not a storage rule. The database does not know wh
 
 By living in `tack-core`, the validation is:
 
-- Testable with zero dependencies (73 unit tests, none of which touch a database).
+- Testable with zero dependencies (its tests never touch a database).
 - Reusable by any layer that loads a `WorkflowConfig`.
 - Independent of how the config was persisted.
 
@@ -174,38 +212,48 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 ├── crates/
 │   ├── tack-core/         Pure domain logic; no I/O
 │   │   └── src/
-│   │       ├── models.rs    All domain structs and DTOs
-│   │       ├── workflow.rs  WorkflowConfig, validation, presets
-│   │       ├── vocabulary.rs VocabularyMap, resolve(), presets
-│   │       ├── dependency.rs DependencyGraph, cycle detection
-│   │       ├── error.rs     CoreError enum
-│   │       └── lib.rs       Re-exports
+│   │       ├── models.rs        All domain structs and DTOs
+│   │       ├── workflow.rs      WorkflowConfig, validation, presets
+│   │       ├── vocabulary.rs    VocabularyMap, resolve(), presets
+│   │       ├── dependency.rs    DependencyGraph, cycle detection
+│   │       ├── autonomy.rs      Merge policy: Level, Facts, Hold, evaluate
+│   │       ├── auto_start.rs    Which waiting tasks a project starts now (pick)
+│   │       ├── run_defaults.rs  Which profile a run gets (resolve, Source)
+│   │       ├── recurrence.rs    When a repeating task's next one is due
+│   │       ├── rate_card.rs     Pricing a model's tokens
+│   │       ├── outline.rs       The outline and the project file's types; resolve
+│   │       ├── outline/bundle.rs  check (a file against a board) and to_bundle (export)
+│   │       ├── brief.rs, mrp.rs   Item briefs and the merge-readiness pack
+│   │       ├── error.rs         CoreError enum
+│   │       └── lib.rs           Re-exports
 │   │
 │   ├── tack-db/           SQLite persistence layer
 │   │   └── src/
 │   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
 │   │       ├── migrations.rs Ordered migrations as embedded SQL strings
 │   │       ├── repo.rs      Repository struct — delegates to submodules
-│   │       └── repo/        One file per entity (items, projects, sprints, …)
+│   │       └── repo/        One file per entity (items, projects, sprints, templates, rate_card, …)
 │   │
 │   ├── tack-orch/         The runner-v1 execution domain
 │   │   └── src/
 │   │       ├── lib.rs       Module declarations, OrchError
-│   │       ├── execution/   Lifecycle validation, fencing/idempotency types
-│   │       ├── scheduler/   Deterministic runner selection
+│   │       ├── execution/   Lifecycle validation, capability types, fencing/idempotency types
+│   │       ├── scheduler/   Deterministic runner selection; wiring.rs is the live caller
 │   │       ├── model_policy/ Which model a run asks for
 │   │       ├── execution_retention.rs Cancellable retention sweep
 │   │       ├── execution_observability.rs Fleet health snapshots
 │   │       └── usage_provenance.rs Requested-vs-actual model + usage economics
 │   │
-│   ├── tack-api/          Axum HTTP server + WebSocket
+│   ├── tack-api/          Axum HTTP server + WebSocket (a library)
 │   │   └── src/
-│   │       ├── main.rs      Startup: config, pool, migrations, listen
+│   │       ├── lib.rs, server.rs  serve(): config, pool, migrations, background tasks, listen
 │   │       ├── router.rs    All routes + AppState + middleware wiring
 │   │       ├── config.rs    AppConfig — TOML / env var loading
 │   │       ├── error.rs     ApiError → HTTP status code mapping
 │   │       ├── debug.rs     /api/health, /api/debug/* endpoints
-│   │       ├── middleware.rs Bearer token gate
+│   │       ├── middleware.rs Token gate, origin and host checks
+│   │       ├── auto_start.rs The tick that starts waiting tasks by itself
+│   │       ├── autonomy.rs, merge.rs  Gathering merge facts and merging
 │   │       └── handlers/    One file per entity group + websocket.rs
 │   │
 │   ├── tack-cli/          CLI (clap), talks to API over HTTP
@@ -213,14 +261,19 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── main.rs      Command tree + implementation functions
 │   │       ├── client.rs    TackClient — thin reqwest wrapper
 │   │       ├── config.rs    ~/.tackrc reader/writer
+│   │       ├── doctor.rs    `tack runner doctor`, including docket's teams
+│   │       ├── mcp.rs       `tack mcp` — the stdio MCP server
 │   │       ├── service.rs   `tack service` — systemd/launchd unit management
 │   │       └── vocab.rs     Fetch and cache project vocabulary
 │   │
 │   ├── tack-runner/       Separate binary; pull-based execution runner
 │   │   └── src/
-│   │       ├── main.rs      Startup, config, registry
+│   │       ├── main.rs, bootstrap.rs  Startup, config, registry, the docket daemon
+│   │       ├── config.rs    Runner configuration, including [docket]
 │   │       ├── engine.rs    Claim → prepare → run → report loop
-│   │       ├── harness/     Adapters per coding agent (codex, claude_code, docket, opencode)
+│   │       ├── active.rs    The leases in flight, for several attempts at once
+│   │       ├── transport.rs HTTP client; the slot loop and the one heartbeat
+│   │       ├── harness/     Adapters per coding agent (codex, claude_code, opencode; docket/ over HTTP)
 │   │       ├── journal.rs   Local attempt journal for crash recovery
 │   │       └── workspace.rs Per-attempt working directory + credentials
 │   │
@@ -230,9 +283,9 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 ├── frontend/                SolidJS + TypeScript + Tailwind v4
 │   └── src/
 │       ├── app/             Router, layout, route definitions
-│       ├── features/        One directory per feature (board, projects, …)
+│       ├── features/        One directory per feature (board, projects, settings, agents, …)
 │       ├── shared/          Reusable UI components, state helpers
-│       └── types/           TypeScript type definitions (mirrors API shapes)
+│       └── test/            Vitest setup
 │
-└── docs/book/               mdBook developer documentation
+└── docs/book/               mdBook documentation: the three guides and the roadmap
 ```

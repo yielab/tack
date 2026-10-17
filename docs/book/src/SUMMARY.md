@@ -14,16 +14,28 @@
 - [Appearance](user-guide/appearance.md)
 - [Workflows & Statuses](user-guide/workflows.md)
 - [Vocabulary](user-guide/vocabulary.md)
-- [Import & Export](user-guide/import-export.md)
-- [Backup & Restore](user-guide/backup-restore.md)
-- [CLI](user-guide/cli.md)
-- [Configuration](user-guide/configuration.md)
-- [Administration & Security](user-guide/administration.md)
-- [Agent Runners & Fleet Execution](user-guide/agent-runners.md)
-  - [Recovery Runbook](user-guide/recovery-runbook.md)
+- [Running Agents on Tasks](user-guide/running-agents.md)
+- [Reviewing a Run](user-guide/reviewing-runs.md)
+- [Automating a Project](user-guide/automation.md)
 - [Merging from Tack](user-guide/merging.md)
-- [What the Agent Can Reach](user-guide/what-the-agent-can-reach.md)
+- [Import, Export & Project Files](user-guide/import-export.md)
+- [CLI](user-guide/cli.md)
 - [Troubleshooting & FAQ](user-guide/troubleshooting.md)
+
+---
+
+# Administrator Guide
+
+- [Overview](admin-guide/index.md)
+- [Deployment](admin-guide/deployment.md)
+- [Configuration](admin-guide/configuration.md)
+- [Configuration Reference](admin-guide/configuration-reference.md)
+- [Administration & Security](admin-guide/administration.md)
+- [Installing and Operating Runners](admin-guide/runners.md)
+  - [Recovery Runbook](admin-guide/recovery-runbook.md)
+- [What the Agent Can Reach](admin-guide/what-the-agent-can-reach.md)
+- [Backup & Restore](admin-guide/backup-restore.md)
+- [Troubleshooting](admin-guide/troubleshooting.md)
 
 ---
 
@@ -31,13 +43,15 @@
 
 - [Architecture Overview](developer/index.md)
 - [Crate Tour](developer/crate-tour.md)
+- [Runs, Teams and Automation](developer/runs-and-teams.md)
+- [The Runner Contract](developer/runner-contract.md)
+- [The Project File Format](developer/project-file.md)
 - [Frontend & Design System](developer/frontend.md)
 - [Adding Features](developer/adding-features.md)
-- [Configuration Reference](developer/configuration-reference.md)
 - [MCP Server](developer/mcp.md)
 - [API Reference](developer/api-reference.md)
 - [Testing](developer/testing.md)
-- [Deployment](developer/deployment.md)
+- [Architecture Decisions](developer/decisions.md)
 
 ## Learning Path
 

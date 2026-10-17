@@ -1,32 +1,28 @@
-# CLI Reference
+# CLI
 
-`tack` is a single binary that is both the **server** and the **CLI client**.
-Run `tack` with no arguments (or `tack serve`) to start the server + web UI;
-run `tack <command>` to use the CLI.
+This page is for anyone who wants to use Tack from a terminal: to script it, to call it from automation, or to work without leaving the shell. After reading it you will know the commands for projects, items, sprints, roles, fields, agent profiles and runs, and what each prints.
 
-The CLI is an alternative to the web UI — reach for it when you want to script
-Tack, wire it into automation or CI, or work without leaving the terminal. It is
-also how you create a git branch straight from an item (`tack branch`) and run the
-[MCP server](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for AI agents.
+`tack` is one binary that is both the server and the command-line client. `tack` with no arguments (or `tack serve`) starts the server and the web UI. Every other command talks to a running server over HTTP, so start the server first. Running a server for other people, and its backups and tokens, belong to the [Administrator Guide](../admin-guide/index.md).
 
-The CLI commands below talk to a running server over HTTP, so start the server
-first (`tack serve`) — all client commands require it to be reachable.
-
-## Configuration
+Every command takes `--help`, and every command that prints a result takes `--json` for raw JSON. With `--json` the vocabulary mapping is bypassed and raw field names come back:
 
 ```sh
-# Set URL and token (saved to ~/.config/tack/config.toml)
-tack config --url http://127.0.0.1:3210 --token your-token
-
-# Print current config
-tack config --show
-
-# Or use environment variables
-export TACK_API_URL=http://127.0.0.1:3210
-export TACK_API_TOKEN=your-token
+tack list --project <id> --json | jq '.[] | select(.priority == "high")'
 ```
 
-**Shell completions:**
+## Connecting
+
+The client finds the server in this order: `--api-url` and `--token` flags, the `TACK_API_URL` and `TACK_API_TOKEN` environment variables, the file `~/.tackrc`, and then the token file a local server keeps in its data folder. The default URL is `http://127.0.0.1:3210`. A server started with the defaults keeps its token in a file that the client reads, so on the computer that runs it you usually need nothing. If the server keeps its database somewhere else, give the client the token with `--token` or `TACK_API_TOKEN`; the [Administrator Guide](../admin-guide/administration.md) says where to find it.
+
+```sh
+# Save the URL and token to ~/.tackrc (readable by you only)
+tack config --url http://127.0.0.1:3210 --token your-token
+
+# Show what the client will use
+tack config --show
+```
+
+Shell completions:
 
 ```sh
 tack completions bash  >> ~/.bashrc
@@ -34,507 +30,306 @@ tack completions zsh   >> ~/.zshrc
 tack completions fish  > ~/.config/fish/completions/tack.fish
 ```
 
+A failed command prints its message on stderr and exits non-zero.
+
 ---
 
 ## Projects
 
 ```sh
-# Create a project
-tack init "Kitchen Reno" --type construction
-
-# Create a project from a template, with its roles and profiles (id, or name with - for spaces)
-tack init "My Site" --template web-product-with-content
-
-# Write a project's items to stdout or a file; --bundle writes the whole project file (YAML by default)
-tack export <project-id> --format csv -o items.csv
-tack export <project-id> --bundle -o project.yaml
-
-# Types: software · web · mobile · construction · personal · homework · maintenance · legal · research · event · custom
+tack projects                                 # list projects
+tack init "Kitchen Reno" --type construction  # create a project
 ```
+
+Project types: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`, `legal`, `research`, `event`, `custom`. The type picks the starting workflow and vocabulary.
+
+### Start from a template
+
+```sh
+tack init "My Site" --template web-product-with-content
+```
+
+The template brings its roles, profiles and automation, and `--type` is ignored. Give the template's id, or its name in any case with `-` for spaces. `tack template list` shows what exists; see [Templates](#templates).
+
+### Import and export
+
+```sh
+tack import project.yaml --dry-run        # check the file, write nothing
+tack import project.yaml                  # create the project the file names
+tack import tasks.csv --name "Relaunch" -t web
+tack import project.yaml -p <project-id>  # read the file into an existing project
+
+tack export <project> -o snapshot.json              # a snapshot: items, sprints, dependencies, briefs
+tack export <project> --format csv -o items.csv     # the items as a spreadsheet
+tack export <project> --bundle -o project.yaml      # the whole project file
+```
+
+`tack import` reads project files, outlines and CSV files, and picks the format from the extension. `tack export` takes `json`, `yaml` or `csv`; with `--bundle` the default is YAML. Without `-o` the file goes to stdout. The formats are described in [Import, Export & Project Files](import-export.md).
+
+An import prints one line per section the file carries, then the items:
+
+```text
+Roles: 1 new, 0 updated, 0 not mentioned
+Items: 3 new, 0 updated, 0 not mentioned
+Would create 3 items and 0 dependencies
+```
+
+The last line reads "Created" instead of "Would create" when you did not pass `--dry-run`. Each warning follows as `warning: …`.
+
+### Autonomy
+
+```sh
+tack project autonomy <project-id>
+```
+
+Shows how far Tack may merge this project's changes on its own. Change the level in **Settings → Automation**; see [Merging from Tack](merging.md).
 
 ---
 
 ## Items
 
 ```sh
-# List items in a project
-tack list --project <id>
+tack list --project <id>                  # list items; filter with --status, --item-type, --assignee
+tack board --project <id>                 # the board in the terminal
+tack search "login" --project <id>        # search; leave out --project to search everything
 
-# Add an item
-tack add "Design login page" \
-  --project <id> \
-  --type task \
-  --priority high
+tack add "Design login page" --project <id> --type task --priority high
+tack add "Send the newsletter" --project <id> --recurrence weekly
 
-# Priorities: high · medium · low
-# Types: task · epic · story · bug · feature · subtask · milestone (or vocabulary-mapped)
-
-# Move an item to a different status column
-tack move <item-id> "In Progress"
-# The status name must exactly match the column name (case-sensitive)
-
-# Derive a git branch name from an item
-tack branch <item-id>
-# → prints: git checkout -b feat/<short-id>-<title-slug>
-
-# Create and switch to the branch in one step
-tack branch <item-id> --checkout
-
-# Override the type-derived prefix (default maps feature→feat, bug→fix, …)
-tack branch <item-id> --prefix hotfix
+tack move <item-id> "In Progress"         # move to another status
 ```
 
-`tack branch` reads the item over the API and builds a conventional branch name
-of the form `<prefix>/<short-id>-<title-slug>`. Without `--checkout` it prints
-the `git checkout -b …` command (handy to `eval` or copy-paste); with
-`--checkout` it runs it. Add `--json` for `{ branch, item_id, checked_out }`.
+`tack add` also takes `--parent`, `--assignee` and `--sprint`. Types are `task` (the default), `epic`, `feature`, `bug`, `subtask` and `requirement`; priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
+
+### Branches
 
 ```sh
-# Move an item to the first in-progress status and check out its branch
-tack start <item-id>
-
-# Print an item's web URL (and open it in $BROWSER when set)
-tack open <item-id>
+tack branch <item-id>                     # print: git checkout -b feat/<short-id>-<title-slug>
+tack branch <item-id> --checkout          # create and switch to the branch
+tack branch <item-id> --prefix hotfix     # use your own prefix
+tack start <item-id>                      # move to the first in-progress status, then check out the branch
+tack open <item-id>                       # print the item's web address, and open it in $BROWSER when set
 ```
 
-`tack start` moves the item to the first status of the workflow's in-progress
-category (the same `PATCH /items/{id}` path `tack move` uses), then does what
-`tack branch <id> --checkout` does. If the workflow refuses the status change,
-the server's error is reported and no branch is created. Add `--json` for
-`{ item_id, status, branch }`.
-
-`tack open` prints the item's web URL. With `$BROWSER` set, it also opens the
-URL with that command. Add `--json` for `{ item_id, url }`.
+`tack branch` builds a conventional name of the form `<prefix>/<short-id>-<title-slug>`, where the prefix follows the type (`feature` becomes `feat`, `bug` becomes `fix`). Without `--checkout` it prints the `git checkout -b …` command, handy to copy or `eval`. If the workflow refuses the status change, `tack start` reports the reason and creates no branch.
 
 ---
 
 ## Sprints
 
 ```sh
-tack sprint create --project <id> --name "Sprint 1"
+tack sprint create "Sprint 1" --project <id> --goal "Ship the login"
+tack sprint list --project <id>
 tack sprint start  <sprint-id>    # Planning → Active
-tack sprint close  <sprint-id>    # Active → Closed
+tack sprint review <sprint-id>    # Active → Review
+tack sprint close  <sprint-id>    # → Closed
 ```
-
-Only one sprint can be Active per project at a time.
 
 ---
 
 ## Templates
 
 ```sh
-# List available templates (built-in + user-created)
-tack template list
-tack template list --type construction   # filter by project type
-
-# Show a template's full details
+tack template list                          # built-in and your own
+tack template list --project-type construction
 tack template show <template-id>
-
-# Create a new project from a template
 tack template create-from <template-id> "My New Project"
-tack template create-from <template-id> "My New Project" --description "Optional description"
 
 # Save a project's roles, profiles, automation, workflow and vocabulary as a template
 tack template save <project-id> --name "My template" --description "Optional"
 ```
 
+`tack template create-from` and `tack init --template` do the same thing; the second also accepts a template's name.
+
 ---
 
 ## Roles
 
-Roles represent specialties or disciplines (Designer, Engineer, Reviewer, …) that can be
-assigned to items for tracking who is responsible.
+A role is a specialty or discipline (Designer, Engineer, Reviewer) you assign to items. A role can name the agent profile its tasks run with.
 
 ```sh
-# List roles in a project
 tack role list --project <project-id>
-
-# Create a role
 tack role create "Designer" --project <project-id>
-tack role create "Engineer" --project <project-id> --color "#4A90D9"
+tack role create "Engineer" --project <project-id> --color "#4A90D9" --profile <profile-id>
 
-# Assign / unassign a role on an item
-tack role assign  <item-id> <role-id>
+# Set, or clear with "none", the profile a role runs with
+tack role set-profile <role-id> <profile-id>
+tack role set-profile <role-id> none
+
+tack role assign   <item-id> <role-id>
 tack role unassign <item-id> <role-id>
-
-# Delete a role (removes all its item assignments)
-tack role delete <role-id>
+tack role delete   <role-id>               # also removes its assignments
 ```
+
+`<profile-id>` comes from `tack agent-profile list`. How a run picks its profile from a role is in [Running Agents on Tasks](running-agents.md).
 
 ---
 
 ## Comments
 
 ```sh
-# List comments on an item
 tack comment list <item-id>
-
-# Add a comment
 tack comment add <item-id> "Looks good to merge"
 tack comment add <item-id> "Blocked on client sign-off" --author "Alice"
 ```
 
 ---
 
-## Custom Fields
+## Custom fields
 
-Custom fields extend items with project-specific metadata.
+Custom fields give items project-specific values.
 
 ```sh
-# List field definitions for a project
 tack field list --project <project-id>
 
-# Create a field definition
-tack field create "Client Name"   --project <project-id> --type text
-tack field create "Story Points"  --project <project-id> --type number --required
-tack field create "Phase"         --project <project-id> --type select \
+tack field create "Client Name"  --project <project-id> --field-type text
+tack field create "Story Points" --project <project-id> --field-type number --required
+tack field create "Phase"        --project <project-id> --field-type select \
     --options "Design,Development,QA,Done"
 
-# Types: text · long_text · number · date · boolean · select · multi_select · url · email
-
-# List all custom field values set on an item
-tack field values <item-id>
-
-# Set a value (parsed as JSON if valid, otherwise treated as a string)
+tack field values <item-id>                         # every value set on an item
 tack field set <item-id> <field-id> "Acme Corp"
-tack field set <item-id> <field-id> 8          # number
-tack field set <item-id> <field-id> true        # boolean
-tack field set <item-id> <field-id> '"Design"'  # string that looks like JSON — quote it
-
-# Remove a value
+tack field set <item-id> <field-id> 8               # a number
+tack field set <item-id> <field-id> true            # a boolean
+tack field set <item-id> <field-id> '"Design"'      # a string that looks like JSON: quote it
 tack field unset <item-id> <field-id>
-
-# Delete a field definition (also removes all item values for that field)
-tack field delete <field-id>
+tack field delete <field-id>                        # also removes that field's values
 ```
+
+Types are `text`, `long_text`, `number`, `date`, `boolean`, `select`, `multi_select`, `url` and `email`.
 
 ---
 
-## Backup and Restore
+## Agent profiles
+
+A profile holds instructions, the tools an agent may use and limits. A run takes a copy when it is created, so editing a profile later never changes the history of an earlier run.
 
 ```sh
-# Download backup to current directory (timestamped filename)
-tack backup
-
-# Download to a specific path
-tack backup --path /safe/place/tack.db
-
-# Stage a restore (applied on next server startup)
-tack restore /safe/place/tack.db
+tack agent-profile create "release-notes" \
+  --instructions "Summarize the diff and write docs/CHANGELOG entries." \
+  --fleet <fleet-id>
+tack agent-profile list
 ```
+
+`--tool-policy` and `--limits` take a JSON object. `--fleet` is optional: runs with this profile go to that fleet when they name no runner or fleet. To name an agent or a docket team in the profile, set `agent` and `docket.team` in `--tool-policy`, or import a [project file](import-export.md#the-project-file).
 
 ---
 
-## Execution
+## Runs
 
-Create, inspect, cancel and recover agent-fleet execution requests — the CLI form of
-`POST /api/executions` and friends. See [Running an item with an
-agent](agent-runners.md#running-an-item-with-an-agent) for a full worked example
-reaching a completed attempt, and [Choosing a
-model](agent-runners.md#choosing-a-model) for what belongs in `--model <name>` (the agent's
-own spelling of a model; omit it and the project's default, or the agent's own, is used).
+`tack execution` creates, inspects and cancels runs. The web UI's **Run with agent** button does the same with a form; see [Running Agents on Tasks](running-agents.md).
 
 ```text
-$ tack execution --help
-Create/list/cancel/reconcile agent-fleet execution requests
-
 Commands:
   create     Create (or idempotently replay) an execution request
   list       List execution requests (newest first)
   get        Get one execution request's current lifecycle state
-  cancel     Request cancellation of an execution (recorded as a request only — the runner observes and reports the actual outcome)
+  cancel     Request cancellation of an execution
   reconcile  Requeue a needs_operator execution after an audited recovery decision
 ```
 
+A run needs a time limit and a permission policy, and nothing else. Everything else falls back to what the project and the item's role say:
+
+```sh
+tack execution create <item-id> \
+  --permission-policy '{"tools":[],"network":false}' \
+  --timeout-seconds 600
+```
+
+| Flag | Meaning when you leave it out |
+|---|---|
+| `--agent-profile <id>` | The item's role decides, then the project's default profile, then the built-in Implementer. |
+| `--harness <agent>` | The profile's agent, else the project's default agent. Names such as `claude-code`, `codex`, `opencode` and `docket`. |
+| `--model <name>` | The project's default for that agent, else the agent's own choice. Give the agent's own spelling of a model. |
+| `--runner <id>` or `--fleet <id>` | The profile's fleet, else the only active runner. Use at most one of the two. |
+| `--idempotency-key <key>` | A fresh key each call. Pass a stable one to retry the same request safely. |
+| `--status-map-policy done_on_success\|done_on_mrp_accepted` | The item's status is never touched. With a policy it moves to the first Done status when the attempt succeeds, or when its merge-readiness pack is accepted. |
+
+`--budgets`, `--environment` and `--metadata` take JSON objects.
+
 ```sh
 tack execution list
+tack execution get <execution-id>
+tack execution cancel <execution-id>
 ```
 
-```text
-ID        ITEM                              STATE         CREATED         
-────────  ────────────  ────────────  ────────────
-exec_9b3  691e721e                          queued        2026-09-03      
-exec_1ec  1bb00bc7                          succeeded (…  2026-09-03      
-exec_0fe  e1d5e03d                          succeeded (…  2026-09-03      
-exec_14a  e4e3e686                          succeeded (…  2026-09-03      
-```
-
-```sh
-tack execution get exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
-```
-
-```text
-Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
-  item:    e1d5e03d-4610-45c2-b5f1-835e69f148a7
-  state:   succeeded (done)
-  created: 2026-09-03T19:00:16.697646760+00:00
-```
-
-`tack execution create` also takes `--status-map-policy done_on_success|done_on_mrp_accepted`
-to move the item to its workflow's first Done status when the attempt succeeds, or when its
-merge-readiness pack is accepted; without it the item's status is never touched (see
-[After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt)).
-
-`tack execution cancel <ID>` only records the request — the runner observes it and
-reports the actual outcome (cancellation is `advisory` for every harness but docket on its
-newer contract, which can be held to stopping what it started; see the
-[capability matrix](agent-runners.md#capability-matrix)). `tack execution reconcile <ID>
---recovery-key <KEY> --reason "..."` requeues a `needs_operator` request after an
-audited decision; see the [Recovery Runbook](recovery-runbook.md).
+`cancel` records the request. The runner carries it out and reports what actually happened. For docket it is a call to docket's own cancel route. For the other agents Tack signals the agent's process group, which may not reach a process the agent started apart from it. `tack execution reconcile <id> --recovery-key <key> --reason "…"` requeues a run that needs an operator after an audited decision; see the [Recovery Runbook](../admin-guide/recovery-runbook.md).
 
 ---
 
 ## Runner
 
-Enroll, revoke, and — for the runner side of the fence — actually run the runner role
-or check what this machine can do. `tack runner enroll` / `revoke` / `revoke-token` are
-the operator surface, covered in full in [Enrolling a
-runner](agent-runners.md#enrolling-a-runner); this section covers the other
-subcommands, which act on the local machine rather than the operator's server.
-
-`tack runner doctor` needs no server and enrolls nothing — it runs the same
-discovery/capability probe as `runner start`, read-only, so you can check what a
-machine can do before enrolling it:
+A runner is the program on a computer that carries out runs. Installing, enrolling and operating runners is administrator work and is described in [Installing and Operating Runners](../admin-guide/runners.md). The command a user reaches for is the check:
 
 ```sh
 tack runner doctor
 ```
 
-```text
-Tack runner doctor — harness discovery for this machine
-
-codex
-  status:      present
-  version:     0.149.1
-  credentials: Codex signs in with its own login; Tack holds no model credential.
-  sandbox:     bwrap
-  signed in:   yes (Logged in using ChatGPT)
-  models:      listed: gpt-5.6-terra, ...; the agent chooses when none is named
-  artifacts:         ...
-  permission policy: ...
-
-claude-code
-  status:      present
-  version:     2.1.291
-  credentials: Claude Code signs in with its own login; Tack holds no model credential.
-  sandbox:     bwrap
-  signed in:   yes (claude.ai)
-  models:      suggested: sonnet, opus, haiku; the agent chooses when none is named
-  artifacts:         ...
-  permission policy: ...
-
-Runner-wide summary (what the runner as a whole can do; artifacts and permission policy differ per harness, above):
-  cancel     advisory    — a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability
-  resume     unsupported — no resumable session contract
-  decisions  supported   — at least one harness adapter opens a decision; see each harness's own decisions capability for which one
-  artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
-  usage      advisory    — usage is reported only when a harness emits it
-
-Secret store (resolves `secret_reference` environment entries):
-  backend: keychain
-  ...
-
-verify: disabled
-```
-
-Each agent prints a `signed in:` line and a `models:` line, read from the agent's own offline
-commands (for example `claude auth status` and `codex login status`). A signed-out agent names
-its own command: `signed in:   no (Not logged in) — run `codex login``. The `models:` line says
-whether the list was `listed` by the agent or `suggested` from its documentation, shows the first
-five, and ends with whether a request must name a model. Tack holds no model credential, so there
-is no provider section. docket needs docket 0.2.0-beta.6 (API 5); another version reads as not
-running here.
-
-The last line is the runner's `[verify]` table as this machine would read it: `disabled`, or
-`enabled` with the program, its arguments and timeout, and whether the program was found on
-`PATH` (see [Runner verifier](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md#runner-verifier-verify)).
-
-`tack runner start` runs the runner role in the current process, speaking runner-v1
-over HTTP against a Tack server — the same composition root the standalone
-`tack-runner` binary and `tack serve --with-runner` both use:
+It needs no server and enrolls nothing. It reports which agents this computer has, whether each is signed in, what models it offers, and, for docket, whether its daemon answers and which teams run lights-out. It reads the configuration a runner on this computer would use. Each agent has a block like this one:
 
 ```text
-$ tack runner start --help
-Usage: tack runner start [OPTIONS]
-
-Options:
-      --config <CONFIG>                    Optional TOML configuration file
-      --api-url <API_URL>                  Runner protocol endpoint. Overrides file and environment configuration
-      --runner-id <RUNNER_ID>               Stable identifier sent to the control plane
-      --state-dir <STATE_DIR>               Local directory for runner state. Overrides file and environment configuration
-      --enrollment-token <ENROLLMENT_TOKEN>  Enrollment credential. Prefer TACK_RUNNER_ENROLLMENT_TOKEN so it is not visible in shell history
+docket
+  status:      absent
+  reason:      docket is not configured: add a [docket] table with its binary or base_url
+  credentials: docket holds its own model credentials in its home; Tack holds none and reaches docket with the daemon's bearer token.
 ```
 
-`tack runner secret set|list|remove` manages this machine's runner-local secret
-store — the values a harness's `[environment]` entries can reference via
-`secret_reference` (see [Local credential
-handling](agent-runners.md#local-credential-handling)). Model logins are not kept here: each
-agent uses its own. It needs no server and
-enrolls nothing; it reads and writes the same on-disk/keychain state a real
-`tack-runner` process would.
+When docket is configured and answers, its block gains these lines before the sign-in and model lines:
 
-```sh
-tack runner secret set build/token   # value read from stdin or TACK_RUNNER_SECRET_VALUE
-tack runner secret list
-tack runner secret remove build/token
+```text
+  api:         5
+  daemon:      running on 127.0.0.1:7399
+  team fab-content: lights-out
+  team fab-research: attended (fix: docket pod set network none)
 ```
 
-`set` never accepts the value as a command-line argument — only from
-`TACK_RUNNER_SECRET_VALUE` or, if that is unset, from stdin — so it never lands in
-shell history or a process listing. `list` prints entry names only, never values.
-The secret lives only in this store, local to the runner: the board and its
-database never receive it, at set time or any time after.
+- **`api`** is the version of docket's HTTP interface. Tack needs docket 0.2.0-beta.6, which speaks version 5. Any other version reads `api: 4 (needs docket 0.2.0-beta.6)` and no run is sent to it.
+- **`daemon`** says whether docket's background process answers. `not answering at … ` says where Tack looked.
+- **`team <name>`** appears once per team. `lights-out` means the team runs without a person. `attended` means it needs one, and the fix in brackets is the docket command that changes that. A team that is `attended` keeps its tasks at L3, however high the project's merge level; see [Merging from Tack](merging.md).
+
+Each agent also prints a `signed in:` line and a `models:` line, read from the agent's own offline commands. A signed-out agent names the command to run, for example `signed in: no (Not logged in)` followed by the command to run. The `models:` line says whether the list came from the agent (`listed`) or from its documentation (`suggested`), and whether a run must name a model. The last lines summarise what the runner can do as a whole and whether the runner's verification step is enabled.
+
+Other runner commands, for operators:
+
+| Command | What it does |
+|---|---|
+| `tack runner enroll`, `revoke`, `revoke-token` | Create, disable or cancel a runner's credential. |
+| `tack runner start` | Run the runner in this process. |
+| `tack runner secret set\|list\|remove` | Manage the secrets kept on this computer for an agent's environment. |
+| `tack fleet create`, `tack fleet list` | Group runners. Adding a runner to a fleet is done on the Agents page. |
+
+All of them are covered in the [Administrator Guide](../admin-guide/runners.md).
 
 ---
 
-## Service
+## Running Tack in the background
 
-Run `tack` as a background service that outlives the terminal — a systemd user unit on
-Linux, a launchd agent on macOS. This is the terminal-user equivalent of the desktop
-app's window: install it once and `tack serve --with-runner` keeps running after you
-close the shell, log back in, and reboot. Not supported on Windows; use the desktop app
-there instead.
-
-The service always uses this OS's own per-user application-data folder (for example
-`~/.local/share/tack` on Linux) for the database, storage, runner state, and log file —
-never the current directory, and never a `tack.toml` from wherever you happened to run
-the command.
+`tack service install` runs Tack as a background service for your own user, so it keeps running after you close the terminal: a systemd user unit on Linux, a launchd agent on macOS. It is not available on Windows, where the desktop app does the same.
 
 ```sh
-tack service install
+tack service install     # write the unit, start it, and start it at login
+tack service status      # active or not, and where the health address is
+tack service uninstall   # stop it and remove the unit; your data stays
 ```
 
-```text
-Created symlink ~/.config/systemd/user/default.target.wants/tack.service → ~/.config/systemd/user/tack.service.
-Installed and started the tack user service.
-  Unit file: ~/.config/systemd/user/tack.service
-  Data root: ~/.local/share/tack
-  Health:    http://127.0.0.1:3210/api/health
-```
-
-```sh
-tack service status
-```
-
-```text
-State:  active
-Health: http://127.0.0.1:3210/api/health
-```
-
-```sh
-tack service uninstall
-```
-
-```text
-Removed "~/.config/systemd/user/default.target.wants/tack.service".
-Removed the tack user service. The data root was left untouched.
-```
-
-`uninstall` stops the service and removes its unit file; it never touches the data root,
-so a later `tack service install` picks the same database back up. For a shared,
-root-owned deployment instead of a per-user one, see the systemd unit in
-[the deployment guide](https://github.com/yielab/tack/blob/develop/docs/DEPLOYMENT-GUIDE.md).
+The service keeps its database, files and log in your per-user application-data folder. A shared server for other people is set up differently; see [Deployment](../admin-guide/deployment.md).
 
 ---
 
-## Fleet
+## MCP server for AI assistants
 
-Manage runner fleets — a named group of runners sharing an optional concurrency limit
-and a default policy. Adding a runner *to* a
-fleet has no CLI subcommand yet. Do it from the Agents page in the web UI (each fleet's
-roster has an add/remove control), or directly against the API: `POST
-/api/runner-fleets/{fleet_id}/members` adds a runner, `DELETE
-/api/runner-fleets/{fleet_id}/members/{runner_id}` removes one.
+`tack mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so an assistant such as Claude Code can read and search the board and create, update and move items or add comments. Its writes go through the same API, so the workflow rules still apply.
 
 ```sh
-tack fleet create "opus-fleet" --concurrency-limit 2
-```
-
-```text
-Created fleet: opus-fleet (fleet_64)
-  id: fleet_64ab2a19-9e38-4820-a8c7-1fa78e435767
-```
-
-```sh
-tack fleet list --json
-```
-
-```json
-[
-  {
-    "concurrency_limit": 2,
-    "default_policy": {},
-    "fleet_id": "fleet_64ab2a19-9e38-4820-a8c7-1fa78e435767",
-    "name": "opus-fleet"
-  }
-]
-```
-
----
-
-## Agent Profiles
-
-Reusable instructions, tool policy and limits, snapshotted into an execution request at
-creation time — later edits to the profile never change history already recorded.
-
-```sh
-tack agent-profile create "sonnet-profile" \
-  --instructions "Print the single word DONE and exit. Do not modify any files."
-```
-
-```text
-Created agent profile: sonnet-profile (ap_6e564)
-  id: ap_6e5649b8-1844-473b-ba36-2a8da37a8256
-```
-
-```sh
-tack agent-profile list
-```
-
-```text
-ID        NAME                            
-────────  ────────────────────────────────
-ap_91b4e  demo-profile                    
-ap_6e564  sonnet-profile                  
-```
-
----
-
-## MCP Server (AI agents)
-
-`tack mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server
-over stdio so AI agents (Claude Code, Codex, …) can drive the board: list/search/read
-items and create/update/move them or add comments. Writes go through the API, so
-workflow rules still apply.
-
-```sh
-# Reads JSON-RPC on stdin, writes responses on stdout — wire it into an MCP client,
-# don't run it interactively. Honors TACK_API_URL / TACK_API_TOKEN.
+# Wire this into an MCP client; it reads JSON-RPC on stdin and answers on stdout.
+# It uses the same connection settings as every other command.
 tack mcp
 ```
 
-See the [MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for the Claude Code `.mcp.json` snippet and the
-full tool reference.
+See [the MCP guide](https://github.com/yielab/tack/blob/develop/docs/MCP.md) for the client configuration and the tool list.
 
 ---
 
-## Machine-Readable Output
+## Backups
 
-All commands accept `--json` for raw JSON output:
-
-```sh
-tack list --project <id> --json | jq '.[] | select(.priority == "high")'
-```
-
-With `--json`, vocabulary mappings are bypassed and raw field names are returned.
-
----
-
-## Exit Codes
-
-| Code | Meaning |
-|---|---|
-| `0` | Success |
-| `1` | General error (see stderr) |
-| `2` | Configuration error (no URL, bad token) |
-| `3` | API error (server returned 4xx/5xx) |
+`tack backup`, `tack backups` and `tack restore` are covered in [Backup & Restore](../admin-guide/backup-restore.md).

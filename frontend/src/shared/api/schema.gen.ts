@@ -3263,8 +3263,11 @@ export interface components {
             usd_per_day?: number | null;
         };
         BundleAutoStart: {
-            /** @description Applied as off by an import; a person turns it on from Settings → Automation. */
-            enabled?: boolean;
+            /**
+             * @description Applied as off by an import that would switch it on; a person turns it on from Settings →
+             *     Automation. Absent leaves the project's switch as it is.
+             */
+            enabled?: boolean | null;
             /**
              * Format: int64
              * @description The most runs open at once; at least 1.

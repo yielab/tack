@@ -4,8 +4,7 @@ From a fresh machine to a finished agent run: install Tack, create a project, ad
 what "done" means for one of them, turn on the agent that will work on it, hand the task to
 Claude Code, watch it run, and read the result. Every image below is a real capture from one
 live session against a clean database — including the runs, which are real model calls, not
-mocks. (The capture recipe lives in `frontend/e2e/tutorial-assets.spec.ts`; see
-[Regenerating these screenshots](#regenerating-these-screenshots).)
+mocks.
 
 The whole loop in one recording — a new project pointed at a folder, a task with its acceptance
 criteria, a Claude Code run tracked from the card, the finished run reviewed and accepted, and
@@ -34,12 +33,11 @@ Verify it's up:
 
 ```sh
 curl http://localhost:3210/api/health
-# {"migrations_applied":83,"status":"ok","version":"0.1.0-beta.10"}
+# {"migrations_applied":…,"status":"ok","version":"0.1.0-beta.10"}
 ```
 
-`migrations_applied` is how many migrations this build actually ran — trust that
-field over the number above, which is what the build this tutorial was captured on
-reported. If this fails, see [Troubleshooting](troubleshooting.md).
+`version` is the build you installed, and `migrations_applied` is how many database migrations
+it has run. If this fails, see [Troubleshooting](troubleshooting.md).
 
 Homebrew, Windows, and the other install methods are in the [Quick Start](quick-start.md).
 
@@ -148,15 +146,18 @@ profile, the model and where the agent works — and asks only what you might wa
 
 - **What the agent will read** shows exactly the text it will be given: the task, its acceptance
   criteria and the project's definition of done.
-- **Profile** — the project's default, or the built-in **Implementer**; this tutorial picks
-  *Announcement writer*.
+- **Profile** — the one Tack picks for the task (the profile of the task's role, else the
+  project's default, else the built-in **Implementer**), with a line saying which; this tutorial
+  picks *Announcement writer*.
 - **Ask before each action** pauses the agent before each tool call until you answer on the
-  task; **Web tools** lets it use its own web-fetch and web-search tools. Both start off.
+  task; **Web tools** lets it use its own web-fetch and web-search tools. **Web tools** starts
+  off. **Ask before each action** starts off when the agent runs inside a sandbox, as Claude
+  Code does here, and on when it does not.
 - **Advanced for this run** is where this run differs from the project: the **Agent** (here
   **Claude Code**), the model (the same field as in the project's settings; **Agent's default** works for Claude Code), the branch,
   the tools allowed, and the timeout. **Verify the result**, **Push the branch** and **Open a pull
   request** are shown disabled, each with the reason and the setting that turns it on (see
-  [After a succeeded attempt](agent-runners.md#after-a-succeeded-attempt)).
+  [After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt)).
 
 <img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default model · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, the Model field set to Agent's default, Branch, Claude Code's tool checkboxes, Allowed tools, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
 
@@ -199,20 +200,11 @@ this page shows that, end to end.
 That's the whole loop: a task on a board with its definition of done, handed to a real agent,
 tracked live, and closed with a result you can check. From here:
 
-- [Agent Runners & Fleet Execution](agent-runners.md) — remote runners on other
-  machines, selectors, budgets, decisions, verification, branch push and pull requests.
+- [Running Agents on Tasks](running-agents.md) — choosing an agent and a model, asking
+  before each action, and the same run from the CLI.
+- [Automating a Project](automation.md) — let Tack start a task when it reaches a column,
+  choose the profile from the task's role, and merge finished work by itself.
 - [Quick Start — Run an item with an agent](quick-start.md#run-an-item-with-an-agent)
   — the same flow driven entirely from the CLI.
 - [Workflows & Statuses](workflows.md) and [Vocabulary](vocabulary.md) — make the
   board speak your domain's language.
-
----
-
-## Regenerating these screenshots
-
-Every image on this page comes from `frontend/e2e/tutorial-assets.spec.ts`, driven
-against an already-running release build (`--features embed-spa`) of this checkout
-on a fresh database, with a real, signed-in `claude` on PATH and `ffmpeg` for the recording.
-There is no `make` target for it on purpose: the runs in steps 9–10 and in the recording are
-real, live, billed model calls. The config file,
-`frontend/playwright.tutorial-assets.config.ts`, carries the exact recipe.

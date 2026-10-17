@@ -1,6 +1,8 @@
 # Working with Items
 
-Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Brief, Activity, Execution, Dependencies, Files, and Fields.
+This page is for anyone who works on individual tasks. After reading it you can open a task, edit its header and details, say what "done" means for it in a form an agent can check, make it repeat, give it a role, and use its tabs for runs, dependencies, files and comments.
+
+Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Activity, Execution, Dependencies, Files, and Fields.
 
 ---
 
@@ -18,7 +20,7 @@ At the top of the drawer, the **header** shows:
 - A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
 - The editable **title**. Edit it inline; the change commits when you blur the field or press `Enter`.
 - A row of **status pills**, one per workflow status. Click any inactive pill to transition the item to that status. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
-- **Priority**, **Estimate**, **Due date**, and **Sprint** controls.
+- **Priority**, **Estimate**, **Due date**, **Repeats** and **Sprint** controls.
 - **Tags** — type a tag and press `Enter` to add; click the `×` on a tag to remove it.
 
 All header edits save immediately (optimistic update: applied locally first, then persisted).
@@ -65,7 +67,7 @@ saves when you leave it.
 - **Risk** is low, medium or high. Leave it *Not set* if you are not sure.
 
 The definition of done in plain sentences is set once per project, in
-[Automation](agent-runners.md#automation) — not on each task.
+[Automation](automation.md#automation) — not on each task.
 
 An item holds up to 50 criteria and 100 constraints. If the server rejects a save, the reason
 appears next to the part it concerns.
@@ -98,6 +100,47 @@ A field definition may also carry extra **validation rules** that apply on top o
 
 ---
 
+## Repeating a task
+
+A task that happens every week, month or quarter can repeat by itself. Set **Repeats** in the task's header to **Weekly**, **Monthly** or **Quarterly**; **Never** turns it off. A task that repeats carries a **Repeats** badge on the board and in the list.
+
+You can also set it when you create a task from the command line, or in a file you import:
+
+```sh
+tack add "Pay the rent" -p <PROJECT_ID> --recurrence monthly
+```
+
+In an outline or CSV import, the column is `recurrence` (CSV also accepts `repeats`). A value that is not weekly, monthly or quarterly is reported as a warning and the task does not repeat; see [Import, Export & Project Files](import-export.md).
+
+**Closing the task makes the next one, once.** When the task moves into a Done status from one that is not Done, Tack creates the next task, unless a task made from it is still unfinished. That is what "once" means: closing, reopening and closing again does not pile up copies.
+
+The next task:
+
+- starts in the first To do column;
+- is due at the end of the next period, counted from the closed task's due date, or from today when it had none: a week later for weekly, the last day of the next month for monthly, and the last day of the quarter after the one the date falls in for quarterly;
+- copies the title, description, type, parent, priority, estimate, tags, roles and the repeat setting;
+- does not copy the sprint or the assignee.
+
+The closed task's activity says "Created the next one, due 2026-11-30" with the new date. See [Repeating a task](automation.md#repeating-a-task) for how this works with a project that starts tasks by itself.
+
+---
+
+## Roles and the Automation row
+
+A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Fields** tab lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
+
+Between the **Run with agent** button and the tabs, the drawer has an **Automation** row. It says in one line what happens to this task without you:
+
+| The row says | What it means |
+|---|---|
+| "Starts by itself when it reaches To Do · Team fab-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
+| "By hand: this project doesn't start tasks by itself" | Nothing starts it. Press **Run with agent** |
+| "By hand: the role Content has no profile" | The task's role has no profile and the project has no default. Choose one in [Teams](automation.md#teams) |
+
+After Tack acts on a task, badges say so on the board, list and table: **Started by itself**, **Team: name** and **Merged by itself**. They are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
+
+---
+
 ## Execution tab
 
 The record of every time an agent was handed this item. Above the tabs, a **Last run** panel
@@ -114,8 +157,9 @@ from the run and, when a verifier ran, the merge-readiness pack. While a docket 
 timeline fills as the agent works: each call to the model, each tool it ran (a shell command is
 shown as the command) and each call docket refused. A question that is still waiting appears on
 the same tab, with the command it is about, why the agent's policy stopped it, the options, their
-risks and the agent's recommendation. Everything
-on this tab, and how to start a run, is in [Agent Runners](agent-runners.md); the item's
+risks and the agent's recommendation. How to
+start a run is in [Running Agents on Tasks](running-agents.md), and how to judge one is in
+[Reviewing a Run](reviewing-runs.md). The item's
 [acceptance criteria](#acceptance-criteria-and-for-the-agent) are what the agent is given as the
 definition of done. An item that was never run shows an empty tab, not a hidden one.
 
@@ -156,13 +200,7 @@ Attach files to an item from the Files tab:
 
 Each uploaded file is listed with its **size and MIME type**. Click a filename to download it (served with the original filename); use **Delete** to remove it.
 
-On the server, the file bytes are written under the configured storage directory (`TACK_STORAGE_DIR`, default `./storage`), organized by item id under a collision-proof generated filename, while the **metadata** (filename, MIME type, size, storage path) is recorded in the database. Deleting an attachment removes both the file on disk and its database record.
-
-> **API note.** Uploads use `multipart/form-data` with a `file` field:
-> ```
-> POST http://127.0.0.1:3210/api/items/<item-id>/attachments
-> ```
-> The 50 MB limit is enforced server-side; oversize uploads return `400 Bad Request`.
+Deleting an attachment removes the file as well as its record. Where the server keeps the files is the administrator's choice; see [Configuration](../admin-guide/configuration.md). To upload from a script, see the [API Reference](../developer/api-reference.md).
 
 ---
 

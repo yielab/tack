@@ -92,6 +92,24 @@ existing, and a project's automation is set on one screen.
   docket test runs against an in-process fake that implements the published contract.
 - `PUT /api/projects/{id}/autonomy` answers what `GET` would: the L4/L5 radios no longer enable
   after a save until the page is reloaded.
+- **The documentation is three guides**: a User Guide (working in Tack, running and automating
+  agents, project files), an Administrator Guide (deploy, configure, secure, runners, backup,
+  recovery, troubleshooting) and a Developer Guide (architecture, runs and teams, the runner
+  contract, the project file format, the decisions). The old agent page is split by audience;
+  every old address redirects.
+- A section of a project file that fails to write answers a 500 that names the section and says
+  whether what came before stayed. An `auto_start` block that omits `enabled` leaves the
+  project's switch as it is.
+
+### Fixed
+
+- Turning on **Start a task by itself** saves the status the list shows; before, nothing started
+  until the status was picked by hand.
+- A run on docket shows "Sandboxed by docket in its own jail" in the run dialog and on the
+  attempt, instead of saying nothing.
+- Several statements in the guides and comments were wrong and are corrected: the backup
+  command's path is an argument, the container refuses to start without a token, and the runner
+  needs its enrollment token at every start.
 
 ---
 

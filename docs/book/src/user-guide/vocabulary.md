@@ -1,6 +1,6 @@
 # Vocabulary
 
-Each project has a **VocabularyMap**: 16 configurable label keys that rename terms throughout
+Each project has its own **vocabulary**: 16 configurable label keys that rename terms throughout
 the UI. Two projects can use completely different language while running on the same underlying
 system.
 
@@ -45,6 +45,8 @@ curl -X PATCH http://localhost:3210/api/projects/{id} \
 ```
 
 Only include the keys you want to change; omitted keys are left as-is.
+
+**In a project file.** The `project.vocabulary` key takes any subset of the 16 keys, and the rest keep the project type's words. A file applies it only when it creates a project. A key that is not one of the 16 makes the file be refused. See [Import, Export & Project Files](import-export.md#the-project-file).
 
 ---
 

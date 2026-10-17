@@ -119,7 +119,7 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
       }
     },
   );
-  const sandbox = () => (props.attempt.sandbox === 'bwrap' || props.attempt.sandbox === 'none' ? SANDBOX_TEXT[props.attempt.sandbox] : null);
+  const sandbox = () => SANDBOX_TEXT[props.attempt.sandbox as keyof typeof SANDBOX_TEXT] ?? null;
   const names = () => props.attempt.environment_names ?? [];
   return (
     <section data-testid="agent-got" class="space-y-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>

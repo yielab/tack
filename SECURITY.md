@@ -53,7 +53,7 @@ the next release; older tags are not backported.
 Tack is built for one operator on one machine, so the rules below are about keeping
 other people's text and other websites away from your board and your keys. They are
 checks in the code, each with a test in a suite CI requires. The full account is in the
-book page [What the Agent Can Reach](docs/book/src/user-guide/what-the-agent-can-reach.md).
+book page [What the Agent Can Reach](docs/book/src/admin-guide/what-the-agent-can-reach.md).
 
 | # | Rule | In practice |
 | --- | --- | --- |

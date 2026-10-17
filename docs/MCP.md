@@ -88,7 +88,7 @@ hierarchy and dependencies. Each item takes the outline fields (`ref`, `title`,
 `ref` or exact title. The whole outline is checked before anything is written and every
 problem comes back in one error; nothing is written unless all of it can be. `dry_run:
 true` reports what would be created. The format and its rules are in the book's
-[import page](https://yielab.github.io/tack/user-guide/import-export.html#how-do-i-create-a-project-and-its-items-from-a-file).
+[import page](https://yielab.github.io/tack/user-guide/import-export.html#the-project-file).
 The call may also carry `fields`, `profiles`, `roles`, `sprints` and `automation`, as in Tack's project file (Settings → Data → File format); the book's [import page](https://yielab.github.io/tack/user-guide/import-export.html#the-project-file) lists what each takes, and the preview and refusal rules are the same.
 `create_project` returns the new project's id and its workflow's status names, the values
 `status` and `move_item` accept. A project is created with `project_type: custom` unless

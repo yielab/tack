@@ -253,7 +253,7 @@ fn the_fabulada_file_checks_clean_but_for_its_three_autonomy_warnings() {
     );
     assert!(plan.warnings[2].starts_with("auto_start asked: true; applied: false."));
     let automation = plan.automation.expect("automation");
-    assert_eq!(automation.auto_start.map(|a| a.enabled), Some(false));
+    assert_eq!(automation.auto_start.map(|a| a.enabled), Some(Some(false)));
     assert_eq!(
         automation.autonomy.and_then(|a| a.level).as_deref(),
         Some("L3")
@@ -271,6 +271,20 @@ fn the_fabulada_file_checks_clean_but_for_its_three_autonomy_warnings() {
         ]
     );
     assert_eq!(plan.items.items.len(), 20);
+}
+
+#[test]
+fn an_auto_start_block_without_the_switch_leaves_the_switch_alone() {
+    let outline = yaml("automation:\n  auto_start:\n    status: To Do\n    max_open: 2\n");
+    let board = Owned::empty();
+    let plan = board.check(&outline).expect("checks clean");
+    let start = plan
+        .automation
+        .and_then(|a| a.auto_start)
+        .expect("auto_start");
+    assert_eq!(start.enabled, None);
+    assert_eq!(start.max_open, Some(2));
+    assert!(plan.warnings.is_empty(), "{:?}", plan.warnings);
 }
 
 fn synthetic_project() -> Project {
