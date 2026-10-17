@@ -16,7 +16,7 @@ export const HARNESS_INSTALL_COMMAND: Readonly<Record<string, string>> = {
 
 /** Per-harness install hint for a harness with no one-line install command:
  *  a sentence to read, not a command to paste. The wording is the user
- *  guide's (`docs/book/src/user-guide/agent-runners.md`, "Choosing a
+ *  guide's (`docs/book/src/user-guide/running-agents.md`, "Choosing a
  *  harness"). */
 export const HARNESS_INSTALL_NOTE: Readonly<Record<string, string>> = {
   docket: 'From the docket project, following its own install instructions.',

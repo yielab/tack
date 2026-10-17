@@ -36,12 +36,11 @@ file. It requires no account.
 
 - **To use Tack:** Linux, macOS or Windows.
 - **To assign tasks to an agent:** one of Claude Code, Codex, opencode or docket installed
-  on the same computer and signed in with its own tools (the documentation calls these
-  *harnesses*). Tack has no agent of its own: it hands the task to that program, which
+  on the same computer and signed in with its own tools. Tack has no agent of its own: it hands the task to that program, which
   reads and edits files, runs commands and uses whatever model you set it up with. Tack
   holds no model key. docket needs version 0.2.0-beta.6 or later.
 
-  [Choosing a harness](https://yielab.github.io/tack/user-guide/agent-runners.html#choosing-a-harness) says
+  [Choosing a harness](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-harness) says
   what each one supports.
 - **Optional:** git, so the agent works on a branch instead of directly in your folder.
 
@@ -131,7 +130,7 @@ set first by the agent's own permission settings, then by what you give Tack: th
 project points at and the credentials the runner holds. The API requires a token, unless you bind
 a non-loopback address with `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`, which turns it off on
 purpose.
-[What the agent can reach](docs/book/src/user-guide/what-the-agent-can-reach.md) explains
+[What the agent can reach](docs/book/src/admin-guide/what-the-agent-can-reach.md) explains
 each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Documentation
@@ -139,11 +138,13 @@ each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability
 | Goal | Start here |
 | --- | --- |
 | Install and run a first task | [Quick Start](https://yielab.github.io/tack/user-guide/quick-start.html) · [Tutorial](https://yielab.github.io/tack/user-guide/tutorial.html) |
-| Set up agents, logins and models | [Agent runners](https://yielab.github.io/tack/user-guide/agent-runners.html) |
+| Run an agent on a task, and review the result | [Running agents](https://yielab.github.io/tack/user-guide/running-agents.html) · [Reviewing a run](https://yielab.github.io/tack/user-guide/reviewing-runs.html) |
+| Let a project work by itself (teams, auto-start, repeating tasks, merging) | [Automating a project](https://yielab.github.io/tack/user-guide/automation.html) · [Merging](https://yielab.github.io/tack/user-guide/merging.html) |
 | Organize work on the board | [Items](https://yielab.github.io/tack/user-guide/items.html) · [Views](https://yielab.github.io/tack/user-guide/views.html) · [Workflows](https://yielab.github.io/tack/user-guide/workflows.html) |
-| Move data in and out | [Import and export](https://yielab.github.io/tack/user-guide/import-export.html) · [Backup and restore](https://yielab.github.io/tack/user-guide/backup-restore.html) |
+| Move a whole project in and out of one file | [Import, export and project files](https://yielab.github.io/tack/user-guide/import-export.html) |
+| Install, secure and operate a server and its runners | [Administrator Guide](https://yielab.github.io/tack/admin-guide/index.html) · [Configuration](https://yielab.github.io/tack/admin-guide/configuration.html) · [Backup and restore](https://yielab.github.io/tack/admin-guide/backup-restore.html) |
 | Use Tack from the terminal or other tools | [CLI](https://yielab.github.io/tack/user-guide/cli.html) · [API](https://yielab.github.io/tack/developer/api-reference.html) · [MCP](docs/MCP.md) |
-| Configure or run a server | [Configuration](https://yielab.github.io/tack/user-guide/configuration.html) · [Architecture](https://yielab.github.io/tack/developer/index.html) |
+| Build on or contribute to Tack | [Developer Guide](https://yielab.github.io/tack/developer/index.html) · [Architecture decisions](https://yielab.github.io/tack/developer/decisions.html) |
 | See what changed and what's next | [Changelog](CHANGELOG.md) · [Roadmap](https://yielab.github.io/tack/roadmap.html) |
 
 ## Built alongside

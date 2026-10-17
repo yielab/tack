@@ -717,8 +717,8 @@ fn check_automation(
         if start.max_open.is_some_and(|n| n < 1) {
             problems.push("automation.auto_start.max_open must be at least 1".into());
         }
-        if start.enabled && !board.auto_start {
-            start.enabled = false;
+        if start.enabled == Some(true) && !board.auto_start {
+            start.enabled = Some(false);
             warnings.push(
                 "auto_start asked: true; applied: false. Turn it on from Settings → Automation"
                     .into(),

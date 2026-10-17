@@ -625,7 +625,7 @@ async fn write_automation(
         update.workspace_mode = Some(parsed(mode)?);
     }
     if let Some(start) = &auto.auto_start {
-        update.auto_start_enabled = Some(start.enabled);
+        update.auto_start_enabled = start.enabled;
         update.auto_start_status = start.status.clone().map(Some);
         update.auto_start_max_open = start.max_open;
     }

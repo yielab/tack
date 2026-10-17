@@ -222,7 +222,7 @@ async fn bundle_response(
         sprints: &sprints,
         autonomy,
         auto_start: BundleAutoStart {
-            enabled: project.auto_start_enabled,
+            enabled: project.auto_start_enabled.then_some(true),
             status: project.auto_start_status.clone(),
             max_open: Some(project.auto_start_max_open),
         },

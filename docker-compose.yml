@@ -15,7 +15,7 @@ services:
     container_name: tack
     restart: unless-stopped
     ports:
-      # Host:container. Publish only to loopback unless you set TACK_API_TOKEN.
+      # Host:container. The container binds 0.0.0.0 and refuses to start without TACK_API_TOKEN.
       - "3210:3210"
     volumes:
       # Persists /data/tack.db (+ -wal/-shm) and /data/storage attachments.

@@ -13,12 +13,12 @@ execution request, upgrading is exactly one step:
 
 ## Upgrading the binary (routine)
 
-1. **Back up first**, always — see [Backup and Restore](book/src/user-guide/backup-restore.md).
+1. **Back up first**, always — see [Backup and Restore](book/src/admin-guide/backup-restore.md).
    Migrations run automatically on the next startup; there is no separate "run
    migrations" command to skip.
 
    ```sh
-   tack backup --path /backups/tack-pre-upgrade.db
+   tack backup /backups/tack-pre-upgrade.db
    ```
 
 2. **Replace the binary** and start it. `tack_api::serve()` runs
@@ -78,13 +78,13 @@ full copy of the database as it was, so it holds the control-plane tokens you ha
 unencrypted: keep it where your database backups live, and delete it once you no longer
 need those rows. Docket itself stays
 reachable as a harness on a runner-v1 execution request
-([Agent Runners](book/src/user-guide/agent-runners.md)); only the old bridge is gone.
+([Running Agents on Tasks](book/src/user-guide/running-agents.md)); only the old bridge is gone.
 
 ---
 
 ## Enabling the runner-fleet execution features
 
-Nothing described on the [Agent Runners](book/src/user-guide/agent-runners.md) page
+Nothing described on the [Running Agents on Tasks](book/src/user-guide/running-agents.md) page
 activates by touching a migration. All of it is env-var gated, off by default, and the
 gates are independent of each other — enabling one does not enable the others.
 
@@ -111,7 +111,7 @@ gates are independent of each other — enabling one does not enable the others.
 
 Docket is reached the same way as any other coding agent, as a harness
 (`--harness docket`) on a runner-v1 execution request — see
-[Agent Runners](book/src/user-guide/agent-runners.md). It needs no separate
+[Running Agents on Tasks](book/src/user-guide/running-agents.md). It needs no separate
 enablement step here.
 
 Full variable reference, defaults, and cross-references: `docs/CONFIG.md`.
@@ -131,12 +131,12 @@ list won't be a prefix match for the newer database's history).
 
 ## See also
 
-- [Backup and Restore](book/src/user-guide/backup-restore.md) — routine snapshot and
+- [Backup and Restore](book/src/admin-guide/backup-restore.md) — routine snapshot and
   staged-restore mechanics, remote/cloud backup, and what's included in each.
-- [Agent Runners & Fleet Execution](book/src/user-guide/agent-runners.md) — what each
+- [Running Agents on Tasks](book/src/user-guide/running-agents.md) — what each
   gate above actually turns on, and the capability/security posture of the runner
   fleet.
-- [Recovery Runbook](book/src/user-guide/recovery-runbook.md) — attempt-level
+- [Recovery Runbook](book/src/admin-guide/recovery-runbook.md) — attempt-level
   recovery (a crashed runner or harness process), a different concern from schema
   migration recovery.
 - `docs/CONFIG.md` — the authoritative table of every `TACK_*` variable.

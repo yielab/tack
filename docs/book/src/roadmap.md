@@ -96,7 +96,7 @@ merges the card it needs, not when docket cuts a release.
 | A | docket in five links, following docket's Phase 35: negotiation and contract 1.1; process events and a proven cancel; asking over stdin; limits, policy and files; the recipe flag. | Sonnet; the last link Haiku |
 
 Left open by the work, each listed in the
-[Agent Runners](user-guide/agent-runners.md) chapter's "Known gaps" or beside the feature it limits: a docket recipe does not run,
+[Agent Runners](user-guide/running-agents.md) chapter's "Known gaps" or beside the feature it limits: a docket recipe does not run,
 because docket runs one only on a contract that needs a model endpoint Tack does not hold; a docket run that times out, rather than being cancelled, stops
 only its main process group; the branch push runs git in a workspace the agent could have
 reconfigured; a docket request must name docket's own tools; and

@@ -2,7 +2,11 @@
 
 Crate responsibilities, design patterns, and implementation details of record.
 This file is the authority for design patterns, implementation notes, and
-troubleshooting — CLAUDE.md keeps only the condensed map. The mdBook's
+troubleshooting — CLAUDE.md keeps only the condensed map. It is for contributors; the
+book's [Developer Guide](book/src/developer/index.md) is the narrative version, and its
+[Runs, Teams and Automation](book/src/developer/runs-and-teams.md) and
+[Project File Format](book/src/developer/project-file.md) pages cover the two newest
+subsystems in depth. The mdBook's
 [Crate Tour](book/src/developer/crate-tour.md) is a separate, deeper per-file
 walkthrough (code snippets, one section per source file) rather than a copy of
 this page; when the two disagree on a fact rather than depth, this file wins
@@ -19,8 +23,10 @@ crates/
 │                  background modules
 ├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve)
 ├── tack-runner/   Pull-based execution runner — its own binary; owns local
-│                  credentials, workspace, journal and the harness subprocess
-└── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
+│                  credentials, workspace, journal, the harness subprocess and the
+│                  connection to the docket daemon
+├── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
+└── tack-test-support/  Test helpers shared by the other crates' tests
 
 crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; excluded
                        from this workspace (own Cargo.toml/lockfile) so Tauri's GTK/WebKit
@@ -53,10 +59,14 @@ docs/                Documentation
 - Dependency graph: DAG with cycle detection (DFS-based)
 - Error types: typed domain errors (`CoreError`)
 - Item briefs (`brief.rs`) and the `mrp-v1` merge-readiness pack (`mrp.rs`): types, validation and Markdown rendering, as plain data
+- The merge policy (`autonomy.rs`): `Level`, `Facts`, `Hold` and the pure `evaluate`, including the team's ceiling (`Hold::HarnessCeiling`)
+- Which profile a run gets (`run_defaults.rs`, `resolve`) and which waiting tasks a project starts (`auto_start.rs`, `pick`), both pure
+- Recurrence (`recurrence.rs`: when the next copy of a repeating task is due) and the rate card (`rate_card.rs`)
+- The project file (`outline.rs`, `outline/bundle.rs`): the types of every section, `resolve` for items, `check` for a whole file against a board and `to_bundle` for the export
 
 **tack-db**:
 - SQLite via `sqlx` (async)
-- 81 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
+- 91 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
 - Repository pattern: CRUD for all entities in `repo/` submodules
 - Auto-runs migrations on startup
 - Database is created automatically if missing
@@ -72,7 +82,7 @@ docs/                Documentation
 - Every dollar-valued field across this crate is named `*_usd_estimated` — token counts are the primary, trustworthy measure; absent usage is a typed "not measured", never a fabricated `0`
 
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 78 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the operator execution/fleet surface and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
+- Axum HTTP server with 96 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the operator execution/fleet surface and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
 - **Two authentication surfaces, separated structurally.** Operator routes live under `/api` behind `require_token`. Runner routes are nested as a _sibling_ of `/api` on the outer router, so they never traverse the operator auth layer at all — deliberately not an exemption-list entry, which a later edit could quietly widen. Each runner handler authenticates its own hashed bearer credential via `handlers/runner_protocol/runner_auth.rs`.
 - `x-tack-principal` is **overwritten from server config** by `middleware::inject_operator_principal` and never read from the request. Operator idempotency is scoped by principal, so a trusted header would let one caller collide with another's requests.
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
@@ -83,22 +93,25 @@ docs/                Documentation
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON, YAML and CSV formats
-- Outline and CSV import (`handlers/outline.rs`): the format and its checks are `tack_core::outline`; the write is one transaction (`Repository::create_outline_items`)
+- Project file, outline and CSV import (`handlers/outline.rs`): the format and its checks are `tack_core::outline` and `outline::bundle::check`; items are written in one transaction (`Repository::create_outline_items`), the other sections one by one, and a failed section answers `ApiError::SectionFailed`. Export of the same file is `export?scope=bundle` (`handlers/export.rs`, `to_bundle`); templates are the same file without items (`handlers/templates.rs`)
+- Automatic work, each its own background task: the auto-start tick (`auto_start.rs`, every `TACK_AUTO_START_SECONDS`, which picks waiting tasks with `tack_core::auto_start::pick` and enqueues them through `handlers/executions.rs::create_as` under the principal `auto_start`), and the autonomy tick (`autonomy.rs`, `merge.rs`) that merges and demotes by `tack_core::autonomy::evaluate`, reading the team's ceiling from the runner's live capability at merge time
 
 **tack-runner** (the pull-based execution runner — its own binary, separate from `tack`):
 - Polls the Tack API's `/api/runner/v1` surface: enroll, refresh capabilities, claim, heartbeat, accept, start, stream events, poll decisions, submit artifacts, complete, and report cancellation/recovery observations
 - Owns everything the API must not: its own secret store, the isolated per-attempt workspace/worktree, the owner-only TOML journal written **before** spawn, and the harness subprocess itself
-- `harness/` holds the adapter layer — `process.rs` (bounded output capture, timeouts, process-group cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and `local_process.rs`, the one lifecycle every local CLI harness shares (locate, probe, request policy, environment and secrets, spawn, cancel, reconcile, log staging, outcome). A harness is a `HarnessDescriptor` (data) plus a `HarnessGrammar` — its command line, how its output is read, what it supports, and optionally how it drives a stdio conversation (`prompt`, `signal`, `answer`) so a run can pause and ask the operator, and which output lines are steps (`StreamSignal::Progress`, read on every run when the descriptor sets `reports_progress`; docket only so far): `codex.rs`, `claude_code.rs`, `docket.rs`, `opencode.rs`. Adding one is a module plus a line in `harness::DESCRIPTORS` and one in `harness::discover`; `tack runner doctor` and the Agents page read the descriptor. The harness vocabulary itself is open (`HarnessKind::Other(String)`) — this crate ships adapters for these four, a runner may still report any kind string
+- `harness/` holds the adapter layer — `process.rs` (bounded output capture, timeouts, process-group cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and `local_process.rs`, the one lifecycle every local CLI harness shares (locate, probe, request policy, environment and secrets, spawn, cancel, reconcile, log staging, outcome). A CLI harness is a `HarnessDescriptor` (data) plus a `HarnessGrammar` — its command line, how its output is read, what it supports, and optionally how it drives a stdio conversation so a run can pause and ask the operator: `codex.rs`, `claude_code.rs`, `opencode.rs`. Adding one is a module plus a line in `harness::DESCRIPTORS` and one in `harness::discover`; `tack runner doctor` and the Agents page read the descriptor. The harness vocabulary itself is open (`HarnessKind::Other(String)`) — a runner may report any kind string
+- **docket is a daemon, not a process the runner spawns per run.** `harness/docket.rs` is a `DocketAdapter` that implements `HarnessAdapter` and `HarnessProbe` directly over docket's operator HTTP API (version 5, docket 0.2.0-beta.6): one attempt is one task posted to a team (`POST /tasks/<pod>`, idempotency key = attempt id), followed by its trace, with approvals and parked questions as decisions, cancelled over HTTP, and the task's branch brought into the runner's worktree. It is registered only when `[docket]` names a `binary` or `base_url`; the runner starts `docket start --dispatch` (`docket/daemon.rs`) only when `binary` is set. Its steps reach the timeline as `agent.hop_*` events; no other agent reports steps yet
+- The runner runs up to `max_concurrent_attempts` attempts at once (default 1): `active.rs` (`ActiveAttempts`) holds the leases in flight, `transport.rs` runs the slots, and one ticker sends a single heartbeat for all of them and delivers a cancellation to the attempt it names. A folder worked in place stays one attempt at a time by the runner's lock on the folder
 - Two traits: `client::engine::HarnessAdapter` (per-attempt lifecycle — `validate`/`start`/`cancel`/`wait`/`reconcile`) and `harness::HarnessProbe` (version/capability discovery, which needs no claimed attempt). `AdapterRegistry` implements `HarnessAdapter` by dispatching on the requested harness kind, so the engine takes exactly one adapter type
-- **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation unless its harness announces the process groups its tools start, because every other harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude`. Only docket on contract 1.1 announces them, so cancellation is `Supported` there and `Advisory` everywhere else; the scheduler must read the capability snapshot, never assume
+- **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation unless its harness announces the process groups its tools start, because every other harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude`. docket stops its work over its own cancel route, so cancellation is `Supported` there and `Advisory` everywhere else; the scheduler must read the capability snapshot, never assume
 - After a succeeded (or cancelled) attempt and before the workspace is deleted, the engine captures the attempt's change as evidence for every harness (`evidence.rs`), then, when the operator turned them on in the runner's TOML config, runs a verifier over it that writes a merge-readiness pack (`verify.rs`, `[verify]`) and pushes the work as a branch (`git.rs`, `[git]`). A failure of either is an event on the attempt, never a change to its outcome
 - Runner events carry the attempt's next sequence, counted in the journal (`events_submitted`), since the server keeps one event per `(attempt, sequence)`; a harness's steps are batched as events every two seconds and flushed when the run ends
-- docket is negotiated, not pinned: the runner probes which harness contract (1.0 or 1.1) and which flags the installed docket accepts at boot and everything else follows from that
-- Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`
+- docket's API version is probed at the first use and must be `5`; any other version is reported as "needs docket 0.2.0-beta.6" and no task is posted
+- Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`. docket is tested against an in-process fake of its API (`tests/fake_docket/`); no test runs a real docket
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
-- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init`, `projects`, `add`, `list`, `move`, `board`, `branch`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template`, `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
+- CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
 - `tack branch <item-id>` — derives/creates a git branch from an item (`git.rs`)
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
@@ -139,7 +152,7 @@ docs/                Documentation
 
 ## Database Schema Highlights
 
-- **81 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests)
+- **91 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests; 088 adds a role's profile and a profile's fleet; 089 a task's recurrence; 090 a project's auto-start; 091 the roles, profiles and automation a template carries)
 - Migrations are transactional with ordered-prefix and checksum enforcement; 037/038's copy/verify/swap rebuild and 064–073's table drops each run behind an automatic pre-upgrade `VACUUM INTO` snapshot
 - **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. 16 sites in `repo/execution.rs` hit this (`grep -c 'begin_with("BEGIN IMMEDIATE")' crates/tack-db/src/repo/execution.rs`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
@@ -157,7 +170,10 @@ All routes follow RESTful conventions:
   - `GET /api/projects/{id}/boards/live` — **WebSocket** for real-time updates
 - `/api/projects/{id}/export` — Export to JSON/YAML/CSV (1 endpoint)
 - `/api/projects/import` — Import from JSON or YAML (1 endpoint)
-- `/api/projects/outline`, `/api/projects/{id}/outline`, `/api/projects/import-csv`, `/api/projects/{id}/import-csv` — A project and its items, or items for a project, from an outline or a CSV (4 endpoints)
+- `/api/projects/outline`, `/api/projects/{id}/outline`, `/api/projects/import-csv`, `/api/projects/{id}/import-csv` — A project (with its fields, profiles, roles, sprints and automation) and its items, or items for a project, from a project file or a CSV (4 endpoints). `GET /api/projects/{id}/export?scope=bundle` writes the same file back
+- `/api/templates`, `/api/projects/from-template/{id}`, `/api/projects/{project_id}/save-as-template` — templates, which are project files without items
+- `/api/projects/{id}/autonomy` (GET/PUT) — a project's merge level, domains and budgets, and, read-only, its ceiling and the teams that cap it
+- `/api/items/{id}/agent-context` — what the agent will read, and which profile a run would get and why
 - `/api/projects/{id}/items` — Items scoped to project (3 endpoints)
 - `/api/items/{id}` — Individual item operations (3 endpoints with WebSocket broadcasting)
 - `/api/items/{id}/dependencies` — Dependency management (3 endpoints)
@@ -252,6 +268,7 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 - **CSV Export**: Simplified item list for spreadsheet import
   - `GET /api/projects/{id}/export?format=csv`
   - Includes: id, title, description, type, status, priority, assignee, estimate, due_date, tags, parent_id, created_at — the columns the CSV import reads, so an export re-imports with its hierarchy
+- **Project file**: `GET /api/projects/{id}/export?scope=bundle&format=yaml|json` writes the whole project as the file that `POST /api/projects/outline` and `POST /api/projects/{id}/outline` read back (see [The Project File Format](book/src/developer/project-file.md)). It is deterministic, carries no ids or dates, and never deletes on import
 - **Import**: `POST /api/projects/import` (`handlers/export.rs::import_project`) accepts the same JSON-or-YAML snapshot shape produced by export, dispatched on `Content-Type`. Creates a new project, imports sprints then items (two passes — create, then wire up `parent_id`) then dependencies, preserves each item's original `source` trust marker, and restores the source project's workflow and vocabulary. If any step fails, the created project is deleted and the error is returned — nothing is left half-imported.
 
 ### WebSocket Real-Time Updates
@@ -278,6 +295,7 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 - **Unit tests** in `tack-core` for business logic (workflow, dependencies, vocabulary)
 - **Integration tests** in `tack-db` for repository operations (require SQLite)
 - **Handler tests** in `tack-api` use in-memory databases
+- **docket** is proved against `crates/tack-runner/tests/fake_docket/`, an in-process fake of its HTTP API
 - **Frontend unit tests** in `frontend/src/**/*.test.tsx` (Vitest + jsdom)
 - **End-to-end tests** in `frontend/e2e/` (Playwright): cross-browser smoke, user
   journeys, axe accessibility scans, and API wire-contract checks. Test setup

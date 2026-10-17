@@ -10,12 +10,6 @@ Prefer pictures? The [Step-by-Step Tutorial](tutorial.md) walks this same page's
 
 Tack is a single self-contained binary — the web UI, REST API, and SQLite engine are all inside one file. No runtime, database server, or container required. Pick any one method.
 
-| Platform | Install → first agent attempt |
-|---|---|
-| Linux | `measured` |
-| macOS | `not_measured` |
-| Windows | `not_measured` |
-
 **One line (Linux / macOS):**
 
 ```sh
@@ -57,7 +51,7 @@ docker build -t tack:latest .
 docker run -d --name tack -p 3210:3210 -v tack-data:/data tack:latest
 ```
 
-See [Deployment → Docker](../developer/deployment.md#docker) for the compose file and configuration.
+See [Deployment → Docker](../admin-guide/deployment.md#docker) for the compose file and configuration.
 
 **Manual download.** Grab the archive for your platform and `SHA256SUMS` from the [releases page](https://github.com/yielab/tack/releases), verify, then run:
 
@@ -92,10 +86,10 @@ Then open **`http://localhost:3210`** in your browser. On first start, Tack crea
 
 ```sh
 curl http://localhost:3210/api/health
-# {"status":"ok","version":"0.1.0-beta.7","migrations_applied":62}
+# {"status":"ok","version":"0.1.0-beta.10","migrations_applied":…}
 ```
 
-`migrations_applied` is how many migrations this build actually ran — trust that field over any number quoted here; it only grows as the schema does.
+`version` is the build you installed and `migrations_applied` is how many database migrations it has run; it only grows as Tack does.
 
 If this fails, see [Troubleshooting](troubleshooting.md).
 
@@ -106,7 +100,7 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later. Then answer **Does this project have code?**:
    - **An existing folder on this computer** — pick the folder once. This is the choice if you want an agent to work on code you already have.
    - **A new folder Tack creates** — Tack makes the folder and starts a git repository in it.
-   - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automation](agent-runners.md#automation)).
+   - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automation](automation.md#automation)).
 
 2. **Add an item.** On the Board, click the **+** inside any column, or the **+ New** toolbar button. Give it a title and press Enter. An *item* is the basic unit of work — a task, bug, building, assignment, or whatever your vocabulary calls it.
 
@@ -116,7 +110,9 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 
 5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Adapt theme, palette, text size and zoom in Settings → Display & accessibility — see [Appearance](appearance.md).
 
-Ready to put it on a network or add a token? See [Administration & Security](administration.md).
+Ready to put it on a network or add a token? See [Administration & Security](../admin-guide/administration.md).
+
+**Where to go next.** To have agents do the work, read [Running Agents on Tasks](running-agents.md). To have Tack start tasks and merge finished work by itself, read [Automating a Project](automation.md). To bring in a plan you already have, read [Import, Export & Project Files](import-export.md).
 
 ---
 
@@ -142,18 +138,21 @@ repository address.
    in, or "Not signed in. Run `<command>` in a terminal." with a link to that agent's own
    documentation; sign in with the agent's own command, then there is nothing else to set. The
    page is about this computer only; see
-   [Agents on this computer](agent-runners.md#agents-on-this-computer). Everything about
+   [Agents on this computer](running-agents.md#agents-on-this-computer). Everything about
    *your project* lives in the project's settings instead.
 2. **Make sure the project knows where its code is.** If you answered **Does this project
    have code?** when you created it, this is done. Otherwise open **Settings → Automation**
    and pick the folder there. Tack chooses how the agent works on it: on a new branch of
    your repository if the folder is a git repository, in the folder directly if it is not
-   (see [Where the agent works](agent-runners.md#where-the-agent-works)).
+   (see [Where the agent works](automation.md#where-the-agent-works)).
 3. **Open a task and click Run with agent.** The dialog is one summary line (who runs it,
    in which profile, on which model, where), a section called **What the agent will read**,
    two switches (**Ask before each action** and **Web tools**) and **Advanced**.
-   The defaults are the recommended ones: **Agent's default** in the model field and the
-   **Implementer** profile. To name a model, pick one the agent listed or choose **Another
+   The defaults are the recommended ones: **Agent's default** in the model field, and the
+   profile Tack would pick for you. That is the profile of the task's role, else the
+   project's default profile, else the built-in **Implementer**; a line under the summary says
+   which ("Chosen by the role Content", for example). **Ask before each action**
+   starts on when the agent would run without a sandbox and off when it is sandboxed. To name a model, pick one the agent listed or choose **Another
    model…** and type it in the agent's own spelling. Click **Run**.
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
@@ -162,7 +161,7 @@ When the run ends, the task's own Execution tab shows the attempt. If the agent 
 anything, the task is marked **Needs your review** until you press **Accept** or
 **Reject** on the attempt. The attempt card has **Open diff**, **Open folder** (or Copy
 path), **Copy branch**, **Result** and **Log** so you can check the work before deciding.
-See [What happens when a run finishes](agent-runners.md#what-happens-when-a-run-finishes).
+See [What happens when a run finishes](reviewing-runs.md#what-happens-when-a-run-finishes).
 
 **The CLI path** — scriptable, and what to reach for outside a browser. Every step
 below is a real command against a real server, copied from an actual run; the fewest
@@ -170,7 +169,7 @@ steps from the binary you already have to a completed attempt, no second process
 no operator-issued token.
 
 Start the server with the embedded runner instead of plain `tack` (it self-provisions
-on first start — see [Standalone mode](agent-runners.md#standalone-mode-tack-serve---with-runner);
+on first start — see [Standalone mode](../admin-guide/runners.md#standalone-mode-tack-serve---with-runner);
 this is the console-command equivalent of step 1 above, not a second thing to do on top
 of it):
 
@@ -198,11 +197,11 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 ```
 
 Using the item id from [First use](#first-use) above, create the execution request
-(swap in your own harness — `codex` or `claude-code`; `--model` takes the model's name in
+(`--agent-profile` and `--harness` can be left out, and then the item's role, the project's default profile and the project's default agent decide; name one of `claude-code`, `codex`, `opencode` or `docket` to choose; `--model` takes the model's name in
 that agent's own spelling and may be left out; the server fills in the repository from the item's project, and the project's
 settings say where the agent works, see
-[Where the agent works](agent-runners.md#where-the-agent-works); see [Choosing a
-model](agent-runners.md#choosing-a-model) if unsure):
+[Where the agent works](automation.md#where-the-agent-works); see [Choosing a
+model](running-agents.md#choosing-a-model) if unsure):
 
 ```sh
 tack execution create <ITEM_ID> \
@@ -229,7 +228,7 @@ Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf92801
 ```
 
 That is a completed attempt, reached either way. See [Running an item with an
-agent](agent-runners.md#running-an-item-with-an-agent) for all four ways to create a
+agent](running-agents.md#running-an-item-with-an-agent) for all four ways to create a
 request and the full field-by-field reference.
 
 ---
@@ -288,13 +287,6 @@ Without `--features embed-spa` the binary serves only the API; use the Vite dev 
 
 ---
 
-## Environment variables
+## Settings and environment
 
-| Variable | Default | Description |
-|---|---|---|
-| `TACK_PORT` | `3210` | Listen port |
-| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite file path |
-| `TACK_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
-| `TACK_API_TOKEN` | _(none)_ | When set, all API calls need `Authorization: Bearer <token>` |
-
-See [Configuration](configuration.md) for the full reference and `tack.toml` format, and [Administration & Security](administration.md) for tokens, CORS, webhooks, and cloud backup.
+Tack reads its port, database location, log level and access token from settings you give the server when it starts. The defaults suit a single computer: the server listens on `127.0.0.1:3210` and makes its own access token, which your browser and the `tack` command pick up without being told. The [Configuration](../admin-guide/configuration.md) page lists every setting, and [Administration & Security](../admin-guide/administration.md) covers tokens, allowed origins, webhooks and cloud backup.

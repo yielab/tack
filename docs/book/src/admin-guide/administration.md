@@ -1,8 +1,10 @@
 # Administration and Security
 
-Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account — anyone can type any name into it. Every request that authenticates at all authenticates as the same single operator, via one shared `TACK_API_TOKEN`. Tack is built for one operator (or a small team willing to share that one secret), not for telling users apart; see [ADR 0059](https://github.com/yielab/tack/blob/develop/docs/adr/0059-single-operator-identity-posture.md) for the reasoning and what was deliberately left out.
+This page is for the person who decides who can reach Tack and how it is protected. After reading it you can set the API token, choose the allowed origins, expose Tack safely on a network, turn on cloud backup and webhooks, and set the log options.
 
-Tack is local-first by default: it binds to `127.0.0.1`, requires no authentication, and stores everything in a single SQLite file. This page covers the configuration you apply when you move beyond a single-machine setup — locking down the API, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
+Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account, and anyone can type any name into it. Every request that authenticates at all authenticates as the same single operator, via one shared token. Tack is built for one operator, or a small team willing to share that one secret, not for telling users apart.
+
+Tack is local-first by default. It binds to `127.0.0.1`, keeps everything in a single SQLite file, and on that loopback bind it creates a token of its own and requires it. This page covers what you set when you go beyond that: choosing the token, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
 
 All examples assume the default base URL `http://127.0.0.1:3210`.
 
@@ -10,11 +12,12 @@ All examples assume the default base URL `http://127.0.0.1:3210`.
 
 ## Authentication
 
-By default Tack accepts every request — appropriate for a pure-local install. To require a token, set `TACK_API_TOKEN` and restart the server. Once set, **every** `/api/*` route requires an `Authorization: Bearer <token>` header. One endpoint is exempt:
+The API always has a token, except in one case described under [Network exposure](#network-exposure-and-tls). **Every** `/api/*` route requires `Authorization: Bearer <token>` or the session cookie below. Two endpoints are open: `GET /api/health`, a liveness probe, and `GET /api/openapi.json`.
 
-- `GET /api/health` — liveness/readiness probe, always open.
+You can choose the token or let the server make one:
 
-Start the server with a token:
+- **You choose it.** Set `TACK_API_TOKEN` (or `api_token` in `tack.toml`) and restart the server.
+- **The server makes it.** On a loopback bind with no `TACK_API_TOKEN`, the server reads `api-token` from the directory of its database file, or creates it there on the first start (mode `0600`, one line). A server that cannot read or create the file does not start, and says which path failed. An in-memory database has no directory, so its token lives only in the process.
 
 ```sh
 TACK_API_TOKEN='a-long-random-secret' tack serve
@@ -32,7 +35,12 @@ curl -s http://127.0.0.1:3210/api/projects \
   -H 'Authorization: Bearer a-long-random-secret'
 ```
 
-The token value is never written to logs. Use a long, random string and rotate it by restarting with a new value.
+The other end of the connection finds the token like this:
+
+- **The browser.** The page the server answers at `/` sets the token as a `tack_session` cookie (`HttpOnly`, `SameSite=Strict`, sent only to `/api`). You never type it.
+- **The `tack` command.** It looks, in order, at `--token`, `TACK_API_TOKEN`, `~/.tackrc`, and then the `api-token` file of a local server (`tack/api-token` in this system's per-user data folder). A server whose database is elsewhere needs `TACK_API_TOKEN` set on both ends.
+
+The token value is never written to logs. Use a long, random string and rotate it by restarting with a new value. For what else stands between a web page and your board (the `Host` rule and the cross-site rule), see [What the Agent Can Reach](what-the-agent-can-reach.md#who-can-talk-to-the-board).
 
 ---
 
@@ -56,7 +64,7 @@ List every origin you serve the UI from; entries are matched exactly, with no wi
 
 ## Network exposure and TLS
 
-Tack binds to `TACK_HOST` (default `127.0.0.1`) on `TACK_PORT` (default `3210`), so out of the box it is reachable only from the local machine. Because Tack has no per-user accounts (see above), a bind reachable from beyond the local machine with no `TACK_API_TOKEN` configured hands full read/write access — the board, and the runner-scheduling surface — to anyone who can reach the port. Tack refuses to start in that configuration:
+Tack binds to `TACK_HOST` (default `127.0.0.1`) on `TACK_PORT` (default `3210`), so out of the box it is reachable only from the local machine. Because Tack has no per-user accounts (see above), a bind reachable from beyond the local machine with no `TACK_API_TOKEN` configured would hand full read/write access, to the board and to the runner-scheduling surface, to anyone who can reach the port. The server makes no token of its own on such a bind, and refuses to start in that configuration:
 
 ```sh
 TACK_HOST=0.0.0.0 TACK_PORT=3210 tack serve
@@ -76,7 +84,7 @@ network you already trust — set `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`
 start anyway. This is an explicit acceptance of the risk above, not a default; leave it
 unset unless you have a specific reason to widen the bind without a credential.
 
-Tack does not terminate TLS itself. For any non-localhost deployment, place it behind a reverse proxy (Caddy, nginx, Traefik) that handles HTTPS and forwards to the local port. Keep `TACK_HOST=127.0.0.1` and let only the proxy reach it. See [Deployment](../developer/deployment.md) for full proxy and TLS setup.
+Tack does not terminate TLS itself. For any non-localhost deployment, place it behind a reverse proxy (Caddy, nginx, Traefik) that handles HTTPS and forwards to the local port. Keep `TACK_HOST=127.0.0.1` and let only the proxy reach it. See [Deployment](deployment.md) for full proxy and TLS setup.
 
 ---
 
@@ -101,7 +109,7 @@ Tack can push database snapshots to any S3-compatible object store — AWS S3, C
 Two layers feed the effective config:
 
 1. **Environment defaults** (`TACK_BACKUP_*`), applied at startup.
-2. **UI overrides** (Settings → Cloud Backup), persisted in the `app_meta` table.
+2. **UI overrides** (Settings → Cloud Backup), stored in the board's database.
 
 The UI values override the environment for these fields: endpoint, bucket, region, access key, secret key, prefix, retention. A blank UI field clears the override and falls back to the environment default. The one exception is the auto-backup **interval**, which is environment-only (`TACK_BACKUP_INTERVAL_SECS`) and applied at startup — it is not editable from the UI.
 
@@ -259,7 +267,7 @@ Logging is controlled by three variables. Secrets — the API token, the webhook
 |----------|---------|---------|
 | `TACK_LOG_LEVEL` | `info` | Verbosity: `trace`, `debug`, `info`, `warn`, `error` |
 | `TACK_LOG_JSON` | `false` | Emit structured JSON lines (for log aggregators) when `true`/`1` |
-| `TACK_LOG_FILE` | _(none)_ | Write logs to this file path instead of (or in addition to) stderr |
+| `TACK_LOG_FILE` | _(none)_ | Also write logs to this file path (standard output still gets them) |
 
 ```sh
 TACK_LOG_LEVEL=debug TACK_LOG_JSON=true TACK_LOG_FILE=/var/log/tack.log tack serve
@@ -276,8 +284,8 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to expose on a LAN (front with a TLS proxy). Requires `TACK_API_TOKEN` (or the opt-out below) once set to anything non-loopback — see [Network exposure and TLS](#network-exposure-and-tls) |
 | `TACK_PORT` | `3210` | Listen port |
 | `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database location |
-| `TACK_API_TOKEN` | _(none)_ | When set, requires `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health`. Never logged |
-| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal (see [ADR 0059](https://github.com/yielab/tack/blob/develop/docs/adr/0059-single-operator-identity-posture.md)). Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
+| `TACK_API_TOKEN` | _(generated on loopback)_ | The token required as `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health` and `/api/openapi.json`. Left unset on a loopback bind, the server uses the `api-token` file beside its database. Never logged |
+| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal. Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
 | `TACK_ALLOWED_ORIGINS` | see [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md) | Comma-separated CORS allow-list of exact origins |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Max body size in bytes for non-attachment requests (2 MB). Uploads are always capped at 50 MB |
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
@@ -285,7 +293,8 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>`. Never logged |
 | `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope); status and comments sync out to linked issues, and the poll below may start. Never logged |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root (override for GitHub Enterprise) |
-| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval for linked issues; `0` is off |
+| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval for linked issues; `0` is off. A project's automatic merge runs on the same tick, so it needs this and `TACK_GITHUB_TOKEN` |
+| `TACK_AUTO_START_SECONDS` | `30` | How often the board starts tasks that projects start by themselves; `0` is off. See [Starting tasks by itself](runners.md#starting-tasks-by-itself) |
 | `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL; omit for AWS S3 |
 | `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — required to enable remote backup |
 | `TACK_BACKUP_REGION` | `auto` | S3 region (`auto` for Cloudflare R2) |
@@ -298,4 +307,4 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_LOG_JSON` | `false` | Structured JSON logging |
 | `TACK_LOG_FILE` | _(none)_ | Optional log file path |
 
-For the workflow-facing side of these features, see [Backup and Restore](backup-restore.md); for proxy and TLS setup, see [Deployment](../developer/deployment.md).
+For the workflow-facing side of these features, see [Backup and Restore](backup-restore.md); for proxy and TLS setup, see [Deployment](deployment.md).

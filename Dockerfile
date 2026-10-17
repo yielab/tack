@@ -60,8 +60,8 @@ COPY --from=backend /tack /usr/local/bin/tack
 COPY --from=backend --chown=65532:65532 /data-empty /data
 
 # Bind on all interfaces inside the container; the database and attachments
-# live under /data so a single volume persists everything. If you expose the
-# container beyond localhost, you MUST also set TACK_API_TOKEN.
+# live under /data so a single volume persists everything. Binding all
+# interfaces means the server refuses to start without TACK_API_TOKEN.
 ENV TACK_HOST=0.0.0.0 \
     TACK_PORT=3210 \
     TACK_DATABASE_URL="sqlite:/data/tack.db?mode=rwc" \

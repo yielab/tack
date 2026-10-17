@@ -2,12 +2,12 @@
 export const BOOK_BASE = 'https://yielab.github.io/tack/';
 
 export const BOOK = {
-  agents: `${BOOK_BASE}user-guide/agent-runners.html#agents-on-this-computer`,
-  automation: `${BOOK_BASE}user-guide/agent-runners.html#automation`,
-  runDialog: `${BOOK_BASE}user-guide/agent-runners.html#the-run-with-agent-dialog`,
-  workspace: `${BOOK_BASE}user-guide/agent-runners.html#where-the-agent-works`,
+  agents: `${BOOK_BASE}user-guide/running-agents.html#agents-on-this-computer`,
+  automation: `${BOOK_BASE}user-guide/automation.html#automation`,
+  runDialog: `${BOOK_BASE}user-guide/running-agents.html#the-run-with-agent-dialog`,
+  workspace: `${BOOK_BASE}user-guide/automation.html#where-the-agent-works`,
   items: `${BOOK_BASE}user-guide/items.html`,
-  importFiles: `${BOOK_BASE}user-guide/import-export.html#how-do-i-create-a-project-and-its-items-from-a-file`,
+  importFiles: `${BOOK_BASE}user-guide/import-export.html#the-project-file`,
 };
 
 /** The book page for where the user is. `dialogOpen` (the Run dialog) wins over the route. */

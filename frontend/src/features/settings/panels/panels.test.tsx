@@ -409,7 +409,8 @@ describe('Settings panels', () => {
       expect(sw.disabled).toBe(false);
       sw.click();
       await flush();
-      expect(lastModelPatch()).toEqual({ auto_start_enabled: true });
+      // The status the dropdown shows is saved with the switch, or the tick would skip the project.
+      expect(lastModelPatch()).toEqual({ auto_start_enabled: true, auto_start_status: 'To Do' });
     });
 
     it('choosing_a_profile_for_a_role_patches_the_role', async () => {

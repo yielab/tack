@@ -33,7 +33,13 @@ const Start: Component<Props> = (props) => {
           aria-label="Start tasks by themselves"
           checked={!!props.project()?.auto_start_enabled}
           disabled={!hasProfile()}
-          onChange={(e) => void props.save({ auto_start_enabled: e.currentTarget.checked })}
+          onChange={(e) => {
+            // The status shown is only a fallback until it is saved; turning the switch on saves it,
+            // or nothing would start.
+            const on = e.currentTarget.checked;
+            const unsaved = on && !props.project()?.auto_start_status;
+            void props.save({ auto_start_enabled: on, ...(unsaved ? { auto_start_status: status() } : {}) });
+          }}
         />
         Start a task by itself
       </label>

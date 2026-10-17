@@ -16,7 +16,7 @@ export const HELP = {
   profile: { text: 'What the agent is allowed to do and how it is told to work. Implementer changes code; Reviewer and Researcher only read; Planner proposes subtasks.', href: BOOK.automation },
   askBeforeEachAction: { text: 'The agent pauses before every action and waits for your answer under Questions from the agent.', href: BOOK.runDialog },
   webTools: { text: "Lets the agent fetch pages and search the web. Off turns those tools off; the agent's shell can still reach the network.", href: BOOK.runDialog },
-  sandbox: { text: "Where this computer can sandbox an agent, it only reaches its workspace. Without a sandbox an agent has your user's access, so it must be able to ask before it acts; one that can't ask doesn't run.", href: `${BOOK_BASE}user-guide/what-the-agent-can-reach.html` },
+  sandbox: { text: "Where this computer can sandbox an agent, it only reaches its workspace. Without a sandbox an agent has your user's access, so it must be able to ask before it acts; one that can't ask doesn't run.", href: `${BOOK_BASE}admin-guide/what-the-agent-can-reach.html` },
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   ladderTeams: { text: 'Each role works with an agent profile, and the profile names the team that runs it. A task takes the profile of its role; one with no role takes the project default.', href: BOOK.automation },
   ladderStart: { text: 'When a task reaches the status you choose, Tack starts a run by itself, up to the number you set. It needs a profile to run with.', href: BOOK.automation },
@@ -32,11 +32,12 @@ export const HELP = {
 export const SANDBOX_TEXT = {
   bwrap: 'Sandboxed with bwrap',
   none: "Not sandboxed: the agent has your user's access to this machine",
+  harness: 'Sandboxed by docket in its own jail',
 } as const;
 
 /** The part of a runner's harness report that says whether the agent may run here. */
 export interface AgentSafetyReport {
-  sandbox?: 'bwrap' | 'none';
+  sandbox?: 'bwrap' | 'none' | 'harness';
   decisions?: { support: string };
 }
 
@@ -44,7 +45,7 @@ export interface AgentSafetyReport {
  *  the runner refuses an agent with no sandbox that cannot ask (ADR 0077). Across several
  *  runners the least safe report decides; `null` when no runner says. */
 export function agentSafety(reports: readonly AgentSafetyReport[]): { text: string; tone: 'ok' | 'asks' | 'blocked' } | null {
-  const known = reports.filter((r) => r.sandbox === 'bwrap' || r.sandbox === 'none');
+  const known = reports.filter((r) => r.sandbox === 'bwrap' || r.sandbox === 'none' || r.sandbox === 'harness');
   if (known.length === 0) return null;
   const unconfined = known.filter((r) => r.sandbox === 'none');
   if (unconfined.some((r) => r.decisions?.support !== 'supported')) return { text: SAFETY_TEXT.blocked, tone: 'blocked' };

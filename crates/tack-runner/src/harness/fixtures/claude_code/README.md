@@ -8,7 +8,7 @@ here instead of as inline string literals so a vendor-shape change is a diff to 
 not a hunt through test bodies.
 
 What a user reads about this harness — install, capabilities, caveats — is
-[Choosing a harness](../../../../../../docs/book/src/user-guide/agent-runners.md#choosing-a-harness)
+[Choosing a harness](../../../../../../docs/book/src/user-guide/running-agents.md#choosing-a-harness)
 in the user guide.
 
 ## Fixture provenance

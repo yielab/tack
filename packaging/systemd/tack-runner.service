@@ -15,11 +15,9 @@
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now tack-runner
 #
-# The enrollment token is a one-time credential: the runner exchanges it for a
-# durable credential on first successful enroll and never needs the original
-# again (crates/tack-runner/src/config.rs, docs/CONFIG.md). Rotate/remove it
-# from the env file after the first successful start if your secrets policy
-# requires that.
+# The enrollment token is read at every start, not only the first: the runner
+# refuses to start without it (docs/CONFIG.md). Keep it in the env file, which
+# should be readable only by the runner's user.
 
 [Unit]
 Description=Tack pull-based execution runner (tack-runner)
