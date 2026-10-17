@@ -275,10 +275,11 @@ through a pull request.
 ## Phase 73 — every run goes to a team, and automation is one ladder
 
 **Status:** opened 2026-10-14; the owner approved the index and the screen the same day, and
-every wave landed in `develop` the same day. What waits: docket 0.2.0-beta.6 for the live proof
-(`scripts/docket-prill-e2e.sh` says so until then), and a seventh wave, a project bundle that
-goes in and out through one file (ADR 0081), whose format waits for the owner's approval.
-**ADR:** 0080 (amends 0078 decision 7 and 0074 decision 1). **Plan:** [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
+the six waves landed in `develop` the same day. The seventh wave, a whole project in and out
+through one file (ADR 0081), was approved on 2026-10-17 and is in progress. What waits: docket
+0.2.0-beta.6 for the live proof (`scripts/docket-prill-e2e.sh` says so until then).
+**ADRs:** 0080 (amends 0078 decision 7 and 0074 decision 1), 0081 (extends 0076). **Plan:**
+[`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
 
 Every run of the docket agent goes to a team that already exists and keeps existing, over
 docket's HTTP API, instead of a throwaway agent per run. A project role says which profile, and
@@ -300,6 +301,7 @@ twice.
 | 2 | The team's ceiling on the automatic merge; usage per model priced through one SQL. | Sonnet |
 | 3 | A task starts by itself; a task can repeat. | Sonnet |
 | 4–5 | The docket harness over HTTP against a fake docket, then the daemon, the doctor and the deletions; the ladder screen beside. | Sonnet |
+| 7–9 | A whole project in and out through one file: the outline carries fields, profiles, roles, sprints and automation; the export writes the same file back; a template is that file without items. | Sonnet |
 
 Waits on: docket 0.2.0-beta.6 (API version 5) for the live proof. Until it ships, every docket
 test runs against a fake that implements the published contract key by key, and the live

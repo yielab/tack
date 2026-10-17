@@ -50,6 +50,17 @@ existing, and a project's automation is set on one screen.
   be used is shown disabled with its reason. The board, the list and the table carry
   "Started by itself", "Team: …" and "Merged by itself"; the task drawer has an Automation
   row; the run dialog says "Chosen by the role …".
+- **A whole project goes in and out through one file** (ADR 0081). The outline of ADR 0076
+  may carry `fields`, `profiles`, `roles`, `sprints` and `automation` beside its items, and
+  the project's vocabulary and workflow; items may name their roles, sprint, fields,
+  recurrence and estimate unit. The file is checked whole, every problem reported at once,
+  nothing written unless all of it can be; on an existing project it adds and updates by
+  name and never deletes, and the preview counts each section ("Roles: 2 new, 5 updated, 3 not
+  mentioned"). A file never raises the autonomy level or switches auto-start on: both are
+  applied as L3 and off with a warning. `GET /api/projects/{id}/export?scope=bundle` and
+  `tack export --bundle` write the same file back, and a template is now that file without
+  items: `tack init --template`, `tack template save`, and three built-ins that come with
+  roles and profiles ("Web product with content", "Library or CLI", "Static content site").
 
 ### Changed
 

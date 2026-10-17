@@ -1045,4 +1045,45 @@ still a control shown with its reason.
     the item's type or priority changed answers 409.
 - **Round 7** opened 2026-10-17: the owner answered "continua" to the file schema shown
   2026-10-14; ADR 0081 written, the fixture `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`
-  is the specification, B1 cut from develop at `b07b75a2`.
+  is the specification, B1 cut from develop at `cff502aa`.
+  - **B1 closed** 2026-10-17 in `f5999a88`: gate green in the worktree; core and db 283 passed,
+    1 skipped; handlers 232 passed. B1's calls, kept: `serde-saphyr` as a dev-dependency of
+    `tack-core` (the fixture and the YAML export tests need it); `OutlineProject.project_type`
+    serializes as `type` with `project_type` still read; `skip_serializing_if` on every optional
+    outline key and sorted vocabulary keys, so an export has no `null` and is deterministic;
+    `sections` lists only the sections the file carries, automation reports `updated: 1`; a
+    file profile named like a built-in is dropped with a warning and `not_mentioned` counts
+    only custom profiles; status names in `automation` match case-insensitively; a `transitions`
+    list beside a `preset` overrides the preset's; the export omits a medium priority, a
+    story-points unit and a built-in profile, writes `closed` only for a closed sprint, and a
+    midnight due date as a date; "Library implementer" and "Docs writer" carry an empty
+    `tool_policy` (the task named no agent for them). B2 cut from `f5999a88`.
+  - **B2 closed** 2026-10-17 in `04f1142e`: gate green in the worktree; handlers, the
+    OpenAPI contract and security 271 passed. B2's calls, kept: the `Settings` ↔ `BundleAutonomy`
+    mapping is inline in the three handlers (the task named no helper); a CSV answers
+    `sections: []`; on an existing project the `project` block is removed before the check, so
+    a bad workflow in an ignored block cannot refuse the file; the export sorts sprints by
+    start date then name (the list route answers newest first, which reversed the round trip);
+    an update keeps the board's value for every key the file leaves empty; the template path
+    re-applies the template's own workflow after the bundle so `workflow_type` survives (a
+    file's statuses can only say `custom`); the response's project is re-read after the
+    writes. Findings: the fixture has 6 dependencies, not the 5 the task said; "the error
+    names the section" holds in the server log only, the client sees a generic 500
+    (`ApiError::Internal` hides its text; no new variant); `test_app()` seeds neither
+    built-in profiles nor templates, so the bundle tests build their own app. B3 cut from
+    `04f1142e`.
+  - **B3 closed** 2026-10-17 in `98d413d5`: gate green in the worktree; tack-cli 122 passed;
+    type-check, Vitest 644, token lint and the build green. B3's calls, kept: the `Template`
+    dispatch moved into `cmd_template` (clippy's line limit on `main`); a UUID is recognised
+    by hand (tack-cli has no `uuid` dependency); the CLI and the panel print the "items"
+    section too and capitalise the section names themselves; the panel's new-project line
+    reads "A new project. N items will be added with M dependencies."; the CLI tests drive
+    the real binary against wiremock with an empty `HOME`, since the `cmd_*` functions are
+    private; the book's section is an H3 under the import H2, beside "The CSV".
+  - **Z2 closed** 2026-10-17 on the merged `develop`: generated files current; the gate green;
+    `cargo nextest run --workspace` 1310 passed, 3 skipped; type-check, Vitest 644 in 68 files,
+    token lint and the build green; `scripts/check-comments.sh` green. Wave 7 is in `develop`,
+    unpushed, as B1 `f5999a88`, B2 `04f1142e`, B3 `98d413d5` and this docs commit. Open, not
+    blocking: the client sees a generic 500 when a configuration section fails to write on an
+    existing project (the section is named in the server log only); the Factory and the
+    templates pages do not yet show a template's roles and profiles (the API does).
