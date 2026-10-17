@@ -1,6 +1,6 @@
 # ADR 0073: installation guidance — desktop-first onboarding, server-optional path
 
-**Status: WITHDRAWN as an ADR 2026-10-03 — the work stays, as tasks R1 and R2 of `docs/plans/phase-66.md`.** Complements ADR 0072 (onboarding clarity). Not yet linked to the plan; waiting on the user's review.
+**Status: WITHDRAWN as an ADR 2026-10-03 — the work stays, as tasks R1 and R2 of `docs/closed-cycles/plans/phase-66.md`.** Complements ADR 0072 (onboarding clarity). Not yet linked to the plan; waiting on the user's review.
 
 **Decide:** approve that the **README, installation docs, and quickstart guides make it clear that Tack has two entry points with different use cases**, and direct most users to the **desktop app first**:
 
@@ -82,7 +82,7 @@ of the same date). Decision 7's "point the app at a remote server" names a setti
 desktop crate does not have (`rg -i "remote|server_url" crates/tack-desktop/src` finds only
 the database path). Decisions 1–4 are the current state; decision 6 is one line in
 `docs/LAUNCH-CHECKLIST.md`; of decision 7 the true answers remain. What survives is R1 in
-`docs/plans/phase-66.md`: a Haiku doc task, two files. Recommendation: reject as an ADR —
+`docs/closed-cycles/plans/phase-66.md`: a Haiku doc task, two files. Recommendation: reject as an ADR —
 there is no decision left to take — and keep R1 (plan question 6). The three questions fall
 away; question 3, a remote-server option in the app, would be a product ADR of its own with
 its trigger.

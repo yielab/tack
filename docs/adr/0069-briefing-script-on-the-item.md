@@ -1,6 +1,6 @@
 # ADR 0069: the brief is a first-class entity on the item, typed, and it travels
 
-**Status: ACCEPTED 2026-10-03.** Written for `docs/plans/phase-66.md` (C1–C3).
+**Status: ACCEPTED 2026-10-03.** Written for `docs/closed-cycles/plans/phase-66.md` (C1–C3).
 The user accepts, amends or rejects it in that plan's Wave 0.
 
 **Decide:** approve that an item may carry a **brief** — typed acceptance criteria,
@@ -64,4 +64,4 @@ test name in C3 so nobody mistakes it for an accident.
 
 *(Appended by later readers, dated. The text above is never rewritten.)*
 
-**2026-10-03 — accepted by the maintainer as written.** Tasks C1a, C1b, C2 and C3 of `docs/plans/phase-66.md`.
+**2026-10-03 — accepted by the maintainer as written.** Tasks C1a, C1b, C2 and C3 of `docs/closed-cycles/plans/phase-66.md`.

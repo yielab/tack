@@ -46,9 +46,9 @@ Decisions are weighed against the project's core philosophy:
 ## Releases
 
 The maintainer cuts releases by tagging `vX.Y.Z` (see `.github/workflows/release.yml`).
-Release notes are drawn from `CHANGELOG.md`, generated from conventional commit
-messages by git-cliff (`cliff.toml`, `make changelog-release`), and which follows
-[Keep a Changelog](https://keepachangelog.com/) and Semantic Versioning.
+Release notes are the version's section of `CHANGELOG.md`, which is written by hand
+in each change and follows [Keep a Changelog](https://keepachangelog.com/) and
+Semantic Versioning.
 
 ## Becoming a Maintainer
 

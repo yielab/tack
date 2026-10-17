@@ -256,7 +256,7 @@ phase adds, each line against a measured cause of Part IX's burn (5.9 B cache-re
 mechanical work, 13 agents over 500 calls, one card resumed three times):
 
 - **The brief is the task's section, extracted — never this file.** The launcher cuts it with
-  `awk '/^### <id> /{p=1;next} /^### |^## /{p=0} p' docs/plans/phase-66.md` and pastes it into
+  `awk '/^### <id> /{p=1;next} /^### |^## /{p=0} p' docs/closed-cycles/plans/phase-66.md` and pastes it into
   the brief after the eight lines. An agent that opens this file reads 800 lines it does not
   need, once per resume. The brief names the ADR the task serves and says "do not open it":
   the section already carries the decision.

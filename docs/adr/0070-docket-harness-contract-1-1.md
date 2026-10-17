@@ -1,6 +1,6 @@
 # ADR 0070: docket contract 1.1 is adopted — cancel becomes per-harness evidence, a recipe is one flag, the task goes by file
 
-**Status: ACCEPTED 2026-10-03, with the two amendments at the end.** Written for `docs/plans/phase-66.md` (A1–A3). It
+**Status: ACCEPTED 2026-10-03, with the two amendments at the end.** Written for `docs/closed-cycles/plans/phase-66.md` (A1–A3). It
 waits on docket Phase 35 (`../rack-cli/docs/adr/0017-docket-in-a-harness-agnostic-factory.md`,
 cards P35-2, P35-3, P35-5, P35-6, P35-9), which on 2026-09-29 is opened and unbuilt
 (docket `b17f73d`; `ls ../rack-cli/docs/contracts/` → `config-v1 harness-v1 operator-v1`).

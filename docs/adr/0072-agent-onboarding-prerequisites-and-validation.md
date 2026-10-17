@@ -74,7 +74,7 @@ heading "blocking Wave 0.1.1" refers to no row of the plan; the row is 0.3b.)
 |---|---|---|
 | 1, 3 — a Setup/Configuration tab as the one place for harness, model, repository, profiles and tools | `/projects/:id/settings` exists with General, Agents, Workflow, Vocabulary, Fields, Roles and Data panels (`frontend/src/features/settings/ProjectSettings.tsx:8-14`); `/settings` is the global page; `/agents` walks harness → provider → default model → test run (`frontend/src/features/agents/steps/`); the project carries `default_model` (`crates/tack-core/src/models.rs:35`) and the book has "The four-tier precedence" for the model (`agent-runners.md:375`). | Not built: it exists. What is missing is the link from the dialog's error to that page (decision 4). |
 | 2 — `HarnessDescriptor.tools: Vec<…>`, "attested in the claim response (already extended by C3)" | The descriptor is a `&'static` table of facts about a CLI (`crates/tack-runner/src/harness/local_process.rs:69-91`). Capabilities travel runner → board through `docs/contracts/runner-v1/capabilities.json` and `GET /runners`' `capability_snapshot` (`RunWithAgentModal.tsx:72-90`), not through the claim, which runs board → runner and is what C3 extends. No harness CLI has been measured to list its tools. | Not built as written. Replaced by P0 (measure first) and, where a list exists, the checklist half of P1. |
-| 4 — the dialog is a pre-flight gate | The dialog already computes the gate and already disables "Ask me" when the harness does not attest `decisions` (`RunWithAgentModal.tsx:314,321,659`). What it does not do: say where each blocking state is fixed; and the repository and the tools (`:172-179`) are collected as free text at run time. | **Stands, reduced**: P1 in `docs/plans/phase-66.md`. No new tab, route or column. |
+| 4 — the dialog is a pre-flight gate | The dialog already computes the gate and already disables "Ask me" when the harness does not attest `decisions` (`RunWithAgentModal.tsx:314,321,659`). What it does not do: say where each blocking state is fixed; and the repository and the tools (`:172-179`) are collected as free text at run time. | **Stands, reduced**: P1 in `docs/closed-cycles/plans/phase-66.md`. No new tab, route or column. |
 | "Related tasks", E2/E3 — "the verification checkbox lives in the configuration" | ADR 0071 decision 4: `[verify]` is a table in the runner's TOML; the board never runs or configures the verifier. | Contradicts the ADR this one says it complements. Dropped. |
 | "Related tasks", D1/D2 — "pre-flight prevents asking on a harness that does not support it" | Already true (`:321`). | Dropped. |
 
@@ -94,7 +94,7 @@ runner's TOML fit together); its scheduling "after C3" is reversed — the dialo
 first (P1, Wave 2) and C3 fills the brief's slot. What stands from that review: no second
 Setup tab is built, because `/projects/:id/settings`, `/settings` and `/agents` already hold
 the configuration, and the dialog links to them; the tool list is measured per harness (P0)
-before it becomes a checklist. Tasks P0, P1 and P2 of `docs/plans/phase-66.md`. The four
+before it becomes a checklist. Tasks P0, P1 and P2 of `docs/closed-cycles/plans/phase-66.md`. The four
 questions are answered by this direction: configuration stays where it is; the model keeps
 the four-tier precedence; allowed tools stay a per-run choice with the harness's list as the
 source; a brief is optional, and its row in the flow says whether the item has one.

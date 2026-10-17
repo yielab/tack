@@ -1,6 +1,6 @@
 # ADR 0071: every attempt leaves evidence; an independent verifier certifies it; the runner pushes, the board opens the pull request
 
-**Status: ACCEPTED 2026-10-03, with the amendment at the end.** Written for `docs/plans/phase-66.md` (B1, E1–E3,
+**Status: ACCEPTED 2026-10-03, with the amendment at the end.** Written for `docs/closed-cycles/plans/phase-66.md` (B1, E1–E3,
 F1, H1–H2, G1). B1 and E1 do not wait on it; F1, H1 and H2 do.
 
 **Decide:** approve four things. **(1)** The runner captures, before it deletes a workspace,

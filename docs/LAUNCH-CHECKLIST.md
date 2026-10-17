@@ -31,6 +31,14 @@ automatically — every step under "Publish list" is a human action.
    ```bash
    git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
+   **`v0.1.0-beta.10` is tagged but not released.** The tag (2026-10-14) points at
+   `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the
+   repository does not allow, so the run failed before it started and no release exists.
+   `b8821c37` fixed the workflow on `develop` the same day and a dry run passed. Running the
+   workflow again on the tag cannot work, since it uses the tag's own copy of the file: either
+   move the tag to a commit after `b8821c37` (delete it on GitHub and push it again, after
+   `main` is fast-forwarded), or tag the next version. Until then the install commands in
+   `README.md`, which name `v0.1.0-beta.10`, answer 404.
    `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
    and refuses the tag outright if it doesn't match `Cargo.toml`.
 

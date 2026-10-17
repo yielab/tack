@@ -513,9 +513,7 @@ jobs:
             **More info** → **Run anyway**. Only needed once.
 
           EOF
-          # The tag's section of CHANGELOG.md, which is written by hand: the
-          # `Add:`/`Fix:` commits since beta.9 are not conventional, so
-          # git-cliff would render an almost empty section.
+          # The tag's section of CHANGELOG.md, which is written by hand.
           version="${GITHUB_REF_NAME#v}"
           awk -v head="## [$version]" '
             index($0, head) == 1 { on = 1; next }

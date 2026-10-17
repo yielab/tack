@@ -136,7 +136,7 @@ layer 100, two layers 150 — thirteen agents, ≈ 1 300 calls at the ceiling.
 
 ## How a task is handed to an agent
 
-As `docs/plans/phase-67.md` § "How a task is handed to an agent", with `phase-72.md` in the
+As `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent", with `phase-72.md` in the
 first line of the brief, the three lines Phase 69 added, and these:
 
 ```

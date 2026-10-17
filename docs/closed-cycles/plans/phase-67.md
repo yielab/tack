@@ -104,7 +104,7 @@ The brief is the task's section of this file plus these lines, and nothing else 
 reads `CLAUDE.md` on its own:
 
 ```
-Task <id> from docs/plans/phase-67.md. Read that section and the files it lists, nothing wider.
+Task <id> from docs/closed-cycles/plans/phase-67.md. Read that section and the files it lists, nothing wider.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Add only the tests the task names. Prefer a row in an existing table test over a new function.
 Do not add a type, trait, option, flag or helper the task does not name.
@@ -116,7 +116,7 @@ Report: what changed, per file, in one line each; what you measured; what you co
 ```
 
 The launcher cuts the section with
-`awk '/^### <id> /{p=1;next} /^### |^## /{p=0} p' docs/plans/phase-67.md` and pastes it after
+`awk '/^### <id> /{p=1;next} /^### |^## /{p=0} p' docs/closed-cycles/plans/phase-67.md` and pastes it after
 the lines. The brief names the ADR and says "do not open it": the section carries the decision.
 Base: `git rev-parse --short develop` at dispatch, and the agent runs
 `git merge-base --is-ancestor <sha> HEAD` first.

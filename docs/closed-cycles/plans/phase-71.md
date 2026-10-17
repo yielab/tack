@@ -43,7 +43,7 @@ At most two agents building cargo at once; a frontend-only task runs beside them
 
 ## How a task is handed to an agent
 
-As `docs/plans/phase-67.md` § "How a task is handed to an agent", with `phase-71.md` in the first
+As `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent", with `phase-71.md` in the first
 line of the brief, the three lines Phase 69 added, and these:
 
 ```
