@@ -40,7 +40,21 @@ function templateSummaryChips(t: ProjectTemplate) {
   const boardCount = t.default_boards?.length ?? 0;
   if (boardCount > 0) chips.push({ label: `${boardCount} board${boardCount > 1 ? 's' : ''}` });
 
+  const roleCount = t.roles?.length ?? 0;
+  if (roleCount > 0) chips.push({ label: `${roleCount} role${roleCount > 1 ? 's' : ''}`, tone: 'success' });
+
+  const profileCount = t.profiles?.length ?? 0;
+  if (profileCount > 0) chips.push({ label: `${profileCount} profile${profileCount > 1 ? 's' : ''}`, tone: 'success' });
+
+  const level = t.automation?.autonomy?.level;
+  if (level) chips.push({ label: `Merges at ${level}` });
+
   return chips;
+}
+
+/** "Content → Content writer" per role; a role without a profile stands alone. */
+function roleLines(t: ProjectTemplate): string[] {
+  return (t.roles ?? []).map((r) => (r.profile ? `${r.name} → ${r.profile}` : r.name));
 }
 
 export default function Templates() {
@@ -218,6 +232,7 @@ export default function Templates() {
               const showPreview = () => previewId() === template.id;
               const columns = () => workflowColumns(template);
               const samples = () => vocabSamples(template);
+              const roles = () => roleLines(template);
               return (
                 <div
                   class="flex flex-col gap-[9px] rounded-[28px] border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
@@ -274,8 +289,8 @@ export default function Templates() {
                   })()}
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
-                  <Show when={showPreview() && (columns().length > 0 || samples().length > 0)}>
-                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[11px] text-content-muted">
+                  <Show when={showPreview() && (columns().length > 0 || samples().length > 0 || roles().length > 0)}>
+                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[11px] text-content-muted" data-testid="template-preview">
                       <Show when={columns().length > 0}>
                         <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>
@@ -294,6 +309,11 @@ export default function Templates() {
                         <div class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono">
                           <For each={samples()}>{(s) => <span>{s}</span>}</For>
                         </div>
+                      </Show>
+                      <Show when={roles().length > 0}>
+                        <ul class="flex flex-col gap-0.5" aria-label="Roles and their profiles">
+                          <For each={roles()}>{(line) => <li>{line}</li>}</For>
+                        </ul>
                       </Show>
                     </div>
                   </Show>
@@ -386,7 +406,15 @@ export default function Templates() {
                 color: 'var(--color-info-700)',
               }}
             >
-              This will create a new project with the template's workflow, vocabulary, custom fields, and boards.
+              This will create a new project with the template's workflow, vocabulary, custom fields and boards
+              <Show when={(selectedTemplate()?.roles?.length ?? 0) > 0}>
+                , its {selectedTemplate()!.roles.length} roles and the agent profiles they use
+              </Show>
+              <Show when={selectedTemplate()?.automation}>
+                , and its automation settings
+              </Show>
+              .
+
             </div>
 
             <div class="flex justify-end gap-2.5 pt-2">

@@ -38,6 +38,17 @@ pub enum ApiError {
     #[error("{0}")]
     UnsupportedMediaType(String),
 
+    /// One section of a project file could not be written. `kept` says
+    /// whether what the file wrote before it stays (an existing project) or
+    /// went with the project (a new one).
+    #[error("the {section} section could not be written")]
+    SectionFailed {
+        section: &'static str,
+        kept: bool,
+        #[source]
+        source: sqlx::Error,
+    },
+
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 
@@ -89,6 +100,22 @@ impl IntoResponse for ApiError {
                     )
                 }
             },
+            ApiError::SectionFailed {
+                section,
+                kept,
+                source,
+            } => {
+                error!(error = %source, section, "A project file section could not be written");
+                let message = if *kept {
+                    format!(
+                        "The {section} section could not be written. What the file wrote before \
+                         it stays, so importing it again finishes the job."
+                    )
+                } else {
+                    format!("The {section} section could not be written, so nothing was created.")
+                };
+                (StatusCode::INTERNAL_SERVER_ERROR, message)
+            }
             ApiError::Database(err) => {
                 error!(error = %err, "Database error");
                 (
@@ -126,3 +153,41 @@ impl IntoResponse for ApiError {
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+
+    async fn message_of(error: ApiError) -> (StatusCode, String) {
+        let response = error.into_response();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        (
+            status,
+            body["error"]["message"].as_str().unwrap().to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_failed_section_names_itself_and_says_what_stayed() {
+        let failed = |kept| ApiError::SectionFailed {
+            section: "roles",
+            kept,
+            source: sqlx::Error::RowNotFound,
+        };
+        let (status, kept) = message_of(failed(true)).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            kept,
+            "The roles section could not be written. What the file wrote before it stays, so \
+             importing it again finishes the job."
+        );
+        let (_, gone) = message_of(failed(false)).await;
+        assert_eq!(
+            gone,
+            "The roles section could not be written, so nothing was created."
+        );
+    }
+}
