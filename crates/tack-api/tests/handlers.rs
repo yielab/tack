@@ -21,6 +21,8 @@ mod autonomy;
 mod boards_multi;
 #[path = "handlers/briefs.rs"]
 mod briefs;
+#[path = "handlers/bundle.rs"]
+mod bundle;
 #[path = "handlers/crud.rs"]
 mod crud;
 #[path = "handlers/custom_fields.rs"]

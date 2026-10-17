@@ -3707,6 +3707,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "`snapshot` (the default) is the database dump `POST /api/projects/import`\nreads; `bundle` is the project file of ADR 0081 (JSON or YAML).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -4023,7 +4032,7 @@
           }
         ],
         "requestBody": {
-          "description": "An outline as JSON, or YAML when Content-Type mentions yaml; its project block is ignored",
+          "description": "An outline as JSON, or YAML when Content-Type mentions yaml; its project block is read for nothing but a warning",
           "content": {
             "application/json": {
               "schema": {
@@ -11233,6 +11242,7 @@
           "skipped",
           "dependencies",
           "items",
+          "sections",
           "warnings"
         ],
         "properties": {
@@ -11266,6 +11276,13 @@
                 "description": "The project created; absent when adding to a project and on a dry run."
               }
             ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SectionSummary"
+            },
+            "description": "What each section of a project file does, in the file's order; empty for a CSV."
           },
           "skipped": {
             "type": "integer",
@@ -12245,6 +12262,41 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "SectionSummary": {
+        "type": "object",
+        "description": "What one section of the file will do, for the preview.",
+        "required": [
+          "section",
+          "created",
+          "updated",
+          "not_mentioned",
+          "warnings"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "not_mentioned": {
+            "type": "integer",
+            "description": "Names the project has and the file does not carry; left alone.",
+            "minimum": 0
+          },
+          "section": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

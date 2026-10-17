@@ -662,3 +662,78 @@ async fn builtin_template_id(pool: &sqlx::SqlitePool) -> Uuid {
         .expect("at least one builtin template was seeded")
         .id
 }
+
+// ─── The project file through templates (ADR 0081) ───────────────────────────
+
+/// A built-in template comes with its roles, and the reviewer profiles those
+/// roles name are made by name; a project saved as a template keeps its roles,
+/// profiles and automation.
+#[tokio::test]
+async fn templates_carry_roles_profiles_and_automation() {
+    let app = crate::bundle::app().await;
+    let (_, listed) = common::send(&app, "GET", "/api/templates", Value::Null, &[]).await;
+    let web = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Web product with content")
+        .expect("the built-in template");
+    let (status, project) = common::send(
+        &app,
+        "POST",
+        &format!(
+            "/api/projects/from-template/{}",
+            web["id"].as_str().unwrap()
+        ),
+        json!({"name": "Shop"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{project}");
+    let (_, roles) = common::send(
+        &app,
+        "GET",
+        &format!("/api/projects/{}/roles", project["id"].as_str().unwrap()),
+        Value::Null,
+        &[],
+    )
+    .await;
+    let roles = roles.as_array().unwrap();
+    assert_eq!(roles.len(), 6);
+    assert!(
+        roles.iter().all(|r| r["agent_profile_id"].is_string()),
+        "{roles:?}"
+    );
+    let (_, profiles) = common::send(&app, "GET", "/api/agent-profiles", Value::Null, &[]).await;
+    for name in ["Legal review", "Security review", "Ops review"] {
+        assert!(
+            profiles["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["name"] == name),
+            "no profile {name}: {profiles}"
+        );
+    }
+
+    let (_, made) =
+        crate::bundle::import(&app, "/api/projects/outline", crate::bundle::FABULADA).await;
+    let (status, saved) = common::send(
+        &app,
+        "POST",
+        &format!(
+            "/api/projects/{}/save-as-template",
+            made["project"]["id"].as_str().unwrap()
+        ),
+        json!({"name": "Fabulada shape"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["roles"].as_array().unwrap().len(), 7);
+    assert_eq!(saved["profiles"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        saved["automation"]["repository"],
+        "/home/ox/Sites/localtales"
+    );
+}

@@ -1,3 +1,4 @@
+use axum::response::IntoResponse;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -5,13 +6,21 @@ use axum::{
 };
 use serde::Deserialize;
 use tack_core::models::*;
+use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};
+use tack_core::outline::{
+    BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain, BundleField, BundleStatus,
+    BundleWorkflow, Outline, OutlineProject,
+};
+use tack_core::workflow::{StatusCategory, StatusDef};
 use tack_db::repo;
+use tack_db::repo::autonomy as store;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
+use crate::handlers::outline::create_from_bundle;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -178,79 +187,84 @@ pub(crate) async fn build_project_from_template(
             StatusCode::NOT_FOUND
         })?;
 
-    // Get default workspace (or create one if needed)
-    let workspace_id = get_or_create_default_workspace(state.pool()).await?;
-
-    // Create project with template configuration
-    let project_data = CreateProject {
-        name: data.name,
-        description: data.description,
-        project_type: template.project_type,
-        template: None, // Already applied
-        code_origin: None,
-        repository: None,
-        default_branch: None,
-        workspace_mode: None,
+    // The template is a project file without items: the same code an import
+    // runs makes the project, its fields, profiles, roles and automation.
+    let mut statuses: Vec<&StatusDef> = template.workflow.statuses.iter().collect();
+    statuses.sort_by_key(|s| s.order);
+    let outline = Outline {
+        project: Some(OutlineProject {
+            name: Some(data.name),
+            project_type: Some(template.project_type.to_string()),
+            description: data.description,
+            vocabulary: Some(template.vocabulary.clone()),
+            workflow: Some(BundleWorkflow {
+                preset: None,
+                statuses: statuses
+                    .into_iter()
+                    .map(|s| BundleStatus {
+                        name: s.name.clone(),
+                        category: match s.category {
+                            StatusCategory::Todo => "todo",
+                            StatusCategory::InProgress => "in_progress",
+                            StatusCategory::Done => "done",
+                        }
+                        .to_string(),
+                        wip_limit: s.wip_limit,
+                    })
+                    .collect(),
+                transitions: template.workflow.transitions.clone(),
+            }),
+        }),
+        fields: template
+            .custom_fields
+            .iter()
+            .map(|f| BundleField {
+                name: f.name.clone(),
+                field_type: serde_json::to_value(&f.field_type)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default(),
+                description: f.description.clone(),
+                required: f.required,
+                default: f.default_value.clone(),
+                options: f.options.clone().unwrap_or_default(),
+                validation: f.validation.clone(),
+            })
+            .collect(),
+        profiles: template.profiles.clone(),
+        roles: template.roles.clone(),
+        sprints: Vec::new(),
+        automation: template.automation.clone(),
+        items: Vec::new(),
     };
-
-    let mut project = state
-        .repo
-        .create_project(workspace_id, project_data)
+    // The first workspace of the board (made when there is none) owns it.
+    let workspace_id = get_or_create_default_workspace(state.pool()).await?;
+    let scoped = AppState {
+        workspace_id,
+        ..state.clone()
+    };
+    let (project, _) = create_from_bundle(&scoped, outline, ItemSource::Outline)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create project from template");
-            StatusCode::INTERNAL_SERVER_ERROR
+            tracing::error!(error = %e, template_id = %template_id, "Failed to create project from template");
+            e.into_response().status()
         })?;
 
-    // Apply template vocabulary and workflow
-    project.vocabulary = template.vocabulary.clone();
-    project.workflow = template.workflow.clone();
-
-    // Update project with template config
-    let update_data = UpdateProject {
-        name: None,
-        description: None,
-        vocabulary: Some(template.vocabulary.clone()),
-        workflow: Some(template.workflow.clone()),
-        default_model: None,
-        github_token_ref: None,
-        archived: None,
-        ..Default::default()
-    };
-
+    // A template keeps its workflow's type, which a file's statuses cannot say.
     state
         .repo
-        .update_project(project.id, update_data)
+        .update_project(
+            project.id,
+            UpdateProject {
+                workflow: Some(template.workflow.clone()),
+                ..Default::default()
+            },
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to update project with template config");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or_else(|| {
-            tracing::error!("Failed to find project after update");
+            tracing::error!(error = %e, "Failed to apply template workflow");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
-    // Create custom fields from template
-    for field_def in &template.custom_fields {
-        let field_data = CreateCustomField {
-            name: field_def.name.clone(),
-            field_type: field_def.field_type.clone(),
-            description: field_def.description.clone(),
-            required: Some(field_def.required),
-            default_value: field_def.default_value.clone(),
-            options: field_def.options.clone(),
-            validation: field_def.validation.clone(),
-        };
-
-        repo::custom_fields::create_field(state.pool(), project.id, field_data)
-            .await
-            .map_err(|e| {
-                tracing::warn!(error = %e, field_name = %field_def.name, "Failed to create custom field from template");
-                // Continue even if some fields fail
-            })
-            .ok();
-    }
 
     // Create boards from template
     for (idx, board_template) in template.default_boards.iter().enumerate() {
@@ -406,6 +420,68 @@ pub async fn save_project_as_template(
         })
         .collect();
 
+    // The project's roles, the profiles they use and its automation settings,
+    // written the way an export writes them.
+    let internal = |e: sqlx::Error| {
+        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
+    let profiles: Vec<ProfileRow> = state
+        .repo
+        .list_agent_profile_rows()
+        .await
+        .map_err(internal)?;
+    let roles = state.repo.list_roles(project_id).await.map_err(internal)?;
+    let sprints = state
+        .repo
+        .list_sprints(project_id)
+        .await
+        .map_err(internal)?;
+    let fleets = state.repo.fleet_names().await.map_err(internal)?;
+    let autonomy = store::get_settings(state.pool(), &project_id.to_string())
+        .await
+        .map_err(internal)?
+        .map(|s| BundleAutonomy {
+            level: Some(s.level.to_string()),
+            domains: s
+                .domains
+                .into_iter()
+                .map(|d| BundleDomain {
+                    name: d.name,
+                    paths: d.path_globs,
+                    item_types: d.item_types,
+                    level: d.level.to_string(),
+                })
+                .collect(),
+            verify_require: Some(s.verify_require),
+            verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
+            budgets: Some(BundleBudgets {
+                tokens_per_day: s.budgets.tokens_per_day,
+                usd_per_day: s.budgets.usd_per_day,
+                auto_merges_per_day: s.budgets.auto_merges_per_day,
+                queue_items_max: s.budgets.queue_items_max,
+            }),
+            merge_on_done: Some(s.merge_on_done),
+        });
+    let bundle = to_bundle(&Parts {
+        project: &project,
+        fields: &[],
+        profiles: &profiles,
+        roles: &roles,
+        sprints: &sprints,
+        autonomy,
+        auto_start: BundleAutoStart {
+            enabled: project.auto_start_enabled,
+            status: project.auto_start_status.clone(),
+            max_open: Some(project.auto_start_max_open),
+        },
+        items: &[],
+        item_roles: &[],
+        item_fields: &[],
+        dependencies: &[],
+        fleets: &fleets,
+    });
+
     let template_data = CreateProjectTemplate {
         name: data.name,
         description: data.description,
@@ -422,9 +498,9 @@ pub async fn save_project_as_template(
         } else {
             Some(default_boards)
         },
-        roles: Vec::new(),
-        profiles: Vec::new(),
-        automation: None,
+        roles: bundle.roles,
+        profiles: bundle.profiles,
+        automation: bundle.automation,
     };
 
     repo::templates::create_template(state.pool(), template_data)
