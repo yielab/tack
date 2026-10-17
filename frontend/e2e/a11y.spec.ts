@@ -5,6 +5,7 @@ import {
   getOrCreateItem,
   createRunnableProject,
   createFreshProject,
+  createSprintWithItem,
   createFreshItem,
   createItemWithAssignee,
   createAgentProfile,
@@ -144,6 +145,45 @@ test('board and settings at 200% text with the high-legibility font have no acce
     const violations = await scan(page);
     expect(violations, `${path}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
   }
+});
+
+// Every project view, plus the forms inside them: the List's new-item row,
+// the Table's cell editor, the new-item dialog. Each scan runs in a project
+// of its own, with one item and one sprint, so the views have rows to name.
+test('list, table, calendar, timeline, sprint and templates have no accessibility violations', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `A11y views ${Date.now()}`);
+  const title = `A11y views item ${Date.now()}`;
+  await createFreshItem(request, projectId, title);
+  await createSprintWithItem(request, projectId);
+
+  for (const view of ['list', 'table', 'calendar', 'timeline', 'sprint']) {
+    await page.goto(`/projects/${projectId}/${view}`);
+    await waitForApp(page);
+    const violations = await scan(page);
+    expect(violations, `${view}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  }
+
+  // The Table's inline editor, open on the title cell.
+  await page.goto(`/projects/${projectId}/table`);
+  await waitForApp(page);
+  await page.locator('table').getByRole('button', { name: title }).first().click();
+  await expect(page.locator('table').getByRole('textbox', { name: `Title of ${title}` })).toBeFocused();
+  let violations = await scan(page);
+  expect(violations, `table editor: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+
+  // The new-item dialog, every field in it named.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Description' })).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'Priority' })).toBeVisible();
+  violations = await scan(page);
+  expect(violations, `new item: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  await page.keyboard.press('Escape');
+
+  await page.goto('/templates');
+  await waitForApp(page);
+  violations = await scan(page);
+  expect(violations, `templates: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
 });
 
 // What axe cannot see: the keyboard alone opens an item from the Board, and

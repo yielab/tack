@@ -91,6 +91,7 @@ const VocabularyPanel: Component = () => {
                       <input
                         type="text"
                         value={edits()[key] ?? ''}
+                        aria-label={`Your word for “${def}”`}
                         placeholder={def}
                         onInput={(e) => setKey(key, e.currentTarget.value)}
                         class="min-h-[30px] w-full rounded-full border px-3.5 py-1 text-[0.8125rem] focus:outline-none focus-visible:ring-2"

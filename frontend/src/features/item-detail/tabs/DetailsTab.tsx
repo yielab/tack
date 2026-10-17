@@ -377,6 +377,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         Description
       </h3>
       <RichTextEditor
+        label="Description"
         value={props.item.description ?? ''}
         onChange={props.onDescriptionChange}
         placeholder="Add details or notes…"

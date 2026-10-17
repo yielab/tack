@@ -11,7 +11,7 @@ import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import { priorityColor } from '../../shared/ui/PriorityDot';
+import { priorityFill } from '../../shared/ui/PriorityDot';
 import { IconTimeline } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
@@ -258,7 +258,7 @@ export default function Timeline() {
 
   // ── Style helpers ──────────────────────────────────────────────────────
 
-  const getPriorityColor = (p: string) => priorityColor(p as Priority);
+  const getPriorityColor = (p: string) => priorityFill(p as Priority);
 
   // Done items are marked with a checkmark + strikethrough, not dimmed: the
   // bar carries `--color-text-inverse` text over a solid priority-color
@@ -468,7 +468,7 @@ export default function Timeline() {
           ] as const}>
             {(p) => (
               <span class="inline-flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityColor(p.priority) }} />
+                <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityFill(p.priority) }} />
                 {p.label}
               </span>
             )}

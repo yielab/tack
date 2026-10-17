@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import { ProjectItemsProvider, useProjectItems } from './projectItemsContext';
+import { ProjectItemsProvider, useProjectItems, shareUnchanged } from './projectItemsContext';
+import type { Item } from '../types';
 
 // Mock useParams so we don't need a live router in these unit tests.
 vi.mock('@solidjs/router', () => ({
@@ -80,6 +81,59 @@ describe('ProjectItemsProvider', () => {
     refetchFn?.();
     await flush();
     expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});
+
+describe('a refetch keeps what is shown', () => {
+  it('keeps loading() false and items() set while it refetches', async () => {
+    let api!: ReturnType<typeof useProjectItems>;
+    mount(() => { api = useProjectItems(); return null; });
+    expect(api.loading()).toBe(true); // the first load has nothing to show yet
+    await flush();
+    expect(api.loading()).toBe(false);
+
+    let release!: (r: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((r) => { release = r; }));
+    api.refetch();
+    expect(api.loading()).toBe(false);
+    expect(api.items()?.length).toBe(2);
+    release(new Response(JSON.stringify({ data: ITEMS, total: 2, page: 1, per_page: 200 }), { status: 200 }));
+    await flush();
+  });
+
+  it('hands back the same object for an item that did not change', async () => {
+    let api!: ReturnType<typeof useProjectItems>;
+    mount(() => { api = useProjectItems(); return null; });
+    await flush();
+    const [alpha, beta] = api.items()!;
+
+    const changed = [ITEMS[0], { ...ITEMS[1], title: 'Beta, renamed' }];
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: changed, total: 2, page: 1, per_page: 200 }), { status: 200 }),
+    );
+    api.refetch();
+    await flush();
+    const [alpha2, beta2] = api.items()!;
+    expect(alpha2).toBe(alpha);
+    expect(beta2).not.toBe(beta);
+    expect(beta2.title).toBe('Beta, renamed');
+  });
+});
+
+describe('shareUnchanged', () => {
+  const a = { id: 'a', title: 'A' } as Item;
+  const b = { id: 'b', title: 'B' } as Item;
+
+  it('returns the new list as is when there was none before', () => {
+    const next = [a];
+    expect(shareUnchanged(undefined, next)).toBe(next);
+  });
+
+  it('reuses unchanged objects, takes changed and new ones, drops removed ones', () => {
+    const out = shareUnchanged([a, b], [{ ...a }, { ...b, title: 'B2' }, { id: 'c', title: 'C' } as Item]);
+    expect(out[0]).toBe(a);
+    expect(out[1]).not.toBe(b);
+    expect(out.map((i) => i.id)).toEqual(['a', 'b', 'c']);
   });
 });
 

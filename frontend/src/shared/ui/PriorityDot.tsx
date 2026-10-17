@@ -23,6 +23,15 @@ export function priorityColor(p: Priority): string {
   }
 }
 
+/** A priority as a solid fill under `--color-text-inverse` text — Calendar's
+ *  chips, Timeline's bars. The same colors as priorityColor, except medium
+ *  takes accent2's ink step: Harbor's coral accent2 carries inverse text at
+ *  only 3.3:1, its ink step clears AA, and in every other palette the ink is
+ *  accent2 itself. */
+export function priorityFill(p: Priority): string {
+  return p === 'medium' ? 'var(--color-accent2-ink)' : priorityColor(p);
+}
+
 export function priorityLabel(p: Priority): string {
   return p.charAt(0).toUpperCase() + p.slice(1);
 }

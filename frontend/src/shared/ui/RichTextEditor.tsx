@@ -2,6 +2,8 @@ import { type Component, createSignal, onMount } from 'solid-js';
 import { FiBold, FiItalic, FiList, FiCode } from 'solid-icons/fi';
 
 export interface RichTextEditorProps {
+  /** The editor's accessible name; a contenteditable has no <label> to point at. */
+  label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -118,6 +120,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
           onClick={() => execCommand('bold')}
           class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Bold (Ctrl+B)"
+          aria-label="Bold"
           disabled={props.disabled}
         >
           <FiBold size={16} />
@@ -127,6 +130,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
           onClick={() => execCommand('italic')}
           class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Italic (Ctrl+I)"
+          aria-label="Italic"
           disabled={props.disabled}
         >
           <FiItalic size={16} />
@@ -137,6 +141,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
           onClick={() => execCommand('insertUnorderedList')}
           class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Bullet List"
+          aria-label="Bullet list"
           disabled={props.disabled}
         >
           <FiList size={16} />
@@ -146,6 +151,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
           onClick={() => execCommand('insertOrderedList')}
           class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Numbered List"
+          aria-label="Numbered list"
           disabled={props.disabled}
         >
           <FiCode size={16} />
@@ -167,6 +173,10 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
       {/* Editor */}
       <div
         ref={editorRef}
+        role="textbox"
+        aria-multiline="true"
+        aria-label={props.label}
+        aria-disabled={props.disabled ? 'true' : undefined}
         contentEditable={!props.disabled}
         onInput={updateContent}
         onFocus={() => {
@@ -191,7 +201,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         {`
           [contenteditable][data-placeholder]:empty:before {
             content: attr(data-placeholder);
-            color: rgb(156 163 175);
+            color: var(--color-text-tertiary);
             pointer-events: none;
             position: absolute;
           }

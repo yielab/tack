@@ -145,6 +145,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           onKeyDown={handleKeyDown}
           onFocus={() => { setFocused(true); if (results().length > 0) setIsOpen(true); }}
           onBlur={() => setFocused(false)}
+          aria-label={props.placeholder ?? 'Search items'}
           placeholder={props.placeholder ?? 'Search items…'}
           style={{
             flex: 1, 'min-width': 0, border: 'none', outline: 'none', background: 'transparent',

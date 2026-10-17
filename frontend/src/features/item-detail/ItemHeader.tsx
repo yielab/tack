@@ -197,6 +197,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
             )}
           </For>
           <input
+            aria-label="Add tag"
             value={tagInput()}
             onInput={(e) => setTagInput(e.currentTarget.value)}
             onKeyDown={(e) => {

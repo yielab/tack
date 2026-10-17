@@ -97,6 +97,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
         }}
       >
         <textarea
+          aria-label="Comment"
           value={content()}
           onInput={(e) => setContent(e.currentTarget.value)}
           placeholder="Write a comment…"

@@ -97,6 +97,43 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   void itemId;
 });
 
+// The dialog belongs to its card. Every realtime event refetches the board;
+// that used to swap the board for its loading skeleton and rebuild every
+// card, closing the dialog under the user's hands. Here someone else creates
+// an item in the project and edits this very card's item while the dialog is
+// open: the board takes both in, and the dialog stays open.
+test('Board: the run dialog stays open while the board takes in other changes', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `RWA live project ${Date.now()}`);
+  const itemId = await createFreshItem(request, projectId, `RWA live item ${Date.now()}`);
+  await enrollRunner(request, `RWA live runner ${Date.now()}`, 'opaque/model-alpha');
+
+  await page.goto(`/projects/${projectId}/board`);
+  await waitForApp(page);
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
+  const dialog = page.getByRole('dialog', { name: /^Run with agent:/ });
+  await expect(dialog).toBeVisible();
+
+  const other = `RWA live other ${Date.now()}`;
+  await createFreshItem(request, projectId, other);
+  const detail = await request.get(`${API}/items/${itemId}`);
+  const renamed = `RWA live item, renamed ${Date.now()}`;
+  const patched = await request.patch(`${API}/items/${itemId}`, {
+    headers: { 'If-Match': detail.headers()['etag'] },
+    data: { title: renamed },
+  });
+  expect(patched.ok()).toBe(true);
+
+  // Both changes reached the board behind the dialog…
+  await expect(page.getByRole('button', { name: other, exact: true })).toBeAttached();
+  await expect(page.getByRole('button', { name: renamed, exact: true })).toBeAttached();
+  // …and the dialog is the same one, still open.
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
 test('item-detail: submitting a run creates the request and it appears in the Execution tab without navigation', async ({
   page,
   request,
