@@ -77,7 +77,7 @@ and is replaced fresh with a shorter brief.
 
 ## How a task is handed to an agent
 
-As `docs/plans/phase-67.md` § "How a task is handed to an agent": one agent, one task, one
+As `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent": one agent, one task, one
 branch from `develop` named `phase73/<id>`; the brief is the task's section of this file plus
 these lines, and nothing else:
 
@@ -1090,3 +1090,17 @@ still a control shown with its reason.
     new project, "so nothing was created"); the Templates page shows a template's roles,
     profiles and merge level as chips, lists "role → profile" on hover, and both the create and
     the save-as-template dialogs say that roles, profiles and automation travel with it.
+  - **The book is three guides** (2026-10-17, `f5b7b579`): a User, an Administrator and a
+    Developer Guide, with a page for automating a project, reviewing a run, installing runners,
+    troubleshooting the server, runs and teams, the project file format and the decisions; every
+    old address redirects. Writing them found three faults, fixed in the same commit: turning on
+    Start did not save the status the list showed, a docket run showed no sandbox line, and
+    three statements in the guides were wrong.
+  - **Pushed** with the rest of `develop` on 2026-10-17. CI went red on two things the local gate
+    does not check, both fixed in `e4c0f8fc`: RustSec marked `zvariant`, `zvariant_derive` and
+    `zbus_names` unmaintained the same week (reviewed and ignored with a date, since
+    `secret-service` 5.2.0, the newest, still needs zbus 5), and the learning path's overview was
+    a `README.md`, which mdBook writes as `index.html`, so the link to it broke.
+- **Phase 73 is built.** What stays open is the live proof on docket `0.2.0-beta.6` and the
+  end-to-end scenario with two teams and a rework; the roadmap's "Open" section lists them with
+  the gaps shown in the product.

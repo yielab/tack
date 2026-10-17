@@ -4,15 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Sections from the next release on are generated from the commit history by
-[git-cliff](https://git-cliff.org) (`make changelog`); earlier sections were written by hand.
+Every section is written by hand, in the change that makes it true; at a release the
+maintainer renames `[Unreleased]` to the version, and the release notes are that section.
 
 ---
 
 ## [Unreleased]
 
 Phase 73 (ADR 0080): every run of the docket agent goes to a team that already exists and keeps
-existing, and a project's automation is set on one screen.
+existing, a role chooses who takes its tasks, a task can start by itself and repeat, and a
+project's automation is set on one screen. Then a whole project goes in and out through one file,
+and a template is that file without items (ADR 0081). Beside them: Settings → Display &
+accessibility and the fixes from an accessibility audit, and the documentation split into a
+User, an Administrator and a Developer Guide.
+
+Two behaviours change for docket users: the runner needs docket `0.2.0-beta.6` (HTTP API
+version 5) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
+0.2.0-beta.6". Upgrading applies migrations 088–091 on first start: a role's profile and a
+profile's fleet, a task's recurrence, the auto-start settings, and the roles, profiles and
+automation a template carries.
 
 ### Added
 

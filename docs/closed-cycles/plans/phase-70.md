@@ -18,7 +18,7 @@ panel offers "Through the gateway" when a gateway key is set.
 
 | Task | Found by | Source |
 |---|---|---|
-| Q1, Q2 | Phase 68 D4 | `docs/plans/phase-68.md` follow-ups, "A request no runner can ever claim stays Queued forever"; `crates/tack-orch/src/scheduler/wiring.rs:222-231` maps `NoEligibleRunner` to `None` and drops its `reasons` |
+| Q1, Q2 | Phase 68 D4 | `docs/closed-cycles/plans/phase-68.md` follow-ups, "A request no runner can ever claim stays Queued forever"; `crates/tack-orch/src/scheduler/wiring.rs:222-231` maps `NoEligibleRunner` to `None` and drops its `reasons` |
 | K1 | Phase 66 | `docs/book/src/user-guide/agent-runners.md` Known gaps; `crates/tack-runner/src/harness/process.rs:515-518` already kills announced groups on timeout in the question-driven path, so the gap may be stale |
 | K2 | Phase 66 | same Known gaps; `crates/tack-cli/src/doctor.rs:174-179` prints `artifacts` once, runner-wide, and never `permission_policy` |
 | K3 | Phase 68 K2, D4 | `crates/tack-db/src/repo/items.rs` row conversion reads `run_settings` with `.ok()`; `crates/tack-cli/src/local_runner.rs:422` has no test against a real enrolment |
@@ -50,7 +50,7 @@ A round's tasks share no source file.
 
 ## How a task is handed to an agent
 
-Exactly as `docs/plans/phase-67.md` § "How a task is handed to an agent", with `phase-70.md` in
+Exactly as `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent", with `phase-70.md` in
 the first line of the brief, plus the three lines Phase 69 added:
 
 ```

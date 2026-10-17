@@ -2,7 +2,7 @@
 
 **Status: ACCEPTED 2026-10-07 (the maintainer: "start the phase"); executed 2026-10-07/08.**
 Amends ADR 0072 (onboarding), ADR 0069 (the brief's place in the UI) and ADR 0071 (where a
-run's work ends up). The plan is `docs/plans/phase-67.md`.
+run's work ends up). The plan is `docs/closed-cycles/plans/phase-67.md`.
 
 **Partly superseded 2026-10-13 by ADR 0078:** decision 1's optional gateway key. The rest stands.
 

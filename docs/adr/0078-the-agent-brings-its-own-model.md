@@ -2,7 +2,7 @@
 
 **Status: ACCEPTED 2026-10-13 (the maintainer: "apply that change, clean up all the old code
 with no need to keep compatibility; choosing a model must stay possible, besides using the
-default"); executed by Phase 71 (`docs/plans/phase-71.md`).**
+default"); executed by Phase 71 (`docs/closed-cycles/plans/phase-71.md`).**
 
 **Decide:** that Tack stops holding model credentials, endpoints and catalogs. Each agent
 (Claude Code, Codex, opencode, docket) signs in and reaches its model with its own tools, the way
@@ -82,7 +82,7 @@ The gateway catalog was attached to every agent whose wire the gateway serves, u
 tests, the gateway step of `scripts/smoke.sh`, `embedded_runner_live_secret.rs`, the key panel),
 plus the mechanical change from a `(provider, model_id)` pair to one string across the wire, the
 database, the scheduler, the API, the CLI, MCP and the frontend. The inventory is in
-`docs/plans/phase-71.md`.
+`docs/closed-cycles/plans/phase-71.md`.
 
 ## Documentation links the model field uses
 

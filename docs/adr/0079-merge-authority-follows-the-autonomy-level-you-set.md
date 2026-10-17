@@ -1,7 +1,7 @@
 # ADR 0079: merge authority follows the autonomy level you set, and Tack stays one of three tools that work alone
 
 **Status: ACCEPTED 2026-10-13, with the amendments at the end** ("Amendments agreed
-2026-10-13"), which win where they disagree with the table. The plan is `docs/plans/phase-72.md`. Amends ADR 0071
+2026-10-13"), which win where they disagree with the table. The plan is `docs/closed-cycles/plans/phase-72.md`. Amends ADR 0071
 (its parked "automatic merge" and its signature slot), ADR 0069 (a brief has no history) and ADR
 0075 (the verifier adapter). Leaves ADR 0059 (one operator) as it is and lists what that costs in
 "Questions for the owner".
@@ -224,7 +224,7 @@ is computed twice and nothing is left half-built. Read against prill ADR 0014 (a
 
 | Item | Amended to |
 |---|---|
-| Ownership | Tack: the brief, the loop across attempts, the merge and whether its evidence is enough (the required stages), every GitHub read and write, observing outcomes, money, the level and its domains, applying directives. prill: the verdict and the stages behind it, next steps when it gives them, signing, the outcomes store and every quality figure, proposing levels and directives. docket: running the agent and its per-run limits. The table "Who owns what" in `docs/plans/phase-72.md` is the full list. |
+| Ownership | Tack: the brief, the loop across attempts, the merge and whether its evidence is enough (the required stages), every GitHub read and write, observing outcomes, money, the level and its domains, applying directives. prill: the verdict and the stages behind it, next steps when it gives them, signing, the outcomes store and every quality figure, proposing levels and directives. docket: running the agent and its per-run limits. The table "Who owns what" in `docs/closed-cycles/plans/phase-72.md` is the full list. |
 | Decision 1, "the verifier ran with the configuration layer the level requires" | **Changed 2026-10-14:** Tack reads it off the pack. The project holds the list (`verify_require`); the runner copies the verifier's stage list into the pack (`stages`); an automatic merge needs every required stage listed as `passed`, and `not_applicable` does not count, because prill treats an unconfigured stage as passing. The merge is Tack's (P5), so whether its evidence is enough is Tack's to check, and any verifier that reports its stages will do. L4 refuses an empty list (answers question 9). prill enforcing `require` itself (ADR 0014 L-1) would make its verdict stricter and changes nothing here. |
 | Decision 2, the reasons sent back | **Changed 2026-10-14:** prill's `nextSteps` (ADR 0014 L-2) when the pack has them; otherwise each failed criterion and each failed stage, with the verifier's note. A pack that names nothing to fix goes to a human. Stopping the loop is cancelling the follow-up run. |
 | Decision 4(a) | The store lives on the board's host, one per repository; the board records each MRP and each outcome it observes. Tack does not run `prill poll github`: Tack is the one GitHub reader, and its revert rule gains prill's (`This reverts commit <merge sha>`). |
@@ -241,6 +241,6 @@ is computed twice and nothing is left half-built. Read against prill ADR 0014 (a
 | Decision 1, CI (question 4) | Green means every check run completed `success`, `neutral` or `skipped` **and** the combined status is not `failure` or `pending`; no check and no status at all is not green. The combined status alone misses GitHub Actions. |
 | Decisions 1 and 2, prill's M6 | **Changed 2026-10-14:** nothing waits on it. The first version held every L4 merge until a runner reported a prill that enforces `require`, and sent a rejection without `nextSteps` to a person. The owner asked why Tack needed prill when prill is not a dependency; the pack already carried what both need. Without a verifier there is no pack, and the change stays L3 (P3). |
 | Decision 7, the contract test | Runs on the maintainer's machine and in `scripts/docket-prill-e2e.sh`; CI has no prill (it is private) and skips it with a line saying so. |
-| Questions 1, 3, 5, 6, 8, 10 | Taken as `docs/plans/phase-72.md` proposes: the signing key is a file in the runner's state; no second person; GitHub's default merge method, branch kept; the rate card by hand and dated, in `app_meta`; the loop cap per item plus the daily budgets; L5 keeps the queue, filled only on failure. |
+| Questions 1, 3, 5, 6, 8, 10 | Taken as `docs/closed-cycles/plans/phase-72.md` proposes: the signing key is a file in the runner's state; no second person; GitHub's default merge method, branch kept; the rate card by hand and dated, in `app_meta`; the loop cap per item plus the daily budgets; L5 keeps the queue, filled only on failure. |
 | Not now | Tack does not fill prill's `trajectory` (ADR 0014 L-4): nothing reads it yet. Trigger: a reader asks. |
 

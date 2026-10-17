@@ -133,7 +133,7 @@ ADR 0077's table stands in full. Added here, each one line to reverse:
 | Tag ruleset: only admins create `v*`, no update, no delete | open — `gh api repos/yielab/tack/rulesets -f target=tag …` |
 | `release` environment with the maintainer as required reviewer, limited to tags; move `HOMEBREW_TAP_TOKEN` into it as a fine-grained PAT scoped to `homebrew-tap` | open |
 | Add `security-boundaries` to the required status checks once C3 lands | open |
-| Move the Vercel AI Gateway key from `.env` into the runner's store (`tack runner secret set`), delete `.env` | open |
+| Delete `.env` and its Vercel AI Gateway key. (It was to move into the runner's store; since Phase 71 Tack reads no model key at all.) | open |
 | Delete `cloudflared.yml`, the `flexmp` tunnel and the `api.yielab.com` DNS record | open |
 | Prune `.claude/settings.local.json`: remove `curl:*`, `python3:*`, `npx:*`, `docker run:*`, `gh api *`, `Read(//home/**)`, `Read(//etc/**)`; deny `~/.ssh`, `~/.cloudflared`, `.env` | open |
 | Bind the workstation's Caddy site for `tack.test` to `127.0.0.1` | open — `~/Sites/Caddyfile` |
@@ -154,7 +154,7 @@ each new test file adds to `crates/tack-api/tests/security.rs`, which the integr
 
 ## How a task is handed to an agent
 
-Exactly as `docs/plans/phase-67.md` § "How a task is handed to an agent", with `phase-69.md` in
+Exactly as `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent", with `phase-69.md` in
 the first line of the brief, and three lines added to the pasted block:
 
 ```

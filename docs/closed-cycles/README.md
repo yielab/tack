@@ -1,7 +1,8 @@
 # Closed cycles
 
-Nothing under this directory is current. The live plan is Phase 65,
-`docs/plans/phase-65.md` (opened 2026-09-20); the roadmap points at it.
+Nothing under this directory is current. The live plans are in `docs/plans/`: Phase 73
+and the two whose maintainer items are still open (Phases 65 and 69). The roadmap,
+`docs/book/src/roadmap.md`, points at them.
 
 - `boards/part-1.md`, `part-2.md`, `part-3.md` — the full board sections for the closed
   Agent-Factory Control Center and Agnostic Control Plane cycles (Phases 33–49), moved
@@ -21,10 +22,13 @@ Nothing under this directory is current. The live plan is Phase 65,
 - `boards/roadmap-phase-64.md` — the Phase 64 chapter, the old "Planned" section (Phase
   21, Phase 22 Task 2) and the Phases 26–32 "Known Gaps" table, moved verbatim
   2026-09-20. `roadmap.md` itself keeps only what is ahead.
+- `boards/roadmap-phases-65-72.md` — the Phases 65 to 72 chapters and the first live docket +
+  prill run, moved verbatim 2026-10-17. Their plan links point at `plans/` below.
 - `plans/` — a plan whose phase has landed or whose design was replaced: the harness
   maintainability audit, the human-maintainability (Phase 63) specification, the
   agnostic control plane plan whose bridge Phase 64 retired, and Phase 64's own two
-  plans (`phase-64.md`, `harnesses.md`), whose open rows became Phase 65's tasks.
+  plans (`phase-64.md`, `harnesses.md`), whose open rows became Phase 65's tasks; and the
+  plans of Phases 66, 67, 68, 70, 71 and 72, moved 2026-10-17 once nothing in them was open.
 - `handoffs/` — the per-card handoffs for every closed cycle, moved out of the old
   `docs/agent-handoffs/`: `part-3/` through `part-7/`, `part-viii/`, `part-ix/`, plus
   `deps/` and `test-architecture/`. `docs/agent-handoffs/` no longer exists anywhere in

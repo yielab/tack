@@ -558,34 +558,25 @@ that may not fit the roadmap.
    npm run build                                                         # entry bundle stays < 30 KB gzipped
    ```
 
-5. **Update docs.** If you changed behavior, config, or the API, update the relevant docs
-   in the same PR. Do **not** edit [CHANGELOG.md](CHANGELOG.md): its release sections are
-   generated from commit messages by [git-cliff](https://git-cliff.org) (`cliff.toml`,
-   `make changelog` to preview). If you changed an API response shape, update the Rust
-   handler **and** the matching frontend types / test mocks.
+5. **Update docs and the changelog.** If you changed behavior, config, or the API, update the
+   relevant docs in the same PR, and add a line to the `[Unreleased]` section of
+   [CHANGELOG.md](CHANGELOG.md) under Added, Changed, Removed, Fixed or Security. The changelog
+   is written by hand, for someone upgrading: say what they can now do or what behaves
+   differently, not which file moved. At a release the maintainer renames `[Unreleased]` to
+   the version, and the release notes are that section. If you changed an API response shape,
+   update the Rust handler **and** the matching frontend types / test mocks.
 6. **Write a clear PR description** — what changed and why, how you tested it, and
    any follow-ups. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
-7. **Write conventional commit messages — they are the changelog.** `type(scope): what
-   changed`, where the type picks the section a user reads:
-
-   | Type | CHANGELOG section |
-   |---|---|
-   | `feat` | Added |
-   | `fix` | Fixed |
-   | `refactor`, `perf`, `api` | Changed |
-   | `revert` | Removed |
-   | `security` | Security |
-   | `docs(book\|readme\|config\|api\|mcp\|deploy\|cli\|install\|desktop)` | Documentation |
-   | `test`, `build`, `ci`, `chore`, `style`, other `docs` scopes | not in the changelog |
-
-   A `!` after the type (`feat(api)!:`) marks a breaking change and is listed first. The
-   subject should read as a changelog line on its own — say what a user can now do, not
-   which file moved. A commit that does not follow the form never reaches the changelog.
-   **No AI-attribution lines** (no `Co-Authored-By` bot trailers) in commit messages.
+7. **Write the commit subject as one plain sentence after a verb.** `Add:` for something new,
+   `Fix:` for a bug, `Clean:` for code or docs removed with no change in behaviour, `Docs:`
+   for documentation only, `Release:` for a version bump. Say what a user or a maintainer can
+   now do or no longer suffers, e.g. `Fix: an open "Run with agent" dialog survives the
+   board's realtime refetch`. **No AI-attribution lines** (no `Co-Authored-By` bot trailers)
+   in commit messages.
 8. **Review.** The maintainer reviews, may request changes, and merges once CI is
-   green and the change is approved. Green CI is required — all ten jobs in
-   `.github/workflows/ci.yml` (`rust`, `msrv`, `desktop`, `coverage`, `deny`,
-   `frontend`, `docs`, `embed-spa`, `security`, `e2e`) must pass.
+   green and the change is approved. Green CI is required — every job in
+   `.github/workflows/ci.yml` that runs on a pull request must pass (all but the weekly
+   `mutants` report).
 
 By submitting a pull request, you agree that your contribution is licensed under
 the project's [MIT License](LICENSE).

@@ -81,7 +81,7 @@ Two agents at a time. A round's two tasks share no file.
 
 ## How a task is handed to an agent
 
-Exactly as `docs/plans/phase-67.md` § "How a task is handed to an agent", with `phase-68.md`
+Exactly as `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent", with `phase-68.md`
 in the first line of the brief. Two changes since: the gate enforces the pinned toolchain
 itself (commit `7470450`), so `PATH=$HOME/.cargo/bin:$PATH` is still set on every cargo
 command the agent runs but the gate no longer depends on it; and the Playwright suite runs
