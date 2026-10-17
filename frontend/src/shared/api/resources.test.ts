@@ -281,6 +281,10 @@ describe('api.data (export/import/backup/restore)', () => {
     await api.data.exportProject('p1', 'csv');
     expect(lastCall().url).toBe('/api/projects/p1/export?format=csv');
   });
+  it('exportProject bundle → ...?format=yaml&scope=bundle', async () => {
+    await api.data.exportProject('p1', 'yaml', 'bundle');
+    expect(lastCall().url).toBe('/api/projects/p1/export?format=yaml&scope=bundle');
+  });
   it('importProject → POST /api/projects/import', async () => {
     await api.data.importProject({ project: {}, items: [] });
     expect(lastCall()).toMatchObject({ url: '/api/projects/import', method: 'POST' });

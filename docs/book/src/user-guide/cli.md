@@ -42,6 +42,13 @@ tack completions fish  > ~/.config/fish/completions/tack.fish
 # Create a project
 tack init "Kitchen Reno" --type construction
 
+# Create a project from a template, with its roles and profiles (id, or name with - for spaces)
+tack init "My Site" --template web-product-with-content
+
+# Write a project's items to stdout or a file; --bundle writes the whole project file (YAML by default)
+tack export <project-id> --format csv -o items.csv
+tack export <project-id> --bundle -o project.yaml
+
 # Types: software · web · mobile · construction · personal · homework · maintenance · legal · research · event · custom
 ```
 
@@ -126,6 +133,9 @@ tack template show <template-id>
 # Create a new project from a template
 tack template create-from <template-id> "My New Project"
 tack template create-from <template-id> "My New Project" --description "Optional description"
+
+# Save a project's roles, profiles, automation, workflow and vocabulary as a template
+tack template save <project-id> --name "My template" --description "Optional"
 ```
 
 ---

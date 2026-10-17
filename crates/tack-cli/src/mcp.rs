@@ -215,10 +215,15 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             Ok(project_summary(&project))
         }
         "create_outline" => {
-            let items = match args.get("items") {
-                Some(v) if v.is_array() => v.clone(),
-                _ => return Err("missing required argument: items (an array)".into()),
-            };
+            if !args.get("items").is_some_and(Value::is_array) {
+                return Err("missing required argument: items (an array)".into());
+            }
+            // The body is the whole file: every argument but the two that pick
+            // the route.
+            let mut file = args.as_object().cloned().unwrap_or_default();
+            file.remove("project_id");
+            file.remove("dry_run");
+            let file = Value::Object(file);
             let suffix = if args.get("dry_run").and_then(Value::as_bool) == Some(true) {
                 "?dry_run=true"
             } else {
@@ -231,14 +236,12 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                 (Some(_), Some(_)) => {
                     Err("create_outline: pass project_id or project, not both".into())
                 }
-                (Some(pid), None) => call(client.post(
-                    &format!("/projects/{pid}/outline{suffix}"),
-                    &json!({ "items": items }),
-                )),
-                (None, Some(project)) if project.is_object() => call(client.post(
-                    &format!("/projects/outline{suffix}"),
-                    &json!({ "project": project, "items": items }),
-                )),
+                (Some(pid), None) => {
+                    call(client.post(&format!("/projects/{pid}/outline{suffix}"), &file))
+                }
+                (None, Some(project)) if project.is_object() => {
+                    call(client.post(&format!("/projects/outline{suffix}"), &file))
+                }
                 _ => Err(
                     "create_outline: pass project_id to add to a project, or project \
                           {name, project_type?, description?} to create one"
@@ -682,7 +685,9 @@ fn tool_specs() -> Value {
              is reported at once; nothing is written unless all of it can be. \
              Give an item a ref and name it from other items' parent or \
              depends_on (an exact title works too). Order does not matter. \
-             Use dry_run first to see what would be created and any warnings.",
+             Use dry_run first to see what would be created and any warnings. \
+             The file may also carry fields, profiles, roles, sprints and \
+             automation, as in Tack's project file (Settings → Data → File format).",
             json!({
                 "type": "object",
                 "properties": {
@@ -718,6 +723,11 @@ fn tool_specs() -> Value {
                             "required": ["title"]
                         }
                     },
+                    "fields": { "type": "array", "description": "Custom fields the project's items carry" },
+                    "profiles": { "type": "array", "description": "Agent profiles the project uses" },
+                    "roles": { "type": "array", "description": "Roles and the profile each one uses" },
+                    "sprints": { "type": "array", "description": "Sprints" },
+                    "automation": { "type": "object", "description": "The project's automation settings" },
                     "dry_run": { "type": "boolean", "description": "Check and report without writing" }
                 },
                 "required": ["items"]

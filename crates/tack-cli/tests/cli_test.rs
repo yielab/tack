@@ -479,3 +479,113 @@ fn vocab_term_fallback() {
     assert_eq!(vocab::term(&map, "task"), "Work Order");
     assert_eq!(vocab::term(&map, "epic"), "epic"); // key not in map → returns key
 }
+
+// ── export, init --template, template save (the `tack` binary against a mock) ─
+
+/// Runs `tack --api-url <uri> <args>` with an empty HOME, so no `~/.tackrc`
+/// or server token file of the operator's is read.
+async fn run_tack(uri: String, args: &'static [&'static str]) -> std::process::Output {
+    run_blocking(move || {
+        let home = tempfile::tempdir().unwrap();
+        std::process::Command::new(env!("CARGO_BIN_EXE_tack"))
+            .env("HOME", home.path())
+            .env_remove("TACK_API_URL")
+            .env_remove("TACK_API_TOKEN")
+            .arg("--api-url")
+            .arg(&uri)
+            .args(args)
+            .output()
+            .unwrap()
+    })
+    .await
+}
+
+#[tokio::test]
+async fn export_bundle_asks_for_the_yaml_project_file() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/projects/p1/export"))
+        .and(query_param("scope", "bundle"))
+        .and(query_param("format", "yaml"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("project:\n  name: P\n"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let out = run_tack(server.uri(), &["export", "p1", "--bundle"]).await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "project:\n  name: P\n"
+    );
+}
+
+#[tokio::test]
+async fn init_template_finds_the_template_by_name_then_creates_from_it() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/templates"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            { "id": "11111111-1111-1111-1111-111111111111", "name": "Library or CLI" },
+            { "id": "22222222-2222-2222-2222-222222222222", "name": "Web product with content" },
+        ])))
+        .expect(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/projects/from-template/22222222-2222-2222-2222-222222222222",
+        ))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440000", "project_type": "web",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let out = run_tack(
+        server.uri(),
+        &["init", "Site", "--template", "web-product-with-content"],
+    )
+    .await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = run_tack(server.uri(), &["init", "Site", "--template", "nope"]).await;
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Library or CLI") && stderr.contains("Web product with content"),
+        "{stderr}"
+    );
+}
+
+#[tokio::test]
+async fn template_save_posts_to_save_as_template() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/projects/p1/save-as-template"))
+        .and(wiremock::matchers::body_partial_json(
+            serde_json::json!({ "name": "Mine" }),
+        ))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "id": "550e8400-e29b-41d4-a716-446655440000", "name": "Mine",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let out = run_tack(server.uri(), &["template", "save", "p1", "--name", "Mine"]).await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

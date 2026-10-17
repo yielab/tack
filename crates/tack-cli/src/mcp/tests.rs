@@ -652,14 +652,23 @@ async fn mcp_create_outline_posts_to_the_matching_route() {
         .await;
     wiremock::Mock::given(wiremock::matchers::method("POST"))
         .and(wiremock::matchers::path("/api/projects/p1/outline"))
-        .and(wiremock::matchers::body_json(json!({ "items": items })))
+        .and(wiremock::matchers::body_json(json!({
+            "items": items,
+            "roles": [{ "name": "Dev", "profile": "Implementer" }],
+            "profiles": [{ "name": "Implementer" }],
+        })))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({ "created": 2 })))
         .mount(&server)
         .await;
 
     for args in [
         json!({ "project": { "name": "N" }, "items": items, "dry_run": true }),
-        json!({ "project_id": "p1", "items": items }),
+        json!({
+            "project_id": "p1",
+            "items": items,
+            "roles": [{ "name": "Dev", "profile": "Implementer" }],
+            "profiles": [{ "name": "Implementer" }],
+        }),
     ] {
         let uri = server.uri();
         let result =
