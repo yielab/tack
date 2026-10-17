@@ -325,14 +325,21 @@ export default function Table() {
                             <Show
                               when={c.editable && isEditing(item.id, c.key)}
                               fallback={
-                                <button
-                                  type="button"
-                                  class={`text-left w-full truncate text-content decoration-dotted underline-offset-4 ${c.editable ? 'hover:underline' : ''}`}
-                                  style={{ cursor: c.editable ? 'text' : 'default' }}
-                                  onClick={() => c.editable && setEditing({ id: item.id, key: c.key })}
+                                // Only an editable cell is a control; a read-only
+                                // one (type, tags) is text, not a button that does nothing.
+                                <Show
+                                  when={c.editable}
+                                  fallback={<div class="w-full truncate text-content">{renderCell(item, c, typeMap)}</div>}
                                 >
-                                  {renderCell(item, c, typeMap)}
-                                </button>
+                                  <button
+                                    type="button"
+                                    class="text-left w-full truncate text-content decoration-dotted underline-offset-4 hover:underline"
+                                    style={{ cursor: 'text' }}
+                                    onClick={() => setEditing({ id: item.id, key: c.key })}
+                                  >
+                                    {renderCell(item, c, typeMap)}
+                                  </button>
+                                </Show>
                               }
                             >
                               {renderEditor(item, c, statuses(), commit)}
@@ -412,6 +419,8 @@ function renderEditor(
     color: 'var(--color-text-primary)',
     'font-weight': 600,
   };
+  // The cell's column and row, as the editor's name: "Status of Fix login".
+  const name = `${c.label} of ${item.title}`;
   const onKey = (e: KeyboardEvent, el: HTMLInputElement | HTMLSelectElement) => {
     if (e.key === 'Enter') el.blur();
     if (e.key === 'Escape') { (el as HTMLInputElement).value = ''; commit(item, c.key, originalRaw(item, c.key)); }
@@ -421,6 +430,7 @@ function renderEditor(
     return (
       <select
         autofocus
+        aria-label={name}
         class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
         onChange={(e) => commit(item, 'status', e.currentTarget.value)}
@@ -436,6 +446,7 @@ function renderEditor(
     return (
       <select
         autofocus
+        aria-label={name}
         class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
         onChange={(e) => commit(item, 'priority', e.currentTarget.value)}
@@ -452,6 +463,7 @@ function renderEditor(
       <input
         type="date"
         autofocus
+        aria-label={name}
         value={item.due_date ? item.due_date.slice(0, 10) : ''}
         class="px-3 py-1 rounded-full w-full focus:outline-none"
         style={baseStyle}
@@ -465,6 +477,7 @@ function renderEditor(
     <input
       type="text"
       autofocus
+      aria-label={name}
       value={c.key === 'assignee' ? (item.assignee ?? '') : item.title}
       class="px-3 py-1 rounded-full w-full focus:outline-none"
       style={baseStyle}

@@ -443,16 +443,21 @@ function ItemRow(props: {
         </Show>
 
         {/* Actions */}
-        <div class={`flex-shrink-0 flex items-center gap-1 transition-opacity ${showActions() ? 'opacity-100' : 'opacity-0'}`}>
+        {/* Shown on hover, and whenever the keyboard is on one of them. */}
+        <div class={`flex-shrink-0 flex items-center gap-1 transition-opacity focus-within:opacity-100 ${showActions() ? 'opacity-100' : 'opacity-0'}`}>
           <button
+            type="button"
             onClick={props.onAddChild}
+            aria-label={`Add child item to ${props.item.title}`}
             class="w-7 h-7 rounded-full grid place-items-center bg-app text-content-muted hover:text-brand transition-colors"
             title="Add child item"
           >
             <FiPlus size={14} />
           </button>
           <button
+            type="button"
             onClick={props.onDelete}
+            aria-label={`Delete ${props.item.title}`}
             class="w-7 h-7 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
             style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
             title="Delete"
@@ -489,6 +494,7 @@ function CreateForm(props: {
     >
       {/* Type Selector */}
       <select
+        aria-label="Type"
         value={props.type}
         onChange={(e) => props.onTypeChange(e.currentTarget.value as ItemType)}
         class={pillControl}
@@ -500,6 +506,7 @@ function CreateForm(props: {
 
       {/* Priority Selector */}
       <select
+        aria-label="Priority"
         value={props.priority}
         onChange={(e) => props.onPriorityChange(e.currentTarget.value)}
         class={pillControl}
@@ -518,6 +525,7 @@ function CreateForm(props: {
           if (e.key === 'Enter') props.onSave();
           if (e.key === 'Escape') props.onCancel();
         }}
+        aria-label="Item title"
         placeholder="Item title... (Enter to save, Esc to cancel)"
         class={`${pillControl} flex-1 min-w-0 px-4 placeholder-[var(--color-text-tertiary)]`}
         autofocus
@@ -525,6 +533,8 @@ function CreateForm(props: {
 
       {/* Actions */}
       <button
+        type="button"
+        aria-label="Save"
         onClick={props.onSave}
         class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center transition-[filter] hover:brightness-95"
         style={{ color: 'var(--color-on-accent)', 'background-color': 'var(--color-primary-600)' }}
@@ -533,6 +543,8 @@ function CreateForm(props: {
         <FiCheck size={16} />
       </button>
       <button
+        type="button"
+        aria-label="Cancel"
         onClick={props.onCancel}
         class="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center bg-app text-content-muted hover:text-content transition-colors"
         title="Cancel (Esc)"

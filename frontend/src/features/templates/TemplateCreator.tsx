@@ -366,17 +366,19 @@ export default function TemplateCreator() {
 
             <div class="space-y-2">
               <For each={statusRows()}>
-                {(row) => (
+                {(row, i) => (
                   <div class="grid grid-cols-[minmax(0,1fr)_150px_auto_32px] items-center gap-2">
                     <input
                       type="text"
                       value={row.name}
+                      aria-label={`Status ${i() + 1}: name`}
                       placeholder="Status name"
                       onInput={(e) => setStatusField(row.id, 'name', e.currentTarget.value)}
                       class={`min-w-0 ${inPanelInput}`}
                       style={inPanelInputStyle}
                     />
                     <select
+                      aria-label={`Status ${i() + 1}: category`}
                       value={row.category}
                       onChange={(e) => setStatusField(row.id, 'category', e.currentTarget.value)}
                       class={inPanelInput}
@@ -394,6 +396,7 @@ export default function TemplateCreator() {
                         type="number"
                         min="1"
                         value={row.wip_limit}
+                        aria-label={`Status ${i() + 1}: WIP limit`}
                         placeholder="∞"
                         onInput={(e) => setStatusField(row.id, 'wip_limit', e.currentTarget.value)}
                         class="w-16 rounded-full border px-2 py-1.5 text-center text-sm focus:outline-none focus-visible:ring-2"
@@ -406,6 +409,7 @@ export default function TemplateCreator() {
                       class={iconBtnClass}
                       style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       title="Remove status"
+                      aria-label={`Remove status ${i() + 1}${row.name ? ` (${row.name})` : ''}`}
                     >
                       <FiTrash2 size={16} />
                     </button>
@@ -473,6 +477,7 @@ export default function TemplateCreator() {
                             <input
                               type="text"
                               value={vocabEdits()[key] ?? ''}
+                              aria-label={`Your word for “${def}”`}
                               placeholder={def}
                               onInput={(e) => setVocabKey(key, e.currentTarget.value)}
                               class={`w-full ${inPanelInput}`}
@@ -539,6 +544,7 @@ export default function TemplateCreator() {
                         class={iconBtnClass}
                         style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                         title="Remove field"
+                        aria-label={`Remove field ${i() + 1}`}
                       >
                         <FiTrash2 size={16} />
                       </button>
@@ -578,6 +584,7 @@ export default function TemplateCreator() {
                       <input
                         type="text"
                         value={board.name}
+                        aria-label={`Board ${i() + 1}: name`}
                         placeholder="Board name"
                         onInput={(e) => setBoardField(i(), 'name', e.currentTarget.value)}
                         class={`w-full ${inPanelInput}`}
@@ -586,6 +593,7 @@ export default function TemplateCreator() {
                       <input
                         type="text"
                         value={board.description}
+                        aria-label={`Board ${i() + 1}: description`}
                         placeholder="Description (optional)"
                         onInput={(e) => setBoardField(i(), 'description', e.currentTarget.value)}
                         class={`w-full ${inPanelInput}`}
@@ -603,6 +611,7 @@ export default function TemplateCreator() {
                       class={`mt-0.5 ${iconBtnClass}`}
                       style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                       title="Remove board"
+                      aria-label={`Remove board ${i() + 1}${board.name ? ` (${board.name})` : ''}`}
                     >
                       <FiTrash2 size={16} />
                     </button>

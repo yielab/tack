@@ -1,4 +1,5 @@
 import { createSignal, createResource, createMemo, For, Show } from 'solid-js';
+import { ForById } from '../../shared/ui/ForById';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
@@ -248,9 +249,9 @@ export default function Sprints() {
                 </div>
               }
             >
-              <For each={backlogItems()}>
-                {(item) => <ItemCard item={item} onDragStart={handleDragStart} onOpen={setSearchParams} />}
-              </For>
+              <ForById each={backlogItems()}>
+                {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+              </ForById>
             </Show>
           </div>
         </div>
@@ -373,9 +374,9 @@ export default function Sprints() {
                             </div>
                           }
                         >
-                          <For each={itemsForSprint(sprint.id)}>
-                            {(item) => <ItemCard item={item} onDragStart={handleDragStart} onOpen={setSearchParams} />}
-                          </For>
+                          <ForById each={itemsForSprint(sprint.id)}>
+                            {(item) => <ItemCard item={item()} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+                          </ForById>
                         </Show>
                       </div>
                     </div>

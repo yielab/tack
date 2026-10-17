@@ -110,6 +110,17 @@ existing, and a project's automation is set on one screen.
 - Several statements in the guides and comments were wrong and are corrected: the backup
   command's path is an argument, the container refuses to start without a token, and the runner
   needs its enrollment token at every start.
+- **An open "Run with agent" dialog no longer closes when the board changes.** Every realtime
+  event refetched the items and swapped the board for its loading skeleton, rebuilding every
+  card and closing whatever a card had open. A refetch now keeps the board on screen, an
+  unchanged item keeps its object, and the Board and Sprints key their cards by id.
+- **Every form field has a name.** The description editor, custom fields, comment, tag and
+  search boxes, the rows of Workflow, Vocabulary and the template editor, the List's new-item
+  row and the Table's cell editors; option rows (type, priority, estimate) are named groups of
+  toggle buttons. A read-only Table cell is text rather than a button that does nothing, a List
+  row's actions show when the keyboard reaches them, and medium priority on a Calendar chip or
+  Timeline bar reads at AA in Harbor. The axe scan now covers List, Table, Calendar, Timeline,
+  Sprints, Templates and the new-item dialog.
 
 ---
 

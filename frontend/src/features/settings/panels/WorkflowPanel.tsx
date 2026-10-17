@@ -95,17 +95,19 @@ const WorkflowPanel: Component = () => {
 
       <div class="flex flex-col gap-2">
         <For each={rows()}>
-          {(row) => (
+          {(row, i) => (
             <div class="flex flex-wrap items-center gap-2 rounded-[22px] bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
               <input
                 type="text"
                 value={row.name}
+                aria-label={`Status ${i() + 1}: name`}
                 placeholder="Status name"
                 onInput={(e) => setField(row.id, 'name', e.currentTarget.value)}
                 class="min-h-8 min-w-0 flex-1 rounded-full border px-3.5 py-1 text-sm focus:outline-none focus-visible:ring-2"
                 style={control}
               />
               <select
+                aria-label={`Status ${i() + 1}: category`}
                 value={row.category}
                 onChange={(e) => setField(row.id, 'category', e.currentTarget.value)}
                 class="min-h-8 w-[150px] rounded-full border px-3.5 py-1 text-[0.8125rem] focus:outline-none focus-visible:ring-2"
@@ -124,6 +126,7 @@ const WorkflowPanel: Component = () => {
                   type="number"
                   min="1"
                   value={row.wip_limit}
+                  aria-label={`Status ${i() + 1}: WIP limit`}
                   placeholder="∞"
                   onInput={(e) => setField(row.id, 'wip_limit', e.currentTarget.value)}
                   class="w-full min-w-0 bg-transparent text-[0.8125rem] focus:outline-none"
@@ -135,7 +138,7 @@ const WorkflowPanel: Component = () => {
                 class="flex-shrink-0 rounded-full p-1.5 transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
                 style={{ color: 'var(--color-text-tertiary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
                 title="Remove status"
-                aria-label="Remove status"
+                aria-label={`Remove status ${i() + 1}${row.name ? ` (${row.name})` : ''}`}
               >
                 <FiTrash2 size={16} />
               </button>

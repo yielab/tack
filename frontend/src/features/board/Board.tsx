@@ -18,6 +18,7 @@ import { Avatar, AvatarStack, Badge, TypeBadge, PriorityDot, WipChip, Skeleton, 
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
+import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 
 /** Short, human id for the card header (real ids are UUIDs). */
@@ -207,15 +208,15 @@ const BoardColumnView: Component<{
           transition: 'background-color .12s',
         }}
       >
-        <For each={props.column.items}>
+        <ForById each={props.column.items}>
           {(item) => (
             <ItemCard
-              item={item}
-              typeLabel={props.typeLabelOf(item)}
+              item={item()}
+              typeLabel={props.typeLabelOf(item())}
               onEdit={props.onEditItem}
             />
           )}
-        </For>
+        </ForById>
         <Show when={props.column.items.length === 0}>
           <div style={{
             'min-height': '70px', display: 'grid', 'place-items': 'center',
@@ -293,6 +294,11 @@ const Board: Component = () => {
   const [optimisticBoardState, setOptimisticBoardState] = createSignal<BoardState | null>(null);
 
   const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || boardStateFromServer();
+  // Columns keyed by status, as ForById keys cards by id: a refetch builds new
+  // column objects, and a column keyed by object would rebuild every card.
+  const columnsByStatus = createMemo(() =>
+    (currentBoard()?.columns ?? []).map((column) => ({ id: column.status, column })),
+  );
 
   // Unique assignees across the board → toolbar avatar stack.
   const assignees = createMemo(() => {
@@ -451,18 +457,18 @@ const Board: Component = () => {
 
           <div style={{ flex: 1, 'overflow-x': 'auto', 'overflow-y': 'hidden', padding: '6px 22px 22px' }}>
             <div style={{ display: 'flex', gap: '14px', height: '100%', 'align-items': 'flex-start' }}>
-              <For each={currentBoard()?.columns || []}>
-                {(column) => (
+              <ForById each={columnsByStatus()}>
+                {(entry) => (
                   <BoardColumnView
-                    column={column}
-                    dotColor={dotColor(column.status)}
+                    column={entry().column}
+                    dotColor={dotColor(entry().id)}
                     typeLabelOf={typeLabelOf}
                     onItemDrop={handleItemDrop}
                     onAddItem={handleAddItem}
                     onEditItem={handleEditItem}
                   />
                 )}
-              </For>
+              </ForById>
             </div>
           </div>
         </Show>

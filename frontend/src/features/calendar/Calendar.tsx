@@ -4,7 +4,7 @@ import { api } from '../../shared/api';
 import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import { priorityColor } from '../../shared/ui/PriorityDot';
+import { priorityFill } from '../../shared/ui/PriorityDot';
 import { IconCalendar } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
@@ -48,7 +48,7 @@ export default function Calendar() {
   const unscheduledItems = createMemo(() => (items() || []).filter(i => !i.due_date));
 
   const getPriorityStyle = (priority: string) => ({
-    'background-color': priorityColor(priority as Priority),
+    'background-color': priorityFill(priority as Priority),
     color: 'var(--color-text-inverse)',
   });
 
@@ -170,7 +170,7 @@ export default function Calendar() {
             <For each={PRIORITY_LEGEND}>
               {(p) => (
                 <span class="inline-flex items-center gap-1.5">
-                  <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityColor(p.priority) }} />
+                  <span class="w-2 h-2 rounded-[3px]" style={{ 'background-color': priorityFill(p.priority) }} />
                   {p.label}
                 </span>
               )}

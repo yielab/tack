@@ -1,4 +1,4 @@
-import { type Component, createResource, createSignal, For, Show } from 'solid-js';
+import { type Component, createResource, createSignal, createUniqueId, For, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
 import { FieldShell, Select, EmptyState } from '../../../shared/ui';
@@ -52,13 +52,19 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
   const commit = (fieldId: string, raw: string, coerce: (s: string) => unknown) =>
     raw === '' ? void clearValue(fieldId) : void setValue(fieldId, coerce(raw));
 
+  // Ties each field's label to its control.
+  const uid = createUniqueId();
+  const controlId = (def: CustomField) => `${uid}-${def.id}`;
+
   const renderInput = (def: CustomField) => {
+    const id = controlId(def);
     const cur = () => valueFor(def.id);
     const str = () => (cur() == null ? '' : String(cur()));
     switch (def.field_type) {
       case 'long_text':
         return (
           <textarea
+            id={id}
             rows={3}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
@@ -69,6 +75,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
       case 'number':
         return (
           <input
+            id={id}
             type="number"
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, Number)}
@@ -79,6 +86,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
       case 'date':
         return (
           <input
+            id={id}
             type="date"
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
@@ -89,6 +97,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
       case 'boolean':
         return (
           <input
+            id={id}
             type="checkbox"
             checked={cur() === true}
             onChange={(e) => void setValue(def.id, e.currentTarget.checked)}
@@ -99,6 +108,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
       case 'select':
         return (
           <Select
+            id={id}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
           >
@@ -109,6 +119,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
       default: // text, url, email
         return (
           <input
+            id={id}
             type={def.field_type === 'email' ? 'email' : def.field_type === 'url' ? 'url' : 'text'}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
@@ -149,7 +160,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
         >
           <For each={defs()}>
             {(def) => (
-              <FieldShell label={def.name} required={def.required}>
+              <FieldShell label={def.name} required={def.required} for={controlId(def)}>
                 {renderInput(def)}
               </FieldShell>
             )}

@@ -1,4 +1,4 @@
-import { type Component, createSignal, Show, createEffect, For, createResource, createMemo } from 'solid-js';
+import { type Component, createSignal, Show, createEffect, For, createResource, createMemo, createUniqueId } from 'solid-js';
 import Modal from './Modal';
 import RichTextEditor from './RichTextEditor';
 import Button from './Button';
@@ -62,6 +62,10 @@ const estimateOptions = [0, 0.5, 1, 2, 3, 5, 8, 13, 21];
 const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   const mode = () => props.mode || 'create';
   const itemTypeConfig = createMemo(() => getItemTypeMap(props.vocabulary));
+  // Ids that tie each heading to what it names: a <label> to its input, a
+  // group's name to its row of option buttons.
+  const uid = createUniqueId();
+  const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, children: `${uid}-children`, tags: `${uid}-tags` };
   const [title, setTitle] = createSignal('');
   const [description, setDescription] = createSignal('');
   const [itemType, setItemType] = createSignal<ItemType>('task');
@@ -265,15 +269,16 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           {/* Item Type (only in create mode) */}
           <Show when={mode() === 'create'} fallback={<div />}>
             <div>
-              <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
+              <span id={ids.type} class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
                 Type
-              </label>
-              <div class="flex flex-wrap gap-1.5">
+              </span>
+              <div role="group" aria-labelledby={ids.type} class="flex flex-wrap gap-1.5">
                 <For each={Object.entries(itemTypeConfig())}>
                   {([type, config]) => (
                     <button
                       type="button"
                       onClick={() => setItemType(type as ItemType)}
+                      aria-pressed={itemType() === type}
                       class={`px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(itemType() === type)}`}
                       style={chipStyle(itemType() === type)}
                       disabled={loading()}
@@ -289,15 +294,16 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
           {/* Priority */}
           <div>
-            <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
+            <span id={ids.priority} class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
               Priority
-            </label>
-            <div class="flex flex-wrap gap-1.5">
+            </span>
+            <div role="group" aria-labelledby={ids.priority} class="flex flex-wrap gap-1.5">
               <For each={Object.entries(priorityConfig)}>
                 {([prio, config]) => (
                   <button
                     type="button"
                     onClick={() => setPriority(prio as Priority)}
+                    aria-pressed={priority() === prio}
                     class={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${chipClass(priority() === prio)}`}
                     style={chipStyle(priority() === prio)}
                     disabled={loading()}
@@ -317,10 +323,11 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Description with WYSIWYG */}
         <div>
-          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
+          <span class={sectionLabel} style={{ color: "var(--color-text-secondary)" }} aria-hidden="true">
             Description
-          </label>
+          </span>
           <RichTextEditor
+            label="Description"
             value={description()}
             onChange={setDescription}
             placeholder="Add details, acceptance criteria, or notes..."
@@ -330,15 +337,16 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Story Points - Compact */}
         <div>
-          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
+          <span id={ids.estimate} class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
             {resolveLabel(props.vocabulary, 'story_points')}
-          </label>
-          <div class="flex flex-wrap gap-1.5">
+          </span>
+          <div role="group" aria-labelledby={ids.estimate} class="flex flex-wrap gap-1.5">
             <For each={estimateOptions}>
               {(value) => (
                 <button
                   type="button"
                   onClick={() => setEstimate(estimate() === value ? null : value)}
+                  aria-pressed={estimate() === value}
                   class={`w-9 h-9 rounded-full font-mono text-[0.8125rem] font-semibold ${chipClass(estimate() === value)}`}
                   style={chipStyle(estimate() === value)}
                   disabled={loading()}
@@ -353,7 +361,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Subtasks/Child Items */}
         <Show when={(mode() === 'create' && itemType() !== 'subtask') || mode() === 'edit'}>
           <div>
-            <label class={`${sectionLabel} text-content-muted`}>
+            <label for={ids.children} class={`${sectionLabel} text-content-muted`}>
               {mode() === 'edit' ? 'Child Items' : 'Subtasks'}
             </label>
 
@@ -408,6 +416,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             {/* Add subtask/child item input */}
             <div class="flex gap-2">
               <input
+                id={ids.children}
                 type="text"
                 value={subtaskInput()}
                 onInput={(e) => setSubtaskInput(e.currentTarget.value)}
@@ -441,7 +450,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
 
         {/* Tags */}
         <div>
-          <label class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
+          <label for={ids.tags} class={sectionLabel} style={{ color: "var(--color-text-secondary)" }}>
             Tags
           </label>
 
@@ -469,6 +478,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           {/* Add tag input */}
           <div class="flex gap-2">
             <input
+              id={ids.tags}
               type="text"
               value={tagInput()}
               onInput={(e) => setTagInput(e.currentTarget.value)}

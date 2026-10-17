@@ -38,7 +38,7 @@ export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 export { default as TypeBadge, typeKey, typeBadgeTone } from './TypeBadge';
 export type { TypeBadgeProps } from './TypeBadge';
 
-export { default as PriorityDot, priorityColor, priorityLabel } from './PriorityDot';
+export { default as PriorityDot, priorityColor, priorityFill, priorityLabel } from './PriorityDot';
 export type { PriorityDotProps } from './PriorityDot';
 
 export { default as WipChip, wipChipStyle } from './WipChip';
