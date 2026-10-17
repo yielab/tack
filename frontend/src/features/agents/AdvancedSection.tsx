@@ -29,11 +29,11 @@ const AdvancedSection: Component = () => {
           <Show when={open()} fallback={<IconChevronRight size={14} />}>
             <IconChevronDown size={14} />
           </Show>
-          <span class="font-heading text-[18px]">Advanced</span>
+          <span class="font-heading text-[1.125rem]">Advanced</span>
         </button>
         {/* Stays unrendered while collapsed: its vocabulary belongs to Advanced only. */}
         <Show when={open()}>
-          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
             Enroll additional machines, manage fleets, and configure agent profiles.
           </p>
         </Show>

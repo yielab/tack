@@ -40,13 +40,13 @@ const SignInStep: Component<SignInStepProps> = (props) => {
   const agents = () => installedAgents(props.thisMachineRunner);
   return (
     <section class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-[22px] py-5">
-      <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+      <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Sign in
       </h2>
       <Show
         when={agents().length > 0}
         fallback={
-          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
             Install an agent above, then sign it in here.
           </p>
         }
@@ -68,7 +68,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                       <span style={{ color: 'var(--color-text-secondary)' }}>
                         Not signed in.
                         <Show when={signIn()?.command}>
-                          {(command) => <> Run <code class="font-mono text-[12px]">{command()}</code> in a terminal.</>}
+                          {(command) => <> Run <code class="font-mono text-[0.75rem]">{command()}</code> in a terminal.</>}
                         </Show>
                       </span>
                     </Show>

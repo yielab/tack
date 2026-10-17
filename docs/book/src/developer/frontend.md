@@ -76,12 +76,22 @@ fail otherwise.
 
 ### Typography
 
-Three self-hosted fonts (via `@fontsource`, so they work offline):
+Self-hosted fonts (via `@fontsource`, so they work offline):
 
-- **Caprasimo** — the display face: headings, step numbers, buttons
-  (`--font-heading`, utility `font-heading`). One weight; never bold it.
+- **Bricolage Grotesque** — the display face: headings, step numbers, buttons
+  (`--font-heading`, utility `font-heading`). Variable in weight and optical
+  size; its weight is `--font-heading-weight`, which the `font-heading` utility
+  and `h1`–`h4` apply.
 - **Figtree** — the UI body (`--font-body`, also `--font-sans`).
 - **JetBrains Mono** — ids, estimates, and keycaps (`--font-mono`).
+- **Atkinson Hyperlegible Next** — replaces body and display when the user turns
+  on the high-legibility font (`data-font="legible"` on `<html>`).
+
+Size text in **rem, never px**. The user's text size (Settings → Display &
+accessibility, `shared/state/display.ts`) sets the root font size as a
+percentage of the browser's default, and only rem follows it: write
+`'font-size': '0.8125rem'` or `text-[0.8125rem]` (px ÷ 16). `npm run
+lint:tokens` fails on a new px font size.
 
 ### Shape
 

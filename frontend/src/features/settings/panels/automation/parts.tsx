@@ -3,13 +3,13 @@ import type { JSX } from 'solid-js';
 export const SECTION = 'flex flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]';
 
 export const Heading = (props: { children: JSX.Element }) => (
-  <h3 class="text-[19px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+  <h3 class="text-[1.1875rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
     {props.children}
   </h3>
 );
 
 export const Note = (props: { children: JSX.Element; testid?: string }) => (
-  <p data-testid={props.testid} class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
+  <p data-testid={props.testid} class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
     {props.children}
   </p>
 );

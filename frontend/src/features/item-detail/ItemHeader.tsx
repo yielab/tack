@@ -66,7 +66,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       {/* Type + id */}
       <div class="flex items-center gap-2">
         <TypeBadge type={props.item.item_type} label={vocab.t(typeKey(props.item.item_type))} />
-        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '12px', color: 'var(--color-text-tertiary)' }}>
+        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)' }}>
           {shortId(props.item.id)}
         </span>
       </div>
@@ -79,7 +79,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-[20px] border-2 border-transparent px-2 py-1 text-[30px] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
+        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-[20px] border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'transparent',
           color: 'var(--color-text-primary)',
@@ -106,7 +106,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
                 class="focus:outline-none focus-visible:ring-2"
                 style={{
                   padding: '6px 14px', 'border-radius': '999px', cursor: 'pointer',
-                  'font-size': '13px', 'font-weight': active() ? 600 : 500, 'font-family': 'inherit',
+                  'font-size': '0.8125rem', 'font-weight': active() ? 600 : 500, 'font-family': 'inherit',
                   border: 'none',
                   background: active() ? 'var(--color-primary-600)' : 'transparent',
                   color: active() ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',

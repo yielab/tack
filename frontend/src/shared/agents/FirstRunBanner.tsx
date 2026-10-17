@@ -62,7 +62,7 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
         <A href="/agents" class="font-bold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>Turn on</A>
         <button
           type="button"
-          class="rounded-full px-1.5 text-[13px] focus:outline-none focus-visible:ring-2"
+          class="rounded-full px-1.5 text-[0.8125rem] focus:outline-none focus-visible:ring-2"
           style={{ color: 'var(--color-text-secondary)' }}
           aria-label="Dismiss"
           onClick={() => {

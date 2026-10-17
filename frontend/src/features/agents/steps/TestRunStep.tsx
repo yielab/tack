@@ -53,17 +53,17 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
 
   return (
     <section class="flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5">
-      <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+      <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Test run
       </h2>
-      <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
         Runs {harnessKind() ?? 'an installed agent'} once on this computer, with its own login, and shows what happened.
       </p>
       <Button class="self-start" onClick={() => void run()} loading={running()} disabled={running() || !harnessKind()}>
         Run test
       </Button>
       <Show when={!harnessKind()}>
-        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
           <Show
             when={needsModelKind()}
             fallback="No installed agent to test — turn on agent execution and install one above first."

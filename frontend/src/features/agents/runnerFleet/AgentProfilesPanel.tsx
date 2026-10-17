@@ -145,10 +145,10 @@ const AgentProfilesPanel: Component = () => {
               {(profile) => (
                 <li class="flex flex-col gap-1.5 rounded-[28px] bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                    <span class="text-[0.9375rem] font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {profile.name}
                     </span>
-                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span class="font-mono text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
                       {profile.agent_profile_id}
                     </span>
                     <Show when={profile.builtin}>
@@ -161,7 +161,7 @@ const AgentProfilesPanel: Component = () => {
                       </Show>
                     </span>
                   </div>
-                  <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
+                  <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
                 </li>
               )}
             </For>
@@ -170,7 +170,7 @@ const AgentProfilesPanel: Component = () => {
       </Show>
 
       <Show when={profiles.error !== undefined}>
-        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[0.8125rem]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load agent profiles.{' '}
           <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry

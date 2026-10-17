@@ -200,10 +200,10 @@ export default function Sprints() {
       {/* Header */}
       <div class="shrink-0 flex items-end gap-3">
         <div>
-          <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>
+          <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
             {t('sprint')} Planning
           </h1>
-          <p class="mt-0.5 text-[13px] text-content-muted">
+          <p class="mt-0.5 text-[0.8125rem] text-content-muted">
             Drag items from the {t('backlog').toLowerCase()} into a {t('sprint').toLowerCase()}, or between {t('sprint').toLowerCase()}s.
           </p>
         </div>
@@ -307,7 +307,7 @@ export default function Sprints() {
                         </div>
 
                         <Show when={sprint.start_date || sprint.end_date}>
-                          <p class="font-mono text-[11.5px] text-content-muted">
+                          <p class="font-mono text-[0.71875rem] text-content-muted">
                             {formatDate(sprint.start_date) ?? '?'} → {formatDate(sprint.end_date) ?? '?'}
                           </p>
                         </Show>
@@ -458,8 +458,11 @@ function ItemCard(props: {
           style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />
-        <p class="flex-1 min-w-0 text-[13px] font-bold truncate text-content">
-          {props.item.title}
+        <p class="flex-1 min-w-0 text-[0.8125rem] font-bold truncate text-content">
+          {/* Keyboard entry: its click bubbles to the card's own handler. */}
+          <button type="button" class="m-0 cursor-pointer border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
+            {props.item.title}
+          </button>
         </p>
         {/* "Run with agent" — same execution
             surface as Board's per-card trigger: launches a single
@@ -473,7 +476,7 @@ function ItemCard(props: {
           />
         </span>
       </div>
-      <div class="flex items-center gap-2 text-[11.5px]">
+      <div class="flex items-center gap-2 text-[0.71875rem]">
         <span class="text-content-muted">
           {props.item.status}
         </span>

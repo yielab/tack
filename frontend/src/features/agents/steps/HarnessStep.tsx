@@ -51,14 +51,14 @@ const INITIAL_BADGE_STYLES: readonly JSX.CSSProperties[] = [
 const HarnessStep: Component<HarnessStepProps> = (props) => {
   return (
     <section class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-[22px] py-5">
-      <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+      <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Agents on this machine
       </h2>
 
       <Show
         when={props.thisMachineRunner}
         fallback={
-          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
             Turn on agent execution above to see what's installed here.
           </p>
         }
@@ -71,7 +71,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
               return (
                 <div class="flex flex-wrap items-center gap-3 rounded-[22px] bg-app px-3.5 py-3 text-sm">
                   <span
-                    class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-[17px]"
+                    class="font-heading grid h-10 w-10 flex-none place-items-center rounded-full text-[1.0625rem]"
                     style={INITIAL_BADGE_STYLES[index() % INITIAL_BADGE_STYLES.length]}
                     aria-hidden="true"
                   >
@@ -79,7 +79,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                   </span>
                   <div class="flex min-w-0 flex-col">
                     <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{kind.label}</span>
-                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{kind.value}</span>
+                    <span class="font-mono text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>{kind.value}</span>
                   </div>
                   <Badge tone={status().tone}>{status().text}</Badge>
                   <Show when={status().text === 'Not installed'}>
@@ -92,14 +92,14 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                       }
                     >
                       {(command) => (
-                        <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[11.5px]" style={{ color: 'var(--color-text-secondary)' }}>
+                        <code class="rounded-full bg-panel px-2.5 py-1 font-mono text-[0.71875rem]" style={{ color: 'var(--color-text-secondary)' }}>
                           {command()}
                         </code>
                       )}
                     </Show>
                   </Show>
                   <Show when={status().text === 'Could not check'}>
-                    <span class="basis-full pl-[52px] font-mono text-[11px]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>
+                    <span class="basis-full pl-[52px] font-mono text-[0.6875rem]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>
                   </Show>
                   <Show when={harness()?.installed_version ? agentSafety([harness()!]) : null}>
                     {(safety) => (

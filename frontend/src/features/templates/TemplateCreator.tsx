@@ -45,7 +45,7 @@ function Section(props: {
         <Show when={props.open} fallback={<FiChevronRight size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />}>
           <FiChevronDown size={16} class="shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
         </Show>
-        <span class={`font-heading ${props.open ? 'text-lg' : 'text-[17px]'}`} style={{ color: 'var(--color-text-primary)' }}>
+        <span class={`font-heading ${props.open ? 'text-lg' : 'text-[1.0625rem]'}`} style={{ color: 'var(--color-text-primary)' }}>
           {props.title}
         </span>
         <Show when={props.badge}>
@@ -59,7 +59,7 @@ function Section(props: {
       </button>
       <Show when={props.open}>
         <div class="px-[22px] pb-[18px] pt-1 space-y-3">
-          <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
             {props.description}
           </p>
           {props.children}
@@ -93,7 +93,7 @@ const itemStyle = {
 const iconBtnClass =
   'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2';
 const addBtnClass =
-  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
+  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-[0.8125rem] font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
 const addBtnStyle = { 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' };
 
 // ── field type meta ───────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ export default function TemplateCreator() {
       <div class="max-w-[760px]">
         {/* Header */}
         <div class="mb-4">
-          <h1 class="text-[36px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h1 class="text-[2.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             Create Project Template
           </h1>
           <p class="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -441,13 +441,13 @@ export default function TemplateCreator() {
                 <thead>
                   <tr>
                     <th
-                      class="w-1/3 px-4 pt-3 pb-2 text-left text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      class="w-1/3 px-4 pt-3 pb-2 text-left text-[0.65625rem] font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Default
                     </th>
                     <th
-                      class="px-4 pt-3 pb-2 text-left text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      class="px-4 pt-3 pb-2 text-left text-[0.65625rem] font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Custom label
@@ -593,7 +593,7 @@ export default function TemplateCreator() {
                       />
                     </div>
                     <Show when={i() === 0}>
-                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-[11px] font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
+                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-[0.6875rem] font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
                         Default
                       </span>
                     </Show>

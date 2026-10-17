@@ -61,9 +61,25 @@ existing, and a project's automation is set on one screen.
   `tack export --bundle` write the same file back, and a template is now that file without
   items: `tack init --template`, `tack template save`, and three built-ins that come with
   roles and profiles ("Web product with content", "Library or CLI", "Static content site").
+- **Settings → Display & accessibility.** Theme (light, dark or system), palette, text size
+  (87.5% to 200%, on top of the browser's own default), zoom (80% to 200% in the desktop app,
+  whose window now also takes Ctrl + / Ctrl − / Ctrl 0; a browser tab keeps its own zoom), a
+  high-legibility font (Atkinson Hyperlegible Next) and reduced motion. The OS's reduced-motion
+  setting is honoured as well.
 
 ### Changed
 
+- **Headings use Bricolage Grotesque** instead of Caprasimo. All text is sized in rem, so it
+  follows the text size; `npm run lint:tokens` fails on a new px font size.
+- **The palette moved from the sidebar to Settings.** The sidebar keeps the light/dark button and
+  a link to the settings; in a project it has both *Project settings* and *Settings*, which was
+  unreachable from there before. The project switcher shows the open project from the first paint.
+- **Keyboard and screen readers.** A *Skip to content* link and header, navigation and main
+  landmarks; a focus ring on every control; items open with Enter from the Board, Sprints,
+  Calendar and Timeline; Tab stays inside an open dialog, drawer or the command palette, which is
+  now a dialog with a listbox; the closed mobile sidebar leaves the Tab order; icon-only buttons
+  have names. Notifications are announced, and an error stays until it is dismissed. The axe
+  scan adds WCAG 2.2, a pass at 200% text, and a keyboard test.
 - **The docket agent runs through docket's HTTP API, version 5, against a long-lived team.**
   The runner supervises `docket start --dispatch` on this computer, accepts only `apiVersion`
   `"5"` (anything else reads "needs docket 0.2.0-beta.6"), ensures the team's pod in the

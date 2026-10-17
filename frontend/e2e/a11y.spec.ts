@@ -4,6 +4,7 @@ import {
   getOrCreateProject,
   getOrCreateItem,
   createRunnableProject,
+  createFreshProject,
   createFreshItem,
   createItemWithAssignee,
   createAgentProfile,
@@ -14,7 +15,7 @@ import {
   setPaletteAndTheme,
 } from './helpers';
 
-// Accessibility scans (WCAG 2.0/2.1 A & AA) on the key surfaces. axe-core finds
+// Accessibility scans (WCAG 2.0/2.1/2.2 A & AA) on the key surfaces. axe-core finds
 // the machine-detectable ~40% of issues: contrast, missing labels, ARIA misuse,
 // non-focusable controls. Run only on chromium — a11y is engine-independent and
 // scanning three times adds noise without coverage.
@@ -33,7 +34,7 @@ const KNOWN_ISSUES: string[] = [];
 
 async function scan(page: import('@playwright/test').Page, extraDisabled: string[] = []) {
   const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .disableRules([...KNOWN_ISSUES, ...extraDisabled])
     .analyze();
   return results.violations;
@@ -125,6 +126,48 @@ test('global settings has no accessibility violations', async ({ page }) => {
   await waitForApp(page);
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+// The display preferences a user turns on for themselves: the largest text
+// size and the high-legibility font, in dark mode. Larger text is where
+// clipped labels and overlapping controls show up.
+test('board and settings at 200% text with the high-legibility font have no accessibility violations', async ({ page, request }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('tack_display', JSON.stringify({ textSize: 2, zoom: 1, legibleFont: true, motion: 'reduce' }));
+    localStorage.setItem('tack_theme', 'dark');
+  });
+  const projectId = await getOrCreateProject(request);
+  for (const path of [`/projects/${projectId}/board`, '/settings']) {
+    await page.goto(path);
+    await waitForApp(page);
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('32px');
+    const violations = await scan(page);
+    expect(violations, `${path}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  }
+});
+
+// What axe cannot see: the keyboard alone opens an item from the Board, and
+// Tab stays inside the drawer until Escape closes it and returns focus.
+test('keyboard opens a board card, Tab stays in the drawer, Escape returns focus', async ({ page, request }) => {
+  // A project of its own: a new item in the shared one re-renders the boards
+  // the other workers have open, and with them any modal a card owns.
+  const projectId = await createFreshProject(request, `A11y keyboard ${Date.now()}`);
+  const title = `Keyboard card ${Date.now()}`;
+  await createFreshItem(request, projectId, title);
+  await page.goto(`/projects/${projectId}/board`);
+  await waitForApp(page);
+  const card = page.getByRole('button', { name: title, exact: true }).first();
+  await card.focus();
+  await page.keyboard.press('Enter');
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toBeVisible();
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab');
+    expect(await drawer.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await expect(card).toBeFocused();
 });
 
 // Agents page — Advanced section (frontend/src/features/agents/runnerFleet/**).
@@ -221,7 +264,9 @@ test('agents page — creating a fleet via the form has no accessibility violati
 // inline action controls).
 
 test('Board card "Run with agent" modal has no accessibility violations', async ({ page, request }) => {
-  const projectId = await getOrCreateProject(request);
+  // A project of its own: the modal belongs to a card, and activity from
+  // other workers in the shared project re-renders that card and closes it.
+  const projectId = await createFreshProject(request, `A11y RWA board ${Date.now()}`);
   await getOrCreateItem(request, projectId, `A11y RWA board ${Date.now()}`);
   // With no active runner the dialog shows only "Agent execution is off"; the form needs one.
   await enrollRunner(request, `A11y RWA board runner ${Date.now()}`, 'opaque/model-alpha');

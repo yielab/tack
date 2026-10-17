@@ -216,10 +216,10 @@ export default function List() {
       <div class="sticky top-0 z-10 bg-app pb-4">
         <div class="flex items-end gap-2.5">
           <div class="min-w-0">
-            <h1 class="text-content m-0 leading-tight truncate" style={{ 'font-size': '34px' }}>
+            <h1 class="text-content m-0 leading-tight truncate" style={{ 'font-size': '2.125rem' }}>
               {project()?.name || 'List View'}
             </h1>
-            <p class="text-[13px] text-content-subtle">
+            <p class="text-[0.8125rem] text-content-subtle">
               {flattenedItems().length} {flattenedItems().length === 1 ? 'item' : 'items'}
             </p>
           </div>
@@ -366,7 +366,11 @@ function ItemRow(props: {
 
         {/* Expand/Collapse */}
         <button
+          type="button"
           onClick={props.onToggleExpand}
+          aria-label={props.isExpanded ? 'Collapse children' : 'Expand children'}
+          aria-expanded={hasChildren ? (props.isExpanded ? 'true' : 'false') : undefined}
+          tabindex={hasChildren ? undefined : -1}
           class={`flex-shrink-0 grid place-items-center w-5 h-5 rounded-full text-content-muted hover:bg-sunken transition-colors ${hasChildren ? '' : 'invisible'}`}
         >
           {props.isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
@@ -430,7 +434,7 @@ function ItemRow(props: {
           <div class="flex-shrink-0 flex gap-1">
             <For each={props.item.tags?.slice(0, 2)}>
               {(tag) => (
-                <span class="text-[11px] font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
+                <span class="text-[0.6875rem] font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
                   {tag}
                 </span>
               )}
@@ -462,7 +466,7 @@ function ItemRow(props: {
 }
 
 const pillControl =
-  'flex-shrink-0 min-h-8 text-[13px] px-3 rounded-full border-0 bg-app text-content ' +
+  'flex-shrink-0 min-h-8 text-[0.8125rem] px-3 rounded-full border-0 bg-app text-content ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]';
 
 // Inline create form — a soft accent pill under its parent.

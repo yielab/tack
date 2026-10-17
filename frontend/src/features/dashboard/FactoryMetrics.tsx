@@ -46,10 +46,10 @@ export default function FactoryMetrics() {
     <div class="flex flex-col gap-[18px]">
       {/* Header */}
       <div>
-        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>
+        <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
           Factory metrics
         </h1>
-        <p class="mt-0.5 text-[13px] text-content-muted">
+        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
           Agent work, verification, and outcomes
         </p>
       </div>

@@ -40,10 +40,10 @@ export default function Dashboard() {
     <div class="flex flex-col gap-[18px]">
       {/* Header */}
       <div>
-        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>
+        <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
           Overview
         </h1>
-        <p class="mt-0.5 text-[13px] text-content-muted">
+        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
           Project statistics and progress
         </p>
       </div>
@@ -142,13 +142,13 @@ export default function Dashboard() {
           {/* Story Points Progress */}
           <Show when={stats().totalEstimate > 0}>
             <MeterCard title={`${t('story_points')} Progress`}>
-              <div class="flex items-center justify-between text-[13px]">
+              <div class="flex items-center justify-between text-[0.8125rem]">
                 <span class="text-content-muted">Total Points</span>
                 <span class="font-heading text-2xl text-content">
                   {stats().totalEstimate}
                 </span>
               </div>
-              <div class="flex items-center justify-between text-[13px]">
+              <div class="flex items-center justify-between text-[0.8125rem]">
                 <span class="text-content-muted">Completed</span>
                 <span class="font-heading text-2xl" style={{ color: 'var(--color-success-600)' }}>
                   {stats().completedEstimate}
@@ -189,7 +189,7 @@ function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; c
       >
         {props.label}
       </p>
-      <p class="font-heading leading-none" style={{ 'font-size': '40px' }}>
+      <p class="font-heading leading-none" style={{ 'font-size': '2.5rem' }}>
         {props.children}
       </p>
       <Show when={props.sub}>
@@ -211,7 +211,7 @@ function MeterCard(props: { title: string; children: JSX.Element }) {
 function Meter(props: { label: string; value: string; percent: number; color: string; capitalize?: boolean }) {
   return (
     <div class="flex flex-col gap-1">
-      <div class="flex items-center text-[13px]">
+      <div class="flex items-center text-[0.8125rem]">
         <span class="text-content" classList={{ capitalize: !!props.capitalize }}>{props.label}</span>
         <span class="ml-auto text-content-muted">{props.value}</span>
       </div>

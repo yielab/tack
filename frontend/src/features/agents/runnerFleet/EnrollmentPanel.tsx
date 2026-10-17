@@ -204,7 +204,7 @@ const EnrollmentPanel: Component = () => {
 
   return (
     <div class="space-y-3.5">
-      <p class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
         Enroll issues a one-time token a <code class="font-mono">tack-runner</code> process exchanges for a
         durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}
@@ -216,7 +216,7 @@ const EnrollmentPanel: Component = () => {
         onSubmit={(e) => void submitEnroll(e)}
         class="grid items-start gap-x-3.5 gap-y-2.5 rounded-[28px] bg-panel px-5 py-[18px] sm:grid-cols-3"
       >
-        <h3 class="col-span-full text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="col-span-full text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
         </h3>
         <Field
@@ -265,7 +265,7 @@ const EnrollmentPanel: Component = () => {
         <Show
           when={sessionRunners().length > 0}
           fallback={
-            <p class="text-[13px]" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-tertiary)' }}>
               None yet — enroll a runner above, or revoke one by ID below.
             </p>
           }
@@ -310,7 +310,7 @@ const EnrollmentPanel: Component = () => {
         onSubmit={(e) => void submitManualRevoke(e)}
         class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]"
       >
-        <h3 class="text-[16px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h3 class="text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID
         </h3>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>

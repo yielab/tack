@@ -43,7 +43,7 @@ const TypeBadge: Component<TypeBadgeProps> = (props) => {
       style={{
         'background-color': tone().bg,
         color: tone().fg,
-        'font-size': '10.5px',
+        'font-size': '0.65625rem',
         'letter-spacing': '.01em',
         padding: '2px 8px',
         ...props.style,

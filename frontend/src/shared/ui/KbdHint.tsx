@@ -12,7 +12,7 @@ const KbdHint: Component<KbdHintProps> = (props) => (
     class={clsx('inline-flex items-center', props.class)}
     style={{
       'font-family': 'var(--font-mono)',
-      'font-size': '10.5px',
+      'font-size': '0.65625rem',
       color: 'var(--color-text-tertiary)',
       background: 'var(--color-bg-app)',
       'border-radius': '6px',

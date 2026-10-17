@@ -220,7 +220,7 @@ export default function Table() {
           aria-label="Filter items"
           class="min-h-9 px-3.5 py-1.5 rounded-full text-sm w-56 border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
         />
-        <span class="text-[13px] text-content-subtle">
+        <span class="text-[0.8125rem] text-content-subtle">
           {rows().length} item{rows().length === 1 ? '' : 's'}
         </span>
         <Button
@@ -249,7 +249,7 @@ export default function Table() {
             >
               <For each={COLUMNS}>
                 {(c) => (
-                  <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-[14px] text-[13px] text-content cursor-pointer hover:bg-sunken">
+                  <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-[14px] text-[0.8125rem] text-content cursor-pointer hover:bg-sunken">
                     <input
                       type="checkbox"
                       class="w-4 h-4"
@@ -293,13 +293,13 @@ export default function Table() {
           }
         >
           <div class="overflow-x-auto rounded-[28px] bg-panel px-2 pt-2 pb-1">
-            <table class="w-full border-collapse" style={{ 'font-size': '13.5px' }}>
+            <table class="w-full border-collapse" style={{ 'font-size': '0.84375rem' }}>
               <thead>
                 <tr>
                   <For each={visibleColumns()}>
                     {(c) => (
                       <th
-                        class="text-left px-3 py-2.5 text-[11px] font-bold uppercase tracking-[.08em] select-none cursor-pointer whitespace-nowrap text-content-subtle border-b border-line"
+                        class="text-left px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-[.08em] select-none cursor-pointer whitespace-nowrap text-content-subtle border-b border-line"
                         onClick={() => toggleSort(c.key)}
                         aria-sort={sortKey() === c.key ? (sortDir() === 'asc' ? 'ascending' : 'descending') : 'none'}
                       >

@@ -114,7 +114,7 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 
 4. **Open the detail drawer.** Click the card body (not the drag handle) to see all fields, dependencies, comments, attachments, and custom fields. See [Working with Items](items.md).
 
-5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Switch theme and palette from the sidebar footer — see [Appearance](appearance.md).
+5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Adapt theme, palette, text size and zoom in Settings → Display & accessibility — see [Appearance](appearance.md).
 
 Ready to put it on a network or add a token? See [Administration & Security](administration.md).
 

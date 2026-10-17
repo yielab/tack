@@ -355,7 +355,7 @@ const AttemptRow: Component<{
           <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
           started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[11px]" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.attempt.runner_id}
         </span>
       </div>
@@ -546,7 +546,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
       </div>
       <Show when={cost() !== NOT_MEASURED_TEXT}>
-        <p class="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
           The cost is {harness()}'s own estimate at list price, not your bill.
         </p>
       </Show>

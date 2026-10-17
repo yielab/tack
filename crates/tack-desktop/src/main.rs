@@ -273,6 +273,9 @@ fn main() {
                             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
                                 .title("Tack")
                                 .inner_size(1200.0, 800.0)
+                                // Ctrl + / Ctrl − / Ctrl 0 zoom, as in a browser
+                                // tab; off by default in a webview.
+                                .zoom_hotkeys_enabled(true)
                                 .on_navigation(move |url| is_board_url(url, port))
                                 .build()
                         {

@@ -75,7 +75,7 @@ export const ItemCard: Component<{
     >
       <div style={{ display: 'flex', 'align-items': 'center', gap: '7px' }}>
         <TypeBadge type={props.item.item_type} label={props.typeLabel} />
-        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10.5px', color: 'var(--color-text-tertiary)' }}>
+        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>
           {shortId(props.item.id)}
         </span>
         <div style={{ 'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px' }}>
@@ -89,10 +89,21 @@ export const ItemCard: Component<{
         </div>
       </div>
       <h4 style={{
-        'font-family': 'var(--font-body)', 'font-size': '14px', 'font-weight': 700, 'font-synthesis': 'auto',
+        'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
         'letter-spacing': 'normal', margin: 0, 'line-height': 1.3, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
       }}>
-        {props.item.title}
+        {/* The keyboard's way in: Enter or Space clicks this button, and the
+            click bubbles to the card's own handler. A real button rather than
+            role="button" on the card, which holds the agent button. */}
+        <button
+          type="button"
+          style={{
+            background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
+            'text-align': 'left', cursor: 'pointer', 'border-radius': '6px', 'overflow-wrap': 'anywhere',
+          }}
+        >
+          {props.item.title}
+        </button>
       </h4>
       <Show when={props.item.needs_review}>
         <div><Badge tone="warning">Needs your review</Badge></div>
@@ -102,14 +113,14 @@ export const ItemCard: Component<{
       </Show>
       <MergeNoteBadge note={props.item.merge_note} />
       <AutomationBadge startedBy={props.item.started_by} team={props.item.team} mergedBy={props.item.merged_by} />
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem' }}>
         <Show when={props.item.priority !== 'none'}>
           <PriorityDot priority={props.item.priority as Priority} showLabel />
         </Show>
         <div style={{ flex: 1 }} />
         <Show when={estimate()}>
           <span style={{
-            'font-family': 'var(--font-mono)', 'font-size': '10.5px', 'font-weight': 500, color: 'var(--color-text-secondary)',
+            'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', 'font-weight': 500, color: 'var(--color-text-secondary)',
             background: 'var(--color-bg-panel)', padding: '2px 7px', 'border-radius': 'var(--radius-pill)',
           }}>
             {estimate()}
@@ -155,12 +166,12 @@ const BoardColumnView: Component<{
       <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
         <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
         <h3 style={{
-          'font-family': 'var(--font-body)', 'font-size': '14px', 'font-weight': 700, 'font-synthesis': 'auto',
+          'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
           'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
         }}>
           {props.column.status}
         </h3>
-        <span style={{ 'font-size': '12px', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>
+        <span style={{ 'font-size': '0.75rem', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>
           {props.column.items.length}
         </span>
         <Show when={props.column.wip_limit != null}>
@@ -209,7 +220,7 @@ const BoardColumnView: Component<{
           <div style={{
             'min-height': '70px', display: 'grid', 'place-items': 'center',
             border: '2px dashed var(--color-border-light)', 'border-radius': 'var(--radius-item)',
-            padding: '12px', 'text-align': 'center', 'font-size': '12px', color: 'var(--color-text-tertiary)',
+            padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
           }}>
             Drop items here
           </div>
@@ -398,12 +409,12 @@ const Board: Component = () => {
     <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, height: '100%' }}>
       {/* board toolbar */}
       <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px' }}>
-        <h1 style={{ 'font-size': '34px', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
+        <h1 style={{ 'font-size': '2.125rem', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
           {vocab.t('board')}
         </h1>
         <Show when={sock()}>
           <span style={{
-            display: 'inline-flex', 'align-items': 'center', gap: '6px', 'font-size': '12px', 'font-weight': 600,
+            display: 'inline-flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem', 'font-weight': 600,
             color: livePill().fg, background: livePill().bg,
             padding: '3px 10px', 'border-radius': 'var(--radius-pill)', 'white-space': 'nowrap',
           }}>
@@ -415,7 +426,7 @@ const Board: Component = () => {
             {liveLabel()}
           </span>
         </Show>
-        <span style={{ display: 'inline-flex', gap: '4px', 'font-size': '13px', color: 'var(--color-text-secondary)' }}>
+        <span style={{ display: 'inline-flex', gap: '4px', 'font-size': '0.8125rem', color: 'var(--color-text-secondary)' }}>
           <span style={{ color: 'var(--color-text-tertiary)' }}>·</span>
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>

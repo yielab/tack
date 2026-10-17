@@ -36,7 +36,7 @@ const Projects: Component = () => {
     <div class="flex flex-col gap-[26px] lg:px-6 lg:py-3">
       <div class="flex flex-wrap items-end gap-4">
         <div>
-          <h1 class="text-[34px] leading-tight text-content">Projects</h1>
+          <h1 class="text-[2.125rem] leading-tight text-content">Projects</h1>
           <p class="mt-1 text-content-muted">
             Select a project to get started
           </p>
@@ -98,7 +98,7 @@ const Projects: Component = () => {
                   class="flex min-h-[170px] flex-col gap-2.5 rounded-[28px] border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                 >
                   <div class="flex items-start gap-2.5">
-                    <h3 class="min-w-0 text-[21px] leading-[1.15] text-content">
+                    <h3 class="min-w-0 text-[1.3125rem] leading-[1.15] text-content">
                       {project.name}
                     </h3>
                     <span class="ml-auto shrink-0" style={projectTypePillStyle(project.project_type)}>
@@ -106,7 +106,7 @@ const Projects: Component = () => {
                     </span>
                   </div>
                   <Show when={project.description}>
-                    <p class="line-clamp-2 text-[13.5px] leading-[1.45] text-content-muted">
+                    <p class="line-clamp-2 text-[0.84375rem] leading-[1.45] text-content-muted">
                       {project.description}
                     </p>
                   </Show>

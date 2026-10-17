@@ -242,7 +242,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     const samples = vocabSamples(t);
     return (
       <div
-        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-[11px]"
+        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-[0.6875rem]"
         style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
       >
         <Show when={columns.length > 0}>
@@ -411,7 +411,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 {(group) => (
                   <div>
                     <div
-                      class="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[.1em]"
+                      class="mb-1.5 flex items-center gap-1.5 text-[0.65625rem] font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       <TypeDot type={group.type} /> {group.label}

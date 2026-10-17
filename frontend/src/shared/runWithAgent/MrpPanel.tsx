@@ -31,7 +31,7 @@ const NotRun: Component = () => (
 
 const Section: Component<{ title: string; children: JSX.Element }> = (props) => (
   <section class="space-y-2">
-    <h5 class="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
+    <h5 class="text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
       {props.title}
     </h5>
     {props.children}

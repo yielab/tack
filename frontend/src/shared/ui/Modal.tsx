@@ -7,6 +7,7 @@ import {
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import clsx from 'clsx';
+import { trapFocus } from './focusTrap';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ const Modal: Component<ModalProps> = (props) => {
         e.stopPropagation();
         props.onClose();
       }
+      trapFocus(dialog, e);
     };
     document.addEventListener('keydown', onKey);
     // Move focus into the dialog once mounted.

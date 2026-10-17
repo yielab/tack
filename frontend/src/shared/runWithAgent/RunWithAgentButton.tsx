@@ -24,7 +24,7 @@ function chipStyle(tone: StateTone, raw: string): JSX.CSSProperties {
     display: 'inline-flex',
     'align-items': 'center',
     gap: '5px',
-    'font-size': '10.5px',
+    'font-size': '0.65625rem',
     'font-weight': 700,
     padding: '2px 8px',
     'white-space': 'nowrap',
@@ -153,7 +153,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             display: 'grid',
             'place-items': 'center',
             'line-height': '1',
-            'font-size': '9px',
+            'font-size': '0.5625rem',
             padding: 0,
             'flex-shrink': 0,
           }}

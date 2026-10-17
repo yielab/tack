@@ -40,7 +40,7 @@ const ExecutionToggle: Component = () => {
   return (
     <section class="flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5">
       <div class="flex items-center gap-2.5">
-        <h2 class="text-[20px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+        <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Agent execution on this machine
         </h2>
         <Show when={!status.loading && !unavailable() && !loadFailed()}>
@@ -55,7 +55,7 @@ const ExecutionToggle: Component = () => {
       </Show>
 
       <Show when={unavailable()}>
-        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
           Not available from this screen — this is a remote-runner deployment (this server
           isn't bound to its own loopback address, or this build has no embedded runner
           wired in), so it can never run one here for security reasons. Enroll a runner on
@@ -65,7 +65,7 @@ const ExecutionToggle: Component = () => {
       </Show>
 
       <Show when={loadFailed()}>
-        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[0.8125rem]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load the current state.{' '}
           <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
@@ -83,7 +83,7 @@ const ExecutionToggle: Component = () => {
           >
             {status()!.enabled ? 'Turn off' : 'Turn on'}
           </Button>
-          <span class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <span class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={status()!.since}
               fallback={status()!.enabled ? 'Starting…' : 'Off since this server started.'}
@@ -93,7 +93,7 @@ const ExecutionToggle: Component = () => {
             </Show>
           </span>
         </div>
-        <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
           Up to {status()!.max_concurrent_attempts}{' '}
           {status()!.max_concurrent_attempts === 1 ? 'run' : 'runs'} at a time on this computer
           {' · '}

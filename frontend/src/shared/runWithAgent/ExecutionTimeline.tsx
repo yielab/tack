@@ -175,7 +175,7 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[11px]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {summary()?.request_id ?? '—'}
         </span>
         <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>

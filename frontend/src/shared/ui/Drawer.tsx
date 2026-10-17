@@ -7,6 +7,7 @@ import {
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import clsx from 'clsx';
+import { trapFocus } from './focusTrap';
 
 export interface DrawerProps {
   isOpen: boolean;
@@ -23,8 +24,8 @@ const WIDTH: Record<NonNullable<DrawerProps['width']>, string> = {
   xl: 'sm:max-w-2xl',
 };
 
-/** Right-side drawer; full-screen sheet on mobile. ESC + overlay close, focus
- * trap entry, returns focus to the opener. Token-driven. */
+/** Right-side drawer; full-screen sheet on mobile. ESC + overlay close, keeps
+ * Tab inside while open, returns focus to the opener. Token-driven. */
 const Drawer: Component<DrawerProps> = (props) => {
   let panel: HTMLDivElement | undefined;
   let previouslyFocused: HTMLElement | null = null;
@@ -38,6 +39,7 @@ const Drawer: Component<DrawerProps> = (props) => {
         e.stopPropagation();
         props.onClose();
       }
+      trapFocus(panel, e);
     };
     document.addEventListener('keydown', onKey);
     queueMicrotask(() => panel?.focus());

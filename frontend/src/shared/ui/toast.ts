@@ -46,7 +46,9 @@ export function removeToast(id: string) {
 export const toast = {
   success: (message: string, duration?: number) =>
     showToast(message, 'success', duration),
-  error: (message: string, duration?: number) =>
+  // An error stays until it is dismissed: it may need longer to read than
+  // the four seconds the others get, and losing it loses what went wrong.
+  error: (message: string, duration = 0) =>
     showToast(message, 'error', duration),
   warning: (message: string, duration?: number) =>
     showToast(message, 'warning', duration),

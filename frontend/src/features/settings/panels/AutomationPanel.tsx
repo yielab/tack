@@ -37,7 +37,7 @@ const Fold = (props: { id?: string; title: string; summary: string; help?: JSX.E
     <summary class="flex cursor-pointer flex-wrap items-center gap-2">
       <Heading>{props.title}</Heading>
       {props.help}
-      <span class="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+      <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
     </summary>
     <div class="mt-2.5 flex flex-col gap-2.5">{props.children}</div>
   </details>

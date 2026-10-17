@@ -12,6 +12,15 @@ export type Palette = 'harbor' | 'teal' | 'clay' | 'graphite';
 
 export const PALETTES: Palette[] = ['harbor', 'teal', 'clay', 'graphite'];
 
+/** Name and identity color of each palette, for the picker in Settings. The
+ *  color is the palette's light-mode accent, shown as data, not as a token. */
+export const PALETTE_SWATCHES: [Palette, string, string][] = [
+  ['harbor', 'Harbor', '#2e5f7f'],
+  ['teal', 'Teal', '#0f766e'],
+  ['clay', 'Clay', '#c2410c'],
+  ['graphite', 'Graphite', '#3f6a0c'],
+];
+
 const KEY = 'tack_palette';
 
 export function getStoredPalette(): Palette {
@@ -26,7 +35,7 @@ export function getStoredPalette(): Palette {
 
 const [palette, setPaletteSignal] = createSignal<Palette>(getStoredPalette());
 
-/** Reactive accessor — drives the sidebar swatch control. */
+/** Reactive accessor — drives the palette picker in Settings. */
 export const currentPalette = palette;
 
 export function applyPalette(p: Palette): void {
