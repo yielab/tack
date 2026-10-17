@@ -7,7 +7,7 @@ appears immediately in every other view. Two more screens, **Overview (Dashboard
 
 Every view shares the same shell: a sidebar to switch project and view, a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
-on `Ctrl+K`. Theme and accent palette are set from the sidebar footer — see
+on `Ctrl+K`. Theme, palette, text size and zoom are set in Settings → Display & accessibility — see
 [Appearance](appearance.md).
 
 ---

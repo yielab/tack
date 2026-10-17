@@ -21,7 +21,7 @@ export function getStoredTheme(): Theme {
 
 const [theme, setThemeSignal] = createSignal<Theme>(getStoredTheme());
 
-/** Reactive accessor — drives the sidebar theme toggle. */
+/** Reactive accessor — drives the sidebar toggle and the picker in Settings. */
 export const currentTheme = theme;
 
 /** Whether dark is currently rendered (resolves 'system' against the OS). */

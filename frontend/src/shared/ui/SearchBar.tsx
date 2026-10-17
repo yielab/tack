@@ -148,7 +148,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
           placeholder={props.placeholder ?? 'Search items…'}
           style={{
             flex: 1, 'min-width': 0, border: 'none', outline: 'none', background: 'transparent',
-            'font-family': 'inherit', 'font-size': '13px', color: 'var(--color-text-primary)',
+            'font-family': 'inherit', 'font-size': '0.8125rem', color: 'var(--color-text-primary)',
           }}
         />
         <Show when={query()} fallback={<KbdHint>⌃/</KbdHint>}>
@@ -187,7 +187,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
                       background: active() ? 'var(--color-accent-soft)' : 'transparent',
                     }}
                   >
-                    <span style={{ 'font-size': '13px', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis', 'max-width': '100%' }}>
+                    <span style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis', 'max-width': '100%' }}>
                       {item.title}
                     </span>
                     <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
@@ -195,14 +195,14 @@ const SearchBar: Component<SearchBarProps> = (props) => {
                       <Show when={item.priority !== 'none'}>
                         <PriorityDot priority={item.priority as Priority} showLabel />
                       </Show>
-                      <span style={{ 'font-size': '11px', color: 'var(--color-text-tertiary)' }}>{item.status}</span>
+                      <span style={{ 'font-size': '0.6875rem', color: 'var(--color-text-tertiary)' }}>{item.status}</span>
                     </span>
                   </button>
                 );
               }}
             </For>
           </div>
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', padding: '8px 12px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-base)', 'font-size': '11px', color: 'var(--color-text-tertiary)' }}>
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', padding: '8px 12px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-base)', 'font-size': '0.6875rem', color: 'var(--color-text-tertiary)' }}>
             <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}><KbdHint>↑↓</KbdHint>navigate</span>
             <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}><KbdHint>↵</KbdHint>open</span>
           </div>

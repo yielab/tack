@@ -14,6 +14,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { IconTimeline } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
+import { onActivateKey } from '../../shared/ui/keyActivate';
 
 // ── Drag state ─────────────────────────────────────────────────────────────
 
@@ -285,8 +286,8 @@ export default function Timeline() {
       onPointerUp={handlePointerUp}
     >
       <div>
-        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>Timeline</h1>
-        <p class="mt-0.5 text-[13px] text-content-muted">
+        <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>Timeline</h1>
+        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
           Drag bars to shift dates. Drag the left/right edge to resize start or due date.
         </p>
       </div>
@@ -307,7 +308,7 @@ export default function Timeline() {
           <Button variant="secondary" onClick={previousPeriod}>← Previous</Button>
           <Button variant="secondary" onClick={goToday}>Today</Button>
           <Button variant="secondary" onClick={nextPeriod}>Next →</Button>
-          <div class="ml-auto flex gap-[3px] p-[3px] rounded-full bg-panel text-[13px]">
+          <div class="ml-auto flex gap-[3px] p-[3px] rounded-full bg-panel text-[0.8125rem]">
             <For each={(['week', 'month', 'quarter'] as const)}>
               {(mode) => (
                 <button
@@ -393,6 +394,10 @@ export default function Timeline() {
                       }}
                       onPointerDown={(e) => handleBarPointerDown(e, item, 'move')}
                       onClick={() => !dragState() && setSearchParams({ item: item.id })}
+                      role="button"
+                      tabindex={0}
+                      aria-label={item.title}
+                      onKeyDown={onActivateKey(() => setSearchParams({ item: item.id }))}
                       title={`${item.title}\n${pos().start.toLocaleDateString()} → ${pos().end.toLocaleDateString()}\n${item.status} · ${item.priority}${isBlocked(item.id) ? '\n⛔ Blocked' : ''}\n\nDrag to move · Drag edges to resize`}
                     >
                       {/* Left resize handle */}
@@ -417,7 +422,7 @@ export default function Timeline() {
                           <span class="text-xs shrink-0" aria-label="done">✓</span>
                         </Show>
                         <span
-                          class="text-[12.5px] font-bold truncate"
+                          class="text-[0.78125rem] font-bold truncate"
                           style={{ 'text-decoration': isDone(item.status) ? 'line-through' : 'none' }}
                         >
                           {item.title}
@@ -436,7 +441,7 @@ export default function Timeline() {
                     {/* Date tooltip during drag */}
                     <Show when={dragging() && preview()}>
                       <div
-                        class="absolute -top-6 font-mono text-[11px] font-bold px-2.5 py-[3px] rounded-full whitespace-nowrap z-20 pointer-events-none"
+                        class="absolute -top-6 font-mono text-[0.6875rem] font-bold px-2.5 py-[3px] rounded-full whitespace-nowrap z-20 pointer-events-none"
                         style={{
                           left: `${pos().leftPercent}%`,
                           'background-color': 'var(--color-text-primary)',

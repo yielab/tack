@@ -20,7 +20,7 @@ const HelpButton: Component = () => {
         display: 'flex', 'align-items': 'center', padding: '6px 10px',
         'border-radius': 'var(--radius-pill)', cursor: 'pointer',
         border: '1px solid var(--color-border-light)', background: 'transparent',
-        color: 'var(--color-text-secondary)', 'font-size': '13px',
+        color: 'var(--color-text-secondary)', 'font-size': '0.8125rem',
       }}
     >
       ?

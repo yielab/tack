@@ -152,10 +152,10 @@ const FleetsPanel: Component = () => {
               {(fleet) => (
                 <li class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                    <span class="text-[0.9375rem] font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {fleet.name}
                     </span>
-                    <span class="font-mono text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span class="font-mono text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
                       {fleet.fleet_id}
                     </span>
                     <Badge class="ml-auto" tone="neutral">
@@ -163,7 +163,7 @@ const FleetsPanel: Component = () => {
                     </Badge>
                   </div>
                   <div class="flex flex-col gap-2">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <p class="text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
                       Members
                     </p>
                     <Show
@@ -186,7 +186,7 @@ const FleetsPanel: Component = () => {
                           <For each={membersOf(fleet.fleet_id)}>
                             {(runner) => (
                               <li class="flex items-center gap-2 rounded-full bg-app py-1 pl-3 pr-1">
-                                <span class="text-[13px]" style={{ color: 'var(--color-text-primary)' }}>
+                                <span class="text-[0.8125rem]" style={{ color: 'var(--color-text-primary)' }}>
                                   {runner.name}
                                 </span>
                                 <Badge tone={runnerStateBadge(runner.state).tone}>
@@ -251,7 +251,7 @@ const FleetsPanel: Component = () => {
       </Show>
 
       <Show when={fleets.error !== undefined}>
-        <div class="text-[13px]" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-[0.8125rem]" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load fleets.{' '}
           <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry

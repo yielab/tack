@@ -87,7 +87,7 @@ export default function Templates() {
 
   /** Filter chip: a pill, accent-filled when active, with a type-hue dot. */
   const chipClass =
-    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] transition-colors ' +
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.78125rem] transition-colors ' +
     'focus:outline-none focus-visible:ring-2';
   const chipStyle = (active: boolean) => ({
     'background-color': active ? 'var(--color-primary-600)' : 'var(--color-bg-panel)',
@@ -144,7 +144,7 @@ export default function Templates() {
         {/* Header */}
         <div class="flex flex-wrap items-end gap-3">
           <div>
-            <h1 class="text-[34px] leading-tight text-content">
+            <h1 class="text-[2.125rem] leading-tight text-content">
               Project Templates
             </h1>
             <p class="text-content-muted mt-1">
@@ -271,7 +271,7 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-[13px] leading-[1.4] text-content-muted">
+                    <p class="text-[0.8125rem] leading-[1.4] text-content-muted">
                       {template.description}
                     </p>
                   </Show>
@@ -290,7 +290,7 @@ export default function Templates() {
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
                   <Show when={showPreview() && (columns().length > 0 || samples().length > 0 || roles().length > 0)}>
-                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[11px] text-content-muted" data-testid="template-preview">
+                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[0.6875rem] text-content-muted" data-testid="template-preview">
                       <Show when={columns().length > 0}>
                         <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>

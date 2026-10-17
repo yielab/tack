@@ -68,7 +68,7 @@ const ProjectSettings: Component = () => {
     <div class="flex flex-col gap-[18px] px-6 py-7 sm:px-12">
       <div class="flex items-end gap-3">
         <div class="min-w-0">
-          <h1 class="text-[36px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+          <h1 class="text-[2.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             Project Settings
           </h1>
           <Show when={project()}>

@@ -25,10 +25,10 @@ const Step: Component<{ n: number; title: string; description: string; action: J
       {props.n}
     </div>
     <div class="min-w-0">
-      <p class="text-[15px] font-bold" style={{ color: 'var(--color-text-primary)' }}>
+      <p class="text-[0.9375rem] font-bold" style={{ color: 'var(--color-text-primary)' }}>
         {props.title}
       </p>
-      <p class="text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
         {props.description}
       </p>
     </div>
@@ -36,7 +36,7 @@ const Step: Component<{ n: number; title: string; description: string; action: J
   </div>
 );
 
-const linkClass = 'inline-flex items-center gap-1 text-[13px] font-bold hover:underline';
+const linkClass = 'inline-flex items-center gap-1 text-[0.8125rem] font-bold hover:underline';
 
 const EmptyProjectGuide: Component<Props> = (props) => {
   const params = useParams();

@@ -7,6 +7,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { IconCalendar } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
+import { onActivateKey } from '../../shared/ui/keyActivate';
 
 export default function Calendar() {
   const params = useParams();
@@ -135,8 +136,8 @@ export default function Calendar() {
   return (
     <div class="flex flex-col gap-3">
       <div>
-        <h1 class="m-0 text-content" style={{ 'font-size': '34px' }}>Calendar</h1>
-        <p class="mt-0.5 text-[13px] text-content-muted">
+        <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>Calendar</h1>
+        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
           Drag items between days to reschedule. Drop on "Unscheduled" to clear a due date.
         </p>
       </div>
@@ -160,7 +161,7 @@ export default function Calendar() {
         {/* Calendar controls + priority legend */}
         <div class="flex flex-wrap items-center gap-2.5">
           <Button variant="secondary" onClick={previousMonth}>← Previous</Button>
-          <h2 class="mx-1.5 text-content" style={{ 'font-size': '22px' }}>
+          <h2 class="mx-1.5 text-content" style={{ 'font-size': '1.375rem' }}>
             {monthName()}
           </h2>
           <Button variant="secondary" size="sm" onClick={goToday}>Today</Button>
@@ -182,7 +183,7 @@ export default function Calendar() {
           {/* Weekday Headers */}
           <For each={['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']}>
             {(day) => (
-              <div class="px-2 text-[11px] font-bold uppercase tracking-[.08em] text-content-subtle">
+              <div class="px-2 text-[0.6875rem] font-bold uppercase tracking-[.08em] text-content-subtle">
                 {day}
               </div>
             )}
@@ -224,7 +225,10 @@ export default function Calendar() {
                           draggable={true}
                           onDragStart={(e) => handleDragStart(e, item.id)}
                           onClick={() => setSearchParams({ item: item.id })}
-                          class="text-[11px] px-2 py-[3px] rounded-[10px] cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
+                          role="button"
+                          tabindex={0}
+                          onKeyDown={onActivateKey(() => setSearchParams({ item: item.id }))}
+                          class="text-[0.6875rem] px-2 py-[3px] rounded-[10px] cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
                           style={getPriorityStyle(item.priority)}
                           title={`${item.title} — drag to reschedule`}
                         >
@@ -236,7 +240,7 @@ export default function Calendar() {
                   </div>
 
                   <Show when={getItemsForDate(day!).length > 3}>
-                    <div class="text-[11px] text-content-muted">
+                    <div class="text-[0.6875rem] text-content-muted">
                       +{getItemsForDate(day!).length - 3} more
                     </div>
                   </Show>
@@ -259,7 +263,7 @@ export default function Calendar() {
           onDragLeave={clearDragOver}
           onDrop={handleUnscheduledDrop}
         >
-          <h3 class="font-sans text-[13px] font-bold text-content">
+          <h3 class="font-sans text-[0.8125rem] font-bold text-content">
             Unscheduled ({unscheduledItems().length}) — drop here to remove a due date
           </h3>
           <Show
@@ -277,6 +281,9 @@ export default function Calendar() {
                     draggable={true}
                     onDragStart={(e) => handleDragStart(e, item.id)}
                     onClick={() => setSearchParams({ item: item.id })}
+                    role="button"
+                    tabindex={0}
+                    onKeyDown={onActivateKey(() => setSearchParams({ item: item.id }))}
                     class="text-xs font-semibold px-2.5 py-[3px] rounded-full cursor-grab active:cursor-grabbing hover:brightness-95 transition-[filter] select-none"
                     style={getPriorityStyle(item.priority)}
                     title={`${item.title} — drag onto a day to schedule`}

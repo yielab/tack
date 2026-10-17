@@ -1,7 +1,7 @@
 {
   "$schema": "../../../gen/schemas/desktop-schema.json",
   "identifier": "server-page",
-  "description": "The board page, served by the embedded tack server on loopback: it may open a link or one folder with the system's own app, nothing else. The port in the remote URL is a template; the app writes the chosen one at startup.",
+  "description": "The board page, served by the embedded tack server on loopback: it may open a link or one folder with the system's own app, and set its own zoom (the hotkeys and Settings → Display & accessibility), nothing else. The port in the remote URL is a template; the app writes the chosen one at startup.",
   "local": false,
   "windows": ["main"],
   "remote": {
@@ -9,6 +9,7 @@
   },
   "permissions": [
     "core:default",
+    "core:webview:allow-set-webview-zoom",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }, { "url": "http://*" }]

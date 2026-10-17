@@ -104,7 +104,7 @@ docs/                Documentation
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
 
 **frontend** (SolidJS + TypeScript):
-- Responsive SPA on a **two-axis design-token system**: mode (`.dark` class) × palette (`data-palette` attr) → Harbor (default)/Teal/Clay/Graphite × light/dark, switched from the sidebar footer. All colors come from `--color-*` tokens in `index.css`; components never use raw hex. WCAG AA, axe-gated in CI. Fonts: Caprasimo (display) + Figtree (body) + JetBrains Mono (self-hosted via `@fontsource`). See `docs/book/src/developer/frontend.md`.
+- Responsive SPA on a **two-axis design-token system**: mode (`.dark` class) × palette (`data-palette` attr) → Harbor (default)/Teal/Clay/Graphite × light/dark, switched in Settings → Display & accessibility, alongside text size (the root font size; all text is in rem), desktop zoom, a high-legibility font and reduced motion (`shared/state/display.ts`). All colors come from `--color-*` tokens in `index.css`; components never use raw hex. WCAG AA, axe-gated in CI. Fonts: Bricolage Grotesque (display) + Figtree (body) + JetBrains Mono, and Atkinson Hyperlegible Next as the high-legibility option (self-hosted via `@fontsource`). See `docs/book/src/developer/frontend.md`.
 - **Board view** with HTML5 drag-and-drop (visual Kanban-style)
 - **List view** with sortable table, filtering, and bulk operations
 - WebSocket integration for real-time updates

@@ -19,7 +19,7 @@ export interface ButtonProps
 const SIZE: Record<ButtonSize, string> = {
   sm: 'px-3 py-[5px] text-xs',
   md: 'px-4 py-2 text-sm',
-  lg: 'px-5 py-2.5 text-[15px]',
+  lg: 'px-5 py-2.5 text-[0.9375rem]',
 };
 
 function variantStyle(variant: ButtonVariant): JSX.CSSProperties {

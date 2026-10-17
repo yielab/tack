@@ -32,7 +32,7 @@ export default function Breadcrumb() {
   };
 
   return (
-    <nav class="flex items-center gap-1 text-sm min-w-0">
+    <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-sm min-w-0">
       <Show when={project()}>
         <A
           href="/projects"

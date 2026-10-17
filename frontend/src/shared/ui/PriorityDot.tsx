@@ -40,7 +40,7 @@ const PriorityDot: Component<PriorityDotProps> = (props) => (
       display: 'inline-flex',
       'align-items': 'center',
       gap: '6px',
-      'font-size': '12px',
+      'font-size': '0.75rem',
       'font-weight': 500,
       color: 'var(--color-text-secondary)',
     }}

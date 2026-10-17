@@ -115,14 +115,24 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
   return (
     <div class="flex h-screen" style={{ 'background-color': 'var(--color-bg-app)' }}>
+      {/* First stop for the keyboard: past the sidebar and the top bar. A
+          handler rather than a #fragment, which the router would navigate. */}
+      <a
+        href="#main"
+        onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}
+        class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[90] focus:rounded-full focus:px-4 focus:py-2 focus:text-sm focus:font-semibold"
+        style={{ 'background-color': 'var(--color-bg-elevated)', color: 'var(--color-text-primary)', 'box-shadow': 'var(--shadow-lg)' }}
+      >
+        Skip to content
+      </a>
       <Sidebar />
 
-      <main class="flex-1 overflow-hidden pt-14 lg:pt-0 flex flex-col min-w-0">
+      <div class="flex-1 overflow-hidden pt-14 lg:pt-0 flex flex-col min-w-0">
         {/* Top bar */}
-        <div
+        <header
           class="sticky top-0 z-40 flex items-center gap-3.5"
           style={{
-            height: '58px',
+            'min-height': '3.625rem',
             'flex-shrink': 0,
             padding: '0 24px',
             'background-color': 'var(--color-bg-app)',
@@ -146,7 +156,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
               display: 'flex', 'align-items': 'center', gap: '6px',
               padding: '7px 16px', 'border-radius': 'var(--radius-pill)', border: 'none', cursor: 'pointer',
               background: 'var(--color-primary-600)', color: 'var(--color-on-accent)',
-              'font-family': 'var(--font-heading)', 'font-size': '14px',
+              'font-family': 'var(--font-heading)', 'font-weight': 'var(--font-heading-weight)', 'font-size': '0.875rem',
             }}
           >
             <IconPlus size={14} /> New
@@ -156,27 +166,31 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
           {/* ⌃K trigger */}
           <button
+            type="button"
             onClick={() => openPalette()}
+            aria-label="Command palette"
             title="Command palette"
             style={{
               display: 'flex', 'align-items': 'center', padding: '6px 10px',
               'border-radius': 'var(--radius-pill)', cursor: 'pointer',
               border: '1px solid var(--color-border-light)', background: 'transparent',
-              color: 'var(--color-text-secondary)', 'font-family': 'var(--font-mono)', 'font-size': '11px',
+              color: 'var(--color-text-secondary)', 'font-family': 'var(--font-mono)', 'font-size': '0.6875rem',
             }}
           >
             ⌃K
           </button>
-        </div>
+        </header>
 
         {/* Board is full-bleed (own scroll); other views get the centered column. */}
-        <Show
-          when={fullBleed()}
-          fallback={<div class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl">{props.children}</div>}
-        >
-          <div class="flex-1 min-w-0 flex flex-col overflow-hidden">{props.children}</div>
-        </Show>
-      </main>
+        <main id="main" tabindex={-1} class="flex-1 min-h-0 min-w-0 flex flex-col focus:outline-none">
+          <Show
+            when={fullBleed()}
+            fallback={<div class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl">{props.children}</div>}
+          >
+            <div class="flex-1 min-w-0 flex flex-col overflow-hidden">{props.children}</div>
+          </Show>
+        </main>
+      </div>
 
       {/* Global command palette */}
       <CommandPalette

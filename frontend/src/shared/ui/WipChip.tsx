@@ -12,7 +12,7 @@ export function wipChipStyle(count: number, limit: number): JSX.CSSProperties {
   const exceeded = count > limit;
   return {
     'font-family': 'var(--font-mono)',
-    'font-size': '10.5px',
+    'font-size': '0.65625rem',
     'font-weight': exceeded ? 700 : 500,
     padding: '1px 7px',
     'border-radius': '999px',

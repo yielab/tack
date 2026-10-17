@@ -113,7 +113,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
         <Show when={!props.artifact.content_verified}>
           <Badge tone="warning">Not verified yet</Badge>
         </Show>
-        <span class="text-[11px]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {formatSize(props.artifact.size_bytes)}
         </span>
         <div class="ml-auto flex gap-2">

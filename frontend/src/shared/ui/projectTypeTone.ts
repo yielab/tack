@@ -29,7 +29,7 @@ export function projectTypePillStyle(type: string): JSX.CSSProperties {
   return {
     'background-color': tone.bg,
     color: tone.fg,
-    'font-size': '11px',
+    'font-size': '0.6875rem',
     'font-weight': 600,
     padding: '3px 10px',
     'border-radius': 'var(--radius-pill)',

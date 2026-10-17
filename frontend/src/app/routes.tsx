@@ -55,7 +55,7 @@ function NotFound() {
   return (
     <div class="flex flex-col items-start gap-3.5 py-14 lg:px-6">
       <BrandMark size={110} />
-      <h1 class="text-[34px] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+      <h1 class="text-[2.125rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Page not found
       </h1>
       <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>

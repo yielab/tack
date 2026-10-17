@@ -43,14 +43,39 @@
   font-weight: 800;
   src: url('@fontsource/figtree/files/figtree-latin-800-normal.woff2') format('woff2');
 }
-/* Caprasimo is the display voice: headings, step numbers, primary actions.
-   It ships in one weight only. */
+/* Bricolage Grotesque is the display voice: headings, step numbers, primary
+   actions. Variable in weight and optical size, so a 13px button and a 38px
+   page title each get the cut drawn for that size. */
 @font-face {
-  font-family: 'Caprasimo';
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-opsz-normal.woff2') format('woff2-variations');
+}
+/* Atkinson Hyperlegible Next: the high-legibility face a user can switch the
+   whole interface to (Settings → Display & accessibility). Drawn by the
+   Braille Institute so similar letters (I l 1, O 0, rn m) stay distinct. */
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url('@fontsource/caprasimo/files/caprasimo-latin-400-normal.woff2') format('woff2');
+  src: url('@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-700-normal.woff2') format('woff2');
 }
 @font-face {
   font-family: 'JetBrains Mono';
@@ -217,11 +242,20 @@
   --radius-card: 28px;
   --radius-pill: 999px;
 
-  /* Type: Caprasimo is the display voice (headings, step numbers, primary
-     actions), Figtree the body, JetBrains Mono ids, kbd hints, estimates. */
-  --font-heading: 'Caprasimo', ui-serif, Georgia, serif;
+  /* Type: Bricolage Grotesque is the display voice (headings, step numbers,
+     primary actions), Figtree the body, JetBrains Mono ids, kbd hints,
+     estimates. */
+  --font-heading: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --font-heading-weight: 650;
   --font-body: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The high-legibility face replaces body and display alike (display.ts). */
+:root[data-font="legible"] {
+  --font-heading: 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif;
+  --font-heading-weight: 700;
 }
 
 /* ============================== *
@@ -757,7 +791,9 @@ body {
   font-family: var(--font-body);
   margin: 0;
   min-height: 100vh;
-  font-size: 14px;
+  /* rem, never px: the root size is the user's text size (display.ts) on top
+     of the browser's own default, and every rem in the app follows it. */
+  font-size: 0.875rem;
   line-height: 1.45;
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
@@ -767,15 +803,33 @@ body {
 
 /* The display face carries every heading by default. In the base layer, so a
    Tailwind utility (font-sans, font-bold) on a heading that should read in the
-   body face still wins. Caprasimo has one weight: never synthesize a bold. */
+   body face still wins. */
 @layer base {
   h1, h2, h3, h4 {
     font-family: var(--font-heading);
-    font-weight: 400;
+    font-weight: var(--font-heading-weight);
+    letter-spacing: -0.02em;
+  }
+}
+/* The `font-heading` utility sets only the family; the weight comes with it
+   here, in the components layer, so an explicit font-* utility still wins. */
+@layer components {
+  .font-heading {
+    font-weight: var(--font-heading-weight);
     letter-spacing: -0.01em;
   }
 }
-h1, h2, h3, h4, .font-heading { font-synthesis: none; }
+
+/* A visible focus ring on every control the keyboard reaches. Components that
+   draw their own ring (focus-visible:ring-2) keep it; this covers the ones
+   styled inline, which otherwise fell back to nothing. In the base layer, so
+   a component's own focus:outline-none + ring still replaces it. */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+}
 
 ::selection { background: color-mix(in srgb, var(--color-primary-600) 28%, transparent); }
 
@@ -827,4 +881,24 @@ h1, h2, h3, h4, .font-heading { font-synthesis: none; }
 }
 @keyframes tk-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Reduced motion: the OS setting, or the app's own (display.ts). Animations
+   and transitions end at once instead of playing; nothing that conveys state
+   depends on the motion itself. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

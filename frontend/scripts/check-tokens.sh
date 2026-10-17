@@ -83,3 +83,31 @@ if [ "$STYLE_COUNT" -lt "$STYLE_BASELINE" ]; then
 fi
 
 echo "✓ inline-style hex gate passed"
+
+# ── Gate 3: font sizes in px ──────────────────────────────────────────────────
+#
+# Text follows the user's text size (Settings → Display & accessibility) only
+# when it is sized in rem: the setting moves the root font size, on top of the
+# browser's own default. A px size stays put and breaks that. Write
+# `'font-size': '0.8125rem'` or `text-[0.8125rem]`, not 13px.
+#
+# The baseline counts the one deliberate exception: the sidebar's identity
+# mark, a letter inside a circle of fixed px size that would overflow it if it
+# grew. (Avatar.tsx's initials are the same case, sized through a map.)
+FONT_PX_BASELINE=1
+
+FONT_PX_COUNT=$(grep -rhoE "'font-size': ?'[0-9.]+px'|text-\[[0-9.]+px\]" src --include='*.tsx' --include='*.ts' \
+  --exclude='*.test.tsx' --exclude='*.test.ts' | wc -l | tr -d ' ' || true)
+
+echo "Font sizes in px: $FONT_PX_COUNT (baseline $FONT_PX_BASELINE)"
+
+if [ "$FONT_PX_COUNT" -gt "$FONT_PX_BASELINE" ]; then
+  echo ""
+  echo "ERROR: font sizes in px increased ($FONT_PX_COUNT > $FONT_PX_BASELINE)."
+  echo "Size text in rem so it follows the user's text size:"
+  echo "  'font-size': '13px'  → 'font-size': '0.8125rem'"
+  echo "  text-[13px]          → text-[0.8125rem]   (px ÷ 16)"
+  exit 1
+fi
+
+echo "✓ font-size gate passed"
