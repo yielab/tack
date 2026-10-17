@@ -1,0 +1,161 @@
+# A Tack project bundle: the outline of ADR 0076 with six more sections (ADR 0081).
+# Applied in this order: project, fields, profiles, roles, sprints, automation, items.
+# The whole file is checked before anything is written; every problem is reported at
+# once; an unknown key anywhere is refused. Names are the references: `profile: X`
+# names a profile of this file first, then one the board already has. An import
+# never deletes anything; what the project has and the file does not mention is
+# counted in the result.
+
+project:
+  name: My SaaS
+  type: web
+  description: Invoicing and appointment booking for small agencies.
+  vocabulary:                     # any subset of the 16 keys; the rest keep the type's defaults
+    epic: Colección
+    feature: Historia
+    task: Pieza
+    subtask: Paso
+    bug: Error
+    sprint: Semana
+    backlog: Ideas
+    board: Tablero
+    blocker: Bloqueo
+    story_points: Puntos
+    assignee: Responsable
+    deliverable: Entrega
+    phase: Fase
+    milestone: Hito
+    release: Publicación
+    requirement: Requisito
+  workflow:                       # EITHER `preset: scrum|kanban|simple|construction|legal|research|event`
+    statuses:                     # OR the statuses in order, each with a category; wip_limit optional
+      - { name: Ideas, category: todo }
+      - { name: Por hacer, category: todo }
+      - { name: En curso, category: in_progress, wip_limit: 5 }
+      - { name: En revisión, category: in_progress }
+      - { name: Hecho, category: done }
+    transitions:                  # optional; absent means any status can move to any other
+      - { from: Ideas, to: Por hacer }
+      - { from: Por hacer, to: En curso }
+      - { from: En curso, to: En revisión }
+      - { from: En revisión, to: En curso }
+      - { from: En revisión, to: Hecho }
+      - { from: Hecho, to: Por hacer }
+
+fields:                           # custom fields; the name is what items use
+  - { name: Plan, type: select, required: true, options: [free, pro, team, business, enterprise] }
+  - { name: Segmento, type: select, options: [autónomo, pyme, empresa] }
+  - { name: Canal, type: multi_select, options: [app, newsletter, instagram, tiktok] }
+  - { name: Fuente, type: url, description: Where the research or the asset came from }
+  # type: text|number|date|boolean|select|multi_select|url|email|long_text; `default` and `validation` optional
+
+profiles:                         # agent profiles are shared by every project; a profile with an existing name is updated
+  - name: My SaaS content writer
+    kind: custom                  # implementer|reviewer|researcher|planner|custom (the default)
+    instructions: >
+      Write and edit help-center articles, release notes and newsletter copy for the plan the task names.
+      Keep every sentence plain enough for a customer to follow without asking support.
+    tool_policy:
+      agent: docket               # which agent runs this profile; absent: the project's default agent
+      tools: { docket: ["*"] }
+      docket:
+        team: saas-content         # the team; absent: the project's own default team
+        pipeline_by_type: { feature: dual-review, task: single }
+    limits: { budgets: { tokens: 300000 }, timeout_seconds: 1800 }
+  - name: My SaaS implementer
+    kind: implementer
+    instructions: Implement the change on a branch; run the project's checks before you finish.
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: saas-dev, pipeline_by_type: { bug: tdd, feature: dual-review } } }
+    limits: { budgets: { tokens: 600000 } }
+  - name: My SaaS growth
+    kind: custom
+    instructions: Draft campaigns and measure them; never publish anything yourself.
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: saas-growth } }
+  - name: My SaaS research
+    kind: researcher
+    instructions: Read, compare and summarise; write findings as a document with sources.
+    tool_policy: { agent: docket, tools: { docket: [read, fetch, write] }, docket: { team: saas-research } }
+  - name: My SaaS ops
+    kind: custom
+    instructions: Deployments, backups and monitoring. Ask before anything that touches production.
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: saas-ops } }
+  - name: Security review
+    kind: reviewer
+    instructions: Review for secrets, injection and permissions. You only read.
+    tool_policy: { agent: claude-code, tools: { claude-code: [Read, Grep, Glob] } }
+  # Planner is a built-in profile, named by a role below; nothing to declare here.
+  # A profile may name a `fleet` (a fleet's name); one the board does not have is a warning.
+  # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0078).
+
+roles:                            # project roles; `profile` is a name from `profiles` or an existing profile
+  - { name: Contenido, color: "#f59e0b", profile: My SaaS content writer }
+  - { name: Desarrollo, color: "#3b82f6", profile: My SaaS implementer }
+  - { name: Crecimiento, color: "#10b981", profile: My SaaS growth }
+  - { name: Investigación, color: "#8b5cf6", profile: My SaaS research }
+  - { name: Operaciones, color: "#6b7280", profile: My SaaS ops }
+  - { name: Seguridad, color: "#ef4444", profile: Security review }
+  - { name: Planificación, color: "#0ea5e9", profile: Planner }
+
+sprints:                          # status: planning (the default) or closed; an import never activates one
+  - { name: Semana 42, goal: Lanzar la facturación recurrente, start: 2026-10-12, end: 2026-10-18 }
+  - { name: Semana 43, goal: Newsletter y campaña de octubre, start: 2026-10-19, end: 2026-10-25 }
+
+automation:
+  code_origin: folder             # folder|new_folder|url|none
+  repository: /home/ox/Sites/my-saas
+  default_branch: main
+  workspace_mode: local_branch    # local_branch|in_place|clone
+  push_after_run: true
+  default_harness: docket
+  default_profile: My SaaS implementer
+  default_model: null             # the agent's own default
+  on_finish_status: En revisión
+  definition_of_done: >
+    Every change passes `npm run check` (lint, types, tests) from the repository root.
+    Content pieces carry their plan and segment fields and are proofread before they ship.
+  autonomy:
+    level: L4                     # accepted in the file, applied as L3, with a warning: raise it from Settings → Automation
+    domains:
+      - { name: content, paths: ["content/**", "public/help/**"], item_types: [feature, task], level: L4 }
+      - { name: code, paths: ["src/**", "package.json"], item_types: [], level: L3 }
+    verify_require: [criteria, suite, anti_tautology, static_analysis]
+    budgets: { tokens_per_day: 2000000, usd_per_day: 20, auto_merges_per_day: 10, queue_items_max: 8 }
+    merge_on_done: true
+    # the attestation public key is never in a bundle: it is pasted on the Merge rung.
+  auto_start:
+    enabled: true                 # accepted, applied as false, with a warning
+    status: Por hacer
+    max_open: 3
+
+items:                            # the outline of ADR 0076, plus roles, sprint, fields, recurrence and estimate_unit
+  - { ref: C1, title: Facturación recurrente, type: epic, priority: high, roles: [Contenido], fields: { Plan: pro } }
+  - ref: S1
+    title: Guía para crear tu primera factura
+    type: feature
+    parent: C1
+    status: Por hacer
+    priority: high
+    roles: [Contenido]
+    sprint: Semana 42
+    fields: { Plan: pro, Segmento: autónomo, Canal: [app] }
+    estimate: 3
+    estimate_unit: hours
+    description: Un artículo de 600 palabras, con capturas, para leer en seis minutos.
+  - { ref: S2, title: Novedades de la versión 2.4, type: feature, parent: C1, status: Por hacer, roles: [Contenido], sprint: Semana 42, fields: { Plan: pro, Segmento: pyme, Canal: [app, newsletter] } }
+  - { ref: S3, title: Revisión editorial de la iniciativa, type: task, parent: C1, roles: [Investigación], depends_on: [S1, S2], fields: { Plan: pro } }
+  - { ref: D1, title: Vista previa de la factura en PDF, type: feature, status: Por hacer, priority: high, roles: [Desarrollo], sprint: Semana 42, estimate: 5, estimate_unit: story_points, fields: { Plan: pro } }
+  - { ref: D2, title: Selector de plan en el onboarding, type: feature, status: Por hacer, roles: [Desarrollo], depends_on: [D1], fields: { Plan: pro } }
+  - { ref: D3, title: El PDF se corta al imprimir facturas largas, type: bug, status: Por hacer, priority: critical, roles: [Desarrollo], fields: { Plan: pro } }
+  - { ref: D4, title: Revisión de seguridad del login con enlace mágico, type: task, roles: [Seguridad], depends_on: [D2], fields: { Plan: pro } }
+  - { ref: G1, title: Campaña de octubre en Instagram, type: feature, status: Por hacer, roles: [Crecimiento], sprint: Semana 43, fields: { Plan: pro, Canal: [instagram] } }
+  - { ref: G2, title: Newsletter semanal, type: task, status: Por hacer, roles: [Contenido, Crecimiento], recurrence: weekly, due: 2026-10-18, fields: { Plan: pro, Canal: [newsletter] } }
+  - { ref: G3, title: Informe mensual de métricas, type: task, roles: [Crecimiento], recurrence: monthly, due: 2026-10-31, fields: { Plan: pro } }
+  - { ref: R1, title: Qué planes piden los clientes en Chile, type: task, status: Por hacer, roles: [Investigación], fields: { Plan: free, Fuente: "https://forms.my-saas.app/chile" } }
+  - { ref: R2, title: Comparativa de proveedores de firma electrónica, type: task, roles: [Investigación], fields: { Plan: enterprise } }
+  - { ref: O1, title: Copia de seguridad diaria de la base de facturas, type: task, status: Por hacer, roles: [Operaciones], fields: { Plan: pro } }
+  - { ref: O2, title: Revisión trimestral de costos de hosting, type: task, roles: [Operaciones], recurrence: quarterly, due: 2026-12-31, fields: { Plan: pro } }
+  - { ref: P1, title: Plan del calendario de citas, type: task, roles: [Planificación], depends_on: [S3], fields: { Plan: team } }
+  - { ref: C2, title: Calendario de citas, type: epic, roles: [Contenido], fields: { Plan: team }, depends_on: [P1] }
+  - { ref: S4, title: Cómo sincronizar tu calendario, type: feature, parent: C2, roles: [Contenido], fields: { Plan: team, Segmento: empresa } }
+  - { ref: D5, title: Modo sin conexión para la app, type: feature, roles: [Desarrollo], estimate: 8, estimate_unit: story_points, fields: { Plan: pro } }
+  - { ref: D6, title: Pipeline de PDFs en CI, type: task, roles: [Desarrollo, Operaciones], fields: { Plan: pro } }
