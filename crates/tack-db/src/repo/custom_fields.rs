@@ -417,3 +417,36 @@ pub async fn delete_field_value(
         .await?;
     Ok(())
 }
+
+/// Every value of every item of the project.
+#[instrument(skip(pool))]
+pub async fn field_values_for_project(
+    pool: &SqlitePool,
+    project_id: Uuid,
+) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, CustomFieldValueRow>(
+        "SELECT v.id, v.item_id, v.field_id, v.value, v.created_at, v.updated_at
+         FROM custom_field_values v JOIN items i ON i.id = v.item_id
+         WHERE i.project_id = ?
+         ORDER BY v.created_at, v.id",
+    )
+    .bind(project_id.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| CustomFieldValue {
+            id: Uuid::parse_str(&row.id).unwrap(),
+            item_id: Uuid::parse_str(&row.item_id).unwrap(),
+            field_id: Uuid::parse_str(&row.field_id).unwrap(),
+            value: serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null),
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+                .unwrap()
+                .into(),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+                .unwrap()
+                .into(),
+        })
+        .collect())
+}

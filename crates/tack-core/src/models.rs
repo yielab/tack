@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::outline::{BundleAutomation, BundleProfile, BundleRole};
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::{StatusCategory, WorkflowConfig};
 
@@ -846,6 +847,12 @@ pub struct ProjectTemplate {
     pub workflow: WorkflowConfig,
     pub custom_fields: Vec<CustomFieldDefinition>,
     pub default_boards: Vec<BoardTemplate>,
+    /// The roles a project made from the template starts with.
+    pub roles: Vec<BundleRole>,
+    /// The agent profiles those roles use.
+    pub profiles: Vec<BundleProfile>,
+    /// The automation settings a project made from the template starts with.
+    pub automation: Option<BundleAutomation>,
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -873,6 +880,12 @@ pub struct CreateProjectTemplate {
     pub workflow: Option<WorkflowConfig>,
     pub custom_fields: Option<Vec<CustomFieldDefinition>>,
     pub default_boards: Option<Vec<BoardTemplate>>,
+    #[serde(default)]
+    pub roles: Vec<BundleRole>,
+    #[serde(default)]
+    pub profiles: Vec<BundleProfile>,
+    #[serde(default)]
+    pub automation: Option<BundleAutomation>,
 }
 
 // ─── Custom Fields ───────────────────────────────────────────

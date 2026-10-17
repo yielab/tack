@@ -422,6 +422,9 @@ pub async fn save_project_as_template(
         } else {
             Some(default_boards)
         },
+        roles: Vec::new(),
+        profiles: Vec::new(),
+        automation: None,
     };
 
     repo::templates::create_template(state.pool(), template_data)

@@ -110,6 +110,28 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_role()).collect())
     }
 
+    /// Every `(item, role)` pair of the project's items.
+    #[instrument(skip(self))]
+    pub async fn item_roles_for_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT ir.item_id, ir.role_id FROM item_roles ir
+             JOIN items i ON i.id = ir.item_id
+             WHERE i.project_id = ? ORDER BY ir.item_id, ir.role_id",
+        )
+        .bind(project_id.to_string())
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(item, role)| {
+                Some((Uuid::parse_str(&item).ok()?, Uuid::parse_str(&role).ok()?))
+            })
+            .collect())
+    }
+
     #[instrument(skip(self))]
     pub async fn assign_role_to_item(
         &self,

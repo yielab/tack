@@ -178,6 +178,13 @@ impl Repository {
         custom_fields::get_all_field_values_for_item(self.pool(), item_id).await
     }
 
+    pub async fn field_values_for_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+        custom_fields::field_values_for_project(self.pool(), project_id).await
+    }
+
     pub async fn delete_field_value(
         &self,
         item_id: Uuid,

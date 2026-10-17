@@ -381,3 +381,18 @@ fn csv_export_reimports_with_hierarchy() {
     assert_eq!(epic.input.tags.as_deref().map(<[String]>::len), Some(2));
     assert_eq!(epic.input.due_date, parse_due_date("2026-03-04"));
 }
+
+#[test]
+fn roles_sprint_fields_and_unit_survive_resolve() {
+    let mut with_all = item("Historia");
+    with_all.roles = vec![" Contenido ".into(), "Ops".into()];
+    with_all.sprint = Some("Semana 42".into());
+    with_all.fields = BTreeMap::from([("Edad".to_string(), serde_json::json!("3-5"))]);
+    with_all.estimate_unit = Some("hours".into());
+    let resolved = resolve(&[with_all], &scrum_workflow()).expect("resolves");
+    let planned = &resolved.items[0];
+    assert_eq!(planned.roles, ["Contenido", "Ops"]);
+    assert_eq!(planned.sprint.as_deref(), Some("Semana 42"));
+    assert_eq!(planned.fields["Edad"], serde_json::json!("3-5"));
+    assert_eq!(planned.estimate_unit.as_deref(), Some("hours"));
+}

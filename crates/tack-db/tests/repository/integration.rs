@@ -55,6 +55,9 @@ fn template_input(
         workflow: None,
         custom_fields: None,
         default_boards: None,
+        roles: Vec::new(),
+        profiles: Vec::new(),
+        automation: None,
     }
 }
 
@@ -608,6 +611,9 @@ async fn create_and_get_template() {
         workflow: None,
         custom_fields: None,
         default_boards: None,
+        roles: Vec::new(),
+        profiles: Vec::new(),
+        automation: None,
     };
 
     let template = templates::create_template(repo.pool(), template_data)
@@ -668,6 +674,9 @@ async fn delete_template_not_builtin() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
+            roles: Vec::new(),
+            profiles: Vec::new(),
+            automation: None,
         },
     )
     .await
@@ -1080,4 +1089,97 @@ async fn outline_batch_failing_midway_writes_nothing() {
         left.is_empty(),
         "the first row must roll back with the second"
     );
+}
+
+#[tokio::test]
+async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_place() {
+    use tack_core::outline::bundle::ProfileRow;
+    use tack_db::repo::execution::SystemExecutionClock;
+
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+    let project = repo
+        .create_project(ws_id, project_input("P"))
+        .await
+        .unwrap();
+    let role = repo
+        .create_role(
+            project.id,
+            CreateRole {
+                name: "Content".into(),
+                color: None,
+                icon: None,
+            },
+        )
+        .await
+        .unwrap();
+    let field = repo
+        .create_field(
+            project.id,
+            CreateCustomField {
+                name: "Dialect".into(),
+                field_type: CustomFieldType::Text,
+                description: None,
+                required: None,
+                default_value: None,
+                options: None,
+                validation: None,
+            },
+        )
+        .await
+        .unwrap();
+    let mut items = Vec::new();
+    for title in ["One", "Two"] {
+        items.push(
+            repo.create_item(project.id, "Backlog", item_input(title))
+                .await
+                .unwrap(),
+        );
+    }
+    for (item, value) in items.iter().zip(["x", "y"]) {
+        repo.assign_role_to_item(item.id, role.id).await.unwrap();
+        repo.set_field_value(item.id, field.id, serde_json::json!(value))
+            .await
+            .unwrap();
+    }
+
+    let pairs = repo.item_roles_for_project(project.id).await.unwrap();
+    assert_eq!(pairs.len(), 2);
+    assert!(pairs.contains(&(items[0].id, role.id)) && pairs.contains(&(items[1].id, role.id)));
+    let values = repo.field_values_for_project(project.id).await.unwrap();
+    assert_eq!(values.len(), 2);
+    assert!(values.iter().all(|v| v.field_id == field.id));
+
+    sqlx::query("INSERT INTO agent_fleets (id, name, default_policy, created_at, updated_at) VALUES ('f1', 'Home', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.fleet_names().await.unwrap(),
+        [("f1".to_string(), "Home".to_string())]
+    );
+
+    let mut row = ProfileRow {
+        id: "ap_mine".into(),
+        name: "First".into(),
+        kind: "custom".into(),
+        instructions: "x".into(),
+        tool_policy: serde_json::json!({"agent": "docket"}),
+        limits: serde_json::json!({}),
+        fleet_id: Some("f1".into()),
+        builtin: true,
+    };
+    repo.write_agent_profile(&row, &SystemExecutionClock)
+        .await
+        .unwrap();
+    row.name = "Second".into();
+    repo.write_agent_profile(&row, &SystemExecutionClock)
+        .await
+        .unwrap();
+    let rows = repo.list_agent_profile_rows().await.unwrap();
+    let mine: Vec<_> = rows.iter().filter(|r| r.id == "ap_mine").collect();
+    assert_eq!(mine.len(), 1);
+    assert_eq!(mine[0].name, "Second");
+    assert_eq!(mine[0].fleet_id.as_deref(), Some("f1"));
+    assert!(!mine[0].builtin, "builtin is never written");
 }

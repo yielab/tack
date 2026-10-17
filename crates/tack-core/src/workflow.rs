@@ -258,6 +258,21 @@ pub fn workflow_for_type(project_type: &ProjectType) -> WorkflowConfig {
     }
 }
 
+/// The preset a project file names (`scrum`, `kanban`, `simple`, `construction`,
+/// `legal`, `research` or `event`, any case); `None` for any other word.
+pub fn preset_workflow(name: &str) -> Option<WorkflowConfig> {
+    match name.trim().to_lowercase().as_str() {
+        "scrum" => Some(scrum_workflow()),
+        "kanban" => Some(kanban_workflow()),
+        "simple" => Some(simple_workflow()),
+        "construction" => Some(construction_workflow()),
+        "legal" => Some(legal_workflow()),
+        "research" => Some(research_workflow()),
+        "event" => Some(event_workflow()),
+        _ => None,
+    }
+}
+
 pub fn scrum_workflow() -> WorkflowConfig {
     WorkflowConfig {
         workflow_type: WorkflowType::Scrum,

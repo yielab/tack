@@ -3262,6 +3262,131 @@ export interface components {
             /** Format: double */
             usd_per_day?: number | null;
         };
+        BundleAutoStart: {
+            /** @description Applied as off by an import; a person turns it on from Settings → Automation. */
+            enabled?: boolean;
+            /**
+             * Format: int64
+             * @description The most runs open at once; at least 1.
+             */
+            max_open?: number | null;
+            /** @description The status whose cards the project starts by itself. */
+            status?: string | null;
+        };
+        BundleAutomation: {
+            auto_start?: null | components["schemas"]["BundleAutoStart"];
+            autonomy?: null | components["schemas"]["BundleAutonomy"];
+            /** @description folder, new_folder, url or none. */
+            code_origin?: string | null;
+            default_branch?: string | null;
+            /** @description The agent a run uses when none is named. */
+            default_harness?: string | null;
+            default_model?: string | null;
+            /** @description The name of the profile a run uses when none is named. */
+            default_profile?: string | null;
+            definition_of_done?: string | null;
+            /** @description The status a card moves to when its run finishes. */
+            on_finish_status?: string | null;
+            push_after_run?: boolean | null;
+            /** @description An absolute path for a folder, a URL for a url origin. */
+            repository?: string | null;
+            /** @description local_branch, in_place or clone. */
+            workspace_mode?: string | null;
+        };
+        BundleAutonomy: {
+            budgets?: null | components["schemas"]["BundleBudgets"];
+            domains?: components["schemas"]["BundleDomain"][];
+            /** @description L3, L4 or L5; a file is applied at most at the project's own level. */
+            level?: string | null;
+            merge_on_done?: boolean | null;
+            /** Format: int64 */
+            verify_loop_max_attempts?: number | null;
+            /** @description The checks a merge needs: criteria, suite, anti_tautology, static_analysis. */
+            verify_require?: string[] | null;
+        };
+        BundleBudgets: {
+            /** Format: int64 */
+            auto_merges_per_day?: number | null;
+            /** Format: int64 */
+            queue_items_max?: number | null;
+            /** Format: int64 */
+            tokens_per_day?: number | null;
+            /** Format: double */
+            usd_per_day?: number | null;
+        };
+        BundleDomain: {
+            /** @description Item types the domain covers; empty means all. */
+            item_types?: string[];
+            /** @description L3, L4 or L5. */
+            level: string;
+            name: string;
+            /** @description Path globs of the repository the domain covers. */
+            paths?: string[];
+        };
+        BundleField: {
+            /** @description The value a new card starts with. */
+            default?: unknown;
+            /** @description One line telling a person what the field is for. */
+            description?: string | null;
+            name: string;
+            /** @description The choices of a select or multi_select field. */
+            options?: string[];
+            /** @description A card without a value for it gets a warning. */
+            required?: boolean;
+            /** @description text, number, date, boolean, select, multi_select, url, email or long_text. */
+            type: string;
+            /** @description Extra rules: pattern, min_length, max_length, min, max, max_items. */
+            validation?: unknown;
+        };
+        BundleProfile: {
+            /** @description The name of the fleet that runs it; absent: any computer. */
+            fleet?: string | null;
+            /** @description What the agent is told before the task. */
+            instructions?: string;
+            /** @description implementer, reviewer, researcher, planner or custom (the default). */
+            kind?: string | null;
+            /** @description Budgets and the time the agent may take. */
+            limits?: unknown;
+            name: string;
+            /** @description One line shown beside the profile's name. */
+            summary?: string | null;
+            /** @description Which agent runs the profile (`agent`), its tools and its team. */
+            tool_policy?: unknown;
+        };
+        BundleRole: {
+            /** @description A CSS color such as `#3b82f6`. */
+            color?: string | null;
+            icon?: string | null;
+            name: string;
+            /** @description The profile a card with this role runs with: a name from the file, then the board. */
+            profile?: string | null;
+        };
+        BundleSprint: {
+            /** @description `YYYY-MM-DD`. */
+            end?: string | null;
+            goal?: string | null;
+            name: string;
+            /** @description `YYYY-MM-DD`. */
+            start?: string | null;
+            /** @description planning (the default) or closed; an import never activates a sprint. */
+            status?: string | null;
+        };
+        BundleStatus: {
+            /** @description todo, in_progress or done. */
+            category: string;
+            name: string;
+            /** @description The most items the status holds at once. */
+            wip_limit?: number | null;
+        };
+        /** @description The workflow a project file asks for: a preset or its own statuses, never both. */
+        BundleWorkflow: {
+            /** @description scrum, kanban, simple, construction, legal, research or event. */
+            preset?: string | null;
+            /** @description The statuses in order, each with a category. */
+            statuses?: components["schemas"]["BundleStatus"][];
+            /** @description Allowed moves; absent means any status can move to any other. */
+            transitions?: components["schemas"]["Transition"][] | null;
+        };
         /**
          * @description Response body for `POST /api/executions/{id}/cancel`. `state` is
          *     deliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`
@@ -3537,11 +3662,14 @@ export interface components {
             name: string;
         };
         CreateProjectTemplate: {
+            automation?: null | components["schemas"]["BundleAutomation"];
             custom_fields?: components["schemas"]["CustomFieldDefinition"][] | null;
             default_boards?: components["schemas"]["BoardTemplate"][] | null;
             description?: string | null;
             name: string;
+            profiles?: components["schemas"]["BundleProfile"][];
             project_type: components["schemas"]["ProjectType"];
+            roles?: components["schemas"]["BundleRole"][];
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
         };
@@ -4193,8 +4321,17 @@ export interface components {
          *     misspelt field is an error the writer sees instead of data that vanishes.
          */
         Outline: {
+            automation?: null | components["schemas"]["BundleAutomation"];
+            /** @description Custom fields of the project, by name (ADR 0081). */
+            fields?: components["schemas"]["BundleField"][];
             items?: components["schemas"]["OutlineItem"][];
+            /** @description Agent profiles, by name; shared by every project of the board. */
+            profiles?: components["schemas"]["BundleProfile"][];
             project?: null | components["schemas"]["OutlineProject"];
+            /** @description Project roles, by name. */
+            roles?: components["schemas"]["BundleRole"][];
+            /** @description Sprints, by name. */
+            sprints?: components["schemas"]["BundleSprint"][];
         };
         OutlineItem: {
             assignee?: string | null;
@@ -4205,6 +4342,12 @@ export interface components {
             due_date?: string | null;
             /** Format: double */
             estimate?: number | null;
+            /** @description story_points, hours, days, or any other word as a custom unit. */
+            estimate_unit?: string | null;
+            /** @description Custom field values by field name. */
+            fields?: {
+                [key: string]: unknown;
+            };
             /**
              * @description Another item's `ref` or exact title; when adding to an existing
              *     project, also the id of an item already in it.
@@ -4219,6 +4362,10 @@ export interface components {
              *     number, unique within the outline.
              */
             ref?: string | null;
+            /** @description Names of the project's roles that work on the item. */
+            roles?: string[];
+            /** @description The name of the sprint the item belongs to. */
+            sprint?: string | null;
             /**
              * @description A status of the project's workflow, any case. Unknown or absent: the
              *     workflow's first status.
@@ -4239,7 +4386,9 @@ export interface components {
              * @description software, web, mobile, construction, personal, homework, maintenance,
              *     legal, research, event or custom (the default).
              */
-            project_type?: string | null;
+            type?: string | null;
+            vocabulary?: null | components["schemas"]["HashMap"];
+            workflow?: null | components["schemas"]["BundleWorkflow"];
         };
         /** @description What an outline or CSV import created, or would create on a dry run. */
         OutlineResult: {
@@ -4340,6 +4489,7 @@ export interface components {
             workspace_mode: components["schemas"]["WorkspaceMode"];
         };
         ProjectTemplate: {
+            automation?: null | components["schemas"]["BundleAutomation"];
             /** Format: date-time */
             created_at: string;
             custom_fields: components["schemas"]["CustomFieldDefinition"][];
@@ -4349,7 +4499,11 @@ export interface components {
             id: string;
             is_builtin: boolean;
             name: string;
+            /** @description The agent profiles those roles use. */
+            profiles: components["schemas"]["BundleProfile"][];
             project_type: components["schemas"]["ProjectType"];
+            /** @description The roles a project made from the template starts with. */
+            roles: components["schemas"]["BundleRole"][];
             /** Format: date-time */
             updated_at: string;
             vocabulary: components["schemas"]["HashMap"];
