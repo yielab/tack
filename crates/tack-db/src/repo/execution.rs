@@ -524,12 +524,11 @@ pub enum ArtifactContentCommitResult {
 /// Outcome of one bounded batch-purge call (which may run several bounded
 /// transactions internally — see the doc comments on
 /// [`Repository::purge_stale_execution_replays`] /
-/// [`Repository::purge_stale_terminal_execution_events`]). Field names
-/// mirror `tack_db::repo::orch::RollupStats`/`tack_orch::reconciler::RollupOutcome`
-/// on purpose — same shape, same reason (a `tack-orch` trait impl backed by
-/// this repo is a direct pass-through) — but this type is named `PurgeStats`,
-/// not `RollupStats`: nothing here aggregates rows into a daily
-/// table before deleting them (see each method's own doc comment for why).
+/// [`Repository::purge_stale_terminal_execution_events`]). The fields are
+/// the shape a `tack-orch` trait impl backed by this repo passes straight
+/// through. The type is named `PurgeStats`, not `RollupStats`: nothing here
+/// aggregates rows into a daily table before deleting them (see each
+/// method's own doc comment for why).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PurgeStats {
     /// Total raw rows deleted.
@@ -667,11 +666,6 @@ pub enum EventApplyResult {
     /// wire mapping is the retryable `conflict` stable error.
     Conflict,
     Stale,
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryClassification {
-    SafePreSpawnRequeue,
-    NeedsOperator,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryObservation {

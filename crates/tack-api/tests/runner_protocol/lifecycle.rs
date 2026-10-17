@@ -1232,8 +1232,8 @@ async fn recovery_observation_requeues_and_replays_idempotently() {
 }
 
 // ---------------------------------------------------------------------
-// 11. `EventApplyResult` splits two causes that used to collapse into one
-//     `ReplayConflict`: a benign, out-of-order resync (mismatched
+// 11. `EventApplyResult` keeps two conflict causes apart: a benign,
+//     out-of-order resync (mismatched
 //     `previous_checkpoint`) is the retryable `conflict` code
 //     (`StableErrorCode::retryable`, `crates/tack-orch/src/execution/types.rs`);
 //     reusing the same `(attempt_id, checkpoint)` key with genuinely

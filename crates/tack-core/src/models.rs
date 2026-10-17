@@ -294,9 +294,9 @@ pub enum ItemSource {
 }
 
 impl ItemSource {
-    /// The single source of truth for "does this item's text get to skip
-    /// docket's `pre_input` untrusted-content policy". Only `Manual` is
-    /// trusted; everything else — including `Unknown` — is not.
+    /// The single source of truth for "is this item's text the operator's own
+    /// words". Only `Manual` is trusted; everything else — including
+    /// `Unknown` — is not.
     pub fn is_trusted(&self) -> bool {
         matches!(self, ItemSource::Manual)
     }

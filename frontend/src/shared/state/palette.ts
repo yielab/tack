@@ -10,8 +10,6 @@ import { createSignal } from 'solid-js';
 
 export type Palette = 'harbor' | 'teal' | 'clay' | 'graphite';
 
-export const PALETTES: Palette[] = ['harbor', 'teal', 'clay', 'graphite'];
-
 /** Name and identity color of each palette, for the picker in Settings. The
  *  color is the palette's light-mode accent, shown as data, not as a token. */
 export const PALETTE_SWATCHES: [Palette, string, string][] = [

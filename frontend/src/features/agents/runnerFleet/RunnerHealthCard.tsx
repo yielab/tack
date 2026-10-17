@@ -5,10 +5,8 @@ import type { RunnerCapabilities } from '../../../shared/execution';
 import { formatCapacity, formatLabelChips } from './format';
 
 /**
- * A runner's connection state, as far as this component is ever fed it —
- * deliberately NOT the richer `ControlPlaneHealth` union `../format.ts`'s
- * Docket-fleet sibling uses (`healthy | degraded | unreachable | unknown |
- * unconfigured`). `GET /runners` exists and reports a live heartbeat,
+ * A runner's connection state, as far as this component is ever fed it.
+ * `GET /runners` exists and reports a live heartbeat,
  * capability snapshot, and capacity for every runner (`AgentsPage.tsx`,
  * `RunWithAgentModal.tsx` both read it), but this component is only ever
  * mounted from `EnrollmentPanel.tsx`'s session-local roster, which does not

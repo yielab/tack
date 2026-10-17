@@ -47,10 +47,10 @@ impl TackClient {
     /// write that follows. Losing it here would silently reopen the exact
     /// read-then-write race `If-Match` exists to close, one layer up from
     /// where it looks closed. Returns `None` for the ETag (never an error)
-    /// when the server doesn't send one — today's server, and any provider
-    /// route this client hits before optimistic concurrency lands there —
-    /// so a caller threading it into a later write degrades to sending no
-    /// `If-Match`, i.e. today's unconditional-write behavior, exactly.
+    /// when the server doesn't send one — a route without optimistic
+    /// concurrency, or a server older than this client — so a caller
+    /// threading it into a later write degrades to sending no `If-Match`,
+    /// i.e. an unconditional write, exactly.
     pub fn get_with_etag(&self, path: &str) -> anyhow::Result<(serde_json::Value, Option<String>)> {
         let resp = self.request(reqwest::Method::GET, path, &[]).send()?;
         let etag = resp
@@ -266,20 +266,6 @@ fn error_msg(body: &serde_json::Value) -> String {
         }
     }
     "server error".to_string()
-}
-
-// ── Connection check ──────────────────────────────────────────────────────────
-
-pub fn check_connection(config: &Config) -> anyhow::Result<()> {
-    let client = TackClient::new(config)?;
-    client.get("/health").map_err(|_| {
-        anyhow::anyhow!(
-            "Cannot reach Tack API at {}\n\
-             Make sure the server is running: cargo run -p tack-cli -- serve",
-            config.base_url
-        )
-    })?;
-    Ok(())
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────

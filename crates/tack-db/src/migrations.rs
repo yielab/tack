@@ -164,7 +164,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let migrations = all_migrations();
     verify_applied_migration_invariant(pool, &migrations).await?;
     create_pre_upgrade_backup_if_needed(pool, &migrations).await?;
-    apply_migrations(pool, &migrations, None).await?;
+    apply_migrations(pool, &migrations).await?;
     info!("All migrations applied");
     Ok(())
 }
@@ -183,7 +183,7 @@ pub async fn run_up_to(pool: &SqlitePool, cutoff: &str) -> Result<(), sqlx::Erro
         .position(|migration| migration.name == cutoff)
         .unwrap_or_else(|| panic!("run_up_to: unknown migration name {cutoff:?}"));
     verify_applied_migration_invariant(pool, &migrations).await?;
-    apply_migrations(pool, &migrations[..=idx], None).await
+    apply_migrations(pool, &migrations[..=idx]).await
 }
 
 async fn ensure_migrations_table(pool: &SqlitePool) -> Result<(), sqlx::Error> {
@@ -359,37 +359,7 @@ async fn create_pre_upgrade_backup_if_needed(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-struct FailureInjection {
-    migration: &'static str,
-    step: usize,
-}
-
-/// Test-only control surface used by integration tests to prove every rebuild
-/// boundary rolls back. It deliberately injects before a named rebuild step;
-/// production callers must use [`run_all`].
-#[doc(hidden)]
-pub async fn run_all_with_rebuild_failure(
-    pool: &SqlitePool,
-    migration: &'static str,
-    step: usize,
-) -> Result<(), sqlx::Error> {
-    ensure_migrations_table(pool).await?;
-    let migrations = all_migrations();
-    verify_applied_migration_invariant(pool, &migrations).await?;
-    apply_migrations(
-        pool,
-        &migrations,
-        Some(FailureInjection { migration, step }),
-    )
-    .await
-}
-
-async fn apply_migrations(
-    pool: &SqlitePool,
-    migrations: &[Migration],
-    failure: Option<FailureInjection>,
-) -> Result<(), sqlx::Error> {
+async fn apply_migrations(pool: &SqlitePool, migrations: &[Migration]) -> Result<(), sqlx::Error> {
     for migration in migrations {
         let already_applied: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = ?)")
@@ -404,7 +374,7 @@ async fn apply_migrations(
                     apply_ordinary_migration(pool, *migration, statements).await?
                 }
                 MigrationKind::Rebuild(spec) => {
-                    apply_rebuild_migration(pool, *migration, spec, failure).await?
+                    apply_rebuild_migration(pool, *migration, spec).await?
                 }
             }
             info!(migration = migration.name, "Migration applied successfully");
@@ -442,7 +412,6 @@ async fn apply_rebuild_migration(
     pool: &SqlitePool,
     migration: Migration,
     spec: RebuildMigration,
-    failure: Option<FailureInjection>,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
     let result = async {
@@ -453,18 +422,14 @@ async fn apply_rebuild_migration(
             .execute(&mut *tx)
             .await?;
         for (step, statement) in spec.statements.iter().enumerate() {
-            inject_failure(failure, migration.name, step)?;
             sqlx::query(*statement).execute(&mut *tx).await.map_err(|error| {
                 tracing::error!(migration = migration.name, statement, error = %error, "Rebuild migration failed");
                 error
             })?;
             if step == spec.copy_step {
-                inject_failure(failure, migration.name, spec.statements.len())?;
                 verify_copy(&mut tx, migration.name, spec).await?;
             }
         }
-        let fk_step = spec.statements.len() + 1;
-        inject_failure(failure, migration.name, fk_step)?;
         assert_foreign_key_check(&mut tx, migration.name).await?;
         record_migration(&mut tx, migration).await
     }
@@ -480,19 +445,6 @@ async fn apply_rebuild_migration(
             Err(error)
         }
     }
-}
-
-fn inject_failure(
-    failure: Option<FailureInjection>,
-    migration: &str,
-    step: usize,
-) -> Result<(), sqlx::Error> {
-    if failure.is_some_and(|failure| failure.migration == migration && failure.step == step) {
-        return Err(sqlx::Error::Protocol(format!(
-            "injected failure before rebuild migration {migration} step {step}"
-        )));
-    }
-    Ok(())
 }
 
 async fn verify_copy(
@@ -852,8 +804,7 @@ const MIGRATION_018: [&str; 1] = [
 // insert time, same as the rest of this file); all IDs are TEXT UUIDs.
 
 const MIGRATION_019: [&str; 1] = [
-    // One row per registered control plane (currently always "docket", but the
-    // ControlPlane trait is written to allow other kinds later). `token` is the
+    // One row per registered control plane (always "docket"). `token` is the
     // docket Bearer credential: nullable, and write-only over the API (never
     // returned to clients — same discipline as the S3 backup secret key).
     // `health` is the reconciler's state machine: healthy | degraded | unreachable.
@@ -1089,14 +1040,12 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
 // ─── Item provenance / trust boundary ────────────────────
 //
 // Tack imports items from GitHub Issues and Linear — text written by anyone who
-// can file an issue on a linked repo. Once the dispatcher sends
-// an item's title/description to docket as agent input, that text becomes
-// instructions to an autonomous agent. `source` is a sticky, creation-time-only
-// marker of where an item's text came from, read by the dispatcher
-// (`tack-api::dispatcher::resolve_default_trust`, and the auto-dispatch hook in
-// `handlers::items`) to decide whether to pass `trusted: true` or `trusted: false`
-// to docket's `pre_input` policy gate. See `tack_core::models::ItemSource` for the
-// full enum and the trust rule (`is_trusted()`).
+// can file an issue on a linked repo. Once a run sends an item's
+// title/description to an agent as input, that text becomes instructions to an
+// autonomous agent. `source` is a sticky, creation-time-only marker of where an
+// item's text came from, read when a run is requested (`handlers::executions`)
+// to record whether the item is `trusted`. See `tack_core::models::ItemSource`
+// for the full enum and the trust rule (`is_trusted()`).
 //
 // Default is deliberately `'unknown'`, not `'manual'`: every *existing* row in
 // every existing install — including items imported via GitHub before this trust
@@ -1145,13 +1094,11 @@ const MIGRATION_031: [&str; 1] = [
 // with its own half-applied-boot guard, so a partial rebuild is never silently
 // retried.
 
-// `control_planes.config` is never a secret, so it is intentionally absent from
-// `remote_backup.rs::SENSITIVE_META_KEYS`/`scrub_snapshot_secrets`. A GitHub
-// Actions plane needs `{owner, repo, workflow_file, ref, api_base}`; today
-// `control_planes` (migration 019) has only `base_url` and one `token`, with
-// nowhere to put provider-shaped configuration that isn't a credential. `config`
-// is opaque JSON at this layer — the registry (`tack-orch::adapters::registry`)
-// is what gives it a per-`kind` shape; this migration only makes room.
+// `control_planes.config` is never a secret. A GitHub Actions plane would
+// need `{owner, repo, workflow_file, ref, api_base}`, and `control_planes`
+// (migration 019) has only `base_url` and one `token`, with nowhere to put
+// provider-shaped configuration that isn't a credential. `config` is opaque
+// JSON at this layer; this migration only makes room.
 // `NOT NULL DEFAULT '{}'` so every row that predates this column — including
 // every docket plane already registered — reads back as "no extra config," which
 // is exactly what a docket plane has today.
@@ -1167,14 +1114,8 @@ const MIGRATION_032: [&str; 1] =
 // distinct from `'{}'` ("a secrets block whose provider-specific keys are all
 // absent") — same discipline migration 030 used for `orchestration TEXT`.
 //
-// `remote_backup.rs::scrub_snapshot_secrets` already nulls this column before
-// every downloadable/uploadable backup snapshot, alongside `control_planes.token`
-// (that function's own doc comment states the rule: every secret-bearing column
-// gets its own null-before-VACUUM block there, run before the trailing `VACUUM`).
-// The column is still unused in practice: `tack_db::repo::orch::ControlPlane`
-// (the read struct the real `registry::build` callers loop over) does not yet
-// surface `config`/`secrets`, so nothing writes a real value into it — but
-// backup scrubbing already covers it whenever a caller does.
+// Nothing ever wrote a real value into this column; migration 073 drops the
+// table.
 const MIGRATION_033: [&str; 1] = ["ALTER TABLE control_planes ADD COLUMN secrets TEXT"];
 
 // ─── Optimistic concurrency columns ──────────────────────────────────────
@@ -1182,7 +1123,7 @@ const MIGRATION_033: [&str; 1] = ["ALTER TABLE control_planes ADD COLUMN secrets
 // `version INTEGER NOT NULL DEFAULT 1` on the three tables an HTTP client can
 // read an ETag from and later PATCH: items, orch_links, control_planes.
 // Bumping it on write and wiring `ETag`/`If-Match` lives in
-// `tack-api::handlers::items`/`handlers::orch`. `DEFAULT 1` (not
+// `tack-api::handlers::items`. `DEFAULT 1` (not
 // 0): a row that predates this column has been written exactly once (its
 // `INSERT`), so its version number under the new scheme is 1, matching what a
 // freshly created row gets going forward — an `If-Match: 1` sent by a client

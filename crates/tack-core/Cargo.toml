@@ -26,7 +26,6 @@ csv = { workspace = true }
 utoipa = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 serde-saphyr = { workspace = true }
 
 [lints]

@@ -111,6 +111,11 @@ automation a template carries.
   whether what came before stayed. An `auto_start` block that omits `enabled` leaves the
   project's switch as it is.
 
+### Removed
+
+- `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
+  in each change, and a release's notes are its section here.
+
 ### Fixed
 
 - Turning on **Start a task by itself** saves the status the list shows; before, nothing started

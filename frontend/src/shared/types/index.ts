@@ -165,5 +165,3 @@ export type BoardEvent =
   | { type: 'board_config_updated'; project_id: string }
   | { type: 'sprint_updated'; project_id: string; sprint_id: string }
   | { type: 'ping' };
-
-export type BoardEventType = BoardEvent['type'];

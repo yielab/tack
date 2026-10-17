@@ -172,6 +172,3 @@ const ItemDetailDrawer: Component = () => {
 };
 
 export default ItemDetailDrawer;
-
-/** Helper for host views: the query patch that opens the drawer for an item. */
-export const openItemParam = (itemId: string) => ({ item: itemId });

@@ -67,8 +67,8 @@ thiserror = "2"
 anyhow = "1"
 
 # Async trait methods on object-safe traits (async fn in traits still can't
-# return a dyn-compatible future on its own) — used by tack-orch's
-# ControlPlane trait.
+# return a dyn-compatible future on its own) — used by the store and control
+# traits in tack-orch, tack-api and tack-cli.
 async-trait = "0.1"
 
 # Utilities
@@ -93,7 +93,6 @@ sha2 = "0.11"
 hex = "0.4"
 
 # Testing
-assert_matches = "1.5"
 # Every temporary path a test needs. The directory is deleted when the guard
 # drops, so a panicking test cleans up too, and anything the code under test
 # writes *beside* the path it was given — SQLite's `-wal` and `-shm`, the
