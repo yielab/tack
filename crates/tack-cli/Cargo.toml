@@ -85,8 +85,7 @@ tack-runner = { path = "../tack-runner" }
 tack-orch = { path = "../tack-orch" }
 # `EmbeddedRunnerControl` (`local_runner.rs`) implements `tack-api`'s
 # `LocalRunnerControl` trait — the async trait itself is `#[async_trait]`,
-# so the implementor needs the same macro. Already a workspace dependency
-# (tack-api, tack-orch); not newly introduced to the lockfile.
+# so the implementor needs the same macro.
 async-trait = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }

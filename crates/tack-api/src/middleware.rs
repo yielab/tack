@@ -458,7 +458,7 @@ mod tests {
     /// credential type and must never be listed here — `require_token`'s
     /// exemption check must stay exact-match, and neither router is mounted
     /// inside the `require_token`-gated sub-app in `router.rs` in the first
-    /// place (see `build_router`'s `runner_router` nest, which sits outside
+    /// place (see `build_router`'s `runner_protocol_routes` nest, which sits outside
     /// the `api` router's `require_token` layer entirely). This test pins
     /// the narrower, directly-checkable half of that guarantee: even if a
     /// future edit accidentally added one of these paths to this list, a

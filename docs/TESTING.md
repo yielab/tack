@@ -135,7 +135,7 @@ past what a reader can hold is a normal review comment, not a script's exit code
 | Fixed waits (`sleep`) in test code | 0 — poll with a bound, or pause time |
 | A test that early-returns on an env var inside a unit module | 0 — it belongs under `tests/live/`, `#[ignore]`d |
 
-Conventions that hold everywhere: `assert_matches!` for enum variants; `#[tokio::test]` for
+Conventions that hold everywhere: `assert!(matches!(..))` for enum variants; `#[tokio::test]` for
 async; a test of "writes nothing" or "rejects before X" asserts the absence directly (row
 counts, an untouched checkpoint) and proves itself load-bearing by reverting the fix once; a
 wait is a bounded poll on a condition, never a fixed `sleep`; a flaky test is recorded, never

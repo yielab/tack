@@ -134,10 +134,3 @@ pub fn read_fixture(manifest_dir: &str, relative: &str) -> Vec<u8> {
     let path = Path::new(manifest_dir).join("tests").join(relative);
     fs::read(&path).unwrap_or_else(|error| panic!("fixture {} not found: {error}", path.display()))
 }
-
-/// Like [`read_fixture`], decoded as UTF-8 text.
-pub fn read_fixture_string(manifest_dir: &str, relative: &str) -> String {
-    let bytes = read_fixture(manifest_dir, relative);
-    String::from_utf8(bytes)
-        .unwrap_or_else(|error| panic!("fixture {relative} is not valid UTF-8: {error}"))
-}

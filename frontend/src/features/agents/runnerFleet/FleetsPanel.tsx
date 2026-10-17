@@ -10,10 +10,7 @@ import { runnerStateBadge } from './RunnerHealthCard';
  * Create/list UI for `agent_fleets` (`GET`/`POST /runner-fleets`,
  * `crates/tack-api/src/handlers/runner_admin.rs`) — a scheduling group of
  * runners a request can target with `{kind:"fleet", fleet_id}`
- * (`RunnerSelector`, `shared/execution/types.ts`). Distinct from
- * `../api.ts`'s `FleetRow`/`FleetEntry` (an older, per-project Docket
- * control-plane roster) — see that file's own header comment; nothing here
- * imports from it.
+ * (`RunnerSelector`, `shared/execution/types.ts`).
  *
  * No endpoint returns a fleet's roster directly — `POST`/`DELETE
  * /runner-fleets/{fleet_id}/members[/{runner_id}]` write membership, and

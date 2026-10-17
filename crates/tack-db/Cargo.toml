@@ -18,7 +18,6 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }

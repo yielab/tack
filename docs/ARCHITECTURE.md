@@ -315,7 +315,7 @@ and retried sequentially, so it silently stopped being concurrent; a capability 
 empty bookkeeping — and prove the test is load-bearing by reverting the fix and watching it
 fail.
 
-Use `assert_matches!` macro for enum matching in tests. When changing an API
+Use `assert!(matches!(..))` for enum matching in tests. When changing an API
 response shape, update both the Rust handler and the matching mock in the
 frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
 

@@ -217,16 +217,6 @@
   --color-info-600: var(--color-accent2-ink);
   --color-info-700: var(--color-accent2-ink);
 
-  /* Back-compat aliases (pre-redesign names still referenced in places). */
-  --color-success: var(--color-success-600);
-  --color-success-light: var(--color-success-100);
-  --color-warning: var(--color-warning-600);
-  --color-warning-light: var(--color-warning-100);
-  --color-danger: var(--color-danger-600);
-  --color-danger-light: var(--color-danger-100);
-  --color-info: var(--color-info-600);
-  --color-info-light: var(--color-info-100);
-
   --color-focus-ring: var(--color-primary-600);
 
   /* Radius (static across themes). The shape language is over-rounded:

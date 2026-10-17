@@ -48,7 +48,6 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }

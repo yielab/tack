@@ -142,10 +142,6 @@ export const IconMoon = stroke(
   { width: 1.8 },
 );
 
-export const IconFilter = stroke(
-  <path d="M2 4h12M4 8h8M6 12h4" stroke-linecap="round" />,
-);
-
 export const IconLink = stroke(
   <path d="M6.5 9.5l3-3M5.5 7l-1.2 1.2a2.4 2.4 0 0 0 3.4 3.4L9 10.3M10.5 9l1.2-1.2a2.4 2.4 0 0 0-3.4-3.4L7 5.7" stroke-linecap="round" />,
   { width: 1.8 },

@@ -209,7 +209,7 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
 // `environment_*` bounds the execution *request's* environment entries
 // (validated at enqueue time, not by any runner-protocol
 // handler here); `decision_answer_bytes_max` bounds an operator's decision
-// *answer*, and decision resolution has no endpoint here yet;
+// *answer*, which the operator's resolve route checks in `decisions.rs`;
 // `request_timeout_seconds_max` bounds the execution request's timeout
 // policy (enqueue-time, not runner-protocol); `retention_event_days_default`/
 // `retention_artifact_days_default` are background-sweep/storage defaults,
@@ -224,12 +224,7 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
 // test proves the *entire* frozen `docs/contracts/runner-v1/limits.json`
 // round-trips with no drift — not just the subset these handlers
 // happen to enforce today. Each `#[allow(dead_code)]` below is therefore
-// scoped to exactly the field it excuses, not the whole struct or module —
-// unlike the blanket `#[allow(dead_code)]` on the
-// `pub mod runner_protocol;` line in `handlers.rs`, needed to keep clippy
-// green once this module was first compiled as a real lib target. This module
-// remove that allow now that the dead fields are excused precisely, here,
-// in the file that owns them.
+// scoped to exactly the field it excuses, not the whole struct or module.
 struct Limits {
     json_body_bytes_max: u64,
     metadata_bytes_max: u64,
@@ -1324,8 +1319,7 @@ pub async fn submit_events(
             "duplicate_event_ids": batch.duplicate_event_ids,
             "committed_checkpoint": batch.committed_checkpoint,
         }))),
-        // Splits the old, collapsed
-        // `ReplayConflict` into two causes carried by distinct variants: the
+        // Two causes, carried by distinct variants: the
         // same `(attempt_id, checkpoint)` idempotency-scoped key reused with
         // different content (this can never succeed by retrying — the
         // non-retryable `idempotency_conflict` code) versus a benign
