@@ -1117,6 +1117,7 @@ GET /api/projects/:id/export
 |---|---|---|---|---|
 | `id` | path | `string` | yes | Project ID |
 | `format` | query | `string` | no |  |
+| `scope` | query | `string` | no | `snapshot` (the default) is the database dump `POST /api/projects/import` |
 
 | Status | Meaning | Schema |
 |---|---|---|

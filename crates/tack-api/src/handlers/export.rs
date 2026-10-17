@@ -14,6 +14,9 @@ use tack_core::models::{
     CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemBrief, ItemSource, Project,
     Sprint, UpdateProject, UpsertItemBrief,
 };
+use tack_core::outline::bundle::{Parts, to_bundle};
+use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain};
+use tack_db::repo::autonomy as store;
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -23,6 +26,9 @@ use crate::router::AppState;
 pub struct ExportQuery {
     #[serde(default = "default_format")]
     format: String,
+    /// `snapshot` (the default) is the database dump `POST /api/projects/import`
+    /// reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+    scope: Option<String>,
 }
 
 fn default_format() -> String {
@@ -51,6 +57,21 @@ pub async fn export_project(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, ApiError> {
     info!(project_id = %project_id, format = %query.format, "Exporting project");
+    let bundle = match query.scope.as_deref() {
+        None | Some("snapshot") => false,
+        Some("bundle") => true,
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "Unsupported scope '{other}'. Use 'snapshot' or 'bundle'"
+            )));
+        }
+    };
+    if bundle && !matches!(query.format.as_str(), "json" | "yaml") {
+        return Err(ApiError::BadRequest(
+            "A project file is JSON or YAML; use format 'json' or 'yaml' with scope 'bundle'"
+                .into(),
+        ));
+    }
 
     let project = state
         .repo
@@ -62,6 +83,9 @@ pub async fn export_project(
         .repo
         .list_items(project_id, &Default::default())
         .await?;
+    if bundle {
+        return bundle_response(&state, &project, &items, &query.format).await;
+    }
     let sprints = state.repo.list_sprints(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
     let briefs = state.repo.list_item_briefs_for_project(project_id).await?;
@@ -147,6 +171,94 @@ pub async fn export_project(
             query.format
         ))),
     }
+}
+
+/// The project as one project file (ADR 0081), written the way `import` reads it.
+async fn bundle_response(
+    state: &AppState,
+    project: &Project,
+    items: &[Item],
+    format: &str,
+) -> Result<Response, ApiError> {
+    let project_id = project.id;
+    let fields = state.repo.list_fields_for_project(project_id).await?;
+    let profiles = state.repo.list_agent_profile_rows().await?;
+    let roles = state.repo.list_roles(project_id).await?;
+    let mut sprints = state.repo.list_sprints(project_id).await?;
+    // The list is newest first; a file reads in the order the sprints run.
+    sprints.sort_by(|a, b| (a.start_date, &a.name).cmp(&(b.start_date, &b.name)));
+    let item_roles = state.repo.item_roles_for_project(project_id).await?;
+    let item_fields = state.repo.field_values_for_project(project_id).await?;
+    let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
+    let fleets = state.repo.fleet_names().await?;
+    let settings = store::get_settings(state.repo.pool(), &project_id.to_string()).await?;
+    let autonomy = settings.map(|s| BundleAutonomy {
+        level: Some(s.level.to_string()),
+        domains: s
+            .domains
+            .into_iter()
+            .map(|d| BundleDomain {
+                name: d.name,
+                paths: d.path_globs,
+                item_types: d.item_types,
+                level: d.level.to_string(),
+            })
+            .collect(),
+        verify_require: Some(s.verify_require),
+        verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
+        budgets: Some(BundleBudgets {
+            tokens_per_day: s.budgets.tokens_per_day,
+            usd_per_day: s.budgets.usd_per_day,
+            auto_merges_per_day: s.budgets.auto_merges_per_day,
+            queue_items_max: s.budgets.queue_items_max,
+        }),
+        merge_on_done: Some(s.merge_on_done),
+    });
+    let outline = to_bundle(&Parts {
+        project,
+        fields: &fields,
+        profiles: &profiles,
+        roles: &roles,
+        sprints: &sprints,
+        autonomy,
+        auto_start: BundleAutoStart {
+            enabled: project.auto_start_enabled,
+            status: project.auto_start_status.clone(),
+            max_open: Some(project.auto_start_max_open),
+        },
+        items,
+        item_roles: &item_roles,
+        item_fields: &item_fields,
+        dependencies: &dependencies,
+        fleets: &fleets,
+    });
+    let name = project.name.replace(' ', "-");
+    let (content_type, extension, text) = if format == "yaml" {
+        (
+            "application/x-yaml",
+            "yaml",
+            serde_saphyr::to_string(&outline)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize YAML: {}", e))?,
+        )
+    } else {
+        (
+            "application/json",
+            "json",
+            serde_json::to_string_pretty(&outline)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize: {}", e))?,
+        )
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{name}-bundle.{extension}\""),
+            ),
+        ],
+        text,
+    )
+        .into_response())
 }
 
 // ─── Import ──────────────────────────────────────────────────────────────────

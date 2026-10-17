@@ -187,6 +187,7 @@ async fn csv_creates_a_named_project() {
     .await;
     assert_eq!(status, StatusCode::OK, "{out}");
     assert_eq!(out["project"]["name"], "From CSV");
+    assert_eq!(out["sections"], json!([]), "a CSV has no sections");
     assert_eq!(out["items"][1]["title"], "Task, with comma");
     assert_eq!(out["items"][1]["parent_id"], out["items"][0]["id"]);
     assert_eq!(

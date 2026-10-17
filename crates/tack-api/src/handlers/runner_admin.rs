@@ -1019,7 +1019,7 @@ fn profile_from_row(
 }
 
 /// The agent kinds a runner can run: what `tool_policy.agent` may name.
-const HARNESS_KINDS: [&str; 4] = ["claude-code", "codex", "opencode", "docket"];
+pub(crate) const HARNESS_KINDS: [&str; 4] = ["claude-code", "codex", "opencode", "docket"];
 
 /// 400 when `tool_policy.agent` is not a known agent kind, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
 async fn check_profile_fields(

@@ -4400,6 +4400,8 @@ export interface components {
             /** @description The items in written order: parents before their children. */
             items: components["schemas"]["OutlineResultItem"][];
             project?: null | components["schemas"]["Project"];
+            /** @description What each section of a project file does, in the file's order; empty for a CSV. */
+            sections: components["schemas"]["SectionSummary"][];
             /** @description CSV rows with no title, which create nothing. */
             skipped: number;
             /**
@@ -4778,6 +4780,15 @@ export interface components {
         SaveAsTemplateRequest: {
             description?: string | null;
             name: string;
+        };
+        /** @description What one section of the file will do, for the preview. */
+        SectionSummary: {
+            created: number;
+            /** @description Names the project has and the file does not carry; left alone. */
+            not_mentioned: number;
+            section: string;
+            updated: number;
+            warnings: string[];
         };
         SetCustomFieldValue: {
             /** Format: uuid */
@@ -7702,6 +7713,11 @@ export interface operations {
         parameters: {
             query?: {
                 format?: string;
+                /**
+                 * @description `snapshot` (the default) is the database dump `POST /api/projects/import`
+                 *     reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+                 */
+                scope?: string;
             };
             header?: never;
             path: {
@@ -7935,7 +7951,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description An outline as JSON, or YAML when Content-Type mentions yaml; its project block is ignored */
+        /** @description An outline as JSON, or YAML when Content-Type mentions yaml; its project block is read for nothing but a warning */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Outline"];
