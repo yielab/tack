@@ -27,7 +27,7 @@ A user page that needs a setting points to the Administrator Guide for how to se
 | [API Reference](api-reference.md) | Look up a route (generated from `docs/openapi.json`) |
 | [Testing](testing.md) | Run the suites and know where a new test belongs |
 | [Architecture Decisions](decisions.md) | Find the ADR behind a behaviour |
-| [Learning Path](learning/README.md) | Learn Rust, async, Axum, sqlx and SolidJS as you need them |
+| [Learning Path](learning/index.md) | Learn Rust, async, Axum, sqlx and SolidJS as you need them |
 
 ## Where to start
 

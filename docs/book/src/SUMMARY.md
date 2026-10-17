@@ -55,7 +55,7 @@
 
 ## Learning Path
 
-- [Overview](developer/learning/README.md)
+- [Overview](developer/learning/index.md)
 - [Rust for Backend Developers](developer/learning/rust-primer.md)
 - [Async/Await in Rust](developer/learning/async-in-rust.md)
 - [Axum — HTTP Without Magic](developer/learning/axum-primer.md)

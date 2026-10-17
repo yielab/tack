@@ -46,7 +46,27 @@ allow = [
 EOF
 }
 
-common_policy > deny.toml
+# zbus 6.0.0 folded zvariant and zbus_names into itself, and RustSec marks the
+# standalone crates unmaintained. Both workspaces reach them only through the
+# Linux credential store (zbus-secret-service-keyring-store 1.0.1 ->
+# secret-service 5.2.0 -> zbus 5), and both of those are their newest
+# releases, still on zbus 5. Re-review when secret-service moves to zbus 6.
+zbus_ignores() {
+  cat <<'EOF'
+  { id = "RUSTSEC-2026-0370", reason = "zvariant 5.15.0, merged into zbus 6; reached only through secret-service 5.2.0 (newest, on zbus 5) for the Linux credential store. Reviewed 2026-10-17, next review 2027-01-17." },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names 4.3.4, merged into zbus 6; reached only through secret-service 5.2.0 (newest, on zbus 5) for the Linux credential store. Reviewed 2026-10-17, next review 2027-01-17." },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5.15.0, merged into zbus 6; reached only through secret-service 5.2.0 (newest, on zbus 5) for the Linux credential store. Reviewed 2026-10-17, next review 2027-01-17." },
+EOF
+}
+
+{
+  echo '[advisories]'
+  echo 'ignore = ['
+  zbus_ignores
+  echo ']'
+  echo
+  common_policy
+} > deny.toml
 
 # crates/tack-desktop pulls in Tauri's Linux WebView backend (wry), which
 # still depends on the unmaintained gtk-rs GTK3 bindings and, through
@@ -82,7 +102,7 @@ ignore = [
   { id = "RUSTSEC-2025-0080", reason = "unic-common 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
-]
-
 EOF
+zbus_ignores >> crates/tack-desktop/deny.toml
+printf ']\n\n' >> crates/tack-desktop/deny.toml
 common_policy >> crates/tack-desktop/deny.toml
