@@ -377,7 +377,16 @@ async fn create_new(
             // Items are one transaction; the rows of the other sections go
             // with the project.
             let _ = state.repo.delete_project(project.id).await;
-            Err(e)
+            Err(match e {
+                ApiError::SectionFailed {
+                    section, source, ..
+                } => ApiError::SectionFailed {
+                    section,
+                    kept: false,
+                    source,
+                },
+                other => other,
+            })
         }
     }
 }
@@ -512,7 +521,11 @@ async fn write_profiles(
 ) -> ApiResult<HashMap<String, String>> {
     let repo = &state.repo;
     let at = |section: &'static str| {
-        move |e: sqlx::Error| ApiError::Internal(anyhow::anyhow!("{section}: {e}"))
+        move |source: sqlx::Error| ApiError::SectionFailed {
+            section,
+            kept: true,
+            source,
+        }
     };
     let mut profile_ids: HashMap<String, String> = board
         .profiles
@@ -580,7 +593,11 @@ async fn write_automation(
 ) -> ApiResult<()> {
     let repo = &state.repo;
     let at = |section: &'static str| {
-        move |e: sqlx::Error| ApiError::Internal(anyhow::anyhow!("{section}: {e}"))
+        move |source: sqlx::Error| ApiError::SectionFailed {
+            section,
+            kept: true,
+            source,
+        }
     };
     let mut update = UpdateProject {
         repository: auto.repository.clone().map(Some),
@@ -677,7 +694,11 @@ async fn write(
     let repo = &state.repo;
     let project_id = project.id;
     let at = |section: &'static str| {
-        move |e: sqlx::Error| ApiError::Internal(anyhow::anyhow!("{section}: {e}"))
+        move |source: sqlx::Error| ApiError::SectionFailed {
+            section,
+            kept: true,
+            source,
+        }
     };
 
     if is_new {

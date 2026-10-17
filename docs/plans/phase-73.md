@@ -1083,7 +1083,10 @@ still a control shown with its reason.
   - **Z2 closed** 2026-10-17 on the merged `develop`: generated files current; the gate green;
     `cargo nextest run --workspace` 1310 passed, 3 skipped; type-check, Vitest 644 in 68 files,
     token lint and the build green; `scripts/check-comments.sh` green. Wave 7 is in `develop`,
-    unpushed, as B1 `f5999a88`, B2 `04f1142e`, B3 `98d413d5` and this docs commit. Open, not
-    blocking: the client sees a generic 500 when a configuration section fails to write on an
-    existing project (the section is named in the server log only); the Factory and the
-    templates pages do not yet show a template's roles and profiles (the API does).
+    unpushed, as B1 `f5999a88`, B2 `04f1142e`, B3 `98d413d5` and this docs commit.
+  - **Two follow-ups** asked by the owner the same day and done by the integrator: a section
+    that fails to write answers `ApiError::SectionFailed` ("The roles section could not be
+    written. What the file wrote before it stays, so importing it again finishes the job."; on a
+    new project, "so nothing was created"); the Templates page shows a template's roles,
+    profiles and merge level as chips, lists "role → profile" on hover, and both the create and
+    the save-as-template dialogs say that roles, profiles and automation travel with it.

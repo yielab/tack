@@ -116,8 +116,9 @@ const ProjectSettings: Component = () => {
         size="sm"
       >
         <p class="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-          Saves this project's workflow, vocabulary, custom field definitions, and boards as a
-          reusable template. Items are not copied.
+          Saves this project's workflow, vocabulary, custom fields, boards, roles, the agent
+          profiles those roles use and the automation settings as a reusable template. Items are
+          not copied.
         </p>
 
         <form onSubmit={handleSaveAsTemplate} class="space-y-4">
