@@ -52,7 +52,10 @@ Phase 73 (`docs/plans/phase-73.md`, ADR 0080, opened 2026-10-14) sends every doc
 long-lived team over docket's HTTP API version 5 (tested against an in-process fake until docket
 0.2.0-beta.6 exists), lets a role choose the profile and a task start by itself, caps the automatic
 merge at the team's ceiling, keeps usage per model, lets a task repeat, and puts a project's
-automation on one screen: Settings → Automation as a ladder of four rungs.
+automation on one screen: Settings → Automation as a ladder of four rungs. Its seventh wave
+(ADR 0081, approved 2026-10-17) lets a whole project go in and out through one file: the outline
+gains fields, profiles, roles, sprints and automation, the export writes the same file back, and
+a template is that file without items.
 Decisions go in an ADR, intent in `docs/book/src/roadmap.md`, history in commits.
 
 ## Commands
