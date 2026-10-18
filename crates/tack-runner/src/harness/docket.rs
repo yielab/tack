@@ -455,27 +455,107 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
     }
 }
 
-fn approval_question(view: &Value) -> Option<Question> {
-    let token = view["token"].as_str()?;
-    let tool = view["tool"].as_str();
-    let action = view["action"].as_str();
-    let prompt = match (tool, action) {
+/// What the person is asked about a gated call: the tool and docket's sentence
+/// naming it, when docket gave them.
+fn approval_prompt(tool: Option<&str>, action: Option<&str>) -> String {
+    match (tool, action) {
         (Some(tool), Some(action)) => format!("Allow {tool}? docket's policy: {action}"),
         (Some(tool), None) => format!("Allow {tool}?"),
         _ => "Allow a gated tool call?".to_owned(),
-    };
-    let option = |id: &str, label: &str| DecisionOption {
-        option_id: id.to_owned(),
-        label: label.to_owned(),
-        description: None,
-        risks: None,
-        estimated_tokens: None,
+    }
+}
+
+/// The question for an approval no task holds: docket's `ApprovalView`, which
+/// carries the tool and action itself.
+fn approval_question(view: &Value) -> Option<Question> {
+    let token = view["token"].as_str()?;
+    let tool = view["tool"].as_str();
+    let prompt = approval_prompt(tool, view["action"].as_str());
+    Some(approval_asking(
+        token,
+        prompt,
+        tool,
+        &view["role"],
+        &view["policy"],
+        &Value::Null,
+    ))
+}
+
+/// The question for the approval a task holds (`status: waiting_approval`,
+/// `approvalToken`). Its details are the record in `GET /approvals`; without
+/// one, the task's `reason` is all docket said.
+fn held_approval_question(task: &Value, token: &str, record: Option<&Value>) -> Question {
+    match record {
+        Some(record) => {
+            let tool = record["context"]["tool"].as_str();
+            let prompt = approval_prompt(tool, record["action"].as_str());
+            approval_asking(
+                token,
+                prompt,
+                tool,
+                &record["role"],
+                &record["policy"],
+                &record["options"],
+            )
+        }
+        None => {
+            let prompt = match task["reason"].as_str().filter(|reason| !reason.is_empty()) {
+                Some(reason) => format!("Allow a gated tool call? docket says: {reason}"),
+                None => approval_prompt(None, None),
+            };
+            approval_asking(
+                token,
+                prompt,
+                None,
+                &Value::Null,
+                &Value::Null,
+                &Value::Null,
+            )
+        }
+    }
+}
+
+/// The three answers docket's endpoint takes (`approve_once` and `approve_task`
+/// both grant), worded as the pending record words them when it is there.
+fn approval_asking(
+    token: &str,
+    prompt: String,
+    tool: Option<&str>,
+    role: &Value,
+    policy: &Value,
+    docket_options: &Value,
+) -> Question {
+    let option = |id: &str, label: &str| {
+        let wording = docket_options
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|option| option["id"] == json!(id));
+        let text = |key: &str| {
+            wording
+                .and_then(|option| option[key].as_str())
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned)
+        };
+        let risks: Vec<String> = wording
+            .and_then(|option| option["risks"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|risk| risk.as_str().map(str::to_owned))
+            .collect();
+        DecisionOption {
+            option_id: id.to_owned(),
+            label: text("label").unwrap_or_else(|| label.to_owned()),
+            description: text("description"),
+            risks: Some(risks).filter(|risks| !risks.is_empty()),
+            estimated_tokens: None,
+        }
     };
     let mut metadata = serde_json::Map::new();
     metadata.insert("tool".to_owned(), tool.into());
-    metadata.insert("role".to_owned(), view["role"].clone());
-    metadata.insert("policy".to_owned(), view["policy"].clone());
-    Some(Question {
+    metadata.insert("role".to_owned(), role.clone());
+    metadata.insert("policy".to_owned(), policy.clone());
+    Question {
         vendor_id: token.to_owned(),
         kind: "approval".to_owned(),
         prompt,
@@ -486,7 +566,7 @@ fn approval_question(view: &Value) -> Option<Question> {
         ],
         recommendation: None,
         metadata,
-    })
+    }
 }
 
 /// The one property a parked question asks for, which its answer fills.
@@ -541,14 +621,32 @@ impl DocketAdapter {
                 continue;
             }
             if item.get("token").is_some() && item["taskId"] == json!(info.task) {
+                // An approval no task holds, which docket sends as its own item.
                 if let Some(question) = approval_question(item)
                     && !asked.contains(&question.vendor_id)
                 {
                     let token = question.vendor_id.clone();
                     return Some((question, Pending::Approval { token }));
                 }
-            } else if item["id"] == json!(info.task)
-                && item["status"] == json!("waiting_input")
+            } else if item["id"] != json!(info.task) {
+                continue;
+            } else if item["status"] == json!("waiting_approval")
+                && let Some(token) = item["approvalToken"].as_str()
+            {
+                // An approval the task holds is the task's own item; the tool and
+                // the policy's sentence are in the record `GET /approvals` lists.
+                if asked.contains(token) {
+                    continue;
+                }
+                let record = self.pending_approval(token).await;
+                let question = held_approval_question(item, token, record.as_ref());
+                return Some((
+                    question,
+                    Pending::Approval {
+                        token: token.to_owned(),
+                    },
+                ));
+            } else if item["status"] == json!("waiting_input")
                 && let Some((question, pending)) = consult_question(item)
                 && !asked.contains(&question.vendor_id)
             {
@@ -556,6 +654,22 @@ impl DocketAdapter {
             }
         }
         None
+    }
+
+    /// The pending record for `token` in `GET /approvals`, if docket answers
+    /// and lists it.
+    async fn pending_approval(&self, token: &str) -> Option<Value> {
+        let reply = self
+            .client
+            .pending_approvals()
+            .await
+            .ok()
+            .filter(|r| r.status == 200)?;
+        reply.body["pending"]
+            .as_array()?
+            .iter()
+            .find(|record| record["token"] == json!(token))
+            .cloned()
     }
 
     /// Posts the person's answer where docket reads it. A `409` means docket

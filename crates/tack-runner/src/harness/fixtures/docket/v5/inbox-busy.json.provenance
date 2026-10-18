@@ -5,3 +5,4 @@ built-from: inbox-failed.json (the item keys of a task) and the approval and que
 docket: 0.2.0b6 (API 5), source checkout a9f6f81c
 date: 2026-10-18
 note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.
+approval-item: the first needsYou item is an ApprovalView, with the keys of docket's inbox.py::_approval_view. docket sends it only for an approval whose record has no taskId and which no task holds, so a real one has taskId null; this one carries a task id to exercise the match Tack's adapter still makes. An approval a task holds is NOT this item but the task's own (status waiting_approval, approvalToken): see inbox-waiting-approval.json, which the fake builds that case from.
