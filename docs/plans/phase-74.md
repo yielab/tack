@@ -337,7 +337,12 @@ is docket's decision (`docket-triage.md` recommends the same default).
 ## Status
 
 - **Round 0** done 2026-10-17: ADR 0082 accepted with its three defaults, this plan, the roadmap section.
-- **Round 1** started 2026-10-17: F, I and W.
+- **Round 1** done 2026-10-17: F, I and W.
+  - F merged (`92dc79c8`). As built: one private `apply_recovery` holds the transition after
+    the attempt row is read; `recover_attempt` (the runner's own report, with its runner check)
+    and `expire_unheld_leases` (the claim poll, any holder state) both call it, and the sentence is
+    written only when the attempt moved. The crash tests crash for real (a provisioner that never
+    returns, aborted), since a failing provisioner is now a clean Failed.
   - I merged (`9899036c`). As built: the refused-credential codes are `unauthorized` (401) and
     `runner_revoked` (403); `api_version` rides in the capability's flattened `additional` map, read
     and written through two accessors; `is_online` takes `(active, last_heartbeat_at, now)` because the
@@ -346,9 +351,14 @@ is docket's decision (`docket-triage.md` recommends the same default).
     reason. Added at integration: `isInstalled`, `isReady` and `versionText` in
     `runnerObservations.ts` are the one rule for the five agents screens, since docket publishes no
     version of its own.
-  - F merged (`92dc79c8`). As built: one private `apply_recovery` holds the transition after
-    the attempt row is read; `recover_attempt` (the runner's own report, with its runner check)
-    and `expire_unheld_leases` (the claim poll, any holder state) both call it, and the sentence is
-    written only when the attempt moved. The crash tests crash for real (a provisioner that never
-    returns, aborted), since a failing provisioner is now a clean Failed.
   - W merged (`90fad17d`). Known, not in scope: Escape in a dialog opened from another closes both, because each `Modal` listens on `document`.
+- **Round 2** done 2026-10-17: C and L.
+  - C merged (`20247edf`). As built: the report is compared with `reported_at` and each
+    `probed_at` neutralized; the re-probe runs on its interval whether or not a run is in flight
+    (a claim occupies a slot, so "idle" cannot be told apart, and a probe is cheap). Added at
+    integration: a team the computer does not report is a ceiling fact, `Facts::ceiling:
+    Result<Option<Level>, String>` with its own `Hold::TeamNotReported`, not a borrowed `require`
+    failure; the Teams rung reads the ladder's settings instead of fetching them again.
+  - L merged (`9eb252f1`). As built: the per-user data folder is owned by `config::data_root` in
+    the tack-cli lib (`service` is private to the binary and delegates to it); an unknown key is
+    named only when serde's refusal names a key that is really in the file's top-level table.
