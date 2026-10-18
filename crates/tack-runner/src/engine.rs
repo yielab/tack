@@ -650,35 +650,43 @@ where
                 },
             )
             .await?;
-        if scratch {
-            self.workspaces.provision_scratch(&workspace).await?;
-        } else {
-            self.workspaces.provision(&workspace, &repository).await?;
-        }
-        // Fixed here, before the harness can write anywhere: the commit the
-        // base revision resolved to and where the branch is pushed. They reach
-        // the journal with the update that follows the start.
-        (record.base_commit, record.push_remote) = self.workspaces.provisioned(&workspace).await;
-
         let spec = ExecutionSpec {
             work: work.clone(),
             workspace,
         };
-        match self.adapter.validate(&spec).await {
-            Ok(()) => {}
-            Err(HarnessError::Rejected { reason }) => {
-                return self
-                    .fail_before_spawn(session, &mut record, &spec, reason)
-                    .await;
+        // Everything from here to the first sight of the agent running ends
+        // the attempt `failed` with its reason when it fails; only a failure
+        // to reach the board above stays an engine error.
+        let started = async {
+            if scratch {
+                self.workspaces.provision_scratch(&spec.workspace).await
+            } else {
+                self.workspaces
+                    .provision(&spec.workspace, &repository)
+                    .await
             }
-            Err(error) => return Err(error.into()),
+            .map_err(|error| HarnessError::Rejected {
+                reason: error.to_string(),
+            })?;
+            // Fixed here, before the harness can write anywhere: the commit
+            // the base revision resolved to and where the branch is pushed.
+            // They reach the journal with the update that follows the start.
+            (record.base_commit, record.push_remote) =
+                self.workspaces.provisioned(&spec.workspace).await;
+            self.adapter.validate(&spec).await?;
+            // What git will read as configuration is fixed here: the harness
+            // runs next, and anything it changed in it is not the
+            // repository's own.
+            record.config_before = Some(crate::client::workspace::git::config_fingerprint(
+                &spec.workspace.path,
+            ));
+            self.adapter.start(&spec).await
         }
-        // What git will read as configuration is fixed here: the harness runs
-        // next, and anything it changed in it is not the repository's own.
-        record.config_before = Some(crate::client::workspace::git::config_fingerprint(
-            &spec.workspace.path,
-        ));
-        let handle = self.adapter.start(&spec).await?;
+        .await;
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(e) => return self.fail_before_spawn(session, &mut record, &spec, e).await,
+        };
         record.state = JournalState::ProcessObservedRunning;
         record.process_id = Some(handle.process_id.clone());
         self.active.sync(&record);
@@ -1933,8 +1941,12 @@ where
     /// complete, and the journal holding a `prepared` record with no process
     /// behind it — a hang only a restart's recovery scan resolves. The
     /// rejection is settled: the adapter refused before any process existed,
-    /// so the report is `failed` with that reason. Only [`HarnessError::Rejected`]
-    /// is settled this way; a process or recovery failure keeps propagating.
+    /// so the report is `failed` with that reason.
+    ///
+    /// Four things end here, each with its own text: a refusal at `validate`,
+    /// a refusal at `start`, any other harness error before the agent was
+    /// seen running (its text), and a workspace that could not be prepared
+    /// (its text). Only a failure to reach the board stays an [`EngineError`].
     ///
     /// The report says nothing ran, in the contract's own vocabulary: no
     /// harness version observed, the model marked as requested, or the agent's own default, every
@@ -1944,15 +1956,22 @@ where
         session: &RunnerSession,
         record: &mut AttemptJournal,
         spec: &ExecutionSpec,
-        reason: String,
+        error: HarnessError,
     ) -> Result<RunCycle, EngineError> {
         use tack_orch::execution as domain;
+
+        // A refusal's own words; any other error's text, which never carries
+        // a secret.
+        let reason = match error {
+            HarnessError::Rejected { reason } => reason,
+            other => other.to_string(),
+        };
 
         let now = chrono::DateTime::<chrono::Utc>::from(self.clock.now());
         let request = &spec.work.request;
         let unexercised = || domain::CapabilityValue {
             support: domain::CapabilitySupport::Unsupported,
-            reason: Some("the harness rejected this execution before it started".to_owned()),
+            reason: Some("the agent refused this run before it started".to_owned()),
             additional: BTreeMap::new(),
         };
         fn not_measured<T>() -> domain::Measurement<T> {

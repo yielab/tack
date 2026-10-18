@@ -364,21 +364,22 @@ impl HarnessAdapter for FakeAdapter {
 
 #[derive(Clone)]
 struct FakeWorktree {
-    fail: bool,
+    hang: bool,
     provisions: Arc<AtomicUsize>,
 }
 
 impl FakeWorktree {
     fn succeeds() -> Self {
         Self {
-            fail: false,
+            hang: false,
             provisions: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    fn fails() -> Self {
+    /// A checkout that never finishes: the runner is killed inside it.
+    fn hangs() -> Self {
         Self {
-            fail: true,
+            hang: true,
             provisions: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -392,8 +393,8 @@ impl WorktreeProvisioner for FakeWorktree {
         _repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError> {
         self.provisions.fetch_add(1, Ordering::SeqCst);
-        if self.fail {
-            Err(WorkspaceError::Io)
+        if self.hang {
+            std::future::pending().await
         } else {
             Ok(())
         }
@@ -483,6 +484,24 @@ fn engine(
     )
 }
 
+/// Kills the runner for real: the attempt is run until its provisioning has
+/// begun (the journal then holds `Prepared`), and its task is dropped there.
+async fn crash_while_provisioning(
+    protocol: &FakeProtocol,
+    adapter: &FakeAdapter,
+    journal: &OwnerOnlyJournal,
+    root: &Path,
+) {
+    let worktree = FakeWorktree::hangs();
+    let crashed = engine(protocol, adapter, journal, root, worktree.clone());
+    let running = tokio::spawn(async move { crashed.run_once(&session(), claim()).await });
+    while worktree.provisions.load(Ordering::SeqCst) == 0 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    running.abort();
+    let _ = running.await;
+}
+
 /// A quarantine leaves nothing left to recover and a dated record of why.
 fn assert_quarantine_recorded(root: &Path, journal: &OwnerOnlyJournal) {
     assert!(
@@ -560,13 +579,10 @@ async fn before_spawn_worktree_crash_recovers_without_respawn() {
     let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::None, false);
     let adapter = FakeAdapter::new(RecoveryObservation::ProcessStopped);
-    let failed_worktree = FakeWorktree::fails();
     let journal = OwnerOnlyJournal::new(root);
-    let crashed = engine(&protocol, &adapter, &journal, root, failed_worktree.clone());
 
-    assert!(crashed.run_once(&session(), claim()).await.is_err());
+    crash_while_provisioning(&protocol, &adapter, &journal, root).await;
     assert_eq!(adapter.starts(), 0);
-    assert_eq!(failed_worktree.provisions.load(Ordering::SeqCst), 1);
     let unresolved = journal.unresolved().expect("unresolved journal");
     assert_eq!(unresolved.len(), 1);
     assert_eq!(unresolved[0].state, JournalState::Prepared);
@@ -604,8 +620,7 @@ async fn two_unresolved_journals_after_a_crash_are_both_recovered() {
         crashed_work.lease.attempt_id = AttemptId::new(attempt);
         crashed_work.attempt.attempt_id = DomainAttemptId::new(attempt);
         let crashed = FakeProtocol::new(crashed_work, FailurePoint::None, false);
-        let crashed = engine(&crashed, &adapter, &journal, root, FakeWorktree::fails());
-        assert!(crashed.run_once(&session(), claim()).await.is_err());
+        crash_while_provisioning(&crashed, &adapter, &journal, root).await;
     }
     assert_eq!(journal.unresolved().expect("unresolved").len(), 2);
 

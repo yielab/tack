@@ -426,6 +426,47 @@ async fn a_422_fails_the_attempt_with_the_bodys_text_and_posts_nothing_again() {
     assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
 }
 
+/// docket refusing the team itself (its answer to `POST /pods`) ends the
+/// attempt with docket's words before any task exists. The fake has no way to
+/// refuse a pod, so a one-route server stands in for it here.
+#[tokio::test]
+async fn a_400_on_the_pod_fails_the_attempt_with_the_bodys_text_and_posts_no_task() {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+    let docket = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(json!({"error": "project is required"})),
+        )
+        .mount(&docket)
+        .await;
+    let fake = FakeDocket::start().await;
+    let scene = scene();
+    let adapter = DocketAdapter::new(
+        DocketConfig {
+            base_url: Some(docket.uri()),
+            token_file: Some(fake.token_file()),
+            ..DocketConfig::default()
+        },
+        scene.state.clone(),
+    );
+
+    let Err(HarnessError::Rejected { reason }) = adapter.start(&spec(&scene, "attempt-1", 1)).await
+    else {
+        panic!("docket refused the team, so the attempt cannot start");
+    };
+
+    assert!(reason.ends_with("project is required"), "{reason}");
+    let requests = docket.received_requests().await.expect("recorded");
+    assert!(
+        requests.iter().all(|request| request.url.path() == "/pods"),
+        "no task is posted: {requests:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_cursor_survives_a_second_adapter_over_the_same_state_dir() {
     let fake = pods_fake().await;

@@ -398,18 +398,37 @@ async fn crash_before_terminal_report(
 ) -> PathBuf {
     let killed = git_engine(
         FakeProtocol::new(work(label, source, commit), false),
-        FailingStartAdapter {
+        HangingStartAdapter {
             reconcile_is_ambiguous: false,
         },
         journal.clone(),
         workspaces,
     );
-    assert!(killed.run_once(&session(), claim(label)).await.is_err());
-    let orphan = std::fs::read_dir(workspaces)
-        .expect("workspace root")
-        .map(|entry| entry.expect("entry").path())
-        .next()
-        .expect("the interrupted attempt left a checkout");
+    // The runner is killed while its harness is starting: the run never
+    // returns, and is dropped as soon as the checkout is complete.
+    let session = session();
+    let claim = claim(label);
+    let running = tokio::spawn(async move { killed.run_once(&session, claim).await });
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let orphan = loop {
+        let found = std::fs::read_dir(workspaces)
+            .ok()
+            .and_then(|mut entries| entries.next())
+            .map(|entry| entry.expect("entry").path())
+            .filter(|path| path.join(CHECKOUT_MARKER).exists());
+        match found {
+            Some(path) => break path,
+            None => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the interrupted attempt left a checkout"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    };
+    running.abort();
+    let _ = running.await;
     assert!(
         orphan.join(CHECKOUT_MARKER).exists(),
         "the interrupted attempt had already completed its checkout"
@@ -455,7 +474,7 @@ async fn a_claimed_attempt_reaches_the_harness_in_its_own_checkout() {
 }
 
 /// The complement of the test above: without a real provisioner, the
-/// identical run cannot reach the harness at all. Reverting the fix is
+/// identical run ends failed with the reason and never reaches the harness. Reverting the fix is
 /// therefore proven to break the claim, rather than assumed to.
 #[tokio::test]
 async fn without_a_provisioner_the_attempt_never_reaches_the_harness() {
@@ -464,8 +483,10 @@ async fn without_a_provisioner_the_attempt_never_reaches_the_harness() {
     let root_dir = temp_root("unavailable");
     let root = root_dir.path();
     let adapter = RealProcessAdapter::default();
+    let protocol = FakeProtocol::new(work("attempt-h3-gap", source, &commit), false);
+    let completions = protocol.completions.clone();
     let engine = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-gap", source, &commit), false),
+        protocol,
         adapter.clone(),
         OwnerOnlyJournal::new(root.join("journal")),
         WorkspaceManager::new(
@@ -474,11 +495,18 @@ async fn without_a_provisioner_the_attempt_never_reaches_the_harness() {
         ),
     );
 
-    let error = engine
+    let cycle = engine
         .run_once(&session(), claim("attempt-h3-gap"))
         .await
-        .expect_err("provisioning is unavailable, so the attempt cannot run");
-    assert!(format!("{error}").contains("worktree provisioning is not configured"));
+        .expect("an attempt that cannot be provisioned ends failed, not as an engine error");
+    assert!(matches!(cycle, RunCycle::Completed { .. }));
+    let report = completions.lock().expect("completions")[0].clone();
+    assert_eq!(report.terminal_state, AttemptState::Failed);
+    assert!(
+        report.terminal_reason["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("worktree provisioning is not configured"))
+    );
     assert!(
         adapter
             .observed
@@ -605,7 +633,7 @@ async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
 
     let restarted = git_engine(
         FakeProtocol::new(work("attempt-h3-quarantine", source, &commit), false),
-        FailingStartAdapter {
+        HangingStartAdapter {
             reconcile_is_ambiguous: true,
         },
         journal.clone(),
@@ -622,15 +650,16 @@ async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
     );
 }
 
-/// Fails to start, and optionally cannot say what happened afterwards. The
+/// Never finishes starting (the runner is killed there), and optionally
+/// cannot say what happened afterwards on the restart. The
 /// second mode is how a quarantine is reached: the engine treats a reconcile
 /// error as `Ambiguous`, which no disposition can settle.
-struct FailingStartAdapter {
+struct HangingStartAdapter {
     reconcile_is_ambiguous: bool,
 }
 
 #[async_trait]
-impl HarnessAdapter for FailingStartAdapter {
+impl HarnessAdapter for HangingStartAdapter {
     async fn validate(
         &self,
         _spec: &tack_runner::client::engine::ExecutionSpec,
@@ -642,7 +671,7 @@ impl HarnessAdapter for FailingStartAdapter {
         &self,
         _spec: &tack_runner::client::engine::ExecutionSpec,
     ) -> Result<LocalRunHandle, HarnessError> {
-        Err(HarnessError::Process)
+        std::future::pending().await
     }
 
     async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
