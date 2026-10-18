@@ -1624,7 +1624,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     let for_b = compose(Some("profile-b")).await;
     assert!(for_b.starts_with("profile B instructions"), "{for_b}");
     assert!(!for_b.contains("work safely"), "{for_b}");
-    let limits = executions::get_item_agent_context(
+    let context = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
         axum::extract::Path(item_uuid),
         axum::extract::Query(executions::AgentContextQuery {
@@ -1632,10 +1632,15 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         }),
     )
     .await
-    .expect("agent context")
-    .limits
-    .clone();
-    assert_eq!(limits["budgets"]["tokens"], 300_000);
+    .expect("agent context");
+    assert_eq!(context.limits["budgets"]["tokens"], 300_000);
+    // The dialog's sentence is the server's: the same one a stored run of that profile prints.
+    assert_eq!(context.limit.tokens, Some(300_000));
+    assert_eq!(context.limit.source, "profile");
+    assert_eq!(
+        context.limit.sentence,
+        "300 000 tokens · from the profile B · measured, not enforced (Tack reads the agent's tokens but cannot stop it at a limit yet)"
+    );
 }
 
 /// A queued request no poll has explained reads "no runner is online" while
@@ -1983,6 +1988,58 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
         let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}: {err}");
         assert_eq!(err["error"]["details"]["field"], "budgets.tokens");
+    }
+    // What a profile's limits may hold: refused when it is made or changed, and a profile that
+    // already holds something else (stored before) is refused at the run, not run without a limit.
+    for (limits, message) in [
+        (
+            json!({"budgets": {"tokens": 0}}),
+            "limits.budgets.tokens must be a positive whole number",
+        ),
+        (
+            json!({"timeout_seconds": "1h"}),
+            "limits.timeout_seconds must be a positive whole number",
+        ),
+        (
+            json!({"budgets": {"cost_usd": 1}}),
+            "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)",
+        ),
+    ] {
+        let create = json!({"name": "Bad limits", "instructions": "x", "limits": limits});
+        let (status, err) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{limits}: {err}");
+        assert_eq!(err["error"]["message"], message);
+        assert_eq!(err["error"]["details"]["field"], "limits");
+        let (status, err) = snd(
+            &app,
+            "PATCH",
+            "/agent-profiles/profile-limits-0",
+            json!({"limits": limits}).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{limits}: {err}");
+        assert_eq!(err["error"]["message"], message);
+        repo.create_agent_profile(
+            NewAgentProfile {
+                id: "profile-stored-bad",
+                name: "stored bad",
+                instructions: "x",
+                tool_policy: "{}",
+                limits: &limits.to_string(),
+            },
+            &SystemExecutionClock,
+        )
+        .await
+        .ok();
+        let mut body = bare_body(&item_id, "k-limits-stored-bad");
+        body["agent_profile_id"] = json!("profile-stored-bad");
+        let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{limits}: {err}");
+        assert_eq!(err["error"]["message"], message);
+        sqlx::query("DELETE FROM agent_profiles WHERE id = 'profile-stored-bad'")
+            .execute(repo.pool())
+            .await
+            .unwrap();
     }
     // Dollars are not a limit: a request that still carries them is told so.
     let mut body = bare_body(&item_id, "k-limits-dollars");

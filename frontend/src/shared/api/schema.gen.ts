@@ -3008,6 +3008,11 @@ export interface components {
         /** @description Response body for `GET /api/items/{id}/agent-context`. */
         AgentContextResponse: {
             /**
+             * @description The limit a run with that profile would have, who applies it and the sentence every screen
+             *     prints, from the same rule as a stored run's `limit`.
+             */
+            limit: components["schemas"]["RunLimit"];
+            /**
              * @description That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the
              *     run dialog pre-fills its limits from it.
              */
