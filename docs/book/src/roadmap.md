@@ -19,7 +19,8 @@ Phase 73 is in `develop` and ships in the release after it.
 
 **Where this is going.** Phase 74 closes what the first real project found when it was put
 into Tack and docket end to end, and ends with that project's first runs through its teams,
-which is also the live proof of Phase 73. Tack
+which is also the live proof of Phase 73. Phase 75 puts every limit in tokens, with dollars
+only as an estimate, and keeps what an agent is sent free of repeated material. Tack
 keeps the same three neighbours it never contains: an agent runtime such as docket, which runs
 the work; an independent verifier such as prill, which judges it; and GitHub. Each still works
 alone, and without a verifier a project stays at Level 3.
@@ -48,11 +49,13 @@ plan or the page named beside it.
 
 **Waiting on a partner:**
 
-- docket's cost brake: a team's dollar budget counts a model with no price as free, and prices a
-  step by the member's model instead of the step's own, so it stops nothing yet. Until docket
-  fixes that, Fabulada's runs on paid models wait, and so do the live run of
-  `scripts/docket-prill-e2e.sh` and the end-to-end scenario with two teams and a rework. Runs
-  already reach their teams, and the docket tests answer from captures of a real docket.
+- docket's context and its token count (Phase 75's requests to docket): each step resends
+  every earlier tool result to the model, its per-step limit counts cache reads at full weight,
+  and it throws away a finished answer that crossed the limit. Fabulada's first steps ended on
+  that limit with their largest single request at about 26 000 tokens. Until docket fixes it,
+  Fabulada's runs on paid models wait, and so do the live run of `scripts/docket-prill-e2e.sh`
+  and the end-to-end scenario with two teams and a rework. Runs already reach their teams, and
+  the docket tests answer from captures of a real docket.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -70,12 +73,54 @@ plan or the page named beside it.
 
 ---
 
+## Phase 75 — limits in tokens, and a lean context
+
+**Status:** proposed 2026-10-18 from the measurements of Fabulada's first runs; its decisions
+were taken the same day. The ADR and the plan are written next.
+
+Dollars are a token count multiplied by a price list someone typed. A model with no price
+counts as free and slips past a dollar limit, and the same work costs differently on every
+provider. Tokens are what every agent measures. So:
+
+- **A limit is in tokens, and nothing has one by default.** A profile can set tokens per run
+  and a time limit, a run can change them, and a project can set tokens per day. Dollars per
+  day goes away, and Tack stops asking Claude Code for a dollar limit.
+- **A token counted is a new one:** uncached input, cache writes and output. Cache reads are
+  shown beside them and never count. In Fabulada's measured runs they were 70% to 92% of the
+  input.
+- **Every limit says who applies it and where it is changed**, and "no limit" names the brake
+  that still applies: "No limit set in Tack · docket stops each step at 100 000 tokens (docket's
+  setting)". An agent that only reports its tokens says "measured, not enforced".
+- **The daily limit is reserved when a run is admitted:** a run starts only if today's use,
+  the open runs' limits and its own fit, so the day's limit is never crossed.
+- **Dollars are an estimate, shown last:** "≈ $0.42 (estimated)", "not priced" for a model with
+  no price, and how many of the models used have one.
+- **What Tack sends an agent carries nothing twice.** The brief goes to docket once instead of
+  three times; a rework replaces the previous round's fixes instead of piling them up; a card's
+  comments have a size limit. Claude Code gets only the tools its role needs. Its seven
+  default tools cost about 6 300 tokens on every call.
+- **What docket sends the model is docket's.** In Fabulada's runs, 64% of the tokens counted
+  were old tool results sent again: one listing of the whole tree, with absolute paths, was 84%
+  of a step. The fixes asked of docket are to condense old results, keep listings relative and
+  bounded, hand the next step what the previous one wrote, and make the member's files (its
+  soul, tools, memory and project instructions) agree with each other and with the checkout
+  it works in.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | The profile's limit reaches the run; one token count for the day, the run and the factory; the brief once, rework fixes replaced, comments bounded. | Sonnet |
+| 2 | The daily limit with its reservation and bar; dollars per day removed from the schema, the screen and the project file; dollars shown as an estimate. | Sonnet |
+| 3 | Claude Code and opencode stopped at their limit from what they report, after a capture shows they report it; the tools per role. | Sonnet |
+| 4 | Live token progress on a run's timeline; the guides; Fabulada's runs again once docket's context and count are fixed. | Integrator |
+
+---
+
 ## Phase 74 — what the first real project found
 
 **Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults. Rounds 1
 to 3 landed in `develop` on 2026-10-18, with Round 4's pages in the book. The first runs on the
 real board reached their teams the same day and ended on docket's per-step token limit; the
-next ones, on paid models, wait on docket's cost brake.
+next ones, on paid models, wait on docket's context and token count (Phase 75).
 **ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
