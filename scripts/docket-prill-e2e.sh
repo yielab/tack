@@ -89,6 +89,15 @@ DOCKET_TOKEN_FILE="$WORK/docket-token"
 umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DOCKET_TOKEN_FILE"; umask 022
 "${DOCKET_ENV[@]}" docket setup provider add local "$MODEL_BASE_URL/v1" --model local-model --ctx 32768 --max-tokens 4096 \
   </dev/null >"$WORK/docket-setup.log" 2>&1 || die "docket setup provider add failed — see $WORK/docket-setup.log"
+# Set before the first process starts, so a failed build still stops docket.
+cleanup() {
+  say "stopping"
+  [ -f "$WORK/runner.pid" ] && kill "$(cat "$WORK/runner.pid")" 2>/dev/null || true
+  [ -f "$WORK/docket.pid" ] && kill -TERM "$(cat "$WORK/docket.pid")" 2>/dev/null || true
+  [ -f "$WORK/server.pid" ] && kill "$(cat "$WORK/server.pid")" 2>/dev/null || true
+  echo "logs and state kept under $WORK"
+}
+trap cleanup EXIT
 say "starting docket start --dispatch on :$DOCKET_PORT"
 if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$DOCKET_PORT\$"; then
   die "port $DOCKET_PORT is already taken — set DOCKET_PRILL_DOCKET_PORT"
@@ -160,14 +169,6 @@ say "starting tack serve on :$PORT (work dir $WORK)"
     "$BIN" serve >"$WORK/server.log" 2>&1 &
   echo $! >"$WORK/server.pid"
 )
-cleanup() {
-  say "stopping"
-  [ -f "$WORK/runner.pid" ] && kill "$(cat "$WORK/runner.pid")" 2>/dev/null || true
-  [ -f "$WORK/docket.pid" ] && kill -TERM "$(cat "$WORK/docket.pid")" 2>/dev/null || true
-  [ -f "$WORK/server.pid" ] && kill "$(cat "$WORK/server.pid")" 2>/dev/null || true
-  echo "logs and state kept under $WORK"
-}
-trap cleanup EXIT
 for _ in $(seq 1 120); do
   curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
   sleep 0.5
