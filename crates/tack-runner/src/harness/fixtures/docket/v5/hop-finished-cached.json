@@ -1,0 +1,21 @@
+{
+  "task": "task-00000000-0000-0000-0000-000000000000",
+  "step": "implementer",
+  "role": "implementer",
+  "member": "fab-dev-implementer",
+  "model": "anthropic/claude-sonnet-4-6",
+  "provider": "anthropic",
+  "cycle": 0,
+  "attempt": 1,
+  "ok": true,
+  "verdict": null,
+  "gate": null,
+  "usage": {
+    "input": 30000,
+    "cached": 25000,
+    "cacheWrite": 2000,
+    "output": 100
+  },
+  "durationMs": 5000,
+  "error": ""
+}

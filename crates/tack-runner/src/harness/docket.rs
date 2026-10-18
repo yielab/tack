@@ -329,6 +329,62 @@ pub fn default_pod(repository: &Path) -> String {
     }
 }
 
+/// docket's cache figures in a hop's or a task's `usage`: `cached` is the part of
+/// `input` a cache served and `cacheWrite` the part written to one, both already
+/// inside `input` (`TokenUsage` in docket's `core/llm.py`, whose `counted_tokens` is
+/// `input - cached + output`; Tack's `Usage::counted` is the same sum over
+/// `tokens_in` and `cache_read_tokens`). docket sends 0 for an endpoint that does
+/// not report a figure, "never definitely no cache hit", so a 0 is left out and the
+/// attempt says "cache not reported" as it did before docket sent the keys.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct CacheFigures {
+    read: Option<u64>,
+    write: Option<u64>,
+}
+
+impl CacheFigures {
+    fn of(cached: Option<u64>, written: Option<u64>) -> Self {
+        Self {
+            read: cached.filter(|tokens| *tokens > 0),
+            write: written.filter(|tokens| *tokens > 0),
+        }
+    }
+
+    /// A hop's `usage`.
+    fn of_hop(usage: &Value) -> Self {
+        Self::of(usage["cached"].as_u64(), usage["cacheWrite"].as_u64())
+    }
+
+    /// A task's `usage`: its own `cached`/`cacheWrite` when docket sends them, else
+    /// the sums of its `byModel` entries, which carry them since docket's `da556114`.
+    fn of_task(usage: &Value) -> Self {
+        let sum = |key: &str| {
+            usage["byModel"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(_, used)| used[key].as_u64())
+                .reduce(|a, b| a + b)
+        };
+        Self::of(
+            usage["cached"].as_u64().or_else(|| sum("cached")),
+            usage["cacheWrite"].as_u64().or_else(|| sum("cacheWrite")),
+        )
+    }
+
+    /// The keys `Usage.additional` carries them under.
+    fn put(self, additional: &mut BTreeMap<String, Value>) {
+        for (key, tokens) in [
+            ("cache_read_tokens", self.read),
+            ("cache_write_tokens", self.write),
+        ] {
+            if let Some(tokens) = tokens {
+                additional.insert(key.to_owned(), tokens.into());
+            }
+        }
+    }
+}
+
 fn hop_role(payload: &Value) -> String {
     let role = payload["role"].as_str().unwrap_or("agent");
     let mut chars = role.chars();
@@ -371,14 +427,22 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
                 payload["usage"]["input"].as_u64(),
                 payload["usage"]["output"].as_u64(),
             ) {
-                parts.push(format!("{input} tokens in, {output} out"));
-                // docket reports no cache figure yet, so the hop counts whole.
+                let cache = CacheFigures::of_hop(&payload["usage"]);
+                parts.push(match cache.read {
+                    Some(read) => {
+                        format!("{input} tokens in ({read} read from cache), {output} out")
+                    }
+                    None => format!("{input} tokens in, {output} out"),
+                });
+                // docket's `input` includes the cache reads and writes, as `tokens_in` does.
+                let mut additional = BTreeMap::new();
+                cache.put(&mut additional);
                 usage = Some(Usage {
                     tokens_in: measurement(Some(input)),
                     tokens_out: measurement(Some(output)),
                     duration_ms: measurement(payload["durationMs"].as_u64()),
                     cost_usd: measurement(None),
-                    additional: BTreeMap::new(),
+                    additional,
                 });
             }
             Some(Progress {
@@ -544,14 +608,27 @@ impl DocketAdapter {
             .into_iter()
             .flatten()
             .map(|(name, used)| {
-                (
-                    name.clone(),
-                    json!({"input": used["input"].as_u64().unwrap_or(0),
-                           "output": used["output"].as_u64().unwrap_or(0)}),
-                )
+                // `by_model` keeps the input the cache did not serve, with the cache
+                // figures on top (`ModelUsage`); docket's `input` has them inside.
+                let cache = CacheFigures::of_hop(used);
+                let input = used["input"].as_u64().unwrap_or(0);
+                let mut entry = json!({
+                    "input": input
+                        .saturating_sub(cache.read.unwrap_or(0))
+                        .saturating_sub(cache.write.unwrap_or(0)),
+                    "output": used["output"].as_u64().unwrap_or(0),
+                });
+                if let Some(read) = cache.read {
+                    entry["cache_read"] = read.into();
+                }
+                if let Some(write) = cache.write {
+                    entry["cache_write"] = write.into();
+                }
+                (name.clone(), entry)
             })
             .collect();
         let mut additional = BTreeMap::new();
+        CacheFigures::of_task(usage).put(&mut additional);
         if !by_model.is_empty() {
             additional.insert("by_model".to_owned(), json!(by_model));
         }

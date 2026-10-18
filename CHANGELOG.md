@@ -114,6 +114,10 @@ automation a template carries, and the removal of dollars per day.
   reads named as not counted; the server does the arithmetic, so the screen and the limit never
   differ. A run given what was left of today's limit by an agent Tack only measures says it can go
   past that limit.
+- **A docket run counts its cache reads the way docket does.** docket's input includes what a cache
+  served, so Tack counted those tokens as new and disagreed with docket's own stop; it now reads
+  the cache reads and writes docket reports for each step and for the task, counts input less the
+  reads plus output, and says "cache not reported" only when docket sends no figure.
 - **What Tack sends an agent carries nothing twice.** To docket the brief goes once, as the
   structured brief docket renders, not again in the description; a rework replaces the previous
   round's fix section instead of adding one; a card's comments go newest first up to 4 000

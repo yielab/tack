@@ -1,0 +1,8 @@
+constructed
+route: GET /tasks/<pod>/<id>
+status: 200
+built-from: the usage block of a finished task as docket's _finalize_task writes it at da556114 (byModel carries cached and cacheWrite, the top level only input and output)
+docket: 0.2.0b6 (API 5), source develop 6fba7057, the keys from da556114
+source: src/docket/core/dispatch.py _finalize_task
+date: 2026-10-18
+note: not captured, because a task would have to run on a model for docket to send it; the values are made up. This is the usage block alone, not the whole task.
