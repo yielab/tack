@@ -295,7 +295,10 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
   let whyStopped: string | null = null;
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
-    const text = str(reason.message) ?? str(reason.code) ?? 'No reason was reported';
+    const text =
+      str(reason.message) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : str(reason.code)) ??
+      'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {
       // The harness's own stream said it succeeded; the process exit overruled it.
