@@ -78,7 +78,8 @@ are `constructed`, each naming the source it was built from.
 - `cached` is the part of `input` a cache served and `cacheWrite` the part written to one. Both are
   subsets of `input` (`core/llm.py::TokenUsage`: "`cached_tokens` is a subset of `input_tokens`
   where the endpoint reports one, and 0 where it does not ... `cache_write_tokens` is a subset
-  too"), so `input` includes reads and writes. A 0 means "not reported", not "no hit".
+  too"), so `input` includes reads and writes. docket writes 0 both for an endpoint that
+  reports no figure and for a real zero; the wire cannot tell them apart.
 - docket counts `input - cached + output` (`TokenUsage.counted_tokens`): a write is counted, a
   read is not. Tack's `Usage::counted` is `tokens_in - cache_read_tokens + tokens_out` with
   `tokens_in` holding reads and writes, so mapping `input` to `tokens_in`, `cached` to
@@ -86,7 +87,7 @@ are `constructed`, each naming the source it was built from.
 - A finished task's `usage.byModel.<model>` sums its hops' four keys
   (`core/dispatch.py::_finalize_task`, committed at `da556114`). The task's own top-level
   `usage` carried only `input` and `output` there. Operator API 5.7.0 adds `cached` and
-  `cacheWrite` to it; that change is in docket's working tree at `6fba7057`, not committed, so
-  `task-usage-cached` is a promise and `task-usage-by-model` is what docket sends today. Tack reads
-  the top-level keys when they are there and sums `byModel` when they are not.
-- Tack leaves a 0 out, and an attempt with no cache figure says "cache not reported".
+  `cacheWrite` to it, committed at `e187be8a`; `task-usage-cached` is that shape and
+  `task-usage-by-model` the earlier one. Tack reads the top-level keys when they are there and sums `byModel` when they are not.
+- Tack keeps a 0 as 0, so it never claims "not reported" for what may be a real zero; an attempt
+  says "cache not reported" only when docket sends no key at all (a docket before `da556114`).
