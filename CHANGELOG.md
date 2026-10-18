@@ -131,7 +131,8 @@ automation a template carries.
   reason, the scheduler and the Agents page all read it; `GET /api/runners` returns `online`. A
   computer that stopped answering no longer blocks a run that names no machine.
 - The Agents page shows docket as installed with the API it speaks ("Installed API 5"), and
-  `tack runner doctor --config <file>` reads the runner's own file and fails on a broken one.
+  `tack runner doctor --config <file>` reads the runner's own file and fails on a broken one; it
+  prints no empty version line for docket, which publishes only its API.
 - The Agents page's title and breadcrumb say Agents; the Overview names item types in the
   project's words; a settings tab follows the address; a new project can start from a project
   file, with the same preview and confirm as Settings → Data.
@@ -144,7 +145,9 @@ automation a template carries.
   promises more than what it lists, and the Teams rung shows the board's own verdict on each
   team.
 - **The board's log shows the runner.** The default log filter covers every Tack crate, so the
-  embedded runner's own lines appear without setting `RUST_LOG`. The start-up line names the
+  embedded runner's own lines appear without setting `RUST_LOG`, and the per-request trace now
+  follows the configured level, so at `info` a runner's polls no longer fill the log (nine lines in
+  ten on a board with its runner). The start-up line names the
   database by its absolute path, says when a build serves the API only, and `tack serve` warns
   when it uses a database in the current folder while the data folder holds another.
 - A runner configuration file with a key it does not know now says which one, and a `[runner]`

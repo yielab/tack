@@ -34,8 +34,10 @@ fn classify_separates_present_probe_error_and_absent() {
     let absent = "no executable named `claude` was found on PATH";
     let missing = BTreeMap::from([("claude-code".to_owned(), absent.to_owned())]);
     let codex = |version, error| Some(capability("codex", version, error));
-    let rows: [(&str, Option<HarnessCapability>, &str); 5] = [
+    let rows: [(&str, Option<HarnessCapability>, &str); 6] = [
         ("codex", codex("0.149.1", None), "present 0.149.1"),
+        // docket publishes its API, not a version of its own: no version, not an empty one.
+        ("docket", Some(capability("docket", "", None)), "present -"),
         ("codex", codex("", Some("unparseable")), "probe_error -"),
         (
             "codex",
@@ -48,7 +50,7 @@ fn classify_separates_present_probe_error_and_absent() {
     for (kind, entry, expected) in rows {
         let harnesses: Vec<HarnessCapability> = entry.into_iter().collect();
         let described = match classify(kind, &harnesses, &missing) {
-            HarnessStatus::Present { version } => format!("present {version}"),
+            HarnessStatus::Present { version } => format!("present {}", version.unwrap_or("-")),
             HarnessStatus::ProbeError { version, .. } => {
                 format!("probe_error {}", version.unwrap_or("-"))
             }

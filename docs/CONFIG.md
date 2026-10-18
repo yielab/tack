@@ -145,9 +145,10 @@ enroll` call, no token to copy anywhere.
   model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No
   `TACK_*` variable names a model, provider or endpoint, and the API server never holds a
   model credential.
-- **Log visibility.** The default filter is `tack={level},tower_http=debug`: a target directive
+- **Log visibility.** The default filter is `tack={level},tower_http={level}`: a target directive
   matches by prefix, so `tack` covers every Tack crate, the embedded runner's self-provisioning,
-  enrollment, claim and completion lines among them, and `TACK_LOG_LEVEL` sets their level.
+  enrollment, claim and completion lines among them, and `TACK_LOG_LEVEL` sets their level. The
+  per-request trace is `debug`, so it appears only at that level; a failed request is `error`.
   `RUST_LOG` still wins when set.
 
 ## Runner verifier (`[verify]`)
