@@ -13,7 +13,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 ## What's next
 
 `docs/book/src/roadmap.md` is the one place for what is delivered and what is open; read its
-"Open" section first. In short, as of 2026-10-17:
+"Open" section first. In short, as of 2026-10-18:
 
 - **Released:** `v0.1.0-beta.9` (2026-09-21). `v0.1.0-beta.10` (Phases 66–72) is tagged
   2026-10-14 but its GitHub release is not published, so the README's install commands 404
@@ -23,9 +23,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).
-- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0082, proposed) — the twenty
+- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0082, accepted) — the twenty
   Tack defects the Fabulada onboarding found, fixed where each fact is owned, ending with
-  Fabulada's first runs through its teams as Phase 73's live proof.
+  Fabulada's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C and L are in
+  `develop` (2026-10-18); task X and those runs wait on docket's `POST /pods` reading `name`/`location`.
 - **Waits on docket `0.2.0-beta.6`:** the live proof, `scripts/docket-prill-e2e.sh`. Until it
   exists every docket test runs against the in-process fake in
   `crates/tack-runner/tests/fake_docket/`.

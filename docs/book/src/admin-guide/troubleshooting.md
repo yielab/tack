@@ -28,6 +28,8 @@ file that was refused, are in the [User Guide's troubleshooting page](../user-gu
 | A team is reported as attended and tasks stay at L3 | [A team is attended](#a-team-is-attended) |
 | A queued run shows "Waiting: …", or failed after thirty minutes | [A queued run says why it waits](#a-queued-run-says-why-it-waits) |
 | Projects with auto-start on never start a task | [Auto-start does not tick](#auto-start-does-not-tick) |
+| A run shows "Needs operator" and says the computer stopped answering | [A run says the computer stopped answering](#a-run-says-the-computer-stopped-answering) |
+| You need to know what the board or its runner did | [The board's log](#the-boards-log) |
 
 ---
 
@@ -366,3 +368,52 @@ several and no fleet named by the profile, Tack cannot tell where to run the tas
 a runner, or name a fleet. And the automatic merge that follows a started run needs `TACK_GITHUB_TOKEN`,
 a non-zero `TACK_GITHUB_POLL_SECONDS` and a `prill` the board can run. See
 [Starting tasks by itself](runners.md#starting-tasks-by-itself).
+
+---
+
+## A run says the computer stopped answering
+
+**What you see.** A run that was **Preparing** or **Running** shows **Needs operator** and the sentence
+"The computer that took this run stopped answering."
+
+**Cause.** A runner that takes a run holds it for a minute at a time and keeps renewing that hold.
+When it stops (the computer slept or shut down, the runner was stopped or crashed, or it lost the
+network), the board waits two minutes more and then asks a person. It never starts the agent again by
+itself, because it cannot tell whether the agent is still working on that computer.
+
+A run that the agent refused before it started is different: it ends **Failed** with the agent's own
+words, for example "docket did not accept the team fab-dev", and needs no one.
+
+**What to do.** Decide what happens to the run:
+
+- **To end it,** press **Cancel** on the run, or run `tack execution cancel <run>`, which answers
+  `Cancelled.`. It ends at once; the computer does not need to be back.
+- **To run it again,** first check on that computer that the agent is not still working, then follow
+  [Resolving a `needs_operator` attempt](recovery-runbook.md#resolving-a-needs_operator-attempt).
+
+To stop it happening again, find out why the runner went quiet: start it, check that it reaches the
+board, and run `tack runner doctor` on its computer.
+
+---
+
+## The board's log
+
+**What you see.** You need to know what the board and its runner did: which database the board opened,
+whether a runner took a run, why an agent refused it.
+
+**Where it is.** The board writes its log to standard output, where a service manager collects it; set `TACK_LOG_FILE` to write it to a file as well. By default it holds the lines of every
+part of Tack at `info`: the server, the runner the board starts, the scheduler and the command line.
+That covers enrollment, claims, refusals and the end of every run.
+
+The first lines say which version started, on which address, and the full path of the database. A
+build without the web UI says so in the next line, so a blank page at the board's address is explained
+there.
+
+**When the database is not the one you expected.** Started without `TACK_DATABASE_URL` or a database in
+its settings, the board uses `tack.db` in the folder it was started in. When the per-user data folder,
+which the desktop app uses, holds another `tack.db`, the board says so as it starts and names both files.
+Start it from that folder, or set `TACK_DATABASE_URL`, to use the other one.
+
+**For more detail.** Raise the level for every part with `RUST_LOG=tack=debug`, or for one part only,
+as in [Configuration](configuration.md). `RUST_LOG` replaces the default, so name every part you want
+to keep. A runner's credential is never written to the log.

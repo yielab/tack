@@ -362,3 +362,7 @@ is docket's decision (`docket-triage.md` recommends the same default).
   - L merged (`9eb252f1`). As built: the per-user data folder is owned by `config::data_root` in
     the tack-cli lib (`service` is private to the binary and delegates to it); an unknown key is
     named only when serde's refusal names a key that is really in the file's top-level table.
+- **Round 4, the part that does not need docket**, done 2026-10-18: the troubleshooting page's two
+  entries, the roadmap's and `CLAUDE.md`'s status. On 2026-10-18 docket's `POST /pods` still read
+  `project`/`path` (`develop` at `4ace6bd1`, the installed `0.2.0b6`); K7 went to docket's session
+  with its evidence. Round 3 (X) and the runs on the real board start when it lands.

@@ -73,7 +73,9 @@ plan or the page named beside it.
 
 ## Phase 74 — what the first real project found
 
-**Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults; Round 1 in progress.
+**Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults. Rounds 1
+and 2 landed in `develop` on 2026-10-18, with Round 4's pages in the book. Round 3 and the runs on
+the real board wait on docket accepting the `POST /pods` body it publishes.
 **ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
