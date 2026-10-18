@@ -447,9 +447,9 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             ),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
-                "the tool list is enforced through --tools; `network: false` only rejects a request \
-                 naming WebFetch or WebSearch, and does not stop the Bash tool from reaching the \
-                 network",
+                "the tool list is enforced through --tools; `network: false` leaves WebFetch and \
+                 WebSearch out of every tool and rejects a request naming them, and does not stop \
+                 the Bash tool from reaching the network",
             ),
         }
     }
