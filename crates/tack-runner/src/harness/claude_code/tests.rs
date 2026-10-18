@@ -39,10 +39,11 @@ fn a_request_is_refused_for_its_policy() {
     }
 }
 
-/// `*` (every tool, as the built-in profiles write it) is claude's
-/// `default`, never `--tools "*"`; an empty list stays `""`, every tool off.
+/// `*` (every tool, as the built-in profiles write it) is the eight file,
+/// shell and web tools, never `--tools "*"` or claude's `default`; an empty
+/// list stays `""`, every tool off.
 #[test]
-fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
+fn every_tool_is_the_eight_and_no_network_drops_the_web_tools() {
     let args = |tools: &[&str], network: bool| {
         invocation(&request(tools, network))
             .expect("invocation")
@@ -55,15 +56,18 @@ fn every_tool_is_claudes_default_and_no_network_drops_the_web_tools() {
     };
 
     let networked = args(&["*"], true);
-    assert_eq!(value_of(&networked, "--tools").as_deref(), Some("default"));
+    assert_eq!(
+        value_of(&networked, "--tools").as_deref(),
+        Some("Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write")
+    );
     assert_eq!(value_of(&networked, "--disallowedTools"), None);
 
     let offline = args(&["*"], false);
-    assert_eq!(value_of(&offline, "--tools").as_deref(), Some("default"));
     assert_eq!(
-        value_of(&offline, "--disallowedTools").as_deref(),
-        Some("WebFetch,WebSearch")
+        value_of(&offline, "--tools").as_deref(),
+        Some("Bash,Edit,Glob,Grep,Read,Write")
     );
+    assert_eq!(value_of(&offline, "--disallowedTools"), None);
 
     assert_eq!(value_of(&args(&[], true), "--tools").as_deref(), Some(""));
 }
@@ -103,6 +107,8 @@ fn the_policy_and_model_reach_the_command_line() {
     assert!(!args.iter().any(|arg| arg == "--max-budget-usd"));
     assert_eq!(value_of("--output-format"), "stream-json");
     assert_eq!(value_of("--setting-sources"), "");
+    // The attribution reminder is switched off (measured on 2.1.302).
+    assert_eq!(value_of("--settings"), r#"{"includeCoAuthoredBy":false}"#);
 
     spec.work.request.requested_model = None;
     let args = invocation(&spec).expect("invocation").args;
@@ -460,10 +466,9 @@ fn a_profiles_tools_fill_a_run_that_names_none() {
 
     // `*` is every tool, and a run without network still drops the web ones.
     let all = tools_arg(&[], false, profile(serde_json::json!(["*"]))).expect("invocation");
-    assert_eq!(value_of(&all, "--tools").as_deref(), Some("default"));
     assert_eq!(
-        value_of(&all, "--disallowedTools").as_deref(),
-        Some("WebFetch,WebSearch")
+        value_of(&all, "--tools").as_deref(),
+        Some("Bash,Edit,Glob,Grep,Read,Write")
     );
     // A profile that names a web tool for a run without network is refused as a run's would be.
     assert!(matches!(

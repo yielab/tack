@@ -68,7 +68,9 @@ offers; see [CLI](cli.md#runner).
 
 - **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It
   also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
-  tools you allow; when the run names none, the profile's list for Claude Code is used. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
+  tools you allow; when the run names none, the profile's list for Claude Code is used. Every tool means
+  its file, shell and web tools, not its sub-agents or schedules, and it is not asked to sign its commits as
+  Claude's. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
