@@ -55,7 +55,10 @@ test.setTimeout(240_000);
 async function apiFetch(p: string, init?: RequestInit) {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 6; attempt++) {
-    const res = await fetch(`${API}${p}`, init);
+    // The board requires its token; the browser gets it as a cookie from `/`.
+    const headers = new Headers(init?.headers);
+    headers.set('authorization', `Bearer ${process.env.TACK_API_TOKEN ?? ''}`);
+    const res = await fetch(`${API}${p}`, { ...init, headers });
     if (res.ok) {
       if (res.status === 204) return null;
       return res.json();
@@ -352,6 +355,10 @@ test.describe.serial('tutorial screenshots', () => {
     const form = page.locator('form').filter({ has: page.getByLabel('Instructions') });
     await form.getByLabel('Name').fill(PROFILE_NAME);
     await form.getByLabel('Instructions').fill(PROFILE_INSTRUCTIONS);
+    // Read tools only: the profile writes text, so its run is not expected to
+    // change files and ends "no changes recorded" rather than failed.
+    await form.getByLabel('All tools (claude-code)').uncheck();
+    for (const tool of ['Read', 'Grep', 'Glob']) await form.getByLabel(`${tool} (claude-code)`).check();
     // The form alone, in a viewport tall enough that it never scrolls under
     // the sticky page header (an element screenshot of the whole Advanced
     // section did, and captured the header across it).
@@ -391,12 +398,18 @@ test.describe.serial('tutorial screenshots', () => {
     // The profile is a pill; the agent is picked under "Advanced for this run".
     await dialog.getByRole('button', { name: PROFILE_NAME, exact: true }).click();
     await dialog.getByText('Advanced for this run').click();
+    // The section remembers it is open on its `toggle` event, which comes a
+    // moment after the click; a change of agent before it closes it again.
+    await page.waitForTimeout(300);
     await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
     await page.waitForTimeout(500);
+    await expect(dialog.locator('details', { hasText: 'Advanced for this run' })).toHaveAttribute('open', '');
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
     await dialog.screenshot({
       path: path.join(OUT_DIR, '11-run-with-agent.png'),
     });
+    // Re-recording the screenshots before the run costs nothing; the run does.
+    test.skip(process.env.TUTORIAL_STOP_BEFORE_RUN === '1', 'TUTORIAL_STOP_BEFORE_RUN=1: stopped before Run');
 
     // ── Submit — from here on everything is a real, billed attempt ────────
     await dialog.getByRole('button', { name: 'Run', exact: true }).click();
@@ -509,6 +522,7 @@ const GIF_CRITERIA = [
 
 test.describe('workflow gif', () => {
   test('workflow gif', async ({ browser }) => {
+    test.skip(process.env.TUTORIAL_STOP_BEFORE_RUN === '1', 'TUTORIAL_STOP_BEFORE_RUN=1: the recording is a real run');
     try {
       execSync('ffmpeg -version', { stdio: 'pipe' });
     } catch {

@@ -13,10 +13,14 @@ import { defineConfig, devices } from '@playwright/test';
 // tutorial's run and the workflow.gif recording — are real, live, billed
 // Claude Code calls.
 //
+//   export TACK_API_TOKEN=tutorial-token   # the same value on both ends
 //   S=$(mktemp -d); TACK_PORT=3311 TACK_DATABASE_URL="sqlite:$S/tack.db?mode=rwc" \
 //     TACK_STORAGE_DIR=$S/storage ./target/release/tack serve
 //   npx playwright test e2e/tutorial-assets.spec.ts \
 //     --config playwright.tutorial-assets.config.ts --project=chromium --workers=1
+//
+// With TUTORIAL_STOP_BEFORE_RUN=1 the suite stops after screenshot 11 and
+// skips the recording: screenshots 01–11 at no cost, 12–15 and the GIF kept.
 export default defineConfig({
   testDir: './e2e',
   testMatch: ['**/tutorial-assets.spec.ts'],
