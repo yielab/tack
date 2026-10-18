@@ -80,7 +80,7 @@ export interface ExecutionSummary {
 export interface RunLimit {
   tokens: number | null;
   source: 'profile' | 'run' | 'none';
-  enforced_by: 'docket' | 'measured';
+  enforced_by: 'docket' | 'claude-code' | 'opencode' | 'measured';
   sentence: string;
 }
 

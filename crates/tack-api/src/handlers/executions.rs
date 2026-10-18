@@ -382,7 +382,9 @@ pub struct RunLimit {
     pub tokens: Option<u64>,
     /// `profile`, `run` or `none`.
     pub source: String,
-    /// `docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it.
+    /// Who stops the run at the limit: `docket` stops the task itself; `claude-code` and
+    /// `opencode`: the runner stops the agent when its counted tokens reach it; `measured`: Tack
+    /// reads the agent's tokens and cannot stop it.
     pub enforced_by: String,
     pub sentence: String,
 }
@@ -1028,8 +1030,9 @@ fn run_limits(
 
 /// The limit a stored run carries, with who applies it and the sentence every screen prints. Reads
 /// the snapshot (`budgets.tokens`, `metadata.limit_source`, the profile's name) and the agent that
-/// ran it: the latest attempt's, else the one requested. Only docket stops a task at the limit; every
-/// other agent is measured, and says so.
+/// ran it: the latest attempt's, else the one requested. docket stops its own task at the limit and
+/// the runner stops Claude Code and opencode when their counted tokens reach it; every other agent
+/// is measured, and says so.
 fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
     let tokens = snapshot["budgets"]["tokens"].as_u64().filter(|n| *n > 0);
     let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {
@@ -1039,7 +1042,12 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
         (Some(_), _) => LimitSource::Run,
     };
     let docket = harness_kind == Some("docket");
-    let enforced_by = if docket { "docket" } else { "measured" };
+    let enforced_by = match harness_kind {
+        Some("docket") => "docket",
+        Some("claude-code") => "claude-code",
+        Some("opencode") => "opencode",
+        _ => "measured",
+    };
     let agent = match harness_kind {
         Some("claude-code") => "Claude Code",
         Some("codex") => "Codex",
@@ -1066,6 +1074,8 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
             };
             let who = if docket {
                 "docket stops the task there".to_owned()
+            } else if enforced_by != "measured" {
+                format!("Tack stops {agent}'s run there")
             } else if matches!(source, LimitSource::Day) {
                 format!(
                     "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet, so this run can go past today's limit)"
@@ -2731,8 +2741,24 @@ mod tests {
                 "claude-code",
                 Some(300_000),
                 "run",
+                "claude-code",
+                "300 000 tokens · set for this run · Tack stops Claude Code's run there",
+            ),
+            (
+                &run,
+                "opencode",
+                Some(300_000),
+                "run",
+                "opencode",
+                "300 000 tokens · set for this run · Tack stops OpenCode's run there",
+            ),
+            (
+                &run,
+                "codex",
+                Some(300_000),
+                "run",
                 "measured",
-                "300 000 tokens · set for this run · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet)",
+                "300 000 tokens · set for this run · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet)",
             ),
             (
                 &none,
@@ -2747,6 +2773,14 @@ mod tests {
                 "opencode",
                 None,
                 "none",
+                "opencode",
+                "No limit set in Tack",
+            ),
+            (
+                &none,
+                "codex",
+                None,
+                "none",
                 "measured",
                 "No limit set in Tack",
             ),
@@ -2758,14 +2792,31 @@ mod tests {
                 "docket",
                 "400 000 tokens · what was left of today's limit · docket stops the task there",
             ),
-            // A measured agent given what is left of the day can go past it.
+            // An agent Tack stops stops at what is left of the day; a measured one can go past it.
             (
                 &json!({"budgets": {"tokens": 400000}, "metadata": {"limit_source": "day"}}),
                 "claude-code",
                 Some(400_000),
                 "day",
+                "claude-code",
+                "400 000 tokens · what was left of today's limit · Tack stops Claude Code's run there",
+            ),
+            (
+                &json!({"budgets": {"tokens": 400000}, "metadata": {"limit_source": "day"}}),
+                "codex",
+                Some(400_000),
+                "day",
                 "measured",
-                "400 000 tokens · what was left of today's limit · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet, so this run can go past today's limit)",
+                "400 000 tokens · what was left of today's limit · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet, so this run can go past today's limit)",
+            ),
+            // An agent the runner does not know is measured.
+            (
+                &run,
+                "mystery",
+                Some(300_000),
+                "run",
+                "measured",
+                "300 000 tokens · set for this run · measured, not enforced (Tack reads the agent's tokens but cannot stop it at a limit yet)",
             ),
             // A run stored before the source was recorded still names a limit it carries.
             (

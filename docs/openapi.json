@@ -12106,7 +12106,7 @@
         "properties": {
           "enforced_by": {
             "type": "string",
-            "description": "`docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it."
+            "description": "Who stops the run at the limit: `docket` stops the task itself; `claude-code` and\n`opencode`: the runner stops the agent when its counted tokens reach it; `measured`: Tack\nreads the agent's tokens and cannot stop it."
           },
           "sentence": {
             "type": "string"

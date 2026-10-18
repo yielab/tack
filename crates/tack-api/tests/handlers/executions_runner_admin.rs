@@ -1769,6 +1769,22 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             "run",
             "120 000 tokens · set for this run · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet)".into(),
         ),
+        (
+            Some("claude-code"),
+            Some("120000"),
+            None,
+            Some(120_000),
+            "run",
+            "120 000 tokens · set for this run · Tack stops Claude Code's run there".into(),
+        ),
+        (
+            Some("opencode"),
+            None,
+            None,
+            Some(300_000),
+            "profile",
+            "300 000 tokens · from the profile B · Tack stops OpenCode's run there".into(),
+        ),
     ];
     for (n, (harness, tokens, no_limit, want_tokens, source, sentence)) in
         rows.into_iter().enumerate()

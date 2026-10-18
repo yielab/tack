@@ -151,7 +151,8 @@ provider. Tokens are what every agent measures. So:
   input.
 - **Every limit says who applies it and where it is changed**, and "no limit" names the brake
   that still applies: "No limit set in Tack · docket stops each step at its own limit (docket's
-  setting)". An agent that only reports its tokens says "measured, not enforced".
+  setting)". Claude Code and opencode say "Tack stops ... run there"; an agent that only reports
+  its tokens says "measured, not enforced".
 - **The daily limit is reserved when a run is admitted:** a run starts only if today's use,
   the open runs' limits and its own fit, so the day's limit is never crossed.
 - **Dollars are an estimate, shown last:** "≈ $0.42 (estimated)", "not priced" for a model with
