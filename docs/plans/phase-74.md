@@ -407,6 +407,87 @@ tested; otherwise the finding says why not).
 **Done when:** `cargo nextest run --workspace -E 'package(tack-api) + package(tack-desktop)'`,
 `cd frontend && npm test`, and the gate are green.
 
+### U — a run that ended says why, on every screen (Sonnet, two layers)
+
+Found in R0 on 2026-10-18: Fabulada's CI1 waited an hour on an approval nobody gave and ended
+`failed` with `terminal_reason` `{"code": "timeout"}` and no message, and the item's Last run
+panel showed "Failed" alone. That panel prints what the agent said, never why a run stopped, so a
+`no_change` or a refused start reads the same way.
+
+**Files:** `crates/tack-runner/src/harness/docket.rs` (the deadline branch of the follow loop),
+the other adapters' own deadline branches if they end without a `message` (read them; change only
+those that do), their tests (`crates/tack-runner/tests/docket_v5.rs` and the adapters' existing
+tables), `frontend/src/shared/runWithAgent/LatestRunSummary.tsx` and its unit test,
+`frontend/src/shared/runWithAgent/attemptFormat.ts` only if `describeAttemptOutcome` needs a row.
+
+**Do:**
+
+- A run whose time runs out ends with `message`: "The run's time ran out after N minutes", and,
+  when a question was open, "while it waited for an answer". `code` stays `timeout`. N is the
+  request's `timeout_seconds`, rounded to whole minutes (seconds below one minute).
+- The Last run panel of a failed, cancelled or lost attempt prints `describeAttemptOutcome`'s
+  `whyStopped`, the line the Execution tab already prints, in the place the agent's words go. The
+  agent's words still show for a run that succeeded.
+
+**Tests (RED first):** `docket_v5.rs`: a task parked on an approval past the deadline ends
+`failed` with the message naming the wait; one without a question ends with the plain sentence
+(one table if the file has one). Frontend: the panel of a failed attempt shows its reason, and of
+a `timeout` with no message still shows a sentence, never the bare code.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner)'`, `cd frontend && npm
+test`, and the gate are green.
+
+### V — a question ends with its run, and the board finds the prill its runner uses (Sonnet, two layers)
+
+Found in R0 on 2026-10-18, two defects of the board:
+
+1. CI1's approval stayed `pending` in the Inbox after the run ended. The runner answers the agent
+   with the question's deny option when the time runs out, but never tells the board, and the
+   sweep that expires an overdue decision rides `TACK_EXECUTION_RETENTION_ENABLE`, off by default.
+   Four more pending rows on the real board belong to attempts that ended `needs_operator`.
+2. Factory metrics said "prill is not installed on the board" while the embedded runner verified
+   two packs with prill: the runner names its program in `[verify] program`, the board looks for
+   `prill` on its own `PATH`.
+
+**Files:** `crates/tack-db/src/repo/execution.rs` (the function or functions through which an
+attempt reaches `succeeded`, `failed`, `cancelled`, `lost` or `needs_operator`),
+`crates/tack-api/src/handlers/decisions.rs` (the `expired` shape it already writes),
+`crates/tack-api/src/server.rs` (start), `crates/tack-api/src/prill.rs`,
+`crates/tack-api/src/prill_store.rs`, `crates/tack-api/src/config.rs` (`prill_program`), the
+`LocalRunnerControl` trait and `crates/tack-cli/src/local_runner.rs`'s `EmbeddedRunnerControl`,
+their existing tests, `crates/tack-api/tests/handlers/metrics.rs`, `docs/CONFIG.md`
+(`TACK_PRILL_PROGRAM`'s row).
+
+**Do:**
+
+- When an attempt reaches one of those states, every one of its `pending` decisions becomes
+  `expired` in the same transaction, `resolved_by` `{"kind": "system", "subject_id":
+  "attempt_ended"}`. Owned by the repository's transition, not by each handler. If the
+  transitions do not share one function, stop and report the list before adding a call to each.
+- At start, the board closes the same way the pending decisions of attempts already in those
+  states (the rows a board from before this change left). One idempotent statement, beside the
+  transition's rule. The retention gate is not touched.
+- The board's prill: `TACK_PRILL_PROGRAM` wins; else, with an embedded runner whose `[verify]` is
+  prill, its `program`; else `prill` on `PATH`. The embedded runner says it through one method on
+  `LocalRunnerControl` (default `None`).
+- The sentence names the fix once, in `prill.rs`, and `prill_store.rs` reads it: "prill is not
+  installed on the board (set TACK_PRILL_PROGRAM to its path)".
+
+**Tests (RED first):** repository: an attempt that ends in each of the five states leaves no
+pending decision, and a resolved one keeps its answer (one table); the start statement closes a
+pending decision of an ended attempt and leaves a running attempt's alone. API: the board with an
+embedded runner that verifies with a program elsewhere reports prill's version from it.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-db) + package(tack-api) +
+package(tack-cli)'` and the gate are green.
+
+### S — the tutorial's screenshots 10 and 11 (integrator)
+
+`9d4ce61e` gave the tutorial's announcement writer read tools only; screenshots 10 (the profile
+form) and 11 (the Run dialog) still show the old tools. Captured by `tutorial-assets.spec.ts`
+against a fresh release build, headless. Test 11 drives a real, billed run after its screenshot,
+so the spec stops before Run when `TUTORIAL_STOP_BEFORE_RUN=1`; only files 10 and 11 change.
+
 ## Open questions
 
 Blocking: none. Not blocking: ADR 0082's three defaults. X waits on docket's answer to K7, which
@@ -468,3 +549,6 @@ is docket's decision (`docket-triage.md` recommends the same default).
     task inline, before the heartbeat ticker existed, so its lease would expire mid-follow and no
     new work would be claimed; `recover` now hands it back as `RunCycle::Resumed` and `serve`
     follows it in a slot. The question already on the board is waited on, never created again.
+- **Round 6** opened 2026-10-18, from R0's report: U (a run that ended says why) and V (a question
+  ends with its run; the board finds its runner's prill) side by side, then S (the tutorial's
+  screenshots 10 and 11).
