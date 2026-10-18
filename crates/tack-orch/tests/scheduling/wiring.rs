@@ -657,7 +657,13 @@ async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queu
 #[tokio::test]
 async fn a_budget_reached_stops_new_work_and_says_why() {
     let (repo, item_id) = setup_repo().await;
-    let now = Utc::now();
+    // Noon, so the poll three hours later is still the same day: a day's tokens
+    // start over at midnight UTC, and a run that crossed it chose the request.
+    let now = Utc::now()
+        .date_naive()
+        .and_hms_opt(12, 0, 0)
+        .expect("noon exists")
+        .and_utc();
     setup_codex_runner(&repo, "runner-a", 3, 3, Some(0), now).await;
     // One run already going, with measured usage, and one item waiting for review.
     enqueue_for_runner(
