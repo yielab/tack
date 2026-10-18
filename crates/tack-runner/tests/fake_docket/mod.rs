@@ -176,10 +176,14 @@ pub enum Gate {
         tool: String,
         action: String,
     },
-    /// A step parked the task on a question (`waiting_input`).
+    /// A step parked the task on a question (`waiting_input`). With `options`
+    /// it is a decision: the task view lists them (the first recommended), the
+    /// inbox's question does not, and an accept must name one in
+    /// `content.optionId`, as docket's `validate_answer_v11` requires.
     Consult {
         question: String,
         property: String,
+        options: Vec<String>,
     },
     /// Never finishes by itself; only a cancel ends it.
     Hold,
@@ -282,6 +286,8 @@ struct World {
     keys: HashMap<String, KeySpec>,
     /// `GET /approvals` answers `500`.
     approvals_down: bool,
+    /// How many of the next answers (to a question or an approval) docket refuses with `422`.
+    answers_refused: u32,
 }
 
 pub struct FakeDocket {
@@ -305,6 +311,7 @@ impl FakeDocket {
             models: vec!["local/local-model".to_owned()],
             keys: request_keys(),
             approvals_down: false,
+            answers_refused: 0,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -365,6 +372,12 @@ impl FakeDocket {
     /// Makes `GET /approvals` answer `500`, as when docket cannot read its records.
     pub fn fail_approvals_list(&self) {
         self.shared.lock().unwrap().approvals_down = true;
+    }
+
+    /// Makes docket refuse the next `count` answers to a question or an approval,
+    /// as it does one a policy blocks (`422`).
+    pub fn refuse_answers(&self, count: u32) {
+        self.shared.lock().unwrap().answers_refused = count;
     }
 
     pub fn script(&self, script: Script) {
@@ -831,10 +844,13 @@ fn finish(state: &mut World, index: usize) {
 /// `error` key.
 fn task_record(task: &Task) -> Value {
     let body = &task.body;
-    let mut record = fixture(if task.status == "done" {
-        "task-done"
-    } else {
-        "task-failed-pipeline"
+    let parked = matches!(&task.script.gate, Gate::Consult { .. })
+        && task.gate_open
+        && task.status == "waiting_input";
+    let mut record = fixture(match task.status.as_str() {
+        _ if parked => "task-waiting-input-options",
+        "done" => "task-done",
+        _ => "task-failed-pipeline",
     });
     record["id"] = json!(task.id);
     record["description"] = body["description"].clone();
@@ -863,6 +879,9 @@ fn task_record(task: &Task) -> Value {
             }
         }
     }
+    if parked {
+        record["question"] = consult_question(task);
+    }
     record["worktree"]["branch"] = json!(task.branch);
     record["worktree"]["baseCommit"] = json!(task.base_commit);
     record["worktree"]["baseRef"] = body["baseRef"].clone();
@@ -881,6 +900,57 @@ fn task_record(task: &Task) -> Value {
         }
     }
     record
+}
+
+/// What a parked question asks for: its one property, required for a plain
+/// question and optional beside docket's options, as the capture has it.
+fn consult_schema(property: &str, options: &[String]) -> Value {
+    let required: Vec<&str> = if options.is_empty() {
+        vec![property]
+    } else {
+        Vec::new()
+    };
+    json!({"type": "object", "properties": {property: {"type": "string"}}, "required": required})
+}
+
+/// The parked question as the task view sends it: the captured decision with
+/// this task's names, the gate's message, schema and options.
+fn consult_question(task: &Task) -> Value {
+    let Gate::Consult {
+        question,
+        property,
+        options,
+    } = &task.script.gate
+    else {
+        return Value::Null;
+    };
+    let mut asked = fixture("task-waiting-input-options")["question"].clone();
+    asked["id"] = json!(format!("q-{}", task.id));
+    asked["taskId"] = json!(task.id);
+    asked["pod"] = json!(task.pod);
+    asked["message"] = json!(question);
+    asked["requestedSchema"] = consult_schema(property, options);
+    if options.is_empty() {
+        asked["kind"] = json!("clarification");
+        asked["options"] = json!([]);
+        asked
+            .as_object_mut()
+            .expect("question")
+            .remove("recommendation");
+    } else {
+        let listed: Vec<Value> = options
+            .iter()
+            .map(|id| {
+                let mut option = asked["options"][0].clone();
+                option["id"] = json!(id);
+                option["label"] = json!(format!("Option {id}"));
+                option
+            })
+            .collect();
+        asked["options"] = json!(listed);
+        asked["recommendation"]["optionId"] = json!(options[0]);
+    }
+    asked
 }
 
 fn get_task(state: &World, pod: &str, id: &str) -> Response {
@@ -1026,8 +1096,16 @@ fn inbox(state: &World) -> Response {
                 item["action"] = json!(action);
                 needs_you.push(item);
             }
-            (Gate::Consult { question, property }, true, "waiting_input") => {
-                let mut item = template["needsYou"][1].clone();
+            (
+                Gate::Consult {
+                    question,
+                    property,
+                    options,
+                },
+                true,
+                "waiting_input",
+            ) => {
+                let mut item = fixture("inbox-waiting-input-options")["needsYou"][0].clone();
                 item["id"] = json!(task.id);
                 item["pod"] = json!(task.pod);
                 item["description"] = task.body["description"].clone();
@@ -1035,9 +1113,7 @@ fn inbox(state: &World) -> Response {
                 item["question"]["taskId"] = json!(task.id);
                 item["question"]["pod"] = json!(task.pod);
                 item["question"]["message"] = json!(question);
-                item["question"]["requestedSchema"] = json!({
-                    "type": "object", "properties": {property: {"type": "string"}},
-                    "required": [property]});
+                item["question"]["requestedSchema"] = consult_schema(property, options);
                 needs_you.push(item);
             }
             (_, _, "running") => {
@@ -1112,6 +1188,10 @@ fn approve(state: &mut World, token: &str, body: &Value) -> Response {
             "option must be \"approve_once\" or \"approve_task\" (grant only)",
         );
     }
+    if state.answers_refused > 0 {
+        state.answers_refused -= 1;
+        return error(422, "blocked by policy 'pre_input'");
+    }
     let Some(index) = state
         .tasks
         .iter()
@@ -1168,11 +1248,33 @@ fn answer(state: &mut World, id: &str, body: &Value) -> Response {
     if state.tasks[index].status != "waiting_input" {
         return error(409, "task is not waiting_input");
     }
+    if state.answers_refused > 0 {
+        state.answers_refused -= 1;
+        return error(422, "blocked by policy 'pre_input'");
+    }
     if action == "accept" {
-        let Gate::Consult { property, .. } = &state.tasks[index].script.gate else {
+        let Gate::Consult {
+            property, options, ..
+        } = &state.tasks[index].script.gate
+        else {
             return error(409, "task is not waiting_input");
         };
-        if object["content"][property].as_str().is_none() {
+        if !options.is_empty() {
+            // docket's own refusals, from `validate_answer_v11`.
+            match object["content"]["optionId"].as_str() {
+                None => {
+                    return error(
+                        422,
+                        "accept requires optionId when the question has options",
+                    );
+                }
+                Some(id) if !options.iter().any(|own| own == id) => {
+                    return error(422, &format!("optionId '{id}' names no option"));
+                }
+                Some(_) => {}
+            }
+        }
+        if options.is_empty() && object["content"][property].as_str().is_none() {
             return error(422, &format!("{property} is required"));
         }
         finish(state, index);

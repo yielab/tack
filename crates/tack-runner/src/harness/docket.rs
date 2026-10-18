@@ -27,7 +27,7 @@ use tack_orch::execution::{
 use tokio::sync::{Mutex, mpsc};
 
 use crate::{
-    client::{AttemptState, Timestamp},
+    client::{AttemptState, Recommendation, Timestamp},
     config::DocketConfig,
     harness::{
         AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, DecisionOption,
@@ -161,8 +161,29 @@ struct Live {
 
 /// What a person's answer will be posted as.
 enum Pending {
-    Approval { token: String },
-    Consult { task: String, property: String },
+    Approval {
+        token: String,
+    },
+    Consult {
+        task: String,
+        /// docket's id for the question.
+        question: String,
+        /// The one property the answer's text fills, and whether docket requires it.
+        property: String,
+        required: bool,
+        /// The ids of docket's own options; none when the question has none.
+        options: Vec<String>,
+    },
+}
+
+impl Pending {
+    /// docket's id for what is asked: the approval's token or the question's id.
+    fn docket_id(&self) -> &str {
+        match self {
+            Self::Approval { token } => token,
+            Self::Consult { question, .. } => question,
+        }
+    }
 }
 
 pub struct DocketAdapter {
@@ -577,33 +598,112 @@ fn consult_property(question: &Value) -> String {
         .unwrap_or_else(|| "answer".to_owned())
 }
 
-fn consult_question(view: &Value) -> Option<(Question, Pending)> {
-    let question = view
-        .get("question")
-        .filter(|question| question.is_object())?;
-    let option = |id: &str, label: &str| DecisionOption {
+/// One of docket's options for a parked question, worded as docket words it.
+fn consult_option(option: &Value) -> Option<DecisionOption> {
+    let text = |key: &str| {
+        option[key]
+            .as_str()
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    let risks: Vec<String> = option["risks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|risk| risk.as_str().map(str::to_owned))
+        .collect();
+    let id = option["id"].as_str()?;
+    Some(DecisionOption {
+        option_id: id.to_owned(),
+        label: text("label").unwrap_or_else(|| id.to_owned()),
+        description: text("description"),
+        risks: Some(risks).filter(|risks| !risks.is_empty()),
+        estimated_tokens: option["estimatedTokens"].as_u64(),
+    })
+}
+
+/// docket's recommendation, when it names one of the options offered.
+fn consult_recommendation(question: &Value, options: &[DecisionOption]) -> Option<Recommendation> {
+    let recommendation = question.get("recommendation")?;
+    let option_id = recommendation["optionId"].as_str()?;
+    options
+        .iter()
+        .find(|option| option.option_id == option_id)?;
+    let evidence: Vec<String> = recommendation["evidenceRefs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|reference| reference.as_str().map(str::to_owned))
+        .collect();
+    Some(Recommendation {
+        option_id: option_id.to_owned(),
+        rationale: recommendation["rationale"]
+            .as_str()
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned),
+        evidence_refs: Some(evidence).filter(|evidence| !evidence.is_empty()),
+    })
+}
+
+/// The question a task parked on (`status: waiting_input`). `question` is the
+/// one docket sent: the task view's carries the `options` and `recommendation`
+/// that the inbox's leaves out. With options the person chooses among them
+/// (or declines); without, the person answers in text or declines.
+fn consult_question(task: &str, question: &Value) -> Option<(Question, Pending)> {
+    let own = |id: &str, label: &str| DecisionOption {
         option_id: id.to_owned(),
         label: label.to_owned(),
         description: None,
         risks: None,
         estimated_tokens: None,
     };
-    let task = view["id"].as_str()?.to_owned();
+    let offered: Vec<DecisionOption> = question["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(consult_option)
+        .collect();
+    let docket_ids: Vec<String> = offered
+        .iter()
+        .map(|option| option.option_id.clone())
+        .collect();
+    let recommendation = consult_recommendation(question, &offered);
+    let mut options = offered;
+    if options.is_empty() {
+        options.push(own("accept", "Answer"));
+        options.push(own("decline", "Decline"));
+    } else {
+        // Whatever the person picks that is not one of docket's is a decline.
+        let id = if docket_ids.iter().any(|id| id == "decline") {
+            "tack_decline"
+        } else {
+            "decline"
+        };
+        options.push(own(id, "Decline"));
+    }
+    let property = consult_property(question);
+    let required = question["requestedSchema"]["required"]
+        .as_array()
+        .is_some_and(|names| names.iter().any(|name| name == &json!(property)));
+    let id = question["id"].as_str()?.to_owned();
     Some((
         Question {
-            vendor_id: question["id"].as_str()?.to_owned(),
+            vendor_id: id.clone(),
             kind: "consult".to_owned(),
             prompt: question["message"]
                 .as_str()
                 .unwrap_or("docket asks a question")
                 .to_owned(),
-            options: vec![option("accept", "Answer"), option("decline", "Decline")],
-            recommendation: None,
+            options,
+            recommendation,
             metadata: serde_json::Map::new(),
         },
         Pending::Consult {
-            task,
-            property: consult_property(question),
+            task: task.to_owned(),
+            question: id,
+            property,
+            required,
+            options: docket_ids,
         },
     ))
 }
@@ -647,10 +747,27 @@ impl DocketAdapter {
                     },
                 ));
             } else if item["status"] == json!("waiting_input")
-                && let Some((question, pending)) = consult_question(item)
-                && !asked.contains(&question.vendor_id)
+                && let Some(task) = item["id"].as_str()
+                && let Some(listed) = item["question"].as_object()
+                && !listed
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| asked.contains(id))
             {
-                return Some((question, pending));
+                // The inbox's question has no options; the task view's has them.
+                let viewed = self
+                    .client
+                    .task(&info.pod, task)
+                    .await
+                    .ok()
+                    .filter(|r| r.status == 200)
+                    .map(|r| r.body["question"].clone())
+                    .filter(|question| question["id"] == item["question"]["id"]);
+                if let Some(found) =
+                    consult_question(task, viewed.as_ref().unwrap_or(&item["question"]))
+                {
+                    return Some(found);
+                }
             }
         }
         None
@@ -691,10 +808,33 @@ impl DocketAdapter {
                 };
                 self.client.approve(token, body).await
             }
-            Pending::Consult { task, property } => {
-                let body = if answer.option_id.as_deref() == Some("accept") {
+            Pending::Consult {
+                task,
+                property,
+                required,
+                options,
+                ..
+            } => {
+                let chosen = answer.option_id.as_deref();
+                // docket's own options take `optionId` inside `content` (its HTTP
+                // route reads only `pod`, `action`, `content` and `actor`).
+                let docket_option = chosen.filter(|id| options.iter().any(|own| own == id));
+                let accepts = if options.is_empty() {
+                    chosen == Some("accept")
+                } else {
+                    docket_option.is_some()
+                };
+                let body = if accepts {
+                    let mut content = serde_json::Map::new();
+                    if let Some(id) = docket_option {
+                        content.insert("optionId".to_owned(), json!(id));
+                    }
+                    let text = answer.text.as_deref().filter(|text| !text.is_empty());
+                    if text.is_some() || *required {
+                        content.insert(property.clone(), json!(text.unwrap_or_default()));
+                    }
                     json!({"pod": info.pod, "action": "accept", "actor": "tack",
-                           "content": {property: answer.text.clone().unwrap_or_default()}})
+                           "content": content})
                 } else {
                     json!({"pod": info.pod, "action": "decline", "actor": "tack"})
                 };
@@ -1111,7 +1251,9 @@ impl DocketAdapter {
         let deadline = tokio::time::Instant::now() + info.timeout;
         let mut cursor = self.read_cursor(&info.attempt_id);
         let mut served_model: Option<String> = None;
+        // docket's ids of what was asked, and how often docket refused the answer.
         let mut asked: HashSet<String> = HashSet::new();
+        let mut refused: HashMap<String, u32> = HashMap::new();
         let mut pending: Option<Pending> = None;
         loop {
             // The hops since the cursor.
@@ -1153,11 +1295,17 @@ impl DocketAdapter {
 
             // Whatever needs a person.
             if pending.is_none()
-                && let Some((question, ask)) = self.next_question(info, &asked).await
-                && side.questions.try_send(question.clone()).is_ok()
+                && let Some((mut question, ask)) = self.next_question(info, &asked).await
             {
-                asked.insert(question.vendor_id);
-                pending = Some(ask);
+                // A question asked again is a new decision: Tack keys a decision
+                // by the id, and the refused one is already resolved there.
+                if let Some(times) = refused.get(ask.docket_id()) {
+                    question.vendor_id = format!("{}#{times}", question.vendor_id);
+                }
+                if side.questions.try_send(question).is_ok() {
+                    asked.insert(ask.docket_id().to_owned());
+                    pending = Some(ask);
+                }
             }
 
             let task = match self.client.task(&info.pod, &info.task).await {
@@ -1204,9 +1352,13 @@ impl DocketAdapter {
                     if let (Some(answer), Some(ask)) = (answer, pending.take())
                         && let Some(problem) = self.deliver(info, &ask, &answer).await
                     {
+                        // The decision is resolved in Tack, so the run would wait on
+                        // nothing: ask again while docket still holds the question.
+                        asked.remove(ask.docket_id());
+                        *refused.entry(ask.docket_id().to_owned()).or_default() += 1;
                         let _ = side.progress.try_send(Progress {
                             kind: "agent.answer_failed".to_owned(),
-                            text: problem,
+                            text: format!("{problem}; asking again"),
                             usage: None,
                         });
                     }

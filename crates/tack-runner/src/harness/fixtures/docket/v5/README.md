@@ -63,6 +63,18 @@ asks from the task's `reason`. A separate approval item (an `ApprovalView`, in `
 constructed) appears only for an approval whose record names no task and which no task holds. Both
 are answered with `POST /approvals/<token>`.
 
+## Where a parked question's options live
+
+A task parked on a consultation (`status: waiting_input`) carries its question twice, and only one
+copy has the options. `GET /inbox` (`inbox-waiting-input-options.json`, captured) has the
+`message` and `requestedSchema`; `GET /tasks/<pod>/<id>` (`task-waiting-input-options.json`,
+captured) adds `kind`, `options` (`id`, `label`, `description`, `risks`, `estimatedTokens`) and
+`recommendation` (`optionId`, `rationale`). The harness reads the task view and falls back to the
+inbox's question when that call fails. With options, docket refuses an `accept` that does not name
+one (`operator_contract.validate_answer_v11`), and `POST /tasks/<id>/answer` reads only `pod`,
+`action`, `content` and `actor`: the id goes inside `content.optionId`, which `answers.py` takes out
+before it checks the rest of `content` against `requestedSchema`. Every refusal is a `422`.
+
 ## What it leaves out
 
 - `GET /tasks/<pod>` and its `externalRef`/`status` filters, `POST .../retry`,
