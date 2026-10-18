@@ -17,8 +17,9 @@ team, repeat tasks, and travel whole in one file.
 which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not published yet.
 Phase 73 is in `develop` and ships in the release after it.
 
-**Where this is going.** No next phase is chosen yet. Two things decide it: the live proof of
-the docket teams once docket `0.2.0-beta.6` exists, and the gaps listed under "Open". Tack
+**Where this is going.** Phase 74 closes what the first real project found when it was put
+into Tack and docket end to end, and ends with that project's first runs through its teams,
+which is also the live proof of Phase 73. Tack
 keeps the same three neighbours it never contains: an agent runtime such as docket, which runs
 the work; an independent verifier such as prill, which judges it; and GitHub. Each still works
 alone, and without a verifier a project stays at Level 3.
@@ -47,10 +48,12 @@ plan or the page named beside it.
 
 **Waiting on a partner:**
 
-- docket `0.2.0-beta.6` (HTTP API version 5): the live run of `scripts/docket-prill-e2e.sh`
-  against a real team, and the end-to-end scenario with two teams and a rework, which is not
-  written yet. Until then every docket test runs against an in-process fake of the published
-  contract.
+- docket `0.2.0-beta.6` (HTTP API version 5) exists, but its `POST /pods` refuses the body its
+  own ADR 0027 and operator API publish (`name`, `location`), so no run reaches a team yet.
+  docket fixes that route; until then the live run of `scripts/docket-prill-e2e.sh`, the
+  end-to-end scenario with two teams and a rework, and Phase 74's task X wait. Every docket test
+  still runs against an in-process fake written from the spec, which is what let the mismatch
+  through; task X replaces it with captures.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -68,12 +71,47 @@ plan or the page named beside it.
 
 ---
 
+## Phase 74 — what the first real project found
+
+**Status:** opened 2026-10-17; ADR 0082 is proposed and waits on the maintainer.
+**ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
+[`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
+
+On 2026-10-17 Fabulada went into Tack and docket end to end, on the maintainer's own board: 86
+tasks, ten roles, eight profiles, three teams. The project, its roles and profiles, the teams and
+the choice of a run's team all worked. No run reached a team, and the board did not say why.
+Twenty defects in Tack were written down, each with its evidence. This phase closes them where
+each fact is owned, so no rule is computed twice:
+
+- A run that cannot start ends Failed with the reason, and a run nobody holds any more asks a
+  person instead of sitting in "Preparing"; cancel always ends it.
+- The board's runner keeps the name the board gave it, so it survives a restart; one rule says
+  whether a computer is online, and every screen and the scheduler read it.
+- What a computer reports about its teams stays current without a restart, the merge ceiling is
+  each run's own team's, and the Ceiling rung never promises more than what it lists.
+- Everything Tack runs is in the log by default; the server says which database it opened and
+  warns when it is not the one the desktop app uses; the doctor reads the runner's own file.
+- A project file carries the auto-start switch's state both ways.
+- The docket contract is proven by answers recorded from a real docket, not a fake written from
+  its spec.
+- The screens name pages and item types in the project's words, a settings tab follows its
+  address, and a new project can be created from a project file.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | A run that cannot start ends; one name and one liveness rule for runners; the screens' words and the import. | Sonnet |
+| 2 | Current team reports and the per-team ceiling; logs, messages and the file's switch. | Sonnet |
+| 3 | The docket contract from captures, once docket's `POST /pods` is fixed. | Sonnet |
+| 4 | Docs and the gate; then Fabulada's first runs through its teams on the real board. | Integrator |
+
+---
+
 ## Phase 73 — every run goes to a team, and automation is one ladder
 
 **Status:** opened 2026-10-14 and built: the six waves landed in `develop` on 2026-10-14, the
 seventh, a whole project in and out through one file (ADR 0081), on 2026-10-17, followed the
 same day by the book's three guides. What remains is the live proof on docket `0.2.0-beta.6`,
-listed under "Open".
+which is Phase 74's last round.
 **ADRs:** 0080 (amends 0078 decision 7 and 0074 decision 1), 0081 (extends 0076). **Plan:**
 [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
 

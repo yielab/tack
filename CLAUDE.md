@@ -23,6 +23,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).
+- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0082, proposed) — the twenty
+  Tack defects the Fabulada onboarding found, fixed where each fact is owned, ending with
+  Fabulada's first runs through its teams as Phase 73's live proof.
 - **Waits on docket `0.2.0-beta.6`:** the live proof, `scripts/docket-prill-e2e.sh`. Until it
   exists every docket test runs against the in-process fake in
   `crates/tack-runner/tests/fake_docket/`.
