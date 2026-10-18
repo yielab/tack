@@ -36,9 +36,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   import that is a three-way comparison against the last revision (removes what the file removed,
   keeps what the board changed, stops on a conflict, shows every removal's cost), revisions to go
   back to, and every import in one transaction. Waits on the maintainer's "continúa".
-- **Waits on docket `0.2.0-beta.6`:** the live proof, `scripts/docket-prill-e2e.sh`. Until it
-  exists every docket test runs against the in-process fake in
-  `crates/tack-runner/tests/fake_docket/`.
+- **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
+  develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
+  Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
 - **The maintainer's:** the release, and the Wave 0 items of `docs/plans/phase-65.md` and
   `docs/plans/phase-69.md`. Closed plans live in `docs/closed-cycles/plans/`.
 
