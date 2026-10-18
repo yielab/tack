@@ -148,7 +148,8 @@ says how the latest run is doing, what the agent said, its tokens and approximat
 **Run again**; the board card carries the same status as a chip.
 
 On the tab, each run (**Run 1**, **Run 2**, …) shows one status — *Running*, *Finished — needs
-your review*, *Finished — no changes recorded*, *Accepted*, and so on — with the agent that ran,
+your review*, *Finished — no changes recorded* (a run that was not meant to change files), *Failed*
+(including a run that was meant to change files and changed nothing), *Accepted*, and so on — with the agent that ran,
 what it did and said, and its usage, tokens first. A finished run that changed files waits for you:
 **Accept** or **Reject**, with an optional note, and the card's *Needs your review* flag clears.
 When the run's branch became a pull request, a **PR #n** link and its state sit on the run.

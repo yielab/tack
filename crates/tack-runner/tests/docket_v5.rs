@@ -815,10 +815,36 @@ async fn a_done_task_brings_its_branch_into_the_worktree() {
             .any(|(_, text)| text == "2 files docket did not commit are not in the evidence"),
         "{steps:?}"
     );
+    assert_eq!(outcome.terminal_reason["untracked_files"], json!(2));
     // The posted base is the worktree's own commit, so the branch is cut there.
     assert_eq!(
         fake.requests_to("POST", "/tasks/fab-dev")[0].body["baseRef"],
         json!(base)
+    );
+}
+
+#[tokio::test]
+async fn a_done_task_that_committed_nothing_hands_the_engine_the_files_it_left() {
+    let fake = pods_fake().await;
+    let scene = scene();
+    fake.script(Script {
+        untracked: vec!["research/notes.md".into()],
+        ..Script::default()
+    });
+    let base = git(&scene.workspace, &["rev-parse", "HEAD"]);
+
+    let (outcome, steps) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    // The branch equals its base; whether that ends the attempt is the engine's rule, which
+    // reads the evidence and names the count from here.
+    assert_eq!(git(&scene.workspace, &["rev-parse", "HEAD"]), base);
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(outcome.terminal_reason["untracked_files"], json!(1));
+    assert!(
+        steps
+            .iter()
+            .any(|(_, text)| text == "1 file docket did not commit is not in the evidence"),
+        "{steps:?}"
     );
 }
 

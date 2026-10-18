@@ -366,6 +366,85 @@ pub struct ExecutionRequestSnapshot {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+/// The tools that can change a file, as every harness spells them (compared
+/// case-insensitively): the set `codex` and `opencode` map onto a writable sandbox.
+const WRITE_TOOLS: [&str; 7] = [
+    "bash",
+    "shell",
+    "edit",
+    "multiedit",
+    "notebookedit",
+    "write",
+    "apply_patch",
+];
+
+/// The profile kinds whose job is to report and not to change project files
+/// (the built-in Reviewer, Researcher and Planner say so in their instructions);
+/// they decide only when no explicit tool list does.
+const READ_ONLY_PROFILE_KINDS: [&str; 3] = ["reviewer", "researcher", "planner"];
+
+impl ExecutionRequestSnapshot {
+    /// Whether this run is expected to change the repository, so that a run which
+    /// reports success and delivers no change did not do its work. One owner of the
+    /// rule, for every harness. In this order:
+    ///
+    /// - an explicit tool list for the run's agent decides: the run's own, else the
+    ///   profile's for that agent, when it is not `*`. Naming a write tool (`bash`,
+    ///   `shell`, `edit`, `multiedit`, `notebookedit`, `write`, `apply_patch`) means
+    ///   a change is expected, whatever the profile's kind; naming only read tools
+    ///   means none is;
+    /// - with `*` or no list at all, a profile of kind `reviewer`, `researcher` or
+    ///   `planner` is read-only, and any other expects a change. No list at all
+    ///   changes nothing, except for `docket`, which applies its team's own tools;
+    /// - `docket` also honours the profile's `docket.denied_tools`: a denied write
+    ///   tool does not count, and `*` with `write`, `edit` and `bash` all denied is
+    ///   read-only.
+    pub fn expects_change(&self) -> bool {
+        let profile = &self.resolved_agent_profile;
+        let harness = self.requested_harness_kind.as_str();
+        let strings = |value: &serde_json::Value| -> Vec<String> {
+            value
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        };
+        let denied = if harness == "docket" {
+            strings(&profile.tool_policy["docket"]["denied_tools"])
+        } else {
+            Vec::new()
+        };
+        let denies = |tool: &str| denied.iter().any(|name| name.eq_ignore_ascii_case(tool));
+        let mut tools = self.permission_policy.tools.clone();
+        if tools.is_empty() {
+            tools = strings(&profile.tool_policy["tools"][harness]);
+        }
+        let wildcard = tools.iter().any(|tool| tool == PermissionPolicy::ALL_TOOLS);
+        if !tools.is_empty() && !wildcard {
+            return tools.iter().any(|tool| {
+                WRITE_TOOLS
+                    .iter()
+                    .any(|write| tool.eq_ignore_ascii_case(write))
+                    && !denies(tool)
+            });
+        }
+        let kind = profile
+            .additional
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if READ_ONLY_PROFILE_KINDS.contains(&kind) {
+            return false;
+        }
+        if wildcard {
+            return !["write", "edit", "bash"].iter().all(|tool| denies(tool));
+        }
+        harness == "docket"
+    }
+}
+
 /// Point-in-time attempt values allocated when a request is claimed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptSnapshot {

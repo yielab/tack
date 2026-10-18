@@ -442,3 +442,143 @@ fn a_counted_token_is_a_new_one() {
     let none = usage(serde_json::json!({"tokens_in": unmeasured, "tokens_out": unmeasured}));
     assert_eq!(none.counted(), None);
 }
+
+/// The claim fixture's request, as `harness` with `tools` for the run and the
+/// profile's `tool_policy` and `kind`.
+fn request_for(
+    harness: &str,
+    tools: &[&str],
+    tool_policy: serde_json::Value,
+    kind: Option<&str>,
+) -> ExecutionRequestSnapshot {
+    let claim: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/claim.response.json"
+    ))
+    .expect("claim fixture");
+    let mut request: ExecutionRequestSnapshot =
+        serde_json::from_value(claim["request"].clone()).expect("request fixture");
+    request.requested_harness_kind = HarnessKind::new(harness);
+    request.permission_policy.tools = tools.iter().map(|tool| (*tool).to_owned()).collect();
+    request.resolved_agent_profile.tool_policy = tool_policy;
+    if let Some(kind) = kind {
+        request
+            .resolved_agent_profile
+            .additional
+            .insert("kind".to_owned(), kind.into());
+    }
+    request
+}
+
+#[test]
+fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_not_read_only() {
+    let none = serde_json::json!({});
+    for (harness, tools, policy, kind, expected) in [
+        (
+            "claude-code",
+            vec!["Read", "Edit"],
+            none.clone(),
+            None,
+            true,
+        ),
+        ("claude-code", vec!["bash"], none.clone(), None, true),
+        (
+            "claude-code",
+            vec!["Read", "Grep", "Glob"],
+            none.clone(),
+            None,
+            false,
+        ),
+        // claude-code reads the profile's list when the run names none.
+        (
+            "claude-code",
+            vec![],
+            serde_json::json!({"tools": {"claude-code": ["Read", "Grep"]}}),
+            None,
+            false,
+        ),
+        (
+            "claude-code",
+            vec![],
+            serde_json::json!({"tools": {"claude-code": ["Read", "Write"]}}),
+            None,
+            true,
+        ),
+        ("codex", vec![], none.clone(), None, false),
+        ("codex", vec!["*"], none.clone(), None, true),
+        ("opencode", vec!["webfetch"], none.clone(), None, false),
+        ("opencode", vec!["edit"], none.clone(), None, true),
+        // Fabulada's researcher writes a document: its explicit list names `write`.
+        (
+            "docket",
+            vec![],
+            serde_json::json!({"tools": {"docket": ["read", "fetch", "write"]}}),
+            Some("researcher"),
+            true,
+        ),
+        (
+            "docket",
+            vec!["read", "fetch", "write"],
+            none.clone(),
+            Some("researcher"),
+            true,
+        ),
+        (
+            "docket",
+            vec![],
+            serde_json::json!({"tools": {"docket": ["read", "fetch"]}}),
+            Some("researcher"),
+            false,
+        ),
+        (
+            "docket",
+            vec![],
+            serde_json::json!({"tools": {"docket": ["*"]}}),
+            Some("researcher"),
+            false,
+        ),
+        ("docket", vec!["*"], none.clone(), Some("researcher"), false),
+        // With `*` or no list, a reviewer, researcher or planner does not change project files.
+        ("codex", vec!["*"], none.clone(), Some("reviewer"), false),
+        ("docket", vec!["*"], none.clone(), Some("planner"), false),
+        (
+            "claude-code",
+            vec!["Edit"],
+            none.clone(),
+            Some("researcher"),
+            true,
+        ),
+        ("codex", vec!["*"], none.clone(), Some("implementer"), true),
+        ("codex", vec!["*"], none.clone(), Some("custom"), true),
+        // docket applies its team's own tools: an unnamed list may write.
+        ("docket", vec![], none.clone(), None, true),
+        ("docket", vec!["*"], none.clone(), None, true),
+        (
+            "docket",
+            vec!["*"],
+            serde_json::json!({"docket": {"denied_tools": ["fetch"]}}),
+            None,
+            true,
+        ),
+        (
+            "docket",
+            vec!["*"],
+            serde_json::json!({"docket": {"denied_tools": ["Write", "edit", "bash"]}}),
+            None,
+            false,
+        ),
+        (
+            "docket",
+            vec![],
+            serde_json::json!({"tools": {"docket": ["write"]}, "docket": {"denied_tools": ["write"]}}),
+            None,
+            false,
+        ),
+    ] {
+        let request = request_for(harness, &tools, policy.clone(), kind);
+        assert_eq!(
+            request.expects_change(),
+            expected,
+            "{harness} {tools:?} {policy} {kind:?}"
+        );
+    }
+}

@@ -132,9 +132,11 @@ An **agent profile** is the agent's standing orders: a name, the instructions se
 run that uses it, and the tools it may use per agent. Four come built in — **Implementer**,
 **Planner**, **Researcher** and **Reviewer**. **Manage profiles** (or **Advanced → Profiles** at
 the bottom of the Agents page) opens the list; **+ Create agent profile** adds one. This one
-writes announcements and is told not to call any tool:
+writes announcements, is told not to call any tool, and is given only the read tools (**Read**,
+**Grep** and **Glob** for Claude Code, with **All tools** left unticked). That also tells Tack it
+is not expected to change files:
 
-<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a 400-word launch announcement and reply with the text only without calling any tool, an empty Summary shown as the profile's tooltip, Tools with All tools ticked for claude-code, codex, opencode and docket, and Create and Cancel buttons.">
+<img src="../screenshots/tutorial/10-agent-profile.png" width="40%" alt="The create-profile form: name 'Announcement writer', instructions to write a 400-word launch announcement and reply with the text only without calling any tool, an empty Summary shown as the profile's tooltip, Tools with All tools unticked and only Read, Grep and Glob ticked for claude-code, and Create and Cancel buttons.">
 
 Click **Create**.
 
@@ -180,8 +182,8 @@ finishes:
 
 When the run finishes, the same tab is the record of what happened: one status, what the agent
 said, and its usage — tokens first, then the approximate cost, which is the agent's own estimate
-at list price, not your bill. This agent only wrote text, so the run reads **Finished — no
-changes recorded**, and **What the agent said** is the announcement itself:
+at list price, not your bill. This agent only wrote text and its profile allows only read tools, so no change was expected
+and the run reads **Finished — no changes recorded**, and **What the agent said** is the announcement itself:
 
 <img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run: Run 1 'Finished — no changes recorded', 'The agent ended without changing any files. What it said is below.', Copy path and Log buttons, What the agent said showing the announcement's headline and first paragraph, and usage reading 17K tokens in, 1.8K out, about $0.04, claude-sonnet-5-5 auto-selected, one model call, 16 seconds; the board card behind carries a Finished chip.">
 
@@ -193,7 +195,8 @@ that ties them together:
 
 <img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 17.6 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 6.8 KB), each with View and Download.">
 
-A run that changes files reads **Finished — needs your review** instead, and the card carries a
+A run that changes files reads **Finished — needs your review** instead (and a run that was
+allowed to change files but changed nothing reads **Failed**, with that as its reason), and the card carries a
 **Needs your review** flag until you **Accept** or **Reject** it — the recording at the top of
 this page shows that, end to end.
 

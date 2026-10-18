@@ -1189,6 +1189,9 @@ async fn a_create_with_no_snapshot_stores_the_profile_as_the_database_has_it() {
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
     let profile = &snapshot["resolved_agent_profile"];
     assert_eq!(profile["name"], "C1");
+    // The run's kind of role rides the snapshot: the runner reads it to know whether
+    // the run is meant to change files.
+    assert_eq!(profile["kind"], "custom");
     assert!(
         profile["instructions"]
             .as_str()

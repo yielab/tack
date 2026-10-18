@@ -185,6 +185,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A run that delivers no change is no longer shown as succeeded.** When an agent reports success but
+  the branch equals its base, the attempt ends failed with "The agent reported success but delivered no
+  change to review", and the number of files the agent left uncommitted when there were any; a verifier's
+  refusal of the empty change stays in the timeline, no longer the headline. This holds for every agent,
+  but only for a run meant to change files: one whose tools include a write tool, or whose tools are all
+  tools unless its profile is a Reviewer, Researcher or Planner. A run whose tools are read-only still ends
+  succeeded with no diff.
 - **A question a docket team parks is answered with docket's own options, and a refused answer is
   asked again.** Tack offered "Answer" and "Decline" and posted `accept` with the text; a
   decision question (one with options) is refused by docket without the chosen `optionId`, so the
