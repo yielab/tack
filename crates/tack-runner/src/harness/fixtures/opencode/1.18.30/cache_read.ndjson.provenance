@@ -1,0 +1,12 @@
+captured
+opencode 1.18.30, 2026-10-18, zero spend: `opencode run --pure --format json --title tack -m
+tack/fake-model` with the adapter's environment, against a loopback chat-completions stand-in
+(`scripts/capture-agent-usage-fixtures.sh`) that answers a `read` tool call and then a final
+message, 1.5 s apart, each with `usage.prompt_tokens` 1 000 + n and
+`prompt_tokens_details.cached_tokens` 800.
+
+What it shows: a `step_finish` line arrives as each step ends, and its `tokens.input` excludes the
+cache reads (201 of 1 001), which arrive apart as `tokens.cache.read` (800) beside
+`tokens.cache.write`. So the counted tokens are input + cache.write + output. Whether a provider that
+reports cache writes (Anthropic) has them inside `input` too was not measured: no such provider
+worked on this machine (see api_key_expired.ndjson).

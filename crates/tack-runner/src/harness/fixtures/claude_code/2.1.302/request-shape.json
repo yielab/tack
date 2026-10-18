@@ -1,0 +1,158 @@
+{
+ "A": {
+  "flags": "--setting-sources '' --tools default (Tack today)",
+  "request_bytes": 85296,
+  "system_bytes": 6576,
+  "tools": {
+   "Agent": 4120,
+   "Bash": 3345,
+   "CronCreate": 3914,
+   "CronDelete": 378,
+   "CronList": 243,
+   "DesignSync": 9607,
+   "Edit": 1006,
+   "EnterWorktree": 4069,
+   "ExitWorktree": 2546,
+   "ListAgents": 1196,
+   "Monitor": 7716,
+   "NotebookEdit": 1679,
+   "PushNotification": 1815,
+   "Read": 1975,
+   "ReportFindings": 2283,
+   "ScheduleWakeup": 5017,
+   "SendMessage": 5800,
+   "Skill": 1846,
+   "TaskStop": 810,
+   "WebFetch": 1120,
+   "WebSearch": 902,
+   "Workflow": 5473,
+   "Write": 663
+  },
+  "found": {
+   "CANARY_USER_CLAUDE_MD": false,
+   "CANARY_PROJECT_CLAUDE_MD": false,
+   "CANARY_LOCAL_CLAUDE_MD": false,
+   "CANARY_MEMORY_INDEX": true,
+   "CANARY_MEMORY_FILE": false
+  },
+  "attribution_reminder": true,
+  "git_status_reminder": true
+ },
+ "B": {
+  "flags": "A + CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
+  "request_bytes": 82612,
+  "system_bytes": 4399,
+  "tools": {
+   "Agent": 4120,
+   "Bash": 3345,
+   "CronCreate": 3914,
+   "CronDelete": 378,
+   "CronList": 243,
+   "DesignSync": 9607,
+   "Edit": 1006,
+   "EnterWorktree": 4069,
+   "ExitWorktree": 2546,
+   "ListAgents": 1196,
+   "Monitor": 7716,
+   "NotebookEdit": 1679,
+   "PushNotification": 1815,
+   "Read": 1975,
+   "ReportFindings": 2283,
+   "ScheduleWakeup": 5017,
+   "SendMessage": 5800,
+   "Skill": 1846,
+   "TaskStop": 810,
+   "WebFetch": 1120,
+   "WebSearch": 902,
+   "Workflow": 5473,
+   "Write": 663
+  },
+  "found": {
+   "CANARY_USER_CLAUDE_MD": false,
+   "CANARY_PROJECT_CLAUDE_MD": false,
+   "CANARY_LOCAL_CLAUDE_MD": false,
+   "CANARY_MEMORY_INDEX": false,
+   "CANARY_MEMORY_FILE": false
+  },
+  "attribution_reminder": true,
+  "git_status_reminder": true
+ },
+ "C": {
+  "flags": "A + --settings '{\"autoMemoryEnabled\":false,\"includeCoAuthoredBy\":false,\"includeGitInstructions\":false}'",
+  "request_bytes": 80929,
+  "system_bytes": 4399,
+  "tools": {
+   "Agent": 4120,
+   "Bash": 2954,
+   "CronCreate": 3914,
+   "CronDelete": 378,
+   "CronList": 243,
+   "DesignSync": 9607,
+   "Edit": 1006,
+   "EnterWorktree": 4069,
+   "ExitWorktree": 2546,
+   "ListAgents": 1196,
+   "Monitor": 7716,
+   "NotebookEdit": 1679,
+   "PushNotification": 1815,
+   "Read": 1975,
+   "ReportFindings": 2283,
+   "ScheduleWakeup": 5017,
+   "SendMessage": 5800,
+   "Skill": 1846,
+   "TaskStop": 810,
+   "WebFetch": 1120,
+   "WebSearch": 902,
+   "Workflow": 5473,
+   "Write": 663
+  },
+  "found": {
+   "CANARY_USER_CLAUDE_MD": false,
+   "CANARY_PROJECT_CLAUDE_MD": false,
+   "CANARY_LOCAL_CLAUDE_MD": false,
+   "CANARY_MEMORY_INDEX": false,
+   "CANARY_MEMORY_FILE": false
+  },
+  "attribution_reminder": false,
+  "git_status_reminder": false
+ },
+ "D": {
+  "flags": "--setting-sources '' --tools Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch",
+  "request_bytes": 22899,
+  "system_bytes": 6403,
+  "tools": {
+   "Bash": 3361,
+   "Edit": 1006,
+   "Glob": 754,
+   "Grep": 3331,
+   "Read": 1975,
+   "WebFetch": 1120,
+   "WebSearch": 902,
+   "Write": 663
+  },
+  "found": {
+   "CANARY_USER_CLAUDE_MD": false,
+   "CANARY_PROJECT_CLAUDE_MD": false,
+   "CANARY_LOCAL_CLAUDE_MD": false,
+   "CANARY_MEMORY_INDEX": true,
+   "CANARY_MEMORY_FILE": false
+  },
+  "attribution_reminder": true,
+  "git_status_reminder": true
+ },
+ "E": {
+  "flags": "--setting-sources '' --tools ''",
+  "request_bytes": 9147,
+  "system_bytes": 6403,
+  "tools": {},
+  "found": {
+   "CANARY_USER_CLAUDE_MD": false,
+   "CANARY_PROJECT_CLAUDE_MD": false,
+   "CANARY_LOCAL_CLAUDE_MD": false,
+   "CANARY_MEMORY_INDEX": true,
+   "CANARY_MEMORY_FILE": false
+  },
+  "attribution_reminder": false,
+  "git_status_reminder": true
+ }
+}

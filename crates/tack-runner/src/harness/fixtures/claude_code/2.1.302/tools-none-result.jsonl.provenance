@@ -1,0 +1,6 @@
+captured
+claude 2.1.302 (Claude Code), 2026-10-18, the `result` line of a real billed run (claude-sonnet-5-5,
+the maintainer's login) asked only "Reply with the single word ok.", with the flags of
+live-usage.jsonl and `--tools` set to the "none" list (default = `default`, eight =
+`Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write`, none = `""`). The prompt one call sends is
+input + cache_creation + cache_read: default 16 142, eight 7 600, none 2 201 tokens.
