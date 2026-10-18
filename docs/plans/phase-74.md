@@ -329,6 +329,84 @@ and the capture script ran once against docket with K7 fixed.
   Phase 73's live proof; `scripts/docket-prill-e2e.sh` runs once in the same round.
 - The defects list beside the test is marked with the commit that closed each row.
 
+### R — a docket task that outlives the runner is followed again (Sonnet, two layers)
+
+ADR 0082's amendment, decision 1. Found in R0 on 2026-10-18: a restart of `tack serve` left two
+docket tasks that were waiting on an approval in `needs_operator`, and an operator had to requeue
+them by hand.
+
+**Files:** `crates/tack-runner/src/journal.rs` (the claim kept in the record),
+`crates/tack-runner/src/engine.rs` (`recover`, `run_claimed` split at the point the agent is seen
+running), `crates/tack-runner/src/harness/mod.rs` (`resume` on the adapter trait, routed by kind
+like `reconcile`; the default answers `Unsupported`), `crates/tack-runner/src/harness/docket.rs`
+(`resume`: rebuild `RunInfo` from the journal's claim and its `pod/task` handle, then `follow`,
+which already reads its persisted cursor), `crates/tack-runner/src/engine/tests.rs`,
+`crates/tack-runner/tests/docket_v5.rs`, `crates/tack-runner/tests/fake_docket/mod.rs` (only if
+the test needs a route the fake lacks), `docs/book/src/admin-guide/recovery-runbook.md` (the
+`process_running` row), `docs/book/src/developer/runner-contract.md` (the recovery section).
+
+**Do:**
+
+- `AttemptJournal.claimed_work: Option<ClaimedWork>` with `#[serde(default)]`, written in the
+  `persist_before_spawn` record. An old journal has none and recovers as today. The claim carries
+  references to secrets, never their values. If a field turns out to carry a value, stop and
+  report it.
+- In `recover`, before `report_recovery_and_apply_disposition`: when `reconcile` answers
+  `ProcessRunning`, the record has a claim and `adapter.resume(&spec, &record)` returns a handle,
+  send one heartbeat for that lease with the journal's fencing token. If it is accepted, run the
+  same post-start path as `run_claimed` (follow, evidence, verifier, publish, terminal report).
+  There is one copy of that path, called from both places. If the heartbeat is refused, or
+  `resume` fails or answers `Unsupported`, go on to the recovery report exactly as today.
+- The attempt's deadline starts over at the resume. Say so in the code's comment and in the runbook.
+- A question docket still holds is not raised twice: `follow` starts with the attempt's decisions
+  already on the board in its `asked` set (read once from the server). If that read needs a route
+  the runner does not have, stop and report it.
+- Every local-process harness keeps answering `Unsupported`: its child died with the runner.
+
+**Tests (RED first):**
+
+- `engine/tests.rs`: a journal with a claim and a running handle whose lease heartbeat is accepted
+  is followed to `succeeded` with no recovery report; the same with the heartbeat refused reports
+  `process_running` and ends `needs_operator`; a journal without a claim behaves as today (one
+  table).
+- `docket_v5.rs`: a task parked on an approval survives a new adapter (a restart). The approval
+  is not raised again, answering it lets the task end, and the attempt ends with evidence.
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-runner) + package(tack-orch)'` and
+the gate are green.
+
+### T — the board makes its decision token, and the desktop app hands it over (Sonnet, two layers)
+
+ADR 0082's amendment, decision 2. Found in R0 on 2026-10-18: a new `tack serve` had no
+`TACK_EXECUTION_DECISION_TOKEN`, so every answer from the Inbox was a 403 and the run waited.
+
+**Files:** `crates/tack-api/src/config.rs` (`decision_token_file` and `ensure_decision_token`
+beside `api_token_file` and `ensure_api_token`, with the same rules for where the file lives and
+for loopback), the place `ensure_api_token` is called at start, `crates/tack-api/src/config/tests.rs`
+(or the module's existing tests), `crates/tack-desktop/src/` (where the app signs its window in:
+the decision token goes through the same door, into the key `decisionTokenStore` reads),
+`frontend/src/shared/execution/decisions.ts` and the screen that asks for the token (the
+sentence only), their unit tests, `docs/CONFIG.md` (the decision-token row),
+`docs/book/src/admin-guide/` (the page that lists the board's files).
+
+**Do:**
+
+- When the variable is unset or empty, read `decision-token` beside `api-token`, or create it
+  with 0600 and 32 random bytes, the way `api-token` is made. The variable still wins. The value
+  is never logged.
+- The desktop app reads the file and gives it to its window through the door it already uses for
+  its sign-in. If there is no such door, stop and report how the window signs in.
+- In a browser, the prompt for the token names the file: "the decision-token file beside the
+  board's database". No path, since the screen does not know it.
+
+**Tests (RED first):** config: missing → created 0600 and reused on the next start; the variable
+wins; an empty file is refused the way an empty `api-token` is (one table). Frontend: the prompt
+names the file. Desktop: the token reaches the window's store (a unit test if the door can be
+tested; otherwise the finding says why not).
+
+**Done when:** `cargo nextest run --workspace -E 'package(tack-api) + package(tack-desktop)'`,
+`cd frontend && npm test`, and the gate are green.
+
 ## Open questions
 
 Blocking: none. Not blocking: ADR 0082's three defaults. X waits on docket's answer to K7, which
@@ -378,4 +456,6 @@ is docket's decision (`docket-triage.md` recommends the same default).
   doctor printed an empty version for docket. Paid runs pause on docket's K8, since its dollar budget
   counts an unpriced model as free. Open, not in this phase: a heartbeat whose capacity disagrees
   is answered as an idempotency conflict, once per runner start.
-
+- **Round 5** opened 2026-10-18, from R0's runs on the real board (ADR 0082's amendment): R (a
+  docket task that outlives the runner is followed again) and T (the board makes its decision
+  token), side by side.
