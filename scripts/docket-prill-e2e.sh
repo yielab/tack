@@ -31,7 +31,9 @@
 #   DOCKET_PRILL_PORT            the server's port (default 3377)
 #   DOCKET_PRILL_DOCKET_PORT     the docket daemon's port (default 7399)
 #   DOCKET_PRILL_SHOTS           where the screenshots go (default frontend/test-results/docket-prill)
-#   DOCKET_PRILL_SKIP_BUILD=1    reuse target/debug/tack and frontend/dist as they are
+#   DOCKET_PRILL_SKIP_BUILD=1    reuse the last build of this script and frontend/dist as they are
+#   DOCKET_PRILL_TARGET_DIR      where tack is built (default /var/tmp/tack-docket-prill-e2e-target: its own, so
+#                                another build of the checkout cannot replace the SPA-embedded binary)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -84,7 +86,15 @@ chmod +x "$WORK/bin/docket" "$WORK/bin/prill"
 # apiVersion "5" cannot run this, however much else is in place.
 DOCKET_HOME_DIR="$AGENT_HOME/.docket"
 mkdir -p "$DOCKET_HOME_DIR"
-DOCKET_ENV=(env -i HOME="$AGENT_HOME" DOCKET_HOME="$DOCKET_HOME_DIR" PATH="$WORK/bin:$SYSTEM_PATH")
+# The fixture's tests run inside docket's jail, whose HOME is a scratch one, so a pytest in the
+# person's user site is out of reach: a venv in the work directory carries it, first on docket's
+# PATH and granted read-only to the jail below.
+PYENV=$WORK/pyenv
+# The system interpreter: the jail reads /usr, never another install's prefix (a Homebrew python3
+# under /home/linuxbrew would leave the venv's own python unreadable).
+/usr/bin/python3 -m venv "$PYENV" >/dev/null && "$PYENV/bin/pip" install -q pytest >"$WORK/pyenv.log" 2>&1 \
+  || die "the venv with pytest could not be made — see $WORK/pyenv.log"
+DOCKET_ENV=(env -i HOME="$AGENT_HOME" DOCKET_HOME="$DOCKET_HOME_DIR" PATH="$PYENV/bin:$WORK/bin:$SYSTEM_PATH")
 DOCKET_TOKEN_FILE="$WORK/docket-token"
 umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DOCKET_TOKEN_FILE"; umask 022
 "${DOCKET_ENV[@]}" docket setup provider add local "$MODEL_BASE_URL/v1" --model local-model --ctx 32768 --max-tokens 4096 \
@@ -94,6 +104,8 @@ umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DOCKET_TOKEN_F
 # person's docket.
 "${DOCKET_ENV[@]}" docket setup sandbox on </dev/null >>"$WORK/docket-setup.log" 2>&1 \
   || die "docket setup sandbox on failed — see $WORK/docket-setup.log"
+"${DOCKET_ENV[@]}" docket setup sandbox read add "$PYENV" </dev/null >>"$WORK/docket-setup.log" 2>&1 \
+  || die "docket setup sandbox read add failed (docket needs the read-only grants) — see $WORK/docket-setup.log"
 # Set before the first process starts, so a failed build still stops docket.
 cleanup() {
   say "stopping"
@@ -147,12 +159,13 @@ for POD in fab-code fab-content; do
 done
 
 # ── Build ─────────────────────────────────────────────────────────────────────
+E2E_TARGET=${DOCKET_PRILL_TARGET_DIR:-/var/tmp/tack-docket-prill-e2e-target}
 if [ "${DOCKET_PRILL_SKIP_BUILD:-0}" != "1" ]; then
   say "building the SPA and the tack binary with it embedded"
   (cd "$ROOT/frontend" && npm run build >"$WORK/build-frontend.log" 2>&1) || die "frontend build failed — see $WORK/build-frontend.log"
-  (cd "$ROOT" && cargo build -p tack-cli --features embed-spa >"$WORK/build-tack.log" 2>&1) || die "cargo build failed — see $WORK/build-tack.log"
+  (cd "$ROOT" && CARGO_TARGET_DIR="$E2E_TARGET" cargo build -p tack-cli --features embed-spa >"$WORK/build-tack.log" 2>&1) || die "cargo build failed — see $WORK/build-tack.log"
 fi
-BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/tack"
+BIN="$E2E_TARGET/debug/tack"
 [ -x "$BIN" ] || die "$BIN is missing"
 
 # ── The server ────────────────────────────────────────────────────────────────
