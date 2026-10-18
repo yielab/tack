@@ -48,6 +48,26 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 /// Tools that reach the network, matched case-insensitively against the run's tools.
 const NETWORK_TOOLS: &[&str] = &["webfetch", "websearch"];
 
+/// What `*` (every tool) gives Claude Code: its file, shell and web tools.
+/// `--tools default` adds fifteen more (sub-agents, worktrees, schedules,
+/// notifications…) that a run on a card never uses, and measured on 2.1.302
+/// they make each call's prompt 16 142 tokens against 7 600 with these eight.
+const EVERY_TOOL: &[&str] = &[
+    "Bash",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Read",
+    "WebFetch",
+    "WebSearch",
+    "Write",
+];
+
+/// Settings passed on the command line, the only ones `--setting-sources ""`
+/// leaves: no reminder asking the agent to sign its commits and pull requests
+/// as Claude's (measured on 2.1.302, it reaches every call with tools).
+const SETTINGS: &str = r#"{"includeCoAuthoredBy":false}"#;
+
 /// The tools this run gives Claude Code: the run's own list, else the profile's for this
 /// agent (`tool_policy.tools["claude-code"]`, the shape the Run dialog and auto-start read),
 /// else none. The run's list wins because the person typed it for this run.
@@ -331,16 +351,28 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         // list, every schema lands in the prompt — one run went from 41K to
         // 255K tokens of context per call on 2.1.291.
         args.push("--strict-mcp-config".to_owned());
-        args.extend(["--effort", "high", "--setting-sources", "", "--tools"].map(str::to_owned));
-        // `""` would turn every tool off; `default` is claude's word for all of them.
+        args.extend(
+            [
+                "--effort",
+                "high",
+                "--setting-sources",
+                "",
+                "--settings",
+                SETTINGS,
+                "--tools",
+            ]
+            .map(str::to_owned),
+        );
+        // `""` would turn every tool off.
         if all_tools {
-            args.push("default".to_owned());
-            if !policy.network {
-                args.extend([
-                    "--disallowedTools".to_owned(),
-                    "WebFetch,WebSearch".to_owned(),
-                ]);
-            }
+            let every: Vec<&str> = EVERY_TOOL
+                .iter()
+                .copied()
+                .filter(|tool| {
+                    policy.network || !NETWORK_TOOLS.contains(&tool.to_ascii_lowercase().as_str())
+                })
+                .collect();
+            args.push(every.join(","));
         } else {
             args.push(tools.join(","));
         }

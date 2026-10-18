@@ -96,6 +96,11 @@ automation a template carries, and the removal of dollars per day.
   another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
   optional `harness`, `tokens` and `no_limit` for it, and answers 400 on a `tokens` that is not a
   positive whole number.
+- **Claude Code's every-tool list is its eight working tools, and its commits are not signed as
+  Claude's.** A run that allows every tool gets Bash, Edit, Glob, Grep, Read, WebFetch, WebSearch and
+  Write instead of Claude Code's whole default list, whose other fifteen tools more than doubled each
+  call's prompt (16 142 tokens against 7 600); and the reminder asking it to add a `Co-Authored-By`
+  trailer to commits and pull requests is switched off.
 - **Claude Code and opencode stop at the run's token limit.** Each model call's tokens are read as
   the call ends, the timeline shows them, and the day's room counts them while the run runs. When
   what a run has counted reaches its limit, Tack stops the process and the attempt fails with "the

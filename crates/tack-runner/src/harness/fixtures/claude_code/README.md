@@ -94,8 +94,13 @@ fresh `HOME`, zero spend), the fixtures in `2.1.273/` are that session's own
 - `--setting-sources ""` keeps the three `CLAUDE.md` files out of the prompt but not the
   auto-memory index; `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` removes it, and the adapter sets it.
 - The profile's tools for this agent (`tool_policy.tools["claude-code"]`) are `--tools` when the
-  run names none. What each tool list costs in the prompt is in the `tools-*-result.jsonl`
-  fixtures' provenance.
+  run names none. `*` (every tool) is the eight file, shell and web tools
+  (`Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write`, the web two dropped without network),
+  not `--tools default`: a call's prompt is 16 142 tokens with `default`, 7 600 with the eight and
+  2 201 with none (`tools-*-result.jsonl`).
+- The attribution reminder (a `<system-reminder>` asking for a `Co-Authored-By` trailer) reaches
+  every call with tools; `--settings '{"includeCoAuthoredBy":false}'` removes it, and the adapter
+  passes it (`request-shape.json`, variant C).
 
 ## What the adapter does not attempt
 
