@@ -336,4 +336,5 @@ is docket's decision (`docket-triage.md` recommends the same default).
 
 ## Status
 
-- **Round 0** opened 2026-10-17: ADR 0082 (proposed), this plan, the roadmap section.
+- **Round 0** done 2026-10-17: ADR 0082 accepted with its three defaults, this plan, the roadmap section.
+- **Round 1** started 2026-10-17: F, I and W.
