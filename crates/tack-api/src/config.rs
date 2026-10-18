@@ -157,7 +157,9 @@ pub struct AppConfig {
     /// higher-privilege act than the ordinary operator gate already covers.
     /// **Fail-closed when unset** — see
     /// `handlers::decisions::require_decision_token`'s doc comment. Never
-    /// logged.
+    /// logged. Left unset on a loopback bind, the server reads or creates
+    /// `decision-token` beside the database file at start
+    /// (`ensure_decision_token`).
     #[serde(default)]
     pub execution_decision_token: Option<String>,
 
@@ -342,6 +344,34 @@ impl AppConfig {
             None => new_token(),
         };
         self.api_token = Some(token);
+        Ok(())
+    }
+
+    /// The file that holds the generated decision token: `decision-token`
+    /// beside `api-token`. `None` for an in-memory database.
+    pub fn decision_token_file(&self) -> Option<std::path::PathBuf> {
+        self.api_token_file()
+            .map(|path| path.with_file_name("decision-token"))
+    }
+
+    /// The same rules as `ensure_api_token`, for the second secret: with no
+    /// `TACK_EXECUTION_DECISION_TOKEN` on a loopback bind, read or create the
+    /// file `decision_token_file` names. The variable still wins. The value
+    /// is never logged.
+    pub fn ensure_decision_token(&mut self) -> anyhow::Result<()> {
+        if self
+            .execution_decision_token
+            .as_deref()
+            .is_some_and(|t| !t.is_empty())
+            || !self.binds_loopback()
+        {
+            return Ok(());
+        }
+        let token = match self.decision_token_file() {
+            Some(path) => read_or_create_token(&path)?,
+            None => new_token(),
+        };
+        self.execution_decision_token = Some(token);
         Ok(())
     }
 
@@ -641,6 +671,75 @@ pub(crate) fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both secrets are made the same way: a missing file is created `0600`
+    /// and reused by the next start, the variable wins and leaves no file,
+    /// and an empty file is refused. One row per token.
+    #[test]
+    fn a_token_file_is_created_reused_and_overridden_by_the_variable() {
+        type Slot = fn(&mut AppConfig) -> &mut Option<String>;
+        type Ensure = fn(&mut AppConfig) -> anyhow::Result<()>;
+        let rows: [(&str, Slot, Ensure); 2] = [
+            (
+                "api-token",
+                |c| &mut c.api_token,
+                AppConfig::ensure_api_token,
+            ),
+            (
+                "decision-token",
+                |c| &mut c.execution_decision_token,
+                AppConfig::ensure_decision_token,
+            ),
+        ];
+        for (name, slot, ensure) in rows {
+            let dir = tempfile::tempdir().expect("data dir");
+            let config_in = || AppConfig {
+                database_url: format!("sqlite:{}?mode=rwc", dir.path().join("tack.db").display()),
+                ..AppConfig::default()
+            };
+            let file = dir.path().join(name);
+
+            let mut first = config_in();
+            ensure(&mut first).expect("create");
+            let token = std::fs::read_to_string(&file).expect(name);
+            assert_eq!(token.len(), 43, "{name}: 32 bytes as unpadded base64url");
+            assert_eq!(slot(&mut first).as_deref(), Some(token.as_str()), "{name}");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+                assert_eq!(mode & 0o777, 0o600, "{name} must be owner-only");
+            }
+
+            let mut second = config_in();
+            ensure(&mut second).expect("reuse");
+            assert_eq!(slot(&mut second).as_deref(), Some(token.as_str()), "{name}");
+
+            let mut set = config_in();
+            *slot(&mut set) = Some("from-the-variable".into());
+            ensure(&mut set).expect("the variable wins");
+            assert_eq!(
+                slot(&mut set).as_deref(),
+                Some("from-the-variable"),
+                "{name}"
+            );
+
+            std::fs::write(&file, "\n").unwrap();
+            let refusal = ensure(&mut config_in()).expect_err("an empty file is refused");
+            assert!(
+                refusal.to_string().contains("is empty"),
+                "{name}: {refusal}"
+            );
+            std::fs::remove_file(&file).unwrap();
+
+            let mut open = AppConfig {
+                host: "0.0.0.0".into(),
+                ..config_in()
+            };
+            ensure(&mut open).expect("a reachable bind makes no file");
+            assert!(!file.exists(), "{name}: not made on a reachable bind");
+        }
+    }
 
     #[test]
     fn outbound_url_refuses_link_local_and_unspecified_hosts() {

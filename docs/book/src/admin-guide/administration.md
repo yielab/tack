@@ -19,6 +19,8 @@ You can choose the token or let the server make one:
 - **You choose it.** Set `TACK_API_TOKEN` (or `api_token` in `tack.toml`) and restart the server.
 - **The server makes it.** On a loopback bind with no `TACK_API_TOKEN`, the server reads `api-token` from the directory of its database file, or creates it there on the first start (mode `0600`, one line). A server that cannot read or create the file does not start, and says which path failed. An in-memory database has no directory, so its token lives only in the process.
 
+Answering a run's questions from the Inbox needs a **second secret**, kept apart from the API token. The server keeps it the same way: on a loopback bind with no `TACK_EXECUTION_DECISION_TOKEN`, it reads `decision-token` beside `api-token`, or creates it on the first start (mode `0600`). The variable still wins. The desktop app hands it to its window, so nobody pastes it there. In a browser the Inbox asks for it once per session and names this file; open the file and paste its one line.
+
 ```sh
 TACK_API_TOKEN='a-long-random-secret' tack serve
 ```
@@ -285,6 +287,7 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_PORT` | `3210` | Listen port |
 | `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database location |
 | `TACK_API_TOKEN` | _(generated on loopback)_ | The token required as `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health` and `/api/openapi.json`. Left unset on a loopback bind, the server uses the `api-token` file beside its database. Never logged |
+| `TACK_EXECUTION_DECISION_TOKEN` | _(generated on loopback)_ | The second secret required to answer a run's question. Left unset on a loopback bind, the server uses the `decision-token` file beside its database. Never logged |
 | `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal. Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
 | `TACK_ALLOWED_ORIGINS` | see [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md) | Comma-separated CORS allow-list of exact origins |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Max body size in bytes for non-attachment requests (2 MB). Uploads are always capped at 50 MB |
