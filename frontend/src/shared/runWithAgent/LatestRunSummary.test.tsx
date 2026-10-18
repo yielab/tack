@@ -102,6 +102,18 @@ describe('LatestRunSummary', () => {
   });
 
   it.each([
+    ['failed', { code: 'timeout', message: "The run's time ran out after 30 minutes while it waited for an answer", result: 'half done' }, "The run's time ran out after 30 minutes while it waited for an answer"],
+    ['failed', { code: 'timeout' }, "The run's time ran out"],
+    ['cancelled', { code: 'user_cancelled' }, 'user_cancelled'],
+    ['lost', null, 'No reason was reported'],
+  ])('a %s run prints why it stopped where the agent\'s words go, never the words themselves', async (state, terminal_reason, why) => {
+    const c = mount([{ ...RUN, state }], () => {}, [{ ...ATTEMPT, state, terminal_reason }]);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run-why"]')!.textContent).toBe(why);
+    expect(c.querySelector('[data-testid="latest-run-said"]')).toBeNull();
+  });
+
+  it.each([
     '300 000 tokens · from the profile Implementer · docket stops the task there',
     "300 000 tokens · set for this run · Tack stops Claude Code's run there",
     "300 000 tokens · set for this run · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet)",
