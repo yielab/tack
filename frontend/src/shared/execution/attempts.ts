@@ -117,6 +117,8 @@ export interface AttemptSummary {
   actual_execution: unknown | null;
   terminal_reason: TerminalReason | null;
   usage: unknown | null;
+  /** New input, cache writes and output, the figure a token limit counts; `null` when nothing was measured. */
+  counted_tokens?: number | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;

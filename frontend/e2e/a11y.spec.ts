@@ -34,6 +34,16 @@ test.skip(({ browserName }) => browserName !== 'chromium', 'a11y scan runs on ch
 const KNOWN_ISSUES: string[] = [];
 
 async function scan(page: import('@playwright/test').Page, extraDisabled: string[] = []) {
+  // A toast fades in over 0.2 s; scanned mid-fade its text reads as low contrast. A spinner
+  // never ends, so only animations with an end are waited for.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .disableRules([...KNOWN_ISSUES, ...extraDisabled])
