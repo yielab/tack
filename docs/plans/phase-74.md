@@ -366,3 +366,16 @@ is docket's decision (`docket-triage.md` recommends the same default).
   entries, the roadmap's and `CLAUDE.md`'s status. On 2026-10-18 docket's `POST /pods` still read
   `project`/`path` (`develop` at `4ace6bd1`, the installed `0.2.0b6`); K7 went to docket's session
   with its evidence. Round 3 (X) and the runs on the real board start when it lands.
+- **Round 3** done 2026-10-18: X merged (`0232f898`). docket fixed K7 the same day (`a9f6f81c`, name and
+  location). As built: the captures come from the installed 0.2.0b6 in a throwaway home; they showed the
+  adapter read a task's `error`, which only a hop has, so every failed docket run reached the board
+  with an empty message (now `reason`), and six shapes the fake had wrong. No-model task shapes
+  stay `constructed`.
+- **R0, first pass** 2026-10-18: the three runs reached their teams. They first failed on "unknown pipeline",
+  because the onboarding skill copied the pipelines to a folder docket does not read (fixed in the
+  skill). After that, each ended on docket's default per-step limit of 100 000 tokens. Found on the
+  way and fixed in `2ea23786`: the request trace filled nine lines in ten of an `info` log, and the
+  doctor printed an empty version for docket. Paid runs pause on docket's K8, since its dollar budget
+  counts an unpriced model as free. Open, not in this phase: a heartbeat whose capacity disagrees
+  is answered as an idempotency conflict, once per runner start.
+

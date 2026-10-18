@@ -48,12 +48,11 @@ plan or the page named beside it.
 
 **Waiting on a partner:**
 
-- docket `0.2.0-beta.6` (HTTP API version 5) exists, but its `POST /pods` refuses the body its
-  own ADR 0027 and operator API publish (`name`, `location`), so no run reaches a team yet.
-  docket fixes that route; until then the live run of `scripts/docket-prill-e2e.sh`, the
-  end-to-end scenario with two teams and a rework, and Phase 74's task X wait. Every docket test
-  still runs against an in-process fake written from the spec, which is what let the mismatch
-  through; task X replaces it with captures.
+- docket's cost brake: a team's dollar budget counts a model with no price as free, and prices a
+  step by the member's model instead of the step's own, so it stops nothing yet. Until docket
+  fixes that, Fabulada's runs on paid models wait, and so do the live run of
+  `scripts/docket-prill-e2e.sh` and the end-to-end scenario with two teams and a rework. Runs
+  already reach their teams, and the docket tests answer from captures of a real docket.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -74,8 +73,9 @@ plan or the page named beside it.
 ## Phase 74 — what the first real project found
 
 **Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults. Rounds 1
-and 2 landed in `develop` on 2026-10-18, with Round 4's pages in the book. Round 3 and the runs on
-the real board wait on docket accepting the `POST /pods` body it publishes.
+to 3 landed in `develop` on 2026-10-18, with Round 4's pages in the book. The first runs on the
+real board reached their teams the same day and ended on docket's per-step token limit; the
+next ones, on paid models, wait on docket's cost brake.
 **ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
