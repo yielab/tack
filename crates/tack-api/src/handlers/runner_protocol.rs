@@ -695,6 +695,26 @@ fn reclassify_refresh_auth_error(
     )
 }
 
+/// A failed capability UPDATE: a unique-constraint violation is a `conflict`
+/// naming the column the database reports, never a bare 500.
+fn refresh_update_error(error: sqlx::Error) -> runner_auth::ProtocolErrorResponse {
+    match error.as_database_error() {
+        Some(db_error) if db_error.is_unique_violation() => {
+            tracing::warn!(error = %db_error.message(), "runner refresh rejected: unique column");
+            protocol_error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                &format!(
+                    "Another runner already holds this value ({})",
+                    db_error.message()
+                ),
+                json!({}),
+            )
+        }
+        _ => internal_error("Could not update runner capabilities"),
+    }
+}
+
 pub async fn refresh(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
@@ -707,7 +727,9 @@ pub async fn refresh(
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let runner_name = as_str(&value, "runner_name")?.to_owned();
+    // The name is validated as present but never written: the board's row owns it
+    // (see `redeem_enrollment_token`), and a runner's self-report must not rename it.
+    as_str(&value, "runner_name")?;
     let runner_version = as_str(&value, "runner_version")?.to_owned();
     let rotate_credential = value
         .get("rotate_credential")
@@ -776,18 +798,17 @@ pub async fn refresh(
             }
         }
         let updated = sqlx::query(
-            "UPDATE agent_runners SET runner_version=?, name=?, labels=?, capability_snapshot=?, updated_at=? \
+            "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \
              WHERE id=? AND state='active' AND revoked_at IS NULL",
         )
         .bind(&runner_version)
-        .bind(&runner_name)
         .bind(&labels_json)
         .bind(&capability_snapshot_json)
         .bind(&now_s)
         .bind(&principal.runner_id)
         .execute(state.repo.pool())
         .await
-        .map_err(|_| internal_error("Could not update runner capabilities"))?;
+        .map_err(refresh_update_error)?;
         if updated.rows_affected() != 1 {
             // The credential CAS above already proved the row was active
             // and non-revoked at that instant; the only way this second,
@@ -817,18 +838,17 @@ pub async fn refresh(
             None => now,
         };
         let updated = sqlx::query(
-            "UPDATE agent_runners SET runner_version=?, name=?, labels=?, capability_snapshot=?, updated_at=? \
+            "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \
              WHERE id=? AND state='active' AND revoked_at IS NULL",
         )
         .bind(&runner_version)
-        .bind(&runner_name)
         .bind(&labels_json)
         .bind(&capability_snapshot_json)
         .bind(&now_s)
         .bind(&principal.runner_id)
         .execute(state.repo.pool())
         .await
-        .map_err(|_| internal_error("Could not update runner capabilities"))?;
+        .map_err(refresh_update_error)?;
         if updated.rows_affected() != 1 {
             return Err(revoked_error());
         }

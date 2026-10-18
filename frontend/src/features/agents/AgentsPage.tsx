@@ -6,7 +6,7 @@ import HarnessStep from './steps/HarnessStep';
 import SignInStep, { allSignedIn } from './steps/SignInStep';
 import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
-import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isThisMachineRunner } from './runnerObservations';
+import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isReady, isThisMachineRunner } from './runnerObservations';
 
 /** How often this page re-polls `GET /api/runners` while mounted — enough
  *  to notice a toggle/re-check without the operator reloading, without
@@ -122,7 +122,7 @@ const AgentsPage: Component = () => {
   // nothing here is a separate notion of progress.
   const stepDone = (): boolean[] => [
     localRunnerStatus.error === undefined && localRunnerStatus()?.state === 'running',
-    harnessesOf(thisMachineRunner()).some((h) => h.probe_error === null && !!h.installed_version),
+    harnessesOf(thisMachineRunner()).some(isReady),
     allSignedIn(thisMachineRunner()),
   ];
   const stepState = (index: number): StepState => {

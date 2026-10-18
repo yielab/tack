@@ -4707,6 +4707,11 @@ export interface components {
             labels_raw: string;
             last_heartbeat_at?: string | null;
             name: string;
+            /**
+             * @description Active, with a heartbeat inside the scheduler's window, as of this read.
+             *     Decided with `SchedulingPolicy::is_online`; never stored.
+             */
+            online: boolean;
             /** Format: int64 */
             protocol_version: number;
             revoked_at?: string | null;

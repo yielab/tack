@@ -22,9 +22,9 @@ fn needs_beta_6(found: &str) -> String {
     format!("needs docket 0.2.0-beta.6 (API {API_VERSION}); this docket answers API {found}")
 }
 
-/// `GET /status.json`: the model ids its team members run on, or the sentence
-/// saying why this docket cannot be used.
-pub(super) async fn status(client: &Client) -> Result<Vec<String>, String> {
+/// `GET /status.json`: the model ids its team members run on and docket's own version when it
+/// sends one, or the sentence saying why this docket cannot be used.
+pub(super) async fn status(client: &Client) -> Result<(Vec<String>, Option<String>), String> {
     let reply = client
         .status()
         .await
@@ -48,7 +48,11 @@ pub(super) async fn status(client: &Client) -> Result<Vec<String>, String> {
         .filter(|model| !model.is_empty())
         .map(str::to_owned)
         .collect();
-    Ok(models.into_iter().collect())
+    let version = reply.body["version"]
+        .as_str()
+        .filter(|version| !version.is_empty())
+        .map(str::to_owned);
+    Ok((models.into_iter().collect(), version))
 }
 
 /// The teams docket reports, each with its profile's violations.
@@ -126,21 +130,21 @@ pub(super) async fn probe(
         ]
         .into(),
     };
-    let models = match status(client).await {
-        Ok(models) => models,
+    let (models, version) = match status(client).await {
+        Ok(answer) => answer,
         Err(why) => {
             // An answer from the wrong API version still says which one.
-            if why.starts_with("needs docket") {
-                capability.installed_version = why
-                    .rsplit("answers API ")
-                    .next()
-                    .map_or_else(String::new, |n| format!("API {n}"));
+            if why.starts_with("needs docket")
+                && let Some(found) = why.rsplit("answers API ").next()
+            {
+                capability.set_api_version(found);
             }
             capability.probe_error = Some(why);
             return capability;
         }
     };
-    capability.installed_version = format!("API {API_VERSION}");
+    capability.installed_version = version.unwrap_or_default();
+    capability.set_api_version(API_VERSION);
     let signed_in = !models.is_empty();
     capability.sign_in = Some(SignInReport {
         state: if signed_in {

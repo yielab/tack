@@ -20,7 +20,7 @@ use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope};
+use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope, runner_is_online};
 
 /// Static request-correlation id placeholder. No per-request correlation
 /// id is wired into these error envelopes yet.
@@ -172,6 +172,9 @@ pub struct RunnerSummary {
     pub protocol_version: i64,
     pub runner_version: Option<String>,
     pub last_heartbeat_at: Option<String>,
+    /// Active, with a heartbeat inside the scheduler's window, as of this read.
+    /// Decided with `SchedulingPolicy::is_online`; never stored.
+    pub online: bool,
     pub revoked_at: Option<String>,
     pub fleet_ids: Vec<String>,
     pub created_at: String,
@@ -508,6 +511,7 @@ pub async fn list_runners(
             json!({}),
         )
     })?;
+    let now = state.clock.now();
     let data: Vec<RunnerSummary> = runners
         .into_iter()
         .filter(|runner| match &query.fleet_id {
@@ -519,6 +523,7 @@ pub async fn list_runners(
             let capability_snapshot =
                 serde_json::from_str::<Value>(&runner.capability_snapshot).ok();
             RunnerSummary {
+                online: runner_is_online(&runner, now),
                 runner_id: runner.id,
                 name: runner.name,
                 state: runner.state,

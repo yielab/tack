@@ -518,3 +518,33 @@ fn a_reached_budget_makes_every_candidate_ineligible_before_any_other_check() {
         );
     }
 }
+
+// The one liveness rule: active and a heartbeat no older than the policy's window.
+#[test]
+fn is_online_is_active_with_a_fresh_heartbeat() {
+    let policy = SchedulingPolicy::default();
+    let window = policy.max_heartbeat_age;
+    for (name, active, heartbeat, expected) in [
+        ("no heartbeat", true, None, false),
+        (
+            "stale",
+            true,
+            Some(now() - window - Duration::seconds(1)),
+            false,
+        ),
+        ("fresh", true, Some(now() - Duration::seconds(5)), true),
+        (
+            "at the edge of the window",
+            true,
+            Some(now() - window),
+            true,
+        ),
+        ("revoked", false, Some(now()), false),
+    ] {
+        assert_eq!(
+            policy.is_online(active, heartbeat, now()),
+            expected,
+            "{name}"
+        );
+    }
+}

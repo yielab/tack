@@ -399,6 +399,8 @@ export interface RunnerSummary {
   protocol_version: number;
   runner_version: string | null;
   last_heartbeat_at: string | null;
+  /** Active with a heartbeat inside the scheduler's window, as of this read. */
+  online: boolean;
   revoked_at: string | null;
   fleet_ids: string[];
   created_at: string;

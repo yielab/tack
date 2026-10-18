@@ -3,8 +3,12 @@ import {
   countOtherActiveRunners,
   findThisMachineRunner,
   harnessesOf,
+  isInstalled,
+  isReady,
+  versionText,
 } from './runnerObservations';
 import type { RunnerSummary } from '../../shared/execution/api';
+import type { HarnessCapability } from '../../shared/execution/types';
 
 function runner(overrides: Partial<RunnerSummary>): RunnerSummary {
   return {
@@ -20,6 +24,7 @@ function runner(overrides: Partial<RunnerSummary>): RunnerSummary {
     protocol_version: 1,
     runner_version: '0.1.0',
     last_heartbeat_at: null,
+    online: true,
     revoked_at: null,
     fleet_ids: [],
     created_at: '2026-01-01T00:00:00Z',
@@ -36,6 +41,24 @@ describe('findThisMachineRunner / countOtherActiveRunners', () => {
     ];
     expect(findThisMachineRunner(runners)?.runner_id).toBe('a');
     expect(countOtherActiveRunners(runners)).toBe(1);
+  });
+
+  it('takes the online local- runner with the newest heartbeat, else the newest', () => {
+    const rows = [
+      runner({ runner_id: 'old', name: 'local-old', last_heartbeat_at: '2026-10-17T08:00:00Z', online: false }),
+      runner({ runner_id: 'newer-offline', name: 'local-offline', last_heartbeat_at: '2026-10-17T11:00:00Z', online: false }),
+      runner({ runner_id: 'online', name: 'local-online', last_heartbeat_at: '2026-10-17T10:00:00Z', online: true }),
+    ];
+    expect(findThisMachineRunner(rows)?.runner_id).toBe('online');
+    expect(findThisMachineRunner(rows.slice(0, 2))?.runner_id).toBe('newer-offline');
+  });
+
+  it('counts only online runners as other machines', () => {
+    const rows = [
+      runner({ runner_id: 'a', name: 'box-a', online: true }),
+      runner({ runner_id: 'b', name: 'box-b', online: false }),
+    ];
+    expect(countOtherActiveRunners(rows)).toBe(1);
   });
 
   it('never counts a revoked or pending local- row as this machine', () => {
@@ -60,5 +83,21 @@ describe('harnessesOf', () => {
   it('returns the real array when the snapshot is well-formed', () => {
     const snap = { harnesses: [{ harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '' }] };
     expect(harnessesOf(runner({ capability_snapshot: snap }))).toHaveLength(1);
+  });
+});
+
+describe('isInstalled, isReady and versionText', () => {
+  const h = (o: Partial<HarnessCapability>) =>
+    ({ harness_kind: 'x', installed_version: '', probe_error: null, probed_at: '', ...o }) as HarnessCapability;
+  it.each([
+    ['a binary with a version', h({ installed_version: '1.2.3' }), true, true, 'v1.2.3'],
+    ['docket: no version of its own, only the API it speaks', h({ api_version: '5' }), true, true, 'API 5'],
+    ['both', h({ installed_version: '0.2.0', api_version: '5' }), true, true, 'v0.2.0 · API 5'],
+    ['installed but its probe failed', h({ installed_version: '1.0.0', probe_error: 'boom' }), true, false, 'v1.0.0'],
+    ['not found', h({ probe_error: 'not found on PATH' }), false, false, ''],
+  ])('%s', (_name, harness, installed, ready, text) => {
+    expect(isInstalled(harness)).toBe(installed);
+    expect(isReady(harness)).toBe(ready);
+    expect(versionText(harness)).toBe(text);
   });
 });

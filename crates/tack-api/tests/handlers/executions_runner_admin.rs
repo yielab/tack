@@ -9,7 +9,7 @@ use crate::common;
 // argument lists onto their own lines where the shorter original name did not.
 use crate::common::send_as_operator as snd;
 use axum::http::StatusCode;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
@@ -1857,6 +1857,67 @@ async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
     let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
     assert_eq!(err["error"]["details"]["reason"], "select_where_this_runs");
+}
+
+// Of two active runners the one that answers is where a run without a machine goes; the one
+// silent for hours is not a reason to refuse it.
+#[tokio::test]
+async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
+    let (app, repo, item_id) = setup().await;
+    repo.register_runner(
+        NewRunner {
+            id: "runner-stale",
+            name: "Stale",
+            credential_hash: "hash-stale",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("second runner");
+    for (id, age) in [
+        ("runner-active", Duration::seconds(5)),
+        ("runner-stale", Duration::hours(2)),
+    ] {
+        sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
+            .bind((Utc::now() - age).to_rfc3339())
+            .bind(id)
+            .execute(repo.pool())
+            .await
+            .expect("heartbeat");
+    }
+    let mut body = bare_body(&item_id, "k-live");
+    body["agent_profile_id"] = json!("profile-c1");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let selector: String =
+        sqlx::query_scalar("SELECT selector_id FROM execution_requests WHERE id = ?")
+            .bind(created["request_id"].as_str().unwrap())
+            .fetch_one(repo.pool())
+            .await
+            .expect("selector");
+    assert_eq!(selector, "runner-active");
+
+    let (_, listed) = snd(&app, "GET", "/runners", String::new()).await;
+    let online: Vec<(&str, bool)> = listed["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["runner_id"].as_str().unwrap(),
+                r["online"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert!(
+        online.contains(&("runner-active", true)) && online.contains(&("runner-stale", false)),
+        "{online:?}"
+    );
 }
 
 async fn add_profile_naming_agent(repo: &Repository, id: &str, agent: &str) {

@@ -9,6 +9,7 @@
 //! truth.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tack_orch::execution::{
@@ -16,7 +17,7 @@ use tack_orch::execution::{
     SignInState,
 };
 use tack_runner::{
-    RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
+    ConfigOverrides, RunnerConfig, SecretStore, bootstrap, harness::process::ProcessLimits,
 };
 
 /// Irrelevant to a probe (the `--version` call is bounded by its own,
@@ -32,9 +33,10 @@ const PROCESS_LIMITS: ProcessLimits =
 /// [`tack_orch::execution::RunnerCapabilities`] snapshot instead of the
 /// human-readable rendering, so it can be diffed byte-for-byte against
 /// whatever a real enrollment or refresh sent a server.
-pub fn run(as_json: bool) -> anyhow::Result<()> {
+pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
+    let config = read_config(config_path)?;
     let runtime = tokio::runtime::Runtime::new()?;
-    let (report, verify, daemon) = runtime.block_on(probe());
+    let (report, verify, daemon) = runtime.block_on(probe(config));
 
     if as_json {
         println!("{}", serde_json::to_string_pretty(&report.capabilities)?);
@@ -46,9 +48,22 @@ pub fn run(as_json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The runner's own file (`--config`, else `TACK_LOCAL_RUNNER_CONFIG`), read the way a live
+/// runner reads it: a broken file is an error, never a silent default.
+fn read_config(config_path: Option<PathBuf>) -> anyhow::Result<RunnerConfig> {
+    Ok(crate::local_runner::load_runner_config(
+        ConfigOverrides::default(),
+        config_path
+            .or_else(crate::local_runner::runner_config_path)
+            .as_deref(),
+    )?)
+}
+
 /// The report, the `[verify]` table, and how the docket daemon answers when
-/// docket is configured at all.
-async fn probe() -> (
+/// docket is configured at all, all from the runner's own configuration.
+async fn probe(
+    config: RunnerConfig,
+) -> (
     bootstrap::DiscoveryReport,
     tack_runner::VerifyConfig,
     Option<Result<String, String>>,
@@ -60,20 +75,8 @@ async fn probe() -> (
     // not a test artifact and takes no `tempfile` guard.
     #[allow(clippy::disallowed_methods)]
     let staging_root = std::env::temp_dir().join("tack-runner-doctor-unused-staging");
-    // The real state dir a `runner start` in this same environment would
-    // use (honors `--state-dir`/`TACK_RUNNER_STATE_DIR`), so the backend
-    // this reports is the one a live runner would actually pick — never a
-    // second, independently derived guess.
-    // The runner's own file too, so the `[docket]` table the live runner reads
-    // is the one this probes.
-    let file_toml = crate::local_runner::runner_config_path()
-        .and_then(|path| std::fs::read_to_string(path).ok());
-    let config = RunnerConfig::from_sources(RunnerConfigSources {
-        file_toml: file_toml.as_deref(),
-        environment: RunnerConfig::environment_overrides(),
-        ..RunnerConfigSources::default()
-    })
-    .unwrap_or_else(|_| RunnerConfig::defaults());
+    // The secret store is the one the same file's state directory names, so
+    // the backend this reports is the one a live runner would actually pick.
     let secrets = SecretStore::open(&config.secret_store_path());
     let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.docket).await;
     let daemon = if config.docket.configured() {
@@ -358,10 +361,7 @@ mod tests;
 /// answers, and one line per team. `daemon` is what
 /// [`tack_runner::harness::docket::daemon::describe`] found.
 fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>) -> Vec<String> {
-    let version = capability
-        .installed_version
-        .strip_prefix("API ")
-        .unwrap_or("unknown");
+    let version = capability.api_version().unwrap_or("unknown");
     let api = match &capability.probe_error {
         Some(reason) => format!("{version} ({reason})"),
         None => version.to_owned(),

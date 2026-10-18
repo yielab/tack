@@ -113,3 +113,52 @@ fn the_embedded_runner_reports_the_id_the_api_assigned() {
     );
     assert!(body["request_id"].is_string(), "{body}");
 }
+
+/// The embedded runner reports `local-runner` as its name on every refresh. A row the operator
+/// named `local-runner` must not stop it from resuming its own session: the board's row owns the
+/// name, so the runner is `running` after each restart on the same database.
+#[test]
+fn the_embedded_runner_resumes_while_another_row_holds_local_runner() {
+    let root = tempfile::Builder::new()
+        .prefix("embedded-runner-restart")
+        .tempdir()
+        .expect("root");
+    let client = common::authed_client();
+    let running = |server: &ServerGuard| {
+        poll_until(Duration::from_secs(30), || {
+            let body = client
+                .get(format!("{}/api/local-runner", server.base_url))
+                .timeout(Duration::from_millis(500))
+                .send()
+                .ok()?
+                .json::<Value>()
+                .ok()?;
+            (body["state"] == "running").then_some(())
+        })
+        .expect("the embedded runner must be running");
+        // A runner that cannot resume stops a moment after it started.
+        std::thread::sleep(Duration::from_secs(2));
+        let body = client
+            .get(format!("{}/api/local-runner", server.base_url))
+            .send()
+            .expect("GET local-runner")
+            .json::<Value>()
+            .expect("json");
+        assert_eq!(body["state"], "running", "{body}");
+    };
+
+    let first = start_server_with_runner(root.path());
+    running(&first);
+    let created = client
+        .post(format!("{}/api/runners/enrollment", first.base_url))
+        .json(&json!({"name": "local-runner", "total_capacity": 1, "available_capacity": 1}))
+        .send()
+        .expect("POST enrollment");
+    assert!(created.status().is_success(), "{}", created.status());
+    drop(first);
+
+    for _ in 0..2 {
+        let restarted = start_server_with_runner(root.path());
+        running(&restarted);
+    }
+}

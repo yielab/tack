@@ -272,6 +272,42 @@ async fn enrollment_and_refresh_rotation_replaces_credential() {
     );
 }
 
+// A refresh never renames the runner: the board's row owns the name. A runner provisioned as
+// `local-<uuid>` that reports `local-runner` while another row already holds that name used to
+// hit the UNIQUE column and fail; now it is accepted and the name stays.
+#[tokio::test]
+async fn refresh_never_writes_the_runner_name() {
+    let fx = Fixture::new().await;
+    create_pending(
+        &fx.repo,
+        &fx.clock,
+        "runner-holds-name",
+        "local-runner",
+        "tok-holder",
+    )
+    .await;
+    let (status, enrolled) = create_pending_and_enroll(
+        &fx,
+        "runner-provisioned",
+        "local-2f9c1e",
+        "refresh-name-token",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{enrolled}");
+    let runner_id = enrolled["runner_id"].as_str().unwrap().to_owned();
+    let credential = enrolled["runner_credential"].as_str().unwrap().to_owned();
+
+    let body = json!({
+        "protocol_version": 1, "runner_id": runner_id, "runner_name": "local-runner",
+        "runner_version": "0.1.2", "rotate_credential": false,
+        "capabilities": full_capabilities(fx.clock.now(), 1, 1),
+    })
+    .to_string();
+    let (status, refreshed) = refresh_as(&fx.app, &credential, body).await;
+    assert_eq!(status, StatusCode::OK, "{refreshed}");
+    assert_eq!(fx.runner_name(&runner_id).await, "local-2f9c1e");
+}
+
 // ---------------------------------------------------------------------
 // 2. Two default-configured runners self-report the identical
 //    `runner_name` (both default it from `TACK_RUNNER_ID`). Without the

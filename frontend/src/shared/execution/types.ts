@@ -139,7 +139,10 @@ export interface HarnessDocs {
 
 export interface HarnessCapability {
   harness_kind: string;
+  /** The program's own version; empty when the program does not report one. */
   installed_version: string;
+  /** The API version the harness answers, `"5"`; only a harness with a versioned API (docket) sets it. */
+  api_version?: string;
   probe_error: string | null;
   probed_at: string;
   /** Whether a request must name a model for this harness (true) or it may use its own

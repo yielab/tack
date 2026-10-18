@@ -12095,6 +12095,7 @@
           "available_capacity",
           "capability_snapshot_raw",
           "protocol_version",
+          "online",
           "fleet_ids",
           "created_at",
           "updated_at"
@@ -12133,6 +12134,10 @@
           },
           "name": {
             "type": "string"
+          },
+          "online": {
+            "type": "boolean",
+            "description": "Active, with a heartbeat inside the scheduler's window, as of this read.\nDecided with `SchedulingPolicy::is_online`; never stored."
           },
           "protocol_version": {
             "type": "integer",
