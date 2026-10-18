@@ -91,6 +91,11 @@ automation a template carries, and the removal of dollars per day.
   in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
   enforced" for an agent Tack cannot stop. Dollars read "≈ $0.42 (estimated)" or "not priced",
   and the Factory page says how many of the models used have a price (ADR 0083 decisions 3–4).
+- **The run dialog says the token limit before you start.** Under the Token limit field it prints
+  the same sentence the run will carry, and it changes as you edit the limit, clear it or choose
+  another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
+  optional `harness`, `tokens` and `no_limit` for it, and answers 400 on a `tokens` that is not a
+  positive whole number.
 - **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
   count uncached input, cache writes and output; what the cache served is shown beside it and
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not

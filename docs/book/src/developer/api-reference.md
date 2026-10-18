@@ -145,6 +145,9 @@ what the agent will read for a given item:
 |---|---|---|---|---|
 | `id` | path | `string` | yes | Item ID |
 | `profile_id` | query | `string` | no | The agent profile to compose with; the project's default when absent. |
+| `harness` | query | `string` | no | The agent the run dialog has chosen (`claude-code`, `codex`, `docket`, `opencode`); it |
+| `tokens` | query | `integer` | no | The token limit typed in the run dialog, a positive whole number. Equal to the profile's it |
+| `no_limit` | query | `boolean` | no | `true` when the person cleared the dialog's token limit to run without one; wins over |
 
 | Status | Meaning | Schema |
 |---|---|---|

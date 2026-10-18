@@ -2498,11 +2498,22 @@ pub struct AgentContextResponse {
 }
 
 /// Query parameters for `GET /api/items/{id}/agent-context`.
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct AgentContextQuery {
     /// The agent profile to compose with; the project's default when absent.
     pub profile_id: Option<String>,
+    /// The agent the run dialog has chosen (`claude-code`, `codex`, `docket`, `opencode`); it
+    /// replaces the profile's agent in the limit's sentence. Absent: the profile's own.
+    pub harness: Option<String>,
+    /// The token limit typed in the run dialog, a positive whole number. Equal to the profile's it
+    /// is still the profile's; different it is "set for this run". Zero or not a number is a 400
+    /// naming `tokens`. Absent: the profile's limit.
+    #[param(value_type = Option<u64>)]
+    pub tokens: Option<String>,
+    /// `true` when the person cleared the dialog's token limit to run without one; wins over
+    /// `tokens`. Absent or `false`: the limit above applies.
+    pub no_limit: Option<bool>,
 }
 
 /// `GET /api/items/{id}/agent-context` — what the agent will read for a given item:
@@ -2643,13 +2654,47 @@ pub async fn get_item_agent_context(
         project.definition_of_done.as_deref(),
     );
 
+    // The profile's limit, unless the dialog has its own: a different number is the run's, none is
+    // "no limit". The sentence is still `limit_source`'s, over a snapshot of the same shape.
+    let profile_tokens = profile["limits"]["budgets"]["tokens"].as_u64();
+    let (tokens, limit_from) = if query.no_limit == Some(true) {
+        (json!(null), "none")
+    } else if let Some(typed) = query.tokens.as_deref() {
+        let typed = typed
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| {
+                error(
+                    StatusCode::BAD_REQUEST,
+                    StableErrorCode::InvalidRequest,
+                    "The token limit must be a positive whole number",
+                    json!({"field": "tokens", "reason": "not_a_positive_whole_number"}),
+                )
+            })?;
+        let from = if Some(typed) == profile_tokens {
+            "profile"
+        } else {
+            "run"
+        };
+        (json!(typed), from)
+    } else {
+        (json!(profile_tokens), "profile")
+    };
+    let harness = query
+        .harness
+        .as_deref()
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .or_else(|| profile["tool_policy"]["agent"].as_str());
     let limit = limit_source(
         &json!({
-            "budgets": {"tokens": profile["limits"]["budgets"]["tokens"]},
-            "metadata": {"limit_source": "profile"},
+            "budgets": {"tokens": tokens},
+            "metadata": {"limit_source": limit_from},
             "resolved_agent_profile": {"name": profile["name"]},
         }),
-        profile["tool_policy"]["agent"].as_str(),
+        harness,
     );
 
     Ok(Json(AgentContextResponse {

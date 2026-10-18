@@ -1278,7 +1278,7 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
     let text = executions::get_item_agent_context(
         axum::extract::State(state),
         axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery { profile_id: None }),
+        axum::extract::Query(executions::AgentContextQuery::default()),
     )
     .await
     .expect("agent context")
@@ -1374,7 +1374,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     let response = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
         axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery { profile_id: None }),
+        axum::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1408,7 +1408,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     let response = executions::get_item_agent_context(
         axum::extract::State(state),
         axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery { profile_id: None }),
+        axum::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1566,7 +1566,10 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
             executions::get_item_agent_context(
                 axum::extract::State(state),
                 axum::extract::Path(item_uuid),
-                axum::extract::Query(executions::AgentContextQuery { profile_id }),
+                axum::extract::Query(executions::AgentContextQuery {
+                    profile_id,
+                    ..Default::default()
+                }),
             )
             .await
             .expect("agent context")
@@ -1629,6 +1632,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         axum::extract::Path(item_uuid),
         axum::extract::Query(executions::AgentContextQuery {
             profile_id: Some("profile-b".into()),
+            ..Default::default()
         }),
     )
     .await
@@ -1641,6 +1645,151 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         context.limit.sentence,
         "300 000 tokens · from the profile B · measured, not enforced (Tack reads the agent's tokens but cannot stop it at a limit yet)"
     );
+}
+
+/// The run dialog sends what it holds, and the sentence follows it: the profile's limit when the
+/// field is untouched or typed back to the profile's, the run's own when it differs, none when
+/// cleared, and the chosen agent decides who applies it.
+#[tokio::test]
+async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
+    let (_app, repo, item_id) = setup().await;
+    let item_uuid: Uuid = item_id.parse().unwrap();
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id: "profile-b",
+            name: "B",
+            instructions: "profile B instructions",
+            tool_policy: "{}",
+            limits: r#"{"budgets":{"tokens":300000}}"#,
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("profile b");
+    use tack_api::{AppState, config::AppConfig};
+    let state = AppState {
+        repo: repo.clone(),
+        config: AppConfig::default(),
+        workspace_id: Uuid::new_v4(),
+        broadcast_tx: tokio::sync::broadcast::channel(16).0,
+        webhook: None,
+        local_runner: None,
+    };
+    let ask = |harness: Option<&str>, tokens: Option<&str>, no_limit: Option<bool>| {
+        let state = state.clone();
+        let query = executions::AgentContextQuery {
+            profile_id: Some("profile-b".into()),
+            harness: harness.map(str::to_owned),
+            tokens: tokens.map(str::to_owned),
+            no_limit,
+        };
+        async move {
+            executions::get_item_agent_context(
+                axum::extract::State(state),
+                axum::extract::Path(item_uuid),
+                axum::extract::Query(query),
+            )
+            .await
+        }
+    };
+    let measured =
+        "measured, not enforced (Tack reads the agent's tokens but cannot stop it at a limit yet)";
+    // (harness, tokens, no_limit, tokens it reports, source, the sentence)
+    let rows = vec![
+        (
+            None,
+            None,
+            None,
+            Some(300_000),
+            "profile",
+            format!("300 000 tokens · from the profile B · {measured}"),
+        ),
+        (
+            None,
+            Some("300000"),
+            None,
+            Some(300_000),
+            "profile",
+            format!("300 000 tokens · from the profile B · {measured}"),
+        ),
+        (
+            None,
+            Some("120000"),
+            None,
+            Some(120_000),
+            "run",
+            format!("120 000 tokens · set for this run · {measured}"),
+        ),
+        (
+            None,
+            None,
+            Some(true),
+            None,
+            "none",
+            "No limit set in Tack".into(),
+        ),
+        (
+            None,
+            Some("120000"),
+            Some(true),
+            None,
+            "none",
+            "No limit set in Tack".into(),
+        ),
+        (
+            Some("docket"),
+            None,
+            None,
+            Some(300_000),
+            "profile",
+            "300 000 tokens · from the profile B · docket stops the task there".into(),
+        ),
+        (
+            Some("docket"),
+            Some("120000"),
+            None,
+            Some(120_000),
+            "run",
+            "120 000 tokens · set for this run · docket stops the task there".into(),
+        ),
+        (
+            Some("docket"),
+            None,
+            Some(true),
+            None,
+            "none",
+            "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
+                .into(),
+        ),
+        (
+            Some("codex"),
+            Some("120000"),
+            None,
+            Some(120_000),
+            "run",
+            "120 000 tokens · set for this run · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet)".into(),
+        ),
+    ];
+    for (n, (harness, tokens, no_limit, want_tokens, source, sentence)) in
+        rows.into_iter().enumerate()
+    {
+        let got = ask(harness, tokens, no_limit)
+            .await
+            .expect("agent context")
+            .0;
+        assert_eq!(got.limit.tokens, want_tokens, "row {n}");
+        assert_eq!(got.limit.source, source, "row {n}");
+        assert_eq!(got.limit.sentence, sentence, "row {n}");
+    }
+    // A limit the dialog cannot mean is refused, naming the field.
+    for bad in ["0", "-5", "abc", "1.5", ""] {
+        let (status, body) = ask(None, Some(bad), None).await.expect_err("refused");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+        assert_eq!(
+            body.0["error"]["details"]["field"], "tokens",
+            "{bad}: {body:?}"
+        );
+    }
 }
 
 /// A queued request no poll has explained reads "no runner is online" while

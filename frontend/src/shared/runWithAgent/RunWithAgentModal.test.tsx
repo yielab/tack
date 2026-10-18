@@ -123,7 +123,7 @@ function mockFetch(
       const fallback = (project as { default_profile_id?: string | null }).default_profile_id
         ?? (agentProfiles.length === 1 ? (agentProfiles[0] as { agent_profile_id: string }).agent_profile_id : null);
       const resolved = opts.resolved ?? { profile_id: fallback, profile_source: fallback ? 'project_default' : null };
-      return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', limits: opts.limits ?? {}, ...resolved }), { status: 200 });
+      return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', limits: opts.limits ?? {}, limit: { tokens: null, source: 'none', enforced_by: 'measured', sentence: `Server says ${new URL(url, 'http://x').search}` }, ...resolved }), { status: 200 });
     }
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
@@ -274,6 +274,62 @@ describe('RunWithAgentModal', () => {
     expect(lastCreateBody).toMatchObject({ budgets: { tokens: null }, timeout_seconds: 1800 });
     // Nothing about the time was changed, so the task does not remember it.
     expect(lastItemPatch).toBeUndefined();
+  });
+
+  it('prints_the_servers_limit_sentence_under_the_field_and_asks_again_when_the_field_or_the_agent_changes', async () => {
+    const both = runnerRow('runner-4', 'Both', runnerCapabilitySnapshot({
+      harnesses: [...runnerCapabilitySnapshot().harnesses, { ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
+    }));
+    const limits = { budgets: { tokens: 300000 } };
+    mount({}, { runners: [both], fleets: [], limits });
+    await flush();
+    await flush();
+    const sentence = () => document.querySelector('[data-testid="run-dialog-limit"]')?.textContent;
+    const limitUrls = () => requestedUrls.filter((u) => u.includes('/agent-context') && u.includes('harness='));
+    const textUrls = () => requestedUrls.filter((u) => u.includes('/agent-context') && !u.includes('harness='));
+    // Untouched: no limit is sent, the profile's stands; the sentence is the server's, as given.
+    expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex');
+    const textFetches = textUrls().length;
+    // A typed limit goes up as `tokens`, after a pause, and the composed text is not asked for again.
+    setField(field('Token limit'), '120000');
+    await flush();
+    expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex');
+    await new Promise((r) => setTimeout(r, 450));
+    await flush();
+    expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex&tokens=120000');
+    // The agent chosen goes up too.
+    setSelect(select('Agent'), 'claude-code');
+    await flush();
+    await flush();
+    expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&tokens=120000');
+    // A cleared field says "no limit".
+    setField(field('Token limit'), '');
+    await new Promise((r) => setTimeout(r, 450));
+    await flush();
+    expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&no_limit=true');
+    expect(limitUrls().every((u) => u.startsWith('/api/items/item-1/agent-context?profile_id=profile-1&harness='))).toBe(true);
+    expect(textUrls().length).toBe(textFetches);
+  });
+
+  it('prints_no_limit_sentence_while_the_token_field_holds_an_invalid_value', async () => {
+    mount({}, { runners: [RUNNER], fleets: [], limits: { budgets: { tokens: 300000 } } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-limit"]')).not.toBeNull();
+    const before = requestedUrls.length;
+    setField(field('Token limit'), '0');
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 450));
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
+    expect(document.body.textContent).toContain('Token limit must be a whole number above zero');
+    // The server was never asked about a value it would refuse.
+    expect(requestedUrls.slice(before).some((u) => u.includes('tokens=0'))).toBe(false);
+    setField(field('Token limit'), '5000');
+    await new Promise((r) => setTimeout(r, 450));
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-limit"]')?.textContent).toContain('tokens=5000');
   });
 
   it('asks_the_server_for_the_profile_and_says_who_chose_it', async () => {
