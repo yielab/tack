@@ -27,9 +27,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   Tack defects the Fabulada onboarding found, fixed where each fact is owned, ending with
   Fabulada's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C, L and X are in
   `develop` (2026-10-18); Fabulada's runs on paid models wait on docket's context and token count.
-- **Proposed 2026-10-18:** Phase 75 — limits in tokens with no default and no dollars per day,
-  cache reads never counted, and nothing sent to an agent twice; its decisions are taken, the ADR
-  and plan are next (roadmap section "Phase 75").
+- **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0083, accepted) — limits in
+  tokens with no default and no dollars per day, cache reads never counted, every limit naming who
+  applies it, and nothing sent to an agent twice.
 - **Waits on docket `0.2.0-beta.6`:** the live proof, `scripts/docket-prill-e2e.sh`. Until it
   exists every docket test runs against the in-process fake in
   `crates/tack-runner/tests/fake_docket/`.

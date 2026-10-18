@@ -75,8 +75,9 @@ plan or the page named beside it.
 
 ## Phase 75 — limits in tokens, and a lean context
 
-**Status:** proposed 2026-10-18 from the measurements of Fabulada's first runs; its decisions
-were taken the same day. The ADR and the plan are written next.
+**Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
+the same day. **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
+[`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
 Dollars are a token count multiplied by a price list someone typed. A model with no price
 counts as free and slips past a dollar limit, and the same work costs differently on every
