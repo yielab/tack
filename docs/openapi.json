@@ -1974,6 +1974,35 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "harness",
+            "in": "query",
+            "description": "The agent the run dialog has chosen (`claude-code`, `codex`, `docket`, `opencode`); it\nreplaces the profile's agent in the limit's sentence. Absent: the profile's own.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokens",
+            "in": "query",
+            "description": "The token limit typed in the run dialog, a positive whole number. Equal to the profile's it\nis still the profile's; different it is \"set for this run\". Zero or not a number is a 400\nnaming `tokens`. Absent: the profile's limit.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "no_limit",
+            "in": "query",
+            "description": "`true` when the person cleared the dialog's token limit to run without one; wins over\n`tokens`. Absent or `false`: the limit above applies.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

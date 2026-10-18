@@ -1,10 +1,11 @@
 import { createStore } from 'solid-js/store';
-import { type Component, createSignal, createResource, createMemo, createEffect, Show } from 'solid-js';
+import { type Component, createSignal, createResource, createMemo, createEffect, onCleanup, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { BOOK } from '../help/routes';
 import { api } from '../api';
+import type { AgentContextRun } from '../api/briefs';
 import {
   fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds,
   type AgentProfileSummary, type RunnerCapabilities, type RunnerSummary,
@@ -19,6 +20,8 @@ import {
 import RunFlow from './RunFlow';
 import { summarizeModels } from './models';
 import { agentSafety } from '../help/texts';
+
+const LIMIT_DEBOUNCE_MS = 300;
 
 /** A profile's `limits` as the dialog reads them: a token limit and a time limit, each only when it is a positive whole number. */
 function profileLimits(limits: unknown): { tokens: number | null; timeoutSeconds: number | null } {
@@ -243,6 +246,34 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     return Number.isInteger(n) && n > 0 ? n : undefined;
   };
 
+  // The sentence about the run's token limit is the server's, asked for what the dialog holds now:
+  // the agent and the limit. The typed value waits 300 ms, and the composed text is not refetched.
+  const [limitInput, setLimitInput] = createSignal({ edited: false, text: '' });
+  createEffect(() => {
+    const next = { edited: form.tokenLimitEdited, text: form.tokenLimit };
+    const timer = setTimeout(() => setLimitInput(next), LIMIT_DEBOUNCE_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
+  const [limitSentence] = createResource(
+    () => {
+      // No profile chosen yet: the dialog cannot run, and the profile it settles on may change the answer.
+      if (!props.isOpen || !form.agentProfileId) return undefined;
+      const { edited, text } = limitInput();
+      const typed = text.trim();
+      const run: AgentContextRun = { harness: form.harnessKind || undefined };
+      if (edited && typed === '') run.noLimit = true;
+      else if (edited) {
+        const n = Number(typed);
+        if (!Number.isInteger(n) || n <= 0) return undefined;
+        run.tokens = n;
+      }
+      return { id: props.itemId, profileId: form.agentProfileId, run };
+    },
+    ({ id, profileId, run }) => api.briefs.agentContext(id, profileId, run).then((r) => r.limit?.sentence, () => undefined),
+  );
+  // An invalid field shows no sentence: the validation message speaks.
+  const limitLine = () => (form.tokenLimitEdited && tokenLimitValue() === undefined ? undefined : limitSentence());
+
   const state = (missing: boolean): 'ok' | 'missing' => (missing ? 'missing' : 'ok');
   const rows = {
     runner: () => state(settled() && activeRunners().length === 0),
@@ -383,6 +414,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             project={project}
             agentContext={() => agentContext()?.text}
             profileLimit={() => agentContext()?.limits.tokens ?? null}
+            limitSentence={limitLine}
             profileSource={profileSource}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}

@@ -6504,6 +6504,22 @@ export interface operations {
             query?: {
                 /** @description The agent profile to compose with; the project's default when absent. */
                 profile_id?: string;
+                /**
+                 * @description The agent the run dialog has chosen (`claude-code`, `codex`, `docket`, `opencode`); it
+                 *     replaces the profile's agent in the limit's sentence. Absent: the profile's own.
+                 */
+                harness?: string;
+                /**
+                 * @description The token limit typed in the run dialog, a positive whole number. Equal to the profile's it
+                 *     is still the profile's; different it is "set for this run". Zero or not a number is a 400
+                 *     naming `tokens`. Absent: the profile's limit.
+                 */
+                tokens?: number;
+                /**
+                 * @description `true` when the person cleared the dialog's token limit to run without one; wins over
+                 *     `tokens`. Absent or `false`: the limit above applies.
+                 */
+                no_limit?: boolean;
             };
             header?: never;
             path: {

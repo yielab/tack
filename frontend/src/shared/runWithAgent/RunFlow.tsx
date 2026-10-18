@@ -56,6 +56,8 @@ export interface RunFlowProps {
   agentContext: Accessor<string | undefined>;
   /** The token limit the selected profile sets; null when it sets none. */
   profileLimit: Accessor<number | null>;
+  /** The server's sentence for the run's token limit and who applies it, as the dialog stands; absent while the field is invalid. */
+  limitSentence?: Accessor<string | undefined>;
   /** Where the shown profile came from (`GET /items/{id}/agent-context`'s `profile_source`); null once the person picked another. */
   profileSource?: Accessor<string | null | undefined>;
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
@@ -312,6 +314,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               ? `From the profile ${profileName()}. Clear it for no limit.`
               : 'Leave empty for no limit.'}
           />
+          <Show when={props.limitSentence?.()}>
+            {(sentence) => (
+              <p data-testid="run-dialog-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {sentence()}
+              </p>
+            )}
+          </Show>
           <Field
             label="Timeout (seconds)"
             type="number"
