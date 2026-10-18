@@ -109,11 +109,12 @@ SRC=${DOCKET_SRC:-$HOME/Sites/rack-cli}
 SOURCE=
 [ -d "$SRC/.git" ] && SOURCE=$(git -C "$SRC" log -1 --format=%h 2>/dev/null || true)
 
-# Drop the previous captures (never the constructed files) so a removed route cannot linger.
+# Drop this script's previous captures so a removed route cannot linger: never a constructed
+# file, and never one captured by hand from a real run (only this script writes `tack-sends:`).
 mkdir -p "$OUT"
 for provenance in "$OUT"/*.provenance; do
   [ -e "$provenance" ] || continue
-  if [ "$(head -1 "$provenance")" = "captured" ]; then
+  if [ "$(head -1 "$provenance")" = "captured" ] && grep -q '^tack-sends: ' "$provenance"; then
     base=${provenance%.provenance}
     rm -f "$provenance" "$base" "${base%.json}.request.json" "${base%.json}.request.txt"
   fi
