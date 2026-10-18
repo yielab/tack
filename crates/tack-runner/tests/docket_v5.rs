@@ -598,6 +598,139 @@ async fn hops_reach_the_timeline_and_the_served_model_is_the_last_implementers()
     );
 }
 
+/// One hop_finished and a finished task with this usage, run to the end: the
+/// hop's progress usage and the attempt's.
+async fn run_with_usage(
+    hop_usage: Value,
+    task_usage: Value,
+) -> (
+    Option<tack_orch::execution::Usage>,
+    tack_runner::harness::HarnessOutcome,
+) {
+    let fake = pods_fake().await;
+    let mut payload = hop_finished("implementer", "anthropic/claude-sonnet-4-6", 0, Value::Null);
+    payload["usage"] = hop_usage;
+    fake.script(Script {
+        after: vec![("hop_finished".into(), payload)],
+        usage: task_usage,
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let spec = spec(&scene, "attempt-1", 1);
+    adapter.validate(&spec).await.expect("validates");
+    let handle = adapter.start(&spec).await.expect("starts");
+    let mut progress = adapter.progress_channel(&handle).await.expect("progress");
+    let outcome = adapter.wait(&handle).await.expect("waits");
+    let mut hop = None;
+    while let Ok(step) = progress.try_recv() {
+        if step.kind == "agent.hop_finished" {
+            hop = step.usage;
+        }
+    }
+    (hop, outcome)
+}
+
+fn cache_of(usage: &tack_orch::execution::Usage) -> (Option<u64>, Option<u64>) {
+    (
+        usage
+            .additional
+            .get("cache_read_tokens")
+            .and_then(Value::as_u64),
+        usage
+            .additional
+            .get("cache_write_tokens")
+            .and_then(Value::as_u64),
+    )
+}
+
+#[tokio::test]
+async fn a_hop_with_cache_figures_counts_what_docket_counts() {
+    let payload = fixture("hop-finished-cached");
+    let (hop, _) = run_with_usage(
+        payload["usage"].clone(),
+        fixture("task-usage-cached")["usage"].clone(),
+    )
+    .await;
+    let hop = hop.expect("the hop reports usage");
+
+    // docket's `input` holds the reads and writes: 30000 - 25000 + 100 is its own count.
+    assert_eq!(hop.tokens_in.value, Some(30_000));
+    assert_eq!(cache_of(&hop), (Some(25_000), Some(2_000)));
+    assert_eq!(hop.counted(), Some(5_100));
+}
+
+#[tokio::test]
+async fn a_hop_the_endpoint_did_not_report_a_cache_for_says_cache_not_reported() {
+    for usage in [
+        json!({"input": 1000, "output": 200}),
+        json!({"input": 1000, "cached": 0, "cacheWrite": 0, "output": 200}),
+    ] {
+        let (hop, _) = run_with_usage(usage, json!({"input": 1000, "output": 200})).await;
+        let hop = hop.expect("the hop reports usage");
+        assert_eq!(cache_of(&hop), (None, None));
+        assert_eq!(hop.counted(), Some(1_200));
+    }
+}
+
+#[tokio::test]
+async fn the_timeline_names_the_cache_reads_of_a_hop() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        after: vec![("hop_finished".into(), fixture("hop-finished-cached"))],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (_, steps) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(
+        steps.last().map(|(_, text)| text.as_str()),
+        Some(
+            "Implementer (anthropic/claude-sonnet-4-6): done, 30000 tokens in (25000 read from cache), 100 out"
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_task_with_cache_figures_counts_what_docket_counts() {
+    // The top-level figures docket 5.7.0 sends, and the byModel sums it sends before.
+    for name in ["task-usage-cached", "task-usage-by-model"] {
+        let usage = fixture(name)["usage"].clone();
+        let (_, outcome) = run_with_usage(json!({"input": 1, "output": 1}), usage).await;
+        let usage = outcome.usage;
+
+        assert_eq!(usage.tokens_in.value, Some(61_230), "{name}");
+        assert_eq!(cache_of(&usage), (Some(40_000), Some(2_100)), "{name}");
+        assert_eq!(usage.counted(), Some(61_230 - 40_000 + 4_120), "{name}");
+        // by_model keeps the input the cache did not serve, the figures on top.
+        assert_eq!(
+            usage.additional["by_model"]["local/local-model"],
+            json!({"input": 8_000, "output": 3_000, "cache_read": 40_000}),
+            "{name}"
+        );
+        assert_eq!(
+            usage.additional["by_model"]["anthropic/claude-sonnet-4-6"],
+            json!({"input": 11_130, "output": 1_120, "cache_write": 2_100}),
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_task_without_cache_figures_counts_whole() {
+    let (_, outcome) = run_with_usage(
+        json!({"input": 1, "output": 1}),
+        json!({"input": 61230, "output": 4120, "byModel": {
+            "local/local-model": {"input": 61230, "output": 4120}}}),
+    )
+    .await;
+    assert_eq!(cache_of(&outcome.usage), (None, None));
+    assert_eq!(outcome.usage.counted(), Some(65_350));
+    assert_eq!(
+        outcome.usage.additional["by_model"]["local/local-model"],
+        json!({"input": 61_230, "output": 4_120})
+    );
+}
+
 #[tokio::test]
 async fn a_done_task_brings_its_branch_into_the_worktree() {
     let fake = pods_fake().await;

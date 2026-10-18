@@ -64,3 +64,29 @@ docket's code writes, built from a capture where one exists; its values are made
   `failureKind: "pipeline"` on its own; a test scripts that.
 - A task's full lifecycle (running, parked on an approval or a question, done) is constructed;
   no capture runs a model.
+
+## docket's cache figures
+
+Read in docket's source on `develop` at `6fba7057` (2026-10-18); the keys arrived with docket
+commit `da556114` ("the turn budget counts new tokens and accepts a paid final reply"). No
+capture reaches a hop, so `hop-finished-cached`, `task-usage-by-model` and `task-usage-cached`
+are `constructed`, each naming the source it was built from.
+
+- A hop's `usage` is `{"input", "cached", "cacheWrite", "output"}`
+  (`core/dispatch.py::_hop_usage`), and the `hop_finished` event's payload carries it as `usage`
+  (the `"hop_finished"` trace write in the same file). The task's `hops[].usage` is the same block.
+- `cached` is the part of `input` a cache served and `cacheWrite` the part written to one. Both are
+  subsets of `input` (`core/llm.py::TokenUsage`: "`cached_tokens` is a subset of `input_tokens`
+  where the endpoint reports one, and 0 where it does not ... `cache_write_tokens` is a subset
+  too"), so `input` includes reads and writes. A 0 means "not reported", not "no hit".
+- docket counts `input - cached + output` (`TokenUsage.counted_tokens`): a write is counted, a
+  read is not. Tack's `Usage::counted` is `tokens_in - cache_read_tokens + tokens_out` with
+  `tokens_in` holding reads and writes, so mapping `input` to `tokens_in`, `cached` to
+  `cache_read_tokens` and `cacheWrite` to `cache_write_tokens` makes the two counts equal.
+- A finished task's `usage.byModel.<model>` sums its hops' four keys
+  (`core/dispatch.py::_finalize_task`, committed at `da556114`). The task's own top-level
+  `usage` carried only `input` and `output` there. Operator API 5.7.0 adds `cached` and
+  `cacheWrite` to it; that change is in docket's working tree at `6fba7057`, not committed, so
+  `task-usage-cached` is a promise and `task-usage-by-model` is what docket sends today. Tack reads
+  the top-level keys when they are there and sums `byModel` when they are not.
+- Tack leaves a 0 out, and an attempt with no cache figure says "cache not reported".
