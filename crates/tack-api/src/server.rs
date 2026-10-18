@@ -71,6 +71,7 @@ async fn serve_inner(
     // Reject unsafe exposure before opening a database or listener.
     security_preflight(&config)?;
     config.ensure_api_token()?;
+    config.ensure_decision_token()?;
     if config.api_token.as_deref().is_none_or(str::is_empty) {
         warn!(
             host = %config.host,

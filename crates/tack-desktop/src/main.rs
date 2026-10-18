@@ -130,6 +130,31 @@ fn server_page_capability(port: u16) -> String {
     capability.to_string()
 }
 
+/// The key `decisionTokenStore` reads in the board page
+/// (`frontend/src/shared/execution/decisions.ts`), before the page's origin.
+const DECISION_TOKEN_STORAGE_KEY: &str = "tack_execution_decision_token";
+
+/// The script that hands the board's decision token to its window: it sets
+/// the page's session storage under the exact key the page reads, for the
+/// board's own origin only. `None` when the file is missing or empty, in
+/// which case the page asks for the token as in a browser. Both strings are
+/// JSON-encoded into the script, never interpolated raw, and the value is
+/// never logged.
+fn decision_token_script(token_file: &Path, origin: &str) -> Option<String> {
+    let token = std::fs::read_to_string(token_file).ok()?;
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let json = |value: &str| serde_json::to_string(value).expect("a string is valid JSON");
+    Some(format!(
+        "if (location.origin === {origin}) {{ try {{ sessionStorage.setItem({key}, {token}); }} catch (e) {{}} }}",
+        origin = json(origin),
+        key = json(&format!("{DECISION_TOKEN_STORAGE_KEY}:{origin}")),
+        token = json(token),
+    ))
+}
+
 /// Canonicalises `path` and returns it only when it is an existing directory
 /// inside the canonical `repository` or the canonical `data_dir`. Symlinks and
 /// `..` resolve before the prefix test, so neither can point outside.
@@ -269,16 +294,27 @@ fn main() {
                         }
 
                         let url = base_url.parse().expect("base_url is a valid URL");
-                        if let Err(err) =
+                        let mut window =
                             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
                                 .title("Tack")
                                 .inner_size(1200.0, 800.0)
                                 // Ctrl + / Ctrl − / Ctrl 0 zoom, as in a browser
                                 // tab; off by default in a webview.
                                 .zoom_hotkeys_enabled(true)
-                                .on_navigation(move |url| is_board_url(url, port))
-                                .build()
-                        {
+                                .on_navigation(move |url| is_board_url(url, port));
+                        // The server has answered, so it has made its
+                        // decision-token file; the window gets its value so
+                        // nobody pastes it there.
+                        let token_file =
+                            paths.decision_token_file(settings.database_path.as_deref());
+                        match decision_token_script(&token_file, &base_url) {
+                            Some(script) => window = window.initialization_script(script),
+                            None => tracing::warn!(
+                                file = %token_file.display(),
+                                "no decision token to hand to the window; the Inbox will ask for it"
+                            ),
+                        }
+                        if let Err(err) = window.build() {
                             tracing::error!(error = %err, "failed to open the main window");
                             handle.exit(1);
                         }
@@ -361,6 +397,35 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_window_gets_the_decision_token_as_a_json_string_under_the_pages_own_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("decision-token");
+        let origin = "http://127.0.0.1:3210";
+
+        assert_eq!(
+            decision_token_script(&file, origin),
+            None,
+            "no file, no script"
+        );
+
+        std::fs::write(&file, "  \n").unwrap();
+        assert_eq!(decision_token_script(&file, origin), None, "an empty file");
+
+        // A value with quotes and a script end must stay a string.
+        let token = "ab\"c</script>';d";
+        std::fs::write(&file, format!("{token}\n")).unwrap();
+        let script = decision_token_script(&file, origin).expect("a script");
+        let key =
+            serde_json::to_string(&format!("tack_execution_decision_token:{origin}")).unwrap();
+        let value = serde_json::to_string(token).unwrap();
+        assert!(
+            script.contains(&format!("sessionStorage.setItem({key}, {value})")),
+            "{script}"
+        );
+        assert!(script.contains(&format!("location.origin === \"{origin}\"")));
+    }
 
     #[test]
     fn open_folder_opens_only_inside_the_repository_or_the_data_dir() {

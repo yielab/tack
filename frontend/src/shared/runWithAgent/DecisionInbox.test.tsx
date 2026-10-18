@@ -94,6 +94,15 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     expect(c.textContent).toContain('Allow this agent to run');
   });
 
+  it('the token prompt names the decision-token file beside the board\'s database', async () => {
+    mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.textContent).toContain("the decision-token file beside the board's database");
+  });
+
   it('an empty list renders a real empty state, not a silently blank panel', async () => {
     mockFetch([], () => new Response('unused'));
     const c = mount();

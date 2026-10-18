@@ -12,6 +12,12 @@ use crate::supervisor::ServerFolders;
 
 const APP_DIR_NAME: &str = "tack";
 
+/// The name of the file the server keeps its decision token in, beside the
+/// database. This crate does not depend on the server crates, so the name is
+/// stated here and in `AppConfig::decision_token_file` (`tack-api`'s
+/// `config.rs`); the two must agree.
+const DECISION_TOKEN_FILE: &str = "decision-token";
+
 #[derive(Debug, thiserror::Error)]
 pub enum PathsError {
     #[error("could not determine this OS's per-user data directory")]
@@ -57,8 +63,24 @@ impl DataPaths {
         })
     }
 
-    pub fn default_database_url(&self) -> String {
-        format!("sqlite:{}/tack.db?mode=rwc", self.root.display())
+    /// The database file the server is started with: the settings.json
+    /// override when there is one, else `tack.db` under the root. The one
+    /// place that decides it; [`Self::server_folders`] and
+    /// [`Self::decision_token_file`] both read it.
+    fn database_file(&self, database_override: Option<&Path>) -> PathBuf {
+        match database_override {
+            Some(path) => path.to_path_buf(),
+            None => self.root.join("tack.db"),
+        }
+    }
+
+    /// The decision-token file the server keeps beside the database it was
+    /// started with.
+    pub fn decision_token_file(&self, database_override: Option<&Path>) -> PathBuf {
+        match self.database_file(database_override).parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => dir.join(DECISION_TOKEN_FILE),
+            _ => PathBuf::from(DECISION_TOKEN_FILE),
+        }
     }
 
     pub fn storage_dir(&self) -> PathBuf {
@@ -79,12 +101,11 @@ impl DataPaths {
     /// the root regardless, since only the database location is ever a
     /// user choice.
     pub fn server_folders(&self, database_override: Option<&Path>) -> ServerFolders {
-        let database_url = match database_override {
-            Some(path) => format!("sqlite:{}?mode=rwc", path.display()),
-            None => self.default_database_url(),
-        };
         ServerFolders {
-            database_url,
+            database_url: format!(
+                "sqlite:{}?mode=rwc",
+                self.database_file(database_override).display()
+            ),
             storage_dir: self.storage_dir(),
             runner_state_dir: self.runner_state_dir(),
             log_file: self.log_file(),
@@ -181,6 +202,22 @@ mod tests {
             format!("sqlite:{}/tack.db?mode=rwc", paths.root.display())
         );
         assert_eq!(folders.storage_dir, paths.storage_dir());
+    }
+
+    #[test]
+    fn the_decision_token_file_sits_beside_the_database_the_server_starts_with() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DataPaths::from_base(&tmp.path().join("data-home")).unwrap();
+        let chosen = tmp.path().join("elsewhere/existing.db");
+
+        assert_eq!(
+            paths.decision_token_file(None),
+            paths.root.join("decision-token")
+        );
+        assert_eq!(
+            paths.decision_token_file(Some(&chosen)),
+            tmp.path().join("elsewhere/decision-token")
+        );
     }
 
     #[test]
