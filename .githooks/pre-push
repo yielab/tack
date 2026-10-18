@@ -51,6 +51,10 @@ if [ -d frontend/node_modules ]; then
     echo "  schema.gen.ts was stale — it has just been regenerated; commit the result" >&2
     exit 1
   fi
+  # CI's first frontend step: a hand-written type that misses a generated field fails here, not
+  # only on GitHub.
+  echo "→ frontend type check"
+  (cd frontend && npx tsc -b)
 fi
 
 python3 scripts/gen-api-reference.py >/dev/null
