@@ -1,6 +1,6 @@
 # ADR 0082: what the first real project found, and what Tack changes for it
 
-**Status: PROPOSED 2026-10-17.** Executed by Phase 74 (`docs/plans/phase-74.md`). Amends no
+**Status: ACCEPTED 2026-10-17.** Executed by Phase 74 (`docs/plans/phase-74.md`). Amends no
 decision; it closes the holes the first real project fell into, inside ADR 0050 (leases and
 recovery), ADR 0062 §5 (where the data lives) and ADR 0080 (teams and the ceiling).
 

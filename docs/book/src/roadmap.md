@@ -73,7 +73,7 @@ plan or the page named beside it.
 
 ## Phase 74 — what the first real project found
 
-**Status:** opened 2026-10-17; ADR 0082 is proposed and waits on the maintainer.
+**Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults; Round 1 in progress.
 **ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
