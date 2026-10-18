@@ -89,6 +89,34 @@ fn the_default_filter_keeps_the_runner_crates_lines() {
     );
 }
 
+/// The per-request trace (`tower_http` logs each request and response at `debug`) stays out of an
+/// `info` log, where a runner's polls would bury every other line; a failed request is `error` and
+/// stays in.
+#[test]
+fn the_default_filter_keeps_the_per_request_trace_at_the_configured_level() {
+    let dir_guard = workdir("log-tower-level");
+    let path = dir_guard.path().join("tack.log");
+    let config = AppConfig {
+        log_file: Some(path.to_string_lossy().into_owned()),
+        log_level: "info".into(),
+        log_json: false,
+        ..AppConfig::default()
+    };
+    tracing::subscriber::with_default(tracing_subscriber_for(&config), || {
+        tracing::debug!(target: "tower_http::trace::on_request", marker = "each-poll", "started");
+        tracing::error!(target: "tower_http::trace::on_failure", marker = "a-5xx", "failed");
+    });
+    let written = fs::read_to_string(&path).expect("the log file must exist");
+    assert!(
+        !written.contains("each-poll"),
+        "a request's debug trace reached an info log: {written:?}"
+    );
+    assert!(
+        written.contains("a-5xx"),
+        "a failed request was filtered out: {written:?}"
+    );
+}
+
 /// The DB swap succeeds but the storage swap fails — the whole
 /// operation must roll back so the original DB is intact and bootable.
 #[test]

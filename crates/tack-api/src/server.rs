@@ -305,7 +305,7 @@ fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + S
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(format!(
-            "tack={level},tower_http=debug",
+            "tack={level},tower_http={level}",
             level = config.log_level
         ))
     });

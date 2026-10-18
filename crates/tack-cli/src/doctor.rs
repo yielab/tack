@@ -110,8 +110,9 @@ fn render_verify(verify: &tack_runner::VerifyConfig) {
 
 /// What this machine's probe found for one harness kind.
 enum HarnessStatus<'a> {
+    /// `version` is `None` when the harness publishes none (docket reports its API instead).
     Present {
-        version: &'a str,
+        version: Option<&'a str>,
     },
     /// The binary was found but a probe step failed — an unparseable version string, a nonzero exit,
     /// or a timed-out process. Distinct from `Absent`:
@@ -140,15 +141,11 @@ fn classify<'a>(
             .map_or("harness not registered", String::as_str);
         return HarnessStatus::Absent { reason };
     };
+    let version =
+        (!capability.installed_version.is_empty()).then_some(capability.installed_version.as_str());
     match &capability.probe_error {
-        None => HarnessStatus::Present {
-            version: &capability.installed_version,
-        },
-        Some(reason) => HarnessStatus::ProbeError {
-            version: (!capability.installed_version.is_empty())
-                .then_some(capability.installed_version.as_str()),
-            reason,
-        },
+        None => HarnessStatus::Present { version },
+        Some(reason) => HarnessStatus::ProbeError { version, reason },
     }
 }
 
@@ -165,7 +162,9 @@ fn render(report: &bootstrap::DiscoveryReport, daemon: Option<&Result<String, St
         match status {
             HarnessStatus::Present { version } => {
                 println!("  status:      present");
-                println!("  version:     {version}");
+                if let Some(version) = version {
+                    println!("  version:     {version}");
+                }
             }
             HarnessStatus::ProbeError { version, reason } => {
                 println!("  status:      present, probe error");
