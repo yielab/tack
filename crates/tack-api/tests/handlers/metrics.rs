@@ -4,8 +4,12 @@
 use crate::common;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tack_api::config::AppConfig;
-use tack_api::{AppState, router::build_router};
+use tack_api::{
+    AppState, LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
+    router::build_router,
+};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
@@ -18,6 +22,34 @@ fn close(value: &Value, expected: f64) {
         .as_f64()
         .unwrap_or_else(|| panic!("not a number: {value}"));
     assert!((got - expected).abs() < 1e-9, "{got} != {expected}");
+}
+
+/// An embedded runner whose `[verify]` names `program` as its prill.
+struct RunnerVerifyingWith(String);
+
+#[async_trait::async_trait]
+impl LocalRunnerControl for RunnerVerifyingWith {
+    async fn status(&self) -> RuntimeStatus {
+        RuntimeStatus {
+            state: RuntimeState::Stopped,
+            since: None,
+            max_concurrent_attempts: 1,
+            active_attempts: 0,
+        }
+    }
+    async fn start(&self) -> Result<(), LocalRunnerControlError> {
+        Ok(())
+    }
+    async fn stop(&self) {}
+    async fn runner_id(&self) -> Option<String> {
+        None
+    }
+    async fn resolve_secret(&self, _reference: &str) -> Result<String, LocalRunnerControlError> {
+        Err(LocalRunnerControlError::SecretStore("none".into()))
+    }
+    async fn verify_program(&self) -> Option<String> {
+        Some(self.0.clone())
+    }
 }
 
 async fn exec(pool: &sqlx::SqlitePool, sql: &'static str, binds: &[&str]) {
@@ -387,7 +419,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     assert!(m.get("quality").is_none(), "{m}");
     assert_eq!(
         m["quality_unavailable"],
-        "prill is not installed on the board"
+        "prill is not installed on the board (set TACK_PRILL_PROGRAM to its path)"
     );
     assert!(m.get("cost_usd").is_none(), "{m}");
     // No dollar figure anywhere, though the seeded usage carries one.
@@ -653,6 +685,42 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     assert_eq!(repos.len(), 1, "{m}");
     assert_eq!(repos[0]["repository"], "o/r");
     assert_eq!(repos[0]["metrics"]["qualified"], 2);
+    // The board's own setting is the default and prill is not on its PATH: the program the
+    // embedded runner verifies with is the one the board uses, and `TACK_PRILL_PROGRAM` still wins.
+    let by_runner = AppState {
+        local_runner: Some(Arc::new(RunnerVerifyingWith(program.clone()))),
+        ..state(AppConfig::default().prill_program)
+    };
+    let (status, m) = common::send(
+        &crate::common::with_default_host(build_router(by_runner.clone())),
+        "GET",
+        &uri,
+        Value::Null,
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{m}");
+    assert_eq!(m["quality"]["prill_version"], "0.1.0", "{m}");
+    let own = AppState {
+        config: AppConfig {
+            prill_program: "tack-no-such-prill".into(),
+            ..by_runner.config.clone()
+        },
+        ..by_runner
+    };
+    let (_, m) = common::send(
+        &crate::common::with_default_host(build_router(own)),
+        "GET",
+        &uri,
+        Value::Null,
+        &headers,
+    )
+    .await;
+    assert_eq!(
+        m["quality_unavailable"],
+        "prill is not installed on the board (set TACK_PRILL_PROGRAM to its path)",
+        "{m}"
+    );
     // No rate card: no dollar anywhere, whatever the usage carried.
     assert!(!m.to_string().contains("cost_usd"), "{m}");
     assert!(repos[0].get("qualified_per_usd").is_none(), "{m}");

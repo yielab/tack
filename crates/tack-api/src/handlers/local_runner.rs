@@ -138,6 +138,13 @@ pub trait LocalRunnerControl: Send + Sync {
     /// the process in a response or a log; only the reference *name* may
     /// ever be logged by a caller.
     async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError>;
+
+    /// The program the runner verifies with when its `[verify]` is prill, so
+    /// the board runs the same prill; `None` when it verifies with nothing
+    /// or with another program.
+    async fn verify_program(&self) -> Option<String> {
+        None
+    }
 }
 
 fn require_control(state: &AppState) -> ApiResult<Arc<dyn LocalRunnerControl>> {

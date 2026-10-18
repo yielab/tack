@@ -106,6 +106,17 @@ async fn serve_inner(
     let workspace_id = ensure_default_workspace(&pool).await?;
     let repo = Repository::new(pool);
 
+    // A board from before a decision ended with its run left questions nobody can answer.
+    let closed = repo
+        .expire_decisions_of_ended_attempts(&repo::execution::SystemExecutionClock)
+        .await?;
+    if closed > 0 {
+        info!(
+            closed,
+            "closed the questions of runs that had already ended"
+        );
+    }
+
     // WebSocket update fan-out; capacity 100 messages.
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 

@@ -260,7 +260,7 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
             let checked = match verified {
                 Some(keyid) => Ok(keyid),
                 None => {
-                    crate::prill::attest_verify(&state.config.prill_program, &envelope, key, head)
+                    crate::prill::attest_verify(&state.prill_program().await, &envelope, key, head)
                         .await
                 }
             };

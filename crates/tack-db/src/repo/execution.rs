@@ -762,6 +762,33 @@ fn terminal(state: &str) -> bool {
     matches!(state, "succeeded" | "failed" | "cancelled")
 }
 
+/// The `resolved_by` of a decision that expired because its attempt ended.
+const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
+
+/// The attempt ended — `succeeded`, `failed`, `cancelled`, `lost` or
+/// `needs_operator` — so nobody can answer a question it was waiting on: every
+/// `pending` decision becomes `expired`, in the transaction that ended it. An
+/// answered decision is left as it was. Every road that ends an attempt calls
+/// this; [`Repository::expire_decisions_of_ended_attempts`] closes what a board
+/// from before it left behind.
+async fn end_attempt_decisions(
+    conn: &mut SqliteConnection,
+    attempt_id: &str,
+    now: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
+         WHERE attempt_id=? AND state='pending'",
+    )
+    .bind(now)
+    .bind(ATTEMPT_ENDED)
+    .bind(now)
+    .bind(attempt_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// Sets the request that owns `attempt_id` to `state`. A request's state
 /// mirrors its live attempt's, so every attempt transition that is not a
 /// claim or a terminal/recovery move calls this in the same transaction.
@@ -1260,6 +1287,7 @@ async fn apply_recovery(
         .bind(&request)
         .execute(&mut *tx)
         .await?;
+    end_attempt_decisions(&mut tx, input.attempt_id, now).await?;
     if let Some((code, sentence)) = waiting {
         sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=? WHERE id=?")
             .bind(code)
@@ -1657,6 +1685,7 @@ impl Repository {
             tx.rollback().await?;
             return Ok(CompletionResult::Conflict);
         }
+        end_attempt_decisions(&mut tx, completion.attempt_id, &now).await?;
         sqlx::query("UPDATE execution_requests SET state=?,updated_at=? WHERE id=?")
             .bind(completion.terminal_state)
             .bind(&now)
@@ -2249,6 +2278,7 @@ impl Repository {
             tx.rollback().await?;
             return Ok(CancellationObservation::Ambiguous { state });
         }
+        end_attempt_decisions(&mut tx, input.attempt_id, &now).await?;
         sqlx::query("UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?")
             .bind(&now)
             .bind(request)
@@ -3134,6 +3164,7 @@ impl Repository {
                 let attempt: String = latest.get("id");
                 sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
                     .bind(&now).bind(&now).bind(&attempt).execute(&mut *tx).await?;
+                end_attempt_decisions(&mut tx, &attempt, &now).await?;
                 sqlx::query(
                     "UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?",
                 )
@@ -3151,6 +3182,29 @@ impl Repository {
         }
         tx.commit().await?;
         Ok(true)
+    }
+
+    /// Closes, as [`end_attempt_decisions`] does when an attempt ends, the
+    /// `pending` decisions of attempts already `succeeded`, `failed`,
+    /// `cancelled`, `lost` or `needs_operator` — the rows a board from before
+    /// that rule left. One statement; a second call finds nothing. Returns how
+    /// many it closed.
+    pub async fn expire_decisions_of_ended_attempts(
+        &self,
+        clock: &dyn ExecutionClock,
+    ) -> Result<u64, sqlx::Error> {
+        let now = stamp(clock);
+        let closed = sqlx::query(
+            "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
+             WHERE state='pending' AND attempt_id IN (SELECT id FROM execution_attempts \
+             WHERE state IN ('succeeded','failed','cancelled','lost','needs_operator'))",
+        )
+        .bind(&now)
+        .bind(ATTEMPT_ENDED)
+        .bind(&now)
+        .execute(self.pool())
+        .await?;
+        Ok(closed.rows_affected())
     }
 
     /// The claim poll's closing of a run nobody holds: every attempt in
