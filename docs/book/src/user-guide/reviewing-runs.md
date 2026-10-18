@@ -94,8 +94,9 @@ see [Sending a rejected change back to the agent](merging.md#sending-a-rejected-
 
 Each finished attempt has a **Usage** panel. It leads with tokens, because that is what the agent measured:
 
-- **Tokens in** and **out**, with the part of the input that was read from or written to the agent's cache
-  and the part that was new. Hover a figure for the exact count.
+- **The tokens counted**, the figure every limit uses, with the tokens in and out beside it, and the part
+  of the input that was read from the agent's cache (not counted) or written to it. Hover a figure for the
+  exact count.
 - **The models** the run used, and, where it matters, whether the agent named the model that answered or
   Tack only knows the one you requested.
 - **Model calls** and how long the run took.

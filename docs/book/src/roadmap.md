@@ -73,8 +73,8 @@ plan or the page named beside it.
   enforced: their tokens are read when they finish, and the screen says so. Their runs keep their
   whole limit reserved against the day until they end; a docket run reserves only what its
   steps have not yet used.
-- A run's attempt list still shows tokens in and out rather than the counted figure, and the run
-  dialog does not print the limit sentence the server now returns before a run starts.
+- The run dialog's limit line says "No limit set in Tack" for a run without one even in a project
+  with a daily limit, where the run will be given what is left of the day when it is chosen.
 - The tokens a verifier spends count whole, cache included: prill reports no cache figure.
 - Only docket reports a running agent's steps on its timeline; Codex, Claude Code and opencode
   need their tool lines captured from the real programs first.
@@ -133,8 +133,9 @@ the file.
 
 **Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
 the same day. Rounds 1 to 3 landed in `develop` the same day, with the guides; Round 4 waits on a
-capture of Claude Code's and opencode's live usage, which costs model calls, and Round 5 on
-docket's context and count. What Rounds 1 and 2 left is in the plan's task Z and in Open above.
+capture of Claude Code's and opencode's live usage, which costs model calls. Round 5's screens
+(the attempt's counted tokens, the run dialog's limit line) are in `develop` too; its run of
+Fabulada waits on docket's context and count. What is left is in Open above.
 **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 

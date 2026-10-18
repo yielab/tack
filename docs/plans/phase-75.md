@@ -313,3 +313,13 @@ of L were dropped: the pack is the MRP pack (`docs/contracts/mrp-v1/`, not runne
 `pack_tokens` reading `cache_read_tokens` would read a field no valid pack has; and the timeline's
 text stays "N tokens in, M out", which is docket's counted figure while docket reports no cache.
 The runner-v1 event fixture was left as it is, since `usage` rides in the event's free payload.
+
+Round 5's screens, the same day, two Sonnet agents side by side, before Round 4: neither needs CT's
+capture. The attempt list carries `counted_tokens` from `Usage::counted`, and the frontend's two
+local formulas went with it (the panel's "new" input, which also subtracted cache writes, and
+`formatCountedTokens`' own subtraction). The agent-context route takes the dialog's `harness`,
+`tokens` and `no_limit` and words the limit through the same `limit_source`; the dialog asks for it
+as its own resource so typing never refetches the composed text. A measured agent given the day's
+room says it can go past today's limit. Left: the dialog says "No limit set in Tack" in a project
+with a daily limit, where the run will be given the day's room when it is chosen; and Fabulada's
+runs, on docket's fixes.
