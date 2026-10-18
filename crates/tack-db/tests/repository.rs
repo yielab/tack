@@ -10,6 +10,8 @@
 
 mod common;
 
+#[path = "repository/counted_tokens.rs"]
+mod counted_tokens;
 #[path = "repository/event_artifact_retention.rs"]
 mod event_artifact_retention;
 #[path = "repository/execution_claim_lease_heartbeat.rs"]

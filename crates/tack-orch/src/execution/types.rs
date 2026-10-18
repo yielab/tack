@@ -416,6 +416,25 @@ pub struct Usage {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+impl Usage {
+    /// A counted token is a new one: `tokens_in` without the cache reads it
+    /// already includes, plus `tokens_out`. The live twin of `COUNTED_TOKENS_SQL`
+    /// in `tack-db`'s `budgets.rs`; the two must agree. `None` when neither
+    /// figure was measured, which is not zero.
+    pub fn counted(&self) -> Option<u64> {
+        if self.tokens_in.value.is_none() && self.tokens_out.value.is_none() {
+            return None;
+        }
+        let read = self
+            .additional
+            .get("cache_read_tokens")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let new_input = self.tokens_in.value.unwrap_or(0).saturating_sub(read);
+        Some(new_input + self.tokens_out.value.unwrap_or(0))
+    }
+}
+
 /// Actual, as-observed execution facts reported at completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActualExecution {

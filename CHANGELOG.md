@@ -79,6 +79,11 @@ automation a template carries.
 
 ### Changed
 
+- **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
+  count uncached input, cache writes and output; what the cache served is shown beside it and
+  never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
+  reported" for an agent that does not say). Dollars still price every kind at its own rate
+  (ADR 0083 decision 2).
 - **What Tack sends an agent carries nothing twice.** To docket the brief goes once, as the
   structured brief docket renders, not again in the description; a rework replaces the previous
   round's fix section instead of adding one; a card's comments go newest first up to 4 000

@@ -307,10 +307,10 @@ describe('FactoryMetrics sources and cost', () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
       cost_by_model: [
-        { model: 'claude-sonnet-5-5', tokens_in: 1000, tokens_out: 200, attempts: 3, usd: 1.25 },
-        { model: 'opaque/unlisted', tokens_in: 40, tokens_out: 5, attempts: 1 },
+        { model: 'claude-sonnet-5-5', tokens_in: 1000, cache_read: 7000, tokens_out: 200, attempts: 3, usd: 1.25 },
+        { model: 'opaque/unlisted', tokens_in: 40, cache_read: 0, tokens_out: 5, attempts: 1 },
       ],
-      cost_by_team: [{ team: 'platform', tokens_in: 1040, tokens_out: 205, attempts: 4 }],
+      cost_by_team: [{ team: 'platform', tokens_in: 1040, cache_read: 7000, tokens_out: 205, attempts: 4 }],
     });
     const { container } = mount();
     await flush();
@@ -320,6 +320,10 @@ describe('FactoryMetrics sources and cost', () => {
     expect(text).toContain('Cost by model');
     expect(text).toContain('claude-sonnet-5-5');
     expect(text).toContain('$1.25');
+    // Counted tokens in their own column, the cache reads beside them.
+    expect(text).toContain('Cache reads');
+    const sonnet = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('claude-sonnet-5-5'));
+    expect([...sonnet!.querySelectorAll('td')].map((td) => td.textContent).slice(1, 4)).toEqual(['1000', '7000', '200']);
     const unlisted = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('opaque/unlisted'));
     expect(unlisted?.textContent).toContain('Not measured');
     expect(text).toContain('By team');
@@ -328,8 +332,8 @@ describe('FactoryMetrics sources and cost', () => {
   it('By team is left out when no run names a team', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
-      cost_by_model: [{ model: 'm', tokens_in: 1, tokens_out: 1, attempts: 1 }],
-      cost_by_team: [{ team: 'No team', tokens_in: 1, tokens_out: 1, attempts: 1 }],
+      cost_by_model: [{ model: 'm', tokens_in: 1, cache_read: 0, tokens_out: 1, attempts: 1 }],
+      cost_by_team: [{ team: 'No team', tokens_in: 1, cache_read: 0, tokens_out: 1, attempts: 1 }],
     });
     const { container } = mount();
     await flush();

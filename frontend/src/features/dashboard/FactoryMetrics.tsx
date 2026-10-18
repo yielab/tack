@@ -114,9 +114,9 @@ export default function FactoryMetrics() {
   );
 }
 
-type CostRow = { name: string; tokens_in: number; tokens_out: number; attempts: number; usd?: number | null };
+type CostRow = { name: string; tokens_in: number; cache_read: number; tokens_out: number; attempts: number; usd?: number | null };
 
-/** Tokens and attempts per name; dollars only where the rate card priced the row. */
+/** Counted tokens and attempts per name, the cache reads beside them and not in them; dollars only where the rate card priced the row. */
 function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
   return (
     <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
@@ -126,6 +126,7 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
           <tr class="text-content-muted">
             <th class="font-normal">{props.label}</th>
             <th class="font-normal">Tokens in</th>
+            <th class="font-normal">Cache reads</th>
             <th class="font-normal">Tokens out</th>
             <th class="font-normal">Attempts</th>
             <th class="font-normal">Cost</th>
@@ -137,6 +138,7 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
               <tr>
                 <td class="text-content">{row.name}</td>
                 <td>{row.tokens_in}</td>
+                <td>{row.cache_read}</td>
                 <td>{row.tokens_out}</td>
                 <td>{row.attempts}</td>
                 <td>{row.usd === null || row.usd === undefined ? 'Not measured' : dollars(row.usd)}</td>

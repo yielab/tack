@@ -163,6 +163,19 @@ export function formatTokenCount(n: number): string {
   return `${trim((n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1))}M`;
 }
 
+/** `48 210`: a whole number with a space between thousands. */
+const spaced = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+/** What a run used, counted the way every limit counts it: a counted token is
+ *  a new one, so the input the cache served is shown beside the figure and
+ *  never in it. `null` when the attempt measured no tokens at all. */
+export function formatCountedTokens(u: AttemptUsage): string | null {
+  if (u.tokensIn === null && u.tokensOut === null) return null;
+  const counted = Math.max((u.tokensIn ?? 0) - (u.cacheRead ?? 0), 0) + (u.tokensOut ?? 0);
+  const cache = u.cacheRead === null ? 'cache not reported' : `+ ${spaced(u.cacheRead)} read from cache, not counted`;
+  return `${spaced(counted)} tokens (${cache})`;
+}
+
 /** A harness's own dollar figure is its estimate (claude-code prices tokens at
  *  list price), never a bill — so it is always shown as approximate. */
 export function formatApproxCost(cost: Measurement<number>): string {

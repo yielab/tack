@@ -3447,10 +3447,15 @@ export interface components {
             kind: "note";
             text: string;
         };
-        /** @description One model's tokens in the window. */
+        /**
+         * @description One model's tokens in the window. `tokens_in` and `tokens_out` are counted
+         *     tokens: the input the cache served is in `cache_read`, shown and not counted.
+         */
         CostByModel: {
             /** Format: int64 */
             attempts: number;
+            /** Format: int64 */
+            cache_read: number;
             /** @description Absent for attempts that reported no model and asked for none. */
             model?: string | null;
             /** Format: int64 */
@@ -3463,10 +3468,12 @@ export interface components {
              */
             usd?: number | null;
         };
-        /** @description One docket team's tokens in the window. */
+        /** @description One docket team's tokens in the window, counted as in [`CostByModel`]. */
         CostByTeam: {
             /** Format: int64 */
             attempts: number;
+            /** Format: int64 */
+            cache_read: number;
             team: string;
             /** Format: int64 */
             tokens_in: number;
@@ -5058,7 +5065,7 @@ export interface components {
             implementation_attempts: number;
             /**
              * Format: int64
-             * @description Tokens in + out of each request's first attempt (requests that are not rework).
+             * @description Counted tokens (cache reads left out) of each request's first attempt (requests that are not rework).
              */
             implementation_tokens: number;
             /** @description (verification + rework) ÷ implementation. */
@@ -5067,7 +5074,7 @@ export interface components {
             rework_attempts: number;
             /**
              * Format: int64
-             * @description Tokens of later attempts plus every attempt of a request whose
+             * @description Counted tokens of later attempts plus every attempt of a request whose
              *     `metadata.rework_of` names another request.
              */
             rework_tokens: number;
