@@ -551,4 +551,16 @@ is docket's decision (`docket-triage.md` recommends the same default).
     follows it in a slot. The question already on the board is waited on, never created again.
 - **Round 6** opened 2026-10-18, from R0's report: U (a run that ended says why) and V (a question
   ends with its run; the board finds its runner's prill) side by side, then S (the tutorial's
-  screenshots 10 and 11).
+  screenshots 10 and 11). All three merged the same day; the workspace passes 1381 of 1381.
+  - U merged (`2542fb8c`). As built: the sentence is `harness::time_ran_out`, read by docket's
+    deadline branch and by `local_process::outcome`, the one place every local agent's outcome is
+    built, so a process stopped by its deadline is a timeout whatever its partial output reads as
+    (the agent's first patch put it in claude-code's grammar alone, which missed a timeout after
+    partial output and every other agent).
+  - V merged (`a9b621bb`). As built: the four roads that end an attempt did not share a function,
+    so the agent stopped and reported them; each now calls one private `end_attempt_decisions` in
+    its own transaction. A `TACK_PRILL_PROGRAM` set to exactly `prill` counts as unset.
+  - S: the spec had not followed `9d4ce61e` (it still gave the profile all tools, so a full
+    re-record would have ended `no_change`), nor Phase 69 (its API calls sent no token, refused on a
+    loopback board since), and it changed the agent before the Advanced section's `toggle` event
+    landed, which closed the section. `TUTORIAL_STOP_BEFORE_RUN=1` records 01–11 at no cost.
