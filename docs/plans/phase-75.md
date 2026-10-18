@@ -56,7 +56,7 @@ cut from `develop`, `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>`.
 |---|---|---|
 | 0 | ADR 0083, this plan (integrator) | the maintainer's go (2026-10-18) |
 | 1 | A (a run's limit), G (nothing twice); then B (one count) | — |
-| 2 | D (the daily limit, dollars per day removed), E (dollars as an estimate, who applies a limit) | A, B |
+| 2 | D (the daily limit, dollars per day removed), E (dollars as an estimate, who applies a limit), side by side: D alone touches `Merge.tsx`, E alone the execution responses | A, B |
 | 3 | C (Claude Code and opencode stop at their limit), T (tools per role) | a capture of each agent's live usage lines |
 | 4 | Z (integrator): live progress on the timeline, the guides, the changelog; Fabulada's runs again | docket's context and count fixed |
 
@@ -174,31 +174,52 @@ test. `attemptFormat.test.ts`: the two sentences.
 (`day_room`, `ProjectBudgets`), `crates/tack-orch/src/scheduler/{wiring.rs,types.rs}`,
 `crates/tack-api/src/autonomy.rs`, `crates/tack-api/src/handlers/{autonomy.rs,outline.rs,export.rs,templates.rs,executions.rs}`,
 `crates/tack-core/src/outline.rs` (`BundleBudgets`), `crates/tack-cli/src/main.rs` (the budgets
-print), `crates/tack-runner/src/harness/claude_code.rs` (drop `--max-budget-usd`),
-`frontend/src/features/settings/panels/automation/Merge.tsx`, the fixtures and tests that name
-`usd_per_day` (the `rg` list in the evidence), the generated files.
+print), `crates/tack-cli/src/mcp.rs` (the `budgets` description),
+`crates/tack-runner/src/harness/claude_code.rs` (drop `--max-budget-usd`),
+`frontend/src/features/settings/panels/automation/Merge.tsx` (only D touches it), the fixtures
+and tests that name `usd_per_day` or `cost_usd` (`rg -n 'usd_per_day|cost_usd'`), the generated
+files. Not `executions.rs`'s response types: those are E's.
 
-**Do:** the "Decided" rows for `usd_per_day`, `cost_usd` and the reservation; the waiting reason
+**Do:** the "Decided" rows for `usd_per_day`, `cost_usd` and the reservation (the `cost_usd`
+refusal sits in `run_limits`, which A made the one reader of a request's `budgets`); the waiting reason
 "Today's token limit is reserved by N open runs (X of Y)"; the Automation screen's day bar
 (counted today, reserved, room), amber at 80%. The claim writes `day_room` into a limitless run's
-snapshot `budgets.tokens` with `limit_source: day`.
+snapshot `budgets.tokens` with `metadata.limit_source: "day"`. The day bar says who applies the
+day's limit: "Tack holds new runs when today's limit is reserved".
 
 **Tests (RED first):** migration 092 in `crates/tack-db/tests/migrations/`; `wiring.rs`: two open
 runs of 800k under a 2M day leave room 400k, a third asking 500k waits with the sentence, one
 asking none is admitted with 400k; the outline preview warns on `usd_per_day`; `cost_usd` on
 create → 400 `field_removed`; the Claude Code args test no longer sees `--max-budget-usd`.
 
-### E — dollars as an estimate, and who applies a limit (Sonnet, one layer)
+### E — dollars as an estimate, and who applies a limit (Sonnet, two layers)
 
-**Files:** `crates/tack-api/src/handlers/metrics.rs` (priced-model coverage),
+**Files:** `crates/tack-api/src/handlers/executions.rs` (`limit_source()` beside `run_limits`,
+`ExecutionSummary`, `ExecutionDetailResponse`, the list and detail handlers),
+`crates/tack-api/src/handlers/metrics.rs` (priced-model coverage), the generated files,
 `frontend/src/features/dashboard/FactoryMetrics.tsx`, the run summary and the run dialog
-(`frontend/src/shared/runWithAgent/`), `frontend/src/features/settings/panels/automation/Merge.tsx`.
+(`frontend/src/shared/runWithAgent/`), their tests, `crates/tack-api/tests/handlers/{executions_runner_admin.rs,metrics.rs}`.
 
-**Do:** every dollar figure as "≈ $0.42 (estimated)", "not priced", and "N of M models priced";
-every limit with its `limit_source` and `enforced_by` sentence from ADR 0083 decision 4, read from
-the server, never computed on the screen.
+**Do:**
 
-**Tests:** one frontend test per sentence.
+- `limit_source(snapshot, harness_kind) -> RunLimit { tokens: Option<u64>, source, enforced_by,
+  sentence }`, read from the stored snapshot (`budgets.tokens`, `metadata.limit_source`) and the
+  agent: the latest attempt's `actual_execution.harness_kind`, else the request's
+  `requested_harness_kind`. `enforced_by` is `docket` for docket and `measured` for every other
+  agent until task C changes a row. The sentence, one per case:
+  - "300 000 tokens · from the profile Implementer · docket stops the task there"
+  - "300 000 tokens · set for this run · measured, not enforced (Claude Code reports its tokens when it ends)"
+  - "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
+  - "No limit set in Tack"
+  ("from today's limit" arrives with D's `day` source.) `ExecutionSummary` and
+  `ExecutionDetailResponse` gain `limit: RunLimit`; the run summary and the dialog print
+  `sentence`, never compose one.
+- Factory: every dollar figure as "≈ $0.42 (estimated)"; an unpriced model "not priced"; the cost
+  card says "N of M models priced" from a `priced_models`/`models` pair the server returns.
+- The run summary's dollar figure the same way.
+
+**Tests:** a table over `limit_source` (the four sentences, an attempt's agent winning over the
+requested one); `metrics.rs`: the coverage pair; one frontend test per printed sentence.
 
 ### C — Claude Code and opencode stop at their limit (Sonnet, two layers; after a capture)
 
