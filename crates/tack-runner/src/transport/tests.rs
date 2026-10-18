@@ -1432,13 +1432,16 @@ mod slot_loop {
 
         let budget = Duration::from_secs(30);
         // The journal behind is recovered while the resumed agent still runs.
+        // Recovery is one pass that ends before the follow starts, so both are
+        // waited for together: what matters is that neither waits for the other.
         let recovered = tack_test_support::poll_until(budget, async || {
-            (journal.load(&AttemptId::new(behind_id)).ok()?.state == JournalState::RecoveryObserved)
+            (journal.load(&AttemptId::new(behind_id)).ok()?.state == JournalState::RecoveryObserved
+                && running.load(Ordering::SeqCst) == 1)
                 .then_some(())
         })
         .await;
         assert!(
-            recovered.is_some() && running.load(Ordering::SeqCst) == 1,
+            recovered.is_some(),
             "the journal behind is recovered while the resumed agent runs"
         );
         // Beyond the one heartbeat that took the lease back, the ticker carries it.
