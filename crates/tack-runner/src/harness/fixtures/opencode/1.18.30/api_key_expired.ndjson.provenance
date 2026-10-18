@@ -1,0 +1,5 @@
+captured
+opencode 1.18.30, 2026-10-18: the whole stdout of `opencode run --pure --format json --title tack -m
+opencode/claude-sonnet-5` with the adapter's environment and the maintainer's opencode login,
+whose OpenCode Zen key had expired. The first real `error` event: one line, exit 0, no
+`step_start`/`step_finish`. The folder is rewritten to `/capture`.

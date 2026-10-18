@@ -1,0 +1,14 @@
+captured
+claude 2.1.302 (Claude Code), 2026-10-18, zero spend: a summary of the one Messages API request
+the CLI sends to a loopback stand-in (fake key, fresh HOME), computed by
+`scripts/capture-agent-usage-fixtures.sh` from the request bodies, which are not kept (they hold
+the vendor's system prompt). Canaries were planted in the fresh HOME's `~/.claude/CLAUDE.md`, the
+project's `CLAUDE.md` and `CLAUDE.local.md`, and the project's auto-memory folder
+(`~/.claude/projects/<folder>/memory/MEMORY.md` and one memory file).
+
+What it shows: `--setting-sources ""` keeps all three CLAUDE.md files out, but the auto-memory
+index still arrives in the first user message (A); `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` removes it
+and 2.1 KB of memory instructions from the system prompt (B). The attribution reminder (asking for
+a Co-Authored-By trailer) arrives in every variant that has tools; `--settings
+'{"includeCoAuthoredBy":false}'` removes it (C). `--tools default` sends 23 tools (67.6 KB) plus an
+8.5 KB list of agent types; the eight file, shell and web tools are 13.1 KB (D).

@@ -1,0 +1,15 @@
+captured
+claude 2.1.302 (Claude Code), 2026-10-18, a real billed run on the maintainer's own login
+(claude-sonnet-5-5), in a fresh git folder rewritten to `/capture`, by
+`scripts/capture-agent-usage-fixtures.sh --paid`:
+`claude -p --output-format stream-json --verbose --no-session-persistence --permission-mode default
+--strict-mcp-config --effort high --setting-sources "" --settings '{"includeCoAuthoredBy":false}'
+--tools Read,Glob,Grep --model sonnet` with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, asked to read three
+files one call at a time. Byte-for-byte stdout but the folder.
+
+What it shows: each `assistant` line carries `message.usage` as that API call finishes (seconds
+apart: 2.6 s, 4.8 s, 7.4 s, 8.6 s), and one call split into several lines (a thinking block, then
+the tool_use) repeats the same `message.id` and the same usage, so a running sum counts each id once.
+Per call, `input_tokens + cache_creation_input_tokens` is final (summed 5 109; the result's 8 + 5 101).
+`output_tokens` is not: the live lines sum 99 against the result's 400 (122 of them thinking), so
+the live count is low by the output and the `result` line is the figure that settles the attempt.
