@@ -116,6 +116,20 @@ pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether a profile's role needs the network (`tool_policy.network`): true only when it is
+/// the boolean `true`; absent, `false` or anything else is off, as every profile was before.
+pub fn profile_network(tool_policy: &serde_json::Value) -> bool {
+    tool_policy.get("network").and_then(|v| v.as_bool()) == Some(true)
+}
+
+/// What a profile's `tool_policy.network` may hold: a boolean or absent.
+pub fn check_network(tool_policy: &serde_json::Value) -> Result<(), String> {
+    match tool_policy.get("network") {
+        None | Some(serde_json::Value::Bool(_)) => Ok(()),
+        Some(_) => Err("tool_policy.network must be true or false".to_owned()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,6 +308,32 @@ mod tests {
         ];
         for (limits, refused) in rows {
             assert_eq!(check_limits(&limits).err().as_deref(), refused, "{limits}");
+        }
+    }
+
+    #[test]
+    fn a_profile_needs_the_network_only_when_it_says_true() {
+        use serde_json::json;
+        for (policy, network) in [
+            (json!({}), false),
+            (json!({"network": false}), false),
+            (json!({"network": true}), true),
+            (json!({"agent": "docket"}), false),
+        ] {
+            assert_eq!(profile_network(&policy), network, "{policy}");
+            assert_eq!(check_network(&policy), Ok(()), "{policy}");
+        }
+        for bad in [
+            json!({"network": "yes"}),
+            json!({"network": 1}),
+            json!({"network": null}),
+        ] {
+            assert_eq!(
+                check_network(&bad).err().as_deref(),
+                Some("tool_policy.network must be true or false"),
+                "{bad}"
+            );
+            assert!(!profile_network(&bad));
         }
     }
 }

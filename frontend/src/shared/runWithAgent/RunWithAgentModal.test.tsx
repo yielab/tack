@@ -791,6 +791,51 @@ describe('RunWithAgentModal', () => {
     expect(ask()).toBe(false);
   });
 
+  it('the_web_tools_box_starts_at_the_profiles_network_and_a_remembered_or_touched_value_wins', async () => {
+    const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true } };
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    const pick = (name: string) => (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === name) as HTMLButtonElement).click();
+    const opts = { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null } };
+    // A profile without the key: off, and the run says so.
+    mount({}, opts);
+    await flush(); await flush();
+    pick('Reviewer');
+    await flush();
+    expect(web().checked).toBe(false);
+    // Changing the profile refills the box while the person has not touched it.
+    pick('Researcher');
+    await flush();
+    expect(web().checked).toBe(true);
+    submitButton().click();
+    await flush(); await flush();
+    expect(lastCreateBody).toMatchObject({ permission_policy: { network: true } });
+    // The profile's own network is not a choice the task has to remember.
+    expect(JSON.stringify(lastItemPatch)).not.toContain('network');
+    teardown();
+    // A touched box stays as the person set it when the profile changes.
+    mount({}, opts);
+    await flush(); await flush();
+    pick('Researcher');
+    await flush();
+    web().click();
+    await flush();
+    pick('Reviewer');
+    await flush();
+    expect(web().checked).toBe(false);
+    pick('Researcher');
+    await flush();
+    expect(web().checked).toBe(false);
+    submitButton().click();
+    await flush(); await flush();
+    expect(lastCreateBody).toMatchObject({ permission_policy: { network: false } });
+    expect(lastItemPatch).toMatchObject({ run_settings: { network: false } });
+    teardown();
+    // What the task remembered wins over the profile.
+    mount({}, { ...opts, runSettings: { agent_profile_id: 'profile-net', network: false } });
+    await flush(); await flush();
+    expect(web().checked).toBe(false);
+  });
+
   it('an agent with no sandbox that cannot ask says it does not run here, and Run stays off', async () => {
     const silent = runnerRow('runner-8', 'Box', runnerCapabilitySnapshot({
       harnesses: [{

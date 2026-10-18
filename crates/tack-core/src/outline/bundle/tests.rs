@@ -121,6 +121,10 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("profiles: \"P\": tool_policy.docket.team"),
         ),
         (
+            "profiles: [{ name: P, tool_policy: { network: \"yes\" } }]",
+            Problem("profiles: \"P\": tool_policy.network must be true or false"),
+        ),
+        (
             "profiles: [{ name: P, limits: { budgets: { tokens: 0 } } }]",
             Problem("profiles: \"P\": limits.budgets.tokens must be a positive whole number"),
         ),

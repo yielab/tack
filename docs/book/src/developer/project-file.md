@@ -58,7 +58,7 @@ On an existing project the whole `project` block is ignored with a warning: the 
 | `name` | text | Matched across the whole board |
 | `kind` | text | `implementer`, `reviewer`, `researcher`, `planner` or `custom` (default) |
 | `instructions` | text | What the agent is told before the task |
-| `tool_policy` | object | `agent` (one of `claude-code`, `codex`, `opencode`, `docket`), `tools`, and `docket.team`, `docket.denied_tools`, `docket.pipeline_by_type` |
+| `tool_policy` | object | `agent` (one of `claude-code`, `codex`, `opencode`, `docket`), `network` (`true` or `false`; absent is `false`: the role's runs start with web tools on), `tools`, and `docket.team`, `docket.denied_tools`, `docket.pipeline_by_type` |
 | `limits` | object | Budgets and the time the agent may take |
 | `fleet` | text | A fleet's name. Absent means any computer |
 | `summary` | text | One line beside the profile's name |
@@ -148,7 +148,7 @@ A `ref` wins over a title when both match. A file holds at most `MAX_OUTLINE_ITE
 
 1. `project.vocabulary` keys against the 16 known keys, and `project.workflow` (a preset or statuses, never both; a known preset; a category per status; then `WorkflowConfig::validate`).
 2. `fields`: a known type, options for `select` and `multi_select`, no repeated or empty name.
-3. `profiles`: a profile named like a built-in is dropped with a warning and never changed. Otherwise a known `kind`, a known `tool_policy.agent`, a `docket.team` matching `^[a-z0-9][a-z0-9-]{0,63}$`, and no repeated name. An unknown `fleet` is a warning and the profile runs on any computer.
+3. `profiles`: a profile named like a built-in is dropped with a warning and never changed. Otherwise a known `kind`, a known `tool_policy.agent`, a boolean `tool_policy.network` when present, a `docket.team` matching `^[a-z0-9][a-z0-9-]{0,63}$`, and no repeated name. An unknown `fleet` is a warning and the profile runs on any computer.
 4. `roles`: the `profile` must be in the file or on the board. No repeated name.
 5. `sprints`: status `planning` or `closed`, dates written `YYYY-MM-DD`, no repeated name.
 6. `automation`: the values of the table above; `check_automation` lowers levels and auto-start.

@@ -14,7 +14,7 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   shouldHideTargetPicker, isExecutionOff, resolveRunModel,
-  isDecisionsAttested, profileToolsFor,
+  isDecisionsAttested, profileNetworkFor, profileToolsFor,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow from './RunFlow';
@@ -197,11 +197,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (typeof saved.push === 'boolean') setForm('pushBranch', saved.push);
     if (typeof saved.timeout_seconds === 'number') setForm('timeoutSeconds', saved.timeout_seconds);
     if (Array.isArray(saved.tools)) setForm('toolsText', saved.tools.join(', '));
-    if (typeof saved.network === 'boolean') setForm('allowNetwork', saved.network);
+    if (typeof saved.network === 'boolean') { networkChosen = true; setForm('allowNetwork', saved.network); }
     if (saved.approvals === 'auto' || saved.approvals === 'ask') { approvalsChosen = true; setForm('approvals', saved.approvals); }
     if (typeof saved.verify === 'boolean') setForm('verify', saved.verify);
     if (typeof saved.model === 'string') setForm('model', saved.model);
   });
+
+  // The Web tools box starts at what the chosen profile's role needs; a value the task remembers or
+  // the person sets wins, and until then it follows the profile.
+  const defaultNetwork = () => profileNetworkFor(selectedAgentProfile()?.tool_policy);
+  let networkChosen = false;
+  createEffect(() => { if (props.isOpen) networkChosen = false; });
+  createEffect(() => { if (!networkChosen) setForm('allowNetwork', defaultNetwork()); });
 
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
 
@@ -326,7 +333,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
     if (form.timeoutSeconds !== timeoutDefault()) diff.timeout_seconds = form.timeoutSeconds;
     if (typedTools().length > 0) diff.tools = typedTools();
-    if (form.allowNetwork !== d.allowNetwork) diff.network = form.allowNetwork;
+    if (form.allowNetwork !== defaultNetwork()) diff.network = form.allowNetwork;
     if (form.approvals !== defaultApprovals()) diff.approvals = form.approvals;
     if (form.verify !== d.verify) diff.verify = form.verify;
     return diff;
@@ -422,6 +429,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             decisionsAttested={decisionsAttested}
             sandboxLine={sandboxLine}
             onApprovals={() => { approvalsChosen = true; }}
+            onNetwork={() => { networkChosen = true; }}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}
             errors={structuralErrors}

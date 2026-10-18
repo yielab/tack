@@ -147,6 +147,12 @@ network: a shell command the agent runs can still reach any address the machine 
 inside the sandbox or not. If a run must not reach the network, run it on a machine
 or in a container that cannot.
 
+A profile can say its role needs the network: the box **This role needs the network (web search
+and reading sources)** on the profile form, or `tool_policy.network: true` in the project file.
+The switch then starts on for that profile's runs, and a run a task starts by itself has it on
+without anyone ticking it. A profile that says nothing is off, and a run that sets the switch
+itself keeps its own choice.
+
 ## MCP
 
 A run started through `tack mcp` always asks you before each action, whatever the

@@ -366,6 +366,11 @@ export function profileToolsFor(toolPolicy: unknown, harness: string): string[] 
   return Array.isArray(tools) ? tools.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : [];
 }
 
+/** Whether a profile says its role needs the network (`tool_policy.network`); the Web tools box starts there. */
+export function profileNetworkFor(toolPolicy: unknown): boolean {
+  return (toolPolicy as { network?: unknown } | null)?.network === true;
+}
+
 export function isDecisionsAttested(harness: HarnessCapability | undefined): boolean {
   return harness?.decisions?.support === 'supported';
 }

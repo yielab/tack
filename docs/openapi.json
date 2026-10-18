@@ -8875,7 +8875,7 @@
             "description": "`mcp` marks a run an agent started through `tack mcp`: it is never merged\nautomatically or by a move to Done, only by the Merge button. Any other\nvalue, or none, means a person started it."
           },
           "permission_policy": {
-            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
+            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `network` absent: the resolved profile's `tool_policy.network`, else\noff; `true` or `false` is kept as sent. `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },
           "push_branch": {
             "type": [
