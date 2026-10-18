@@ -86,12 +86,10 @@ fn status_for(platform: Platform) -> anyhow::Result<()> {
 
 // ─── Data root, shared by both platforms ───────────────────────────────────
 
-/// `dirs::data_dir()/tack` — the OS's per-user application-data folder.
-/// Fixed to agree with `tack-desktop`'s own data-folder code without the two
-/// sharing a dependency.
-fn data_root() -> anyhow::Result<PathBuf> {
-    dirs::data_dir()
-        .map(|dir| dir.join("tack"))
+/// The per-user data folder, `tack_cli::config::data_root` with an error for the commands
+/// that cannot go on without it.
+pub(crate) fn data_root() -> anyhow::Result<PathBuf> {
+    tack_cli::config::data_root()
         .ok_or_else(|| anyhow::anyhow!("could not determine this OS's per-user data directory"))
 }
 

@@ -589,3 +589,60 @@ async fn template_save_posts_to_save_as_template() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ── `tack serve` says when the database it uses is not the one in the data folder ──
+
+#[test]
+fn serve_warns_when_the_data_folder_holds_a_database_it_does_not_use() {
+    use std::io::{BufRead, BufReader};
+
+    let home = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let kept = home.path().join(".local/share/tack");
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(kept.join("tack.db"), b"").unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_tack"))
+        .arg("serve")
+        .current_dir(elsewhere.path())
+        .env("HOME", home.path())
+        .env("TACK_PORT", port.to_string())
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("TACK_DATABASE_URL")
+        .env_remove("TACK_API_TOKEN")
+        .env_remove("TACK_LOCAL_RUNNER_ENABLE")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let warning = rx
+        .iter()
+        .take(200)
+        .find(|line| line.contains("not the one in your data folder"));
+    child.kill().ok();
+    child.wait().ok();
+
+    let warning = warning.expect("the warning was not printed");
+    assert!(
+        warning.contains(&kept.join("tack.db").display().to_string()),
+        "{warning}"
+    );
+    assert!(
+        warning.contains(&elsewhere.path().join("tack.db").display().to_string()),
+        "{warning}"
+    );
+}

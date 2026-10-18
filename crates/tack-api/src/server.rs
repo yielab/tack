@@ -78,13 +78,21 @@ async fn serve_inner(
         );
     }
 
+    // The database named by its absolute path: the default is relative to the folder the
+    // server was started in, and which file that is must not need guessing.
+    let database = config
+        .db_file_path()
+        .map(|p| std::path::absolute(&p).unwrap_or(p).display().to_string())
+        .unwrap_or_else(|| config.database_url.clone());
     info!(
         version = env!("CARGO_PKG_VERSION"),
         host = %config.host,
         port = config.port,
-        database = %config.database_url,
+        database = %database,
         "Starting Tack server"
     );
+    #[cfg(not(feature = "embed-spa"))]
+    info!("This build serves the API only; the web UI is in the release build or `npm run dev`.");
 
     // Apply any staged restore before opening the pool.
     apply_staged_restore(&config);
@@ -297,7 +305,7 @@ fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + S
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(format!(
-            "tack_api={level},tack_db={level},tack_core={level},tower_http=debug",
+            "tack={level},tower_http=debug",
             level = config.log_level
         ))
     });

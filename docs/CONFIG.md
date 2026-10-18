@@ -13,7 +13,7 @@ The server reads `tack.toml` from its working directory, then environment variab
 |----------|---------|-------------|
 | `TACK_HOST` | `127.0.0.1` | Server bind address |
 | `TACK_PORT` | `3210` | Server port |
-| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database path |
+| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database path. The default is relative to the folder `tack serve` is started in; the start-up line names the absolute path, and `tack serve` warns when nothing names a database and the data folder holds a different `tack.db` |
 | `TACK_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `TACK_LOG_JSON` | `false` | Structured JSON logging |
 | `TACK_LOG_FILE` | _(none)_ | Write logs to this file **in addition to** stdout, in the same format `TACK_LOG_JSON` selects. Missing parent directories are created; if the directory cannot be created the server logs to stdout only rather than refusing to start. `tack service install` and the desktop app both set this so logs survive without a service manager attached |
@@ -145,18 +145,10 @@ enroll` call, no token to copy anywhere.
   model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No
   `TACK_*` variable names a model, provider or endpoint, and the API server never holds a
   model credential.
-- **Log visibility.** The embedded runner's own log lines (self-provisioning, enrollment, claim,
-  completion) do **not** appear under default logging. The default filter names only `tack_api`,
-  `tack_db` and `tack_core`, and `TACK_LOG_LEVEL` changes the level of those three but cannot add a
-  target the filter never mentions. Set `RUST_LOG` explicitly to include the runner's own targets:
-
-  ```bash
-  RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
-    tack serve --with-runner
-  ```
-
-  Server-side handler logs are visible either way, since `tack_api` is already in the default
-  filter; only the *runner's own* log lines are missing under the default.
+- **Log visibility.** The default filter is `tack={level},tower_http=debug`: a target directive
+  matches by prefix, so `tack` covers every Tack crate, the embedded runner's self-provisioning,
+  enrollment, claim and completion lines among them, and `TACK_LOG_LEVEL` sets their level.
+  `RUST_LOG` still wins when set.
 
 ## Runner verifier (`[verify]`)
 
@@ -319,10 +311,8 @@ RUST_LOG=tack_db=trace,tack_api=debug tack serve
 # JSON logs (for log aggregators)
 TACK_LOG_JSON=true tack serve
 
-# See the embedded runner's own log lines under `--with-runner` (see
-# "Embedded runner" above — silent by default)
-RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
-  tack serve --with-runner
+# The embedded runner's own log lines are in the default output under `--with-runner`
+tack serve --with-runner
 ```
 
 ## Run environment

@@ -286,6 +286,16 @@ async fn the_export_is_the_import() {
     let uri = format!("/api/projects/{pid}/export?scope=bundle&format=yaml");
     let (status, first) = call(&app, Method::GET, &uri, "").await;
     assert_eq!(status, StatusCode::OK, "{first}");
+    // Auto-start is off, and the file says so: an absent key would leave a project's switch on.
+    assert!(first.contains("enabled: false"), "{first}");
+    let uri = format!("/api/projects/{pid}");
+    let on = json!({"auto_start_enabled": true, "auto_start_status": "Por hacer"});
+    let (status, patched) = common::send(&app, "PATCH", &uri, on, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    assert_eq!(get(&app, &uri).await["auto_start_enabled"], true);
+    let (status, again) = import(&app, &format!("/api/projects/{pid}/outline"), &first).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(get(&app, &uri).await["auto_start_enabled"], false);
 
     let (status, copy) = import(&app, "/api/projects/outline", &first).await;
     assert_eq!(status, StatusCode::OK, "{copy}");
