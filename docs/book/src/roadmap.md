@@ -20,7 +20,10 @@ Phase 73 is in `develop` and ships in the release after it.
 **Where this is going.** Phase 74 closes what the first real project found when it was put
 into Tack and docket end to end, and ends with that project's first runs through its teams,
 which is also the live proof of Phase 73. Phase 75 puts every limit in tokens, with dollars
-only as an estimate, and keeps what an agent is sent free of repeated material. Tack
+only as an estimate, and keeps what an agent is sent free of repeated material. Phase 76 makes
+the project file a place the configuration is kept, not only imported from: a key that survives a
+rename, an import that removes what the file removed and keeps what the board changed, the cost of
+every removal shown first, and a revision to go back to. Tack
 keeps the same three neighbours it never contains: an agent runtime such as docket, which runs
 the work; an independent verifier such as prill, which judges it; and GitHub. Each still works
 alone, and without a verifier a project stays at Level 3.
@@ -70,6 +73,50 @@ plan or the page named beside it.
   need their tool lines captured from the real programs first.
 - `docs/screenshots/automation.png` and `factory-metrics.png` predate the four-rung Automation
   screen and the cost cards.
+
+---
+
+## Phase 76 — the project file is kept in sync
+
+**Status:** proposed 2026-10-18; ADR 0084 proposed the same day, with its four defaults.
+**ADR:** 0084 (amends 0081 §2 and §6). **Plan:**
+[`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md).
+
+The project file of Phase 73 is a one-way door: it creates and updates by name and never
+deletes, so a role renamed in the file becomes a second role, a role removed from it stays for
+ever, and a file imported twice doubles the items. Keeping a project beside its code, which is
+why the file exists, needs the board to follow the file. Drupal keeps configuration in a sync
+directory and content in the database; Tack's file already has the two halves. So:
+
+- **The configuration is everything in the file but the items**, and only it is kept in sync.
+  Items keep their additive import.
+- **Every role, field, sprint and profile has a key**, made from its name when it is created and
+  never changed, so a rename in the file is a rename on the board. A file without keys works as
+  today.
+- **An import compares three things:** the file, the board and the last revision. Changed only in
+  the file: applied. Changed only on the board: kept. Removed from the file and untouched on the
+  board: removed. Changed on both: a conflict, which stops the import unless you say which side
+  wins. With no revision yet nothing is removed.
+- **A removal shows its cost first:** how many cards lose the role, how many values go with the
+  field. A profile another project uses, or with a run open, is not removed.
+- **Every export and import leaves a revision**, shown in Settings → Data → History, and going
+  back to one is an import like any other.
+- **The preview and the apply are one plan:** the apply carries the preview's hash and is refused
+  if the board moved in between. Everything an import writes lands in one transaction — the
+  outline import too — so "import again to finish" goes away.
+- The file still cannot switch auto-start on, raise the autonomy level, change the workflow or
+  the project type, or change an item.
+
+| Round | What lands | Who |
+|---|---|---|
+| 1 | Every import in one transaction; the key and the three-way comparison as pure code with their tests. | Sonnet |
+| 2 | Keys on the four tables, in the file and on the wire; the status, plan, apply and revision routes; the revisions table. | Sonnet |
+| 3 | `tack config export · status · import · history · revert`; the MCP tool `sync_config`; the Configuration card, the plan dialog and the history in Settings → Data; the key under each name. | Sonnet |
+| 4 | The guides, the changelog, the gate; a run against a copy of the real database. | Integrator |
+
+Left for a later phase, each shown disabled or named in the preview: choosing a side per
+conflict instead of for all; items matched by key and archived when removed; the workflow in
+the file.
 
 ---
 
