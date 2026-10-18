@@ -20,9 +20,9 @@ User, an Administrator and a Developer Guide.
 
 Two behaviours change for docket users: the runner needs docket `0.2.0-beta.6` (HTTP API
 version 5) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
-0.2.0-beta.6". Upgrading applies migrations 088–091 on first start: a role's profile and a
-profile's fleet, a task's recurrence, the auto-start settings, and the roles, profiles and
-automation a template carries.
+0.2.0-beta.6". Upgrading applies migrations 088–092 on first start: a role's profile and a
+profile's fleet, a task's recurrence, the auto-start settings, the roles, profiles and
+automation a template carries, and the removal of dollars per day.
 
 ### Added
 
@@ -79,6 +79,12 @@ automation a template carries.
 
 ### Changed
 
+- **The day's token limit is reserved when a run is admitted.** A run starts only if today's
+  counted tokens, the limits of the project's open runs and its own fit in the day; otherwise it
+  waits with "Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)". A run
+  with no limit of its own, in a project with a daily limit, runs with what is left of the day.
+  Settings → Automation shows the day as a bar (counted, reserved, room), amber at 80%
+  (ADR 0083 decision 5).
 - **Every run says its token limit and who applies it,** in one sentence the server writes:
   "300 000 tokens · from the profile Implementer · docket stops the task there", "No limit set
   in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
@@ -128,6 +134,11 @@ automation a template carries.
 
 ### Removed
 
+- **Dollars per day.** The limit, its field on Settings → Automation and the project file's
+  `usd_per_day` are gone (migration 092 drops the column); a project file that still has it
+  imports without it, with a warning in the preview. A request whose `budgets` carries
+  `cost_usd` is refused `field_removed`, and Claude Code is no longer given `--max-budget-usd`:
+  a dollar limit stopped only the models that had a price (ADR 0083 decision 3).
 - `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
   in each change, and a release's notes are its section here.
 

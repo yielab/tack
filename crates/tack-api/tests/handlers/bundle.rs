@@ -200,6 +200,11 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     let (status, out) = import(&app, "/api/projects/outline?dry_run=true", FABULADA).await;
     assert_eq!(status, StatusCode::OK, "{out}");
     assert_eq!(out["dry_run"], true);
+    // The fixture still says `usd_per_day`: it imports without it, and the preview says so.
+    assert_eq!(
+        out["warnings"][0],
+        "Dollars per day is no longer a limit; this value is ignored."
+    );
     assert_eq!(section(&out, "roles")["created"], 7);
     assert_eq!(count(&app, "/api/projects").await, projects);
     assert_eq!(count(&app, "/api/agent-profiles").await, profiles);

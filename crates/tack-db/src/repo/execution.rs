@@ -866,6 +866,12 @@ fn event_batch_fingerprint(
     .map_err(|error| sqlx::Error::Protocol(error.to_string()))
 }
 
+/// Whether a stored snapshot's limit was written by the claim from the day's room.
+fn given_the_days_room(snapshot: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(snapshot)
+        .is_ok_and(|value| value["metadata"]["limit_source"] == "day")
+}
+
 fn canonical_json(value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
@@ -2930,7 +2936,12 @@ impl Repository {
         if let Some((id, fingerprint, stored_snapshot)) = existing {
             tx.commit().await?;
             return Ok(
-                if fingerprint == input.request_fingerprint && stored_snapshot == request_snapshot {
+                // The claim may since have given a limitless run what was left of the day
+                // (`budgets::limit_to_day_room`); the fingerprint is still the one it was sent with.
+                if fingerprint == input.request_fingerprint
+                    && (stored_snapshot == request_snapshot
+                        || given_the_days_room(&stored_snapshot))
+                {
                     EnqueueResult::Replayed(id)
                 } else {
                     EnqueueResult::Conflict

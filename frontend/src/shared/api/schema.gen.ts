@@ -3188,6 +3188,27 @@ export interface components {
              *     itself, otherwise `L5`.
              */
             readonly ceiling?: string;
+            /**
+             * Format: int64
+             * @description Read only: the tokens counted today (cache reads excluded), when the project has a
+             *     daily token limit.
+             */
+            readonly day_counted?: number | null;
+            /**
+             * Format: int64
+             * @description Read only: how many open runs hold tokens back.
+             */
+            readonly day_open_runs?: number | null;
+            /**
+             * Format: int64
+             * @description Read only: the tokens the project's open runs hold back from today's limit.
+             */
+            readonly day_reserved?: number | null;
+            /**
+             * Format: int64
+             * @description Read only: what is left of today's limit for a run admitted now.
+             */
+            readonly day_room?: number | null;
             /** @description Replaces the project's domains. */
             domains: components["schemas"]["DomainSettings"][];
             /** @description `L3` (a person merges), `L4` (Tack merges inside the domains) or `L5` (everywhere). */
@@ -3265,8 +3286,6 @@ export interface components {
             queue_items_max?: number | null;
             /** Format: int64 */
             tokens_per_day?: number | null;
-            /** Format: double */
-            usd_per_day?: number | null;
         };
         BundleAutoStart: {
             /**
@@ -3320,8 +3339,6 @@ export interface components {
             queue_items_max?: number | null;
             /** Format: int64 */
             tokens_per_day?: number | null;
-            /** Format: double */
-            usd_per_day?: number | null;
         };
         BundleDomain: {
             /** @description Item types the domain covers; empty means all. */
@@ -3520,7 +3537,7 @@ export interface components {
              * @description A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
              *     `null`: no limit for this run even when the profile has one; a positive integer: that
              *     many. `0`, a negative number or a non-number is refused (`invalid_request`, field
-             *     `budgets.tokens`).
+             *     `budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`).
              */
             budgets: unknown;
             environment: unknown;

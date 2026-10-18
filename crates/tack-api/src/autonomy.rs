@@ -288,11 +288,8 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
 async fn budget(state: &AppState, project_id: &str, settings: &store::Settings) -> Check {
     let pool = state.repo.pool();
     let now = Utc::now();
-    if let Some(limit) = settings.budgets.tokens_per_day
-        && budgets::spent_today(pool, project_id, now)
-            .await
-            .unwrap_or(0)
-            >= limit
+    if let Ok(Some(day)) = budgets::day_room(pool, project_id, now).await
+        && day.counted >= day.limit
     {
         return fail("This project used its tokens for today");
     }

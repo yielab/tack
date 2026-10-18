@@ -125,7 +125,7 @@ async fn enqueue(
     model: Option<&str>,
     metadata: &str,
     created_at: chrono::DateTime<Utc>,
-) {
+) -> tack_db::repo::execution::EnqueueResult {
     let selector = match selector_kind {
         "exact_runner" => serde_json::json!({"kind":"exact_runner","runner_id":selector_id}),
         "fleet" => serde_json::json!({"kind":"fleet","fleet_id":selector_id}),
@@ -180,7 +180,7 @@ async fn enqueue(
         &FixedClock(created_at),
     )
     .await
-    .expect("enqueue");
+    .expect("enqueue")
 }
 
 /// `enqueue` with the standard `codex` harness, targeting one runner directly.
@@ -192,7 +192,7 @@ async fn enqueue_for_runner(
     model: Option<&str>,
     metadata: &str,
     created_at: chrono::DateTime<Utc>,
-) {
+) -> tack_db::repo::execution::EnqueueResult {
     let key = format!("{request_id}-key");
     enqueue(
         repo,
@@ -206,7 +206,7 @@ async fn enqueue_for_runner(
         metadata,
         created_at,
     )
-    .await;
+    .await
 }
 
 /// `enqueue` with the standard `codex` harness, targeting a fleet selector.
@@ -646,7 +646,6 @@ async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queu
         &project_id,
         &tack_db::repo::budgets::ProjectBudgets {
             tokens_per_day: tokens,
-            usd_per_day: Some(0.01),
             auto_merges_per_day: None,
             queue_items_max: queue,
         },
@@ -742,12 +741,6 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     let cases = [
         ("no row", None, None, None),
         (
-            "a dollar budget alone is read and ignored",
-            None,
-            None,
-            None,
-        ),
-        (
             "tokens",
             Some(100),
             None,
@@ -759,29 +752,8 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
             Some(1),
             Some("This project's review queue is full (1 waiting)"),
         ),
-        (
-            "dollars, once a rate card prices the model",
-            None,
-            None,
-            Some("This project used its dollars for today"),
-        ),
     ];
     for (case, tokens, queue, expect) in cases {
-        if case.starts_with("dollars") {
-            // 110 tokens at $1 per token is far over the $0.01 a day set_budgets allows.
-            tack_db::repo::rate_card::save(
-                repo.pool(),
-                &serde_json::from_value(serde_json::json!({
-                    "as_of": "2026-10-13",
-                    "models": {"opaque/model-alpha": {"input_per_mtok": 1e6, "output_per_mtok": 1e6}},
-                    "ci_minute": 0.0,
-                    "human_hour": 0.0
-                }))
-                .unwrap(),
-            )
-            .await
-            .expect("rate card");
-        }
         if case == "no row" {
             // no project_budgets row at all
         } else {
@@ -817,4 +789,139 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
             .await
             .expect("attempt");
     assert_eq!(running, "leased");
+}
+
+// ADR 0083 decision 5: the day's limit is reserved when a run is admitted.
+#[tokio::test]
+async fn the_days_tokens_are_reserved_by_open_runs() {
+    let (repo, item_id) = setup_repo().await;
+    let now = Utc::now();
+    setup_codex_runner(&repo, "runner-a", 5, 5, Some(0), now).await;
+    set_budgets(&repo, &item_id, Some(2_000_000), None).await;
+    // Two open runs of 800k each hold 1.6M of the 2M day.
+    for n in 1..=2 {
+        let id = format!("open-{n}");
+        enqueue_for_runner(&repo, &item_id, &id, "runner-a", ALPHA_MODEL, "{}", now).await;
+        set_run_limit(&repo, &id, 800_000).await;
+        repo.claim_execution_idempotent_with_snapshot(
+            "runner-a",
+            &format!("claim-{n}"),
+            &format!("attempt-{n}"),
+            chrono::Duration::hours(4),
+            &FixedClock(now),
+            RequestSelection::Scheduled(Some(&id)),
+        )
+        .await
+        .expect("no db error")
+        .expect("claimed");
+    }
+    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .expect("project");
+    let room = tack_db::repo::budgets::day_room(repo.pool(), &project_id, now)
+        .await
+        .expect("no db error")
+        .expect("a daily limit");
+    assert_eq!(
+        (room.counted, room.reserved, room.open_runs, room.room),
+        (0, 1_600_000, 2, 400_000)
+    );
+
+    // A third that asks for 500k waits, and says why; one that asks for nothing is
+    // admitted with the 400k that is left as its limit.
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "asks-500k",
+        "runner-a",
+        ALPHA_MODEL,
+        "{}",
+        now,
+    )
+    .await;
+    set_run_limit(&repo, "asks-500k", 500_000).await;
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "asks-none",
+        "runner-a",
+        ALPHA_MODEL,
+        "{}",
+        now,
+    )
+    .await;
+    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+        .await
+        .expect("no db error");
+    assert_eq!(chosen.as_deref(), Some("asks-none"));
+    let (state, code, reason, _) = waiting_row(&repo, "asks-500k").await;
+    assert_eq!(state, "queued");
+    assert_eq!(code.as_deref(), Some("budget_reached"));
+    assert_eq!(
+        reason.as_deref(),
+        Some("Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)")
+    );
+    let (tokens, source): (i64, String) = sqlx::query_as(
+        "SELECT json_extract(request_snapshot, '$.budgets.tokens'), \
+         json_extract(request_snapshot, '$.metadata.limit_source') \
+         FROM execution_requests WHERE id = 'asks-none'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .expect("snapshot");
+    assert_eq!((tokens, source.as_str()), (400_000, "day"));
+    // A run asking for more than the whole day, with nothing reserved, says so.
+    sqlx::query("UPDATE execution_attempts SET state = 'succeeded'")
+        .execute(repo.pool())
+        .await
+        .expect("finish the open runs");
+    enqueue_for_runner(
+        &repo,
+        &item_id,
+        "asks-3m",
+        "runner-a",
+        ALPHA_MODEL,
+        "{}",
+        now,
+    )
+    .await;
+    set_run_limit(&repo, "asks-3m", 3_000_000).await;
+    choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+        .await
+        .expect("no db error");
+    let (_, _, reason, _) = waiting_row(&repo, "asks-3m").await;
+    assert_eq!(
+        reason.as_deref(),
+        Some(
+            "This run's token limit is more than what is left of today's (2 000 000 of 2 000 000)"
+        )
+    );
+    // The same request sent again is the one already there, not a conflict.
+    let again = enqueue_for_runner(
+        &repo,
+        &item_id,
+        "asks-none",
+        "runner-a",
+        ALPHA_MODEL,
+        "{}",
+        now,
+    )
+    .await;
+    assert_eq!(
+        again,
+        tack_db::repo::execution::EnqueueResult::Replayed("asks-none".into())
+    );
+}
+
+async fn set_run_limit(repo: &Repository, request_id: &str, tokens: i64) {
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.budgets.tokens', ?) WHERE id = ?",
+    )
+    .bind(tokens)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("run limit");
 }

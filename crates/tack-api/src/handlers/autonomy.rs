@@ -3,6 +3,7 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use utoipa::ToSchema;
@@ -10,7 +11,7 @@ use uuid::Uuid;
 
 use tack_core::autonomy::{Domain, Level};
 use tack_db::repo::autonomy::{self as store, Settings};
-use tack_db::repo::budgets::ProjectBudgets;
+use tack_db::repo::budgets::{self, ProjectBudgets};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -41,7 +42,6 @@ pub struct DomainSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BudgetSettings {
     pub tokens_per_day: Option<i64>,
-    pub usd_per_day: Option<f64>,
     pub auto_merges_per_day: Option<i64>,
     pub queue_items_max: Option<i64>,
 }
@@ -77,6 +77,23 @@ pub struct AutonomySettings {
     #[serde(default)]
     #[schema(read_only)]
     pub teams: Vec<TeamLine>,
+    /// Read only: the tokens counted today (cache reads excluded), when the project has a
+    /// daily token limit.
+    #[serde(default)]
+    #[schema(read_only)]
+    pub day_counted: Option<i64>,
+    /// Read only: the tokens the project's open runs hold back from today's limit.
+    #[serde(default)]
+    #[schema(read_only)]
+    pub day_reserved: Option<i64>,
+    /// Read only: what is left of today's limit for a run admitted now.
+    #[serde(default)]
+    #[schema(read_only)]
+    pub day_room: Option<i64>,
+    /// Read only: how many open runs hold tokens back.
+    #[serde(default)]
+    #[schema(read_only)]
+    pub day_open_runs: Option<i64>,
 }
 
 fn full_ceiling() -> String {
@@ -116,7 +133,6 @@ impl From<Settings> for AutonomySettings {
             verify_loop_max_attempts: s.verify_loop_max_attempts,
             budgets: BudgetSettings {
                 tokens_per_day: s.budgets.tokens_per_day,
-                usd_per_day: s.budgets.usd_per_day,
                 auto_merges_per_day: s.budgets.auto_merges_per_day,
                 queue_items_max: s.budgets.queue_items_max,
             },
@@ -124,6 +140,10 @@ impl From<Settings> for AutonomySettings {
             automatic_merge_blocked_by: Vec::new(),
             ceiling: full_ceiling(),
             teams: Vec::new(),
+            day_counted: None,
+            day_reserved: None,
+            day_room: None,
+            day_open_runs: None,
         }
     }
 }
@@ -156,7 +176,6 @@ fn settings_of(input: AutonomySettings) -> ApiResult<Settings> {
         .into_iter()
         .flatten()
         .any(|n| n < 0)
-        || b.usd_per_day.is_some_and(|n| n < 0.0)
         || input.verify_loop_max_attempts < 0;
     if negative {
         return Err(ApiError::BadRequest(
@@ -173,7 +192,6 @@ fn settings_of(input: AutonomySettings) -> ApiResult<Settings> {
         verify_loop_max_attempts: input.verify_loop_max_attempts,
         budgets: ProjectBudgets {
             tokens_per_day: b.tokens_per_day,
-            usd_per_day: b.usd_per_day,
             auto_merges_per_day: b.auto_merges_per_day,
             queue_items_max: b.queue_items_max,
         },
@@ -293,6 +311,12 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
     }
     settings.teams = teams;
     settings.automatic_merge_blocked_by = blocked;
+    if let Some(day) = budgets::day_room(state.repo.pool(), project_id, Utc::now()).await? {
+        settings.day_counted = Some(day.counted);
+        settings.day_reserved = Some(day.reserved);
+        settings.day_room = Some(day.room);
+        settings.day_open_runs = Some(day.open_runs);
+    }
     Ok(settings)
 }
 

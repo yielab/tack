@@ -74,7 +74,6 @@ pub async fn get_settings(
             .await?
             .unwrap_or(ProjectBudgets {
                 tokens_per_day: None,
-                usd_per_day: None,
                 auto_merges_per_day: None,
                 queue_items_max: None,
             }),

@@ -43,7 +43,7 @@ const AUTONOMY = {
   verify_require: [] as string[],
   attestation_public_key: null as string | null,
   verify_loop_max_attempts: 2,
-  budgets: { tokens_per_day: null, usd_per_day: null, auto_merges_per_day: null, queue_items_max: null },
+  budgets: { tokens_per_day: null, auto_merges_per_day: null, queue_items_max: null },
   merge_on_done: false,
   automatic_merge_blocked_by: [] as string[],
 };
@@ -528,7 +528,7 @@ describe('Settings panels', () => {
       tokens.value = '5000';
       tokens.dispatchEvent(new Event('change', { bubbles: true }));
       await flush();
-      expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000, usd_per_day: null });
+      expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000 });
 
       btn(container, "Fill prill's example").click();
       await flush();

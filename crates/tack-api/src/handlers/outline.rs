@@ -111,10 +111,20 @@ fn read_outline(headers: &HeaderMap, body: &[u8]) -> ApiResult<Read> {
     let raw = structured_body(headers, body, "outline")?;
     let outline: Outline = serde_json::from_value(raw)
         .map_err(|e| ApiError::BadRequest(format!("Invalid outline: {e}")))?;
+    let mut warnings = Vec::new();
+    if outline
+        .automation
+        .as_ref()
+        .and_then(|auto| auto.autonomy.as_ref())
+        .and_then(|autonomy| autonomy.budgets.as_ref())
+        .is_some_and(|budgets| budgets.usd_per_day.is_some())
+    {
+        warnings.push("Dollars per day is no longer a limit; this value is ignored.".to_owned());
+    }
     Ok(Read {
         outline,
         skipped: 0,
-        warnings: Vec::new(),
+        warnings,
     })
 }
 
@@ -665,7 +675,6 @@ async fn write_automation(
         if let Some(budgets) = &asked.budgets {
             let now = &mut settings.budgets;
             now.tokens_per_day = budgets.tokens_per_day.or(now.tokens_per_day);
-            now.usd_per_day = budgets.usd_per_day.or(now.usd_per_day);
             now.auto_merges_per_day = budgets.auto_merges_per_day.or(now.auto_merges_per_day);
             now.queue_items_max = budgets.queue_items_max.or(now.queue_items_max);
         }

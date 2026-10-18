@@ -317,7 +317,7 @@ pub struct CreateExecution {
     /// A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
     /// `null`: no limit for this run even when the profile has one; a positive integer: that
     /// many. `0`, a negative number or a non-number is refused (`invalid_request`, field
-    /// `budgets.tokens`).
+    /// `budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`).
     pub budgets: Value,
     pub environment: Value,
     pub metadata: Value,
@@ -945,6 +945,8 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 3600;
 enum LimitSource {
     Profile,
     Run,
+    /// What was left of the project's day when a computer took the run.
+    Day,
     None,
 }
 
@@ -953,6 +955,7 @@ impl LimitSource {
         match self {
             Self::Profile => "profile",
             Self::Run => "run",
+            Self::Day => "day",
             Self::None => "none",
         }
     }
@@ -981,6 +984,14 @@ fn run_limits(
     let Some(object) = budgets.as_object_mut() else {
         return Err(refused("budgets must be an object", "budgets"));
     };
+    if object.contains_key("cost_usd") {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "budgets.cost_usd was removed; a run's limit is in tokens (budgets.tokens)",
+            json!({"field": "budgets.cost_usd", "reason": "field_removed"}),
+        ));
+    }
     let positive = |value: &Value| value.as_u64().filter(|n| *n > 0);
     let (tokens, source) = match object.get("tokens") {
         None => match positive(&profile_limits["budgets"]["tokens"]) {
@@ -1018,6 +1029,7 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
     let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {
         (None, _) => LimitSource::None,
         (Some(_), Some("profile")) => LimitSource::Profile,
+        (Some(_), Some("day")) => LimitSource::Day,
         (Some(_), _) => LimitSource::Run,
     };
     let docket = harness_kind == Some("docket");
@@ -1035,14 +1047,7 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
         }
         None => "No limit set in Tack".to_owned(),
         Some(n) => {
-            let digits = n.to_string();
-            let spaced = digits
-                .as_bytes()
-                .rchunks(3)
-                .rev()
-                .map(|c| std::str::from_utf8(c).unwrap_or_default())
-                .collect::<Vec<_>>()
-                .join(" ");
+            let spaced = tack_core::run_defaults::token_count(i64::try_from(n).unwrap_or(i64::MAX));
             let from = match source {
                 LimitSource::Profile => {
                     let name = snapshot["resolved_agent_profile"]["name"]
@@ -1050,6 +1055,7 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
                         .unwrap_or("");
                     format!("from the profile {name}")
                 }
+                LimitSource::Day => "what was left of today's limit".to_owned(),
                 _ => "set for this run".to_owned(),
             };
             let who = if docket {
@@ -2669,6 +2675,14 @@ mod tests {
                 "none",
                 "measured",
                 "No limit set in Tack",
+            ),
+            (
+                &json!({"budgets": {"tokens": 400000}, "metadata": {"limit_source": "day"}}),
+                "docket",
+                Some(400_000),
+                "day",
+                "docket",
+                "400 000 tokens · what was left of today's limit · docket stops the task there",
             ),
             // A run stored before the source was recorded still names a limit it carries.
             (

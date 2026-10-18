@@ -258,7 +258,8 @@ pub struct BundleDomain {
 pub struct BundleBudgets {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens_per_day: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Read and ignored: dollars per day is no longer a limit (the preview says so).
+    #[serde(default, skip_serializing)]
     pub usd_per_day: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_merges_per_day: Option<i64>,

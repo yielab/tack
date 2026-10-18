@@ -67,6 +67,24 @@ pub fn resolve(
     implementer.and_then(|id| found(id, Source::Implementer))
 }
 
+/// A token count as every sentence prints it: digits in groups of three,
+/// separated by a space ("1 600 000").
+pub fn token_count(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let grouped = digits
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if n < 0 {
+        format!("-{grouped}")
+    } else {
+        grouped
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
