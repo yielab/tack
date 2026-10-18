@@ -450,6 +450,24 @@ impl HarnessAdapter for AdapterRegistry {
         self.resolve(&kind)?.reconcile(&delegated).await
     }
 
+    async fn resume(
+        &self,
+        spec: &ExecutionSpec,
+        record: &AttemptJournal,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        let (kind, inner) = record
+            .process_id
+            .as_deref()
+            .and_then(decode_handle)
+            .ok_or(HarnessError::RecoveryUnavailable)?;
+        let mut delegated = record.clone();
+        delegated.process_id = Some(inner);
+        let handle = self.resolve(&kind)?.resume(spec, &delegated).await?;
+        Ok(LocalRunHandle {
+            process_id: encode_handle(&kind, &handle.process_id),
+        })
+    }
+
     async fn decision_channels(
         &self,
         handle: &LocalRunHandle,

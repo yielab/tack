@@ -406,6 +406,9 @@ struct FakeAdapter {
     cancellation_evidence: CancellationEvidence,
     recovery_observation: RecoveryObservation,
     reconcile_fails: bool,
+    /// Whether `resume` hands back the running task, as docket's does; every
+    /// other harness answers `Unsupported`.
+    resumable: bool,
     completion_actual_execution: tack_orch::execution::ActualExecution,
     // Overridable so a test can prove the engine reads a real
     // `terminal_reason.artifact` object (the exact shape the real
@@ -491,6 +494,20 @@ impl HarnessAdapter for FakeAdapter {
             Err(HarnessError::RecoveryUnavailable)
         } else {
             Ok(self.recovery_observation)
+        }
+    }
+
+    async fn resume(
+        &self,
+        _spec: &ExecutionSpec,
+        _record: &AttemptJournal,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        if self.resumable {
+            Ok(LocalRunHandle {
+                process_id: "fake-process".into(),
+            })
+        } else {
+            Err(HarnessError::Unsupported)
         }
     }
 
@@ -723,6 +740,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         },
         recovery_observation: RecoveryObservation::ProcessStopped,
         reconcile_fails: false,
+        resumable: false,
         completion_actual_execution: actual_execution(),
         completion_terminal_reason: default_completion_terminal_reason(),
         wait_delay: std::time::Duration::ZERO,
@@ -2193,6 +2211,201 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
     assert!(journal.unresolved().expect("scanned journal").is_empty());
     assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
     std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+/// A task still running in docket when the runner restarted: with the claim in
+/// the journal, a resumable agent and a lease the board still renews it is
+/// followed to its end with no recovery report; anything unproven reports
+/// `process_running` and ends for an operator, as before.
+#[tokio::test]
+async fn a_running_agent_that_outlived_the_runner_is_followed_again() {
+    for (label, claimed, resumable, lease_renewed, followed) in [
+        ("resume-followed", true, true, true, true),
+        ("resume-lease-refused", true, true, false, false),
+        ("resume-unsupported", true, false, true, false),
+        ("resume-no-claim", false, true, true, false),
+    ] {
+        let (root_dir, journal) = fresh_journal(label);
+        let root = root_dir.path();
+        let mut record = claimed_record(&work().lease, root);
+        record.state = JournalState::ProcessObservedRunning;
+        record.process_id = Some("fake-process".into());
+        record.claimed_work = claimed.then(work);
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        protocol
+            .heartbeat_echo_matches
+            .store(lease_renewed, Ordering::SeqCst);
+        let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        adapter.recovery_observation = RecoveryObservation::ProcessRunning;
+        adapter.resumable = resumable;
+        let starts = Arc::clone(&adapter.start_calls);
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
+
+        let mut cycles = engine.recover(&session()).await.expect(label);
+        if followed {
+            // `recover` only takes the run back; the caller follows it, here
+            // as `serve` does in a slot of its own.
+            let Some(RunCycle::Resumed(resumed)) = cycles.pop() else {
+                panic!("{label}: the run is handed back to be followed");
+            };
+            assert!(cycles.is_empty(), "{label}");
+            assert_eq!(
+                protocol.received_heartbeats.lock().expect("lock").len(),
+                1,
+                "{label}: the lease is renewed once before it is handed back"
+            );
+            assert!(
+                journal.unresolved().expect("scanned journal").len() == 1,
+                "{label}: still unresolved while it runs"
+            );
+            cycles.push(
+                engine
+                    .follow_resumed(&session(), *resumed)
+                    .await
+                    .expect(label),
+            );
+        }
+        assert!(journal.unresolved().expect("scanned journal").is_empty());
+        assert_eq!(starts.load(Ordering::SeqCst), 0, "{label}: never respawns");
+        if followed {
+            assert!(
+                matches!(cycles.as_slice(), [RunCycle::Completed { .. }]),
+                "{label}"
+            );
+            assert_eq!(
+                protocol.recovery_reports.load(Ordering::SeqCst),
+                0,
+                "{label}"
+            );
+            let completions = protocol.reported_completions.lock().expect("lock");
+            assert_eq!(completions.len(), 1, "{label}");
+            assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+            assert_eq!(completions[0].fencing_token, record.fencing_token);
+        } else {
+            assert!(
+                matches!(cycles.as_slice(), [RunCycle::Quarantined { .. }]),
+                "{label}"
+            );
+            assert_eq!(
+                protocol.recovery_reports.load(Ordering::SeqCst),
+                1,
+                "{label}"
+            );
+            assert_eq!(
+                protocol.reported_recoveries.lock().expect("lock")[0].observation,
+                RecoveryObservation::ProcessRunning,
+                "{label}"
+            );
+            assert_eq!(
+                protocol.completion_reports.load(Ordering::SeqCst),
+                0,
+                "{label}"
+            );
+        }
+    }
+}
+
+/// A resumed attempt whose question the board already holds as a pending
+/// decision: the engine waits for that decision, it neither creates it again
+/// (the server would answer `idempotency_conflict` and the agent would be
+/// denied) nor answers the agent before the board does. The answer the board
+/// gives later reaches the agent once.
+#[tokio::test(start_paused = true)]
+async fn a_resumed_attempt_waits_for_the_decision_the_board_already_holds() {
+    let (root_dir, journal) = fresh_journal("resume-known-decision");
+    let root = root_dir.path();
+    let question = Question {
+        vendor_id: "apr-1".to_owned(),
+        kind: "approval".to_owned(),
+        prompt: "Allow the agent to run bash?".to_owned(),
+        options: ["approve_once", "deny"]
+            .map(|option_id| DecisionOption {
+                option_id: option_id.to_owned(),
+                label: option_id.to_owned(),
+                description: None,
+                risks: None,
+                estimated_tokens: None,
+            })
+            .to_vec(),
+        metadata: serde_json::Map::new(),
+        recommendation: None,
+    };
+    let mut record = claimed_record(&work().lease, root);
+    record.state = JournalState::ProcessObservedRunning;
+    record.process_id = Some("fake-process".into());
+    record.claimed_work = Some(work());
+    journal
+        .persist_before_spawn(&record)
+        .expect("prior journal");
+
+    let held = |state: &str, answer: Option<&str>| DecisionPollResponse {
+        decisions: vec![ResolvedDecision {
+            decision_id: decision_id_for(&record, &question),
+            state: state.into(),
+            answer: answer.map(|option_id| DecisionAnswer {
+                option_id: Some(option_id.to_owned()),
+                text: None,
+            }),
+            resolved_at: None,
+            resolved_by: None,
+        }],
+        next_after: None,
+    };
+    let data_protocol = FakeDataProtocol::new();
+    *data_protocol.poll_response.lock().expect("lock") = held("pending", None);
+    // Someone answers on the board a few polls later.
+    tokio::spawn({
+        let poll_response = Arc::clone(&data_protocol.poll_response);
+        let resolved = held("resolved", Some("approve_once"));
+        async move {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            *poll_response.lock().expect("lock") = resolved;
+        }
+    });
+
+    let received = Arc::new(Mutex::new(None));
+    let (questions_tx, questions_rx) = mpsc::channel(1);
+    let (answers_tx, answers_rx) = mpsc::channel(1);
+    let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    adapter.recovery_observation = RecoveryObservation::ProcessRunning;
+    adapter.resumable = true;
+    adapter.interactive = Arc::new(Mutex::new(Some(InteractiveFake {
+        engine_side: Some((questions_rx, answers_tx)),
+        to_engine: questions_tx,
+        from_engine: answers_rx,
+        question,
+        received: received.clone(),
+    })));
+    let protocol = protocol(work(), false, false);
+    let engine = runner_engine(protocol.clone(), adapter, journal, root)
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+
+    let mut cycles = engine.recover(&session()).await.expect("recovery");
+    let Some(RunCycle::Resumed(resumed)) = cycles.pop() else {
+        panic!("the run is handed back to be followed");
+    };
+    assert!(matches!(
+        engine
+            .follow_resumed(&session(), *resumed)
+            .await
+            .expect("followed"),
+        RunCycle::Completed { .. }
+    ));
+    assert!(
+        data_protocol
+            .state
+            .lock()
+            .expect("lock")
+            .decisions_created
+            .is_empty(),
+        "the decision on the board is not created again"
+    );
+    let answer = received.lock().expect("lock").clone().expect("answered");
+    assert_eq!(answer.option_id.as_deref(), Some("approve_once"));
+    assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

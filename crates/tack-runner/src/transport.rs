@@ -1304,19 +1304,6 @@ where
     async fn serve(&self, mut shutdown: Shutdown) -> Result<(), RunnerError> {
         let session = self.establish_session().await?;
 
-        // Replay before claiming anything new: an unresolved journal record
-        // is a crash-recovery obligation, and taking fresh work first would
-        // let a second attempt race the observation of the first.
-        match self.engine.recover(&session).await {
-            Ok(outcomes) if !outcomes.is_empty() => {
-                tracing::info!(recovered = outcomes.len(), "replayed unresolved attempts");
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(%error, "recovery pass failed; not claiming new work this cycle");
-            }
-        }
-
         let claim_wait = Duration::from_secs(10);
         let total = self.engine.active().total().max(1) as usize;
         // One slot per attempt the runner may work at once. A slot is taken
@@ -1327,6 +1314,39 @@ where
         let mut ticker = tokio::time::interval(self.renewal_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut claim_not_before = tokio::time::Instant::now();
+        // Replay before claiming anything new: an unresolved journal record
+        // is a crash-recovery obligation, and taking fresh work first would
+        // let a second attempt race the observation of the first.
+        // An agent that outlived the previous runner is followed in a slot of
+        // its own, so the one ticker heartbeats its lease with every other and
+        // the journals behind it are recovered without waiting for it.
+        match self.engine.recover(&session).await {
+            Ok(outcomes) => {
+                let mut replayed = 0;
+                for outcome in outcomes {
+                    if let RunCycle::Resumed(resumed) = outcome {
+                        let engine = Arc::clone(&self.engine);
+                        let session = session.clone();
+                        slots.spawn(async move {
+                            let result = engine.follow_resumed(&session, *resumed).await;
+                            (result, tokio::time::Instant::now())
+                        });
+                    } else {
+                        replayed += 1;
+                    }
+                }
+                if replayed > 0 || !slots.is_empty() {
+                    tracing::info!(
+                        replayed,
+                        resumed = slots.len(),
+                        "replayed unresolved attempts"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "recovery pass failed; not claiming new work this cycle");
+            }
+        }
         let mut reprobe_ticker = self.reprobe.as_ref().map(|(interval, _)| {
             let mut ticker =
                 tokio::time::interval_at(tokio::time::Instant::now() + *interval, *interval);

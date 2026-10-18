@@ -5,7 +5,7 @@
 //! as ambiguous and quarantined rather than retried.
 
 use async_trait::async_trait;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use tack_orch::execution::{
     AttemptId as DomainAttemptId, FencingToken as DomainFencingToken, ProtocolVersion,
@@ -126,6 +126,10 @@ struct DecisionState<'a> {
     decisions: &'a mut Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
     pending: &'a mut Option<PendingDecision>,
     expires_at: chrono::DateTime<chrono::Utc>,
+    /// The decisions the board already holds for this attempt when the runner
+    /// took it back after a restart: a question asked again that is among them
+    /// is not created a second time, it is waited for.
+    known: &'a HashSet<String>,
 }
 
 /// The next question a running harness asks, or never resolves — used as a
@@ -322,6 +326,8 @@ pub enum HarnessError {
     Process,
     #[error("harness recovery observation is unavailable")]
     RecoveryUnavailable,
+    #[error("this harness cannot take hold of a run that outlived the runner")]
+    Unsupported,
 }
 
 #[derive(Debug, Error)]
@@ -426,6 +432,19 @@ pub trait HarnessAdapter: Send + Sync {
         journal: &AttemptJournal,
     ) -> Result<RecoveryObservation, HarnessError>;
 
+    /// Takes hold again of an agent that outlived the runner and that
+    /// `reconcile` saw still running, from the claim the journal kept and the
+    /// handle it recorded. Only an agent that lives outside the runner can
+    /// answer: a child process died with it, so every local-process harness
+    /// keeps this default.
+    async fn resume(
+        &self,
+        _spec: &ExecutionSpec,
+        _record: &AttemptJournal,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        Err(HarnessError::Unsupported)
+    }
+
     /// The channel pair for a run that can pause and ask: the engine
     /// receives [`Question`]s on the first half and posts back
     /// [`DecisionAnswer`]s on the second. `None` for a run that never asks —
@@ -452,8 +471,24 @@ pub trait HarnessAdapter: Send + Sync {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An agent that outlived the runner, taken back by `recover` and ready to be
+/// followed to its end. `recover` only prepares it: following can last hours,
+/// so the caller runs [`RunnerEngine::follow_resumed`] where the run's lease is
+/// heartbeated with every other, and where a restart's other journals do not
+/// wait for it.
+#[derive(Debug, Clone)]
+pub struct ResumedRun {
+    record: AttemptJournal,
+    spec: ExecutionSpec,
+    handle: LocalRunHandle,
+    cancel: tokio::sync::watch::Receiver<bool>,
+    known_decisions: HashSet<String>,
+}
+
+#[derive(Debug, Clone)]
 pub enum RunCycle {
+    /// A running agent `recover` took back; see [`ResumedRun`].
+    Resumed(Box<ResumedRun>),
     /// Nothing to claim. `retry_after` is the server's own
     /// `claim.no-work.response.json` hint for when to ask again.
     NoWork {
@@ -663,6 +698,17 @@ where
                 Ok(observation) => observation,
                 Err(_) => RecoveryObservation::Ambiguous,
             };
+            // docket's task lives in its daemon, not in a child of this
+            // runner: when it is still running and the journal kept the claim,
+            // it is followed to its end as a fresh run is. Anything unproven
+            // falls through to the recovery report below.
+            if observation == RecoveryObservation::ProcessRunning
+                && record.state == JournalState::ProcessObservedRunning
+                && let Some(resumed) = self.resume_running_agent(session, &record).await
+            {
+                outcomes.push(RunCycle::Resumed(Box::new(resumed)));
+                continue;
+            }
             let outcome = self
                 .report_recovery_and_apply_disposition(session, &mut record, observation)
                 .await?;
@@ -680,6 +726,84 @@ where
             outcomes.push(outcome);
         }
         Ok(outcomes)
+    }
+
+    /// Takes back an agent `reconcile` saw still running: the adapter hands
+    /// back its handle, one heartbeat with the journal's fencing token proves
+    /// the lease is still this runner's, and the lease is registered so the
+    /// runner's one ticker carries it from here on. `None` when the journal kept
+    /// no claim, the adapter cannot resume or the lease is no longer this
+    /// runner's. The run is followed by [`Self::follow_resumed`].
+    async fn resume_running_agent(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+    ) -> Option<ResumedRun> {
+        let work = record.claimed_work.clone().filter(|work| {
+            work.lease.attempt_id == record.attempt_id
+                && work.lease.fencing_token == record.fencing_token
+        })?;
+        let spec = ExecutionSpec {
+            work,
+            workspace: Self::workspace_from_journal(record),
+        };
+        let handle = self.adapter.resume(&spec, record).await.ok()?;
+        let cancel = self.active.register(record);
+        if !self.renew_lease(session, record).await {
+            self.active.remove(&record.attempt_id);
+            return None;
+        }
+        let known_decisions = match self.data_protocol.as_ref() {
+            Some(data_protocol) => data_protocol
+                .poll_decisions(
+                    session,
+                    DecisionPollReport {
+                        attempt_id: record.attempt_id.clone(),
+                        fencing_token: record.fencing_token,
+                        after: Timestamp::new(POLL_FROM_THE_START.to_owned()),
+                    },
+                )
+                .await
+                .map(|polled| {
+                    polled
+                        .decisions
+                        .into_iter()
+                        .map(|decision| decision.decision_id)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => HashSet::new(),
+        };
+        Some(ResumedRun {
+            record: record.clone(),
+            spec,
+            handle,
+            cancel,
+            known_decisions,
+        })
+    }
+
+    /// Follows a [`ResumedRun`] to its terminal report, as a fresh run is
+    /// followed after it starts. The attempt's deadline starts over here: the
+    /// time it ran before the restart is not counted against it.
+    pub async fn follow_resumed(
+        &self,
+        session: &RunnerSession,
+        resumed: ResumedRun,
+    ) -> Result<RunCycle, EngineError> {
+        let attempt_id = resumed.record.attempt_id.clone();
+        let cycle = self
+            .follow_to_end(
+                session,
+                resumed.record,
+                &resumed.spec,
+                resumed.handle,
+                resumed.cancel,
+                resumed.known_decisions,
+            )
+            .await;
+        self.active.remove(&attempt_id);
+        cycle
     }
 
     async fn run_claimed(
@@ -700,10 +824,18 @@ where
 
         let workspace = self.workspaces.plan(&work.lease, &repository)?;
         let mut record = AttemptJournal::prepared(&work.lease, workspace.journal());
+        // The claim is kept so a restarted runner can follow an agent that is
+        // still running. It carries references to secrets, never their values,
+        // so a literal environment value is not written.
+        let mut kept = work.clone();
+        for entry in kept.request.environment.values_mut() {
+            entry.value = None;
+        }
+        record.claimed_work = Some(kept);
         // This is the hard ownership boundary: no worktree or adapter method
         // with a local side effect is called before create+fsync succeeds.
         self.journal.persist_before_spawn(&record)?;
-        let mut cancel = self.active.register(&record);
+        let cancel = self.active.register(&record);
         self.protocol
             .report_start(
                 session,
@@ -783,30 +915,47 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
 
-        let heartbeat_request = self.heartbeat_request(session, &record);
-        let heartbeat = match self
-            .protocol
-            .heartbeat(session, heartbeat_request.clone())
+        if !self.renew_lease(session, &record).await {
+            return self.quarantine_after_spawn(session, &record, &handle).await;
+        }
+        self.follow_to_end(session, record, &spec, handle, cancel, HashSet::new())
             .await
-        {
-            Ok(response) => response,
-            Err(_) => return self.quarantine_after_spawn(session, &record, &handle).await,
+    }
+
+    /// Sends one heartbeat for this attempt's lease and says whether the board
+    /// still holds it to this runner and this fencing token. One answer covers
+    /// every lease this runner holds: each cancellation it names goes to its
+    /// own attempt, this one included.
+    async fn renew_lease(&self, session: &RunnerSession, record: &AttemptJournal) -> bool {
+        let request = self.heartbeat_request(session, record);
+        let Ok(heartbeat) = self.protocol.heartbeat(session, request.clone()).await else {
+            return false;
         };
         if heartbeat.protocol_version != ProtocolVersion::v1()
-            || heartbeat.heartbeat_id != heartbeat_request.heartbeat_id
+            || heartbeat.heartbeat_id != request.heartbeat_id
         {
-            return self.quarantine_after_spawn(session, &record, &handle).await;
+            return false;
         }
-        // One answer covers every lease this runner holds: each cancellation
-        // it names goes to its own attempt, this one included.
         self.active.apply(&heartbeat.lease_results);
-        let lease = heartbeat.lease_results.iter().find(|result| {
+        heartbeat.lease_results.iter().any(|result| {
             result.attempt_id == record.attempt_id && result.fencing_token == record.fencing_token
-        });
-        if lease.is_none() {
-            return self.quarantine_after_spawn(session, &record, &handle).await;
-        }
+        })
+    }
 
+    /// Everything from the first sight of the agent running to the terminal
+    /// report: cancellation, the wait, evidence, the verifier, the publish and
+    /// the report. A fresh run and a resumed one both end here, so there is one
+    /// copy of it. `known_decisions` are the ids of the decisions the board
+    /// already holds for this attempt, which only a resumed run has.
+    async fn follow_to_end(
+        &self,
+        session: &RunnerSession,
+        mut record: AttemptJournal,
+        spec: &ExecutionSpec,
+        handle: LocalRunHandle,
+        mut cancel: tokio::sync::watch::Receiver<bool>,
+        known_decisions: HashSet<String>,
+    ) -> Result<RunCycle, EngineError> {
         if *cancel.borrow_and_update() {
             record.state = JournalState::CancellationRequested;
             self.active.sync(&record);
@@ -837,7 +986,7 @@ where
             });
             if let Some((scratch, staged)) = self
                 .capture_attempt_evidence(
-                    &spec,
+                    spec,
                     record.base_commit.as_deref(),
                     cancelled_reason,
                     serde_json::Value::Null,
@@ -879,7 +1028,14 @@ where
         }
 
         let outcome = match self
-            .wait_with_lease_renewal(session, &mut record, &handle, &spec, &mut cancel)
+            .wait_with_lease_renewal(
+                session,
+                &mut record,
+                &handle,
+                spec,
+                &mut cancel,
+                &known_decisions,
+            )
             .await
         {
             Ok(outcome) => outcome,
@@ -911,7 +1067,7 @@ where
         // the report; the staged files ride `terminal_reason.artifacts`.
         let evidence_scratch = match self
             .capture_attempt_evidence(
-                &spec,
+                spec,
                 record.base_commit.as_deref(),
                 outcome.terminal_reason.clone(),
                 outcome.evidence_usage(),
@@ -920,13 +1076,13 @@ where
         {
             Some((scratch, mut staged)) => {
                 if outcome.terminal_state == AttemptState::Succeeded {
-                    self.verify_attempt(session, &mut record, &spec, &scratch, &mut staged)
+                    self.verify_attempt(session, &mut record, spec, &scratch, &mut staged)
                         .await;
                     if let Some(published) = self
                         .publish_attempt(
                             session,
                             &mut record,
-                            &spec,
+                            spec,
                             &scratch,
                             &mut staged,
                             &mut outcome,
@@ -940,7 +1096,7 @@ where
                     }
                     // After the verifier, whose refusal of an empty change stays an
                     // event: the empty change is the headline, not that refusal.
-                    Self::fail_without_change(&spec, &scratch, &mut staged, &mut outcome);
+                    Self::fail_without_change(spec, &scratch, &mut staged, &mut outcome);
                 }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
@@ -1134,6 +1290,7 @@ where
         handle: &LocalRunHandle,
         spec: &ExecutionSpec,
         cancel: &mut tokio::sync::watch::Receiver<bool>,
+        known_decisions: &HashSet<String>,
     ) -> Result<HarnessOutcome, HarnessError> {
         let prompt = spec
             .work
@@ -1165,6 +1322,7 @@ where
                 decisions: &mut decisions,
                 pending: &mut pending,
                 expires_at,
+                known: known_decisions,
             };
             tokio::select! {
                 biased;
@@ -1261,7 +1419,9 @@ where
         prompt: &str,
     ) {
         let decision_id = decision_id_for(record, &question);
-        let created = if let Some(data_protocol) = self.data_protocol.as_ref() {
+        let created = if state.known.contains(&decision_id) {
+            true
+        } else if let Some(data_protocol) = self.data_protocol.as_ref() {
             let report = DecisionCreateReport {
                 attempt_id: record.attempt_id.clone(),
                 fencing_token: record.fencing_token,

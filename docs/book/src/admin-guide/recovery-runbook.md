@@ -53,8 +53,20 @@ any agent process was ever allowed to start
 | Observation | What it means |
 |---|---|
 | `process_stopped` | The runner found no live process for this attempt (checked by PID/process-group, not merely "the runner restarted") |
-| `process_running` | The runner found the agent's process still alive and reattached to it |
+| `process_running` | The runner found the agent still running but could not take it back (see below) |
 | `ambiguous` | The runner could not determine either way — e.g. the process table is inconclusive, or the journal itself was corrupt/incomplete |
+
+An agent that runs in docket is the exception to that last row. docket keeps the task
+in its own daemon, so it survives a restart of the runner. When the restarted runner finds
+the task still running, and its journal kept the claim, the runner asks the board once
+whether the attempt's lease is still its own. If it is, the runner follows the task to its
+end as it would a new run, and no recovery observation is sent: a question the task was
+waiting on is still on the board and is answered there, and the run ends as any other.
+The attempt's time limit starts over at that moment, so the time before the restart is not
+counted against it. If the lease is no longer the runner's, or anything cannot be proven,
+the runner reports `process_running` and the attempt goes to an operator as described below.
+Every other agent runs as a process of the runner, which a restart ends, so it always takes
+the path below.
 
 The server decides the disposition from the observation **and** the journal state it
 already had on file for that attempt:
