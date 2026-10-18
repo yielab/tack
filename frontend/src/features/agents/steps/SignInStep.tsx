@@ -4,22 +4,19 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { RunnerSummary } from '../../../shared/execution/api';
 import type { HarnessCapability } from '../../../shared/execution/types';
 import { agentSafety } from '../../../shared/help/texts';
-import { findHarness, harnessesOf } from '../runnerObservations';
+import { findHarness, harnessesOf, isReady } from '../runnerObservations';
 
 export interface SignInStepProps {
   /** This machine's own active runner row, or `null` when agent execution is off. */
   thisMachineRunner: RunnerSummary | null;
 }
 
-const isInstalled = (h: HarnessCapability | undefined): h is HarnessCapability =>
-  !!h && h.probe_error === null && !!h.installed_version;
-
 /** The agents installed on this computer, in the order the page lists them. */
 function installedAgents(runner: RunnerSummary | null): { kind: string; label: string; harness: HarnessCapability }[] {
   const harnesses = harnessesOf(runner);
   return HARNESS_KINDS.flatMap((k) => {
     const harness = findHarness(harnesses, k.value);
-    return isInstalled(harness) ? [{ kind: k.value, label: k.label, harness }] : [];
+    return isReady(harness) ? [{ kind: k.value, label: k.label, harness }] : [];
   });
 }
 

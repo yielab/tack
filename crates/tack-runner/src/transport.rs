@@ -1179,11 +1179,22 @@ where
                     store_session(&self.config.state_dir, &refreshed.session)?;
                     return Ok(refreshed.session);
                 }
-                Err(error) => {
+                // Only a credential the server refused spends the enrollment
+                // token; any other failure (a timeout, a 500, a unique-column
+                // conflict) is returned and the retry loop tries again.
+                Err(EngineError::Protocol(
+                    ProtocolClientError::RunnerRevoked
+                    | ProtocolClientError::Protocol {
+                        code: StableErrorCode::Unauthorized,
+                    },
+                )) => {
                     tracing::warn!(
-                        %error,
                         "persisted runner session was refused; falling back to enrollment"
                     );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "persisted runner session could not be refreshed");
+                    return Err(RunnerError::ProtocolTransport);
                 }
             }
         }

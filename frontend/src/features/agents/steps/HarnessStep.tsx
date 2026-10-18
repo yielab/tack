@@ -3,7 +3,7 @@ import { Badge, Button } from '../../../shared/ui';
 import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import type { RunnerSummary } from '../../../shared/execution/api';
 import type { HarnessCapability } from '../../../shared/execution/types';
-import { findHarness, harnessesOf } from '../runnerObservations';
+import { findHarness, harnessesOf, isInstalled, isReady, versionText } from '../runnerObservations';
 import { HARNESS_INSTALL_COMMAND, HARNESS_INSTALL_NOTE } from '../constants';
 import { agentSafety } from '../../../shared/help/texts';
 
@@ -19,6 +19,10 @@ export interface HarnessStepProps {
   rechecking: boolean;
 }
 
+function installedText(harness: HarnessCapability): string {
+  return `Installed ${versionText(harness)}`.trimEnd();
+}
+
 /** One harness row's status, entirely from the runner's own probe — never
  *  a check mark derived from anything this page assumes. A harness kind
  *  this runner's snapshot never mentions at all is treated the same as an
@@ -27,11 +31,11 @@ export interface HarnessStepProps {
  *  older or fake snapshot that never ran the probe. Whether an installed
  *  agent is signed in is the Sign in step's business. */
 function statusLabel(harness: HarnessCapability | undefined): { text: string; tone: 'success' | 'neutral' | 'warning' } {
-  if (harness?.installed_version && agentSafety([harness])?.tone === 'blocked') {
-    return { text: `Installed v${harness.installed_version} · Doesn't run here`, tone: 'warning' };
+  if (isInstalled(harness) && agentSafety([harness])?.tone === 'blocked') {
+    return { text: `${installedText(harness)} · Doesn't run here`, tone: 'warning' };
   }
-  if (harness && harness.probe_error === null && harness.installed_version) {
-    return { text: `Installed v${harness.installed_version}`, tone: 'success' };
+  if (isReady(harness)) {
+    return { text: installedText(harness), tone: 'success' };
   }
   if (harness?.probe_error && !/not found on path/i.test(harness.probe_error)) {
     return { text: 'Could not check', tone: 'warning' };
@@ -101,7 +105,7 @@ const HarnessStep: Component<HarnessStepProps> = (props) => {
                   <Show when={status().text === 'Could not check'}>
                     <span class="basis-full pl-[52px] font-mono text-[0.6875rem]" style={{ color: 'var(--color-danger-600)' }}>{harness()?.probe_error}</span>
                   </Show>
-                  <Show when={harness()?.installed_version ? agentSafety([harness()!]) : null}>
+                  <Show when={isInstalled(harness()) ? agentSafety([harness()!]) : null}>
                     {(safety) => (
                       <span
                         class="basis-full pl-[52px] text-xs"

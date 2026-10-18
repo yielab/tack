@@ -3,6 +3,7 @@ import { Badge, type BadgeTone } from '../../../shared/ui';
 import { gateFeature, gateFeatureAcrossRunners, type FeatureName } from '../../../shared/execution';
 import type { RunnerCapabilities } from '../../../shared/execution';
 import { formatCapacity, formatLabelChips } from './format';
+import { versionText } from '../runnerObservations';
 
 /**
  * A runner's connection state, as far as this component is ever fed it.
@@ -154,7 +155,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
             <For each={props.capabilities?.harnesses ?? []}>
               {(h) => (
                 <li class="rounded-full bg-app px-2.5 py-[3px]" style={{ color: 'var(--color-text-secondary)' }}>
-                  <span class="font-mono">{h.harness_kind}</span> v{h.installed_version}
+                  <span class="font-mono">{h.harness_kind}</span> {versionText(h)}
                   <Show when={h.probe_error}>
                     {(err) => (
                       <span style={{ color: 'var(--color-danger-600)' }}> — probe error: {err()}</span>

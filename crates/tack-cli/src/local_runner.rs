@@ -56,7 +56,7 @@ fn runner_limits() -> RunnerLimits {
 
 /// TOML file, then environment, then `command_line` overrides — identical
 /// precedence to `tack-runner`'s own binary, reusing its types.
-fn load_runner_config(
+pub(crate) fn load_runner_config(
     command_line: ConfigOverrides,
     config_path: Option<&Path>,
 ) -> Result<RunnerConfig, ConfigError> {

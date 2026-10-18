@@ -24,22 +24,23 @@ export function isThisMachineRunner(runner: RunnerSummary): boolean {
 }
 
 /** The active runner representing the embedded runner on this machine, or
- *  `null` when none is enrolled (never started, or revoked). Never used to
- *  claim "on" by itself — step 1's own state comes from `GET
- *  /api/local-runner`; this is only for step 2's per-harness listing, which
- *  has no other source. */
+ *  `null` when none is enrolled (never started, or revoked). A restart can
+ *  leave several `local-*` rows: the online one with the newest heartbeat
+ *  wins, else the newest. Never used to claim "on" by itself — step 1's own
+ *  state comes from `GET /api/local-runner`; this is only for step 2's
+ *  per-harness listing, which has no other source. */
 export function findThisMachineRunner(runners: readonly RunnerSummary[]): RunnerSummary | null {
-  return runners.find((r) => r.state === 'active' && isThisMachineRunner(r)) ?? null;
+  const mine = runners.filter((r) => r.state === 'active' && isThisMachineRunner(r));
+  const online = mine.filter((r) => r.online);
+  const heartbeat = (r: RunnerSummary) => Date.parse(r.last_heartbeat_at ?? '') || 0;
+  return [...(online.length > 0 ? online : mine)].sort((a, b) => heartbeat(b) - heartbeat(a))[0] ?? null;
 }
 
-/** Active runners that are not this machine's own — "on, other machines" in
- *  step 1. Counts every `state === 'active'` row regardless of how recent
- *  its heartbeat is: staleness has no agreed threshold anywhere else in
- *  this tree, and inventing one here would be a hard-coded status this
- *  codebase's rules forbid. A caller that wants
- *  to show staleness can read `last_heartbeat_at` directly. */
+/** Online runners that are not this machine's own — "on, other machines" in
+ *  step 1. Whether a runner is online is the server's answer (`online`, from
+ *  the scheduler's own rule); nothing here decides it. */
 export function countOtherActiveRunners(runners: readonly RunnerSummary[]): number {
-  return runners.filter((r) => r.state === 'active' && !isThisMachineRunner(r)).length;
+  return runners.filter((r) => r.online && !isThisMachineRunner(r)).length;
 }
 
 /** `capability_snapshot` is an untyped, best-effort parse of a stored JSON
@@ -51,6 +52,24 @@ export function harnessesOf(runner: RunnerSummary | null): HarnessCapability[] {
   const snapshot = runner?.capability_snapshot as Partial<RunnerCapabilities> | null | undefined;
   const harnesses = snapshot?.harnesses;
   return Array.isArray(harnesses) ? harnesses : [];
+}
+
+/** The probe found the agent: a version, or for an agent that is a service
+ *  (docket, which publishes no version of its own) the API it speaks. */
+export function isInstalled(h: HarnessCapability | undefined): h is HarnessCapability {
+  return !!h && !!(h.installed_version || h.api_version);
+}
+
+/** Installed, and its probe found nothing wrong: the agent can be used here. */
+export function isReady(h: HarnessCapability | undefined): h is HarnessCapability & { probe_error: null } {
+  return isInstalled(h) && h.probe_error === null;
+}
+
+/** "v1.2.3", "API 5", or both; the "v" goes only before a version. */
+export function versionText(h: HarnessCapability): string {
+  return [h.installed_version && `v${h.installed_version}`, h.api_version && `API ${h.api_version}`]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 export function findHarness(

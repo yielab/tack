@@ -17,10 +17,13 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tack_db::{
     Repository,
-    repo::execution::{EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult},
+    repo::execution::{
+        EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult, RunnerListingRow,
+    },
 };
 use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
 use tack_orch::model_policy::wiring::resolve_request_model_policy;
+use tack_orch::scheduler::select::SchedulingPolicy;
 use tack_orch::usage_provenance::derive_attempt_facts;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -1051,7 +1054,8 @@ pub(crate) async fn resolve_profile(
     ))
 }
 
-/// Where a run that names no selector goes: its profile's fleet, else the only active runner.
+/// Where a run that names no selector goes: its profile's fleet, else the only online runner
+/// (the only active one when none is online).
 pub(crate) async fn default_selector(
     repo: &tack_db::Repository,
     fleet_id: Option<String>,
@@ -1059,19 +1063,27 @@ pub(crate) async fn default_selector(
     if let Some(fleet_id) = fleet_id {
         return Ok(("fleet".to_owned(), fleet_id));
     }
-    let runners: Vec<String> = sqlx::query_scalar(
-        "SELECT id FROM agent_runners WHERE state = 'active' AND revoked_at IS NULL",
-    )
-    .fetch_all(repo.pool())
-    .await
-    .map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not list runners",
-            json!({}),
-        )
-    })?;
+    let mut runners: Vec<_> = repo
+        .list_runners()
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list runners",
+                json!({}),
+            )
+        })?
+        .into_iter()
+        .filter(|runner| runner.state == "active" && runner.revoked_at.is_none())
+        .collect();
+    // Of several active runners the ones answering win; when none answers, all stay
+    // candidates and the run waits for whichever comes back.
+    let now = Utc::now();
+    if runners.iter().any(|runner| runner_is_online(runner, now)) {
+        runners.retain(|runner| runner_is_online(runner, now));
+    }
+    let runners: Vec<String> = runners.into_iter().map(|runner| runner.id).collect();
     match <[String; 1]>::try_from(runners) {
         Ok([only]) => Ok(("exact_runner".to_owned(), only)),
         Err(_) => Err(error(
@@ -1569,16 +1581,26 @@ pub async fn list_executions(
 /// window. Decided at read time; never stored, never grounds for failing it.
 const NO_RUNNER_ONLINE: &str = "no runner is online";
 
+/// Whether a listed runner is online now: [`SchedulingPolicy::is_online`] is the one rule,
+/// this only reads the stored row into it.
+pub(crate) fn runner_is_online(runner: &RunnerListingRow, now: DateTime<Utc>) -> bool {
+    SchedulingPolicy::default().is_online(
+        runner.state == "active" && runner.revoked_at.is_none(),
+        runner
+            .last_heartbeat_at
+            .as_deref()
+            .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+            .map(|at| at.with_timezone(&Utc)),
+        now,
+    )
+}
+
 async fn no_runner_online(repo: &Repository, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
-    let window = tack_orch::scheduler::select::SchedulingPolicy::default().max_heartbeat_age;
-    Ok(!repo.list_runners().await?.iter().any(|runner| {
-        runner.state == "active"
-            && runner
-                .last_heartbeat_at
-                .as_deref()
-                .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
-                .is_some_and(|at| now - at.with_timezone(&Utc) <= window)
-    }))
+    Ok(!repo
+        .list_runners()
+        .await?
+        .iter()
+        .any(|runner| runner_is_online(runner, now)))
 }
 
 /// A queued request's reason, or the read-time one when nothing explains it.

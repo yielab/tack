@@ -4,7 +4,7 @@ import { Button } from '../../../shared/ui';
 import type { RunnerSummary } from '../../../shared/execution/api';
 import { useExecutionStore } from '../../../shared/state/executionContext';
 import ExecutionTimeline from '../../../shared/runWithAgent/ExecutionTimeline';
-import { findHarness, harnessesOf } from '../runnerObservations';
+import { findHarness, harnessesOf, isReady } from '../runnerObservations';
 import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { localRunnerApi } from '../api';
 
@@ -24,7 +24,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
 
   const installed = (kind: string) => {
     const h = findHarness(harnessesOf(props.thisMachineRunner), kind);
-    return h && h.probe_error === null && !!h.installed_version ? h : undefined;
+    return isReady(h) ? h : undefined;
   };
   // The test run names no model, and the scheduler refuses that for an agent
   // that reports it needs one: the request would wait with nothing to run it.

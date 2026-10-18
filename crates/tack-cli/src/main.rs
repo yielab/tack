@@ -842,6 +842,9 @@ enum RunnerAction {
         /// human-readable report.
         #[arg(long)]
         json: bool,
+        /// The runner's configuration file; defaults to TACK_LOCAL_RUNNER_CONFIG.
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
     },
     /// Manage this machine's runner-local secret store — the secrets
     /// a harness's environment can reference via `secret_reference` without
@@ -970,9 +973,9 @@ fn main() -> anyhow::Result<()> {
             );
         }
         Commands::Runner {
-            action: RunnerAction::Doctor { json },
+            action: RunnerAction::Doctor { json, config },
         } => {
-            return doctor::run(json);
+            return doctor::run(json, config);
         }
         Commands::Runner {
             action: RunnerAction::Secret { action },

@@ -44,6 +44,23 @@ impl Default for SchedulingPolicy {
     }
 }
 
+impl SchedulingPolicy {
+    /// Whether a runner is online as of `now`: it is active and its last
+    /// heartbeat is no older than `max_heartbeat_age`. The one rule: the
+    /// scheduler's filter, the default-selector and the "no runner is online"
+    /// reading all call it, and the runner list reports its answer.
+    pub fn is_online(
+        &self,
+        active: bool,
+        last_heartbeat_at: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> bool {
+        active
+            && last_heartbeat_at
+                .is_some_and(|last| now.signed_duration_since(last) <= self.max_heartbeat_age)
+    }
+}
+
 /// Evaluates one candidate against one request. `Ok` carries the harness
 /// this candidate would actually run the request under (always
 /// `request.requested_harness_kind` today — the return type exists so a
@@ -83,11 +100,7 @@ fn evaluate_candidate(
         });
     }
 
-    let stale = match candidate.last_heartbeat_at {
-        Some(last) => now.signed_duration_since(last) > policy.max_heartbeat_age,
-        None => true,
-    };
-    if stale {
+    if !policy.is_online(true, candidate.last_heartbeat_at, now) {
         return Err(IneligibleReason::HeartbeatStale {
             last_heartbeat_at: candidate.last_heartbeat_at,
             max_age: policy.max_heartbeat_age,

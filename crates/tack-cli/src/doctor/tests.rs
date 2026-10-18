@@ -270,7 +270,8 @@ fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
 #[test]
 fn docket_lines_state_the_api_the_daemon_and_each_team() {
     use tack_orch::execution::{TeamReport, TeamViolation};
-    let mut docket = capability("docket", "API 5", None);
+    let mut docket = capability("docket", "", None);
+    docket.set_api_version("5");
     docket.teams = Some(vec![
         TeamReport {
             name: "fab-content".to_owned(),
@@ -296,7 +297,8 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
         ]
     );
 
-    let mut wrong = capability("docket", "API 4", Some("needs docket 0.2.0-beta.6"));
+    let mut wrong = capability("docket", "", Some("needs docket 0.2.0-beta.6"));
+    wrong.set_api_version("4");
     wrong.teams = None;
     assert_eq!(
         docket_lines(
@@ -308,4 +310,28 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             "  daemon:      not answering at http://127.0.0.1:7399/health",
         ]
     );
+}
+
+/// `--config` names the runner's file: its `[docket]` table and the state directory it names are
+/// what the doctor probes, and a broken file is an error rather than a default.
+#[test]
+fn config_names_the_file_the_doctor_reads_and_a_broken_one_is_an_error() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let state = dir.path().join("state");
+    let good = dir.path().join("runner.toml");
+    std::fs::write(
+        &good,
+        format!("state_dir = {state:?}\n[docket]\nbase_url = \"http://127.0.0.1:9\"\n",),
+    )
+    .expect("write config");
+    let config = read_config(Some(good)).expect("a good file is read");
+    assert_eq!(
+        config.docket.base_url.as_deref(),
+        Some("http://127.0.0.1:9")
+    );
+    assert_eq!(config.state_dir, state);
+
+    let broken = dir.path().join("broken.toml");
+    std::fs::write(&broken, "[docket\n").expect("write broken");
+    assert!(read_config(Some(broken)).is_err());
 }

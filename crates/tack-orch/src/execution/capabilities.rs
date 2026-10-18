@@ -49,6 +49,11 @@ pub struct Concurrency {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
+/// The key under which a harness that speaks a versioned API (docket) reports it, beside
+/// `installed_version`, which holds only the program's own version. It rides in
+/// `additional`, so an older runner or reader that does not know it loses nothing.
+const API_VERSION_KEY: &str = "api_version";
+
 /// One installed harness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessCapability {
@@ -96,6 +101,19 @@ pub struct HarnessCapability {
     pub teams: Option<Vec<TeamReport>>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+impl HarnessCapability {
+    /// The API version the harness answers, when it has one: `"5"`, not `"API 5"`.
+    pub fn api_version(&self) -> Option<&str> {
+        self.additional.get(API_VERSION_KEY)?.as_str()
+    }
+
+    /// Records the API version the harness answers; see [`Self::api_version`].
+    pub fn set_api_version(&mut self, version: &str) {
+        self.additional
+            .insert(API_VERSION_KEY.to_owned(), serde_json::json!(version));
+    }
 }
 
 /// One team a harness runs.
