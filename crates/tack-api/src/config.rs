@@ -106,7 +106,9 @@ pub struct AppConfig {
 
     /// The prill the board runs to check an attestation
     /// (`crate::prill::attest_verify`). `TACK_PRILL_PROGRAM`; a bare name is
-    /// looked up on `PATH`. Default: `prill`.
+    /// looked up on `PATH`. Default: `prill`. Read it through
+    /// [`Self::prill_program_or`], which lets an embedded runner's prill
+    /// stand in when this was never set.
     #[serde(default = "default_prill_program")]
     pub prill_program: String,
 
@@ -216,6 +218,19 @@ impl Default for AppConfig {
             execution_health_interval_secs: default_execution_health_interval_secs(),
             execution_decision_token: None,
             allow_unauthenticated_nonloopback: false,
+        }
+    }
+}
+
+impl AppConfig {
+    /// The prill the board runs: `TACK_PRILL_PROGRAM` when it was set, else the
+    /// `runner`'s (the program an embedded runner verifies with, if prill),
+    /// else `prill` on `PATH`.
+    pub fn prill_program_or(&self, runner: Option<String>) -> String {
+        if self.prill_program == default_prill_program() {
+            runner.unwrap_or_else(|| self.prill_program.clone())
+        } else {
+            self.prill_program.clone()
         }
     }
 }

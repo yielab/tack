@@ -200,6 +200,14 @@ automation a template carries, and the removal of dollars per day.
   failed, cancelled or lost run prints the reason where the agent's words go. A run whose time ran out
   says "The run's time ran out after 60 minutes", and "while it waited for an answer" when a docket team
   was waiting on a question; before, it read "Failed" alone, or the bare word "timeout".
+- **A question closes when its run ends.** A question a run was waiting on stays in the Inbox only while
+  the run is alive. When the run ends, however it ends, the question is marked expired, and a board
+  that kept such questions from before closes them when it starts. Before, they stayed pending for good
+  unless the retention sweep was turned on.
+- **The Factory page finds the prill this computer verifies with.** When `TACK_PRILL_PROGRAM` is unset,
+  the board uses the program its embedded runner verifies with before looking for `prill` on `PATH`.
+  Before, it said "prill is not installed on the board" while the runner was verifying with prill. The
+  sentence now says how to set it.
 - **A run that delivers no change is no longer shown as succeeded.** When an agent reports success but
   the branch equals its base, the attempt ends failed with "The agent reported success but delivered no
   change to review", and the number of files the agent left uncommitted when there were any; a verifier's
