@@ -31,7 +31,7 @@ use chrono::{DateTime, Utc};
 use tack_api::{LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus};
 use tack_runner::{
     ConfigError, ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
-    RunnerError, Shutdown, ShutdownHandle,
+    RunnerError, Shutdown, ShutdownHandle, VerifyKind,
     bootstrap::{self, RunnerLimits},
     harness::process::ProcessLimits,
     secrets::SecretStore,
@@ -364,6 +364,12 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
         // session — not `runner_config.runner_id`, which is the runner's own
         // configured name and is never a selector the API would accept.
         tack_runner::client::persisted_session_runner_id(&state.runner_config.state_dir)
+    }
+
+    async fn verify_program(&self) -> Option<String> {
+        let state = self.state.lock().await;
+        let verify = &state.runner_config.verify;
+        (verify.enabled && verify.kind == VerifyKind::Prill).then(|| verify.program.clone())
     }
 
     async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {

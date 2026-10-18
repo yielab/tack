@@ -20,7 +20,9 @@ pub struct Unavailable;
 /// Longest `attest verify` is given before the check fails.
 const ATTEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-const NOT_INSTALLED: &str = "prill is not installed on the board";
+/// What the board says when it cannot start prill; every caller reads it from here.
+pub const NOT_INSTALLED: &str =
+    "prill is not installed on the board (set TACK_PRILL_PROGRAM to its path)";
 
 /// Runs `program args…` with a null stdin and `PATH` as its only variable.
 /// A program that cannot start, or does not finish within `timeout`, is
@@ -196,9 +198,6 @@ mod tests {
         assert_eq!(wrong, Err("subject_mismatch".to_owned()));
 
         let missing = attest_verify("tack-no-such-prill", ENVELOPE.as_bytes(), KEY, HEAD).await;
-        assert_eq!(
-            missing,
-            Err("prill is not installed on the board".to_owned())
-        );
+        assert_eq!(missing, Err(NOT_INSTALLED.to_owned()));
     }
 }

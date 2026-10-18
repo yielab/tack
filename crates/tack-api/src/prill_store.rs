@@ -66,7 +66,7 @@ async fn mark_recorded(app: &AppState, attempt_id: &str, kind: &str) {
 
 /// Runs `prill args…`; true when prill took it. A failure is logged.
 async fn record(app: &AppState, attempt_id: &str, kind: &str, args: Vec<String>) -> bool {
-    match run(&app.config.prill_program, &args, TIMEOUT).await {
+    match run(&app.prill_program().await, &args, TIMEOUT).await {
         Ok(output) if output.status.success() => true,
         Ok(output) => {
             let said = String::from_utf8_lossy(&output.stderr);
@@ -263,7 +263,7 @@ pub async fn version(program: &str) -> Result<String, String> {
             .map(str::to_owned)
             .ok_or_else(|| "prill did not say its version".to_owned()),
         Ok(_) => Err("prill did not say its version".to_owned()),
-        Err(Unavailable) => Err("prill is not installed on the board".to_owned()),
+        Err(Unavailable) => Err(crate::prill::NOT_INSTALLED.to_owned()),
     }
 }
 
@@ -279,6 +279,6 @@ pub async fn metrics(program: &str, db: &std::path::Path) -> Result<Value, Strin
         Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
             .map_err(|_| "prill answered with something that is not JSON".to_owned()),
         Ok(output) => Err(format!("prill metrics failed ({})", output.status)),
-        Err(Unavailable) => Err("prill is not installed on the board".to_owned()),
+        Err(Unavailable) => Err(crate::prill::NOT_INSTALLED.to_owned()),
     }
 }
