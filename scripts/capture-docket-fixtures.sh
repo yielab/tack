@@ -6,7 +6,10 @@
 # the client sends has no capture.
 #
 # docket runs in a throwaway HOME and DOCKET_HOME (a mktemp -d under /var/tmp) with no model,
-# no provider key and an unreachable proxy, so nothing is spent. It starts with `--dispatch`
+# no provider key and an unreachable proxy, so nothing is spent. It declares one read-only
+# sandbox grant on a folder it makes under its scratch folder (`docket setup sandbox read add`)
+# and sets the lights-out team's `readOnly` to none, so one capture shows a team that keeps the
+# machine's grant and one that narrowed it away. It starts with `--dispatch`
 # the way Tack starts it. The only task it queues is refused at claim by an unknown pipeline,
 # before any agent turn. It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
@@ -230,9 +233,16 @@ guard
 (cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set profile lights-out --pod fab-lights </dev/null >"$SCRATCH/pod-set.log" 2>&1) \
   || die "docket pod set profile failed; see $SCRATCH/pod-set.log"
 
+mkdir -p "$SCRATCH/toolchain/node"
+guard
+"${DOCKET_ENV[@]}" "$DOCKET_BIN" setup sandbox read add "$SCRATCH/toolchain/node" </dev/null >"$SCRATCH/read-add.log" 2>&1 \
+  || die "docket setup sandbox read add failed; see $SCRATCH/read-add.log"
+(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set readOnly none --pod fab-lights </dev/null >"$SCRATCH/pod-set-read.log" 2>&1) \
+  || die "docket pod set readOnly failed; see $SCRATCH/pod-set-read.log"
+
 rec pods GET /pods yes "two teams, one attended and one lights-out"; expect 200 pods
-rec pod-attended GET /pods/fab-dev yes "a team with no violation"; expect 200 pod-attended
-rec pod-lights-out GET /pods/fab-lights yes "a lights-out team that lacks isolation, a network setting and an external gate"; expect 200 pod-lights-out
+rec pod-attended GET /pods/fab-dev yes "a team with no violation, keeping the machine's one read-only grant in readOnly"; expect 200 pod-attended
+rec pod-lights-out GET /pods/fab-lights yes "a lights-out team that lacks isolation, a network setting and an external gate; its readOnly setting is none, so readOnly is empty"; expect 200 pod-lights-out
 rec pod-unknown GET /pods/no-such-team yes "a team docket does not know"; expect 404 pod-unknown
 rec status GET /status.json yes "with teams, the agents are their members" --no-auth; expect 200 status-teams
 rec traces-since-empty GET '/traces/fab-dev?since=2026-01-01T00:00:00Z:0' yes "the compound cursor echoed when there is nothing newer"; expect 200 traces-since

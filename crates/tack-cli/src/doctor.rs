@@ -383,7 +383,21 @@ fn docket_lines(capability: &HarnessCapability, daemon: &Result<String, String>)
         } else {
             format!("attended (fix: {})", fixes.join("; "))
         };
-        lines.push(format!("  team {}: {state}", team.name));
+        lines.push(format!(
+            "  team {}: {state} · {}",
+            team.name,
+            reads_line(team.read_only.as_deref())
+        ));
     }
     lines
+}
+
+/// What a team's sandbox reads besides its own work: the folders docket granted, nothing, or
+/// that this docket does not say.
+fn reads_line(read_only: Option<&[String]>) -> String {
+    match read_only {
+        None => "reads: not reported by this docket".to_owned(),
+        Some([]) => "reads nothing outside its work".to_owned(),
+        Some(paths) => format!("reads {}", paths.join(", ")),
+    }
 }

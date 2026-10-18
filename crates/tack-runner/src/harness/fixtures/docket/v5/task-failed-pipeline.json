@@ -55,5 +55,6 @@
     "commonDir": "/scratch/repo/.git"
   },
   "failureKind": "pipeline",
-  "gateOverridePipelineIndex": null
+  "gateOverridePipelineIndex": null,
+  "tokenBudget": 1000
 }

@@ -90,6 +90,10 @@
     "profile": {
       "value": "attended",
       "source": "default"
+    },
+    "readOnly": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {
@@ -103,6 +107,7 @@
     "mode": "none",
     "scope": "default"
   },
+  "budgetUnpriced": [],
   "configSource": "",
   "configDigest": "",
   "drift": "",
@@ -111,5 +116,8 @@
     "violations": []
   },
   "pipelineSource": "blueprint 'software'",
-  "repoConfigDir": "/scratch/repo/.docket"
+  "repoConfigDir": "/scratch/repo/.docket",
+  "readOnly": [
+    "/scratch/toolchain/node"
+  ]
 }

@@ -110,6 +110,10 @@ pub struct TeamLine {
     pub caps_at: Option<String>,
     /// What to change so the team runs lights-out; `null` for a team that already does.
     pub fix: Option<String>,
+    /// The folders the team's sandbox reads besides its own work; `[]` for none, `null` when no
+    /// computer reports the team or its harness does not say.
+    #[serde(default)]
+    pub read_only: Option<Vec<String>>,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -261,6 +265,7 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
             profile,
             caps_at,
             fix,
+            read_only: known.and_then(|t| t.read_only.clone()),
         });
     }
     Ok(lines)

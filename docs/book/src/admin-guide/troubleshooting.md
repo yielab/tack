@@ -294,7 +294,7 @@ a minute. All the keys are in [docket teams](runners.md#docket-teams).
 **What you see.** `tack runner doctor` prints a team as attended:
 
 ```text
-  team fab-research: attended (fix: docket pod set network none)
+  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 In the project's **Settings → Automation → Ceiling**, the team is listed with "keeps its tasks at L3"

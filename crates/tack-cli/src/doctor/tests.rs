@@ -279,6 +279,10 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             name: "fab-content".to_owned(),
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
+            read_only: Some(vec![
+                "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
+                "/home/x/proj/node_modules".to_owned(),
+            ]),
         },
         TeamReport {
             name: "fab-research".to_owned(),
@@ -287,6 +291,13 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
                 requirement: "network none".to_owned(),
                 fix: "docket pod set network none".to_owned(),
             }],
+            read_only: Some(Vec::new()),
+        },
+        TeamReport {
+            name: "fab-old".to_owned(),
+            profile: "attended".to_owned(),
+            violations: Vec::new(),
+            read_only: None,
         },
     ]);
     assert_eq!(
@@ -294,8 +305,9 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
         vec![
             "  api:         5",
             "  daemon:      running on 127.0.0.1:7399",
-            "  team fab-content: lights-out",
-            "  team fab-research: attended (fix: docket pod set network none)",
+            "  team fab-content: lights-out · reads /home/x/.nvm/versions/node/v22.17.1, /home/x/proj/node_modules",
+            "  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work",
+            "  team fab-old: attended · reads: not reported by this docket",
         ]
     );
 

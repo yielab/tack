@@ -123,6 +123,11 @@ pub struct TeamReport {
     pub profile: String,
     #[serde(default)]
     pub violations: Vec<TeamViolation>,
+    /// The folders the team's sandbox may read besides its own work, as docket resolved them
+    /// (its machine-wide grants narrowed by the team's own setting); empty when there are none.
+    /// Absent when the harness did not say, which is not the same as none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<Vec<String>>,
 }
 
 /// One thing that makes a team need a person during a run, and how to fix it.

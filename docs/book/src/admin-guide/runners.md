@@ -337,8 +337,8 @@ docket
   ...
   api:         5
   daemon:      running on 127.0.0.1:7399
-  team fab-content: lights-out
-  team fab-research: attended (fix: docket pod set network none)
+  team fab-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
+  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 A team that can finish a task with nobody present is `lights-out`. Any other team is `attended`, and
@@ -349,6 +349,11 @@ Automation settings show the same teams and fixes under "Ceiling". Run the fix w
 commands, then run the doctor again. The Merge button is not held by this ceiling. See
 [Automating a Project](../user-guide/automation.md) for the person's side.
 
+The end of each team's line says which folders its sandbox reads besides its own work: the folders
+docket granted, `reads nothing outside its work` when there are none, or `reads: not reported by this
+docket` for a docket that does not say. The Teams rung of the Automation settings shows the same fact
+under each role's team.
+
 When the daemon does not answer, the `daemon:` line says why, for example "not answering at
 http://127.0.0.1:7399/health; the runner starts it with the runner" (the runner is configured to
 start it but has not), or "no binary is set to start one".
@@ -356,6 +361,22 @@ start it but has not), or "no binary is set to start one".
 The Teams rung of the Automation settings has a button to apply a repository's teams. It is shown
 disabled, with its reason, because the board has no channel to the runner's machine. Apply a team
 with docket's own commands on that machine.
+
+### What a team's sandbox can read
+
+A team's sandbox reads only the system folders and the team's own work. A toolchain installed under
+your home folder, such as Node under `~/.nvm` or a Python virtual environment, is outside both, so
+the team's tests cannot load it and every check fails. Grant it once for the whole machine, on the
+computer that runs docket:
+
+```sh
+docket setup sandbox read add ~/.nvm/versions/node/v22.17.1
+```
+
+The sandbox may read and run that folder and never write to it. docket refuses a folder that would
+expose its own home or yours. A team's own `readOnly` setting can only narrow the machine's grants:
+unset, the team keeps all of them; `none` or a list of folders keeps fewer. It cannot add a folder
+the machine has not granted. `tack runner doctor` shows, per team, what is left.
 
 ### Where docket's sandbox comes from
 

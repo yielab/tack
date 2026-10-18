@@ -110,7 +110,7 @@ On `done`, `bring_in` runs `git reset --hard refs/heads/<task branch>` in the ru
 
 ## The ceiling
 
-`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport { name, profile, violations }`).
+`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport { name, profile, violations, read_only }`; `read_only` is `GET /pods/<team>`'s `readOnly`, the folders the team's sandbox may read, and stays absent for a docket that sends no such key).
 
 The ceiling is read at merge time, never frozen in the request. `tack_db::repo::autonomy::attempt_ceiling_inputs` joins the attempt to its runner's capability snapshot and to `resolved_agent_profile.tool_policy.docket.team` in the request. `tack_api::autonomy::ceiling_of` then returns `L3` when the profile names a team the runner reports and that team is attended. When the profile names no team, or the runner does not report the one it names, it falls back to the agent's own `autonomy_ceiling`: `L3` when any team the runner reports is capped, else `L5`. An agent that reports neither leaves the ceiling unknown (`None`), and an unknown ceiling is no hold.
 

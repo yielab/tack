@@ -263,6 +263,9 @@ struct Pod {
     codebase: String,
     profile: String,
     violations: Vec<(String, String)>,
+    /// What `readOnly` answers instead of the capture's: `Some(None)` leaves the key out, as
+    /// docket did before it granted the sandbox a toolchain.
+    read_only: Option<Option<Vec<String>>>,
 }
 
 struct World {
@@ -341,8 +344,17 @@ impl FakeDocket {
                     .iter()
                     .map(|(requirement, fix)| ((*requirement).to_owned(), (*fix).to_owned()))
                     .collect(),
+                read_only: None,
             },
         );
+    }
+
+    /// What the pod's `readOnly` answers: the folders its sandbox reads, `[]` for none, or
+    /// `None` for a docket that sends no such key.
+    pub fn set_read_only(&self, name: &str, paths: Option<&[&str]>) {
+        let mut world = self.shared.lock().unwrap();
+        let pod = world.pods.get_mut(name).expect("a pod added first");
+        pod.read_only = Some(paths.map(|p| p.iter().map(|s| (*s).to_owned()).collect()));
     }
 
     /// The repository docket commits a task's branch in.
@@ -601,6 +613,13 @@ fn pod_report(state: &World, name: &str) -> Response {
         .map(|(requirement, fix)| json!({"requirement": requirement, "fix": fix}))
         .collect();
     report["profile"] = json!({"name": pod.profile, "violations": violations});
+    match &pod.read_only {
+        Some(Some(paths)) => report["readOnly"] = json!(paths),
+        Some(None) => {
+            report.as_object_mut().unwrap().remove("readOnly");
+        }
+        None => {}
+    }
     if let Some(model) = state.models.first() {
         for member in report["members"].as_array_mut().into_iter().flatten() {
             member["model"]["value"] = json!(model);
@@ -630,6 +649,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             codebase: body["location"].as_str().unwrap_or_default().to_owned(),
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
+            read_only: None,
         },
     );
     reply(201, fixture_with("post-pods-created", &[("fab-dev", name)]))

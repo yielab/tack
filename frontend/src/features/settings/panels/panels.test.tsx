@@ -471,6 +471,34 @@ describe('Settings panels', () => {
       expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('fab-content · lights-out · this computer');
     });
 
+    it('a_team_row_says_which_folders_its_sandbox_reads_and_what_to_do_when_there_are_none', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
+      const { container, dispose } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const reads = () => Array.from(rung(container, 'teams').querySelectorAll('[data-testid="team-reads"]')).map((e) => e.textContent);
+      expect(reads()[0]).toBe('Its sandbox also reads /home/x/.nvm/versions/node/v22.17.1, /home/x/venv, and cannot change them.');
+      dispose();
+
+      // Nothing granted: the row says so, and what an operator does about a team that runs tests.
+      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
+      const none = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const text = rung(none.container, 'teams').querySelector('[data-testid="team-reads"]')!.textContent!;
+      expect(text).toContain('reads only its own work');
+      expect(text).toContain('docket setup sandbox read add <folder>');
+      none.dispose();
+
+      // A docket that does not say adds no line, rather than claiming "nothing".
+      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
+      const unknown = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rung(unknown.container, 'teams').querySelector('[data-testid="team-reads"]')).toBeNull();
+    });
+
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {
       autonomy.teams = [{ name: 'fab-content', profile: 'Content', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);
