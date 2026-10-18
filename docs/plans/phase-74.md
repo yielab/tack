@@ -185,7 +185,7 @@ package(tack-orch)'`, `cd frontend && npm test -- runnerObservations`, and the g
 `frontend/src/features/dashboard/Dashboard.tsx`, `frontend/src/features/dashboard/computeStats.ts`,
 `frontend/src/features/table/Table.tsx` (its `typeKey` copy only),
 `frontend/src/features/settings/ProjectSettings.tsx`, a new
-`frontend/src/features/settings/panels/ImportFromFile.tsx`,
+`frontend/src/shared/ui/ImportFromFile.tsx` (shared, because a feature may not import another),
 `frontend/src/features/settings/panels/DataPanel.tsx`,
 `frontend/src/features/projects/CreateProjectModal.tsx`, the tests named below.
 
@@ -338,3 +338,4 @@ is docket's decision (`docket-triage.md` recommends the same default).
 
 - **Round 0** done 2026-10-17: ADR 0082 accepted with its three defaults, this plan, the roadmap section.
 - **Round 1** started 2026-10-17: F, I and W.
+  - W merged (`90fad17d`). Known, not in scope: Escape in a dialog opened from another closes both, because each `Modal` listens on `document`.
