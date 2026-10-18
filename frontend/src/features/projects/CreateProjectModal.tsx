@@ -6,6 +6,7 @@ import type { CreateProject, ProjectType, ProjectTemplate } from '../../shared/t
 import type { FolderCheck } from '../../shared/api/projects';
 import { toast } from '../../shared/ui/toast';
 import { projectTypeTone } from '../../shared/ui/projectTypeTone';
+import ImportFromFile from '../../shared/ui/ImportFromFile';
 
 /** The four fields that store where a project's code is, sent in the one
  *  POST that creates it so the project never exists without its folder. */
@@ -468,6 +469,17 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 )}
               </For>
             </div>
+          </div>
+        </FieldShell>
+
+        <FieldShell label="Or start from a project file" for="project-file-import">
+          <div id="project-file-import" class="flex flex-wrap items-center gap-3">
+            <ImportFromFile target={{ kind: 'new' }} onDone={handleClose}>
+              From a project file…
+            </ImportFromFile>
+            <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              A file exported from a project, or an outline. You see what it creates before anything is written.
+            </span>
           </div>
         </FieldShell>
 

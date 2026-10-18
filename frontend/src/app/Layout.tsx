@@ -14,6 +14,7 @@ import CreateItemModal from '../shared/ui/CreateItemModal';
 import CreateProjectModal from '../features/projects/CreateProjectModal';
 import { useProject } from '../shared/state/projectContext';
 import { useVocab } from '../shared/vocab/useVocab';
+import { pageOf } from './pages';
 
 const ItemDetailDrawer = lazy(() => import('../features/item-detail/ItemDetailDrawer'));
 
@@ -56,12 +57,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
       title = `${proj.name} — ${viewLabel} · Tack`;
     } else if (proj) {
       title = `${proj.name} · Tack`;
-    } else if (path.startsWith('/templates')) {
-      title = 'Templates · Tack';
-    } else if (path.startsWith('/settings')) {
-      title = 'Settings · Tack';
     } else {
-      title = 'Projects · Tack';
+      title = `${pageOf(path).label} · Tack`;
     }
     document.title = title;
   });

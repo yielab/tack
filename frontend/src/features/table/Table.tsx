@@ -10,6 +10,7 @@ import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import type { Item, Priority, UpdateItem } from '../../shared/types';
 import { Badge, Button, Skeleton } from '../../shared/ui';
 import { priorityColor } from '../../shared/ui/PriorityDot';
+import { typeKey } from '../../shared/ui/TypeBadge';
 
 // ── Pure helpers (exported for unit testing) ──────────────────────────────────
 
@@ -24,11 +25,6 @@ const PRIORITY_RANK: Record<string, number> = {
   low: 3,
   none: 4,
 };
-
-/** Normalize an item type (string or `{ custom }`) to a plain key string. */
-export function typeKey(t: Item['item_type']): string {
-  return typeof t === 'string' ? t : t.custom;
-}
 
 function cellValue(item: Item, key: SortKey): string | number {
   if (key === 'needs_review') return item.needs_review ? 0 : 1;

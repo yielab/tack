@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import { MemoryRouter, Route } from '@solidjs/router';
+import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import AgentsPage from './AgentsPage';
+import Layout from '../../app/Layout';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -318,5 +319,30 @@ describe('AgentsPage — composition', () => {
     expect(container.textContent).toContain('Installed v9.9.2');
     expect(container.textContent).toContain('Not installed');
     expect(container.textContent).toContain('npm install -g @anthropic-ai/claude-code');
+  });
+});
+
+describe('AgentsPage — in the app shell', () => {
+  it('the title reads "Agents · Tack" and the breadcrumb "Agents"', async () => {
+    mockFetch();
+    const history = createMemoryHistory();
+    history.set({ value: '/agents', replace: true });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () => (
+        <ExecutionStoreProvider>
+          <MemoryRouter history={history} root={Layout}>
+            <Route path="/agents" component={AgentsPage} />
+          </MemoryRouter>
+        </ExecutionStoreProvider>
+      ),
+      container,
+    );
+    await flush();
+    await flush();
+    expect(document.title).toBe('Agents · Tack');
+    expect(container.querySelector('nav[aria-label="Breadcrumb"]')?.textContent?.trim()).toBe('Agents');
+    dispose();
   });
 });

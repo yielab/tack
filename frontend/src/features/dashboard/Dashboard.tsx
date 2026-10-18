@@ -129,7 +129,7 @@ export default function Dashboard() {
             <For each={stats().byType}>
               {(type) => (
                 <Meter
-                  label={type.name}
+                  label={t(type.name)}
                   capitalize
                   value={`${type.count} (${pct(type.count)}%)`}
                   percent={pct(type.count)}

@@ -21,6 +21,10 @@ function mockFetch() {
     if (url.endsWith('/api/local-runner/check-folder')) {
       return Promise.resolve(new Response(JSON.stringify(folderCheck), { status: 200 }));
     }
+    if (url.includes('/api/projects/outline') && method === 'POST') {
+      const result = { dry_run: url.includes('dry_run'), created: 2, skipped: 0, dependencies: 0, warnings: [], items: [], sections: [], project: url.includes('dry_run') ? null : { id: 'proj-9', name: 'From file' } };
+      return Promise.resolve(new Response(JSON.stringify(result), { status: 200 }));
+    }
     if (url.endsWith('/api/projects') && method === 'POST') {
       return Promise.resolve(new Response(JSON.stringify({ id: 'proj-1', name: 'New' }), { status: 200 }));
     }
@@ -110,5 +114,28 @@ describe('CreateProjectModal', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0][0]).toBe('POST');
     expect(requests[0][2]).toMatchObject({ code_origin: 'none', repository: null, workspace_mode: 'local_branch', default_branch: null });
+  });
+
+  it('a project file is previewed, then creates the project with one confirm', async () => {
+    const fetchSpy = mockFetch();
+    mount();
+    await flush();
+    const choose = Array.from(dialog().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'From a project file…');
+    expect(choose, 'the modal offers "From a project file"').toBeTruthy();
+    const fileInput = dialog().querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(['name: From file\nitems: []'], 'bundle.yaml', { type: 'application/x-yaml' });
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true });
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const outlinePosts = () =>
+      fetchSpy.mock.calls
+        .filter(([u, init]) => init?.method === 'POST' && String(u).includes('/api/projects/outline'))
+        .map(([u]) => String(u).replace(/^.*\/api/, '/api'));
+    await vi.waitFor(() => expect(outlinePosts()).toEqual(['/api/projects/outline?dry_run=true']));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('2 items will be added'));
+
+    const confirm = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Create project')!;
+    confirm.click();
+    await vi.waitFor(() => expect(outlinePosts()).toEqual(['/api/projects/outline?dry_run=true', '/api/projects/outline']));
   });
 });

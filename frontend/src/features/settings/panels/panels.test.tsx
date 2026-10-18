@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import { MemoryRouter, Route } from '@solidjs/router';
+import { MemoryRouter, Route, useNavigate } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../../shared/state/projectContext';
 import type { Resource } from 'solid-js';
 import type { Project } from '../../../shared/types';
 import GeneralPanel from './GeneralPanel';
 import RolesPanel from './RolesPanel';
 import DataPanel from './DataPanel';
+import ProjectSettings from '../ProjectSettings';
 import AutomationPanel from './AutomationPanel';
 import { toast } from '../../../shared/ui/toast';
 
@@ -231,6 +232,26 @@ describe('Settings panels', () => {
       expect(csvPosts()).toEqual(['/api/projects/p1/import-csv?dry_run=true', '/api/projects/p1/import-csv']),
     );
     dispose();
+  });
+
+  it('project_settings_follows_the_tab_in_the_address', async () => {
+    let go!: (to: string) => void;
+    const { container } = mount(() => {
+      go = useNavigate();
+      return <ProjectSettings />;
+    });
+    await flush();
+    const active = () => container.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim();
+    expect(active()).toBe('General');
+    go('/?tab=automation');
+    await flush();
+    expect(active()).toBe('Automation');
+    go('/?tab=roles');
+    await flush();
+    expect(active()).toBe('Roles');
+    go('/?tab=nonsense');
+    await flush();
+    expect(active()).toBe('General');
   });
 
   it('automation_panel_saves_each_field_on_change', async () => {
