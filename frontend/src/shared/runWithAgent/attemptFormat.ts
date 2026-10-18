@@ -177,11 +177,11 @@ export function formatCountedTokens(u: AttemptUsage): string | null {
 }
 
 /** A harness's own dollar figure is its estimate (claude-code prices tokens at
- *  list price), never a bill — so it is always shown as approximate. */
+ *  list price), never a bill — so it is always shown as an estimate. */
 export function formatApproxCost(cost: Measurement<number>): string {
   if (cost.source === 'not_measured' || cost.value === null) return NOT_MEASURED_TEXT;
   const decimals = Math.abs(cost.value) > 0 && Math.abs(cost.value) < 0.01 ? 4 : 2;
-  return `≈ $${cost.value.toFixed(decimals)}`;
+  return `≈ $${cost.value.toFixed(decimals)} (estimated)`;
 }
 
 export function harnessName(kind: string | null | undefined): string {

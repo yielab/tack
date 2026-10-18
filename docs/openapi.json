@@ -9918,7 +9918,8 @@
           "request_id",
           "item_id",
           "state",
-          "created_at"
+          "created_at",
+          "limit"
         ],
         "properties": {
           "cancellation_requested_at": {
@@ -9939,6 +9940,10 @@
           },
           "item_id": {
             "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/RunLimit",
+            "description": "The run's token limit and who applies it."
           },
           "protocol_version": {
             "type": "integer",
@@ -9994,7 +9999,8 @@
           "request_id",
           "item_id",
           "state",
-          "created_at"
+          "created_at",
+          "limit"
         ],
         "properties": {
           "cancellation_requested_at": {
@@ -10008,6 +10014,10 @@
           },
           "item_id": {
             "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/RunLimit",
+            "description": "The run's token limit and who applies it."
           },
           "request_id": {
             "type": "string"
@@ -10048,6 +10058,8 @@
           "merges_by_trigger",
           "decisions_answered",
           "lights_off_rate",
+          "models",
+          "priced_models",
           "cost_by_model",
           "cost_by_team"
         ],
@@ -10112,6 +10124,11 @@
           "merges_by_trigger": {
             "$ref": "#/components/schemas/MergesByTrigger"
           },
+          "models": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Models the window's attempts named, and how many of them the rate card prices (none\nwithout a card): the cost card says \"N of M models priced\" from this pair."
+          },
           "mrp_acceptance_rate": {
             "$ref": "#/components/schemas/Ratio",
             "description": "accepted ÷ reviewed."
@@ -10127,6 +10144,10 @@
           },
           "outcomes": {
             "$ref": "#/components/schemas/Outcomes"
+          },
+          "priced_models": {
+            "type": "integer",
+            "format": "int64"
           },
           "quality": {
             "oneOf": [
@@ -12006,6 +12027,37 @@
           "project_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "RunLimit": {
+        "type": "object",
+        "description": "A run's token limit, who set it and who applies it, with the one sentence every screen prints.",
+        "required": [
+          "source",
+          "enforced_by",
+          "sentence"
+        ],
+        "properties": {
+          "enforced_by": {
+            "type": "string",
+            "description": "`docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it."
+          },
+          "sentence": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "`profile`, `run` or `none`."
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Absent when the run has no limit set in Tack.",
+            "minimum": 0
           }
         }
       },

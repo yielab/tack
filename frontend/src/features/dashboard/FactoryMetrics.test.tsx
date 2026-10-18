@@ -74,6 +74,8 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
   },
   mrp_produced: 2,
   mrp_unreviewed: 2,
+  models: 0,
+  priced_models: 0,
   cost_by_model: [],
   cost_by_team: [],
   outcomes: {
@@ -281,13 +283,14 @@ describe('FactoryMetrics sources and cost', () => {
   });
 
   it('with cost_usd, shows the cost and the date the prices were read', async () => {
-    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: 12.5, cost_unpriced_attempts: 2, rate_card_as_of: '2026-10-01' });
+    setupFetchMock({ ...FACTORY_METRICS_FIXTURE, cost_usd: 12.5, cost_unpriced_attempts: 2, models: 4, priced_models: 3, rate_card_as_of: '2026-10-01' });
     const { container } = mount();
     await flush();
     await flush();
 
     const text = container.textContent ?? '';
-    expect(text).toContain('$12.50');
+    expect(text).toContain('≈ $12.50 (estimated)');
+    expect(text).toContain('3 of 4 models priced');
     expect(text).toContain('Prices as of 2026-10-01');
     expect(text).toContain('2 attempts not priced');
   });
@@ -303,7 +306,7 @@ describe('FactoryMetrics sources and cost', () => {
     expect(container.textContent).not.toContain('$12.50');
   });
 
-  it('Cost by model lists each model, and an unpriced one says Not measured', async () => {
+  it('Cost by model lists each model, and an unpriced one says not priced', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
       cost_by_model: [
@@ -319,13 +322,13 @@ describe('FactoryMetrics sources and cost', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('Cost by model');
     expect(text).toContain('claude-sonnet-5-5');
-    expect(text).toContain('$1.25');
+    expect(text).toContain('≈ $1.25 (estimated)');
     // Counted tokens in their own column, the cache reads beside them.
     expect(text).toContain('Cache reads');
     const sonnet = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('claude-sonnet-5-5'));
     expect([...sonnet!.querySelectorAll('td')].map((td) => td.textContent).slice(1, 4)).toEqual(['1000', '7000', '200']);
     const unlisted = [...container.querySelectorAll('tr')].find((r) => r.textContent?.includes('opaque/unlisted'));
-    expect(unlisted?.textContent).toContain('Not measured');
+    expect(unlisted?.textContent).toContain('not priced');
     expect(text).toContain('By team');
   });
 

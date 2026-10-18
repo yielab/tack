@@ -208,7 +208,7 @@ create → 400 `field_removed`; the Claude Code args test no longer sees `--max-
   `requested_harness_kind`. `enforced_by` is `docket` for docket and `measured` for every other
   agent until task C changes a row. The sentence, one per case:
   - "300 000 tokens · from the profile Implementer · docket stops the task there"
-  - "300 000 tokens · set for this run · measured, not enforced (Claude Code reports its tokens when it ends)"
+  - "300 000 tokens · set for this run · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet)"
   - "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
   - "No limit set in Tack"
   ("from today's limit" arrives with D's `day` source.) `ExecutionSummary` and

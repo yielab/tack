@@ -32,8 +32,9 @@ function percent(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
+/** Every dollar figure is Tack's estimate from the rate card, never a bill. */
 function dollars(v: number): string {
-  return `$${v.toFixed(2)}`;
+  return `≈ $${v.toFixed(2)} (estimated)`;
 }
 
 export default function FactoryMetrics() {
@@ -89,7 +90,7 @@ export default function FactoryMetrics() {
           </MetricCard>
 
           <MetricCard title="Cost" data={metrics()!}>
-            {(m) => <CostCard costUsd={m.cost_usd} unpricedAttempts={m.cost_unpriced_attempts} asOf={m.rate_card_as_of} />}
+            {(m) => <CostCard costUsd={m.cost_usd} unpricedAttempts={m.cost_unpriced_attempts} asOf={m.rate_card_as_of} pricedModels={m.priced_models} models={m.models} />}
           </MetricCard>
 
           <MetricCard title={qualityTitle(metrics()!.quality)} data={metrics()!}>
@@ -141,7 +142,7 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
                 <td>{row.cache_read}</td>
                 <td>{row.tokens_out}</td>
                 <td>{row.attempts}</td>
-                <td>{row.usd === null || row.usd === undefined ? 'Not measured' : dollars(row.usd)}</td>
+                <td>{row.usd === null || row.usd === undefined ? 'not priced' : dollars(row.usd)}</td>
               </tr>
             )}
           </For>
@@ -280,7 +281,7 @@ function OutcomesCard(props: { outcomes: Outcomes }) {
 }
 
 /** Cost is Tack's: tokens priced by the rate card, plus human minutes at its hour rate. */
-function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | null; asOf?: string | null }) {
+function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | null; asOf?: string | null; pricedModels: number; models: number }) {
   return (
     <div class="flex flex-col gap-2">
       <Show
@@ -295,6 +296,7 @@ function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | 
         <div>
           <p class="text-2xl font-heading text-content">{dollars(props.costUsd!)}</p>
           <div class="text-xs text-content-subtle mt-2 space-y-1">
+            <p>{props.pricedModels} of {props.models} models priced</p>
             <Show when={props.asOf}>
               <p>Prices as of {props.asOf}</p>
             </Show>

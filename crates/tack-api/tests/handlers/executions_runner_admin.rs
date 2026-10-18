@@ -1929,6 +1929,52 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
             snapshot["resolved_agent_profile"]["timeout_seconds"], seconds,
             "row {n}"
         );
+        // The run's detail and its list row both say the same limit, from the same snapshot.
+        let request_id = created["request_id"].as_str().unwrap();
+        let (_, detail) = snd(
+            &app,
+            "GET",
+            &format!("/executions/{request_id}"),
+            String::new(),
+        )
+        .await;
+        let (_, listed) = snd(&app, "GET", "/executions?limit=100", String::new()).await;
+        let row = listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["request_id"] == request_id)
+            .unwrap();
+        for limit in [&detail["limit"], &row["limit"]] {
+            assert_eq!(limit["tokens"].as_u64(), tokens, "row {n}: {limit}");
+            assert_eq!(limit["enforced_by"], "measured", "row {n}: {limit}");
+        }
+        // The agent that ran it wins over the one requested: once an attempt ran on docket, docket applies it.
+        sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,actual_execution) VALUES (?,?,1,'runner-active',1,'running','t','t','t','t','{\"harness_kind\":\"docket\"}')")
+            .bind(format!("attempt-limit-{n}")).bind(request_id)
+            .execute(repo.pool()).await.unwrap();
+        let (_, detail) = snd(
+            &app,
+            "GET",
+            &format!("/executions/{request_id}"),
+            String::new(),
+        )
+        .await;
+        assert_eq!(
+            detail["limit"]["enforced_by"], "docket",
+            "row {n}: {detail}"
+        );
+        assert_eq!(
+            detail["limit"]["source"],
+            if tokens.is_none() {
+                "none"
+            } else if n == 2 {
+                "run"
+            } else {
+                "profile"
+            },
+            "row {n}: {detail}"
+        );
     }
     for refused in [json!(0), json!(-5), json!("many")] {
         let mut body = bare_body(&item_id, "k-limits-refused");

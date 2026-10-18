@@ -371,6 +371,20 @@ pub struct ExecutionSummary {
     pub waiting_reason: Option<String>,
     /// When a runner's poll first found the request unclaimable; null once claimed.
     pub waiting_since: Option<String>,
+    /// The run's token limit and who applies it.
+    pub limit: RunLimit,
+}
+
+/// A run's token limit, who set it and who applies it, with the one sentence every screen prints.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RunLimit {
+    /// Absent when the run has no limit set in Tack.
+    pub tokens: Option<u64>,
+    /// `profile`, `run` or `none`.
+    pub source: String,
+    /// `docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it.
+    pub enforced_by: String,
+    pub sentence: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -497,6 +511,8 @@ pub struct ExecutionDetailResponse {
     pub waiting_reason: Option<String>,
     /// When a runner's poll first found the request unclaimable; null once claimed.
     pub waiting_since: Option<String>,
+    /// The run's token limit and who applies it.
+    pub limit: RunLimit,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -991,6 +1007,103 @@ fn run_limits(
         .or_else(|| positive(&profile_limits["timeout_seconds"]))
         .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
     Ok((budgets, timeout, source))
+}
+
+/// The limit a stored run carries, with who applies it and the sentence every screen prints. Reads
+/// the snapshot (`budgets.tokens`, `metadata.limit_source`, the profile's name) and the agent that
+/// ran it: the latest attempt's, else the one requested. Only docket stops a task at the limit; every
+/// other agent is measured, and says so.
+fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
+    let tokens = snapshot["budgets"]["tokens"].as_u64().filter(|n| *n > 0);
+    let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {
+        (None, _) => LimitSource::None,
+        (Some(_), Some("profile")) => LimitSource::Profile,
+        (Some(_), _) => LimitSource::Run,
+    };
+    let docket = harness_kind == Some("docket");
+    let enforced_by = if docket { "docket" } else { "measured" };
+    let agent = match harness_kind {
+        Some("claude-code") => "Claude Code",
+        Some("codex") => "Codex",
+        Some("opencode") => "OpenCode",
+        _ => "the agent",
+    };
+    let sentence = match tokens {
+        None if docket => {
+            "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
+                .to_owned()
+        }
+        None => "No limit set in Tack".to_owned(),
+        Some(n) => {
+            let digits = n.to_string();
+            let spaced = digits
+                .as_bytes()
+                .rchunks(3)
+                .rev()
+                .map(|c| std::str::from_utf8(c).unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let from = match source {
+                LimitSource::Profile => {
+                    let name = snapshot["resolved_agent_profile"]["name"]
+                        .as_str()
+                        .unwrap_or("");
+                    format!("from the profile {name}")
+                }
+                _ => "set for this run".to_owned(),
+            };
+            let who = if docket {
+                "docket stops the task there".to_owned()
+            } else {
+                format!(
+                    "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet)"
+                )
+            };
+            format!("{spaced} tokens · {from} · {who}")
+        }
+    };
+    RunLimit {
+        tokens,
+        source: source.as_str().to_owned(),
+        enforced_by: enforced_by.to_owned(),
+        sentence,
+    }
+}
+
+/// The limit of each listed request, read from its stored snapshot and the agent that ran it.
+async fn run_limits_of(
+    pool: &sqlx::SqlitePool,
+    ids: &[String],
+) -> Result<std::collections::HashMap<String, RunLimit>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT r.id,
+                json_extract(r.request_snapshot, '$.budgets') AS budgets,
+                json_extract(r.request_snapshot, '$.metadata.limit_source') AS source,
+                json_extract(r.request_snapshot, '$.resolved_agent_profile.name') AS profile,
+                COALESCE((SELECT json_extract(a.actual_execution, '$.harness_kind')
+                            FROM execution_attempts a
+                           WHERE a.request_id = r.id AND a.actual_execution IS NOT NULL
+                           ORDER BY a.attempt_number DESC LIMIT 1),
+                         r.requested_harness_kind) AS harness_kind
+           FROM execution_requests r
+          WHERE r.id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(json!(ids).to_string())
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let budgets: Option<String> = row.get("budgets");
+            let snapshot = json!({
+                "budgets": budgets.and_then(|b| serde_json::from_str::<Value>(&b).ok()).unwrap_or(Value::Null),
+                "metadata": {"limit_source": row.get::<Option<String>, _>("source")},
+                "resolved_agent_profile": {"name": row.get::<Option<String>, _>("profile")},
+            });
+            let kind: Option<String> = row.get("harness_kind");
+            (row.get("id"), limit_source(&snapshot, kind.as_deref()))
+        })
+        .collect())
 }
 
 /// `create_execution` for a caller that is the server itself: the principal is a string,
@@ -1670,9 +1783,21 @@ pub async fn list_executions(
                     json!({}),
                 )
             })?;
+    let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+    let mut limits = run_limits_of(state.repo.pool(), &ids).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not read the runs' limits",
+            json!({}),
+        )
+    })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| ExecutionSummary {
+            limit: limits
+                .remove(&row.id)
+                .unwrap_or_else(|| limit_source(&Value::Null, None)),
             waiting_reason: waiting_reason_or_offline(&row.state, row.waiting_reason, offline),
             request_id: row.id,
             item_id: row.item_id,
@@ -1768,9 +1893,23 @@ pub async fn get_execution(
                     json!({}),
                 )
             })?;
+    let request_id: String = row.get("id");
+    let limit = run_limits_of(state.repo.pool(), std::slice::from_ref(&request_id))
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not read the run's limit",
+                json!({}),
+            )
+        })?
+        .remove(&request_id)
+        .unwrap_or_else(|| limit_source(&Value::Null, None));
     Ok(Json(ExecutionDetailResponse {
         protocol_version: 1,
-        request_id: row.get("id"),
+        request_id,
+        limit,
         item_id: row.get("item_id"),
         state: request_state.clone(),
         cancellation_requested_at: row.get("cancellation_requested_at"),
@@ -2485,4 +2624,74 @@ pub async fn get_item_agent_context(
         profile_source: answered_source,
         limits: profile["limits"].clone(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // (stored snapshot, agent, tokens, source, enforced_by, the sentence every screen prints)
+    #[test]
+    fn a_runs_limit_says_who_set_it_and_who_applies_it() {
+        let profile = json!({"budgets": {"tokens": 300000}, "metadata": {"limit_source": "profile"},
+            "resolved_agent_profile": {"name": "Implementer"}});
+        let run = json!({"budgets": {"tokens": 300000}, "metadata": {"limit_source": "run"}});
+        let none = json!({"budgets": {}, "metadata": {"limit_source": "none"}});
+        let rows = [
+            (
+                &profile,
+                "docket",
+                Some(300_000),
+                "profile",
+                "docket",
+                "300 000 tokens · from the profile Implementer · docket stops the task there",
+            ),
+            (
+                &run,
+                "claude-code",
+                Some(300_000),
+                "run",
+                "measured",
+                "300 000 tokens · set for this run · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet)",
+            ),
+            (
+                &none,
+                "docket",
+                None,
+                "none",
+                "docket",
+                "No limit set in Tack · docket stops each step at its own limit (docket's setting)",
+            ),
+            (
+                &none,
+                "opencode",
+                None,
+                "none",
+                "measured",
+                "No limit set in Tack",
+            ),
+            // A run stored before the source was recorded still names a limit it carries.
+            (
+                &json!({"budgets": {"tokens": 1000}}),
+                "docket",
+                Some(1000),
+                "run",
+                "docket",
+                "1 000 tokens · set for this run · docket stops the task there",
+            ),
+        ];
+        for (snapshot, agent, tokens, source, enforced_by, sentence) in rows {
+            let limit = limit_source(snapshot, Some(agent));
+            assert_eq!(
+                (
+                    limit.tokens,
+                    limit.source.as_str(),
+                    limit.enforced_by.as_str(),
+                    limit.sentence.as_str()
+                ),
+                (tokens, source, enforced_by, sentence),
+                "{snapshot} on {agent}"
+            );
+        }
+    }
 }

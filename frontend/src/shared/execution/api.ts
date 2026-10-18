@@ -72,6 +72,16 @@ export interface ExecutionSummary {
   /** When a runner's poll first found the request unclaimable (RFC 3339); null
    *  for a capacity wait and once claimed. */
   waiting_since?: string | null;
+  /** The run's token limit and who applies it; `sentence` is what every screen prints. */
+  limit?: RunLimit;
+}
+
+/** `RunLimit` from the server, which owns the sentence. */
+export interface RunLimit {
+  tokens: number | null;
+  source: 'profile' | 'run' | 'none';
+  enforced_by: 'docket' | 'measured';
+  sentence: string;
 }
 
 export interface ExecutionListResult {
@@ -194,6 +204,7 @@ export const executionsApi = {
       created_at: data.created_at,
       waiting_reason: data.waiting_reason,
       waiting_since: data.waiting_since,
+      limit: data.limit,
     };
     return { data: summary, headers };
   },

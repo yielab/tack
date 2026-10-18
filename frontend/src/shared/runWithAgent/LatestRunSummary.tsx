@@ -132,6 +132,13 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               </p>
             )}
           </Show>
+          <Show when={latest()?.limit}>
+            {(limit) => (
+              <p data-testid="latest-run-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {limit().sentence}
+              </p>
+            )}
+          </Show>
           <Show when={finished() && attempt()?.merge && !attempt()!.merge!.merged}>
             <MergeButton
               attemptId={attempt()!.attempt_id}

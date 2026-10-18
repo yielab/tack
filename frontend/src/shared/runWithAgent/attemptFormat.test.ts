@@ -186,8 +186,8 @@ describe('formatTokenCount / formatApproxCost', () => {
   });
 
   it('a harness dollar figure is always approximate, and unmeasured stays "Not measured"', () => {
-    expect(formatApproxCost({ value: 1.3368, source: 'measured' })).toBe('≈ $1.34');
-    expect(formatApproxCost({ value: 0.0042, source: 'estimated' })).toBe('≈ $0.0042');
+    expect(formatApproxCost({ value: 1.3368, source: 'measured' })).toBe('≈ $1.34 (estimated)');
+    expect(formatApproxCost({ value: 0.0042, source: 'estimated' })).toBe('≈ $0.0042 (estimated)');
     expect(formatApproxCost({ value: null, source: 'not_measured' })).toBe(NOT_MEASURED_TEXT);
   });
 });

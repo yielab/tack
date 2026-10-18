@@ -519,7 +519,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
           fallback={<span data-testid="usage-cost" class="text-sm" title={`${harness()} did not report a cost`} style={{ color: 'var(--color-text-secondary)' }}>Cost: <Unmeasured /></span>}
         >
           <span data-testid="usage-cost" class="text-sm font-semibold" title={`${harness()}'s own estimate at list price — your bill may differ`} style={{ color: 'var(--color-text-primary)' }}>
-            {cost()} (approx.)
+            {cost()}
           </span>
         </Show>
       </div>
