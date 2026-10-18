@@ -458,4 +458,13 @@ is docket's decision (`docket-triage.md` recommends the same default).
   is answered as an idempotency conflict, once per runner start.
 - **Round 5** opened 2026-10-18, from R0's runs on the real board (ADR 0082's amendment): R (a
   docket task that outlives the runner is followed again) and T (the board makes its decision
-  token), side by side.
+  token), side by side. Both merged the same day.
+  - T merged (`fa3617f0`). As built: `ensure_decision_token` reuses `ensure_api_token`'s rules and
+    file helper; the desktop app had no door to its window (it signs in by the server's HttpOnly
+    cookie), so it gained an initialization script that sets the key the Inbox reads, for the
+    board's origin only, from the file beside the database it starts the server with.
+  - R merged (`dc276387`, test race fixed in `88053f77`). As built: the journal keeps the claim with
+    literal environment values cleared. At integration, recovery was found to follow a resumed
+    task inline, before the heartbeat ticker existed, so its lease would expire mid-follow and no
+    new work would be claimed; `recover` now hands it back as `RunCycle::Resumed` and `serve`
+    follows it in a slot. The question already on the board is waited on, never created again.
