@@ -152,6 +152,43 @@ async fn next_step(progress: &mut Option<mpsc::Receiver<Progress>>) -> Option<Op
     }
 }
 
+/// The token limit the runner itself holds a run to: the snapshot's `budgets.tokens`
+/// (`run_limits` in the server wrote it), unless docket is the agent, which stops its own
+/// task there (`maxTokens` in its task body). A harness that reports no usage while it runs
+/// is never stopped by it: its tokens are measured, not enforced.
+fn runner_token_limit(request: &tack_orch::execution::ExecutionRequestSnapshot) -> Option<u64> {
+    if request.requested_harness_kind.as_str() == crate::harness::docket::DESCRIPTOR.kind {
+        return None;
+    }
+    request
+        .budgets
+        .get("tokens")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|tokens| *tokens > 0)
+}
+
+/// The attempt a run's limit stopped ends failed with the limit's sentence, which the
+/// attempt's panel prints as its reason; what the harness staged stays beside it.
+fn token_limit_reached(outcome: &mut HarnessOutcome, limit: u64, counted: u64) {
+    outcome.terminal_state = AttemptState::Failed;
+    let mut reason = match std::mem::take(&mut outcome.terminal_reason) {
+        serde_json::Value::Object(reason) => reason,
+        _ => serde_json::Map::new(),
+    };
+    reason.insert("reason".to_owned(), "token_limit".into());
+    reason.insert("code".to_owned(), "token_limit".into());
+    reason.insert(
+        "message".to_owned(),
+        format!(
+            "the run reached its token limit ({})",
+            tack_core::run_defaults::token_count(i64::try_from(limit).unwrap_or(i64::MAX))
+        )
+        .into(),
+    );
+    reason.insert("counted_tokens".to_owned(), counted.into());
+    outcome.terminal_reason = serde_json::Value::Object(reason);
+}
+
 /// Posts `answer` back to the harness, if anything is still listening. Best
 /// effort: a dropped receiver means the run has already moved on without it.
 async fn send_answer(
@@ -1083,6 +1120,9 @@ where
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
         let mut stopped_by_cancel = false;
+        let limit = runner_token_limit(&spec.work.request);
+        let mut counted = 0u64;
+        let mut stopped_by_limit = false;
         let mut flush = tokio::time::interval_at(
             tokio::time::Instant::now() + PROGRESS_FLUSH_INTERVAL,
             PROGRESS_FLUSH_INTERVAL,
@@ -1110,6 +1150,9 @@ where
                         if stopped_by_cancel {
                             outcome.terminal_state = AttemptState::Cancelled;
                         }
+                        if let (true, Some(limit)) = (stopped_by_limit, limit) {
+                            token_limit_reached(&mut outcome, limit, counted);
+                        }
                         outcome
                     });
                 }
@@ -1117,13 +1160,22 @@ where
                     self.open_decision(session, record, &mut state, question, prompt).await;
                 }
                 Some(step) = next_step(&mut progress) => match step {
-                    Some(step) => steps.push(step),
+                    Some(step) => {
+                        counted += step.usage.as_ref().and_then(tack_orch::execution::Usage::counted).unwrap_or(0);
+                        steps.push(step);
+                        if limit.is_some_and(|limit| counted >= limit)
+                            && !stopped_by_limit
+                            && !stopped_by_cancel
+                        {
+                            stopped_by_limit = self.stop_at_limit(handle, record, counted).await;
+                        }
+                    }
                     None => progress = None,
                 },
                 _ = flush.tick(), if !steps.is_empty() => {
                     self.submit_progress(session, record, &mut steps, prompt).await;
                 }
-                Ok(()) = cancel.changed(), if !stopped_by_cancel => {
+                Ok(()) = cancel.changed(), if !stopped_by_cancel && !stopped_by_limit => {
                     match self.adapter.cancel(handle).await {
                         Ok(evidence) => {
                             stopped_by_cancel =
@@ -1139,6 +1191,28 @@ where
                 () = tokio::time::sleep(DECISION_POLL_INTERVAL), if waiting_for_an_answer => {
                     self.advance_pending(session, record, &mut state).await;
                 }
+            }
+        }
+    }
+
+    /// Stops the process through the cancel path once its steps have counted its limit;
+    /// whether it stopped decides how the attempt ends.
+    async fn stop_at_limit(
+        &self,
+        handle: &LocalRunHandle,
+        record: &AttemptJournal,
+        counted: u64,
+    ) -> bool {
+        match self.adapter.cancel(handle).await {
+            Ok(evidence) => evidence.observation == CancelObservation::ProcessStopped,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    counted,
+                    attempt_id = record.attempt_id.as_str(),
+                    "the token limit was reached but the harness could not be stopped"
+                );
+                false
             }
         }
     }

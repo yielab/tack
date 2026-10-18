@@ -3885,6 +3885,95 @@ async fn reported_steps_reach_the_timeline_in_order_before_the_terminal_event() 
     }
 }
 
+/// An agent whose steps count the run's limit is stopped through the cancel path and the
+/// attempt fails with the limit's sentence; the running sum is the steps' counted tokens
+/// (a cache read is not one). docket stops its own task, a run without a limit is never
+/// stopped, and a run short of its limit finishes as the agent ended it.
+#[tokio::test(start_paused = true)]
+async fn a_run_that_counts_its_token_limit_is_stopped_and_fails() {
+    let step = |tokens_in: u64, cache_read: u64, tokens_out: u64| {
+        serde_json::from_value(serde_json::json!({
+            "tokens_in": {"value": tokens_in, "source": "measured"},
+            "tokens_out": {"value": tokens_out, "source": "measured"},
+            "duration_ms": {"value": null, "source": "not_measured"},
+            "cost_usd": {"value": null, "source": "not_measured"},
+            "cache_read_tokens": cache_read,
+        }))
+        .expect("usage")
+    };
+    // Counted: 300, then 600 (of 5 600 in, 5 000 of them cache reads), then 500: 1 400 in all.
+    let rows = [
+        (
+            "claude-code",
+            serde_json::json!({"tokens": 1_000}),
+            1,
+            AttemptState::Failed,
+        ),
+        (
+            "docket",
+            serde_json::json!({"tokens": 1_000}),
+            0,
+            AttemptState::Succeeded,
+        ),
+        (
+            "claude-code",
+            serde_json::json!({}),
+            0,
+            AttemptState::Succeeded,
+        ),
+        (
+            "claude-code",
+            serde_json::json!({"tokens": 5_000}),
+            0,
+            AttemptState::Succeeded,
+        ),
+    ];
+    for (kind, budgets, stops, state) in rows {
+        let (root_dir, journal) = fresh_journal("token-limit");
+        let mut claimed = work();
+        claimed.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(kind);
+        claimed.request.budgets = budgets.clone();
+        let (steps_tx, steps_rx) = mpsc::channel(8);
+        for usage in [step(300, 0, 0), step(5_600, 5_000, 0), step(500, 0, 0)] {
+            steps_tx
+                .send(Progress {
+                    kind: "agent.model_call".to_owned(),
+                    text: "Model call".to_owned(),
+                    usage: Some(usage),
+                })
+                .await
+                .expect("send");
+        }
+        drop(steps_tx);
+        let fake_adapter = FakeAdapter {
+            wait_delay: PROGRESS_FLUSH_INTERVAL * 3,
+            progress: Arc::new(Mutex::new(Some(steps_rx))),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        let cancel_calls = fake_adapter.cancel_calls.clone();
+        let fake_protocol = protocol(claimed, false, false);
+        let reported = fake_protocol.reported_completions.clone();
+        let engine = runner_engine(fake_protocol, fake_adapter, journal, root_dir.path())
+            .with_data_protocol(Arc::new(FakeDataProtocol::new()));
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle");
+
+        let label = format!("{kind} {budgets}");
+        assert_eq!(cancel_calls.load(Ordering::SeqCst), stops, "{label}");
+        let completions = reported.lock().expect("lock").clone();
+        assert_eq!(completions[0].terminal_state, state, "{label}");
+        if stops == 1 {
+            let reason = &completions[0].terminal_reason;
+            assert_eq!(reason["message"], "the run reached its token limit (1 000)");
+            assert_eq!(reason["code"], "token_limit");
+            // The third step reaches the limit; the 5 000 cache reads of the second are not counted.
+            assert_eq!(reason["counted_tokens"], 900 + 500);
+        }
+    }
+}
+
 /// The verifier reads the agent's version and model from the evidence's usage,
 /// beside the measured counters.
 #[test]

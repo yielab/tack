@@ -8,13 +8,15 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities};
+use tack_orch::execution::{
+    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
+};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        ModelUsage, RunContext, RunReport, UsageDetail, capability, policy_capability,
+        ModelUsage, RunContext, RunReport, UsageDetail, call_usage, capability, policy_capability,
     },
     process::{ProcessExit, ProcessResult},
 };
@@ -36,16 +38,32 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     credential_note: "Claude Code signs in with its own login; Tack holds no model credential.",
     reports_process_groups: false,
     cancels_over_api: false,
-    reports_progress: false,
+    reports_progress: true,
     sandbox_binds: &[".claude"],
     readiness: Some(readiness::check),
     models_docs: "https://code.claude.com/docs/en/model-config",
     sign_in_docs: "https://code.claude.com/docs/en/authentication",
 };
 
-/// Tools that reach the network, matched case-insensitively against
-/// `permission_policy.tools`.
+/// Tools that reach the network, matched case-insensitively against the run's tools.
 const NETWORK_TOOLS: &[&str] = &["webfetch", "websearch"];
+
+/// The tools this run gives Claude Code: the run's own list, else the profile's for this
+/// agent (`tool_policy.tools["claude-code"]`, the shape the Run dialog and auto-start read),
+/// else none. The run's list wins because the person typed it for this run.
+fn tools(run: &RunContext<'_>) -> Vec<String> {
+    let request = &run.spec.work.request;
+    if !request.permission_policy.tools.is_empty() {
+        return request.permission_policy.tools.clone();
+    }
+    request.resolved_agent_profile.tool_policy["tools"][DESCRIPTOR.kind]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
 
 pub struct ClaudeCodeGrammar;
 
@@ -260,9 +278,9 @@ impl HarnessGrammar for ClaudeCodeGrammar {
     fn invocation(&self, run: &RunContext<'_>) -> Result<Invocation, HarnessError> {
         let request = &run.spec.work.request;
         let policy = &request.permission_policy;
-        let all_tools = policy.allows_all_tools();
-        let names_network_tool = policy
-            .tools
+        let tools = tools(run);
+        let all_tools = tools.iter().any(|tool| tool == PermissionPolicy::ALL_TOOLS);
+        let names_network_tool = tools
             .iter()
             .any(|tool| NETWORK_TOOLS.contains(&tool.to_ascii_lowercase().as_str()));
         if !policy.network && names_network_tool {
@@ -324,13 +342,16 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                 ]);
             }
         } else {
-            args.push(policy.tools.join(","));
+            args.push(tools.join(","));
         }
         if let Some(model) = &request.requested_model {
             args.extend(["--model".to_owned(), model.clone()]);
         }
 
         let mut env = BTreeMap::new();
+        // The auto-memory index reaches the prompt past `--setting-sources ""`;
+        // this removes it (measured on 2.1.302).
+        env.insert("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "1".to_owned());
         // The same opt-out for claude.ai connectors, for a CLI that predates
         // `--strict-mcp-config` covering them.
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".to_owned(), "false".to_owned());
@@ -389,7 +410,8 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                 "Token totals, cache reads and writes, model calls and the models used are read \
                  from the result line's `modelUsage` (every model, auxiliary ones included) or, \
                  without it, `usage`; `total_cost_usd` is Claude Code's own estimate at list \
-                 price, not a bill.",
+                 price, not a bill. While it runs, each model call's tokens are read from its \
+                 `assistant` line, once per message id, with the output low until the result.",
             ),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
@@ -471,6 +493,41 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             Some("result") => Some(StreamSignal::Finished),
             _ => None,
         }
+    }
+
+    /// An `assistant` line carries `message.usage` as that API call ends, and a call split
+    /// over several lines (a thinking block, then its tool_use) repeats the id and the usage,
+    /// so the id names the call. `output_tokens` is low until the `result` line, which settles
+    /// the attempt's figure (`fixtures/claude_code/README.md`, 2.1.302).
+    fn live_usage(&self, line: &str) -> Option<(String, Usage)> {
+        let value: Value = serde_json::from_str(line.trim()).ok()?;
+        if value.get("type").and_then(Value::as_str) != Some("assistant") {
+            return None;
+        }
+        let call = value.pointer("/message/id")?.as_str()?.to_owned();
+        let field = |key: &str| {
+            value
+                .pointer(&format!("/message/usage/{key}"))
+                .and_then(Value::as_u64)
+        };
+        let (input, read, write) = (
+            field("input_tokens")?,
+            field("cache_read_input_tokens").unwrap_or(0),
+            field("cache_creation_input_tokens").unwrap_or(0),
+        );
+        let detail = UsageDetail {
+            cache_read_tokens: Some(read),
+            cache_write_tokens: Some(write),
+            ..Default::default()
+        };
+        Some((
+            call,
+            call_usage(
+                input + read + write,
+                field("output_tokens").unwrap_or(0),
+                detail,
+            ),
+        ))
     }
 
     /// `allow_once` is the only option this grammar spends on letting the

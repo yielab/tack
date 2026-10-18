@@ -15,7 +15,7 @@
 //! once.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -297,6 +297,42 @@ impl UsageDetail {
     }
 }
 
+/// The usage of one model call a CLI reported while it ran: `tokens_in` already holds the
+/// cache reads and writes `detail` names, as it does for a finished run.
+pub fn call_usage(tokens_in: u64, tokens_out: u64, detail: UsageDetail) -> Usage {
+    Usage {
+        tokens_in: measurement(Some(tokens_in)),
+        tokens_out: measurement(Some(tokens_out)),
+        duration_ms: measurement(None),
+        cost_usd: measurement(None),
+        additional: detail.into_additional(),
+    }
+}
+
+/// The timeline step a model call makes, once per call: `counted` holds the calls already
+/// seen in this run. The step's usage is that call's alone; the server and the engine add
+/// the steps up, so a running sum lives in one place on each side.
+pub(crate) fn live_usage_step(
+    grammar: &impl HarnessGrammar,
+    line: &str,
+    counted: &mut BTreeSet<String>,
+) -> Option<StreamSignal> {
+    let (call, usage) = grammar.live_usage(line)?;
+    if !counted.insert(call) {
+        return None;
+    }
+    Some(StreamSignal::Progress(Progress {
+        kind: "agent.model_call".to_owned(),
+        text: format!(
+            "Model call used {} tokens",
+            tack_core::run_defaults::token_count(
+                i64::try_from(usage.counted().unwrap_or(0)).unwrap_or(i64::MAX)
+            )
+        ),
+        usage: Some(usage),
+    }))
+}
+
 impl RunReport {
     /// A report carrying only a verdict and its evidence.
     pub fn verdict(succeeded: bool, terminal_reason: serde_json::Value) -> Self {
@@ -348,6 +384,14 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// workspace is `run.spec.workspace.path`, and the scratch dir is its
     /// own field.
     fn signal(&self, _run: &RunContext<'_>, _line: &str) -> Option<StreamSignal> {
+        None
+    }
+
+    /// What a model call used, when this line says so, for a CLI that reports it while it
+    /// runs: the call's name and its own usage (see [`call_usage`]). A call a CLI repeats
+    /// across lines is named alike, so [`live_usage_step`] counts it once. Only consulted
+    /// when the descriptor's `reports_progress` is, and only for a line `signal` left alone.
+    fn live_usage(&self, _line: &str) -> Option<(String, Usage)> {
         None
     }
 
@@ -1525,11 +1569,16 @@ where
                 scratch: &record.scratch,
                 program: None,
             };
+            let mut calls = BTreeSet::new();
             process
                 .wait_with_capture_and_questions(
                     &record.limits,
                     &record.secrets,
-                    |line| self.grammar.signal(&run_context, line),
+                    |line| {
+                        self.grammar
+                            .signal(&run_context, line)
+                            .or_else(|| live_usage_step(&self.grammar, line, &mut calls))
+                    },
                     |question, answer| self.grammar.answer(question, answer),
                     questions,
                     progress,

@@ -8,13 +8,15 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
+use tack_orch::execution::{
+    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
+};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,
     local_process::{
         HarnessDescriptor, HarnessGrammar, Invocation, LocalProcessHarness, ModelSelection,
-        RunContext, RunReport, capability, policy_capability,
+        RunContext, RunReport, UsageDetail, call_usage, capability, policy_capability,
     },
     process::{ProcessExit, ProcessResult, confined_cwd},
 };
@@ -42,12 +44,15 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     credential_note: "opencode signs in with its own login; Tack holds no model credential.",
     reports_process_groups: false,
     cancels_over_api: false,
-    reports_progress: false,
+    reports_progress: true,
     sandbox_binds: &[],
     readiness: Some(readiness::check),
     models_docs: "https://opencode.ai/docs/models/",
     sign_in_docs: "https://opencode.ai/docs/providers/",
 };
+
+/// The most characters of an `error` event's message the attempt keeps.
+const ERROR_MESSAGE_CHARS: usize = 500;
 
 pub struct OpencodeGrammar;
 
@@ -99,6 +104,37 @@ fn cancelled_or_malformed(result: &ProcessResult) -> RunReport {
     )
 }
 
+/// What a `step_finish` event used: `part.tokens.input` leaves the cache reads out
+/// (opencode 1.18.30, `fixtures/opencode/README.md`), so they and the cache writes are
+/// added back and named, which is how `tokens_in` reads for every agent.
+struct StepTokens {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+}
+
+impl StepTokens {
+    fn of(event: &Value) -> Self {
+        let field = |path: &str| {
+            event
+                .pointer(&format!("/part/tokens/{path}"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+        };
+        Self {
+            input: field("input"),
+            output: field("output"),
+            cache_read: field("cache/read"),
+            cache_write: field("cache/write"),
+        }
+    }
+
+    fn tokens_in(&self) -> u64 {
+        self.input + self.cache_read + self.cache_write
+    }
+}
+
 /// Scans every stdout line for `step_finish` (tokens are summed across
 /// every one; the last `reason` decides the verdict) and `error`. A tool
 /// the policy denied is opencode's own `tool_use` event and never stops
@@ -106,10 +142,14 @@ fn cancelled_or_malformed(result: &ProcessResult) -> RunReport {
 /// 5) — only whether a terminal event was seen at all.
 fn parse_run_output(result: &ProcessResult) -> RunReport {
     let mut last_reason = None;
-    let mut tokens_in = 0u64;
-    let mut tokens_out = 0u64;
+    let mut steps = StepTokens {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+    };
     let mut saw_finish = false;
-    let mut saw_error = false;
+    let mut error_message = None;
     let mut terminal_seen = false;
 
     for line in result.stdout.text.lines() {
@@ -124,30 +164,35 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
         match kind {
             Some("step_finish") => {
                 saw_finish = true;
-                tokens_in += event
-                    .pointer("/part/tokens/input")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                tokens_out += event
-                    .pointer("/part/tokens/output")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
+                let step = StepTokens::of(&event);
+                steps.input += step.input;
+                steps.output += step.output;
+                steps.cache_read += step.cache_read;
+                steps.cache_write += step.cache_write;
                 last_reason = event
                     .pointer("/part/reason")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
                 terminal_seen = last_reason.as_deref() != Some("tool-calls");
             }
-            Some("error") => saw_error = true,
+            Some("error") if error_message.is_none() => {
+                error_message = Some(error_text(&event));
+            }
             _ => {}
         }
     }
 
     if !saw_finish {
+        if let Some(message) = error_message {
+            return RunReport::verdict(
+                false,
+                serde_json::json!({ "reason": "error", "message": message }),
+            );
+        }
         return cancelled_or_malformed(result);
     }
     RunReport {
-        succeeded: last_reason.as_deref() == Some("stop") && !saw_error,
+        succeeded: last_reason.as_deref() == Some("stop") && error_message.is_none(),
         terminal_reason: serde_json::json!({ "reason": last_reason }),
         harness_version: None,
         // Neither the event stream nor `opencode export` ever names the
@@ -155,12 +200,28 @@ fn parse_run_output(result: &ProcessResult) -> RunReport {
         // `served_model_export.json`, opencode 1.18.30, 2026-09-20) — both
         // only ever name the requested model, so there is nothing to read.
         observed_model: None,
-        tokens_in: Some(tokens_in),
-        tokens_out: Some(tokens_out),
+        tokens_in: Some(steps.tokens_in()),
+        tokens_out: Some(steps.output),
         duration_ms: None,
         cost_usd: None,
-        usage_detail: Default::default(),
+        usage_detail: UsageDetail {
+            cache_read_tokens: Some(steps.cache_read),
+            cache_write_tokens: Some(steps.cache_write),
+            ..Default::default()
+        },
     }
+}
+
+/// An `error` event's words: `error.data.message` when it has one (an expired key prints
+/// "This API key has expired…", 1.18.30), else the error's name, bounded.
+fn error_text(event: &Value) -> String {
+    let text = event
+        .pointer("/error/data/message")
+        .and_then(Value::as_str)
+        .filter(|message| !message.is_empty())
+        .or_else(|| event.pointer("/error/name").and_then(Value::as_str))
+        .unwrap_or("opencode reported an error");
+    bounded_prefix(text, ERROR_MESSAGE_CHARS)
 }
 
 /// The working directory `session/new`'s `cwd` names: the workspace root,
@@ -435,7 +496,8 @@ impl HarnessGrammar for OpencodeGrammar {
             ),
             usage: capability(
                 CapabilitySupport::Advisory,
-                "step_finish.tokens are real per-turn measurements, summed across every step; \
+                "step_finish.tokens are real per-turn measurements, summed across every step, \
+                 with the cache reads and writes added back to the input (it leaves them out); \
                  cost is always null on the installed version for an unrecognized model, so cost \
                  is never reported",
             ),
@@ -521,6 +583,22 @@ impl HarnessGrammar for OpencodeGrammar {
             3 => Some(StreamSignal::Finished),
             _ => None,
         }
+    }
+
+    /// A `step_finish` line arrives as each step ends; `part.id` names it.
+    fn live_usage(&self, line: &str) -> Option<(String, Usage)> {
+        let event: Value = serde_json::from_str(line.trim()).ok()?;
+        if event.get("type").and_then(Value::as_str) != Some("step_finish") {
+            return None;
+        }
+        let step = StepTokens::of(&event);
+        let detail = UsageDetail {
+            cache_read_tokens: Some(step.cache_read),
+            cache_write_tokens: Some(step.cache_write),
+            ..Default::default()
+        };
+        let call = event.pointer("/part/id")?.as_str()?.to_owned();
+        Some((call, call_usage(step.tokens_in(), step.output, detail)))
     }
 
     /// `once` is the only answer that releases the tool call; every other

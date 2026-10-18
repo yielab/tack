@@ -302,3 +302,76 @@ fn acp_events_become_a_report_over_a_captured_conversation() {
     assert!(!errored.succeeded);
     assert_eq!(errored.terminal_reason["message"], "boom");
 }
+
+/// `tokens.input` leaves the cache reads out (opencode 1.18.30): `tokens_in` adds them and the
+/// writes back and names them, so the counted tokens are input + cache writes + output. The
+/// same steps read live, one per `step_finish`, add up to the finished run's figure.
+#[test]
+fn cache_reads_are_added_back_to_the_input_and_named() {
+    use crate::harness::local_process::live_usage_step;
+
+    let transcript = include_str!("../fixtures/opencode/1.18.30/cache_read.ndjson");
+    let report = read(transcript, ProcessExit::Exited(0));
+    assert!(report.succeeded);
+    // (201 + 800) + (202 + 800) in; 7 + 7 out.
+    assert_eq!(report.tokens_in, Some(2_003));
+    assert_eq!(report.tokens_out, Some(14));
+    assert_eq!(report.usage_detail.cache_read_tokens, Some(1_600));
+    assert_eq!(report.usage_detail.cache_write_tokens, Some(0));
+
+    let mut calls = std::collections::BTreeSet::new();
+    let steps: Vec<Usage> = transcript
+        .lines()
+        .filter_map(|line| live_usage_step(&OpencodeGrammar, line, &mut calls))
+        .map(|signal| match signal {
+            StreamSignal::Progress(step) => step.usage.expect("a step's usage"),
+            other => panic!("expected progress, got {other:?}"),
+        })
+        .collect();
+    let counted: Vec<u64> = steps.iter().filter_map(Usage::counted).collect();
+    assert_eq!(counted, [208, 209]);
+    assert_eq!(steps[0].tokens_in.value, Some(1_001));
+    assert_eq!(steps[0].additional["cache_read_tokens"], 800);
+
+    // A step is counted once however often its line is read.
+    let first = transcript
+        .lines()
+        .find(|line| line.contains("step_finish"))
+        .expect("a step_finish line");
+    assert!(live_usage_step(&OpencodeGrammar, first, &mut calls).is_none());
+    assert_eq!(OpencodeGrammar.live_usage("{\"type\":\"text\"}"), None);
+}
+
+/// An expired key prints one `error` event, no `step_finish`, and exits 0 (1.18.30). The
+/// attempt fails with the error's own words, not as malformed output.
+#[test]
+fn an_error_event_fails_the_attempt_with_its_message() {
+    let transcript = include_str!("../fixtures/opencode/1.18.30/api_key_expired.ndjson");
+    let report = read(transcript, ProcessExit::Exited(0));
+    assert!(!report.succeeded);
+    assert_eq!(report.terminal_reason["reason"], "error");
+    let message = report.terminal_reason["message"].as_str().expect("message");
+    assert!(
+        message.starts_with("This API key has expired."),
+        "{message}"
+    );
+    assert!(message.chars().count() <= ERROR_MESSAGE_CHARS);
+
+    // Bounded, and named by the error when it has no message.
+    let long = format!(
+        "{{\"type\":\"error\",\"error\":{{\"name\":\"APIError\",\"data\":{{\"message\":\"{}\"}}}}}}",
+        "x".repeat(2 * ERROR_MESSAGE_CHARS)
+    );
+    let bounded = read(&long, ProcessExit::Exited(0));
+    assert_eq!(
+        bounded.terminal_reason["message"]
+            .as_str()
+            .map(|m| m.chars().count()),
+        Some(ERROR_MESSAGE_CHARS)
+    );
+    let nameless = read(
+        "{\"type\":\"error\",\"error\":{\"name\":\"UnknownError\"}}",
+        ProcessExit::Exited(0),
+    );
+    assert_eq!(nameless.terminal_reason["message"], "UnknownError");
+}
