@@ -20,9 +20,16 @@ import RunFlow from './RunFlow';
 import { summarizeModels } from './models';
 import { agentSafety } from '../help/texts';
 
+/** A profile's `limits` as the dialog reads them: a token limit and a time limit, each only when it is a positive whole number. */
+function profileLimits(limits: unknown): { tokens: number | null; timeoutSeconds: number | null } {
+  const l = (limits ?? {}) as { budgets?: { tokens?: unknown }; timeout_seconds?: unknown };
+  const positive = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null);
+  return { tokens: positive(l.budgets?.tokens), timeoutSeconds: positive(l.timeout_seconds) };
+}
+
 const initialForm = () => ({
   selectorKind: 'fleet' as 'fleet' | 'exact_runner', selectorId: '', agentProfileId: '', harnessKind: HARNESS_KINDS[0].value,
-  model: '', timeoutSeconds: 3600, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
+  model: '', timeoutSeconds: 3600, tokenLimit: '', tokenLimitEdited: false, timeoutEdited: false, allowNetwork: false, approvals: 'auto' as 'auto' | 'ask', toolsText: '',
   branch: '',
   idempotencyKey: generateIdempotencyKey(),
   verify: true, pushBranch: true,
@@ -75,8 +82,16 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   );
   const [agentContext] = createResource(
     () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
-    ({ id, profileId }) => api.briefs.agentContext(id, profileId || undefined).then((r) => r.text, () => undefined),
+    ({ id, profileId }) => api.briefs.agentContext(id, profileId || undefined).then((r) => ({ text: r.text, limits: profileLimits(r.limits) }), () => undefined),
   );
+  // What the profile limits a run to; the fields start from it until the person edits them.
+  createEffect(() => {
+    const limits = agentContext()?.limits;
+    if (!limits) return;
+    if (!form.tokenLimitEdited) setForm('tokenLimit', limits.tokens === null ? '' : String(limits.tokens));
+    const saved = item.error === undefined ? item()?.run_settings?.timeout_seconds : undefined;
+    if (!form.timeoutEdited && typeof saved !== 'number') setForm('timeoutSeconds', limits.timeoutSeconds ?? initialForm().timeoutSeconds);
+  });
 
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
@@ -126,6 +141,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   });
 
   const selectedAgentProfile = createMemo(() => agentProfilesData().find((p) => p.agent_profile_id === form.agentProfileId));
+  const timeoutDefault = () => agentContext()?.limits.timeoutSeconds ?? initialForm().timeoutSeconds;
   const typedTools = () => form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
   const profileTools = createMemo(() => profileToolsFor(selectedAgentProfile()?.tool_policy, form.harnessKind));
   // A blank field means the profile's tools; an empty list would leave the agent none.
@@ -215,8 +231,17 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!form.agentProfileId) errors.push('Choose a profile.');
     if (!form.harnessKind) errors.push('Select an agent.');
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
+    if (form.tokenLimitEdited && tokenLimitValue() === undefined) errors.push('Token limit must be a whole number above zero, or empty for no limit.');
     return errors;
   });
+
+  /** What the field asks for: `null` is no limit, `undefined` is a value that is no limit and no number. */
+  const tokenLimitValue = (): number | null | undefined => {
+    const text = form.tokenLimit.trim();
+    if (text === '') return null;
+    const n = Number(text);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
 
   const state = (missing: boolean): 'ok' | 'missing' => (missing ? 'missing' : 'ok');
   const rows = {
@@ -241,6 +266,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       harnessKind: form.harnessKind,
       model: requestedModel(),
       timeoutSeconds: form.timeoutSeconds,
+      // Sent only once the person changed it, so an untouched field leaves the choice to the profile.
+      tokenLimit: form.tokenLimitEdited ? tokenLimitValue() : undefined,
       allowNetwork: form.allowNetwork,
       approvals: form.approvals,
       tools: runTools(),
@@ -266,7 +293,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     const branch = form.branch.trim();
     if (branch && branch !== p?.default_branch) diff.branch = branch;
     if (form.pushBranch !== (p?.push_after_run ?? d.pushBranch)) diff.push = form.pushBranch;
-    if (form.timeoutSeconds !== d.timeoutSeconds) diff.timeout_seconds = form.timeoutSeconds;
+    if (form.timeoutSeconds !== timeoutDefault()) diff.timeout_seconds = form.timeoutSeconds;
     if (typedTools().length > 0) diff.tools = typedTools();
     if (form.allowNetwork !== d.allowNetwork) diff.network = form.allowNetwork;
     if (form.approvals !== defaultApprovals()) diff.approvals = form.approvals;
@@ -354,7 +381,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             harnessReports={chosenHarnessReports}
             gate={modelGate}
             project={project}
-            agentContext={() => agentContext()}
+            agentContext={() => agentContext()?.text}
+            profileLimit={() => agentContext()?.limits.tokens ?? null}
             profileSource={profileSource}
             profileTools={profileTools}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}

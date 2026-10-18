@@ -3008,6 +3008,11 @@ export interface components {
         /** @description Response body for `GET /api/items/{id}/agent-context`. */
         AgentContextResponse: {
             /**
+             * @description That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the
+             *     run dialog pre-fills its limits from it.
+             */
+            limits: unknown;
+            /**
              * @description The profile the server resolved for this item (the one named, else the role's, the
              *     project's default or the implementer); `null` when none could be chosen.
              */
@@ -3504,6 +3509,12 @@ export interface components {
              *     default, the implementer, and records which in `metadata.profile_source`.
              */
             agent_profile_id?: string | null;
+            /**
+             * @description A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
+             *     `null`: no limit for this run even when the profile has one; a positive integer: that
+             *     many. `0`, a negative number or a non-number is refused (`invalid_request`, field
+             *     `budgets.tokens`).
+             */
             budgets: unknown;
             environment: unknown;
             idempotency_key: string;
@@ -3559,8 +3570,11 @@ export interface components {
              *     with `invalid_request`. Omitted leaves the item's status untouched.
              */
             status_map_policy_id?: string | null;
-            /** Format: int64 */
-            timeout_seconds: number;
+            /**
+             * Format: int64
+             * @description Absent: the profile's `limits.timeout_seconds`, else the default time limit.
+             */
+            timeout_seconds?: number | null;
             /**
              * @description `false` declines the runner's verifier for this run. The runner's own
              *     configuration decides whether a verifier exists; `true` never enables one.

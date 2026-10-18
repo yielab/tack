@@ -91,7 +91,7 @@ pub struct CreateExecutionArgs<'a> {
     pub budgets: Option<&'a str>,
     pub environment: Option<&'a str>,
     pub metadata: Option<&'a str>,
-    pub timeout_seconds: u64,
+    pub timeout_seconds: Option<u64>,
     /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
     pub status_map_policy_id: Option<&'a str>,
 }
@@ -115,7 +115,8 @@ pub struct CreateExecutionValues<'a> {
     pub budgets: Value,
     pub environment: Value,
     pub metadata: Value,
-    pub timeout_seconds: u64,
+    /// Omitted, the server uses the profile's time limit, else its default.
+    pub timeout_seconds: Option<u64>,
     /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
     pub status_map_policy_id: Option<&'a str>,
 }
@@ -140,7 +141,6 @@ pub fn create_execution_body(
         "budgets": values.budgets,
         "environment": values.environment,
         "metadata": values.metadata,
-        "timeout_seconds": values.timeout_seconds,
         "status_map_policy_id": values.status_map_policy_id,
     });
     // An absent key is omitted, not sent as null: the server resolves it.
@@ -153,6 +153,9 @@ pub fn create_execution_body(
     }
     if let Some(harness) = values.requested_harness_kind {
         body["requested_harness_kind"] = json!(harness);
+    }
+    if let Some(timeout_seconds) = values.timeout_seconds {
+        body["timeout_seconds"] = json!(timeout_seconds);
     }
     body
 }

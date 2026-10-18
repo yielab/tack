@@ -678,9 +678,9 @@ struct ExecutionCreateArgs {
     /// Free-form metadata, as a JSON object (default: {})
     #[arg(long)]
     metadata: Option<String>,
-    /// Execution timeout, in seconds
+    /// Execution timeout, in seconds (default: the profile's time limit, else one hour)
     #[arg(long)]
-    timeout_seconds: u64,
+    timeout_seconds: Option<u64>,
     /// Status-map policy ID: done_on_success or done_on_mrp_accepted
     #[arg(long)]
     status_map_policy: Option<String>,
@@ -2538,7 +2538,7 @@ struct ExecutionCreateOpts {
     budgets: Option<String>,
     environment: Option<String>,
     metadata: Option<String>,
-    timeout_seconds: u64,
+    timeout_seconds: Option<u64>,
     status_map_policy: Option<String>,
 }
 

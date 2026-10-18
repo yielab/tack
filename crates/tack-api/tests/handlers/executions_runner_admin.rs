@@ -1543,7 +1543,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
             name: "B",
             instructions: "profile B instructions",
             tool_policy: "{}",
-            limits: "{}",
+            limits: r#"{"budgets":{"tokens":300000}}"#,
         },
         &SystemExecutionClock,
     )
@@ -1624,6 +1624,18 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     let for_b = compose(Some("profile-b")).await;
     assert!(for_b.starts_with("profile B instructions"), "{for_b}");
     assert!(!for_b.contains("work safely"), "{for_b}");
+    let limits = executions::get_item_agent_context(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(item_uuid),
+        axum::extract::Query(executions::AgentContextQuery {
+            profile_id: Some("profile-b".into()),
+        }),
+    )
+    .await
+    .expect("agent context")
+    .limits
+    .clone();
+    assert_eq!(limits["budgets"]["tokens"], 300_000);
 }
 
 /// A queued request no poll has explained reads "no runner is online" while
@@ -1858,6 +1870,74 @@ async fn the_request_snapshot_carries_what_the_item_is() {
         json!({"type": "task", "priority": "medium", "trusted": true})
     );
     assert_eq!(snapshot["metadata"]["mine"], 1);
+}
+
+// A run's limits: its own when the request sets them, else its profile's, else none (tokens)
+// or the default hour (time).
+#[tokio::test]
+async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
+    let (app, repo, item_id) = setup().await;
+    let with_tokens = r#"{"budgets":{"tokens":300000}}"#;
+    let with_time = r#"{"timeout_seconds":1800}"#;
+    // (profile limits, request budgets, request timeout, tokens it runs with, seconds it runs with)
+    let rows = [
+        (with_tokens, json!({}), None, Some(300_000), 3600),
+        (with_tokens, json!({"tokens": null}), None, None, 3600),
+        (with_tokens, json!({"tokens": 5000}), None, Some(5000), 3600),
+        ("{}", json!({}), None, None, 3600),
+        (with_time, json!({}), None, None, 1800),
+        (with_time, json!({}), Some(60), None, 60),
+    ];
+    for (n, (limits, budgets, timeout, tokens, seconds)) in rows.into_iter().enumerate() {
+        let id = format!("profile-limits-{n}");
+        repo.create_agent_profile(
+            NewAgentProfile {
+                id: &id,
+                name: &id,
+                instructions: "x",
+                tool_policy: "{}",
+                limits,
+            },
+            &SystemExecutionClock,
+        )
+        .await
+        .expect("profile");
+        let mut body = bare_body(&item_id, &format!("k-limits-{n}"));
+        body["agent_profile_id"] = json!(id);
+        body["budgets"] = budgets;
+        match timeout {
+            Some(t) => body["timeout_seconds"] = json!(t),
+            None => {
+                body.as_object_mut().unwrap().remove("timeout_seconds");
+            }
+        }
+        let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::OK, "row {n}: {created}");
+        let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+        for budgets in [
+            &snapshot["budgets"],
+            &snapshot["resolved_agent_profile"]["budgets"],
+        ] {
+            assert_eq!(
+                budgets.get("tokens").and_then(Value::as_u64),
+                tokens,
+                "row {n}"
+            );
+        }
+        assert_eq!(snapshot["timeout_seconds"], seconds, "row {n}");
+        assert_eq!(
+            snapshot["resolved_agent_profile"]["timeout_seconds"], seconds,
+            "row {n}"
+        );
+    }
+    for refused in [json!(0), json!(-5), json!("many")] {
+        let mut body = bare_body(&item_id, "k-limits-refused");
+        body["agent_profile_id"] = json!("profile-c1");
+        body["budgets"] = json!({"tokens": refused});
+        let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}: {err}");
+        assert_eq!(err["error"]["details"]["field"], "budgets.tokens");
+    }
 }
 
 #[tokio::test]
