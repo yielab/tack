@@ -91,10 +91,6 @@ automation a template carries, and the removal of dollars per day.
   in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
   enforced" for an agent Tack cannot stop. Dollars read "≈ $0.42 (estimated)" or "not priced",
   and the Factory page says how many of the models used have a price (ADR 0083 decisions 3–4).
-- **Tack stops Claude Code and opencode at a run's token limit.** A run's limit sentence names who
-  applies it: "300 000 tokens · set for this run · Tack stops Claude Code's run there" (and the same
-  for opencode, also when the limit is what was left of today's); Codex and any agent Tack does not
-  know stay "measured, not enforced".
 - **The run dialog says the token limit before you start.** Under the Token limit field it prints
   the same sentence the run will carry, and it changes as you edit the limit, clear it or choose
   another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
@@ -104,7 +100,8 @@ automation a template carries, and the removal of dollars per day.
   the call ends, the timeline shows them, and the day's room counts them while the run runs. When
   what a run has counted reaches its limit, Tack stops the process and the attempt fails with "the
   run reached its token limit (300 000)"; docket keeps stopping its own task, and Codex stays
-  measured. opencode's cache reads and writes are now named instead of dropped, and an error it
+  measured. The run's limit sentence says so: "300 000 tokens · set for this run · Tack stops
+  Claude Code's run there". opencode's cache reads and writes are now named instead of dropped, and an error it
   prints (an expired key) fails the attempt with its own message instead of "malformed output".
   A profile's tools for Claude Code (`tool_policy.tools`) are used when a run names none, and
   Claude Code no longer reads its auto-memory index into the prompt (ADR 0083).
