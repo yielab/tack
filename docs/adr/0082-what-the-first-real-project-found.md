@@ -87,3 +87,25 @@ Blocking: none.
    Tack does not change its body.
 2. How long an expired lease waits before it asks a person: two lease durations (120 s).
 3. How often an idle runner probes its agents again: five minutes.
+
+## Amendment 2026-10-18: what Fabulada's R0 found after the rounds
+
+The maintainer chose both on 2026-10-18, inside this phase.
+
+1. **A docket task that outlives the runner is picked up again.** A restart of `tack serve` left
+   two docket tasks waiting on an approval in `needs_operator`, though docket still held them and
+   their questions. With API 5 the task lives in docket's daemon, not in a child of the runner, so
+   the reason ADR 0070 cut `resume` no longer holds. On recovery, when the harness sees the task
+   still running and the journal kept the claim, the runner renews the lease with the journal's
+   fencing token and follows the task to its end through the same path as a fresh run. If the
+   lease is no longer its own, or anything is unproven, the attempt goes to `needs_operator` as
+   today. Only docket resumes; every local-process harness stays `Unsupported`.
+2. **The board makes its own decision token, and the desktop app hands it to its window.** A new
+   `tack serve` had no `TACK_EXECUTION_DECISION_TOKEN`, so no question could be answered from the
+   Inbox (403). The server now keeps a `decision-token` file (0600) beside `api-token`, created
+   when missing, and the environment variable still wins. It stays a second secret. The desktop
+   app reads it and gives it to its window, so nobody pastes it there. In a browser the Inbox asks
+   once per session and says where the file is. The cost is that an agent running unjailed as the
+   same user can read the file. That was already true of `api-token`, and a docket team's sandbox
+   reads neither.
+

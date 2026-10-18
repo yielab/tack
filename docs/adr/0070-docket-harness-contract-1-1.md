@@ -67,7 +67,7 @@ agent for Tack.
 
 | Item | Status | Why |
 |---|---|---|
-| `resume: Supported` | Cut | docket defers reattachment (ADR 0017 "Cut and deferred"); Tack declares `Unsupported` everywhere. |
+| `resume: Supported` | Cut; **reopened by ADR 0082's amendment (2026-10-18)** for docket's API 5 | docket defers reattachment (ADR 0017 "Cut and deferred"); Tack declares `Unsupported` everywhere. With API 5 a task lives in docket's daemon, so a docket attempt is resumed after a runner restart. |
 | An HTTP decision channel | Cut | Decided row; docket cut it too. |
 | Reading the `task` block's hops into Tack's timeline as events | Deferred | Trigger: the evidence-v1 docket ships in Phase 36; until then the block stays in `terminal_reason`. |
 | Passing the tool list as a docket policy | Deferred to Q3 | The document shape is not in the contract. |
