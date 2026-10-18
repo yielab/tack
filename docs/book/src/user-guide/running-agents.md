@@ -214,7 +214,11 @@ Every run says its limit and who applies it, in one line:
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
   a limit of its own for each step, which you change in docket, not in Tack.
 - "measured, not enforced": Claude Code, Codex and opencode report their tokens, but Tack cannot stop them
-  at a limit yet. The limit is still shown, and still counts against the project's day.
+  at a limit yet. The limit is still shown, and still counts against the project's day. A run given what
+  was left of the day says it can go past today's limit.
+
+The dialog prints the same line under **Token limit** before you start, and it changes as you edit the
+limit, clear it or choose another agent.
 
 Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 
