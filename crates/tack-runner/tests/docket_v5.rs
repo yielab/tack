@@ -1506,6 +1506,43 @@ async fn an_approval_docket_refuses_is_asked_again() {
     assert_eq!(fake.requests_to("POST", "/approvals/apr-9").len(), 2);
 }
 
+/// A run whose time runs out says so, and says when it was waiting on a person.
+#[tokio::test]
+async fn a_run_whose_time_ran_out_ends_with_a_message_naming_the_wait() {
+    let approval = || Gate::Approval {
+        token: "apr-t".into(),
+        tool: "bash".into(),
+        action: "tool call 'bash'".into(),
+    };
+    let rows = [
+        (Gate::Hold, "The run's time ran out after 1 second"),
+        (
+            approval(),
+            "The run's time ran out after 1 second while it waited for an answer",
+        ),
+    ];
+    for (gate, message) in rows {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            gate,
+            ..Script::default()
+        });
+        let scene = scene();
+        let adapter = Arc::new(adapter(&fake, &scene));
+        let mut attempt = spec(&scene, "attempt-1", 1);
+        attempt.work.request.timeout_seconds = 1;
+        let handle = adapter.start(&attempt).await.expect("starts");
+        let (_questions, _answers) = adapter.decision_channels(&handle).await.expect("channels");
+        let outcome = tokio::time::timeout(Duration::from_secs(20), adapter.wait(&handle))
+            .await
+            .expect("finishes")
+            .expect("outcome");
+        assert_eq!(outcome.terminal_state, AttemptState::Failed, "{message}");
+        assert_eq!(outcome.terminal_reason["code"], json!("timeout"));
+        assert_eq!(outcome.terminal_reason["message"], json!(message));
+    }
+}
+
 #[tokio::test]
 async fn cancel_posts_cancel_and_the_wait_ends_cancelled() {
     let fake = pods_fake().await;

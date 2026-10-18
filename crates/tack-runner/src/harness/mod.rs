@@ -198,6 +198,27 @@ pub const DESCRIPTORS: [&local_process::HarnessDescriptor; 4] = [
     &opencode::DESCRIPTOR,
 ];
 
+/// The reason a run whose time ran out ends with, for every agent: "The run's time ran out after
+/// N minutes" (seconds under one minute), and "while it waited for an answer" when a question was
+/// open.
+pub(crate) fn time_ran_out(timeout: std::time::Duration, waiting_for_an_answer: bool) -> String {
+    let seconds = timeout.as_secs();
+    let (count, unit) = if seconds < 60 {
+        (seconds, "second")
+    } else {
+        ((seconds + 30) / 60, "minute")
+    };
+    format!(
+        "The run's time ran out after {count} {unit}{}{}",
+        if count == 1 { "" } else { "s" },
+        if waiting_for_an_answer {
+            " while it waited for an answer"
+        } else {
+            ""
+        },
+    )
+}
+
 pub fn descriptor(kind: &str) -> Option<&'static local_process::HarnessDescriptor> {
     DESCRIPTORS
         .into_iter()

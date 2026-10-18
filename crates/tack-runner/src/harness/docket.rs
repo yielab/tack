@@ -1376,10 +1376,11 @@ impl DocketAdapter {
                     .client
                     .cancel_task(&info.pod, &info.task, "the attempt's time ran out")
                     .await;
+                let message = super::time_ran_out(info.timeout, pending.is_some());
                 return Ok(self.outcome(
                     info,
                     AttemptState::Failed,
-                    json!({"code": "timeout", "task": info.task}),
+                    json!({"code": "timeout", "message": message, "task": info.task}),
                     &task,
                     served_model,
                 ));
