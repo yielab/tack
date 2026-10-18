@@ -1,0 +1,43 @@
+{
+  "pending": [
+    {
+      "token": "apr-00000000-0000-0000-0000-000000000000",
+      "project": "calc",
+      "role": "implementer",
+      "action": "tool call 'bash': 'ls' is not on the curated allowlist; call=bash command=\"which python3 && python3 -c \\\"import pytest\\\" 2>&1; python3 -m pytest --version 2>&1; ls -la /usr/lib/python3*/dist-packages/pytest* 2>/dev/null || true; apt list --installed 2>/dev/null | grep pytest || true\"",
+      "state": "pending",
+      "created": "2026-10-18T16:57:24Z",
+      "context": {
+        "tool": "bash",
+        "callId": "0otlLxl5z9LIYZfSdkIXCQMwRNOU6znN",
+        "argsDigest": "5191dbdfc03d2f79",
+        "parked": true,
+        "project": "calc",
+        "role": "implementer",
+        "taskId": "task-64d4a436-7a71-4615-a9a4-aafb2f26ae98"
+      },
+      "expiresAt": "2026-10-19T16:56:32.674586+00:00",
+      "rationale": "",
+      "options": [
+        {
+          "id": "approve_once",
+          "label": "Approve once",
+          "description": "Run this call now; ask again next time.",
+          "risks": []
+        },
+        {
+          "id": "approve_task",
+          "label": "Approve for this task",
+          "description": "Run this call and any identical one in this task.",
+          "risks": []
+        },
+        {
+          "id": "deny",
+          "label": "Deny",
+          "description": "Refuse this call; a reason can be given.",
+          "risks": []
+        }
+      ]
+    }
+  ]
+}

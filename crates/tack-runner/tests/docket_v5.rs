@@ -948,6 +948,197 @@ async fn a_denied_approval_posts_deny_without_an_option() {
     );
 }
 
+/// Runs an attempt whose task docket parks on `gate`, answers the first question
+/// with `answer` and returns that question and how the attempt ended.
+async fn answer_the_parked_gate(
+    fake: &FakeDocket,
+    gate: Gate,
+    answer: DecisionAnswer,
+) -> (tack_runner::client::engine::Question, AttemptState) {
+    fake.script(Script {
+        gate,
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = Arc::new(adapter(fake, &scene));
+    let handle = adapter
+        .start(&spec(&scene, "attempt-1", 1))
+        .await
+        .expect("starts");
+    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
+    let waiting = tokio::spawn({
+        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+        async move { adapter.wait(&handle).await }
+    });
+    let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
+        .await
+        .expect("a question in time")
+        .expect("a question");
+    answers.send(answer).await.expect("answer");
+    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("finishes")
+        .expect("joins")
+        .expect("outcome");
+    (question, outcome.terminal_state)
+}
+
+fn granting(option: &str) -> DecisionAnswer {
+    DecisionAnswer {
+        option_id: Some(option.to_owned()),
+        text: None,
+    }
+}
+
+const GATED_ACTION: &str = "tool call 'bash': 'ls' is not on the curated allowlist";
+
+/// docket holds the approval on the task (`waiting_approval`, `approvalToken`)
+/// and sends no approval item; the tool and the sentence are in `GET /approvals`.
+#[tokio::test]
+async fn a_task_parked_for_approval_asks_with_the_tool_and_action_from_the_approvals_list() {
+    let fake = pods_fake().await;
+    let (question, state) = answer_the_parked_gate(
+        &fake,
+        Gate::Approval {
+            token: "apr-3".into(),
+            tool: "bash".into(),
+            action: GATED_ACTION.into(),
+        },
+        granting("approve_task"),
+    )
+    .await;
+    assert_eq!(question.kind, "approval");
+    assert_eq!(question.vendor_id, "apr-3");
+    assert_eq!(
+        question.prompt,
+        format!("Allow bash? docket's policy: {GATED_ACTION}")
+    );
+    assert_eq!(question.metadata["tool"], json!("bash"));
+    assert_eq!(question.metadata["role"], json!("implementer"));
+    let options: Vec<_> = question
+        .options
+        .iter()
+        .map(|o| (o.option_id.as_str(), o.label.as_str()))
+        .collect();
+    assert_eq!(
+        options,
+        [
+            ("approve_once", "Approve once"),
+            ("approve_task", "Approve for this task"),
+            ("deny", "Deny"),
+        ],
+        "the labels are the record's"
+    );
+    assert_eq!(
+        question.options[1].description.as_deref(),
+        Some("Run this call and any identical one in this task.")
+    );
+    assert_eq!(state, AttemptState::Succeeded);
+    let posted = fake.requests_to("POST", "/approvals/apr-3");
+    assert_eq!(posted.len(), 1);
+    assert_eq!(
+        posted[0].body,
+        json!({"action": "grant", "channel": "tack", "option": "approve_task", "reason": ""})
+    );
+    assert_eq!(fake.requests_to("GET", "/approvals").len(), 1);
+}
+
+#[tokio::test]
+async fn a_parked_task_still_asks_from_its_reason_when_the_approvals_list_fails() {
+    let fake = pods_fake().await;
+    fake.fail_approvals_list();
+    let (question, state) = answer_the_parked_gate(
+        &fake,
+        Gate::Approval {
+            token: "apr-4".into(),
+            tool: "bash".into(),
+            action: GATED_ACTION.into(),
+        },
+        DecisionAnswer {
+            option_id: Some("deny".to_owned()),
+            text: Some("no".to_owned()),
+        },
+    )
+    .await;
+    assert_eq!(question.vendor_id, "apr-4");
+    assert!(
+        question
+            .prompt
+            .contains("implementer hop parked for approval (token=apr-4)"),
+        "{}",
+        question.prompt
+    );
+    let ids: Vec<_> = question
+        .options
+        .iter()
+        .map(|o| o.option_id.as_str())
+        .collect();
+    assert_eq!(ids, ["approve_once", "approve_task", "deny"]);
+    assert_eq!(state, AttemptState::Failed);
+    assert_eq!(
+        fake.requests_to("POST", "/approvals/apr-4")[0].body,
+        json!({"action": "deny", "channel": "tack", "reason": "no"})
+    );
+}
+
+#[tokio::test]
+async fn an_approval_no_task_holds_still_asks_from_its_own_item() {
+    let fake = pods_fake().await;
+    let (question, state) = answer_the_parked_gate(
+        &fake,
+        Gate::UnboundApproval {
+            token: "apr-5".into(),
+            tool: "bash".into(),
+            action: "rm -rf build".into(),
+        },
+        granting("approve_once"),
+    )
+    .await;
+    assert_eq!(question.vendor_id, "apr-5");
+    assert_eq!(question.prompt, "Allow bash? docket's policy: rm -rf build");
+    assert_eq!(state, AttemptState::Succeeded);
+    assert_eq!(fake.requests_to("POST", "/approvals/apr-5").len(), 1);
+    assert!(
+        fake.requests_to("GET", "/approvals").is_empty(),
+        "its item already says what it is"
+    );
+}
+
+#[tokio::test]
+async fn the_fake_refuses_an_option_on_a_deny_as_docket_does() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Approval {
+            token: "apr-6".into(),
+            tool: "bash".into(),
+            action: "x".into(),
+        },
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    adapter
+        .start(&spec(&scene, "attempt-1", 1))
+        .await
+        .expect("starts");
+    let refused = ask(
+        &fake,
+        "POST",
+        "/approvals/apr-6",
+        Some(json!({"action": "deny", "channel": "tack", "option": "approve_once", "reason": ""})),
+    )
+    .await;
+    assert_eq!(refused.0, 400, "{refused:?}");
+    let approve = ask(
+        &fake,
+        "POST",
+        "/approvals/apr-6",
+        Some(json!({"action": "approve", "channel": "tack", "reason": ""})),
+    )
+    .await;
+    assert_eq!(approve.0, 400, "{approve:?}");
+}
+
 #[tokio::test]
 async fn a_consult_round_trip_answers_the_parked_question() {
     let fake = pods_fake().await;
@@ -1328,7 +1519,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 13] = [
+const CLIENT_ROUTES: [&str; 14] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -1340,6 +1531,7 @@ const CLIENT_ROUTES: [&str; 13] = [
     "GET /tasks/<pod>/<id>/diff",
     "GET /traces/<pod>",
     "GET /inbox",
+    "GET /approvals",
     "POST /approvals/<token>",
     "POST /tasks/<id>/answer",
 ];
@@ -1558,6 +1750,26 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
             Some(request_file("approval-unknown")),
         )
         .await,
+    );
+    fake.script(Script {
+        gate: Gate::Approval {
+            token: "apr-1".into(),
+            tool: "bash".into(),
+            action: "x".into(),
+        },
+        ..Script::default()
+    });
+    let mut second = request_file("post-task-created");
+    second["idempotencyKey"] = json!("capture-attempt-2");
+    let parked = ask(&fake, "POST", "/tasks/fab-dev", Some(second)).await;
+    assert_eq!(parked.0, 201, "{parked:?}");
+    get(
+        "inbox-waiting-approval",
+        ask(&fake, "GET", "/inbox", None).await,
+    );
+    get(
+        "approvals-pending",
+        ask(&fake, "GET", "/approvals", None).await,
     );
     get(
         "answer-unknown",

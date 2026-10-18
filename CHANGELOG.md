@@ -242,6 +242,7 @@ automation a template carries, and the removal of dollars per day.
   row's actions show when the keyboard reaches them, and medium priority on a Calendar chip or
   Timeline bar reads at AA in Harbor. The axe scan now covers List, Table, Calendar, Timeline,
   Sprints, Templates and the new-item dialog.
+- **A run docket parks on a gated command asks the person in Tack.** It used to wait until docket's approval expired, because docket sends an approval a task holds as the task's own item and Tack looked only for a separate one; the decision now names the tool and the policy's sentence and offers docket's three answers.
 
 ---
 

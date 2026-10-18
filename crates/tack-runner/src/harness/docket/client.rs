@@ -158,6 +158,11 @@ impl Client {
         self.send(Method::GET, &["inbox"], &[], None).await
     }
 
+    /// `GET /approvals`: the pending records, with each one's tool, action and options.
+    pub async fn pending_approvals(&self) -> Result<Reply, String> {
+        self.send(Method::GET, &["approvals"], &[], None).await
+    }
+
     /// `POST /approvals/<token>`.
     pub async fn approve(&self, token: &str, body: Value) -> Result<Reply, String> {
         self.send(Method::POST, &["approvals", token], &[], Some(body))

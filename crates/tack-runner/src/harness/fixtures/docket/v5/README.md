@@ -52,10 +52,21 @@ docket's code writes, built from a capture where one exists; its values are made
 - docket accepts a blank description, any priority and unknown keys without comment, and fills a
   brief out to the whole document.
 
+## Two shapes of an approval in `GET /inbox`
+
+Since docket `129c6dbc` an approval a task holds is not a separate inbox item. It is the task's own
+item in `needsYou`: `status: "waiting_approval"`, `approvalToken`, a `reason` naming the token,
+and no `tool` or `action` (`inbox-waiting-approval.json`, captured). The tool, the sentence naming
+the call and the options are in the record `GET /approvals` lists under that token
+(`approvals-pending.json`, captured), and the harness reads them from there; when that call fails it
+asks from the task's `reason`. A separate approval item (an `ApprovalView`, in `inbox-busy.json`,
+constructed) appears only for an approval whose record names no task and which no task holds. Both
+are answered with `POST /approvals/<token>`.
+
 ## What it leaves out
 
 - `GET /tasks/<pod>` and its `externalRef`/`status` filters, `POST .../retry`,
-  `POST /pods/<p>/apply`, `GET /pods/<p>/corrections`, `/metrics`, `/runs`, `GET /approvals`,
+  `POST /pods/<p>/apply`, `GET /pods/<p>/corrections`, `/metrics`, `/runs`,
   `POST /tasks/<id>/pregrants`, `POST /dispatch/<pod>`, `GET .../evidence`.
 - The one-second hold-back of `GET /traces` (the fake's timestamps are all in the past), the
   `413` for bodies over 1 MiB, and `409` for a task that ran in place.

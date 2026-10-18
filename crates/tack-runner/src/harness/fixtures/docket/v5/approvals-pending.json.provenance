@@ -1,0 +1,6 @@
+captured
+route: GET /approvals
+status: 200
+docket: 0.2.0b6 (API 5), source develop e187be8a plus docket's uncommitted condensation fix (c4a488d5 installed for the operator the same day)
+date: 2026-10-18
+note: a real local-model run of scripts/docket-prill-e2e.sh, parked on an in-turn bash call (a 2>/dev/null redirect outside the jail's roots). Since docket 129c6dbc (2026-10-06) an approval a task holds is that task's inbox item, status waiting_approval with approvalToken, and no separate approval item; its tool, action and options are in GET /approvals. The token is replaced by apr-00000000-…, the scratch folder by /capture, and the task's description and brief are cut.

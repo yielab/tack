@@ -161,8 +161,17 @@ fn request_keys() -> HashMap<String, KeySpec> {
 #[derive(Clone, Debug)]
 pub enum Gate {
     None,
-    /// A `pre_tool_call` policy parked the task on an approval.
+    /// A `pre_tool_call` policy parked the task on an approval. The task holds
+    /// the token: docket sends it as the task's inbox item (`waiting_approval`,
+    /// `approvalToken`) and lists the record in `GET /approvals`.
     Approval {
+        token: String,
+        tool: String,
+        action: String,
+    },
+    /// An approval no task holds: docket sends it as its own inbox item
+    /// (`ApprovalView`), and the record is in `GET /approvals` too.
+    UnboundApproval {
         token: String,
         tool: String,
         action: String,
@@ -174,6 +183,25 @@ pub enum Gate {
     },
     /// Never finishes by itself; only a cancel ends it.
     Hold,
+}
+
+impl Gate {
+    /// The token, tool and action of either kind of approval.
+    fn approval(&self) -> Option<(&str, &str, &str)> {
+        match self {
+            Self::Approval {
+                token,
+                tool,
+                action,
+            }
+            | Self::UnboundApproval {
+                token,
+                tool,
+                action,
+            } => Some((token, tool, action)),
+            _ => None,
+        }
+    }
 }
 
 /// What a task does once it is posted: the test fills this in first.
@@ -249,6 +277,8 @@ struct World {
     repository: Option<PathBuf>,
     models: Vec<String>,
     keys: HashMap<String, KeySpec>,
+    /// `GET /approvals` answers `500`.
+    approvals_down: bool,
 }
 
 pub struct FakeDocket {
@@ -271,6 +301,7 @@ impl FakeDocket {
             repository: None,
             models: vec!["local/local-model".to_owned()],
             keys: request_keys(),
+            approvals_down: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -317,6 +348,11 @@ impl FakeDocket {
     /// The repository docket commits a task's branch in.
     pub fn set_repository(&self, path: &Path) {
         self.shared.lock().unwrap().repository = Some(path.to_path_buf());
+    }
+
+    /// Makes `GET /approvals` answer `500`, as when docket cannot read its records.
+    pub fn fail_approvals_list(&self) {
+        self.shared.lock().unwrap().approvals_down = true;
     }
 
     pub fn script(&self, script: Script) {
@@ -500,6 +536,7 @@ async fn handle(
         ("POST", ["tasks", id, "answer"]) => answer(&mut state, id, &parsed),
         ("GET", ["traces", pod]) => traces(&state, pod, &query),
         ("GET", ["inbox"]) => inbox(&state),
+        ("GET", ["approvals"]) => approvals(&state),
         ("POST", ["approvals", token]) => approve(&mut state, token, &parsed),
         _ => error(404, "not found"),
     }
@@ -724,7 +761,7 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
         finish(state, index);
     } else if matches!(state.tasks[index].script.gate, Gate::Consult { .. }) {
         state.tasks[index].status = "waiting_input".to_owned();
-    } else if matches!(state.tasks[index].script.gate, Gate::Approval { .. }) {
+    } else if state.tasks[index].script.gate.approval().is_some() {
         state.tasks[index].status = "waiting_approval".to_owned();
     }
     let mut answer = fixture("post-task-created");
@@ -929,12 +966,31 @@ fn traces(state: &World, pod: &str, query: &str) -> Response {
 
 fn inbox(state: &World) -> Response {
     let template = fixture("inbox-busy");
+    let waiting = fixture("inbox-waiting-approval");
     let mut needs_you = Vec::new();
     let mut running = Vec::new();
     for task in &state.tasks {
         match (&task.script.gate, task.gate_open, task.status.as_str()) {
             (
                 Gate::Approval {
+                    token,
+                    tool: _,
+                    action: _,
+                },
+                true,
+                "waiting_approval",
+            ) => {
+                let mut item = waiting["needsYou"][0].clone();
+                item["id"] = json!(task.id);
+                item["pod"] = json!(task.pod);
+                item["approvalToken"] = json!(token);
+                item["reason"] = json!(format!(
+                    "implementer hop parked for approval (token={token})"
+                ));
+                needs_you.push(item);
+            }
+            (
+                Gate::UnboundApproval {
                     token,
                     tool,
                     action,
@@ -980,6 +1036,35 @@ fn inbox(state: &World) -> Response {
     reply(200, answer)
 }
 
+/// `GET /approvals`: a record for each approval a task waits on, in the
+/// captured record's shape.
+fn approvals(state: &World) -> Response {
+    if state.approvals_down {
+        return error(500, "approvals could not be read");
+    }
+    let template = fixture("approvals-pending");
+    let pending: Vec<Value> = state
+        .tasks
+        .iter()
+        .filter(|task| task.gate_open && task.status == "waiting_approval")
+        .filter_map(|task| {
+            let (token, tool, action) = task.script.gate.approval()?;
+            let mut record = template["pending"][0].clone();
+            record["token"] = json!(token);
+            record["project"] = json!(task.pod);
+            record["action"] = json!(action);
+            record["context"]["tool"] = json!(tool);
+            if matches!(task.script.gate, Gate::UnboundApproval { .. }) {
+                record["context"]["taskId"] = Value::Null;
+            } else {
+                record["context"]["taskId"] = json!(task.id);
+            }
+            Some(record)
+        })
+        .collect();
+    reply(200, json!({"pending": pending}))
+}
+
 fn approve(state: &mut World, token: &str, body: &Value) -> Response {
     let Some(object) = body.as_object() else {
         return refusal("post-tasks-invalid-json", &[]);
@@ -1007,9 +1092,11 @@ fn approve(state: &mut World, token: &str, body: &Value) -> Response {
             "option must be \"approve_once\" or \"approve_task\" (grant only)",
         );
     }
-    let Some(index) = state.tasks.iter().position(
-        |task| matches!(&task.script.gate, Gate::Approval { token: t, .. } if t == token),
-    ) else {
+    let Some(index) = state
+        .tasks
+        .iter()
+        .position(|task| matches!(task.script.gate.approval(), Some((held, ..)) if held == token))
+    else {
         return refusal("approval-unknown", &[]);
     };
     if !state.tasks[index].gate_open {
