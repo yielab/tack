@@ -204,6 +204,14 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
         )}
       </Show>
 
+      <Show when={summary()?.limit}>
+        {(limit) => (
+          <p data-testid="run-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            {limit().sentence}
+          </p>
+        )}
+      </Show>
+
       <Show when={props.record.error}>
         {(err) => (
           <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>

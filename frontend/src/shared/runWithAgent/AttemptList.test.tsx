@@ -160,7 +160,7 @@ describe('AttemptList', () => {
     expect(usage.textContent).toContain('6 model calls');
     expect(usage.textContent).toContain('1m 53s');
     expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
-    expect(usage.querySelector('[data-testid="usage-cost"]')!.textContent).toContain('≈ $1.34 (approx.)');
+    expect(usage.querySelector('[data-testid="usage-cost"]')!.textContent).toContain('≈ $1.34 (estimated)');
     expect(usage.textContent).toContain("Claude Code's own estimate at list price, not your bill");
     // One time figure: the runner-time dollar tile, never measured, is gone.
     expect(usage.textContent!.match(/Not measured/g)).toBeNull();
@@ -205,7 +205,7 @@ describe('AttemptList', () => {
         },
       }),
     ]);
-    expect(c.textContent).toContain('≈ $0.42 (approx.)');
+    expect(c.textContent).toContain('≈ $0.42 (estimated)');
     expect(c.textContent).not.toContain('$0.42 (measured)');
     expect(c.textContent).toContain('4m 55s');
   });

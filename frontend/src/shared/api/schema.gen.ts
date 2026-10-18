@@ -3918,6 +3918,8 @@ export interface components {
             /** @description The composed prompt the agent is given, as stored with the request; null when absent. */
             instructions?: string | null;
             item_id: string;
+            /** @description The run's token limit and who applies it. */
+            limit: components["schemas"]["RunLimit"];
             /** Format: int32 */
             protocol_version: number;
             request_id: string;
@@ -3942,6 +3944,8 @@ export interface components {
             cancellation_requested_at?: string | null;
             created_at: string;
             item_id: string;
+            /** @description The run's token limit and who applies it. */
+            limit: components["schemas"]["RunLimit"];
             request_id: string;
             state: string;
             /** @description Why no runner has claimed this request yet, as a plain sentence; null once claimed. */
@@ -3984,6 +3988,12 @@ export interface components {
              */
             lights_off_rate: components["schemas"]["Ratio"];
             merges_by_trigger: components["schemas"]["MergesByTrigger"];
+            /**
+             * Format: int64
+             * @description Models the window's attempts named, and how many of them the rate card prices (none
+             *     without a card): the cost card says "N of M models priced" from this pair.
+             */
+            models: number;
             /** @description accepted ÷ reviewed. */
             mrp_acceptance_rate: components["schemas"]["Ratio"];
             /**
@@ -3994,6 +4004,8 @@ export interface components {
             /** Format: int64 */
             mrp_unreviewed: number;
             outcomes: components["schemas"]["Outcomes"];
+            /** Format: int64 */
+            priced_models: number;
             quality?: null | components["schemas"]["Quality"];
             quality_unavailable?: string | null;
             rate_card_as_of?: string | null;
@@ -4680,6 +4692,19 @@ export interface components {
             name: string;
             /** Format: uuid */
             project_id: string;
+        };
+        /** @description A run's token limit, who set it and who applies it, with the one sentence every screen prints. */
+        RunLimit: {
+            /** @description `docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it. */
+            enforced_by: string;
+            sentence: string;
+            /** @description `profile`, `run` or `none`. */
+            source: string;
+            /**
+             * Format: int64
+             * @description Absent when the run has no limit set in Tack.
+             */
+            tokens?: number | null;
         };
         /**
          * @description The run dialog's Advanced values a task overrides. Every field is optional;

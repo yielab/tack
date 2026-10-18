@@ -656,6 +656,12 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     // No rate card: no dollar anywhere, whatever the usage carried.
     assert!(!m.to_string().contains("cost_usd"), "{m}");
     assert!(repos[0].get("qualified_per_usd").is_none(), "{m}");
+    // The model is named, and nothing prices it: 0 of 1.
+    assert_eq!(
+        (m["priced_models"].as_i64(), m["models"].as_i64()),
+        (Some(0), Some(1)),
+        "{m}"
+    );
 
     // The rate card: $3 in and $15 out per million tokens, 1M in and 100k out = $4.50.
     let card = json!({
@@ -685,6 +691,11 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     let (_, m) = get(program).await;
     close(&m["cost_usd"], 4.5);
     assert_eq!(m["rate_card_as_of"], "2026-10-01");
+    assert_eq!(
+        (m["priced_models"].as_i64(), m["models"].as_i64()),
+        (Some(1), Some(1)),
+        "{m}"
+    );
     close(&m["quality"]["repositories"][0]["cost_usd"], 4.5);
     close(
         &m["quality"]["repositories"][0]["qualified_per_usd"],

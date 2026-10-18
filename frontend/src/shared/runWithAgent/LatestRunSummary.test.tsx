@@ -72,7 +72,7 @@ describe('LatestRunSummary', () => {
     expect(panel.textContent).toContain('Finished — needs your review');
     expect(panel.querySelector('[data-testid="latest-run-said"]')!.textContent).toContain('I created test.md');
     expect(panel.querySelector('[data-testid="latest-run-usage"]')!.textContent).toBe(
-      '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 · 6 model calls · claude-sonnet-5-5',
+      '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 (estimated) · 6 model calls · claude-sonnet-5-5',
     );
     const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what the agent did')!;
     open.click();
@@ -98,5 +98,17 @@ describe('LatestRunSummary', () => {
     for (let i = 0; i < 4; i++) await flush();
     expect(c.querySelector('[data-testid="latest-run-waiting"]')).toBeNull();
     expect(c.querySelector('[data-testid="latest-run-failure"]')!.textContent).toBe('No runner has the model it asks for.');
+  });
+
+  it.each([
+    '300 000 tokens · from the profile Implementer · docket stops the task there',
+    "300 000 tokens · set for this run · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet)",
+    "No limit set in Tack · docket stops each step at its own limit (docket's setting)",
+    'No limit set in Tack',
+  ])('prints the limit sentence the server wrote, composing none: %s', async (sentence) => {
+    const limit = { tokens: null, source: 'none', enforced_by: 'measured', sentence };
+    const c = mount([{ ...RUN, limit }]);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run-limit"]')!.textContent).toBe(sentence);
   });
 });

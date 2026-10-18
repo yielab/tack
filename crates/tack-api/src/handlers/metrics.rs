@@ -3,7 +3,7 @@
 //! computed from rows; every ratio carries its numerator and denominator, and a
 //! figure with nothing to measure is `null` with its reason (`denominator_zero`
 //! or `not_measured`), never 0. Quality figures are prill's, read from its
-//! store and named as prill's. Dollars are Tack's: tokens priced by the
+//! store and named as prill's. Dollars are Tack's estimate: tokens priced by the
 //! operator's rate card; a harness's own `cost_usd` is never read or summed.
 
 use axum::Json;
@@ -173,6 +173,10 @@ pub struct FactoryMetrics {
     /// Attempts whose model the rate card does not list, so not in `cost_usd`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_unpriced_attempts: Option<i64>,
+    /// Models the window's attempts named, and how many of them the rate card prices (none
+    /// without a card): the cost card says "N of M models priced" from this pair.
+    pub models: i64,
+    pub priced_models: i64,
     /// Tokens and attempts per model, priced when a card lists it.
     pub cost_by_model: Vec<CostByModel>,
     /// Tokens and attempts per docket team; `No team` for runs that name none.
@@ -477,6 +481,11 @@ pub async fn factory_metrics(
         usd: line.usd,
     })
     .collect();
+    let models = cost_by_model.iter().filter(|l| l.key.is_some()).count();
+    let priced_models = cost_by_model
+        .iter()
+        .filter(|l| l.key.is_some() && l.usd.is_some())
+        .count();
     let cost_by_model = cost_by_model
         .into_iter()
         .map(|line| CostByModel {
@@ -569,6 +578,8 @@ pub async fn factory_metrics(
         cost_usd: card.as_ref().map(|_| cost),
         rate_card_as_of: card.as_ref().map(|c| c.as_of.clone()),
         cost_unpriced_attempts: card.as_ref().map(|_| unpriced),
+        models: i64::try_from(models).unwrap_or(i64::MAX),
+        priced_models: i64::try_from(priced_models).unwrap_or(i64::MAX),
         cost_by_model,
         cost_by_team,
     }))

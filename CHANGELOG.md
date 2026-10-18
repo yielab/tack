@@ -79,6 +79,11 @@ automation a template carries.
 
 ### Changed
 
+- **Every run says its token limit and who applies it,** in one sentence the server writes:
+  "300 000 tokens · from the profile Implementer · docket stops the task there", "No limit set
+  in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
+  enforced" for an agent Tack cannot stop. Dollars read "≈ $0.42 (estimated)" or "not priced",
+  and the Factory page says how many of the models used have a price (ADR 0083 decisions 3–4).
 - **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
   count uncached input, cache writes and output; what the cache served is shown beside it and
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
