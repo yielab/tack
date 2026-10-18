@@ -112,20 +112,41 @@ pub const COUNTED_TOKENS_SQL: &str = "(COALESCE(json_extract(a.usage, '$.tokens_
 /// shown beside [`COUNTED_TOKENS_SQL`], never part of it.
 pub const CACHE_READ_SQL: &str = "COALESCE(json_extract(a.usage, '$.cache_read_tokens'), 0)";
 
+/// The attempt states in which a run is open: it holds its place in the day.
+const OPEN_ATTEMPT_STATES: &str = "'leased', 'preparing', 'running', 'waiting_decision'";
+
+/// Joins, to `execution_attempts a`, `live.counted`: what an open attempt has
+/// counted so far, which is [`COUNTED_TOKENS_SQL`] over the `usage` its progress
+/// lines carry (an attempt's own `usage` is written only when it ends). The one
+/// owner of the attempt's running counted sum: the day's spend and its reservation read it.
+fn running_counted_join() -> String {
+    format!(
+        "LEFT JOIN (SELECT attempt_id, SUM({COUNTED_TOKENS_SQL}) AS counted FROM (
+             SELECT e.attempt_id AS attempt_id, json_extract(e.payload, '$.usage') AS usage
+             FROM execution_events e
+             WHERE json_type(e.payload, '$.usage') = 'object'
+               AND e.attempt_id IN
+                 (SELECT id FROM execution_attempts WHERE state IN ({OPEN_ATTEMPT_STATES}))) a
+           GROUP BY attempt_id) live ON live.attempt_id = a.id"
+    )
+}
+
 /// Counted tokens ([`COUNTED_TOKENS_SQL`]) of the attempts the project started
-/// since 00:00 UTC.
+/// since 00:00 UTC, an open one by what it has counted so far.
 pub async fn spent_today(
     pool: &SqlitePool,
     project_id: &str,
     now: DateTime<Utc>,
 ) -> Result<i64, sqlx::Error> {
-    // The fragment is a constant of this crate; only values are bound.
+    // The fragments are constants of this crate; only values are bound.
     sqlx::query_scalar(AssertSqlSafe(format!(
-        "SELECT COALESCE(SUM({COUNTED_TOKENS_SQL}), 0)
+        "SELECT COALESCE(SUM({COUNTED_TOKENS_SQL} + COALESCE(live.counted, 0)), 0)
          FROM execution_attempts a
+         {}
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)"
+         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)",
+        running_counted_join()
     )))
     .bind(project_id)
     .bind(day_start(now))
@@ -135,9 +156,9 @@ pub async fn spent_today(
 
 /// A project's token limit for today and what is already spoken for. An open run
 /// is an attempt that is leased, preparing, running or waiting for a decision; it
-/// reserves its own limit less what it has counted so far (an attempt reports its
-/// usage when it ends, so until then that is its whole limit). A run with no limit
-/// of its own reserves nothing.
+/// reserves its own limit less what it has counted so far (its progress lines carry
+/// the usage; an agent that reports none leaves its whole limit reserved). A run with
+/// no limit of its own reserves nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DayRoom {
     pub limit: i64,
@@ -168,13 +189,15 @@ pub async fn day_room(
     let (open_runs, reserved): (i64, i64) = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT COUNT(*), COALESCE(SUM(MAX(own - counted, 0)), 0) FROM (
             SELECT json_extract(r.request_snapshot, '$.budgets.tokens') AS own,
-                   {COUNTED_TOKENS_SQL} AS counted
+                   {COUNTED_TOKENS_SQL} + COALESCE(live.counted, 0) AS counted
             FROM execution_attempts a
+            {}
             JOIN execution_requests r ON r.id = a.request_id
             JOIN items i ON i.id = r.item_id
             WHERE i.project_id = ?
-              AND a.state IN ('leased', 'preparing', 'running', 'waiting_decision'))
-         WHERE own IS NOT NULL"
+              AND a.state IN ({OPEN_ATTEMPT_STATES}))
+         WHERE own IS NOT NULL",
+        running_counted_join()
     )))
     .bind(project_id)
     .fetch_one(pool)

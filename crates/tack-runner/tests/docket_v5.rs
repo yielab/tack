@@ -540,7 +540,28 @@ async fn hops_reach_the_timeline_and_the_served_model_is_the_last_implementers()
     });
     let scene = scene();
 
-    let (outcome, steps) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    let adapter = adapter(&fake, &scene);
+    let spec = spec(&scene, "attempt-1", 1);
+    adapter.validate(&spec).await.expect("validates");
+    let handle = adapter.start(&spec).await.expect("starts");
+    let mut progress = adapter.progress_channel(&handle).await.expect("progress");
+    let outcome = adapter.wait(&handle).await.expect("waits");
+    let mut lines = Vec::new();
+    while let Ok(step) = progress.try_recv() {
+        lines.push(step);
+    }
+    // A finished hop carries its usage; the counted figure is the one the day's room reads.
+    assert_eq!(
+        lines
+            .iter()
+            .map(|step| step.usage.as_ref().and_then(|usage| usage.counted()))
+            .collect::<Vec<_>>(),
+        vec![None, Some(1200), Some(1200)]
+    );
+    let steps: Vec<(String, String)> = lines
+        .into_iter()
+        .map(|step| (step.kind, step.text))
+        .collect();
 
     assert_eq!(
         steps,

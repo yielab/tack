@@ -83,7 +83,8 @@ automation a template carries, and the removal of dollars per day.
   counted tokens, the limits of the project's open runs and its own fit in the day; otherwise it
   waits with "Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)". A run
   with no limit of its own, in a project with a daily limit, runs with what is left of the day.
-  Settings → Automation shows the day as a bar (counted, reserved, room), amber at 80%
+  While a docket run runs, the tokens each step reports count toward the day and the run reserves
+  only what is left of its limit. Settings → Automation shows the day as a bar (counted, reserved, room), amber at 80%
   (ADR 0083 decision 5).
 - **Every run says its token limit and who applies it,** in one sentence the server writes:
   "300 000 tokens · from the profile Implementer · docket stops the task there", "No limit set

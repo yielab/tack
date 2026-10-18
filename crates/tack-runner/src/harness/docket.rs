@@ -349,6 +349,7 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
         "hop_started" => Some(Progress {
             kind: "agent.hop_started".to_owned(),
             text: format!("{who} started"),
+            usage: None,
         }),
         "hop_finished" => {
             let mut parts = vec![match payload["verdict"].as_str() {
@@ -365,15 +366,25 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
             if let Some(gate) = payload["gate"].as_str() {
                 parts.push(format!("gate {gate}"));
             }
+            let mut usage = None;
             if let (Some(input), Some(output)) = (
                 payload["usage"]["input"].as_u64(),
                 payload["usage"]["output"].as_u64(),
             ) {
                 parts.push(format!("{input} tokens in, {output} out"));
+                // docket reports no cache figure yet, so the hop counts whole.
+                usage = Some(Usage {
+                    tokens_in: measurement(Some(input)),
+                    tokens_out: measurement(Some(output)),
+                    duration_ms: measurement(payload["durationMs"].as_u64()),
+                    cost_usd: measurement(None),
+                    additional: BTreeMap::new(),
+                });
             }
             Some(Progress {
                 kind: "agent.hop_finished".to_owned(),
                 text: format!("{who}: {}", parts.join(", ")),
+                usage,
             })
         }
         _ => None,
@@ -614,6 +625,7 @@ impl DocketAdapter {
                             let _ = progress.try_send(Progress {
                                 kind: "agent.untracked".to_owned(),
                                 text,
+                                usage: None,
                             });
                         }
                         (
@@ -895,6 +907,7 @@ impl DocketAdapter {
             let _ = side.progress.try_send(Progress {
                 kind: "agent.refused".to_owned(),
                 text: error.clone(),
+                usage: None,
             });
             return Ok(self.outcome(
                 info,
@@ -1003,6 +1016,7 @@ impl DocketAdapter {
                         let _ = side.progress.try_send(Progress {
                             kind: "agent.answer_failed".to_owned(),
                             text: problem,
+                            usage: None,
                         });
                     }
                 }
