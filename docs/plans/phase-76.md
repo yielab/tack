@@ -3,7 +3,10 @@
 **Status: proposed 2026-10-18.** Serves ADR 0084
 (`docs/adr/0084-the-project-file-is-kept-in-sync-not-only-imported.md`). Written against `develop`
 at `cebaef77`. Every path and line below was read that day; re-run `rg -n` before trusting a line
-number.
+number. Re-checked the same day against Phase 75's task D (`d72be6ce`): migration 092 is
+`092_drop_usd_per_day`, so this phase's two are 093 and 094; D also moved lines in
+`handlers/outline.rs` (`read_outline` now warns on an old file's `usd_per_day`, `write_automation`
+no longer writes it), `export.rs` and `templates.rs`. Nothing else in this plan changes.
 
 What this phase does, in one paragraph. A project's configuration (everything in the project file
 but the items) can be exported, edited and imported again, and the board follows: a key on every
@@ -38,7 +41,7 @@ Every row of ADR 0084's table and its four defaults, plus:
 
 | Question | Decision |
 |---|---|
-| Migrations | Two, in the style of `MIGRATION_091` (several statements under one name; `apply_migrations` runs them in one transaction, `migrations.rs` line 391 — `CONTRIBUTING.md`'s "one ALTER per name" predates that and task Z corrects it). `092_config_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`; `UPDATE … SET key = lower(replace(trim(name), ' ', '-'))`; a second `UPDATE` suffixing `'-' \|\| substr(id, 1, 8)` on every row whose `(project_id, key)` (for profiles: `key`) is not the first of its group; `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key)` (`agent_profiles(key)`). `093_config_revisions`: the table below. The SQL backfill is ASCII-lowercase; a key is opaque after creation, so it need not equal `key_of(name)`. |
+| Migrations | Two, in the style of `MIGRATION_091` (several statements under one name; `apply_migrations` runs them in one transaction, `migrations.rs` line 391 — `CONTRIBUTING.md`'s "one ALTER per name" predates that and task Z corrects it). `093_config_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`; `UPDATE … SET key = lower(replace(trim(name), ' ', '-'))`; a second `UPDATE` suffixing `'-' \|\| substr(id, 1, 8)` on every row whose `(project_id, key)` (for profiles: `key`) is not the first of its group; `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key)` (`agent_profiles(key)`). `094_config_revisions`: the table below. The SQL backfill is ASCII-lowercase; a key is opaque after creation, so it need not equal `key_of(name)`. |
 | The revisions table | `project_config_revisions (project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, number INTEGER NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('board','file','revert')), hash TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (project_id, number))`. `body` is the configuration as canonical JSON (`serde_json::to_string` of the `Outline` with `items` empty; keys of every map sorted — `Outline` already serializes maps sorted). `hash` is the SHA-256 of `body`, hex. |
 | The key | `key_of(name)`: trim; lowercase (Unicode); every run of characters that are not alphanumeric (`char::is_alphanumeric`) becomes one `-`; leading and trailing `-` removed; cut to 64 chars at a char boundary; empty → `unnamed`. A key in a file must already be of that form (`^[\p{L}\p{N}][\p{L}\p{N}-]{0,63}$`, lowercase) or the file is refused naming the entry. |
 | Matching | File entry has `key` → the board row with that key; none → create with that key, unless the key is taken by a row of another name (refused: "roles: key \"dev\" is already the key of \"Dev Team\""); a row with the same *name* but another key → refused ("roles: \"Dev\" is \"dev-team\" on the board; write that key or drop the name"). File entry has no `key` → the board row with that name, as today; none → create with `key_of(name)`, refused if that key is taken. The rule lives once, in `match_rows`, and serves the outline import and the sync alike. |
@@ -50,7 +53,7 @@ Every row of ADR 0084's table and its four defaults, plus:
 | The plan's hash | `plan_hash = sha256(body of the merged outline ‖ "\n" ‖ board hash ‖ "\n" ‖ the deletions as "section/key" lines ‖ "\n" ‖ prefer)`, hex. The apply recomputes it from the request body and the live board; a mismatch is 409 `{"error": "The project changed since the preview; preview again"}`. |
 | The apply, in order, in one `BEGIN IMMEDIATE` transaction (`execution.rs` line 2910 is the precedent) | record a `board` revision of the live configuration when its hash differs from the last revision's; the deletions (profiles, then roles, fields, sprints — the FKs already `SET NULL` or cascade: `roles.agent_profile_id`, `items.sprint_id`, `item_roles`, `custom_field_values`); `write(tx, …)` with the merged plan; the project's three keys when changed; a `file` (or `revert`) revision whose body is the merged configuration; commit; then `BoardEvent::BoardConfigUpdated { project_id }`. |
 | An export records a revision | `GET …/export?scope=bundle\|config` records a `board` revision when the hash differs from the last. `scope=snapshot` and `format=csv` do not. |
-| Routes | `GET /api/projects/{id}/config/status` → `{ last_revision: {number, origin, created_at, hash} \| null, board_hash, changes: [Change] }` (two-way `diff(last.body, board)`; `changes: []` and `last_revision: null` when there is none). `POST …/config/plan` and `POST …/config/apply`: body = the file (JSON, or YAML when `Content-Type` mentions yaml, read with `structured_body` as the outline routes do) **or** `?revision=<n>` with an empty body; query `prefer=file\|board` optional; `apply` also needs `plan_hash=<hex>`. `GET …/config/revisions` → `[{number, origin, created_at, hash}]` newest first; `GET …/config/revisions/{n}` → the body as the file (`format=json\|yaml`, default yaml). |
+| Routes | `GET /api/projects/{id}/config/status` → `{ last_revision: {number, origin, created_at, hash} \| null, board_hash, changes: [Change] }` (two-way `diff(last.body, board)`; `changes: []` and `last_revision: null` when there is none). `POST …/config/plan` and `POST …/config/apply`: body = the file (JSON, or YAML when `Content-Type` mentions yaml, read with `outline::read_outline`, made `pub(crate)`, as the outline routes do, so its warnings — an old file's `usd_per_day` — reach the plan's `warnings`) **or** `?revision=<n>` with an empty body; query `prefer=file\|board` optional; `apply` also needs `plan_hash=<hex>`. `GET …/config/revisions` → `[{number, origin, created_at, hash}]` newest first; `GET …/config/revisions/{n}` → the body as the file (`format=json\|yaml`, default yaml). |
 | The plan's answer | `ConfigPlan { plan_hash, base: Option<RevisionSummary>, changes: Vec<Change>, conflicts: Vec<Conflict>, deletions: Vec<Deletion { section, key, name, cost: Vec<String> }>, warnings: Vec<String>, applies: bool }`. `applies` is false while there is a conflict without `prefer`. Problems (anything `check` or the usage rule refuses) are a 400 with every problem, as today. The apply answers `ConfigApplied { revision: RevisionSummary, changes, deletions }`. |
 | A key on the wire | `Role`, `Sprint`, `CustomFieldDefinition` and the profile response gain `key: String`; `CreateRole`, `CreateSprint`, `CreateCustomField` and the profile create body gain `key: Option<String>` (checked with the same rule; default `key_of(name)`, 409 when taken). No update route changes a key. |
 | The CLI | `tack config <export \| import \| status \| history \| revert>`; `import` and `revert` print the plan and apply unless `--dry-run`; a plan with deletions is applied only with `--yes` (otherwise the plan is printed and the exit code is 1 with "add --yes to apply the N deletions"); `--prefer file\|board`; `--json` everywhere. `tack import` and `tack export --bundle` do not change. |
@@ -220,7 +223,7 @@ uses). Nothing else; no I/O; no new dependency (`serde_json` and `sha2` are not 
 
 ### A — a key on every configured thing (Sonnet, two layers)
 
-**Files:** `crates/tack-db/src/migrations.rs` (`MIGRATION_092` + its line in `all_migrations()`),
+**Files:** `crates/tack-db/src/migrations.rs` (`MIGRATION_093` + its line in `all_migrations()`),
 a new `crates/tack-db/tests/migrations/config_keys.rs` registered in
 `crates/tack-db/tests/migrations.rs`, `crates/tack-core/src/models.rs` (`Role`, `Sprint`,
 `CustomFieldDefinition`, `CreateRole`, `CreateSprint`, `CreateCustomField`),
@@ -240,7 +243,7 @@ through unchanged — read only to confirm), `crates/tack-api/tests/handlers/bun
 **Do:**
 
 - The migration and its test as "Decided" says. The test (`config_keys.rs`, the shape of
-  `template_bundle.rs`): at `091_template_bundle` insert two roles named `Dev Team` and `dev-team`
+  `template_bundle.rs`): at `092_drop_usd_per_day` insert two roles named `Dev Team` and `dev-team`
   in one project and a profile `Writer`; run all; the first role's key is `dev-team`, the second's
   `dev-team-<8 chars of its id>`, the profile's `writer`; the unique indexes exist
   (`PRAGMA index_list`).
@@ -293,7 +296,7 @@ through unchanged — read only to confirm), `crates/tack-api/tests/handlers/bun
 (the paths and the schemas: `ConfigStatus`, `ConfigPlan`, `ConfigApplied`, `RevisionSummary`,
 `Deletion`, and `sync::{Change, Conflict, FieldChange, Verb, Prefer}` — the last five need
 `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` added in `sync.rs`, which is the one
-line this task may change there), `crates/tack-db/src/migrations.rs` (`MIGRATION_093` + its line),
+line this task may change there), `crates/tack-db/src/migrations.rs` (`MIGRATION_094` + its line),
 a new `crates/tack-db/src/repo/config.rs` (+ `pub mod config;` in `repo.rs`),
 `crates/tack-api/src/handlers/export.rs` (`bundle_of`, the revision on export),
 `crates/tack-api/src/handlers/templates.rs` (`save_project_as_template` reads `bundle_of`),
