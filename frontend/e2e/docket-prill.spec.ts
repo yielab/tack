@@ -186,15 +186,22 @@ async function waitAllowingApprovals(requestId: string, label: string, timeoutMs
       const attempts = await attemptsOf(requestId);
       const n = attempts[attempts.length - 1]?.attempt_number;
       const { data } = (await apiFetch(`/executions/${requestId}/attempts/${n}/decisions`)) as {
-        data: Array<{ decision_id: string; attempt_id: string; kind: string; prompt: string; state: string; options: Array<{ option_id: string }> }>;
+        data: Array<{
+          decision_id: string; attempt_id: string; kind: string; prompt: string; state: string;
+          options: Array<{ option_id: string }>; recommendation?: { option_id?: string } | null;
+        }>;
       };
       for (const d of data.filter((d) => d.state === 'pending')) {
-        // A gated command is allowed once; a consultation (a member asking how to go on) is
-        // answered by pointing back at the item, which already says what to do.
+        // A gated command is allowed once. A consultation (a member asking how to go on) takes
+        // docket's recommended option, else its first that is not a decline; one with no options
+        // of its own is answered by pointing back at the item, which already says what to do.
+        const own = d.options.filter((o) => !/decline/i.test(o.option_id) && o.option_id !== 'accept');
         const answer =
           d.kind === 'approval'
             ? { option_id: (d.options.find((o) => /once|allow/i.test(o.option_id)) ?? d.options[0]).option_id }
-            : { option_id: 'accept', text: 'Do exactly what the item says, with the tools you have, and finish.' };
+            : own.length
+              ? { option_id: d.recommendation?.option_id ?? own[0].option_id }
+              : { option_id: 'accept', text: 'Do exactly what the item says, with the tools you have, and finish.' };
         await apiFetch(
           `/attempts/${d.attempt_id}/decisions/${d.decision_id}/resolve`,
           { ...json('POST', { answer }), headers: { 'content-type': 'application/json', 'x-tack-decision-token': DECISION_TOKEN } },
