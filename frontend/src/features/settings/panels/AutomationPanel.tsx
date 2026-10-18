@@ -318,7 +318,6 @@ const AutomationPanel: Component = () => {
             project={() => p() ?? undefined}
             statuses={statuses}
             profiles={() => profiles() ?? []}
-            runners={() => runners() ?? []}
             saveProject={save}
           />
         )}

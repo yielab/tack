@@ -937,3 +937,214 @@ fn the_default_pod_is_the_folders_slug() {
         assert_eq!(default_pod(Path::new(folder)), pod, "{folder}");
     }
 }
+
+/// A tack server that answers the runner's routes with the frozen fixtures and
+/// records each request as (path, body).
+#[allow(clippy::type_complexity)]
+fn tack_server() -> (String, Arc<std::sync::Mutex<Vec<(String, Value)>>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let base_url = format!(
+        "http://127.0.0.1:{}/api/runner/v1",
+        listener.local_addr().expect("addr").port()
+    );
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&requests);
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let recorded = Arc::clone(&recorded);
+            std::thread::spawn(move || {
+                let mut stream = stream;
+                let mut buffer = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                let (head_end, length) = loop {
+                    let read = stream.read(&mut chunk).unwrap_or(0);
+                    if read == 0 {
+                        return;
+                    }
+                    buffer.extend_from_slice(&chunk[..read]);
+                    let text = String::from_utf8_lossy(&buffer).to_string();
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let length = text[..end]
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())
+                                    .flatten()
+                            })
+                            .unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                };
+                while buffer.len() < head_end + length {
+                    let read = stream.read(&mut chunk).unwrap_or(0);
+                    if read == 0 {
+                        break;
+                    }
+                    buffer.extend_from_slice(&chunk[..read]);
+                }
+                let head = String::from_utf8_lossy(&buffer[..head_end]).to_string();
+                let path = head
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned();
+                let body: Value =
+                    serde_json::from_slice(&buffer[head_end..]).unwrap_or(Value::Null);
+                recorded.lock().unwrap().push((path.clone(), body));
+                let payload = match path.rsplit('/').next().unwrap_or_default() {
+                    "enroll" => {
+                        include_str!("../../../docs/contracts/runner-v1/enrollment.response.json")
+                    }
+                    "refresh" => {
+                        include_str!("../../../docs/contracts/runner-v1/refresh.response.json")
+                    }
+                    "claim" => include_str!(
+                        "../../../docs/contracts/runner-v1/claim.no-work.response.json"
+                    ),
+                    _ => include_str!("../../../docs/contracts/runner-v1/heartbeat.response.json"),
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+            });
+        }
+    });
+    (base_url, requests)
+}
+
+/// What the runner reports with the given harnesses, as `build_runtime` would send it.
+fn report(
+    harnesses: Vec<tack_orch::execution::HarnessCapability>,
+) -> tack_orch::execution::RunnerCapabilities {
+    use tack_orch::execution::{
+        CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities, ProtocolVersion,
+        RunnerCapabilities,
+    };
+    let feature = |support: &str| CapabilityValue {
+        support: serde_json::from_value(json!(support)).expect("support"),
+        reason: None,
+        additional: Default::default(),
+    };
+    RunnerCapabilities {
+        protocol_version: Some(ProtocolVersion::v1()),
+        runner_version: "0.1.0".to_owned(),
+        reported_at: chrono::Utc::now(),
+        labels: Default::default(),
+        concurrency: Concurrency {
+            total: 1,
+            available: 1,
+            additional: Default::default(),
+        },
+        harnesses,
+        features: FeatureCapabilities {
+            cancel: feature("advisory"),
+            resume: feature("unsupported"),
+            decisions: feature("supported"),
+            artifacts: feature("advisory"),
+            usage: feature("advisory"),
+            additional: Default::default(),
+        },
+        limits: CapabilityLimits {
+            event_payload_bytes_max: 65_536,
+            artifact_content_bytes_max: 52_428_800,
+            additional: Default::default(),
+        },
+        additional: Default::default(),
+    }
+}
+
+#[tokio::test]
+async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_sends_none() {
+    use tack_runner::{
+        ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
+        RunnerProtocolClient, Shutdown, SystemClock,
+        client::{
+            HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy, RunnerEngine,
+            WorkspaceManager, workspace::git::GitWorktreeProvisioner,
+        },
+    };
+
+    let fake = pods_fake().await;
+    let scene = scene();
+    let (base_url, requests) = tack_server();
+    let mut probed = AdapterRegistry::new();
+    probed.register(adapter(&fake, &scene)).expect("registers");
+    let probed = Arc::new(probed);
+    let state = common::temp_dir("docket-reprobe");
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        command_line: ConfigOverrides {
+            api_base_url: Some(base_url.clone()),
+            runner_id: Some("local-runner".into()),
+            state_dir: Some(state.path().to_path_buf()),
+            enrollment_credential: Some(EnrollmentCredential::new("test-only-credential")),
+            ..ConfigOverrides::default()
+        },
+        ..RunnerConfigSources::default()
+    })
+    .expect("configuration");
+    let protocol = Arc::new(
+        HttpPullProtocol::new(&base_url, Duration::from_secs(5), RetryPolicy::default())
+            .expect("protocol"),
+    );
+    let engine = RunnerEngine::new(
+        Arc::clone(&protocol),
+        AdapterRegistry::new(),
+        OwnerOnlyJournal::new(state.path().join("journal")),
+        WorkspaceManager::new(
+            state.path().join("workspaces"),
+            GitWorktreeProvisioner::default(),
+        ),
+    );
+    let client = HttpRunnerClient::new(
+        protocol,
+        engine,
+        config,
+        SystemClock,
+        report(probed.capabilities().await),
+    )
+    .with_reprobe(Duration::from_millis(150), {
+        let probed = Arc::clone(&probed);
+        move || {
+            let probed = Arc::clone(&probed);
+            async move { report(probed.capabilities().await) }
+        }
+    });
+    let (shutdown, handle) = Shutdown::channel();
+    let serving = tokio::spawn(async move { client.serve(shutdown).await });
+    let refreshes = || {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(path, _)| path.ends_with("/refresh"))
+            .map(|(_, body)| body.clone())
+            .collect::<Vec<_>>()
+    };
+
+    // Several intervals pass with nothing changed: no refresh.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(refreshes().is_empty(), "{:?}", refreshes());
+
+    fake.add_pod("fab-content", "lights-out", &[]);
+    let mut waited = 0;
+    while refreshes().is_empty() && waited < 100 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        waited += 1;
+    }
+    let sent = refreshes();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    let teams = sent[0]["capabilities"]["harnesses"][0]["teams"].to_string();
+    assert!(teams.contains("fab-content"), "{teams}");
+
+    // The new report is now the last one sent: later intervals send nothing.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(refreshes().len(), 1);
+
+    handle.request();
+    let ended = tokio::time::timeout(Duration::from_secs(30), serving).await;
+    assert!(ended.is_ok(), "the runner stops on shutdown");
+}

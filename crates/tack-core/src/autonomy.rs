@@ -144,8 +144,10 @@ pub struct Facts {
     pub budget: Check,
     pub pr_open: Check,
     pub ci: CiState,
-    /// The most autonomy the team that ran the change allows; `None` when unknown.
-    pub ceiling: Option<Level>,
+    /// The most autonomy the team that ran the change allows; `Ok(None)` when
+    /// unknown, `Err` with the sentence when the run names a team its computer
+    /// does not report.
+    pub ceiling: Result<Option<Level>, String>,
 }
 
 /// The first condition that stops a merge. One variant per condition; the
@@ -156,6 +158,7 @@ pub enum Hold {
     NotMerge,
     LevelBelowL4,
     HarnessCeiling { ceiling: Level, wanted: Level },
+    TeamNotReported(String),
     Require(String),
     Attestation(String),
     Budget(String),
@@ -179,7 +182,8 @@ impl fmt::Display for Hold {
                 f,
                 "The team that ran this stays at {ceiling}: it needs a person during a run"
             ),
-            Hold::Require(reason)
+            Hold::TeamNotReported(reason)
+            | Hold::Require(reason)
             | Hold::Attestation(reason)
             | Hold::Budget(reason)
             | Hold::PrNotOpen(reason) => f.write_str(reason),
@@ -217,11 +221,15 @@ pub fn evaluate(f: &Facts) -> Result<(), Hold> {
             if f.level < Level::L4 {
                 return Err(Hold::LevelBelowL4);
             }
-            if let Some(ceiling) = f.ceiling.filter(|ceiling| *ceiling < f.level) {
-                return Err(Hold::HarnessCeiling {
-                    ceiling,
-                    wanted: f.level,
-                });
+            match &f.ceiling {
+                Err(reason) => return Err(Hold::TeamNotReported(reason.clone())),
+                Ok(Some(ceiling)) if *ceiling < f.level => {
+                    return Err(Hold::HarnessCeiling {
+                        ceiling: *ceiling,
+                        wanted: f.level,
+                    });
+                }
+                Ok(_) => {}
             }
             check(&f.require).map_err(Hold::Require)?;
             check(&f.attestation).map_err(Hold::Attestation)?;
@@ -253,7 +261,7 @@ mod tests {
             budget: Check::Pass,
             pr_open: Check::Pass,
             ci: CiState::Green,
-            ceiling: None,
+            ceiling: Ok(None),
         };
         let fail = |s: &str| Check::Fail(s.to_string());
         let rows: Vec<(&str, Facts, Result<(), Hold>)> = vec![
@@ -409,7 +417,7 @@ mod tests {
             (
                 "auto, the team's ceiling is below the level",
                 Facts {
-                    ceiling: Some(Level::L3),
+                    ceiling: Ok(Some(Level::L3)),
                     ..base(Trigger::Auto)
                 },
                 Err(Hold::HarnessCeiling {
@@ -418,9 +426,19 @@ mod tests {
                 }),
             ),
             (
+                "auto, the run's team is not reported by its computer",
+                Facts {
+                    ceiling: Err("Team fab-dev is not reported yet by this computer".into()),
+                    ..base(Trigger::Auto)
+                },
+                Err(Hold::TeamNotReported(
+                    "Team fab-dev is not reported yet by this computer".into(),
+                )),
+            ),
+            (
                 "auto, the team's ceiling allows the level",
                 Facts {
-                    ceiling: Some(Level::L5),
+                    ceiling: Ok(Some(Level::L5)),
                     ..base(Trigger::Auto)
                 },
                 Ok(()),
@@ -428,7 +446,7 @@ mod tests {
             (
                 "button, the team's ceiling does not hold the Merge button",
                 Facts {
-                    ceiling: Some(Level::L3),
+                    ceiling: Ok(Some(Level::L3)),
                     ..base(Trigger::Button)
                 },
                 Ok(()),

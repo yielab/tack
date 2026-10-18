@@ -87,18 +87,51 @@ pub async fn build_runtime_with_active(
         &own_environment,
         &config.docket,
     );
-    let mut capabilities =
-        report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts).await;
-    // Whether this runner has a verifier and a branch push at all; a request
-    // may decline either, never enable one that is off here.
-    capabilities.additional.insert(
-        "verify_configured".to_owned(),
-        serde_json::json!(config.verify.enabled),
-    );
-    capabilities.additional.insert(
-        "push_configured".to_owned(),
-        serde_json::json!(config.git.push_branches),
-    );
+    // What this runner reports is probed here and again by the client later
+    // (a team added after start), so one function decides how it is built.
+    let probe = {
+        let (limits, staging_root, secrets, config, own_environment) = (
+            limits.harness_process.clone(),
+            staging_root.clone(),
+            secrets.clone(),
+            config.clone(),
+            own_environment.clone(),
+        );
+        move || {
+            let (limits, staging_root, secrets, config, own_environment) = (
+                limits.clone(),
+                staging_root.clone(),
+                secrets.clone(),
+                config.clone(),
+                own_environment.clone(),
+            );
+            async move {
+                let (adapters, _) = crate::harness::discover(
+                    &limits,
+                    &staging_root,
+                    &secrets,
+                    &config.secrets.request_may_reference,
+                    &own_environment,
+                    &config.docket,
+                );
+                let mut capabilities =
+                    report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts)
+                        .await;
+                // Whether this runner has a verifier and a branch push at all; a request
+                // may decline either, never enable one that is off here.
+                capabilities.additional.insert(
+                    "verify_configured".to_owned(),
+                    serde_json::json!(config.verify.enabled),
+                );
+                capabilities.additional.insert(
+                    "push_configured".to_owned(),
+                    serde_json::json!(config.git.push_branches),
+                );
+                capabilities
+            }
+        }
+    };
+    let capabilities = probe().await;
     if config.verify.enabled && !crate::verify::program_found(&config.verify.program) {
         tracing::warn!(
             program = config.verify.program.as_str(),
@@ -127,7 +160,8 @@ pub async fn build_runtime_with_active(
     .with_verify(config.verify.clone(), limits.harness_process.clone())
     .with_git(config.git.clone())
     .with_active(active);
-    let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
+    let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)
+        .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe);
 
     Ok(RunnerRuntime::new(
         client,

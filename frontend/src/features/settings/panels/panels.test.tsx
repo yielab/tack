@@ -83,7 +83,7 @@ beforeEach(() => {
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
-      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer', tool_policy: { docket: { team: 'fab-content' } } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/local-runner/check-folder')) {
       return Promise.resolve(new Response(JSON.stringify({ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -446,6 +446,29 @@ describe('Settings panels', () => {
       const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/api/roles/role-1'))!;
       expect((call[1] as RequestInit).method).toBe('PATCH');
       expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({ agent_profile_id: 'prof1' });
+    });
+
+    it('a_team_row_says_what_the_server_says_and_the_apply_button_says_what_is_missing', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      // Attended with no violation listed: the server still caps it, so the row says a person is needed.
+      autonomy.teams = [{ name: 'fab-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const teams = rung(container, 'teams');
+      expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('fab-content · needs a person · this computer');
+      expect(teams.querySelector('#apply-teams-why')!.textContent).toContain(
+        "Tack cannot run this on the team's computer from the board yet. In the project's folder, run:",
+      );
+    });
+
+    it('a_lights_out_team_row_says_lights_out', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null }];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('fab-content · lights-out · this computer');
     });
 
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {

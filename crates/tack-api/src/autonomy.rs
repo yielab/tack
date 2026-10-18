@@ -122,23 +122,27 @@ pub(crate) fn is_attended(team: &TeamReport) -> bool {
     team.profile != "lights-out" || !team.violations.is_empty()
 }
 
-/// The most autonomy the team that ran an attempt allows. The named team's when
-/// the runner reports teams (attended means L3); otherwise the harness's own
-/// ceiling; otherwise unknown.
-fn ceiling_of(snapshot: &str, kind: Option<&str>, team: Option<&str>) -> Option<Level> {
-    let kind = kind?;
-    let harness = harnesses_of(snapshot)
-        .into_iter()
-        .find(|harness| kind_is(harness, kind))?;
-    let named = harness
-        .teams
-        .as_ref()
-        .zip(team)
-        .and_then(|(teams, name)| teams.iter().find(|t| t.name == name));
-    match named {
-        Some(team) => is_attended(team).then_some(Level::L3),
-        None => harness.autonomy_ceiling.as_deref()?.parse().ok(),
-    }
+/// The most autonomy the team that ran an attempt allows: the named team's as the
+/// computer reports it now (attended means L3), or the sentence that says the
+/// computer does not report it. A run of an agent with no team keeps the
+/// harness's own ceiling; `Ok(None)` is unknown.
+fn ceiling_of(
+    snapshot: &str,
+    kind: Option<&str>,
+    team: Option<&str>,
+) -> Result<Option<Level>, String> {
+    let harness = kind.and_then(|kind| {
+        harnesses_of(snapshot)
+            .into_iter()
+            .find(|harness| kind_is(harness, kind))
+    });
+    let Some(name) = team else {
+        return Ok(harness.and_then(|harness| harness.autonomy_ceiling?.parse().ok()));
+    };
+    harness
+        .and_then(|harness| harness.teams?.into_iter().find(|t| t.name == name))
+        .map(|team| is_attended(&team).then_some(Level::L3))
+        .ok_or_else(|| format!("Team {name} is not reported yet by this computer"))
 }
 
 fn fail(reason: &str) -> Check {
@@ -271,14 +275,13 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
     };
 
     extra.budget = budget(state, &context.project_id, &settings).await;
-    extra.ceiling = match store::attempt_ceiling_inputs(pool, attempt_id).await {
-        Ok(Some(inputs)) => ceiling_of(
+    if let Ok(Some(inputs)) = store::attempt_ceiling_inputs(pool, attempt_id).await {
+        extra.ceiling = ceiling_of(
             &inputs.capability_snapshot,
             inputs.harness_kind.as_deref(),
             inputs.team.as_deref(),
-        ),
-        _ => None,
-    };
+        );
+    }
     Some(extra)
 }
 

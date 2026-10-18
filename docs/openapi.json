@@ -7661,7 +7661,7 @@
           },
           "ceiling": {
             "type": "string",
-            "description": "Read only: the most autonomy the teams this project's roles use allow,\n`L5`, `L4` or `L3`.",
+            "description": "Read only: the most autonomy this project can reach now: the lowest any\nteam its roles use allows, `L3` while anything stops Tack merging by\nitself, otherwise `L5`.",
             "readOnly": true
           },
           "domains": {

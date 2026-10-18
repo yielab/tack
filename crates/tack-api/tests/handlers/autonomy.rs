@@ -604,54 +604,82 @@ fn reviewers_snapshot(kind: &str) -> String {
     json!({"harnesses": [{
         "harness_kind": kind, "installed_version": "0.2.0", "probe_error": null,
         "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
-        "teams": [{"name": "reviewers", "profile": "default", "violations": [
-            {"requirement": "no operator prompts during a run", "fix": "run it lights-out"}]}],
+        "teams": [
+            {"name": "reviewers", "profile": "default", "violations": [
+                {"requirement": "no operator prompts during a run", "fix": "run it lights-out"}]},
+            {"name": "writers", "profile": "lights-out", "violations": []}],
     }]})
     .to_string()
 }
 
-/// A succeeded attempt whose runner reports the request's team attended is held
-/// for the team's ceiling, not merged.
+/// A succeeded attempt is held for the ceiling of the team that ran it, and only
+/// that team's: a lights-out team beside an attended one merges, and a team the
+/// computer does not report is held with the sentence that says so.
 #[tokio::test]
-async fn an_attended_team_holds_the_automatic_merge_at_its_ceiling() {
-    let root = tempfile::tempdir().unwrap();
-    let prill = fake_prill(root.path());
-    let gh = github(false, 0).await;
-    let b = board(root.path(), Some(&gh.uri()), &prill).await;
-    let setup = Setup::default();
-    let (status, put) = put_autonomy(&b, &setup).await;
-    assert_eq!(status, StatusCode::OK, "{put}");
-    let a = finished_attempt(&b, &setup).await;
-    let pool = b.state.repo.pool();
-    let kind: String = sqlx::query_scalar(
-        "SELECT json_extract(request_snapshot, '$.requested_harness_kind') FROM execution_requests WHERE id = ?",
-    )
-    .bind(&a.request_id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', 'reviewers') WHERE id = ?",
-    )
-    .bind(&a.request_id)
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = ?")
-        .bind(reviewers_snapshot(&kind))
-        .bind(&a.runner_id)
-        .execute(pool)
+async fn the_ceiling_is_the_ceiling_of_the_team_that_ran_it() {
+    let rows: [(Option<&str>, u64, Option<&str>); 4] = [
+        (
+            Some("reviewers"),
+            0,
+            Some("The team that ran this stays at L3: it needs a person during a run"),
+        ),
+        (Some("writers"), 1, None),
+        (
+            Some("fab-dev"),
+            0,
+            Some("Team fab-dev is not reported yet by this computer"),
+        ),
+        (
+            None,
+            0,
+            Some("The team that ran this stays at L3: it needs a person during a run"),
+        ),
+    ];
+    for (team, merges, expected) in rows {
+        let root = tempfile::tempdir().unwrap();
+        let prill = fake_prill(root.path());
+        let gh = github(false, merges).await;
+        let b = board(root.path(), Some(&gh.uri()), &prill).await;
+        let setup = Setup::default();
+        let (status, put) = put_autonomy(&b, &setup).await;
+        assert_eq!(status, StatusCode::OK, "{put}");
+        let a = finished_attempt(&b, &setup).await;
+        let pool = b.state.repo.pool();
+        let kind: String = sqlx::query_scalar(
+            "SELECT json_extract(request_snapshot, '$.requested_harness_kind') FROM execution_requests WHERE id = ?",
+        )
+        .bind(&a.request_id)
+        .fetch_one(pool)
         .await
         .unwrap();
+        if let Some(team) = team {
+            sqlx::query(
+                "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', ?) WHERE id = ?",
+            )
+            .bind(team)
+            .bind(&a.request_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = ?")
+            .bind(reviewers_snapshot(&kind))
+            .bind(&a.runner_id)
+            .execute(pool)
+            .await
+            .unwrap();
 
-    tack_api::autonomy::tick(&b.state).await;
-    let row = merge_row(&b, &a.attempt_id).await.expect("a held row");
-    let held = row.3.unwrap_or_default();
-    assert!(
-        held.contains("The team that ran this stays at L3: it needs a person during a run"),
-        "{held:?}"
-    );
-    assert!(row.4.is_none(), "merged");
+        tack_api::autonomy::tick(&b.state).await;
+        let row = merge_row(&b, &a.attempt_id).await.expect("a row");
+        let held = row.3.clone().unwrap_or_default();
+        match expected {
+            Some(words) => {
+                assert!(held.contains(words), "{team:?}: {held:?}");
+                assert!(row.4.is_none(), "{team:?}: merged");
+            }
+            None => assert!(row.4.is_some(), "{team:?}: held for {held:?}"),
+        }
+    }
 }
 
 /// A role pointing at a profile whose team runs attended is said on the settings
@@ -668,7 +696,14 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
             .1
     };
     let before = get().await;
-    assert_eq!(before["ceiling"], "L5", "{before}");
+    // Whatever stops Tack merging by itself lowers the level the page prints.
+    assert!(
+        !before["automatic_merge_blocked_by"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(before["ceiling"], "L3", "{before}");
     assert_eq!(before["teams"], json!([]), "{before}");
 
     let pool = b.state.repo.pool();

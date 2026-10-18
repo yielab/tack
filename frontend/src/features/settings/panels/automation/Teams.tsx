@@ -1,6 +1,7 @@
 import { type Accessor, type Component, For, Show, createResource } from 'solid-js';
 import { api } from '../../../../shared/api';
-import { fleetsApi, type AgentProfileSummary, type RunnerSummary } from '../../../../shared/execution';
+import type { AutonomySettings } from '../../../../shared/api/autonomy';
+import { fleetsApi, type AgentProfileSummary } from '../../../../shared/execution';
 import { HelpHint } from '../../../../shared/ui';
 import { toast } from '../../../../shared/ui/toast';
 import { HELP } from '../../../../shared/help/texts';
@@ -10,25 +11,22 @@ import { Heading, Note, SECTION, inputStyle, teamOf } from './parts';
 interface Props {
   roles: Accessor<Role[]>;
   profiles: Accessor<AgentProfileSummary[]>;
-  runners: Accessor<RunnerSummary[]>;
+  /** The ladder's autonomy settings: each team's state is the server's verdict. */
+  settings: Accessor<AutonomySettings | null | undefined>;
   project: Accessor<Project | undefined>;
   /** Re-reads the roles after one is saved. */
   onRoleSaved: () => void;
   onDefaultProfile: (profileId: string | null) => void;
 }
 
-/** Is the team reported lights-out by every runner that reports it? `null` when none does. */
-function lightsOut(runners: RunnerSummary[], team: string): boolean | null {
-  const reports = runners.flatMap((r) => {
-    const snapshot = r.capability_snapshot as { harnesses?: { teams?: { name: string; violations?: unknown[] }[] }[] } | null;
-    return (snapshot?.harnesses ?? []).flatMap((h) => h.teams ?? []).filter((t) => t.name === team);
-  });
-  return reports.length === 0 ? null : reports.every((t) => (t.violations ?? []).length === 0);
-}
-
 /** Rung 1: which profile each role works with, and the team and machine that profile names. */
 const Teams: Component<Props> = (props) => {
   const [fleets] = createResource(() => fleetsApi.list().then((r) => r.data.data ?? []).catch(() => []));
+  /** What the server says about a team: lights-out, needs a person, or nothing while no computer reports it. */
+  const stateOf = (team: string) => {
+    const line = props.settings()?.teams?.find((t) => t.name === team);
+    return !line || line.profile === 'unknown' ? null : line.caps_at ? 'needs a person' : 'lights-out';
+  };
   const profile = (id: string | null | undefined) => props.profiles().find((p) => p.agent_profile_id === id);
 
   /** "fab-content · lights-out · this computer" for the chosen profile; empty without one. */
@@ -38,10 +36,7 @@ const Teams: Component<Props> = (props) => {
     const team = teamOf(p);
     const fleetId = (p as { fleet_id?: string | null }).fleet_id;
     const machine = fleetId ? `fleet ${(fleets() ?? []).find((f) => f.fleet_id === fleetId)?.name ?? fleetId}` : 'this computer';
-    const attended = team ? lightsOut(props.runners(), team) : null;
-    return [team ?? 'no team', attended === null ? null : attended ? 'lights-out' : 'needs a person', machine]
-      .filter(Boolean)
-      .join(' · ');
+    return [team ?? 'no team', team ? stateOf(team) : null, machine].filter(Boolean).join(' · ');
   };
 
   const saveRole = async (role: Role, value: string) => {
@@ -98,7 +93,7 @@ const Teams: Component<Props> = (props) => {
           Apply the repository's teams
         </button>
         <span id="apply-teams-why" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          Tack cannot reach the team's machine from here yet. In the project's folder, run: docket init --name &lt;team&gt;
+          Tack cannot run this on the team's computer from the board yet. In the project's folder, run: docket init --name &lt;team&gt;
         </span>
       </div>
     </div>
