@@ -68,7 +68,7 @@ offers; see [CLI](cli.md#runner).
 
 - **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It
   also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
-  tools you allow and a cost limit. A run that turns web tools off blocks only Claude Code's own web fetch
+  tools you allow. Tack reads its tokens but cannot stop it at a token limit yet. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
@@ -181,7 +181,8 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   those tools off, but the agent's shell can still reach the network. A line under the switches says
   whether the agent is sandboxed or has your user's access to this machine; see
   [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
-- **Advanced.** The computer, the agent, the model, the allowed tools, the timeout and the steps after a
+- **Advanced.** The computer, the agent, the model, the allowed tools, the **Token limit** and the
+  timeout (both filled from the profile; clear the token limit to run without one), and the steps after a
   run (verify, push). A step that is not available is shown disabled with the reason beside it, and
   **Verify the result** and **Push the branch** say which part of the runner's setup turns them on; that is
   the administrator's to set ([After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt)).
@@ -191,6 +192,31 @@ A setting you change here is saved on the task, and one you change in the projec
 running the same task again does not make you retype it. A field that cannot work says why in a sentence
 with a link where you typed it (the folder does not exist, the branch is not in the repository, the model
 is not on the agent's list), rather than leaving **Run** disabled with no explanation.
+
+### Token limits
+
+A limit is in tokens, and nothing has one unless you set it. You can set one in three places:
+
+| Where | What it limits |
+|---|---|
+| A profile, on the Agents page: **Token limit per run** and **Time limit** | Every run of that profile |
+| The dialog's **Advanced** section | This run only; it replaces the profile's, and an empty box runs it with no limit |
+| Settings → Automation → Merge, **Tokens per day** | The project's day; see [Budgets](merging.md#budgets) |
+
+A token counted is a new one: the input the agent's cache did not serve, what it wrote to the cache, and
+its output. What the cache served is shown beside the count and never counted, because the model did not
+read it again at full price. A run's summary reads, for example, "48 210 tokens (+ 412 000 read from cache,
+not counted)", or says "cache not reported" for an agent that does not separate it.
+
+Every run says its limit and who applies it, in one line:
+
+- "300 000 tokens · from the profile Implementer · docket stops the task there"
+- "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
+  a limit of its own for each step, which you change in docket, not in Tack.
+- "measured, not enforced": Claude Code, Codex and opencode report their tokens, but Tack cannot stop them
+  at a limit yet. The limit is still shown, and still counts against the project's day.
+
+Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 
 ### While a run works
 

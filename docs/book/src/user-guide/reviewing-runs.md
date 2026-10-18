@@ -100,11 +100,13 @@ Each finished attempt has a **Usage** panel. It leads with tokens, because that 
   Tack only knows the one you requested.
 - **Model calls** and how long the run took.
 - **Cost**, in two cases. When the agent reports an estimate, as Claude Code does, the panel shows
-  "≈ $x.xx (approx.)" and says it is the agent's own estimate at list price, not your bill. When the agent
+  "≈ $x.xx (estimated)" and says it is the agent's own estimate at list price, not your bill. When the agent
   reports none, the panel says **Cost: Not measured**. Tack never shows `$0.00` for a figure it does not
   have, because zero would claim the run was free.
 
-If an agent does not report tokens, the panel says **Tokens: Not measured**.
+If an agent does not report tokens, the panel says **Tokens: Not measured**. The task's summary of its latest
+run gives the counted tokens, with what the cache served beside them, and the run's token limit with who
+applies it; see [Token limits](running-agents.md#token-limits).
 
 The Factory metrics page, below, adds up cost for a whole project in a different way: it prices the tokens of
 every run with a rate card you enter once.
@@ -125,18 +127,18 @@ shows a figure, or **Not measured** with its reason when there is nothing to mea
 | **Pack acceptance rate** | Accepted packs divided by reviewed packs, with how many are still unreviewed |
 | **Verification tax (tokens)** | Tokens spent on verification and rework, divided by tokens spent on first attempts |
 | **Outcomes** | Pull requests opened, merged, closed and reverted, and how many were merged and not reverted |
-| **Cost** | Dollars for the project: tokens priced by the rate card, plus the human minutes above at the card's hour rate |
+| **Cost** | An estimate in dollars for the project: tokens priced by the rate card, plus the human minutes above at the card's hour rate, with how many of the models used have a price |
 | **Quality** | The figures the verifier reports for each repository. Tack shows them and does not compute them. Where the verifier cannot answer, the card says why |
 
 When a card has nothing to count, it says **Not measured** and why, never `0`.
 
 ### Cost by model and by team
 
-Under the cards, **Cost by model** lists, for each model, the tokens in and out, the number of attempts and
-the cost. A run that named no model and whose agent reported none appears as **No model named**. **By team**
+Under the cards, **Cost by model** lists, for each model, the counted tokens in and out, the tokens the
+cache served (shown, not counted), the number of attempts and the estimated cost. A run that named no model and whose agent reported none appears as **No model named**. **By team**
 appears when at least one run went to a team, and groups the same figures by team.
 
-A row shows **Not measured** in its Cost column when there is no rate card, or when the card does not list
+A row shows **not priced** in its Cost column when there is no rate card, or when the card does not list
 that model. The **Cost** card then says how many attempts were left out.
 
 ### The rate card

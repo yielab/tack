@@ -101,7 +101,7 @@ Only the keys the file names change. On an export every key is written.
 | `autonomy.domains` | list | `{name, paths, item_types, level}`. A domain's level is lowered the same way |
 | `autonomy.verify_require` | list | `criteria`, `suite`, `anti_tautology`, `static_analysis` |
 | `autonomy.verify_loop_max_attempts` | integer | |
-| `autonomy.budgets` | object | `tokens_per_day`, `usd_per_day`, `auto_merges_per_day`, `queue_items_max` |
+| `autonomy.budgets` | object | `tokens_per_day`, `auto_merges_per_day`, `queue_items_max`. An older file's `usd_per_day` is read and ignored, with a warning in the preview |
 | `autonomy.merge_on_done` | bool | |
 | `auto_start.enabled` | bool, optional | Never switched on by a file. Absent leaves the project's switch as it is |
 | `auto_start.status` | text | The trigger status; a status of the workflow |

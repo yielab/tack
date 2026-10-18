@@ -109,15 +109,25 @@ review with every attempt kept.
 
 ## Budgets
 
-Each project can cap four things, set under **Daily limits** in the Merge step. Leave a box empty for no
-limit.
+Each project can cap three things, set under **Daily limits** in the Merge step. Leave a box empty for no
+limit; nothing has one until you set it.
 
 | Limit | What happens when it is reached |
 |---|---|
 | **Tokens per day** | New runs do not start, and no automatic merge happens |
-| **Dollars per day** | New runs do not start. Dollars are priced from the [rate card](reviewing-runs.md#the-rate-card) on the Factory metrics page; a run that cannot be priced does not count |
 | **Items waiting at once** | New runs do not start while that many tasks wait for your review |
 | **Automatic merges per day** | No further automatic merge happens that day |
 
+**Tokens per day** is reserved when a run starts, so the runs of one day cannot add up past it. A run starts
+only if the tokens counted today, what the runs already going may still use, and its own token limit fit in
+the day. Otherwise it waits and says why: "Today's token limit is reserved by 2 open runs (1 600 000 of
+2 000 000)". A run with no token limit of its own is given what is left of the day as its limit, and says so.
+Tokens are counted as [Token limits](running-agents.md#token-limits) explains: what the cache served does
+not count. A bar under the limit shows the day: counted, reserved and what is left, amber from 80%.
+
+An agent Tack cannot stop at a limit (Claude Code, Codex and opencode today) can use more than it was given,
+so its run can still take the day past its limit; docket stops at it.
+
 A limit that stops new runs says which one on the task; runs already going finish. A day starts at midnight
-UTC.
+UTC. There is no limit in dollars: a dollar figure is a price list applied to tokens, and a model with no
+price would pass it.
