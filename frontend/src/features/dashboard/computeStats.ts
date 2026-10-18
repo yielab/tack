@@ -1,4 +1,5 @@
 import type { Item, WorkflowStatus } from '../../shared/types';
+import { typeKey } from '../../shared/ui/TypeBadge';
 
 export interface DashboardStats {
   totalItems: number;
@@ -13,9 +14,6 @@ export interface DashboardStats {
   throughput7: number;
   throughput30: number;
 }
-
-const typeKey = (i: Item) =>
-  typeof i.item_type === 'string' ? i.item_type : i.item_type.custom;
 
 /** Pure aggregation of project items for the dashboard. `now` is
  * injected so time-window metrics are deterministic in tests. */
@@ -39,10 +37,10 @@ export function computeDashboardStats(
     low: items.filter((i) => i.priority === 'low').length,
   };
 
-  const typeSet = new Set(items.map(typeKey));
+  const typeSet = new Set(items.map((i) => typeKey(i.item_type)));
   const byType = Array.from(typeSet).map((name) => ({
     name,
-    count: items.filter((i) => typeKey(i) === name).length,
+    count: items.filter((i) => typeKey(i.item_type) === name).length,
   }));
 
   const doneStatusNames = new Set(byStatus.filter((s) => s.category === 'done').map((s) => s.name));

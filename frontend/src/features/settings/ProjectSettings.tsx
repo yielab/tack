@@ -27,10 +27,9 @@ const TABS: TabItem[] = [
 const ProjectSettings: Component = () => {
   const { project, projectId } = useProject();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  // Allow deep-linking to a specific tab, e.g. `?tab=vocabulary`.
-  const initialTab = TABS.some(t => t.id === searchParams.tab) ? (searchParams.tab as string) : 'general';
-  const [active, setActive] = createSignal(initialTab);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The address owns the tab, e.g. `?tab=vocabulary`; an unknown id shows General.
+  const active = () => (TABS.some(t => t.id === searchParams.tab) ? (searchParams.tab as string) : 'general');
 
   // Save as template state
   const [showSaveModal, setShowSaveModal] = createSignal(false);
@@ -82,7 +81,7 @@ const ProjectSettings: Component = () => {
         </Button>
       </div>
 
-      <Tabs tabs={TABS} active={active()} onChange={setActive}>
+      <Tabs tabs={TABS} active={active()} onChange={(id) => setSearchParams({ tab: id })}>
         <Switch>
           <Match when={active() === 'general'}>
             <GeneralPanel />

@@ -1,10 +1,10 @@
-import { type Component, For, Show, createSignal } from 'solid-js';
+import { type Component, Show, createSignal } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { api } from '../../../shared/api';
-import { type ImportFileKind, type OutlineResult, importFileKind } from '../../../shared/api/data';
 import { BOOK } from '../../../shared/help/routes';
 import { toast } from '../../../shared/ui/toast';
-import { Button, Modal } from '../../../shared/ui';
+import { Button } from '../../../shared/ui';
+import ImportFromFile from '../../../shared/ui/ImportFromFile';
 import { useProject } from '../../../shared/state/projectContext';
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -18,33 +18,12 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** How many items the preview names before summing up the rest. */
-const PREVIEW_ITEMS = 8;
-
-const sectionTitle = (section: string) => section.charAt(0).toUpperCase() + section.slice(1);
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** A file read, checked with a dry run, and waiting for the person to confirm. */
-interface PendingImport {
-  target: 'this-project' | 'new-project';
-  text: string;
-  kind: ImportFileKind;
-  /** The new project's name, for a CSV (an outline names its own). */
-  name?: string;
-  preview?: OutlineResult;
-  error?: string;
-}
-
 /** Export this project (JSON/CSV) and import items or a full snapshot. */
 const DataPanel: Component = () => {
   const { projectId, project } = useProject();
   const navigate = useNavigate();
   const [busy, setBusy] = createSignal(false);
-  const [pending, setPending] = createSignal<PendingImport | null>(null);
   let importJsonInput: HTMLInputElement | undefined;
-  let addItemsInput: HTMLInputElement | undefined;
-  let newProjectInput: HTMLInputElement | undefined;
 
   const exportAs = async (format: 'json' | 'yaml' | 'csv', scope?: 'snapshot' | 'bundle') => {
     const id = projectId();
@@ -78,71 +57,6 @@ const DataPanel: Component = () => {
       setBusy(false);
     }
   };
-
-  const send = (job: PendingImport, dryRun: boolean) => {
-    if (job.target === 'new-project') {
-      return api.data.createProjectFromFile(job.text, job.kind, { name: job.name, dryRun });
-    }
-    return api.data.importItems(projectId() ?? '', job.text, job.kind, dryRun);
-  };
-
-  // Every file import is checked first with a dry run; the dialog shows what
-  // would be created, or every reason it would not, before anything is written.
-  const previewFile = async (file: File, target: PendingImport['target']) => {
-    if (target === 'this-project' && !projectId()) return;
-    setBusy(true);
-    const kind = importFileKind(file.name);
-    const job: PendingImport = {
-      target,
-      kind,
-      text: await file.text(),
-      name: target === 'new-project' && kind === 'csv' ? file.name.replace(/\.csv$/i, '') : undefined,
-    };
-    try {
-      setPending({ ...job, preview: await send(job, true) });
-    } catch (err) {
-      setPending({ ...job, error: err instanceof Error ? err.message : 'The file was refused' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirmImport = async () => {
-    const job = pending();
-    if (!job?.preview) return;
-    setBusy(true);
-    try {
-      const result = await send(job, false);
-      setPending(null);
-      toast.success(`Created ${plural(result.created, 'item', 'items')}`);
-      if (result.project) navigate(`/projects/${result.project.id}/board`);
-    } catch (err) {
-      setPending({ ...job, preview: undefined, error: err instanceof Error ? err.message : 'Import failed' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const dialogTitle = () => {
-    const job = pending();
-    if (job?.error) return 'This file cannot be imported';
-    if (job?.target === 'new-project') return 'Create a project from this file?';
-    return `Add these items to ${project()?.name ?? 'this project'}?`;
-  };
-
-  const fileInput = (ref: (el: HTMLInputElement) => void, onFile: (f: File) => void) => (
-    <input
-      ref={ref}
-      type="file"
-      accept="text/csv,.csv,application/json,.json,application/x-yaml,.yaml,.yml"
-      class="hidden"
-      onChange={(e) => {
-        const f = e.currentTarget.files?.[0];
-        e.currentTarget.value = '';
-        if (f) onFile(f);
-      }}
-    />
-  );
 
   const CARD = 'flex flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]';
   const TITLE = 'text-[1.1875rem] leading-tight';
@@ -207,87 +121,12 @@ const DataPanel: Component = () => {
           </a>
         </p>
         <div class="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => addItemsInput?.click()} disabled={busy()}>
-            Add items from a file…
-          </Button>
-          <Button variant="secondary" onClick={() => newProjectInput?.click()} disabled={busy()}>
-            New project from a file…
-          </Button>
+          <Show when={projectId()}>
+            {(id) => <ImportFromFile target={{ kind: 'project', id: id() }}>Add items from a file…</ImportFromFile>}
+          </Show>
+          <ImportFromFile target={{ kind: 'new' }}>New project from a file…</ImportFromFile>
         </div>
-        {fileInput((el) => (addItemsInput = el), (f) => void previewFile(f, 'this-project'))}
-        {fileInput((el) => (newProjectInput = el), (f) => void previewFile(f, 'new-project'))}
       </section>
-
-      <Modal isOpen={pending() !== null} onClose={() => setPending(null)} title={dialogTitle()} help={BOOK.importFiles}>
-        <div class="flex flex-col gap-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          <Show when={pending()?.error}>
-            {(error) => <p class="whitespace-pre-wrap" role="alert">{error()}</p>}
-          </Show>
-          <Show when={pending()?.preview}>
-            {(preview) => (
-              <>
-                <Show when={(preview().sections ?? []).length > 0}>
-                  <ul class="flex flex-col gap-1">
-                    <For each={preview().sections}>
-                      {(section) => (
-                        <li>
-                          <span style={{ color: 'var(--color-text-primary)' }}>
-                            {sectionTitle(section.section)}: {section.created} new, {section.updated} updated,{' '}
-                            {section.not_mentioned} not mentioned
-                          </span>
-                          <Show when={section.warnings.length > 0}>
-                            <ul class="list-disc pl-5">
-                              <For each={section.warnings}>{(w) => <li>{w}</li>}</For>
-                            </ul>
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-                <p>
-                  <Show when={pending()?.target === 'new-project'}>A new project. </Show>
-                  {plural(preview().created, 'item', 'items')} will be added
-                  <Show when={preview().dependencies > 0}>
-                    {' '}with {plural(preview().dependencies, 'dependency', 'dependencies')}
-                  </Show>
-                  .
-                </p>
-                <ul class="flex flex-col gap-1">
-                  <For each={preview().items.slice(0, PREVIEW_ITEMS)}>
-                    {(item) => (
-                      <li style={{ color: 'var(--color-text-primary)' }}>
-                        {item.title} <span style={{ color: 'var(--color-text-tertiary)' }}>· {item.status}</span>
-                      </li>
-                    )}
-                  </For>
-                  <Show when={preview().items.length > PREVIEW_ITEMS}>
-                    <li>and {preview().items.length - PREVIEW_ITEMS} more</li>
-                  </Show>
-                </ul>
-                <Show when={preview().warnings.length > 0}>
-                  <div>
-                    <p style={{ color: 'var(--color-text-primary)' }}>Read differently than written:</p>
-                    <ul class="list-disc pl-5">
-                      <For each={preview().warnings}>{(w) => <li>{w}</li>}</For>
-                    </ul>
-                  </div>
-                </Show>
-              </>
-            )}
-          </Show>
-          <div class="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setPending(null)} disabled={busy()}>
-              {pending()?.error ? 'Close' : 'Cancel'}
-            </Button>
-            <Show when={pending()?.preview}>
-              <Button onClick={() => void confirmImport()} disabled={busy()}>
-                {pending()?.target === 'new-project' ? 'Create project' : 'Add items'}
-              </Button>
-            </Show>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };

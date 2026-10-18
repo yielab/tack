@@ -2,6 +2,7 @@ import { Show } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
 import { useProject } from '../state/projectContext';
 import { useVocab } from '../vocab/useVocab';
+import { pageOf } from '../../app/pages';
 
 // Work lenses (rendered under "Work"). `sprint` matches the singular `/sprint`
 // route and is relabelled via the project vocabulary.
@@ -62,7 +63,7 @@ export default function Breadcrumb() {
       </Show>
       <Show when={!project()}>
         <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          {location.pathname === '/templates' ? 'Templates' : 'Projects'}
+          {pageOf(location.pathname).label}
         </span>
       </Show>
     </nav>

@@ -1,4 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createComponent, type Resource } from 'solid-js';
+import { render } from 'solid-js/web';
+import { MemoryRouter, Route } from '@solidjs/router';
+import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
+import type { Project } from '../../shared/types';
+import Dashboard from './Dashboard';
 import { computeDashboardStats } from './computeStats';
 import type { Item, WorkflowStatus } from '../../shared/types';
 
@@ -60,5 +66,45 @@ describe('computeDashboardStats', () => {
     expect(s.totalItems).toBe(0);
     expect(s.completionRate).toBe(0);
     expect(s.throughput7).toBe(0);
+  });
+});
+
+describe('Dashboard item types', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it("labels a type with the project's word for it", async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: [mk({ item_type: 'epic' }), mk({ item_type: 'task' })], total: 2 }), { status: 200 })),
+    );
+    const project = { id: 'p1', name: 'P', workflow: { statuses: STATUSES }, vocabulary: { epic: 'Saga' } } as unknown as Project;
+    const ctx: ProjectContextValue = {
+      projectId: () => 'p1',
+      project: (() => project) as unknown as Resource<Project>,
+      workflow: () => project.workflow,
+      vocabulary: () => ({ epic: 'Saga' }),
+      refetch: () => {},
+    };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () =>
+        createComponent(ProjectContext.Provider, {
+          value: ctx,
+          get children() {
+            return createComponent(MemoryRouter, {
+              get children() {
+                return createComponent(Route, { path: '/', component: Dashboard });
+              },
+            });
+          },
+        }),
+      container,
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain('Saga'));
+    expect(container.textContent).not.toContain('epic');
+    dispose();
   });
 });
