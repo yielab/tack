@@ -196,6 +196,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A run that ended says why on the item, not only in its Execution tab.** The Last run panel of a
+  failed, cancelled or lost run prints the reason where the agent's words go. A run whose time ran out
+  says "The run's time ran out after 60 minutes", and "while it waited for an answer" when a docket team
+  was waiting on a question; before, it read "Failed" alone, or the bare word "timeout".
 - **A run that delivers no change is no longer shown as succeeded.** When an agent reports success but
   the branch equals its base, the attempt ends failed with "The agent reported success but delivered no
   change to review", and the number of files the agent left uncommitted when there were any; a verifier's

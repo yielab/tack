@@ -1095,6 +1095,17 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         {
             object.insert("artifact".to_owned(), artifact);
         }
+        // A process stopped by its deadline ended for that reason, whatever its partial output
+        // reads as; what the agent's grammar made of it stays beside it.
+        let timed_out = result.exit == ProcessExit::TimedOut;
+        if timed_out && let Some(object) = terminal_reason.as_object_mut() {
+            object.insert("code".to_owned(), "timeout".into());
+            let message = super::time_ran_out(
+                std::time::Duration::from_secs(request.timeout_seconds),
+                false,
+            );
+            object.insert("message".to_owned(), message.into());
+        }
 
         let (model, source) = match (report.observed_model, request.requested_model.as_ref()) {
             (Some(model), _) => (Some(model), ModelSource::Reported),
@@ -1107,7 +1118,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             .num_milliseconds()
             .max(0) as u64;
         HarnessOutcome {
-            terminal_state: if report.succeeded {
+            terminal_state: if report.succeeded && !timed_out {
                 AttemptState::Succeeded
             } else {
                 AttemptState::Failed

@@ -149,6 +149,7 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     expect(describeAttemptOutcome('cancelled', { code: 'user_cancelled' }).whyStopped).toBe('user_cancelled');
     expect(describeAttemptOutcome('lost', null).whyStopped).toBe('No reason was reported');
     expect(describeAttemptOutcome('running', null).whyStopped).toBeNull();
+    expect(describeAttemptOutcome('failed', { code: 'timeout' }).whyStopped).toBe("The run's time ran out");
   });
 
   it('a requested-only model is neutral and says it was not confirmed', () => {

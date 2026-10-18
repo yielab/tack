@@ -3,6 +3,7 @@ import { Badge, Button } from '../ui';
 import { useExecutionStore } from '../state/executionContext';
 import type { AttemptSummary } from '../execution';
 import {
+  describeAttemptOutcome,
   describeAttemptStatus,
   formatApproxCost,
   formatCountedTokens,
@@ -56,6 +57,10 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (typeof result !== 'string' || result.trim() === '') return null;
     const text = result.trim().replace(/\s+/g, ' ');
     return text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS - 1)}…` : text;
+  };
+  const whyStopped = () => {
+    const a = attempt();
+    return a ? describeAttemptOutcome(a.state, a.terminal_reason).whyStopped : null;
   };
   const usageLine = () => {
     const a = attempt();
@@ -117,11 +122,20 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               </Show>
             }
           >
-            <Show when={said()}>
-              {(text) => (
-                <p data-testid="latest-run-said" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  “{text()}”
-                </p>
+            <Show
+              when={whyStopped()}
+              fallback={
+                <Show when={said()}>
+                  {(text) => (
+                    <p data-testid="latest-run-said" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                      “{text()}”
+                    </p>
+                  )}
+                </Show>
+              }
+            >
+              {(why) => (
+                <p data-testid="latest-run-why" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>
               )}
             </Show>
           </Show>

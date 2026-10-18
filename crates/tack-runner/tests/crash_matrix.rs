@@ -1137,6 +1137,11 @@ async fn timeout_stops_every_group_the_harness_announced() {
             .arg(grandchild.to_string())
             .status();
         assert_eq!(outcome.terminal_state, AttemptState::Failed, "{path}");
+        assert_eq!(outcome.terminal_reason["code"], "timeout", "{path}");
+        assert_eq!(
+            outcome.terminal_reason["message"], "The run's time ran out after 3 seconds",
+            "{path}"
+        );
         assert_eq!(
             gone, stopped,
             "{path}: the announced group after the timeout"
