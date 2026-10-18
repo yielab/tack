@@ -3,12 +3,16 @@
 //! rows are compared against with `julianday` (`created_at >= since`); `None` is all time.
 //! No `cost_usd` is read anywhere here.
 
-use sqlx::{Row, SqlitePool};
+use sqlx::{AssertSqlSafe, Row, SqlitePool};
 
-/// Tokens (in + out) of attempts, split into implementation and rework.
+use super::budgets::{CACHE_READ_SQL, COUNTED_TOKENS_SQL};
+
+/// Counted tokens (`COUNTED_TOKENS_SQL`) of attempts, split into implementation
+/// and rework, with the cache reads that were shown and not counted.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TokenSplit {
     pub tokens: i64,
+    pub cache_read: i64,
     pub attempts: i64,
     /// Attempts whose usage carries no token value.
     pub unmeasured: i64,
@@ -56,20 +60,22 @@ pub async fn attempt_totals(
     project_id: &str,
     since: Option<&str>,
 ) -> Result<AttemptTotals, sqlx::Error> {
-    let rows = sqlx::query(
+    // The fragments are constants of this crate; only values are bound.
+    let rows = sqlx::query(AssertSqlSafe(format!(
         "SELECT CASE WHEN json_extract(r.metadata, '$.rework_of') IS NOT NULL
                           AND json_extract(r.metadata, '$.rework_of') != r.id THEN 'rework'
                      WHEN a.attempt_number = 1 THEN 'implementation'
                      ELSE 'rework' END AS bucket,
                 COUNT(*) AS attempts,
-                COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0) + COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0) AS tokens,
+                COALESCE(SUM({COUNTED_TOKENS_SQL}), 0) AS tokens,
+                COALESCE(SUM({CACHE_READ_SQL}), 0) AS cache_read,
                 COALESCE(SUM(json_extract(a.usage, '$.tokens_in.value') IS NULL AND json_extract(a.usage, '$.tokens_out.value') IS NULL), 0) AS unmeasured
          FROM execution_attempts a
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
          WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
-         GROUP BY bucket",
-    )
+         GROUP BY bucket"
+    )))
         .bind(project_id)
         .bind(since)
         .bind(since)
@@ -79,6 +85,7 @@ pub async fn attempt_totals(
     for row in rows {
         let split = TokenSplit {
             tokens: row.get("tokens"),
+            cache_read: row.get("cache_read"),
             attempts: row.get("attempts"),
             unmeasured: row.get("unmeasured"),
         };

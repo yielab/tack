@@ -5,7 +5,7 @@ import type { AttemptSummary } from '../execution';
 import {
   describeAttemptStatus,
   formatApproxCost,
-  formatTokenCount,
+  formatCountedTokens,
   isTerminalAttemptState,
   readAttemptUsage,
   NOT_MEASURED_TEXT,
@@ -62,10 +62,8 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (!a || !finished()) return null;
     const u = readAttemptUsage(a);
     const parts: string[] = [];
-    if (u.tokensIn !== null || u.tokensOut !== null) {
-      const total = (u.tokensIn ?? 0) + (u.tokensOut ?? 0);
-      parts.push(`${formatTokenCount(total)} tokens`);
-    }
+    const tokens = formatCountedTokens(u);
+    if (tokens !== null) parts.push(tokens);
     const cost = formatApproxCost(u.cost);
     if (cost !== NOT_MEASURED_TEXT) parts.push(cost);
     if (u.modelCalls !== null) parts.push(`${u.modelCalls} model ${u.modelCalls === 1 ? 'call' : 'calls'}`);

@@ -72,21 +72,35 @@ pub async fn project_of_request(
     .await
 }
 
-/// Tokens (in plus out, as the runners measured them) of the attempts the
-/// project started since 00:00 UTC.
+/// A counted token is a new one: the attempt's input without what the cache
+/// served, plus its output. Over `execution_attempts a`; `tokens_in` already
+/// includes cache reads, and an attempt with no cache figure counts whole. An
+/// attempt that reported neither figure counts 0 here and is *unmeasured* to
+/// whoever needs the difference. The one owner of this sum in SQL: the day's
+/// spend and the Factory totals read it; `Usage::counted` is the same rule in Rust.
+pub const COUNTED_TOKENS_SQL: &str = "(COALESCE(json_extract(a.usage, '$.tokens_in.value')
+             - COALESCE(json_extract(a.usage, '$.cache_read_tokens'), 0), 0)
+           + COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0))";
+
+/// The input tokens the prompt cache served, over `execution_attempts a`:
+/// shown beside [`COUNTED_TOKENS_SQL`], never part of it.
+pub const CACHE_READ_SQL: &str = "COALESCE(json_extract(a.usage, '$.cache_read_tokens'), 0)";
+
+/// Counted tokens ([`COUNTED_TOKENS_SQL`]) of the attempts the project started
+/// since 00:00 UTC.
 pub async fn spent_today(
     pool: &SqlitePool,
     project_id: &str,
     now: DateTime<Utc>,
 ) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COALESCE(SUM(COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0)
-                           + COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0)), 0)
+    // The fragment is a constant of this crate; only values are bound.
+    sqlx::query_scalar(AssertSqlSafe(format!(
+        "SELECT COALESCE(SUM({COUNTED_TOKENS_SQL}), 0)
          FROM execution_attempts a
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)",
-    )
+         WHERE i.project_id = ? AND julianday(a.created_at) >= julianday(?)"
+    )))
     .bind(project_id)
     .bind(day_start(now))
     .fetch_one(pool)

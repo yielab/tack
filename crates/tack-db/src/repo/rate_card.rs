@@ -43,7 +43,10 @@ pub struct SpendRow {
     pub repo: Option<String>,
     /// The docket team of the attempts' resolved agent profile.
     pub team: Option<String>,
+    /// Every input token, cache reads and writes included: what the rate card prices.
     pub tokens_in: i64,
+    /// Of `tokens_in`, the ones the prompt cache served: shown, never counted.
+    pub cache_read: i64,
     pub tokens_out: i64,
     pub attempts: i64,
 }
@@ -69,6 +72,7 @@ pub async fn spend_by_model(
     sqlx::query_as(AssertSqlSafe(format!(
         "SELECT model, repo, team,
                 COALESCE(SUM(tokens_in), 0) AS tokens_in,
+                COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(tokens_out), 0) AS tokens_out,
                 COUNT(*) AS attempts
          FROM (
@@ -76,18 +80,21 @@ pub async fn spend_by_model(
                   COALESCE(json_extract(m.value, '$.input'), 0)
                     + COALESCE(json_extract(m.value, '$.cache_read'), 0)
                     + COALESCE(json_extract(m.value, '$.cache_write'), 0) AS tokens_in,
+                  COALESCE(json_extract(m.value, '$.cache_read'), 0) AS cache_read,
                   COALESCE(json_extract(m.value, '$.output'), 0) AS tokens_out
            {from}, json_each(a.usage, '$.by_model') m
            WHERE json_type(a.usage, '$.by_model') = 'object' AND {filter}
            UNION ALL
            SELECT {model} AS model, p.repo AS repo, {team} AS team,
                   COALESCE(json_extract(a.usage, '$.tokens_in.value'), 0) AS tokens_in,
+                  {cache_read} AS cache_read,
                   COALESCE(json_extract(a.usage, '$.tokens_out.value'), 0) AS tokens_out
            {from}
            WHERE json_type(a.usage, '$.by_model') IS NOT 'object' AND {filter}
          )
          GROUP BY model, repo, team",
-        model = RUN_MODEL_SQL
+        model = RUN_MODEL_SQL,
+        cache_read = super::budgets::CACHE_READ_SQL
     )))
     .bind(project)
     .bind(since)

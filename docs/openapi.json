@@ -8586,14 +8586,19 @@
       },
       "CostByModel": {
         "type": "object",
-        "description": "One model's tokens in the window.",
+        "description": "One model's tokens in the window. `tokens_in` and `tokens_out` are counted\ntokens: the input the cache served is in `cache_read`, shown and not counted.",
         "required": [
           "tokens_in",
+          "cache_read",
           "tokens_out",
           "attempts"
         ],
         "properties": {
           "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_read": {
             "type": "integer",
             "format": "int64"
           },
@@ -8624,15 +8629,20 @@
       },
       "CostByTeam": {
         "type": "object",
-        "description": "One docket team's tokens in the window.",
+        "description": "One docket team's tokens in the window, counted as in [`CostByModel`].",
         "required": [
           "team",
           "tokens_in",
+          "cache_read",
           "tokens_out",
           "attempts"
         ],
         "properties": {
           "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_read": {
             "type": "integer",
             "format": "int64"
           },
@@ -13120,7 +13130,7 @@
           "implementation_tokens": {
             "type": "integer",
             "format": "int64",
-            "description": "Tokens in + out of each request's first attempt (requests that are not rework)."
+            "description": "Counted tokens (cache reads left out) of each request's first attempt (requests that are not rework)."
           },
           "ratio": {
             "$ref": "#/components/schemas/Ratio",
@@ -13133,7 +13143,7 @@
           "rework_tokens": {
             "type": "integer",
             "format": "int64",
-            "description": "Tokens of later attempts plus every attempt of a request whose\n`metadata.rework_of` names another request."
+            "description": "Counted tokens of later attempts plus every attempt of a request whose\n`metadata.rework_of` names another request."
           },
           "verification_packs": {
             "type": "integer",

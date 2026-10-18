@@ -415,3 +415,30 @@ fn recovery_disposition_transition_targets_are_fixed() {
         None
     );
 }
+
+#[test]
+fn a_counted_token_is_a_new_one() {
+    let usage = |reported: serde_json::Value| -> Usage {
+        let mut value = serde_json::json!({
+            "duration_ms": {"value": null, "source": "not_measured"},
+            "cost_usd": {"value": null, "source": "not_measured"},
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(reported.as_object().unwrap().clone());
+        serde_json::from_value(value).expect("usage")
+    };
+    let measured = |n: u64| serde_json::json!({"value": n, "source": "measured"});
+    let unmeasured = serde_json::json!({"value": null, "source": "not_measured"});
+    // 100 000 in with 90 000 read from the cache, 2 000 out.
+    let cached = usage(serde_json::json!({
+        "tokens_in": measured(100_000), "tokens_out": measured(2_000), "cache_read_tokens": 90_000,
+    }));
+    assert_eq!(cached.counted(), Some(12_000));
+    // No cache figure counts whole; nothing measured is not zero.
+    let whole = usage(serde_json::json!({"tokens_in": measured(500), "tokens_out": measured(100)}));
+    assert_eq!(whole.counted(), Some(600));
+    let none = usage(serde_json::json!({"tokens_in": unmeasured, "tokens_out": unmeasured}));
+    assert_eq!(none.counted(), None);
+}

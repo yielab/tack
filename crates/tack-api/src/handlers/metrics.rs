@@ -65,10 +65,10 @@ pub struct HumanMinutes {
 pub struct VerificationTax {
     /// (verification + rework) ÷ implementation.
     pub ratio: Ratio,
-    /// Tokens in + out of each request's first attempt (requests that are not rework).
+    /// Counted tokens (cache reads left out) of each request's first attempt (requests that are not rework).
     pub implementation_tokens: i64,
     pub implementation_attempts: i64,
-    /// Tokens of later attempts plus every attempt of a request whose
+    /// Counted tokens of later attempts plus every attempt of a request whose
     /// `metadata.rework_of` names another request.
     pub rework_tokens: i64,
     pub rework_attempts: i64,
@@ -179,12 +179,14 @@ pub struct FactoryMetrics {
     pub cost_by_team: Vec<CostByTeam>,
 }
 
-/// One model's tokens in the window.
+/// One model's tokens in the window. `tokens_in` and `tokens_out` are counted
+/// tokens: the input the cache served is in `cache_read`, shown and not counted.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CostByModel {
     /// Absent for attempts that reported no model and asked for none.
     pub model: Option<String>,
     pub tokens_in: i64,
+    pub cache_read: i64,
     pub tokens_out: i64,
     pub attempts: i64,
     /// Absent without a rate card or when it does not list the model.
@@ -192,11 +194,12 @@ pub struct CostByModel {
     pub usd: Option<f64>,
 }
 
-/// One docket team's tokens in the window.
+/// One docket team's tokens in the window, counted as in [`CostByModel`].
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CostByTeam {
     pub team: String,
     pub tokens_in: i64,
+    pub cache_read: i64,
     pub tokens_out: i64,
     pub attempts: i64,
     /// Absent without a rate card or when any of the team's models is unlisted.
@@ -212,7 +215,9 @@ fn priced_row(card: &crate::rate_card::RateCard, row: &SpendRow) -> Option<f64> 
 
 struct CostLine {
     key: Option<String>,
+    /// Every input token, cache reads included: what the rate card prices.
     tokens_in: i64,
+    cache_read: i64,
     tokens_out: i64,
     attempts: i64,
     usd: Option<f64>,
@@ -230,11 +235,13 @@ fn cost_lines(
         let line = lines.entry(k.clone()).or_insert(CostLine {
             key: k,
             tokens_in: 0,
+            cache_read: 0,
             tokens_out: 0,
             attempts: 0,
             usd: card.map(|_| 0.0),
         });
         line.tokens_in += row.tokens_in;
+        line.cache_read += row.cache_read;
         line.tokens_out += row.tokens_out;
         line.attempts += row.attempts;
         line.usd = line
@@ -309,6 +316,7 @@ fn human_minutes(waits: &[WaitRow]) -> HumanMinutes {
 }
 
 /// Tokens in + out of a pack's `usage`, or `None` when the pack cannot be read.
+/// The pack contract carries no cache figure, so these are its counted tokens.
 async fn pack_tokens(storage: &ArtifactStorage, reference: Option<&str>) -> Option<i64> {
     let mut file = storage.open_for_read(reference?).await.ok()?;
     let mut bytes = Vec::new();
@@ -462,7 +470,8 @@ pub async fn factory_metrics(
     .into_iter()
     .map(|line| CostByTeam {
         team: line.key.unwrap_or_default(),
-        tokens_in: line.tokens_in,
+        tokens_in: line.tokens_in - line.cache_read,
+        cache_read: line.cache_read,
         tokens_out: line.tokens_out,
         attempts: line.attempts,
         usd: line.usd,
@@ -472,7 +481,8 @@ pub async fn factory_metrics(
         .into_iter()
         .map(|line| CostByModel {
             model: line.key,
-            tokens_in: line.tokens_in,
+            tokens_in: line.tokens_in - line.cache_read,
+            cache_read: line.cache_read,
             tokens_out: line.tokens_out,
             attempts: line.attempts,
             usd: line.usd,

@@ -101,21 +101,24 @@ async fn spend_by_model_splits_an_attempt_that_used_two_models() {
     let project = project.id.to_string();
     let mut got = spend_by_model(repo.pool(), &project, None).await.unwrap();
     got.sort_by(|a, b| a.model.cmp(&b.model));
-    let row = |model: &str, team: Option<&str>, tokens_in, tokens_out, attempts| SpendRow {
-        model: Some(model.into()),
-        repo: None,
-        team: team.map(Into::into),
-        tokens_in,
-        tokens_out,
-        attempts,
-    };
-    // `tokens_in` of a `by_model` entry counts its cache reads and writes.
+    let row =
+        |model: &str, team: Option<&str>, tokens_in, cache_read, tokens_out, attempts| SpendRow {
+            model: Some(model.into()),
+            repo: None,
+            team: team.map(Into::into),
+            tokens_in,
+            cache_read,
+            tokens_out,
+            attempts,
+        };
+    // `tokens_in` of a `by_model` entry counts its cache reads and writes, and
+    // `cache_read` says how many of them were reads.
     assert_eq!(
         got,
         vec![
-            row("opaque/a", None, 300, 30, 2),
-            row("opaque/b", None, 75, 5, 1),
-            row("opaque/c", Some("alpha"), 7, 3, 1),
+            row("opaque/a", None, 300, 0, 30, 2),
+            row("opaque/b", None, 75, 25, 5, 1),
+            row("opaque/c", Some("alpha"), 7, 0, 3, 1),
         ]
     );
 

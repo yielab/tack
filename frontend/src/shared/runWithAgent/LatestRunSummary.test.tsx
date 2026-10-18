@@ -72,7 +72,7 @@ describe('LatestRunSummary', () => {
     expect(panel.textContent).toContain('Finished — needs your review');
     expect(panel.querySelector('[data-testid="latest-run-said"]')!.textContent).toContain('I created test.md');
     expect(panel.querySelector('[data-testid="latest-run-usage"]')!.textContent).toBe(
-      '1.08M tokens · ≈ $1.34 · 6 model calls · claude-sonnet-5-5',
+      '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 · 6 model calls · claude-sonnet-5-5',
     );
     const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what the agent did')!;
     open.click();
