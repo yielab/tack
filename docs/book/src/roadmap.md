@@ -123,7 +123,8 @@ the file.
 ## Phase 75 — limits in tokens, and a lean context
 
 **Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
-the same day. **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
+the same day. Rounds 1 and 2 landed in `develop` the same day, with the guides; Round 3 waits on a
+capture of Claude Code's and opencode's live usage, and Round 4 on docket's context and count. **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
 Dollars are a token count multiplied by a price list someone typed. A model with no price
