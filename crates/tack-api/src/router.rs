@@ -56,6 +56,15 @@ impl AppState {
     pub fn pool(&self) -> &sqlx::SqlitePool {
         self.repo.pool()
     }
+
+    /// The prill the board runs: the one place that asks the embedded runner.
+    pub async fn prill_program(&self) -> String {
+        let runner = match &self.local_runner {
+            Some(control) => control.verify_program().await,
+            None => None,
+        };
+        self.config.prill_program_or(runner)
+    }
 }
 
 const ATTACH_LIMIT: usize = 50 * 1024 * 1024; // 50 MB for file uploads

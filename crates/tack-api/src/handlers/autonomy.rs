@@ -289,7 +289,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
             "GitHub polling is off on this board, so Tack cannot read CI or merge".to_owned(),
         );
     }
-    if let Err(reason) = crate::prill_store::version(&state.config.prill_program).await {
+    if let Err(reason) = crate::prill_store::version(&state.prill_program().await).await {
         blocked.push(format!("{reason}, so a signed pack cannot be checked"));
     }
     if settings.attestation_public_key.is_none() {

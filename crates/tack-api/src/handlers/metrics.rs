@@ -336,7 +336,7 @@ async fn prill_quality(
     state: &AppState,
     project: &str,
 ) -> Result<(String, Vec<(String, serde_json::Value)>), String> {
-    let program = &state.config.prill_program;
+    let program = &state.prill_program().await;
     let version = crate::prill_store::version(program).await?;
     let repos: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT p.repo FROM pull_requests p

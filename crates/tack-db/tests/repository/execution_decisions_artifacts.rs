@@ -8,8 +8,161 @@ use crate::common::execution_fixture::{
 
 use chrono::Duration;
 use tack_db::repo::execution::{
-    CancellationObservation, CancellationObservationInput, CompletionResult, RecoveryObservation,
+    CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
+    RecoveryObservation,
 };
+
+const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
+
+/// Two decisions on `attempt_id` at the row level: `pending-d` waiting, `answered-d` already
+/// resolved by a person. A real decision needs a running attempt; these routes end it from `leased`.
+async fn seed_decisions(fx: &Fixture, attempt_id: &str) {
+    for (id, state, answer, by) in [
+        ("pending-d", "pending", None, None),
+        (
+            "answered-d",
+            "resolved",
+            Some("\"allow\""),
+            Some(r#"{"kind":"operator"}"#),
+        ),
+    ] {
+        sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, state, prompt, answer, resolved_by, created_at, updated_at) VALUES (?, ?, ?, 'approval', ?, 'Continue?', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')")
+            .bind(format!("{attempt_id}-{id}")).bind(attempt_id).bind(id).bind(state).bind(answer).bind(by)
+            .execute(fx.repo.pool()).await.unwrap();
+    }
+}
+
+async fn decision(
+    fx: &Fixture,
+    attempt_id: &str,
+    id: &str,
+) -> (String, Option<String>, Option<String>) {
+    sqlx::query_as("SELECT state, answer, resolved_by FROM execution_decisions WHERE attempt_id=? AND decision_id=?")
+        .bind(attempt_id).bind(id).fetch_one(fx.repo.pool()).await.unwrap()
+}
+
+/// Every road by which an attempt ends: the pending decisions of its run end with it, an
+/// answered one keeps its answer.
+#[tokio::test]
+async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
+    for (route, state) in [
+        ("succeeded", "succeeded"),
+        ("failed", "failed"),
+        ("cancelled by the runner", "cancelled"),
+        ("cancelled with no holder", "cancelled"),
+        ("lost", "lost"),
+        ("needs_operator", "needs_operator"),
+    ] {
+        let fx = Fixture::new().await;
+        let request = format!("request-{state}");
+        let fence = fx.ready_completion_attempt(&request, "attempt-e").await;
+        seed_decisions(&fx, "attempt-e").await;
+        match route {
+            "succeeded" | "failed" => {
+                let done = Completion {
+                    terminal_state: state,
+                    ..completion_input("attempt-e", fence, "done", None)
+                };
+                assert!(
+                    matches!(fx.complete(done).await, CompletionResult::Committed(_)),
+                    "{route}"
+                );
+            }
+            "cancelled by the runner" => {
+                assert!(fx.request_cancellation(&request).await);
+                let cancel = cancellation_input("attempt-e", fence, "cancel", fx.clock.now());
+                assert!(
+                    matches!(
+                        fx.observe_cancellation(cancel).await,
+                        CancellationObservation::Cancelled(_)
+                    ),
+                    "{route}"
+                );
+            }
+            "cancelled with no holder" => {
+                fx.clock.advance(Duration::seconds(61));
+                assert!(fx.request_cancellation(&request).await);
+            }
+            _ => {
+                let seen = if state == "lost" {
+                    RecoveryObservation::ProcessStopped
+                } else {
+                    RecoveryObservation::Ambiguous
+                };
+                fx.recover(recovery_input("attempt-e", fence, "recover", seen))
+                    .await;
+            }
+        }
+        let ended: String =
+            sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id='attempt-e'")
+                .fetch_one(fx.repo.pool())
+                .await
+                .unwrap();
+        assert_eq!(ended, state, "{route}");
+        let (s, answer, by) = decision(&fx, "attempt-e", "pending-d").await;
+        assert_eq!(
+            (s.as_str(), answer, by.as_deref()),
+            ("expired", None, Some(ATTEMPT_ENDED)),
+            "{route}"
+        );
+        let (s, answer, by) = decision(&fx, "attempt-e", "answered-d").await;
+        assert_eq!(
+            (s.as_str(), answer.as_deref(), by.as_deref()),
+            (
+                "resolved",
+                Some("\"allow\""),
+                Some(r#"{"kind":"operator"}"#)
+            ),
+            "{route}"
+        );
+    }
+}
+
+/// A board from before the change left pending decisions behind: the start-up statement closes
+/// those of ended attempts and leaves a running attempt's alone.
+#[tokio::test]
+async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-old", "attempt-old")
+        .await;
+    assert!(matches!(
+        fx.complete(completion_input("attempt-old", fence, "done", None))
+            .await,
+        CompletionResult::Committed(_)
+    ));
+    seed_decisions(&fx, "attempt-old").await; // what the old board left
+    let live = fx
+        .ready_running_attempt("request-live", "attempt-live")
+        .await;
+    assert!(fx.create_decision("attempt-live", live, "live-d").await);
+
+    assert_eq!(
+        fx.repo
+            .expire_decisions_of_ended_attempts(&fx.clock)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fx.repo
+            .expire_decisions_of_ended_attempts(&fx.clock)
+            .await
+            .unwrap(),
+        0
+    );
+
+    let (s, _, by) = decision(&fx, "attempt-old", "pending-d").await;
+    assert_eq!(
+        (s.as_str(), by.as_deref()),
+        ("expired", Some(ATTEMPT_ENDED))
+    );
+    assert_eq!(
+        decision(&fx, "attempt-old", "answered-d").await.0,
+        "resolved"
+    );
+    assert_eq!(decision(&fx, "attempt-live", "live-d").await.0, "pending");
+}
 
 #[tokio::test]
 async fn cancellation_observation_replays_after_first_success() {
