@@ -7668,6 +7668,42 @@
             "description": "Read only: the most autonomy this project can reach now: the lowest any\nteam its roles use allows, `L3` while anything stops Tack merging by\nitself, otherwise `L5`.",
             "readOnly": true
           },
+          "day_counted": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only: the tokens counted today (cache reads excluded), when the project has a\ndaily token limit.",
+            "readOnly": true
+          },
+          "day_open_runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only: how many open runs hold tokens back.",
+            "readOnly": true
+          },
+          "day_reserved": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only: the tokens the project's open runs hold back from today's limit.",
+            "readOnly": true
+          },
+          "day_room": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Read only: what is left of today's limit for a run admitted now.",
+            "readOnly": true
+          },
           "domains": {
             "type": "array",
             "items": {
@@ -7966,13 +8002,6 @@
               "null"
             ],
             "format": "int64"
-          },
-          "usd_per_day": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
           }
         }
       },
@@ -8171,13 +8200,6 @@
               "null"
             ],
             "format": "int64"
-          },
-          "usd_per_day": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
           }
         },
         "additionalProperties": false
@@ -8791,7 +8813,7 @@
             "description": "Omitted, the server picks one: run settings, the item's role, the project's\ndefault, the implementer, and records which in `metadata.profile_source`."
           },
           "budgets": {
-            "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`)."
+            "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."
           },
           "environment": {},
           "idempotency_key": {

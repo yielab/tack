@@ -1,5 +1,5 @@
-//! A project's daily budgets (`project_budgets`, migration 087) and the three
-//! counts they are compared with. A project with no row has no budget.
+//! A project's daily budgets (`project_budgets`, migration 087) and the counts
+//! they are compared with. A project with no row has no budget.
 
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, SqlitePool};
@@ -8,7 +8,6 @@ use sqlx::{AssertSqlSafe, SqlitePool};
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct ProjectBudgets {
     pub tokens_per_day: Option<i64>,
-    pub usd_per_day: Option<f64>,
     pub auto_merges_per_day: Option<i64>,
     pub queue_items_max: Option<i64>,
 }
@@ -27,7 +26,7 @@ pub async fn get(
     project_id: &str,
 ) -> Result<Option<ProjectBudgets>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT tokens_per_day, usd_per_day, auto_merges_per_day, queue_items_max
+        "SELECT tokens_per_day, auto_merges_per_day, queue_items_max
          FROM project_budgets WHERE project_id = ?",
     )
     .bind(project_id)
@@ -41,17 +40,15 @@ pub async fn put(
     budgets: &ProjectBudgets,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO project_budgets (project_id, tokens_per_day, usd_per_day, auto_merges_per_day, queue_items_max)
-         VALUES (?, ?, ?, ?, ?)
+        "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT(project_id) DO UPDATE SET
            tokens_per_day = excluded.tokens_per_day,
-           usd_per_day = excluded.usd_per_day,
            auto_merges_per_day = excluded.auto_merges_per_day,
            queue_items_max = excluded.queue_items_max",
     )
     .bind(project_id)
     .bind(budgets.tokens_per_day)
-    .bind(budgets.usd_per_day)
     .bind(budgets.auto_merges_per_day)
     .bind(budgets.queue_items_max)
     .execute(pool)
@@ -59,17 +56,46 @@ pub async fn put(
     Ok(())
 }
 
-/// The project that owns a queued or running request, through its item.
+/// The project that owns a queued or running request, through its item, and the
+/// token limit its snapshot carries (`None`: the run has none of its own).
 pub async fn project_of_request(
     pool: &SqlitePool,
     request_id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT i.project_id FROM execution_requests r JOIN items i ON i.id = r.item_id WHERE r.id = ?",
+) -> Result<Option<(String, Option<i64>)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT i.project_id, json_extract(r.request_snapshot, '$.budgets.tokens')
+         FROM execution_requests r JOIN items i ON i.id = r.item_id WHERE r.id = ?",
     )
     .bind(request_id)
     .fetch_optional(pool)
     .await
+}
+
+/// A queued run with no limit of its own, in a project with a daily limit, runs
+/// with what is left of the day: writes `tokens` as its limit in the snapshot's
+/// two copies of `budgets` and in the row's own columns, and `metadata.limit_source`
+/// as `day`. A request that has a limit of its own, or is no longer queued, is left alone.
+pub async fn limit_to_day_room(
+    pool: &SqlitePool,
+    request_id: &str,
+    tokens: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE execution_requests SET
+           request_snapshot = json_set(request_snapshot,
+             '$.budgets.tokens', ?1,
+             '$.resolved_agent_profile.budgets.tokens', ?1,
+             '$.metadata.limit_source', 'day'),
+           budgets = json_set(budgets, '$.tokens', ?1),
+           metadata = json_set(metadata, '$.limit_source', 'day')
+         WHERE id = ?2 AND state = 'queued'
+           AND json_extract(request_snapshot, '$.budgets.tokens') IS NULL",
+    )
+    .bind(tokens)
+    .bind(request_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// A counted token is a new one: the attempt's input without what the cache
@@ -105,6 +131,61 @@ pub async fn spent_today(
     .bind(day_start(now))
     .fetch_one(pool)
     .await
+}
+
+/// A project's token limit for today and what is already spoken for. An open run
+/// is an attempt that is leased, preparing, running or waiting for a decision; it
+/// reserves its own limit less what it has counted so far (an attempt reports its
+/// usage when it ends, so until then that is its whole limit). A run with no limit
+/// of its own reserves nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DayRoom {
+    pub limit: i64,
+    /// [`spent_today`].
+    pub counted: i64,
+    pub reserved: i64,
+    /// The open runs that reserve something.
+    pub open_runs: i64,
+    /// `limit - counted - reserved`, never below 0: what a run admitted now may use.
+    pub room: i64,
+}
+
+/// The project's [`DayRoom`]; `None` when it has no token limit per day. The one
+/// owner of the day's room: admission and the Automation screen both read it.
+pub async fn day_room(
+    pool: &SqlitePool,
+    project_id: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<DayRoom>, sqlx::Error> {
+    let Some(limit) = get(pool, project_id)
+        .await?
+        .and_then(|budgets| budgets.tokens_per_day)
+    else {
+        return Ok(None);
+    };
+    let counted = spent_today(pool, project_id, now).await?;
+    // The fragment is a constant of this crate; only `project_id` is bound.
+    let (open_runs, reserved): (i64, i64) = sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT COUNT(*), COALESCE(SUM(MAX(own - counted, 0)), 0) FROM (
+            SELECT json_extract(r.request_snapshot, '$.budgets.tokens') AS own,
+                   {COUNTED_TOKENS_SQL} AS counted
+            FROM execution_attempts a
+            JOIN execution_requests r ON r.id = a.request_id
+            JOIN items i ON i.id = r.item_id
+            WHERE i.project_id = ?
+              AND a.state IN ('leased', 'preparing', 'running', 'waiting_decision'))
+         WHERE own IS NOT NULL"
+    )))
+    .bind(project_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(Some(DayRoom {
+        limit,
+        counted,
+        reserved,
+        open_runs,
+        room: (limit - counted - reserved).max(0),
+    }))
 }
 
 /// What waits for a human: the project's unfinished items that show **Needs

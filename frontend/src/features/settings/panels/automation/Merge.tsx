@@ -16,9 +16,11 @@ const PRILL_STAGES = ['criteria', 'suite', 'anti_tautology', 'static_analysis'];
 
 const list = (text: string) => text.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 
+/** The day bar turns amber when this share of today's limit is counted or reserved. */
+const DAY_WARNING = 0.8;
+
 const BUDGETS = [
   { key: 'tokens_per_day', label: 'Tokens per day', integer: true },
-  { key: 'usd_per_day', label: 'Dollars per day', integer: false },
   { key: 'auto_merges_per_day', label: 'Automatic merges per day', integer: true },
   { key: 'queue_items_max', label: 'Items waiting at once', integer: true },
 ] as const;
@@ -37,6 +39,16 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
     save({ domains: (settings()?.domains ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)) });
   const addDomain = () =>
     save({ domains: [...(settings()?.domains ?? []), { name: `domain-${(settings()?.domains?.length ?? 0) + 1}`, path_globs: [], item_types: [], level: 'L3' }] });
+  /** Today's token limit, what was counted, what open runs hold back and what is left; null without a daily limit. */
+  const day = () => {
+    const s = settings();
+    const limit = s?.budgets?.tokens_per_day;
+    if (!s || !limit || s.day_room === null || s.day_room === undefined) return null;
+    const counted = s.day_counted ?? 0;
+    const reserved = s.day_reserved ?? 0;
+    return { limit, counted, reserved, room: s.day_room, runs: s.day_open_runs ?? 0, warn: (counted + reserved) / limit >= DAY_WARNING };
+  };
+  const share = (n: number, limit: number) => `${Math.min(100, (n / limit) * 100)}%`;
   const saveBudget = (key: (typeof BUDGETS)[number]['key'], raw: string, integer: boolean) => {
     const text = raw.trim();
     const n = text === '' ? null : integer ? Math.trunc(Number(text)) : Number(text);
@@ -208,6 +220,26 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
             </FieldShell>
 
             <FieldShell label="Daily limits" help={HELP.budgets}>
+              <Show when={day()}>
+                {(d) => (
+                  <div data-testid="day-bar" class="flex flex-col gap-1">
+                    <div
+                      role="img"
+                      aria-label={`${d().counted.toLocaleString()} counted and ${d().reserved.toLocaleString()} reserved of ${d().limit.toLocaleString()} tokens today`}
+                      class="flex h-2 overflow-hidden rounded-full"
+                      style={{ 'background-color': 'var(--color-border-medium)' }}
+                    >
+                      <div style={{ width: share(d().counted, d().limit), 'background-color': d().warn ? 'var(--color-warning-600)' : 'var(--color-text-secondary)' }} />
+                      <div style={{ width: share(d().reserved, d().limit), 'background-color': d().warn ? 'var(--color-warning-600)' : 'var(--color-text-tertiary)', opacity: 0.55 }} />
+                    </div>
+                    <p data-testid="day-bar-text" class="text-xs" style={{ color: d().warn ? 'var(--color-warning-600)' : 'var(--color-text-secondary)' }}>
+                      Today: {d().counted.toLocaleString()} counted · {d().reserved.toLocaleString()} reserved by {d().runs} open {d().runs === 1 ? 'run' : 'runs'} ·{' '}
+                      {d().room.toLocaleString()} left of {d().limit.toLocaleString()}
+                    </p>
+                    <Note>Tack holds new runs when today's limit is reserved.</Note>
+                  </div>
+                )}
+              </Show>
               <div class="grid grid-cols-2 gap-2">
                 <For each={BUDGETS}>
                   {(b) => (

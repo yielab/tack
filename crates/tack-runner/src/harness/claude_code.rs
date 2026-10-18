@@ -329,10 +329,6 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         if let Some(model) = &request.requested_model {
             args.extend(["--model".to_owned(), model.clone()]);
         }
-        let budget = request.budgets.get("cost_usd").and_then(Value::as_f64);
-        if let Some(budget) = budget.filter(|value| *value > 0.0) {
-            args.extend(["--max-budget-usd".to_owned(), budget.to_string()]);
-        }
 
         let mut env = BTreeMap::new();
         // The same opt-out for claude.ai connectors, for a CLI that predates
@@ -397,9 +393,9 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             ),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
-                "the tool list is enforced through --tools and cost_usd through \
-                 --max-budget-usd; `network: false` only rejects a request naming WebFetch or \
-                 WebSearch, and does not stop the Bash tool from reaching the network",
+                "the tool list is enforced through --tools; `network: false` only rejects a request \
+                 naming WebFetch or WebSearch, and does not stop the Bash tool from reaching the \
+                 network",
             ),
         }
     }

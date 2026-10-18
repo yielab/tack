@@ -36,9 +36,17 @@ pub enum Priority {
 /// Which project budget stopped new work.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BudgetKind {
+    /// The day's counted tokens reached `tokens_per_day`.
     Tokens,
-    /// `usd_per_day`, priced by the operator's rate card.
-    Dollars,
+    /// The day's tokens are spoken for: `open_runs` runs reserve `reserved` of `limit`, or
+    /// the run asks for more than is left.
+    TokensReserved {
+        open_runs: i64,
+        reserved: i64,
+        limit: i64,
+        /// What is left of the day for a run admitted now.
+        room: i64,
+    },
     ReviewQueue {
         waiting: u32,
     },

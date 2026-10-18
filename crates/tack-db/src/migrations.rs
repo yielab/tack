@@ -153,6 +153,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("089_item_recurrence", &MIGRATION_089[..]),
         ordinary("090_auto_start", &MIGRATION_090[..]),
         ordinary("091_template_bundle", &MIGRATION_091[..]),
+        ordinary("092_drop_usd_per_day", &MIGRATION_092[..]),
     ]
 }
 
@@ -1859,3 +1860,6 @@ const MIGRATION_091: [&str; 3] = [
     "ALTER TABLE project_templates ADD COLUMN profiles TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE project_templates ADD COLUMN automation TEXT",
 ];
+
+// 092: dollars per day is no longer a limit (ADR 0083): every limit is in tokens.
+const MIGRATION_092: [&str; 1] = ["ALTER TABLE project_budgets DROP COLUMN usd_per_day"];

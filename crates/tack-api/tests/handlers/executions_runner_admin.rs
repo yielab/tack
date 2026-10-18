@@ -1984,6 +1984,14 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}: {err}");
         assert_eq!(err["error"]["details"]["field"], "budgets.tokens");
     }
+    // Dollars are not a limit: a request that still carries them is told so.
+    let mut body = bare_body(&item_id, "k-limits-dollars");
+    body["agent_profile_id"] = json!("profile-c1");
+    body["budgets"] = json!({"cost_usd": 1.5});
+    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["field"], "budgets.cost_usd");
+    assert_eq!(err["error"]["details"]["reason"], "field_removed");
 }
 
 #[tokio::test]

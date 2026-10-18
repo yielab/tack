@@ -88,7 +88,7 @@ fn no_mcp_server_loads_not_even_the_accounts_claude_ai_connectors() {
 }
 
 #[test]
-fn the_policy_model_and_budget_reach_the_command_line() {
+fn the_policy_and_model_reach_the_command_line() {
     let mut spec = request(&["Read", "Edit"], true);
     spec.work.request.budgets = serde_json::json!({"cost_usd": 1.5});
     let args = invocation(&spec).expect("invocation").args;
@@ -99,18 +99,14 @@ fn the_policy_model_and_budget_reach_the_command_line() {
     };
     assert_eq!(value_of("--tools"), "Read,Edit");
     assert_eq!(value_of("--model"), "opaque/model-alpha");
-    assert_eq!(value_of("--max-budget-usd"), "1.5");
+    // A dollar budget in an old snapshot is read and ignored: no flag carries it.
+    assert!(!args.iter().any(|arg| arg == "--max-budget-usd"));
     assert_eq!(value_of("--output-format"), "stream-json");
     assert_eq!(value_of("--setting-sources"), "");
 
-    spec.work.request.budgets = serde_json::json!({"cost_usd": null});
     spec.work.request.requested_model = None;
     let args = invocation(&spec).expect("invocation").args;
-    assert!(
-        !args
-            .iter()
-            .any(|arg| arg == "--max-budget-usd" || arg == "--model")
-    );
+    assert!(!args.iter().any(|arg| arg == "--model"));
 
     // `approvals` absent, or explicit `auto`, produces byte-for-byte the
     // same command line this adapter has always produced.

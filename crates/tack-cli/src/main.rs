@@ -1585,9 +1585,8 @@ fn cmd_project_autonomy(client: &TackClient, project: &str, as_json: bool) -> an
     println!("Loop cap:            {}", a["verify_loop_max_attempts"]);
     let b = &a["budgets"];
     println!(
-        "Budgets per day:     tokens {}, usd {}, auto merges {}, review queue {}",
+        "Budgets per day:     tokens {}, auto merges {}, review queue {}",
         limit(&b["tokens_per_day"]),
-        limit(&b["usd_per_day"]),
         limit(&b["auto_merges_per_day"]),
         limit(&b["queue_items_max"])
     );

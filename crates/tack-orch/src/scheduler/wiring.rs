@@ -140,7 +140,9 @@ fn build_scheduling_request(
 const BUDGET_REACHED: &str = "budget_reached";
 
 /// Which of the project's budgets, if any, forbids starting new work now.
-/// A project with no `project_budgets` row has none.
+/// A project with no `project_budgets` row has none. The token branch reads
+/// `budgets::day_room`: the day is closed when nothing is left of it, whether
+/// finished runs used it or open ones have it reserved.
 pub async fn budget_reached(
     repo: &Repository,
     project_id: &str,
@@ -150,15 +152,14 @@ pub async fn budget_reached(
     let Some(limits) = budgets::get(repo.pool(), project_id).await? else {
         return Ok(None);
     };
-    if let Some(max) = limits.usd_per_day
-        && dollars_today(repo, project_id, now).await? >= max
+    if let Some(day) = budgets::day_room(repo.pool(), project_id, now).await?
+        && day.room == 0
     {
-        return Ok(Some(BudgetKind::Dollars));
-    }
-    if let Some(max) = limits.tokens_per_day
-        && budgets::spent_today(repo.pool(), project_id, now).await? >= max
-    {
-        return Ok(Some(BudgetKind::Tokens));
+        return Ok(Some(if day.counted >= day.limit {
+            BudgetKind::Tokens
+        } else {
+            reserved(&day)
+        }));
     }
     if let Some(max) = limits.queue_items_max {
         let waiting = budgets::queue_items(repo.pool(), project_id).await?;
@@ -171,32 +172,14 @@ pub async fn budget_reached(
     Ok(None)
 }
 
-/// What the project's attempts since 00:00 UTC cost under the operator's rate
-/// card, priced the way the metrics page prices them. Without a card, or for a
-/// model it does not list, nothing is priced: the dollar budget cannot be
-/// reached by what cannot be priced.
-async fn dollars_today(
-    repo: &Repository,
-    project_id: &str,
-    now: DateTime<Utc>,
-) -> Result<f64, sqlx::Error> {
-    let Some(card) = tack_db::repo::rate_card::load(repo.pool()).await? else {
-        return Ok(0.0);
-    };
-    let day_start = now
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight exists")
-        .and_utc()
-        .to_rfc3339();
-    let spend =
-        tack_db::repo::rate_card::spend_by_model(repo.pool(), project_id, Some(&day_start)).await?;
-    Ok(spend
-        .into_iter()
-        .filter_map(|row| {
-            tack_core::rate_card::price(&card, row.model.as_deref()?, row.tokens_in, row.tokens_out)
-        })
-        .sum())
+/// The day's tokens are spoken for, as [`BudgetKind`] says it.
+fn reserved(day: &tack_db::repo::budgets::DayRoom) -> BudgetKind {
+    BudgetKind::TokensReserved {
+        open_runs: day.open_runs,
+        reserved: day.reserved,
+        limit: day.limit,
+        room: day.room,
+    }
 }
 
 /// The terminal code of a request failed for want of a runner.
@@ -261,11 +244,33 @@ fn describe_ineligible(reason: &IneligibleReason) -> (&'static str, String) {
             "This project used its tokens for today".to_string(),
         ),
         IneligibleReason::BudgetReached {
-            which: BudgetKind::Dollars,
-        } => (
-            BUDGET_REACHED,
-            "This project used its dollars for today".to_string(),
-        ),
+            which:
+                BudgetKind::TokensReserved {
+                    open_runs,
+                    reserved,
+                    limit,
+                    room,
+                },
+        } => {
+            use tack_core::run_defaults::token_count;
+            (
+                BUDGET_REACHED,
+                if *open_runs == 0 {
+                    format!(
+                        "This run's token limit is more than what is left of today's ({} of {})",
+                        token_count(*room),
+                        token_count(*limit)
+                    )
+                } else {
+                    format!(
+                        "Today's token limit is reserved by {open_runs} open run{} ({} of {})",
+                        if *open_runs == 1 { "" } else { "s" },
+                        token_count(*reserved),
+                        token_count(*limit)
+                    )
+                },
+            )
+        }
         IneligibleReason::BudgetReached {
             which: BudgetKind::ReviewQueue { waiting },
         } => (
@@ -437,6 +442,9 @@ pub async fn choose_request_for_runner(
     }
 
     let mut project_budgets: BTreeMap<String, Option<BudgetKind>> = BTreeMap::new();
+    // What is left of the day, for each request that has no limit of its own in a
+    // project that has a daily one: it runs with that as its limit.
+    let mut day_rooms: BTreeMap<String, i64> = BTreeMap::new();
     let mut requests: Vec<SchedulingRequest> = Vec::new();
     for row in queued.iter().filter(|row| {
         row.selector_kind != "fleet"
@@ -444,12 +452,25 @@ pub async fn choose_request_for_runner(
     }) {
         let reached = match tack_db::repo::budgets::project_of_request(repo.pool(), &row.id).await?
         {
-            Some(project_id) => {
+            Some((project_id, asking)) => {
                 if !project_budgets.contains_key(&project_id) {
                     let reached = budget_reached(repo, &project_id, now).await?;
                     project_budgets.insert(project_id.clone(), reached);
                 }
-                project_budgets.get(&project_id).cloned().flatten()
+                let mut reached = project_budgets.get(&project_id).cloned().flatten();
+                if reached.is_none()
+                    && let Some(day) =
+                        tack_db::repo::budgets::day_room(repo.pool(), &project_id, now).await?
+                {
+                    match asking {
+                        Some(asking) if asking > day.room => reached = Some(reserved(&day)),
+                        Some(_) => {}
+                        None => {
+                            day_rooms.insert(row.id.clone(), day.room);
+                        }
+                    }
+                }
+                reached
             }
             None => None,
         };
@@ -475,9 +496,15 @@ pub async fn choose_request_for_runner(
         .map(|(request_id, outcome)| (request_id.into_inner(), outcome))
         .collect();
     record_waiting(repo, &queued, &outcomes, now, policy).await?;
-    Ok(outcomes.into_iter().find_map(|(request_id, outcome)| {
+    let selected = outcomes.into_iter().find_map(|(request_id, outcome)| {
         matches!(outcome, SelectionOutcome::Selected(_)).then_some(request_id)
-    }))
+    });
+    if let Some(request_id) = &selected
+        && let Some(room) = day_rooms.get(request_id)
+    {
+        tack_db::repo::budgets::limit_to_day_room(repo.pool(), request_id, *room).await?;
+    }
+    Ok(selected)
 }
 
 #[cfg(test)]
