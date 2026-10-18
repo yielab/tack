@@ -351,7 +351,11 @@ async function runFromBoard(page: Page, key: ItemKey, options: { ask?: boolean; 
   await expect(modal.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
   await modal.getByText('Advanced for this run').click();
   await modal.getByLabel('Agent', { exact: true }).selectOption('docket');
-  await expect(modal.getByLabel('Model', { exact: true }).locator('option:checked')).toHaveText(`Agent's default (${modelId})`);
+  // docket names no default model (each team member runs on its own), so the run leaves it to
+  // docket; the model its members run on is listed to choose.
+  const model = modal.getByLabel('Model', { exact: true });
+  await expect(model.locator('option:checked')).toHaveText("Agent's default");
+  await expect(model.locator('option', { hasText: modelId })).toHaveCount(1);
   // prill is this runner's verifier: the switch is live and on, not deferred.
   const verify = modal.getByLabel('Verify the result');
   await expect(verify).toBeEnabled();
@@ -470,6 +474,14 @@ async function acceptAndMerge(page: Page, key: ItemKey, branch: string | null, c
 }
 
 // ── The workflow ─────────────────────────────────────────────────────────────
+/** Opens one of Settings → Automation's folded sections by its heading, as a person clicks it. */
+async function openFold(page: Page, title: string) {
+  const fold = page.locator('details').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+  if (!(await fold.evaluate((details) => (details as HTMLDetailsElement).open))) {
+    await fold.locator(':scope > summary').click();
+  }
+}
+
 test.describe.serial('docket runs, prill verifies', () => {
   test('01 a new project pointed at the folder', async ({ page }) => {
     await page.goto(`${BASE}/`);
@@ -559,11 +571,14 @@ test.describe.serial('docket runs, prill verifies', () => {
     await waitForApp(page);
     await expect(page.getByRole('heading', { name: 'Where the code is' })).toBeVisible();
     await expect(page.getByLabel('An existing folder on this computer')).toBeChecked();
+    await openFold(page, 'How the agent works on it');
     await page.getByLabel('On a new branch of your repo (recommended)').check();
+    await openFold(page, 'Agent');
     await page.getByRole('button', { name: /^docket$/i }).click();
     await expect.poll(async () => ((await apiFetch(`/projects/${projectId}`)) as { default_harness: string | null }).default_harness, { timeout: 10_000 }).toBe('docket');
     await page.reload();
     await waitForApp(page);
+    await openFold(page, 'Agent');
     await expect(page.getByRole('button', { name: /^docket$/i })).toHaveAttribute('aria-pressed', 'true');
     // docket listed the models its team members run on; the project names none.
     const model = page.getByLabel('Model', { exact: true });

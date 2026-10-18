@@ -89,6 +89,11 @@ DOCKET_TOKEN_FILE="$WORK/docket-token"
 umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DOCKET_TOKEN_FILE"; umask 022
 "${DOCKET_ENV[@]}" docket setup provider add local "$MODEL_BASE_URL/v1" --model local-model --ctx 32768 --max-tokens 4096 \
   </dev/null >"$WORK/docket-setup.log" 2>&1 || die "docket setup provider add failed — see $WORK/docket-setup.log"
+# Tack sends a run without network as the task's restriction, and docket refuses one with its
+# isolation off, since only its sandbox can cut the network: the sandbox goes on, as on a
+# person's docket.
+"${DOCKET_ENV[@]}" docket setup sandbox on </dev/null >>"$WORK/docket-setup.log" 2>&1 \
+  || die "docket setup sandbox on failed — see $WORK/docket-setup.log"
 # Set before the first process starts, so a failed build still stops docket.
 cleanup() {
   say "stopping"
