@@ -93,6 +93,12 @@ automation a template carries, and the removal of dollars per day.
   (owner-only) beside `api-token` and creates it when missing, so a new board can answer an
   agent's questions from the Inbox; `TACK_EXECUTION_DECISION_TOKEN` still wins. The desktop app
   hands it to its window, and a browser asks for it once per session and says which file holds it.
+- **A docket run survives a restart of the board.** When the computer that runs agents restarts
+  while a docket team still holds the task, often waiting on a question, the run is picked up
+  again: the question already in the Inbox is not asked twice, and the run ends as it would have.
+  If the run cannot be shown to be its own any more, it goes to a person as before. Its time limit
+  starts over at the restart. Every other agent still goes to a person, since its process ended
+  with the runner.
 
 ### Changed
 

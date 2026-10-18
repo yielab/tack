@@ -153,6 +153,7 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
         base_commit: None,
         config_before: None,
         push_remote: None,
+        claimed_work: None,
     }
 }
 

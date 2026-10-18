@@ -1541,6 +1541,82 @@ async fn cancel_posts_cancel_and_the_wait_ends_cancelled() {
     assert!(posted[0].body["reason"].is_string(), "{:?}", posted[0].body);
 }
 
+/// A task parked on an approval outlives the runner. A new adapter over the
+/// same state takes it back from the journal's handle, docket gets no second
+/// task, the approval is answered once, and the task's commit reaches the
+/// worktree as the evidence of the run.
+#[tokio::test]
+async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        gate: Gate::Approval {
+            token: "apr-1".into(),
+            tool: "bash".into(),
+            action: "tool call 'bash': needs a person".into(),
+        },
+        ..Script::default()
+    });
+    let scene = scene();
+    let attempt = spec(&scene, "attempt-1", 1);
+
+    let before = Arc::new(adapter(&fake, &scene));
+    let handle = before.start(&attempt).await.expect("starts");
+    let (mut questions, _answers) = before.decision_channels(&handle).await.expect("channels");
+    let waiting = tokio::spawn({
+        let (before, handle) = (Arc::clone(&before), handle.clone());
+        async move { before.wait(&handle).await }
+    });
+    tokio::time::timeout(Duration::from_secs(20), questions.recv())
+        .await
+        .expect("a question in time")
+        .expect("a question");
+    // The runner goes away with the task parked.
+    waiting.abort();
+    drop(before);
+
+    let mut journal = tack_runner::client::AttemptJournal::prepared(
+        &attempt.work.lease,
+        attempt.workspace.journal(),
+    );
+    journal.state = tack_runner::client::journal::JournalState::ProcessObservedRunning;
+    journal.process_id = Some(handle.process_id.clone());
+    let after = Arc::new(adapter(&fake, &scene));
+    assert_eq!(
+        after.reconcile(&journal).await.unwrap(),
+        RecoveryObservation::ProcessRunning
+    );
+    let resumed = after.resume(&attempt, &journal).await.expect("resumes");
+    assert_eq!(resumed.process_id, handle.process_id);
+    let (mut questions, answers) = after.decision_channels(&resumed).await.expect("channels");
+    let waiting = tokio::spawn({
+        let (after, resumed) = (Arc::clone(&after), resumed.clone());
+        async move { after.wait(&resumed).await }
+    });
+    let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
+        .await
+        .expect("the held question in time")
+        .expect("a question");
+    assert_eq!(question.vendor_id, "apr-1");
+    answers
+        .send(granting("approve_once"))
+        .await
+        .expect("answer");
+
+    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("finishes")
+        .expect("joins")
+        .expect("outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(
+        std::fs::read_to_string(scene.workspace.join("src/retry.rs")).unwrap(),
+        "pub fn retry() {}\n"
+    );
+    assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
+    assert_eq!(fake.requests_to("POST", "/approvals/apr-1").len(), 1);
+}
+
 #[tokio::test]
 async fn reconcile_reads_the_task_state() {
     let fake = pods_fake().await;

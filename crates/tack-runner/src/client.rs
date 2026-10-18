@@ -262,7 +262,7 @@ pub struct AttemptLease {
     pub expires_at: Timestamp,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ClaimedWork {
     pub claim_request_id: ClaimRequestId,
     pub lease: AttemptLease,
