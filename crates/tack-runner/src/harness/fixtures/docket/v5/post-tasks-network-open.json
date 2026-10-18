@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "restrictions.network may only be 'none' (open would widen)"
+}

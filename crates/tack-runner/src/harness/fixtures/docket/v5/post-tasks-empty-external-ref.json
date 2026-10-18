@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "invalid externalRef: String should have at least 1 character"
+}

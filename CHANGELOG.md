@@ -150,6 +150,11 @@ automation a template carries.
   ten on a board with its runner). The start-up line names the
   database by its absolute path, says when a build serves the API only, and `tack serve` warns
   when it uses a database in the current folder while the data folder holds another.
+- **A failed docket run says why.** docket's task record carries its sentence in `reason`, not in
+  an `error` key, so every failed or blocked run on docket reached the board with an empty
+  message; it now shows docket's words ("unknown pipeline …"). The test double for docket
+  answers from what a real docket 0.2.0b6 sent (`scripts/capture-docket-fixtures.sh` records it
+  in a throwaway home, with no model), so a renamed field fails a test instead of a run.
 - A runner configuration file with a key it does not know now says which one, and a `[runner]`
   table says the settings go at the top of the file, instead of "configuration is invalid".
 - A project file exported with **Start a task by itself** off now says so, and importing it

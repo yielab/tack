@@ -1,0 +1,7 @@
+constructed
+route: GET /inbox
+status: 200
+built-from: inbox-failed.json (the item keys of a task) and the approval and question items of specs/data/serve-read-api.spec.md
+docket: 0.2.0b6 (API 5), source checkout a9f6f81c
+date: 2026-10-18
+note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.

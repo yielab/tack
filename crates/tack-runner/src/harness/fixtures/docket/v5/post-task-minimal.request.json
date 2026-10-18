@@ -1,0 +1,7 @@
+{
+  "description": "Capture only: a task with the four keys every task carries.",
+  "externalRef": "capture-item/attempt-2",
+  "idempotencyKey": "capture-attempt-2",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline"
+}

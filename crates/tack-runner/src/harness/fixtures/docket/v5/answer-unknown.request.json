@@ -1,0 +1,8 @@
+{
+  "pod": "saas-dev",
+  "action": "accept",
+  "actor": "tack",
+  "content": {
+    "answer": "yes"
+  }
+}

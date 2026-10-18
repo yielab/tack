@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "created": true,
+  "project": "saas-lights",
+  "blueprint": "software",
+  "members": [
+    {
+      "id": "saas-lights-lead",
+      "role": "lead",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    {
+      "id": "saas-lights-implementer",
+      "role": "implementer",
+      "model": "anthropic/claude-sonnet-4-6"
+    }
+  ]
+}

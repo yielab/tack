@@ -1,0 +1,29 @@
+{
+  "description": "Capture only: this task fails at claim, no agent runs.",
+  "externalRef": "capture-item/attempt-1",
+  "idempotencyKey": "capture-attempt-1",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "maxTokens": 1000,
+  "priority": "normal",
+  "trusted": false,
+  "restrictions": {
+    "network": "none",
+    "deniedTools": [
+      "bash"
+    ]
+  },
+  "gate": {
+    "command": "true",
+    "timeoutS": 600
+  },
+  "brief": {
+    "objective": "Capture only",
+    "acceptance": [
+      "nothing"
+    ],
+    "constraints": [
+      "nothing"
+    ]
+  }
+}

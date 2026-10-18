@@ -1,0 +1,8 @@
+constructed
+route: GET /traces/<pod>
+status: 200
+built-from: one trace line observed once from a task whose hop failed (not kept), and core/dispatch.py's trace writes
+docket: 0.2.0b6 (API 5), source checkout a9f6f81c
+date: 2026-10-18
+note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.
+line: each event is a string holding one JSON line, as docket sends them.

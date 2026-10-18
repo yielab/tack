@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "no pod for 'no-such-team' (run from its directory: docket init)"
+}

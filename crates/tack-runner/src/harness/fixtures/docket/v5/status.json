@@ -1,0 +1,56 @@
+{
+  "apiVersion": "5",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "channels": [],
+  "agents": [
+    {
+      "id": "saas-dev-implementer",
+      "name": "saas-dev implementer",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-sonnet-4-6",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "saas-dev-lead",
+      "name": "saas-dev lead",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-haiku-4-5",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "saas-lights-implementer",
+      "name": "saas-lights implementer",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-sonnet-4-6",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "saas-lights-lead",
+      "name": "saas-lights lead",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-haiku-4-5",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    }
+  ],
+  "totalCostUsd": 0.0
+}

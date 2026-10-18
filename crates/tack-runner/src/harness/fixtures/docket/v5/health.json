@@ -1,0 +1,10 @@
+{
+  "status": "ok",
+  "apiVersion": "5",
+  "dispatch": {
+    "on": true,
+    "inflight": [],
+    "stopping": false,
+    "workers": 4
+  }
+}

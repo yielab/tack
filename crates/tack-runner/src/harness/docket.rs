@@ -589,7 +589,9 @@ impl DocketAdapter {
         progress: &mpsc::Sender<Progress>,
     ) -> HarnessOutcome {
         let status = task["status"].as_str().unwrap_or_default();
-        let error = task["error"].as_str().unwrap_or_default();
+        // docket's task record says why it ended in `reason`, for a failed and a blocked task
+        // alike; its hops carry their own `error`, the task has none.
+        let why = task["reason"].as_str().unwrap_or_default();
         let (state, reason) = match status {
             "done" => {
                 let branch = task["worktree"]["branch"].as_str().unwrap_or_default();
@@ -634,12 +636,12 @@ impl DocketAdapter {
             ),
             "blocked" => (
                 AttemptState::Failed,
-                json!({"code": "blocked", "message": error, "task": info.task}),
+                json!({"code": "blocked", "message": why, "task": info.task}),
             ),
             _ => (
                 AttemptState::Failed,
                 json!({"code": task["failureKind"].as_str().unwrap_or("failed"),
-                       "message": error, "task": info.task}),
+                       "message": why, "task": info.task}),
             ),
         };
         self.outcome(info, state, reason, task, model)
