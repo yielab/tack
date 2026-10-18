@@ -30,6 +30,7 @@ The Status line in each file is the authority. The "Superseded by" column below 
 
 | ADR | Title | Status | Superseded by |
 |---|---|---|---|
+| 0083 | [limits in tokens, and nothing sent to an agent twice](https://github.com/yielab/tack/blob/develop/docs/adr/0083-limits-in-tokens-and-a-lean-context.md) | Accepted 2026-10-18 | — |
 | 0082 | [what the first real project found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0082-what-the-first-real-project-found.md) | Accepted 2026-10-17 | — |
 | 0081 | [a whole project goes in and out through one file](https://github.com/yielab/tack/blob/develop/docs/adr/0081-a-whole-project-goes-in-and-out-through-one-file.md) | Accepted 2026-10-17 | — |
 | 0080 | [every run goes to a long-lived team, and a project's automation is one ladder](https://github.com/yielab/tack/blob/develop/docs/adr/0080-every-run-goes-to-a-team-and-automation-is-one-ladder.md) | Accepted 2026-10-14 | — |
