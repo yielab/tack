@@ -337,5 +337,5 @@ sum would count twice) and stops every agent but docket at `budgets.tokens`; Cla
 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. docket's session reported that its `hop_finished` and task
 `usage` carry `cached` and `cacheWrite` inside `input` (docket `da556114`, `e187be8a`), so the
 adapter maps them; the review kept a 0 as 0, since docket writes 0 for "none reported" and a real
-zero alike. Left for the maintainer: whether Claude Code's default tool list becomes the eight and
-whether its attribution reminder is turned off (`--settings '{"includeCoAuthoredBy":false}'`).
+zero alike. The maintainer then chose both open questions: `*` is the eight tools, not
+`--tools default`, and `--settings '{"includeCoAuthoredBy":false}'` turns the attribution reminder off.
