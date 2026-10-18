@@ -79,6 +79,24 @@ fresh `HOME`, zero spend), the fixtures in `2.1.273/` are that session's own
   closes. `ClaudeCodeGrammar::signal` reads that line as `Finished` for exactly this reason —
   it is the core's own signal to close stdin, not the CLI's.
 
+### Usage while it runs, and the memory index (measured against `claude` 2.1.302, 2026-10-18)
+
+`live-usage.jsonl`, `tools-*-result.jsonl` and `request-shape.json` were captured by
+`scripts/capture-agent-usage-fixtures.sh`; each has its provenance beside it.
+
+- Each `assistant` line carries `message.usage` as that API call ends. A call split over several
+  lines (a thinking block, then its tool_use) repeats the same `message.id` and the same usage,
+  so the adapter counts each id once. Per call, `input_tokens + cache_creation_input_tokens` is
+  final; `output_tokens` is not (the live lines sum 99 against the `result` line's 400, 122 of
+  them thinking). So the live sum is the running figure and the `result` line settles the attempt.
+- The runner stops the run when that running sum reaches the run's token limit, so a run can end
+  a little past its limit by the output of the call that crossed it.
+- `--setting-sources ""` keeps the three `CLAUDE.md` files out of the prompt but not the
+  auto-memory index; `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` removes it, and the adapter sets it.
+- The profile's tools for this agent (`tool_policy.tools["claude-code"]`) are `--tools` when the
+  run names none. What each tool list costs in the prompt is in the `tools-*-result.jsonl`
+  fixtures' provenance.
+
 ## What the adapter does not attempt
 
 - Resolving `secret_reference`-only environment entries: no secret-store client exists in

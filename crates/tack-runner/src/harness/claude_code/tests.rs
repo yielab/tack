@@ -399,3 +399,122 @@ fn claude_code_declares_advisory_cancel_artifacts_and_policy() {
         "advisory"
     );
 }
+
+/// The auto-memory index reaches the prompt past `--setting-sources ""`;
+/// `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` removes it (measured on 2.1.302).
+#[test]
+fn the_auto_memory_index_is_switched_off() {
+    let invocation = invocation(&request(&["Read"], true)).expect("invocation");
+    assert_eq!(
+        invocation
+            .env
+            .get("CLAUDE_CODE_DISABLE_AUTO_MEMORY")
+            .map(String::as_str),
+        Some("1")
+    );
+}
+
+/// The run's own tool list wins; a blank one takes the profile's for this agent
+/// (`tool_policy.tools["claude-code"]`); a profile without it leaves the
+/// command line exactly as it was.
+#[test]
+fn a_profiles_tools_fill_a_run_that_names_none() {
+    let tools_arg = |tools: &[&str], network: bool, policy: serde_json::Value| {
+        let mut spec = request(tools, network);
+        spec.work.request.resolved_agent_profile.tool_policy = policy;
+        invocation(&spec).map(|built| built.args)
+    };
+    let value_of = |args: &[String], flag: &str| {
+        args.iter()
+            .position(|arg| arg == flag)
+            .map(|at| args[at + 1].clone())
+    };
+    let profile = |tools: serde_json::Value| serde_json::json!({"tools": {"claude-code": tools}});
+
+    let from_profile =
+        tools_arg(&[], true, profile(serde_json::json!(["Read", "Grep"]))).expect("invocation");
+    assert_eq!(
+        value_of(&from_profile, "--tools").as_deref(),
+        Some("Read,Grep")
+    );
+
+    let run_wins = tools_arg(
+        &["Edit"],
+        true,
+        profile(serde_json::json!(["Read", "Grep"])),
+    )
+    .expect("invocation");
+    assert_eq!(value_of(&run_wins, "--tools").as_deref(), Some("Edit"));
+
+    // Another agent's tools, or none, are not Claude Code's.
+    for policy in [
+        serde_json::json!({}),
+        serde_json::json!({"tools": {"codex": ["Read"]}}),
+        profile(serde_json::json!("Read")),
+    ] {
+        let args = tools_arg(&[], true, policy.clone()).expect("invocation");
+        let untouched = invocation(&request(&[], true)).expect("invocation").args;
+        assert_eq!(args, untouched, "{policy}");
+        assert_eq!(value_of(&args, "--tools").as_deref(), Some(""), "{policy}");
+    }
+
+    // `*` is every tool, and a run without network still drops the web ones.
+    let all = tools_arg(&[], false, profile(serde_json::json!(["*"]))).expect("invocation");
+    assert_eq!(value_of(&all, "--tools").as_deref(), Some("default"));
+    assert_eq!(
+        value_of(&all, "--disallowedTools").as_deref(),
+        Some("WebFetch,WebSearch")
+    );
+    // A profile that names a web tool for a run without network is refused as a run's would be.
+    assert!(matches!(
+        tools_arg(&[], false, profile(serde_json::json!(["WebFetch"]))),
+        Err(HarnessError::Rejected { .. })
+    ));
+}
+
+/// `live-usage.jsonl` (2.1.302) read line by line the way `wait` reads it: each API call
+/// counts once though its thinking block and its tool_use repeat the message id, and the
+/// calls' counted tokens (input + cache writes + output) add up to the running sum.
+#[test]
+fn live_usage_counts_each_call_once_and_the_result_settles_the_attempt() {
+    use crate::harness::local_process::live_usage_step;
+
+    let transcript = include_str!("../fixtures/claude_code/2.1.302/live-usage.jsonl");
+    let mut calls = std::collections::BTreeSet::new();
+    let steps: Vec<Usage> = transcript
+        .lines()
+        .filter_map(|line| live_usage_step(&ClaudeCodeGrammar, line, &mut calls))
+        .map(|signal| match signal {
+            StreamSignal::Progress(step) => step.usage.expect("a call's usage"),
+            other => panic!("expected progress, got {other:?}"),
+        })
+        .collect();
+
+    // Four calls in five `assistant` lines: (2 + 1 666 + 16), (2 + 1 104 + 9), (2 + 1 227 + 16), (2 + 1 104 + 58).
+    let counted: Vec<u64> = steps.iter().filter_map(Usage::counted).collect();
+    assert_eq!(counted, [1_684, 1_115, 1_245, 1_164]);
+    let running: Vec<u64> = counted
+        .iter()
+        .scan(0, |sum, call| {
+            *sum += call;
+            Some(*sum)
+        })
+        .collect();
+    assert_eq!(running, [1_684, 2_799, 4_044, 5_208]);
+
+    // `tokens_in` holds the cache reads and writes, as it does for a finished run.
+    assert_eq!(steps[0].tokens_in.value, Some(2 + 3_223 + 1_666));
+    assert_eq!(steps[0].additional["cache_read_tokens"], 3_223);
+    assert_eq!(steps[0].additional["cache_write_tokens"], 1_666);
+
+    // The result line is the attempt's settled figure: its output (400) is not the live sum's (99).
+    let settled = read(ProcessExit::Exited(0), transcript);
+    assert_eq!(settled.tokens_out, Some(400));
+    assert_eq!(settled.tokens_in, Some(8 + 21_325 + 5_101));
+    let live_output: u64 = steps.iter().filter_map(|step| step.tokens_out.value).sum();
+    assert_eq!(live_output, 99);
+
+    // A line that is not an `assistant` call says nothing.
+    assert_eq!(ClaudeCodeGrammar.live_usage("{\"type\":\"user\"}"), None);
+    assert_eq!(ClaudeCodeGrammar.live_usage("not json"), None);
+}

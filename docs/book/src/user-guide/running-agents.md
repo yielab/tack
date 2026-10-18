@@ -68,7 +68,7 @@ offers; see [CLI](cli.md#runner).
 
 - **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It
   also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
-  tools you allow. Tack reads its tokens but cannot stop it at a token limit yet. A run that turns web tools off blocks only Claude Code's own web fetch
+  tools you allow; when the run names none, the profile's list for Claude Code is used. Tack stops it when the tokens it has used reach the run's token limit. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
@@ -76,7 +76,7 @@ offers; see [CLI](cli.md#runner).
   action** off, a write the sandbox forbids simply fails inside the run. With it on, Codex pauses only for a
   command that needs to escape the sandbox; a command inside the sandbox runs without asking. Codex has no
   switch for web tools or a token limit, so neither reaches it.
-- **opencode.** Reports tokens, summed over the run. It reaches the npm registry and installs packages before
+- **opencode.** Reports tokens, summed over the run, with what its cache served counted apart. Tack stops it when the tokens it has used reach the run's token limit. A model that refuses the run, for example because its key has expired, fails the attempt with the model's own sentence. It reaches the npm registry and installs packages before
   it does anything else, on every run, so a request that turns the network off is refused before opencode starts. A run gets
   its own copy of your opencode sign-in and model settings; its other settings (extra tool servers,
   plugins, permissions) do not reach the run.
@@ -213,9 +213,12 @@ Every run says its limit and who applies it, in one line:
 - "300 000 tokens · from the profile Implementer · docket stops the task there"
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
   a limit of its own for each step, which you change in docket, not in Tack.
-- "measured, not enforced": Claude Code, Codex and opencode report their tokens, but Tack cannot stop them
-  at a limit yet. The limit is still shown, and still counts against the project's day. A run given what
-  was left of the day says it can go past today's limit.
+- Claude Code and opencode: Tack stops them when the tokens they have used reach the limit, and the attempt
+  fails with "the run reached its token limit (300 000)". They report each call as it finishes and a call's
+  output is only complete at the end, so a run can end a little past its limit.
+- "measured, not enforced": Codex reports its tokens, but Tack cannot stop it at a limit yet. The limit is
+  still shown, and still counts against the project's day. A run given what was left of the day says it can
+  go past today's limit.
 
 The dialog prints the same line under **Token limit** before you start, and it changes as you edit the
 limit, clear it or choose another agent.

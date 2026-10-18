@@ -86,8 +86,8 @@ this tree trusts blindly.
   times a second, of the exact same request. The fake model server must answer
   `text/event-stream` chunks ending `data: [DONE]`, never a single JSON body.
 - Every stdout line is one JSON event object (`step_start`, `text`, `step_finish`, `tool_use`,
-  and presumably `error`, never observed here). Only `step_finish` (`part.reason`,
-  `part.tokens.input`/`output`) and any `error` event carry what `report()` reads; every other
+  `error`). Only `step_finish` (`part.reason`, `part.tokens`) and any `error` event carry what
+  `report()` reads; every other
   line is real evidence of the run but not part of the adapter's contract, the same posture
   `docket.rs` takes toward its own progress events.
 - A tool the injected `permission` block denies is not offered to the model at all; a model that
@@ -102,6 +102,19 @@ this tree trusts blindly.
   143 and produces **zero bytes of stdout** — not even the `step_start` a normal turn opens
   with. `report()` reads that combination (`Exited(143)`, no terminal `step_finish`) as
   `cancelled`; any other exit with no terminal event is `malformed_output`.
+- **Tokens, measured on 1.18.30 (2026-10-18, `cache_read.ndjson`).** A `step_finish` line
+  arrives as each step ends, seconds before the run does, so the tokens can be read while it runs.
+  `part.tokens.input` leaves the cache reads out (201 of a step's 1 001); they arrive apart as
+  `part.tokens.cache.read` (800), beside `part.tokens.cache.write`. The adapter's `tokens_in`
+  is `input + cache.read + cache.write`, with the reads and writes named, which is how every other
+  agent's `tokens_in` reads; the counted tokens are then `input + cache.write + output`. **Not
+  measured:** whether a provider that reports cache writes (Anthropic) puts them inside `input`
+  too; no such provider worked on this machine, so a cache write may be counted twice there.
+- **An `error` event is a failed run, not malformed output (2026-10-18, `api_key_expired.ndjson`).**
+  An expired key prints one `{"type":"error","error":{"name":"APIError","data":{"message":...}}}`
+  line, no `step_start` or `step_finish`, and exits 0. `report()` fails the attempt with reason
+  `error` and `error.data.message` (500 characters at most), so the attempt says "This API key has
+  expired. Create a new API key…".
 - `opencode --version` prints a plain `1.18.30` — the existing `local_process::parse_version`
   reads it unchanged.
 - **No served model anywhere.** With the fake model server answering every chunk's `model`

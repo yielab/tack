@@ -96,6 +96,14 @@ automation a template carries, and the removal of dollars per day.
   another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
   optional `harness`, `tokens` and `no_limit` for it, and answers 400 on a `tokens` that is not a
   positive whole number.
+- **Claude Code and opencode stop at the run's token limit.** Each model call's tokens are read as
+  the call ends, the timeline shows them, and the day's room counts them while the run runs. When
+  what a run has counted reaches its limit, Tack stops the process and the attempt fails with "the
+  run reached its token limit (300 000)"; docket keeps stopping its own task, and Codex stays
+  measured. opencode's cache reads and writes are now named instead of dropped, and an error it
+  prints (an expired key) fails the attempt with its own message instead of "malformed output".
+  A profile's tools for Claude Code (`tool_policy.tools`) are used when a run names none, and
+  Claude Code no longer reads its auto-memory index into the prompt (ADR 0083).
 - **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
   count uncached input, cache writes and output; what the cache served is shown beside it and
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
