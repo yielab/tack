@@ -125,6 +125,16 @@ automation a template carries.
   answering for two lease durations, the run moves to "needs a person" with "The computer that
   took this run stopped answering." Cancel ends such a run at once, and `tack execution cancel`
   prints "Cancelled.".
+- **The board's runner survives a restart** on a computer where the desktop app ran before: a
+  refresh never renames it, and only a refused credential makes it enroll again.
+- **One rule says a computer is online**, and the run dialog's default machine, the waiting
+  reason, the scheduler and the Agents page all read it; `GET /api/runners` returns `online`. A
+  computer that stopped answering no longer blocks a run that names no machine.
+- The Agents page shows docket as installed with the API it speaks ("Installed API 5"), and
+  `tack runner doctor --config <file>` reads the runner's own file and fails on a broken one.
+- The Agents page's title and breadcrumb say Agents; the Overview names item types in the
+  project's words; a settings tab follows the address; a new project can start from a project
+  file, with the same preview and confirm as Settings → Data.
 - Turning on **Start a task by itself** saves the status the list shows; before, nothing started
   until the status was picked by hand.
 - A run on docket shows "Sandboxed by docket in its own jail" in the run dialog and on the
