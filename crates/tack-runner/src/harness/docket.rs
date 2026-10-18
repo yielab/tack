@@ -333,9 +333,9 @@ pub fn default_pod(repository: &Path) -> String {
 /// `input` a cache served and `cacheWrite` the part written to one, both already
 /// inside `input` (`TokenUsage` in docket's `core/llm.py`, whose `counted_tokens` is
 /// `input - cached + output`; Tack's `Usage::counted` is the same sum over
-/// `tokens_in` and `cache_read_tokens`). docket sends 0 for an endpoint that does
-/// not report a figure, "never definitely no cache hit", so a 0 is left out and the
-/// attempt says "cache not reported" as it did before docket sent the keys.
+/// `tokens_in` and `cache_read_tokens`). docket writes 0 both for an endpoint that
+/// reports no figure and for a real zero, which the wire cannot tell apart, so a 0
+/// is kept as 0; only a docket that sends no key leaves "cache not reported".
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct CacheFigures {
     read: Option<u64>,
@@ -345,8 +345,8 @@ struct CacheFigures {
 impl CacheFigures {
     fn of(cached: Option<u64>, written: Option<u64>) -> Self {
         Self {
-            read: cached.filter(|tokens| *tokens > 0),
-            write: written.filter(|tokens| *tokens > 0),
+            read: cached,
+            write: written,
         }
     }
 

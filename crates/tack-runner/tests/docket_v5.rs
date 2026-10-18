@@ -661,16 +661,29 @@ async fn a_hop_with_cache_figures_counts_what_docket_counts() {
 }
 
 #[tokio::test]
-async fn a_hop_the_endpoint_did_not_report_a_cache_for_says_cache_not_reported() {
-    for usage in [
+async fn a_hop_without_cache_keys_says_cache_not_reported() {
+    let (hop, _) = run_with_usage(
         json!({"input": 1000, "output": 200}),
+        json!({"input": 1000, "output": 200}),
+    )
+    .await;
+    let hop = hop.expect("the hop reports usage");
+    assert_eq!(cache_of(&hop), (None, None));
+    assert_eq!(hop.counted(), Some(1_200));
+}
+
+#[tokio::test]
+async fn a_hop_whose_cache_figures_are_zero_keeps_them_as_zero() {
+    // docket writes 0 for "none reported" and for a real zero alike, so Tack says 0, not
+    // "not reported"; the count is the same either way.
+    let (hop, _) = run_with_usage(
         json!({"input": 1000, "cached": 0, "cacheWrite": 0, "output": 200}),
-    ] {
-        let (hop, _) = run_with_usage(usage, json!({"input": 1000, "output": 200})).await;
-        let hop = hop.expect("the hop reports usage");
-        assert_eq!(cache_of(&hop), (None, None));
-        assert_eq!(hop.counted(), Some(1_200));
-    }
+        json!({"input": 1000, "output": 200}),
+    )
+    .await;
+    let hop = hop.expect("the hop reports usage");
+    assert_eq!(cache_of(&hop), (Some(0), Some(0)));
+    assert_eq!(hop.counted(), Some(1_200));
 }
 
 #[tokio::test]
@@ -701,15 +714,15 @@ async fn a_task_with_cache_figures_counts_what_docket_counts() {
         assert_eq!(usage.tokens_in.value, Some(61_230), "{name}");
         assert_eq!(cache_of(&usage), (Some(40_000), Some(2_100)), "{name}");
         assert_eq!(usage.counted(), Some(61_230 - 40_000 + 4_120), "{name}");
-        // by_model keeps the input the cache did not serve, the figures on top.
+        // by_model keeps the input the cache did not serve, the figures on top, a 0 as 0.
         assert_eq!(
             usage.additional["by_model"]["local/local-model"],
-            json!({"input": 8_000, "output": 3_000, "cache_read": 40_000}),
+            json!({"input": 8_000, "output": 3_000, "cache_read": 40_000, "cache_write": 0}),
             "{name}"
         );
         assert_eq!(
             usage.additional["by_model"]["anthropic/claude-sonnet-4-6"],
-            json!({"input": 11_130, "output": 1_120, "cache_write": 2_100}),
+            json!({"input": 11_130, "output": 1_120, "cache_read": 0, "cache_write": 2_100}),
             "{name}"
         );
     }
