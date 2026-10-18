@@ -21,9 +21,11 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
-use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForScheduling};
+use tack_db::repo::execution::{
+    FleetConcurrencySnapshot, QueuedRequestForScheduling, SystemExecutionClock,
+};
 
-use super::select::{SchedulingPolicy, select_runner};
+use super::select::{EXPIRED_LEASE_GRACE, SchedulingPolicy, select_runner};
 use super::types::{
     BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     SelectionOutcome,
@@ -199,6 +201,9 @@ async fn dollars_today(
 
 /// The terminal code of a request failed for want of a runner.
 const NO_RUNNER_CAN_CLAIM: &str = "no_runner_can_claim";
+/// The code and sentence of a run whose lease expired and nobody renewed.
+const LEASE_EXPIRED: &str = "lease_expired";
+const LEASE_EXPIRED_SENTENCE: &str = "The computer that took this run stopped answering.";
 
 /// The `(code, sentence)` an ineligible candidate is recorded under: the code
 /// is the variant's snake_case name, the sentence is what an operator reads.
@@ -367,6 +372,15 @@ pub async fn choose_request_for_runner(
     now: DateTime<Utc>,
     policy: &SchedulingPolicy,
 ) -> Result<Option<String>, sqlx::Error> {
+    // A run whose lease expired and was not renewed is nobody's: ask a person
+    // about it before looking for work, since it is no longer queued.
+    repo.expire_unheld_leases(
+        now - EXPIRED_LEASE_GRACE,
+        LEASE_EXPIRED,
+        LEASE_EXPIRED_SENTENCE,
+        &SystemExecutionClock,
+    )
+    .await?;
     let Some(runner) = repo.fetch_runner_scheduling_snapshot(runner_id).await? else {
         return Ok(None);
     };

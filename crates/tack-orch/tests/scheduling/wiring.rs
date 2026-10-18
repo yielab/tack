@@ -675,7 +675,9 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         "runner-a",
         "claim",
         "attempt",
-        chrono::Duration::seconds(60),
+        // Held past the three-hour poll below: a lease that ended unrenewed
+        // would be handed to a person, which is not what this test is about.
+        chrono::Duration::hours(4),
         &FixedClock(now),
         RequestSelection::Scheduled(Some("running")),
     )

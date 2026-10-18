@@ -3392,10 +3392,12 @@ export interface components {
         };
         /**
          * @description Response body for `POST /api/executions/{id}/cancel`. `state` is
-         *     deliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`
-         *     value — cancellation is recorded as a request only
-         *     (`cancellation_requested_at`); the request's real lifecycle state is
-         *     unaffected and visible via `GET /api/executions/{id}`.
+         *     `cancelled` when nobody held the run (its attempt was waiting on a person,
+         *     or its lease had expired) and the request ended at once. Otherwise it is
+         *     `cancellation_requested`, deliberately **not** a
+         *     `docs/contracts/runner-v1/lifecycle-transitions.json` value — the request
+         *     is recorded (`cancellation_requested_at`) and the runner holding the run
+         *     reports the outcome, visible via `GET /api/executions/{id}`.
          */
         CancellationRequestedResponse: {
             /** Format: int32 */
@@ -6211,7 +6213,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cancellation requested — not yet terminal */
+            /** @description Cancelled at once when nobody holds the run; otherwise cancellation requested and not yet terminal */
             200: {
                 headers: {
                     [name: string]: unknown;

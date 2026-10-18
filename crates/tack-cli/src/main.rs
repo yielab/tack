@@ -2652,11 +2652,15 @@ fn cmd_execution_cancel(client: &TackClient, id: String, as_json: bool) -> anyho
         println!("{}", serde_json::to_string_pretty(&resp)?);
         return Ok(());
     }
-    // The server's `state` here is the literal string "cancellation_requested"
-    // — not one of the frozen `tack_orch::execution::ExecutionState` lifecycle states — because cancellation
-    // is recorded as a request only; the runner observes and reports the
-    // actual outcome (succeeded/failed/cancelled/lost). Say that plainly
+    // `cancelled` means nobody held the run, so it ended at once. Otherwise
+    // the state is the literal "cancellation_requested" — not one of the
+    // frozen `ExecutionState` values — because the runner holding the run
+    // observes the request and reports the actual outcome; say that plainly
     // rather than implying the request is already terminal.
+    if resp["state"] == "cancelled" {
+        println!("Cancelled.");
+        return Ok(());
+    }
     println!(
         "Cancellation requested for {} — the request is not yet terminal; \
          `tack execution get {id}` will show the outcome once the runner reports it.",

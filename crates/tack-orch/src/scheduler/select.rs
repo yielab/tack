@@ -15,6 +15,13 @@ use super::types::{
 };
 use crate::execution::{Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
 
+/// How long a lease that nobody renewed waits, after it expires, before the
+/// claim poll asks a person about the run: twice the lease duration, 60
+/// seconds in `docs/contracts/runner-v1/limits.json`
+/// (`lease_duration_seconds`, the same figure `max_heartbeat_age` derives from). One missed heartbeat must not cost
+/// a run its slot, and a runner that stopped is judged within two minutes.
+pub const EXPIRED_LEASE_GRACE: Duration = Duration::seconds(2 * 60);
+
 /// Configurable thresholds the pure selection functions read but never
 /// invent internally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -399,6 +399,7 @@ impl FakeProtocol {
 struct FakeAdapter {
     expected_journal: PathBuf,
     validate_error: Option<HarnessError>,
+    start_error: Option<HarnessError>,
     start_calls: Arc<AtomicUsize>,
     start_after_journal: Arc<AtomicBool>,
     cancel_calls: Arc<AtomicUsize>,
@@ -444,6 +445,9 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn start(&self, _spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
         self.start_calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(error) = &self.start_error {
+            return Err(error.clone());
+        }
         self.start_after_journal
             .store(self.expected_journal.exists(), Ordering::SeqCst);
         Ok(LocalRunHandle {
@@ -705,6 +709,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
     FakeAdapter {
         expected_journal,
         validate_error: None,
+        start_error: None,
         start_calls: Arc::new(AtomicUsize::new(0)),
         start_after_journal: Arc::new(AtomicBool::new(false)),
         cancel_calls: Arc::new(AtomicUsize::new(0)),
@@ -1416,49 +1421,77 @@ async fn non_stopped_cancellation_evidence_skips_transport() {
     }
 }
 
-/// A request the adapter refuses at `validate` — a disabled provider, a
-/// binary that vanished, a policy the harness cannot honour — arrives
-/// after the engine has already journaled the attempt and announced it as
-/// `preparing`. It must end as a reported `failed` attempt through the
-/// terminal outbox, with the refusal as its reason, and the record must be
-/// settled in this same cycle. The absence is asserted directly: no
-/// process is ever started for it.
+/// A run that fails after the engine has already journaled the attempt and
+/// announced it as `preparing` — the agent refuses it at `validate` or at
+/// `start`, or its folder cannot be prepared — must end as a reported
+/// `failed` attempt through the terminal outbox, with the reason, and the
+/// record must be settled in this same cycle. How often `start` is reached
+/// is asserted directly: never for a refusal at `validate` or provisioning.
 #[tokio::test]
-async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
-    let (root_dir, journal) = fresh_journal("validate-rejected");
-    let root = root_dir.path();
-    let protocol = protocol(work(), false, false);
-    let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    adapter.validate_error = Some(HarnessError::Rejected {
-        reason: "provider endpoint could not be resolved".into(),
-    });
-    let start_calls = Arc::clone(&adapter.start_calls);
-    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
+async fn every_failure_before_the_agent_runs_is_reported_failed_with_its_reason() {
+    let refused = |reason: &str| HarnessError::Rejected {
+        reason: reason.into(),
+    };
+    // (name, error at validate, error at start, remote of the repository,
+    // the reason the report carries, how many times `start` is reached)
+    let rows = [
+        (
+            "validate",
+            Some(refused("provider endpoint could not be resolved")),
+            None,
+            "https://example.test/repo.git",
+            "provider endpoint could not be resolved",
+            0,
+        ),
+        (
+            "start",
+            None,
+            Some(refused(
+                "docket did not accept the team: project is required",
+            )),
+            "https://example.test/repo.git",
+            "docket did not accept the team: project is required",
+            1,
+        ),
+        (
+            "provisioning",
+            None,
+            None,
+            "",
+            "the attempt repository could not be reached",
+            0,
+        ),
+    ];
+    for (name, validate_error, start_error, remote, message, starts) in rows {
+        let (root_dir, journal) = fresh_journal(&format!("pre-start-{name}"));
+        let root = root_dir.path();
+        let mut claimed = work();
+        claimed.request.repository.remote = remote.into();
+        let protocol = protocol(claimed, false, false);
+        let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        adapter.validate_error = validate_error;
+        adapter.start_error = start_error;
+        let start_calls = Arc::clone(&adapter.start_calls);
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
-    let cycle = engine
-        .run_once(&session(), claim_request())
-        .await
-        .expect("a refused request is a settled cycle, not an engine error");
+        let cycle = engine
+            .run_once(&session(), claim_request())
+            .await
+            .unwrap_or_else(|error| panic!("{name}: a refused run is a settled cycle: {error}"));
 
-    assert!(matches!(cycle, RunCycle::Completed { .. }));
-    assert_eq!(
-        start_calls.load(Ordering::SeqCst),
-        0,
-        "no process may be started for a request the adapter refused"
-    );
-    let report = single_completion_report(&protocol);
-    assert_eq!(report.terminal_state, AttemptState::Failed);
-    assert_eq!(report.terminal_reason["code"], "harness_rejected");
-    assert_eq!(
-        report.terminal_reason["message"],
-        "provider endpoint could not be resolved"
-    );
-    assert_pre_spawn_rejection_actual_execution(&report.actual_execution);
-    assert_eq!(report.usage.tokens_in.value, None);
-    assert!(
-        journal.unresolved().expect("scanned journal").is_empty(),
-        "the record must be settled now, not left for a restart's recovery scan"
-    );
+        assert!(matches!(cycle, RunCycle::Completed { .. }), "{name}");
+        assert_eq!(start_calls.load(Ordering::SeqCst), starts, "{name}");
+        let report = single_completion_report(&protocol);
+        assert_eq!(report.terminal_state, AttemptState::Failed, "{name}");
+        assert_eq!(report.terminal_reason["code"], "harness_rejected", "{name}");
+        assert_eq!(report.terminal_reason["message"], message, "{name}");
+        assert_pre_spawn_rejection_actual_execution(&report.actual_execution);
+        assert_eq!(report.usage.tokens_in.value, None, "{name}");
+        assert!(
+            journal.unresolved().expect("scanned journal").is_empty(),
+            "{name}: the record must be settled now, not left for a restart's recovery scan"
+        );
+    }
 }
 
 /// The one `CompletionReport` a run sent, asserting exactly one was sent.

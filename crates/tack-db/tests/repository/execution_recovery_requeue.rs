@@ -4,7 +4,8 @@ use crate::common::execution_fixture::{Fixture, recovery_input};
 
 use chrono::Duration;
 use tack_db::repo::execution::{
-    EnrollmentToken, NewRunner, OperatorRequeueResult, RecoveryDisposition, RecoveryObservation,
+    AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, EnrollmentToken,
+    NewRunner, OperatorRequeueResult, RecoveryDisposition, RecoveryObservation,
     RecoveryObservationInput, RecoveryObservationResult,
 };
 
@@ -289,4 +290,75 @@ async fn operator_requeue_rejects_without_authoritative_recovery() {
     );
     assert_eq!(fx.request_state("request-r").await, "needs_operator");
     assert_eq!(fx.capacity().await, 0);
+}
+
+#[tokio::test]
+async fn a_lease_nobody_renewed_asks_a_person_once_and_cancel_ends_it() {
+    let fx = Fixture::new().await;
+    sqlx::query(
+        "UPDATE agent_runners SET total_capacity = 4, available_capacity = 4 WHERE id = 'runner-a'",
+    )
+    .execute(fx.repo.pool())
+    .await
+    .unwrap();
+    // Both are enqueued now: a request is stamped with the clock it is made at.
+    fx.enqueue("request-gone", "request-gone", "same").await;
+    fx.enqueue("request-near", "request-near", "same").await;
+    for attempt in ["attempt-gone", "attempt-near"] {
+        let fence = fx
+            .claim(attempt, Duration::seconds(60))
+            .await
+            .unwrap()
+            .fencing_token;
+        assert!(matches!(
+            fx.transition(AttemptTransitionInput {
+                runner_id: "runner-a",
+                attempt_id: attempt,
+                fencing_token: fence,
+                phase: AttemptTransitionPhase::Preparing,
+                workspace_id: "workspace-1",
+                base_revision: "abc123",
+                process_id: None,
+            })
+            .await,
+            AttemptTransitionResult::Applied(_)
+        ));
+        // The second lease is taken 100 s after the first.
+        fx.clock.advance(Duration::seconds(100));
+    }
+    // 200 s after the first claim: its lease (60 s) ended 140 s ago, past a
+    // 120 s grace; the second ended 40 s ago, inside it.
+    let grace = Duration::seconds(120);
+    // The holder is gone for good: a revoked runner's runs are asked about
+    // like any other's.
+    fx.repo.revoke_runner("runner-a", &fx.clock).await.unwrap();
+    let sentence = "The computer that took this run stopped answering.";
+    let expire = || {
+        fx.repo
+            .expire_unheld_leases(fx.clock.now() - grace, "lease_expired", sentence, &fx.clock)
+    };
+
+    assert_eq!(expire().await.unwrap(), 1);
+    assert_eq!(expire().await.unwrap(), 0, "a second poll finds nothing");
+    assert_eq!(fx.attempt_state("attempt-gone").await, "needs_operator");
+    assert_eq!(fx.request_state("request-gone").await, "needs_operator");
+    let reason: Option<String> =
+        sqlx::query_scalar("SELECT waiting_reason FROM execution_requests WHERE id='request-gone'")
+            .fetch_one(fx.repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(reason.as_deref(), Some(sentence));
+    assert_eq!(fx.attempt_state("attempt-near").await, "preparing");
+    assert_eq!(fx.request_state("request-near").await, "preparing");
+
+    // Cancel is the person's decision: it ends a run asked about, and a run
+    // whose lease has ended even before the poll has asked.
+    for (request, attempt) in [
+        ("request-gone", "attempt-gone"),
+        ("request-near", "attempt-near"),
+    ] {
+        assert!(fx.request_cancellation(request).await);
+        assert_eq!(fx.attempt_state(attempt).await, "cancelled");
+        assert_eq!(fx.request_state(request).await, "cancelled");
+    }
 }

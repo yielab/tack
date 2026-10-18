@@ -1668,7 +1668,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Cancellation requested — not yet terminal",
+            "description": "Cancelled at once when nobody holds the run; otherwise cancellation requested and not yet terminal",
             "content": {
               "application/json": {
                 "schema": {
@@ -8422,7 +8422,7 @@
       },
       "CancellationRequestedResponse": {
         "type": "object",
-        "description": "Response body for `POST /api/executions/{id}/cancel`. `state` is\ndeliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`\nvalue — cancellation is recorded as a request only\n(`cancellation_requested_at`); the request's real lifecycle state is\nunaffected and visible via `GET /api/executions/{id}`.",
+        "description": "Response body for `POST /api/executions/{id}/cancel`. `state` is\n`cancelled` when nobody held the run (its attempt was waiting on a person,\nor its lease had expired) and the request ended at once. Otherwise it is\n`cancellation_requested`, deliberately **not** a\n`docs/contracts/runner-v1/lifecycle-transitions.json` value — the request\nis recorded (`cancellation_requested_at`) and the runner holding the run\nreports the outcome, visible via `GET /api/executions/{id}`.",
         "required": [
           "protocol_version",
           "request_id",

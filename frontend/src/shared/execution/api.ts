@@ -32,20 +32,14 @@
 //     `ExecutionTimeline.tsx` still shows the typed "not available yet"
 //     placeholder.
 //
-// **A wire inconsistency worth flagging alongside that gap:** `POST
-// /executions/{id}/cancel`'s success response
-// (`crates/tack-api/src/handlers/executions.rs`, `request_cancellation`,
-// line ~515) hardcodes `"state":"cancellation_requested"` — a string that is
-// NOT a member of `ExecutionState` (the frozen ten-state lifecycle has no
-// such state; cancellation intent is instead the separate
-// `cancellation_requested_at` timestamp column `list_executions`/
-// `get_execution` already expose). A client that calls `cancel()` and then
-// re-fetches via `get()` will see the row's REAL current lifecycle state
-// (e.g. still `"running"`) with `cancellation_requested_at` populated, not a
-// `"cancellation_requested"` state. `CancelExecutionResult.state` is typed
-// as a bare `string` below (never merged into an `ExecutionState`) and
+// **The cancel answer's `state` is not a lifecycle state.** `POST
+// /executions/{id}/cancel` answers `"cancelled"` when nobody held the run and
+// it ended at once, and `"cancellation_requested"` when a runner holds it and
+// will stop it on its next heartbeat — the second is NOT a member of
+// `ExecutionState`. Either way the server stamps `cancellation_requested_at`,
+// so `CancelExecutionResult.state` stays a bare `string` below, and
 // `store.ts`'s optimistic update only ever touches
-// `cancellation_requested_at`, never `state`, for exactly this reason.
+// `cancellation_requested_at`, never `state`; a re-fetch shows the real one.
 
 import { request, requestWithHeaders } from '../api/client';
 

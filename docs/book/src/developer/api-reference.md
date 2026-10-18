@@ -1471,7 +1471,7 @@ Download a verified artifact's raw content
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Cancellation requested — not yet terminal | `CancellationRequestedResponse` |
+| 200 | Cancelled at once when nobody holds the run; otherwise cancellation requested and not yet terminal | `CancellationRequestedResponse` |
 | 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict (already terminal) | `RunnerV1ErrorEnvelope` |
 

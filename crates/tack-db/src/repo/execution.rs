@@ -1158,6 +1158,134 @@ fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, 
     .map_err(|error| sqlx::Error::Protocol(error.to_string()))
 }
 
+/// Everything `recover_attempt` does once it holds the open transaction and
+/// the attempt's row: replay or conflict on the audit, the terminal case, the
+/// disposition, the three updates and the audit row. The runner's own report
+/// reaches it through a row read with the runner's authentication; the claim
+/// poll's expired-lease rule reaches it with a row read without one, and
+/// passes `waiting` — the code and sentence the request keeps — which is
+/// written in this same transaction only when the attempt moved.
+async fn apply_recovery(
+    mut tx: sqlx::Transaction<'static, sqlx::Sqlite>,
+    row: &sqlx::sqlite::SqliteRow,
+    input: &RecoveryObservationInput<'_>,
+    details: &RecoveryDetails,
+    fingerprint: &str,
+    now: &str,
+    waiting: Option<(&str, &str)>,
+) -> Result<RecoveryObservationResult, sqlx::Error> {
+    if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?")
+        .bind(input.attempt_id).bind(input.recovery_key).fetch_optional(&mut *tx).await? {
+        let stored_fingerprint: String = row.get("fingerprint");
+        if stored_fingerprint != fingerprint {
+            tx.commit().await?;
+            return Ok(RecoveryObservationResult::Conflict);
+        }
+        let response: String = row.get("response");
+        let response = recovery_response(&response)?;
+        tx.commit().await?;
+        return Ok(RecoveryObservationResult::Replayed(response));
+    }
+    let request: String = row.get("request_id");
+    let runner: String = row.get("runner_id");
+    let state: String = row.get("state");
+    if terminal(&state) {
+        let response = RecoveryResponse {
+            attempt_id: input.attempt_id.into(),
+            recovery_key: input.recovery_key.into(),
+            disposition: RecoveryDisposition::AlreadyTerminal,
+            committed_at: now.to_owned(),
+        };
+        let serialized_response = serde_json::json!({
+            "attempt_id": response.attempt_id,
+            "recovery_key": response.recovery_key,
+            "disposition": "already_terminal",
+            "committed_at": response.committed_at,
+        })
+        .to_string();
+        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?, 'already_terminal',?,?,?,?)")
+            .bind(input.attempt_id).bind(input.recovery_key).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(RecoveryObservationResult::Applied(response));
+    }
+    if !matches!(
+        state.as_str(),
+        "leased" | "preparing" | "running" | "waiting_decision"
+    ) {
+        tx.commit().await?;
+        return Ok(RecoveryObservationResult::Stale);
+    }
+    let started: Option<String> = row.get("started_at");
+    let disposition = match input.observation {
+        RecoveryObservation::ProcessStopped
+            if started.is_none()
+                && details.journal_state == "prepared"
+                && !details.process_observed =>
+        {
+            RecoveryDisposition::SafePreSpawnRequeue
+        }
+        RecoveryObservation::ProcessStopped
+        | RecoveryObservation::ProcessRunning
+        | RecoveryObservation::Ambiguous => RecoveryDisposition::NeedsOperator,
+    };
+    let (attempt_state, request_state, classification) = match disposition {
+        RecoveryDisposition::SafePreSpawnRequeue => ("lost", "queued", "safe_pre_spawn_requeue"),
+        RecoveryDisposition::NeedsOperator => {
+            ("needs_operator", "needs_operator", "needs_operator")
+        }
+        RecoveryDisposition::AlreadyTerminal => unreachable!("terminal states return above"),
+    };
+    let updated = sqlx::query("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision')")
+        .bind(attempt_state)
+        .bind(now)
+        .bind(input.attempt_id)
+        .bind(input.runner_id)
+        .bind(input.fencing_token)
+        .execute(&mut *tx)
+        .await?;
+    if updated.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(RecoveryObservationResult::Stale);
+    }
+    sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?='queued' THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
+        .bind(request_state)
+        .bind(request_state)
+        .bind(now)
+        .bind(&request)
+        .execute(&mut *tx)
+        .await?;
+    if let Some((code, sentence)) = waiting {
+        sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=? WHERE id=?")
+            .bind(code)
+            .bind(sentence)
+            .bind(&request)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(now).bind(&runner).execute(&mut *tx).await?;
+    let response = RecoveryResponse {
+        attempt_id: input.attempt_id.into(),
+        recovery_key: input.recovery_key.into(),
+        disposition: disposition.clone(),
+        committed_at: now.to_owned(),
+    };
+    let serialized_response = serde_json::json!({
+        "attempt_id": response.attempt_id,
+        "recovery_key": response.recovery_key,
+        "disposition": match response.disposition {
+            RecoveryDisposition::SafePreSpawnRequeue => "safe_pre_spawn_requeue",
+            RecoveryDisposition::NeedsOperator => "needs_operator",
+            RecoveryDisposition::AlreadyTerminal => "already_terminal",
+        },
+        "committed_at": response.committed_at,
+    })
+    .to_string();
+    sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?,?,?,?,?,?)")
+        .bind(input.attempt_id).bind(input.recovery_key).bind(classification).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(RecoveryObservationResult::Applied(response))
+}
+
 fn recovery_response(serialized: &str) -> Result<RecoveryResponse, sqlx::Error> {
     let value: serde_json::Value = serde_json::from_str(serialized)
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
@@ -2050,110 +2178,7 @@ impl Repository {
             tx.commit().await?;
             return Ok(RecoveryObservationResult::Stale);
         };
-        if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?")
-            .bind(input.attempt_id).bind(input.recovery_key).fetch_optional(&mut *tx).await? {
-            let stored_fingerprint: String = row.get("fingerprint");
-            if stored_fingerprint != fingerprint {
-                tx.commit().await?;
-                return Ok(RecoveryObservationResult::Conflict);
-            }
-            let response: String = row.get("response");
-            let response = recovery_response(&response)?;
-            tx.commit().await?;
-            return Ok(RecoveryObservationResult::Replayed(response));
-        }
-        let request: String = row.get("request_id");
-        let runner: String = row.get("runner_id");
-        let state: String = row.get("state");
-        if terminal(&state) {
-            let response = RecoveryResponse {
-                attempt_id: input.attempt_id.into(),
-                recovery_key: input.recovery_key.into(),
-                disposition: RecoveryDisposition::AlreadyTerminal,
-                committed_at: now.clone(),
-            };
-            let serialized_response = serde_json::json!({
-                "attempt_id": response.attempt_id,
-                "recovery_key": response.recovery_key,
-                "disposition": "already_terminal",
-                "committed_at": response.committed_at,
-            })
-            .to_string();
-            sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?, 'already_terminal',?,?,?,?)")
-                .bind(input.attempt_id).bind(input.recovery_key).bind(input.details).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
-            tx.commit().await?;
-            return Ok(RecoveryObservationResult::Applied(response));
-        }
-        if !matches!(
-            state.as_str(),
-            "leased" | "preparing" | "running" | "waiting_decision"
-        ) {
-            tx.commit().await?;
-            return Ok(RecoveryObservationResult::Stale);
-        }
-        let started: Option<String> = row.get("started_at");
-        let disposition = match input.observation {
-            RecoveryObservation::ProcessStopped
-                if started.is_none()
-                    && details.journal_state == "prepared"
-                    && !details.process_observed =>
-            {
-                RecoveryDisposition::SafePreSpawnRequeue
-            }
-            RecoveryObservation::ProcessStopped
-            | RecoveryObservation::ProcessRunning
-            | RecoveryObservation::Ambiguous => RecoveryDisposition::NeedsOperator,
-        };
-        let (attempt_state, request_state, classification) = match disposition {
-            RecoveryDisposition::SafePreSpawnRequeue => {
-                ("lost", "queued", "safe_pre_spawn_requeue")
-            }
-            RecoveryDisposition::NeedsOperator => {
-                ("needs_operator", "needs_operator", "needs_operator")
-            }
-            RecoveryDisposition::AlreadyTerminal => unreachable!("terminal states return above"),
-        };
-        let updated = sqlx::query("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision')")
-            .bind(attempt_state)
-            .bind(&now)
-            .bind(input.attempt_id)
-            .bind(input.runner_id)
-            .bind(input.fencing_token)
-            .execute(&mut *tx)
-            .await?;
-        if updated.rows_affected() != 1 {
-            tx.rollback().await?;
-            return Ok(RecoveryObservationResult::Stale);
-        }
-        sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?='queued' THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
-            .bind(request_state)
-            .bind(request_state)
-            .bind(&now)
-            .bind(&request)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(&runner).execute(&mut *tx).await?;
-        let response = RecoveryResponse {
-            attempt_id: input.attempt_id.into(),
-            recovery_key: input.recovery_key.into(),
-            disposition: disposition.clone(),
-            committed_at: now.clone(),
-        };
-        let serialized_response = serde_json::json!({
-            "attempt_id": response.attempt_id,
-            "recovery_key": response.recovery_key,
-            "disposition": match response.disposition {
-                RecoveryDisposition::SafePreSpawnRequeue => "safe_pre_spawn_requeue",
-                RecoveryDisposition::NeedsOperator => "needs_operator",
-                RecoveryDisposition::AlreadyTerminal => "already_terminal",
-            },
-            "committed_at": response.committed_at,
-        })
-        .to_string();
-        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?,?,?,?,?,?)")
-            .bind(input.attempt_id).bind(input.recovery_key).bind(classification).bind(input.details).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(RecoveryObservationResult::Applied(response))
+        apply_recovery(tx, &row, &input, &details, &fingerprint, &now, None).await
     }
 
     pub async fn observe_cancellation(
@@ -3065,6 +3090,12 @@ impl Repository {
         ))
     }
 
+    /// Records the cancellation request. When nobody holds the run any more
+    /// — its latest attempt is `needs_operator`, or its lease has expired —
+    /// there is no runner to observe the request, so the attempt and the
+    /// request end `cancelled` at once: that is the person's decision. A run
+    /// somebody holds only gets `cancellation_requested_at`, which its runner
+    /// reads on the next heartbeat.
     #[instrument(skip(self, clock))]
     pub async fn request_execution_cancellation(
         &self,
@@ -3072,9 +3103,100 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let result = sqlx::query("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ('succeeded','failed','cancelled')")
-            .bind(&now).bind(&now).bind(request_id).execute(self.pool()).await?;
-        Ok(result.rows_affected() == 1)
+            .bind(&now).bind(&now).bind(request_id).execute(&mut *tx).await?;
+        if result.rows_affected() != 1 {
+            tx.commit().await?;
+            return Ok(false);
+        }
+        let latest = sqlx::query("SELECT id,runner_id,state,lease_expires_at FROM execution_attempts WHERE request_id=? ORDER BY attempt_number DESC LIMIT 1")
+            .bind(request_id).fetch_optional(&mut *tx).await?;
+        if let Some(latest) = latest {
+            let state: String = latest.get("state");
+            let expired = latest.get::<String, _>("lease_expires_at") <= now;
+            let active = matches!(
+                state.as_str(),
+                "leased" | "preparing" | "running" | "waiting_decision"
+            );
+            if state == "needs_operator" || (active && expired) {
+                let attempt: String = latest.get("id");
+                sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
+                    .bind(&now).bind(&now).bind(&attempt).execute(&mut *tx).await?;
+                sqlx::query(
+                    "UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?",
+                )
+                .bind(&now)
+                .bind(request_id)
+                .execute(&mut *tx)
+                .await?;
+                // A `needs_operator` attempt already gave its slot back.
+                if active {
+                    let runner: String = latest.get("runner_id");
+                    sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?")
+                        .bind(&now).bind(&runner).execute(&mut *tx).await?;
+                }
+            }
+        }
+        tx.commit().await?;
+        Ok(true)
+    }
+
+    /// The claim poll's closing of a run nobody holds: every attempt in
+    /// `leased`, `preparing`, `running` or `waiting_decision` whose lease
+    /// expired before `expired_before` moves, with its request, to
+    /// `needs_operator` through the same steps [`Self::recover_attempt`] takes,
+    /// whatever state its runner is in (the runner's authentication guards
+    /// only the runner's own report), exactly as a recovery that cannot prove
+    /// the agent absent does (a lease expiry alone
+    /// never starts another process, ADR 0050). The request keeps `code` and
+    /// `sentence` for a person to read. Returns how many it closed; a second
+    /// call finds nothing.
+    pub async fn expire_unheld_leases(
+        &self,
+        expired_before: DateTime<Utc>,
+        code: &str,
+        sentence: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<u64, sqlx::Error> {
+        let candidates = sqlx::query_scalar::<_, String>("SELECT id FROM execution_attempts WHERE state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
+            .bind(expired_before.to_rfc3339()).fetch_all(self.pool()).await?;
+        let details =
+            serde_json::json!({"journal_state": code, "process_observed": false}).to_string();
+        let mut closed = 0;
+        for attempt in candidates {
+            let now = stamp(clock);
+            // The holder's state does not matter here: `needs_operator` never
+            // starts a process, so a revoked or stopped runner's attempts are
+            // asked about like any other. The row is read inside the
+            // transaction, so an attempt that moved since the list is skipped.
+            let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+            let row = sqlx::query("SELECT request_id,runner_id,fencing_token,state,started_at FROM execution_attempts WHERE id=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
+                .bind(&attempt).bind(expired_before.to_rfc3339()).fetch_optional(&mut *tx).await?;
+            let Some(row) = row else {
+                tx.commit().await?;
+                continue;
+            };
+            let runner: String = row.get("runner_id");
+            let input = RecoveryObservationInput {
+                runner_id: &runner,
+                attempt_id: &attempt,
+                fencing_token: row.get("fencing_token"),
+                recovery_key: code,
+                observation: RecoveryObservation::Ambiguous,
+                details: &details,
+            };
+            let recovery = recovery_details(&details)?;
+            let fingerprint = recovery_fingerprint(&input)?;
+            let waiting = Some((code, sentence));
+            if matches!(
+                apply_recovery(tx, &row, &input, &recovery, &fingerprint, &now, waiting).await?,
+                RecoveryObservationResult::Applied(_)
+            ) {
+                closed += 1;
+            }
+        }
+        Ok(closed)
     }
 
     #[instrument(skip(self, artifact, clock))]

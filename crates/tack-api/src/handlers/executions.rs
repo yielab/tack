@@ -627,10 +627,12 @@ pub struct EventListResponse {
 }
 
 /// Response body for `POST /api/executions/{id}/cancel`. `state` is
-/// deliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`
-/// value — cancellation is recorded as a request only
-/// (`cancellation_requested_at`); the request's real lifecycle state is
-/// unaffected and visible via `GET /api/executions/{id}`.
+/// `cancelled` when nobody held the run (its attempt was waiting on a person,
+/// or its lease had expired) and the request ended at once. Otherwise it is
+/// `cancellation_requested`, deliberately **not** a
+/// `docs/contracts/runner-v1/lifecycle-transitions.json` value — the request
+/// is recorded (`cancellation_requested_at`) and the runner holding the run
+/// reports the outcome, visible via `GET /api/executions/{id}`.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CancellationRequestedResponse {
     pub protocol_version: u32,
@@ -2042,7 +2044,7 @@ pub async fn list_execution_attempt_events(
     tag = "execution-operator",
     params(("request_id" = String, Path, description = "Execution request ID (opaque)")),
     responses(
-        (status = 200, description = "Cancellation requested — not yet terminal", body = CancellationRequestedResponse),
+        (status = 200, description = "Cancelled at once when nobody holds the run; otherwise cancellation requested and not yet terminal", body = CancellationRequestedResponse),
         (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
         (status = 409, description = "conflict (already terminal)", body = RunnerV1ErrorEnvelope),
     ),
@@ -2097,10 +2099,29 @@ pub async fn request_cancellation(
             ),
         });
     }
+    // A run nobody held ended at once; any other waits for its runner.
+    let ended: bool =
+        sqlx::query_scalar("SELECT state = 'cancelled' FROM execution_requests WHERE id = ?")
+            .bind(&request_id)
+            .fetch_one(state.repo.pool())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not verify execution state",
+                    json!({}),
+                )
+            })?;
     Ok(Json(CancellationRequestedResponse {
         protocol_version: 1,
         request_id,
-        state: "cancellation_requested".into(),
+        state: if ended {
+            "cancelled"
+        } else {
+            "cancellation_requested"
+        }
+        .into(),
     }))
 }
 

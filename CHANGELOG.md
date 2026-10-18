@@ -118,6 +118,13 @@ automation a template carries.
 
 ### Fixed
 
+- **A run that cannot start ends Failed with the reason**, whether the folder could not be
+  prepared or the agent refused the run at validation or at start (for docket: "docket did not
+  accept the team"). Before, it stayed in "Preparing" with no reason anywhere.
+- **A run nobody holds any more asks a person.** When the computer that took a run stops
+  answering for two lease durations, the run moves to "needs a person" with "The computer that
+  took this run stopped answering." Cancel ends such a run at once, and `tack execution cancel`
+  prints "Cancelled.".
 - Turning on **Start a task by itself** saves the status the list shows; before, nothing started
   until the status was picked by hand.
 - A run on docket shows "Sandboxed by docket in its own jail" in the run dialog and on the
