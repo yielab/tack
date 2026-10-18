@@ -29,8 +29,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   `develop` (2026-10-18); Fabulada's runs on paid models wait on docket's context and token count.
 - **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0083, accepted) — limits in
   tokens with no default and no dollars per day, cache reads never counted, every limit naming who
-  applies it, and nothing sent to an agent twice. Rounds 1–2 (A, G, B, D, E) are in `develop`; C and T
-  wait on captures of the real agents, Z's run of Fabulada on docket's fixes.
+  applies it, and nothing sent to an agent twice. Rounds 1–2 (A, G, B, D, E) are in `develop`; next V
+  (a profile's limit checked, before Phase 76's Round 2) and L (usage while a run runs), then CT on
+  one capture of the real agents, and Z's run of Fabulada on docket's fixes.
 - **Proposed 2026-10-18:** Phase 76 (`docs/plans/phase-76.md`, ADR 0084, proposed) — the project
   file kept in sync like Drupal's configuration: a key on every role, field, sprint and profile, an
   import that is a three-way comparison against the last revision (removes what the file removed,

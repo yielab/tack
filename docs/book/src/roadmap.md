@@ -168,8 +168,9 @@ provider. Tokens are what every agent measures. So:
 |---|---|---|
 | 1 | The profile's limit reaches the run; one token count for the day, the run and the factory; the brief once, rework fixes replaced, comments bounded. | Sonnet |
 | 2 | The daily limit with its reservation and bar; dollars per day removed from the schema, the screen and the project file; dollars shown as an estimate. | Sonnet |
-| 3 | Claude Code and opencode stopped at their limit from what they report, after a capture shows they report it; the tools per role. | Sonnet |
-| 4 | Live token progress on a run's timeline; the guides; Fabulada's runs again once docket's context and count are fixed. | Integrator |
+| 3 | A profile's limit checked where it is saved and shown before a run starts; a run's tokens while it runs, from docket's steps, so its reservation shrinks and its timeline shows them. | Integrator, Sonnet |
+| 4 | Claude Code and opencode stopped at their limit from what they report, and Claude Code's tools per role, from one capture of the real programs. | Sonnet |
+| 5 | The screens that read them; the guides; Fabulada's runs again once docket's context and count are fixed. | Integrator |
 
 ---
 

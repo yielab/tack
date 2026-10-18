@@ -24,6 +24,8 @@ roadmap's partner item); the phase ends by running Fabulada again once docket ha
 | What docket is told | `harness/docket/task.rs::body` | `compose_instructions` stays harness-blind |
 | The rework's fix section | `enqueue_rework` in `runner_protocol.rs`, replacing by its heading | — |
 | A card's comments in the prompt | `compose_instructions`, with `COMMENTS_BUDGET_CHARS = 4_000` beside it | — |
+| What a profile's `limits` may hold | `tack_core::run_defaults::check_limits(&Value)` (task V): `budgets.tokens` a positive whole number or absent, `timeout_seconds` the same, `budgets.cost_usd` refused | `run_limits`'s silent `positive` on the profile side, `runner_admin` create and update, `outline::bundle::check` |
+| A run's usage while it runs | `Progress.usage` (`engine.rs`, task L), stored with the progress line; the attempt's running counted sum is the one figure `day_room`, the timeline and a harness's stop read | the reservation's "its whole limit" fallback; C's and Z's own sums |
 
 No task adds a layer, a trait, a loop, a table or a setting the task does not name. A new number
 is a named constant beside the code that reads it, never a config key.
@@ -57,8 +59,14 @@ cut from `develop`, `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>`.
 | 0 | ADR 0083, this plan (integrator) | the maintainer's go (2026-10-18) |
 | 1 | A (a run's limit), G (nothing twice); then B (one count) | — |
 | 2 | D (the daily limit, dollars per day removed), E (dollars as an estimate, who applies a limit), side by side: D alone touches `Merge.tsx`, E alone the execution responses | A, B |
-| 3 | C (Claude Code and opencode stop at their limit), T (tools per role) | a capture of each agent's live usage lines |
-| 4 | Z (integrator): live progress on the timeline, the guides, the changelog; Fabulada's runs again | docket's context and count fixed |
+| 3 | V (integrator, no agent: what a profile's limits may hold, and the limit before a run starts), L (usage while a run runs, from docket's steps, which report it today) | V before Phase 76's Round 2, whose task A edits the same `create_profile` and `check` |
+| 4 | CT (Claude Code and opencode: one capture session, then the stop at the limit and the tools per role, in one task because both live in `claude_code.rs`) | L's `Progress.usage`; the capture costs model calls, on the maintainer's word |
+| 5 | Z (integrator): the screens that read L and V, the guides, the changelog; Fabulada's runs again | docket's context and count fixed |
+
+Why this order: every pending piece reads one of two new facts, a profile's limit before the run
+(V) and its usage while it runs (L). Each is built once, in the round before its readers, so no
+task parses usage or validates a limit on its own and no later task rewrites an earlier one's
+code.
 
 Ceilings: Sonnet one layer 100 calls, two layers 150. One that reaches it hands off and is
 replaced fresh with a shorter brief.
@@ -221,38 +229,65 @@ create → 400 `field_removed`; the Claude Code args test no longer sees `--max-
 **Tests:** a table over `limit_source` (the four sentences, an attempt's agent winning over the
 requested one); `metrics.rs`: the coverage pair; one frontend test per printed sentence.
 
-### C — Claude Code and opencode stop at their limit (Sonnet, two layers; after a capture)
+### V — what a profile's limits may hold, and the limit before a run (integrator, no agent)
 
-First a capture with each agent's real program, in a throwaway HOME, of the lines that carry
-usage while it runs (`scripts/capture-*-fixtures.sh` as for the others). If a program reports its
-tokens only at the end, it stays "measured, not enforced" and this task closes with that finding.
-Otherwise the runner sums `Usage::counted` from the live lines and stops the process at the limit
-with the reason "the run reached its token limit (N)".
+Today a profile or a project file with `limits.budgets.tokens: 0`, a negative, a string or the old
+`cost_usd` is stored, and its runs silently have no limit (`run_limits` reads it through
+`positive`). `run_defaults::check_limits(&Value) -> Result<(), String>` holds the rule
+`run_limits` already applies to a request; `runner_admin::create_profile` and `update_profile`
+answer 400 with its message, `outline::bundle::check` makes it a problem in the `profiles`
+section naming the profile, and `run_limits` reads the profile's side through it. The context
+route the run dialog reads (`get_item_agent_context`) returns `limit` from `limit_source` over
+the resolved profile, so the dialog's sentence is the server's.
+**Files:** `crates/tack-core/src/run_defaults.rs`, `crates/tack-core/src/outline/bundle.rs`
+(`check`), `crates/tack-api/src/handlers/{runner_admin.rs,executions.rs}`, rows in
+`run_defaults` tests, `outline/bundle/tests.rs`' `every_rule_of_the_check_speaks_in_its_own_section`
+and `tests/handlers/executions_runner_admin.rs`; the generated files.
 
-### T — Claude Code gets only its role's tools (Sonnet, one layer; after a capture)
+### L — a run's usage while it runs (Sonnet, two layers)
 
-A capture of the request Claude Code sends, measuring what each default tool's definition costs
-and whether `--setting-sources ""` keeps the project's `CLAUDE.md` and the user's memory out.
-Then the profile's `tool_policy.tools` names the tools; the default stays today's list. Its test is
-at the arguments Claude Code is given (`harness/claude_code/tests.rs`), not through a project file,
-whose import Phase 76 rewrites; a profile without `tool_policy.tools` reads the same before and
-after, so no file changes.
+`Progress` gains `usage: Option<Usage>`; docket's `hop_progress` fills it from `hop_finished`'s
+`usage` (the text line stays). The runner sends it with the progress line it already sends; the
+server keeps the attempt's running counted sum (`Usage::counted`) beside the stored line.
+`budgets::day_room` reserves an open run's limit minus that sum (the "Decided" row), and the
+timeline line prints the counted figure. The pack carries `cache_read_tokens` beside
+`tokens_in`/`tokens_out` (runner-v1 contract fixture and pin), and `pack_tokens` subtracts it as
+`COUNTED_TOKENS_SQL` does.
+**Files:** `crates/tack-runner/src/engine.rs` (`Progress`, `submit_progress`), `harness/docket.rs`
+(`hop_progress`), `crates/tack-api/src/handlers/runner_protocol.rs` (`submit_events`),
+`crates/tack-db/src/repo/{budgets.rs,execution.rs}`, `handlers/metrics.rs` (`pack_tokens`),
+`docs/contracts/runner-v1/` and `crates/tack-orch/tests/runner_contract.rs`.
+**Tests (RED first):** a `docket_v5.rs` row whose `hop_finished` carries usage → the progress has
+it; a `wiring.rs` row: an open run with 400 000 counted of its 1 000 000 reserves 600 000; a
+`metrics.rs` row: a pack with cache reads counts without them.
+
+### CT — Claude Code and opencode: the stop and the tools (Sonnet, two layers; after one capture)
+
+One capture session, in a throwaway HOME, with each real program (`scripts/capture-*-fixtures.sh`
+as for the others): the lines that carry usage while it runs, and for Claude Code the request it
+sends, measuring what each default tool's definition costs and whether `--setting-sources ""`
+keeps the project's `CLAUDE.md` and the user's memory out. Then:
+
+- Each program's live usage lines fill L's `Progress.usage`; the runner stops the process when the
+  attempt's counted sum reaches its limit, with the reason "the run reached its token limit (N)",
+  and `limit_source`'s `enforced_by` names the agent. A program that reports its tokens only at
+  the end stays "measured, not enforced" and the capture is the finding.
+- The profile's `tool_policy.tools` names Claude Code's tools; absent, today's list. Its test is at
+  the arguments Claude Code is given (`harness/claude_code/tests.rs`), not through a project file,
+  whose import Phase 76 rewrites; a profile without it reads the same before and after.
+
+**Files:** `crates/tack-runner/src/harness/{claude_code.rs,opencode.rs,local_process.rs}` and
+their tests, the captured fixtures, `limit_source` in `handlers/executions.rs`.
 
 ### Z — the integrator's round
 
-Live token progress on a run's timeline (docket's `hop_finished` usage, and C's lines); the User
-and Administrator guides (Merging → Budgets, Reviewing runs); the changelog's `[Unreleased]`;
-the roadmap. Then Fabulada's runs again, on the maintainer's word, once docket has fixed its
-context and count. Also Z's, left by Rounds 1 and 2:
-
-- An attempt's usage panel (`AttemptList.tsx`) still prints tokens in and out, not the counted
-  figure and the cache reads beside it.
-- The pack's tokens (`pack_tokens`) are its `tokens_in + tokens_out`: the pack contract has no
-  cache field, so a pack-only run counts its cache reads.
-- The run dialog does not print the limit sentence before a run starts, and a measured agent's
-  admission does not say it can cross the day's limit.
-- A run reserves its whole limit until it ends, because its usage is stored only at the end;
-  live progress is what lets the reservation shrink.
+The screens that read L and V: an attempt's usage panel (`AttemptList.tsx`) prints the counted
+figure with the cache reads beside it; the run dialog prints the context route's `limit` before a
+run starts; a measured agent's admission says it can cross the day's limit. The User and
+Administrator guides (Merging → Budgets, Reviewing runs); the changelog's `[Unreleased]`; the
+roadmap. If Phase 76's Z is open at the same time, one pass writes both phases' changelog,
+roadmap and `CLAUDE.md` lines. Then Fabulada's runs again, on the maintainer's word, once docket
+has fixed its context and count.
 
 ## How it went
 

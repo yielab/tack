@@ -59,7 +59,7 @@ Every row of ADR 0084's table and its four defaults, plus:
 | The CLI | `tack config <export \| import \| status \| history \| revert>`; `import` and `revert` print the plan and apply unless `--dry-run`; a plan with deletions is applied only with `--yes` (otherwise the plan is printed and the exit code is 1 with "add --yes to apply the N deletions"); `--prefer file\|board`; `--json` everywhere. `tack import` and `tack export --bundle` do not change. |
 | The MCP tool | `sync_config { project_id*, file (object) \| revision (number), dry_run (default true in the description), prefer }` → the plan or the apply. `create_outline`'s description gains one sentence: it never deletes; `sync_config` does. |
 | Words on screen | key, revision, configuration, kept, removed, conflict, "prefer the file / prefer the board". Never sync, merge, base, upsert, prune. |
-| Generated files | A task that changes an API type regenerates and stages them (`./scripts/regen-generated.sh`). |
+| Generated files | A task that changes an API type regenerates and stages them (`./scripts/regen-generated.sh`). When two branches conflict only in them, the integrator regenerates after the merge instead of resolving the conflict by hand. |
 | `CHANGELOG.md` | Written by task Z, by hand, in `[Unreleased]`. |
 
 ## Rounds
@@ -72,7 +72,7 @@ beside them. Worktrees under `/var/tmp/tack-worktrees/p76-<id>` cut from `develo
 |---|---|---|
 | 0 | ADR 0084, this plan, the roadmap section (integrator) | the maintainer's approval |
 | 1 | B (one transaction), M (the key and the comparison, pure) | — |
-| 2 | A (keys everywhere), S (the routes and the revisions) | B and M; A and S touch `migrations.rs` on two separate lines each |
+| 2 | A (keys everywhere), S (the routes and the revisions) | B and M, and Phase 75's V (it edits the `create_profile` and `check` A edits); A and S touch `migrations.rs` on two separate lines each, and neither builds a `Board`: both read B's `board_of` |
 | 3 | C (CLI and MCP), F (the screens) | S's routes; F also reads A's `key` on the wire |
 | 4 | Z (integrator): docs, changelog, the gate, a run against a copy of the real database | everything |
 
@@ -139,7 +139,11 @@ public signatures and return types do not change, so no caller outside the liste
   `state.repo.pool().begin_with("BEGIN IMMEDIATE")`, creates the project with `create_project_in`,
   calls `write`, commits, then reads the project back; the `delete_project` compensation and its
   comment go. `into_existing_project` opens the same transaction around `write`, commits, then
-  broadcasts as today. `info!(… "Outline written")` stays after the commit.
+  broadcasts as today. Its inline block that builds the `Board` becomes
+  `pub(crate) async fn board_of(state, project: &Project) -> ApiResult<OwnedBoard>`, where
+  `OwnedBoard` owns what `Board` borrows (fields, profiles, roles, sprints, fleets, level,
+  auto_start) and has `fn borrow(&self) -> Board<'_>`: B rewrites that function anyway, so A
+  changes the board's rows in one place and S only calls it. `info!(… "Outline written")` stays after the commit.
 - `ApiError::SectionFailed { section, source }`: the `kept` field goes; the message is
   "The {section} section could not be written; nothing was changed." The test at `error.rs` line
   175 keeps one row.
@@ -235,7 +239,7 @@ a new `crates/tack-db/tests/migrations/config_keys.rs` registered in
 (its row mapping, `create_field_in`), `crates/tack-db/src/repo/execution.rs`
 (`list_agent_profile_rows`, `write_agent_profile_in`), `crates/tack-api/src/handlers/runner_admin.rs`
 (`create_profile` line 893, the profile response struct `list_profiles` returns),
-`crates/tack-api/src/handlers/outline.rs` (`into_existing_project`'s `Board`, `write`'s maps),
+`crates/tack-api/src/handlers/outline.rs` (B's `board_of` and its `OwnedBoard`, `write`'s maps),
 `crates/tack-api/src/handlers/templates.rs` (`build_project_from_template` passes roles and profiles
 through unchanged — read only to confirm), `crates/tack-api/tests/handlers/bundle.rs`,
 `crates/tack-api/tests/handlers/crud.rs` (one row), the generated files.
@@ -300,7 +304,7 @@ line this task may change there), `crates/tack-db/src/migrations.rs` (`MIGRATION
 a new `crates/tack-db/src/repo/config.rs` (+ `pub mod config;` in `repo.rs`),
 `crates/tack-api/src/handlers/export.rs` (`bundle_of`, the revision on export),
 `crates/tack-api/src/handlers/templates.rs` (`save_project_as_template` reads `bundle_of`),
-`crates/tack-api/src/handlers/outline.rs` (`board_of`), a new `crates/tack-api/tests/handlers/config.rs`
+`crates/tack-api/src/handlers/outline.rs` (`read_outline` made `pub(crate)`; `board_of` is B's), a new `crates/tack-api/tests/handlers/config.rs`
 registered in `crates/tack-api/tests/handlers.rs`, a new `crates/tack-api/tests/fixtures/bundles/fabulada-config-v2.yaml`,
 the generated files.
 
@@ -318,10 +322,6 @@ the generated files.
   cleared) for `scope=bundle` and the new `scope=config` (same handler, items left out of the
   text). `templates::save_project_as_template` calls `bundle_of(state, &project, &[])` and drops its
   own copy of the mapping (lines 440–486).
-- `outline.rs`: `pub(crate) async fn board_of(state, project: &Project) -> ApiResult<OwnedBoard>`
-  where `OwnedBoard` owns what `Board` borrows (fields, profiles, roles, sprints, fleets, level,
-  auto_start) and has `fn borrow(&self) -> Board<'_>`; `into_existing_project` uses it (its inline
-  block, lines 412–442, goes).
 - `handlers/config.rs`: the five handlers of "Decided". `plan` and `apply` share one
   `async fn planned(state, project_id, body, query) -> ApiResult<(Merged, Plan, Vec<Deletion>, ConfigPlan)>`:
   read the file (body or revision), `bundle_of(project, &[])` as the board, `last_revision` as the
@@ -465,7 +465,8 @@ transaction; cite `apply_migrations`), `CHANGELOG.md` (`[Unreleased]`: Added —
 file, keys, revisions, `tack config`, `sync_config`; Changed — an import writes in one transaction,
 an export of a project file records a revision; Removed — the "import again to finish" answer),
 `docs/book/src/roadmap.md` (Phase 76 delivered; the gaps: per-field conflicts, items by key, the
-workflow in the file), `CLAUDE.md` (the "What's next" line), ADR 0084's status.
+workflow in the file), `CLAUDE.md` (the "What's next" line), ADR 0084's status. If Phase 75's Z
+is open at the same time, one pass writes both phases' changelog, roadmap and `CLAUDE.md` lines.
 
 **Do:** merge the branches in round order with one gate run per round; after round 3 copy the
 maintainer's database (`~/.local/share/tack/tack.db` or the path `tack serve` logs) to the
