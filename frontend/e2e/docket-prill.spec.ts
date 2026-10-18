@@ -106,7 +106,7 @@ test.use({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
 
 // ── Capture ──────────────────────────────────────────────────────────────────
 let shotIndex = 0;
-const summary: Record<string, unknown> = { base: BASE, work: WORK, shots: [] as string[], runs: {} as Record<string, unknown> };
+const summary: Record<string, unknown> = { base: BASE, work: WORK, shots: [] as string[], runs: {} as Record<string, unknown>, allowed: {} as Record<string, unknown> };
 
 async function shot(target: Page | Locator, name: string): Promise<void> {
   fs.mkdirSync(SHOTS, { recursive: true });
@@ -168,6 +168,48 @@ const json = (method: string, body: unknown): RequestInit => ({
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body),
 });
+
+/**
+ * Waits for a run to end, answering what docket asks along the way as the operator would: a
+ * gated command is allowed once, a consultation is pointed back at the item. A local model sometimes writes a gated command (a `2>/dev/null` redirect, a
+ * binary off docket's list) on its own; that is docket's policy working, not this run's subject.
+ * Each answer is recorded in the summary.
+ */
+async function waitAllowingApprovals(requestId: string, label: string, timeoutMs: number): Promise<string> {
+  const start = Date.now();
+  const allowed: string[] = [];
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    last = ((await apiFetch(`/executions/${requestId}`)) as { state?: string }).state ?? last;
+    if (['succeeded', 'failed', 'cancelled'].includes(last)) break;
+    if (last === 'waiting_decision') {
+      const attempts = await attemptsOf(requestId);
+      const n = attempts[attempts.length - 1]?.attempt_number;
+      const { data } = (await apiFetch(`/executions/${requestId}/attempts/${n}/decisions`)) as {
+        data: Array<{ decision_id: string; attempt_id: string; kind: string; prompt: string; state: string; options: Array<{ option_id: string }> }>;
+      };
+      for (const d of data.filter((d) => d.state === 'pending')) {
+        // A gated command is allowed once; a consultation (a member asking how to go on) is
+        // answered by pointing back at the item, which already says what to do.
+        const answer =
+          d.kind === 'approval'
+            ? { option_id: (d.options.find((o) => /once|allow/i.test(o.option_id)) ?? d.options[0]).option_id }
+            : { option_id: 'accept', text: 'Do exactly what the item says, with the tools you have, and finish.' };
+        await apiFetch(
+          `/attempts/${d.attempt_id}/decisions/${d.decision_id}/resolve`,
+          { ...json('POST', { answer }), headers: { 'content-type': 'application/json', 'x-tack-decision-token': DECISION_TOKEN } },
+        );
+        allowed.push(`${d.kind}: ${d.prompt}`);
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (allowed.length) (summary.allowed as Record<string, unknown>)[label] = allowed;
+  if (!['succeeded', 'failed', 'cancelled'].includes(last)) {
+    throw new Error(`timed out after ${timeoutMs}ms waiting for request ${requestId} to end (last seen: ${last || 'none'})`);
+  }
+  return last;
+}
 
 async function waitForRequestState(requestId: string, wantStates: readonly string[], timeoutMs: number): Promise<string> {
   const start = Date.now();
@@ -395,9 +437,10 @@ async function inspectFinishedRun(page: Page, key: ItemKey, requestId: string, c
   expect(verifyFailed, `prill did not fail: ${JSON.stringify(verifyFailed?.payload ?? null)}`).toBeUndefined();
   // The steps docket reported while it ran come first, in order, and the run's end after them.
   const kindsInOrder = events.map((e) => e.kind);
-  expect(kindsInOrder, 'the model was called').toContain('agent.model_turn');
-  expect(kindsInOrder, 'the agent used a tool').toContain('agent.tool_call');
-  expect(kindsInOrder.indexOf('agent.tool_call')).toBeLessThan(kindsInOrder.indexOf('attempt.terminal'));
+  // docket's team reports each step (hop) it runs, not each model call or tool inside one.
+  expect(kindsInOrder, 'a step of the team ran').toContain('agent.hop_started');
+  expect(kindsInOrder, 'a step of the team finished').toContain('agent.hop_finished');
+  expect(kindsInOrder.indexOf('agent.hop_finished')).toBeLessThan(kindsInOrder.indexOf('attempt.terminal'));
   const sequences = events.map((e) => e.sequence);
   expect(sequences, 'one event per sequence, oldest first').toEqual([...sequences].sort((a, b) => a - b));
   expect(new Set(sequences).size).toBe(sequences.length);
@@ -655,7 +698,7 @@ test.describe.serial('docket runs, prill verifies', () => {
     await expect(page.getByText('Running', { exact: true }).or(page.getByText('Finished', { exact: true })).first()).toBeVisible({ timeout: 120_000 });
     await shot(page, 'execution-running-bug');
 
-    const state = await waitForRequestState(requestId, ['succeeded', 'failed', 'cancelled'], 600_000);
+    const state = await waitAllowingApprovals(requestId, `run-5`, 600_000);
     expect(state, 'the bug-fix run succeeded').toBe('succeeded');
     const { pack, branch } = await inspectFinishedRun(page, 'bug', requestId, true);
     expect(pack.criteria.find((c) => c.id === 'suite')?.status, 'prill ran the suite in its sandbox and it passed').toBe('passed');
@@ -669,7 +712,7 @@ test.describe.serial('docket runs, prill verifies', () => {
   test('06 the feature: a new function with its test', async ({ page }) => {
     await ensureRunner();
     const requestId = await runFromBoard(page, 'feature');
-    const state = await waitForRequestState(requestId, ['succeeded', 'failed', 'cancelled'], 600_000);
+    const state = await waitAllowingApprovals(requestId, `run-6`, 600_000);
     expect(state, 'the feature run succeeded').toBe('succeeded');
     const { pack, branch } = await inspectFinishedRun(page, 'feature', requestId, true);
     expect(pack.criteria.find((c) => c.id === 'multiply_tested')?.status).toBe('passed');
@@ -714,7 +757,7 @@ test.describe.serial('docket runs, prill verifies', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const listed = (await apiFetch(`/executions?item_id=${itemId}`)) as { data: Array<{ request_id: string }> };
     const requestId = listed.data[0]!.request_id;
-    const state = await waitForRequestState(requestId, ['succeeded', 'failed', 'cancelled'], 600_000);
+    const state = await waitAllowingApprovals(requestId, `run-7`, 600_000);
     expect(state, 'the documentation run succeeded').toBe('succeeded');
     const { pack, branch } = await inspectFinishedRun(page, 'task', requestId, true);
     expect(pack.criteria.find((c) => c.id === 'changelog')?.status).toBe('passed');
@@ -760,27 +803,54 @@ test.describe.serial('docket runs, prill verifies', () => {
     await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
     await waitForApp(page);
     await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
-    await expect(page.getByText('Pending', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
-    // The question names the command and docket's reason, not only the tool.
-    const question = page.getByText(/^Allow bash to run "sh /).first();
-    await expect(question).toBeVisible();
-    await expect(question).toContainText("docket's policy:");
-    // The timeline is live: the call that is waiting is already on it.
-    await expect(page.getByText('The agent ran a tool').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/^bash: sh /).first()).toBeVisible();
-    await page.setViewportSize({ width: 1440, height: 2000 });
-    await page.waitForTimeout(300);
-    await shot(page.getByRole('dialog', { name: 'Item details' }), 'decision-pending');
     const tokenField = page.getByLabel('Your decision token');
     await tokenField.fill(DECISION_TOKEN);
     await tokenField.locator('xpath=ancestor::div[.//button][1]').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Decision token saved for this browser session.')).toBeVisible();
-    // The option's input is visually hidden behind a styled span (`RadioRow`), so a
-    // plain click lands on the span; set the input directly.
-    await page.getByRole('radio', { name: /allow/i }).first().check({ force: true });
-    await page.getByRole('button', { name: 'Resolve', exact: true }).first().click();
-    await expect(page.getByText('Decision resolved.')).toBeVisible();
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // docket asks in one of two ways, and the inbox answers each as a person would: a gated
+    // command (approval) names the tool and docket's policy and is allowed; a consultation from a
+    // member that cannot do the step itself (the lead has no shell) takes its first option.
+    const kinds: string[] = [];
+    for (let answered = 0; answered < 3; answered++) {
+      const attempts = await attemptsOf(requestId);
+      const n = attempts[attempts.length - 1]?.attempt_number;
+      const decisions = ((await apiFetch(`/executions/${requestId}/attempts/${n}/decisions`)) as {
+        data: Array<{ state: string; kind?: string; prompt?: string }>;
+      }).data;
+      const pending = decisions.find((d) => d.state === 'pending');
+      if (!pending) break;
+      kinds.push(pending.kind ?? 'unknown');
+      await expect(page.getByText('Pending', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+      if (pending.kind === 'approval') {
+        const question = page.getByText(/^Allow bash\b/).first();
+        await expect(question).toBeVisible();
+        await expect(question).toContainText("docket's policy:");
+      } else {
+        await expect(page.getByText(pending.prompt!.slice(0, 40), { exact: false }).first()).toBeVisible();
+      }
+      await page.setViewportSize({ width: 1440, height: 2000 });
+      await page.waitForTimeout(300);
+      await shot(page.getByRole('dialog', { name: 'Item details' }), `decision-pending-${answered + 1}`);
+      // The option's input is visually hidden behind a styled span (`RadioRow`), so a
+      // plain click lands on the span; set the input directly.
+      await page.getByRole('radio').first().check({ force: true });
+      await page.getByRole('button', { name: 'Resolve', exact: true }).first().click();
+      await expect(page.getByText('Decision resolved.')).toBeVisible();
+      await page.setViewportSize({ width: 1440, height: 900 });
+      // Either the run goes on to its end or docket asks again.
+      const next = Date.now();
+      while (Date.now() - next < 300_000) {
+        const st = ((await apiFetch(`/executions/${requestId}`)) as { state: string }).state;
+        if (st !== 'waiting_decision' && st !== 'running' && st !== 'claimed' && st !== 'queued') break;
+        const again = ((await apiFetch(`/executions/${requestId}/attempts/${n}/decisions`)) as { data: Array<{ state: string }> }).data;
+        if (st === 'waiting_decision' && again.some((d) => d.state === 'pending')) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      await page.reload();
+      await waitForApp(page);
+      await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    }
+    testInfo.annotations.push({ type: 'note', description: `docket asked: ${kinds.join(', ')}` });
     const end = await waitForRequestState(requestId, ['succeeded', 'failed', 'cancelled'], 600_000);
     (summary.runs as Record<string, unknown>).ask = { requestId, asked: true, state: end };
     expect(end, 'the run went on after the answer').toBe('succeeded');
