@@ -155,13 +155,8 @@ running.
   no environment variable. Without it the embedded runner runs on defaults: no verifier, no branch
   push and no docket. A service installed by `tack service install` sets no such file; add
   `Environment=TACK_LOCAL_RUNNER_CONFIG=<path>` to its unit if you need one.
-- **Its log lines** are silent under the default logging, because the default filter names only the
-  board's own crates. To see enrollment, claims and completions, set `RUST_LOG` yourself:
-
-  ```bash
-  RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
-    tack serve --with-runner
-  ```
+- **Its log lines** are in the board's log by default: enrollment, claims, refusals and
+  completions. For every step, start the board with `RUST_LOG=tack=debug`.
 
 Everything else on this page (agent lookup, credentials, workspace storage, what happens after a
 run) applies to an embedded runner exactly as to a separate one.

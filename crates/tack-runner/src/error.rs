@@ -13,6 +13,20 @@ pub enum ConfigError {
          each agent signs in with its own login, so remove the table"
     )]
     ProviderTable,
+    /// A top-level key the file's schema does not have, named by the key alone: never a value.
+    /// `is_table` is set when the file wrote it as a `[table]`.
+    #[error(
+        "{}",
+        if *.is_table {
+            format!(
+                "runner configuration has an unknown table [{}]: the runner's settings go at the top of the file",
+                .key
+            )
+        } else {
+            format!("runner configuration has an unknown key {}", .key)
+        }
+    )]
+    UnknownKey { key: String, is_table: bool },
     #[error("runner configuration could not be read")]
     Unreadable,
     #[error("runner id must not be empty")]

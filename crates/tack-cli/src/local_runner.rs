@@ -438,6 +438,7 @@ pub async fn serve() -> anyhow::Result<()> {
     if server_config.local_runner_enable {
         ensure_loopback(&server_config)?;
     }
+    warn_if_data_folder_database_is_unused(&server_config);
 
     let control = Arc::new(EmbeddedRunnerControl::new(server_config)?);
     let local_runner: Arc<dyn tack_api::LocalRunnerControl> = control.clone();
@@ -471,6 +472,30 @@ pub async fn serve() -> anyhow::Result<()> {
     match server_task.await {
         Ok(result) => result,
         Err(join_error) => Err(anyhow::anyhow!("server task panicked: {join_error}")),
+    }
+}
+
+/// The default database is `tack.db` in the folder the server was started in. When nothing names
+/// a database and a different `tack.db` already sits in the data folder, say which one this
+/// start uses, so starting from the wrong folder does not look like losing everything.
+fn warn_if_data_folder_database_is_unused(config: &tack_api::config::AppConfig) {
+    if std::env::var_os("TACK_DATABASE_URL").is_some()
+        || config.database_url != tack_api::config::AppConfig::default().database_url
+    {
+        return;
+    }
+    let (Ok(root), Some(used)) = (crate::service::data_root(), config.db_file_path()) else {
+        return;
+    };
+    let kept = root.join("tack.db");
+    let used = std::path::absolute(&used).unwrap_or(used);
+    if kept.exists() && used != kept {
+        eprintln!(
+            "tack: this start uses the database in this folder, {}, not the one in your data folder, {}. \
+             To use that one, start tack from its folder or set TACK_DATABASE_URL.",
+            used.display(),
+            kept.display()
+        );
     }
 }
 

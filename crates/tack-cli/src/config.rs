@@ -58,9 +58,17 @@ fn read_rc_file() -> Option<RcFile> {
     toml::from_str(&content).ok()
 }
 
+/// `dirs::data_dir()/tack` — the OS's per-user application-data folder, the one place the
+/// terminal path's server keeps its files. Fixed to agree with `tack-desktop`'s own
+/// data-folder code without the two sharing a dependency. It lives here, in the library,
+/// because the token lookup below and the binary's `service` and `serve` all read it.
+pub fn data_root() -> Option<std::path::PathBuf> {
+    dirs::data_dir().map(|dir| dir.join("tack"))
+}
+
 /// The token a local `tack serve` keeps in `<data root>/api-token`.
 fn read_server_token_file() -> Option<String> {
-    let path = dirs::data_dir()?.join("tack").join("api-token");
+    let path = data_root()?.join("api-token");
     let token = std::fs::read_to_string(path).ok()?.trim().to_string();
     (!token.is_empty()).then_some(token)
 }

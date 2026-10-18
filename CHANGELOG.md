@@ -143,6 +143,14 @@ automation a template carries.
   yet holds the merge with "Team … is not reported yet by this computer". The Ceiling rung never
   promises more than what it lists, and the Teams rung shows the board's own verdict on each
   team.
+- **The board's log shows the runner.** The default log filter covers every Tack crate, so the
+  embedded runner's own lines appear without setting `RUST_LOG`. The start-up line names the
+  database by its absolute path, says when a build serves the API only, and `tack serve` warns
+  when it uses a database in the current folder while the data folder holds another.
+- A runner configuration file with a key it does not know now says which one, and a `[runner]`
+  table says the settings go at the top of the file, instead of "configuration is invalid".
+- A project file exported with **Start a task by itself** off now says so, and importing it
+  turns the switch off.
 - Turning on **Start a task by itself** saves the status the list shows; before, nothing started
   until the status was picked by hand.
 - A run on docket shows "Sandboxed by docket in its own jail" in the run dialog and on the

@@ -67,6 +67,28 @@ fn a_configured_log_file_receives_the_lines_that_are_logged() {
     );
 }
 
+/// A line from another Tack crate (the runner's transport) is kept by the default filter: the
+/// filter lists the `tack` prefix, not each crate, so a new crate cannot be silent again.
+#[test]
+fn the_default_filter_keeps_the_runner_crates_lines() {
+    let dir_guard = workdir("log-runner-target");
+    let path = dir_guard.path().join("tack.log");
+    let config = AppConfig {
+        log_file: Some(path.to_string_lossy().into_owned()),
+        log_level: "info".into(),
+        log_json: false,
+        ..AppConfig::default()
+    };
+    tracing::subscriber::with_default(tracing_subscriber_for(&config), || {
+        tracing::info!(target: "tack_runner::transport", marker = "from-the-runner", "runner line");
+    });
+    let written = fs::read_to_string(&path).expect("the log file must exist");
+    assert!(
+        written.contains("from-the-runner"),
+        "the runner's line was filtered out: {written:?}"
+    );
+}
+
 /// The DB swap succeeds but the storage swap fails — the whole
 /// operation must roll back so the original DB is intact and bootable.
 #[test]

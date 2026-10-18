@@ -221,11 +221,11 @@ async fn bundle_response(
         roles: &roles,
         sprints: &sprints,
         autonomy,
-        auto_start: BundleAutoStart {
-            enabled: project.auto_start_enabled.then_some(true),
-            status: project.auto_start_status.clone(),
-            max_open: Some(project.auto_start_max_open),
-        },
+        auto_start: BundleAutoStart::from_project(
+            project.auto_start_enabled,
+            project.auto_start_status.clone(),
+            project.auto_start_max_open,
+        ),
         items,
         item_roles: &item_roles,
         item_fields: &item_fields,

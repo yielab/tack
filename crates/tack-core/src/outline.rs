@@ -282,6 +282,18 @@ pub struct BundleAutoStart {
     pub max_open: Option<i64>,
 }
 
+impl BundleAutoStart {
+    /// A project's auto-start section as the file writes it: the switch is always written, on or
+    /// off, so importing the file into a project whose switch is on turns it off.
+    pub fn from_project(enabled: bool, status: Option<String>, max_open: i64) -> Self {
+        Self {
+            enabled: Some(enabled),
+            status,
+            max_open: Some(max_open),
+        }
+    }
+}
+
 fn is_false(value: &bool) -> bool {
     !*value
 }

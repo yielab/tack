@@ -85,6 +85,32 @@ fn a_provider_table_is_refused() {
     assert!(error.to_string().contains("[provider]"));
 }
 
+/// A key the file does not have is named by its key; a `[table]` says where the runner's settings
+/// go; a value never appears in the message, whatever the key held.
+#[test]
+fn an_unknown_key_is_named_and_never_its_value() {
+    let secret = "do-not-echo-this-credential";
+    for (toml, expected) in [
+        (
+            "[runner]\nenrollment_credential = \"do-not-echo-this-credential\"".to_owned(),
+            "unknown table [runner]: the runner's settings go at the top of the file",
+        ),
+        (
+            "runer_id = \"do-not-echo-this-credential\"".to_owned(),
+            "unknown key runer_id",
+        ),
+    ] {
+        let error = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: Some(&toml),
+            ..RunnerConfigSources::default()
+        })
+        .expect_err("an unknown key must be refused");
+        let text = error.to_string();
+        assert!(text.contains(expected), "{text}");
+        assert!(!text.contains(secret), "{text}");
+    }
+}
+
 /// The verifier is prill unless the file says otherwise; `kind = "command"`
 /// is the operator's own program, and a kind this build does not know is
 /// rejected rather than run as something else.

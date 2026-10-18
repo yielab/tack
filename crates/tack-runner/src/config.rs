@@ -253,14 +253,26 @@ impl RunnerConfig {
         let mut config = Self::defaults();
 
         if let Some(contents) = sources.file_toml {
-            let file: FileConfig = toml::from_str(contents).map_err(|_| {
-                let names_provider = toml::from_str::<toml::Table>(contents)
-                    .is_ok_and(|table| table.contains_key("provider"));
-                if names_provider {
-                    ConfigError::ProviderTable
-                } else {
-                    ConfigError::Invalid
+            let file: FileConfig = toml::from_str(contents).map_err(|error| {
+                let Ok(table) = toml::from_str::<toml::Table>(contents) else {
+                    return ConfigError::Invalid;
+                };
+                if table.contains_key("provider") {
+                    return ConfigError::ProviderTable;
                 }
+                // serde names the key it refused; the key is looked up in the file's own
+                // top-level table so only a key that is really there is ever reported, never
+                // a value or any parser text.
+                let message = error.message();
+                table
+                    .iter()
+                    .find(|(key, _)| message.starts_with(&format!("unknown field `{key}`")))
+                    .map_or(ConfigError::Invalid, |(key, value)| {
+                        ConfigError::UnknownKey {
+                            key: key.clone(),
+                            is_table: value.is_table(),
+                        }
+                    })
             })?;
             if let Some(verify) = file.verify {
                 config.verify = verify;
