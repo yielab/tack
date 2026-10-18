@@ -310,7 +310,8 @@ pub struct CreateExecution {
     #[serde(default)]
     pub repository_snapshot: Option<Value>,
     /// `tack_orch::execution::PermissionPolicy` (`{tools, network,
-    /// approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
+    /// approvals}`). `network` absent: the resolved profile's `tool_policy.network`, else
+    /// off; `true` or `false` is kept as sent. `approvals` is `"auto"` or `"ask"`; absent means
     /// `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
     /// matched harness does not attest `decisions: supported`.
     pub permission_policy: Value,
@@ -1367,6 +1368,17 @@ async fn load_profile(
         ));
     };
     let limits = serde_json::from_str::<Value>(&limits).unwrap_or_else(|_| json!({}));
+    let tool_policy = serde_json::from_str::<Value>(&tool_policy).unwrap_or_else(|_| json!({}));
+    // A request that does not say `network` gets what the profile's role needs; one that does,
+    // true or false, keeps its own.
+    if let Some(policy) = input.permission_policy.as_object_mut()
+        && !policy.contains_key("network")
+    {
+        policy.insert(
+            "network".into(),
+            json!(tack_core::run_defaults::profile_network(&tool_policy)),
+        );
+    }
     let (budgets, timeout_seconds, source) = run_limits(input, &limits)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);
@@ -1376,7 +1388,7 @@ async fn load_profile(
     Ok(json!({
         "name": name,
         "instructions": instructions,
-        "tool_policy": serde_json::from_str::<Value>(&tool_policy).unwrap_or_else(|_| json!({})),
+        "tool_policy": tool_policy,
         "timeout_seconds": timeout_seconds,
         "budgets": input.budgets,
     }))

@@ -3565,7 +3565,8 @@ export interface components {
             origin?: string | null;
             /**
              * @description `tack_orch::execution::PermissionPolicy` (`{tools, network,
-             *     approvals}`). `approvals` is `"auto"` or `"ask"`; absent means
+             *     approvals}`). `network` absent: the resolved profile's `tool_policy.network`, else
+             *     off; `true` or `false` is kept as sent. `approvals` is `"auto"` or `"ask"`; absent means
              *     `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
              *     matched harness does not attest `decisions: supported`.
              */

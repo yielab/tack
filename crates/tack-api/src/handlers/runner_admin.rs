@@ -1039,7 +1039,7 @@ fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
     })
 }
 
-/// 400 when `tool_policy.agent` is not a known agent kind, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
+/// 400 when `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
 async fn check_profile_fields(
     repo: &Repository,
     tool_policy: Option<&Value>,
@@ -1056,6 +1056,16 @@ async fn check_profile_fields(
                 HARNESS_KINDS.join(", ")
             ),
             json!({"field": "tool_policy.agent"}),
+        ));
+    }
+    if let Some(policy) = tool_policy
+        && let Err(message) = tack_core::run_defaults::check_network(policy)
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "tool_policy.network"}),
         ));
     }
     if let Some(team) = tool_policy.and_then(|p| p.get("docket")?.get("team")) {

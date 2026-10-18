@@ -179,8 +179,10 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 - **Ask before each action.** On when the agent is not sandboxed, off otherwise. When on, the agent pauses
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
-- **Web tools.** Off by default. Turning it on lets the agent fetch pages and search the web. Off turns
-  those tools off, but the agent's shell can still reach the network. A line under the switches says
+- **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on
+  the Agents page), in which case the switch starts on and you can turn it off for this run. A choice the
+  task remembered wins over the profile. Turning it on lets the agent fetch pages and search the web. Off
+  turns those tools off, but the agent's shell can still reach the network. A line under the switches says
   whether the agent is sandboxed or has your user's access to this machine; see
   [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
 - **Advanced.** The computer, the agent, the model, the allowed tools, the **Token limit** and the

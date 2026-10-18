@@ -10,7 +10,8 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * Create/edit/delete UI for `agent_profiles`. The tool policy is built from a
  * per-harness checklist (`KNOWN_TOOLS`) plus a free-text line, and stored as
  * `{"tools": {"<harness>": [names] | ["*"]}}`; keys other than `tools` in an
- * existing policy are kept untouched on edit. The limits form edits `limits.budgets.tokens`
+ * existing policy are kept untouched on edit, except `network`: the "needs the network" box sets
+ * `network: true`, and unticked it leaves the key out (absent is off). The limits form edits `limits.budgets.tokens`
  * and `limits.timeout_seconds`; any other key in an existing `limits` is kept.
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
@@ -70,6 +71,7 @@ const AgentProfilesPanel: Component = () => {
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
+  const [network, setNetwork] = createSignal(false);
   const [tokenLimit, setTokenLimit] = createSignal('');
   const [timeLimit, setTimeLimit] = createSignal('');
   const [saving, setSaving] = createSignal(false);
@@ -82,6 +84,7 @@ const AgentProfilesPanel: Component = () => {
     setSummary(profile?.summary ?? '');
     setInstructions(profile?.instructions ?? '');
     setTools(toolsFromPolicy(profile?.tool_policy));
+    setNetwork((profile?.tool_policy as { network?: unknown } | null)?.network === true);
     const { tokens, seconds } = limitsFrom(profile?.limits);
     setTokenLimit(tokens);
     setTimeLimit(seconds);
@@ -95,8 +98,10 @@ const AgentProfilesPanel: Component = () => {
     if (!name().trim() || !instructions().trim() || limitsInvalid()) return;
     const existing = editing();
     const base = (existing?.tool_policy ?? {}) as Record<string, unknown>;
+    const { network: _network, ...rest } = base;
     const tool_policy = {
-      ...base,
+      ...rest,
+      ...(network() ? { network: true } : {}),
       tools: Object.fromEntries(HARNESSES.map((h) => [h, namesFor(h, tools[h])])),
     };
     // The edited keys replace the profile's; every other key of its limits stays.
@@ -265,6 +270,15 @@ const AgentProfilesPanel: Component = () => {
             value={timeLimit()}
             onInput={(e) => setTimeLimit(e.currentTarget.value)}
           />
+          <label class="flex items-start gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+            <input type="checkbox" class="mt-0.5" checked={network()} onChange={(e) => setNetwork(e.currentTarget.checked)} />
+            <span>
+              This role needs the network (web search and reading sources)
+              <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Its runs start with web tools on, including the ones that start by themselves. A run can still turn them off.
+              </span>
+            </span>
+          </label>
           <FieldShell label="Tools">
             <div class="space-y-3">
               <For each={HARNESSES}>

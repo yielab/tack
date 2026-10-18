@@ -2439,6 +2439,33 @@ async fn requests_of(repo: &Repository, item_id: &str) -> Vec<(String, String, S
     .unwrap()
 }
 
+async fn network_of(repo: &Repository, item_id: &str) -> Option<bool> {
+    sqlx::query_scalar(
+        "SELECT json_extract(request_snapshot, '$.permission_policy.network') \
+         FROM execution_requests WHERE item_id = ?",
+    )
+    .bind(item_id)
+    .fetch_optional(repo.pool())
+    .await
+    .unwrap()
+    .flatten()
+}
+
+async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Value) {
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id,
+            name: id,
+            instructions: "x",
+            tool_policy: &tool_policy.to_string(),
+            limits: "{}",
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("profile");
+}
+
 async fn status_of(repo: &Repository, item_id: &str) -> String {
     sqlx::query_scalar("SELECT status FROM items WHERE id = ?")
         .bind(item_id)
@@ -2480,6 +2507,8 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     .await
     .unwrap();
     assert_eq!(approvals.as_deref(), Some("ask"));
+    // A profile that does not say it needs the network starts a run without it.
+    assert_eq!(network_of(&repo, &item_id).await, Some(false));
     let said: Vec<String> =
         sqlx::query_scalar("SELECT content FROM comments WHERE item_id = ? AND author = 'system'")
             .bind(&item_id)
@@ -2507,4 +2536,82 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     tack_api::auto_start::tick(&state).await;
     assert!(requests_of(&repo, &next).await.is_empty());
     assert_eq!(status_of(&repo, &next).await, "To Do");
+}
+
+// A role that needs the network (`tool_policy.network`) starts its auto-started run with it.
+#[tokio::test]
+async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {
+    let (repo, state, _item_id, project_id) = auto_start_board().await;
+    add_profile_with_policy(&repo, "profile-net", &json!({"network": true})).await;
+    let research = add_item(&repo, project_id, "research").await;
+    add_role(&repo, &research, "Research", Some("profile-net")).await;
+    tack_api::auto_start::tick(&state).await;
+    assert_eq!(requests_of(&repo, &research).await.len(), 1);
+    assert_eq!(network_of(&repo, &research).await, Some(true));
+}
+
+// A run that does not say `network` takes its profile's; one that says so keeps its own; a
+// profile without the key behaves as before (off).
+#[tokio::test]
+async fn a_runs_network_comes_from_the_request_then_the_profile_then_off() {
+    let (app, repo, item_id) = setup().await;
+    add_profile_with_policy(&repo, "profile-net-on", &json!({"network": true})).await;
+    add_profile_with_policy(&repo, "profile-net-off", &json!({"network": false})).await;
+    // (profile, the request's network, what the run gets)
+    let rows = [
+        ("profile-net-on", None, true),
+        ("profile-net-on", Some(false), false),
+        ("profile-net-on", Some(true), true),
+        ("profile-net-off", None, false),
+        ("profile-net-off", Some(true), true),
+        ("profile-c1", None, false),
+        ("profile-c1", Some(true), true),
+    ];
+    for (n, (profile, asked, network)) in rows.into_iter().enumerate() {
+        let mut body = bare_body(&item_id, &format!("k-network-{n}"));
+        body["agent_profile_id"] = json!(profile);
+        body["permission_policy"] = match asked {
+            Some(asked) => json!({"tools": ["shell"], "network": asked}),
+            None => json!({"tools": ["shell"]}),
+        };
+        let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::OK, "row {n}: {created}");
+        let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+        assert_eq!(
+            snapshot["permission_policy"]["network"], network,
+            "row {n}: {profile} asked {asked:?}"
+        );
+    }
+}
+
+// `tool_policy.network` is a boolean or absent, refused with the field named when a profile is
+// made or changed.
+#[tokio::test]
+async fn a_profile_whose_network_is_not_a_boolean_is_refused() {
+    let (app, _repo, _item_id) = setup().await;
+    for network in [json!("yes"), json!(1), json!(null)] {
+        let create =
+            json!({"name": "Odd", "instructions": "x", "tool_policy": {"network": network}});
+        let (status, err) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{network}: {err}");
+        assert_eq!(err["error"]["details"]["field"], "tool_policy.network");
+        assert_eq!(
+            err["error"]["message"],
+            "tool_policy.network must be true or false"
+        );
+        let (status, err) = snd(
+            &app,
+            "PATCH",
+            "/agent-profiles/profile-c1",
+            json!({"tool_policy": {"network": network}}).to_string(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{network}: {err}");
+        assert_eq!(err["error"]["details"]["field"], "tool_policy.network");
+    }
+    for network in [json!(true), json!(false)] {
+        let create = json!({"name": format!("Net {network}"), "instructions": "x", "tool_policy": {"network": network}});
+        let (status, body) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
+        assert_eq!(status, StatusCode::OK, "{network}: {body}");
+    }
 }

@@ -69,6 +69,8 @@ export interface RunFlowProps {
   /** What the chosen agent's sandbox is, in words; null when the runner does not say. */
   sandboxLine: Accessor<{ text: string; unsandboxed: boolean } | null>;
   onApprovals: () => void;
+  /** The person set the Web tools box, so a profile change no longer fills it. */
+  onNetwork: () => void;
   /** The selected runner's own config has a verifier / pushes branches. */
   verifyConfigured: Accessor<boolean>;
   pushConfigured: Accessor<boolean>;
@@ -245,7 +247,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             class="h-4 w-4"
             style={{ 'accent-color': 'var(--color-primary-600)' }}
             checked={props.form.allowNetwork}
-            onChange={(e) => props.setForm('allowNetwork', e.currentTarget.checked)}
+            onChange={(e) => { props.onNetwork(); props.setForm('allowNetwork', e.currentTarget.checked); }}
           />
           Web tools
         </label>

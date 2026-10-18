@@ -51,6 +51,12 @@ automation a template carries, and the removal of dollars per day.
 - **Usage per model.** A run's usage keeps its tokens per model (Claude Code's `modelUsage`,
   docket's `usage.byModel`); one query prices the Factory page and the daily dollar budget; the
   page shows cost by model and, when a run names a team, by team.
+- **A profile can say its role needs the network.** The profile form on the Agents page has a box,
+  "This role needs the network (web search and reading sources)", and the project file takes
+  `tool_policy.network: true`; absent is off, as before. The run dialog's **Web tools** switch
+  starts at the chosen profile's value (a value the task remembered or you set wins), a run that
+  does not say `network` takes the profile's, and a task that starts by itself no longer always
+  runs without the network. Anything but `true` or `false` is refused where the profile is saved.
 - **A task can repeat** weekly, monthly or quarterly: closing it creates the next one once, due
   at the next period's end, in the first to-do column. In the outline, the CSV, `tack add
   --recurrence`, the task header and a badge.

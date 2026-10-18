@@ -223,18 +223,23 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
             .await
             .ok()
             .flatten();
+    let policy = policy.and_then(|text| serde_json::from_str::<Value>(&text).ok());
     let tools = policy
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .as_ref()
         .map(|policy| policy["tools"][harness.as_str()].clone())
         .filter(Value::is_array)
         .unwrap_or_else(|| json!([]));
+    // Nobody ticks a box here, so the profile's role says whether the run may reach the network.
+    let network = policy
+        .as_ref()
+        .is_some_and(tack_core::run_defaults::profile_network);
     // The Run dialog's rule: auto where the machine sandboxes this agent, ask
     // where it does not. Absent `approvals` means auto, so it is set only when
     // some eligible machine reports no sandbox for the agent.
     let approvals = if sandboxed_everywhere(state, resolved.fleet_id.as_deref(), &harness).await {
-        json!({ "tools": tools, "network": false })
+        json!({ "tools": tools, "network": network })
     } else {
-        json!({ "tools": tools, "network": false, "approvals": "ask" })
+        json!({ "tools": tools, "network": network, "approvals": "ask" })
     };
     let input = CreateExecution {
         item_id: candidate.item_id,

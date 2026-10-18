@@ -119,6 +119,43 @@ describe('AgentProfilesPanel', () => {
     });
   });
 
+  it('the_network_box_reads_and_writes_tool_policy_network_and_leaves_the_other_keys', async () => {
+    const profile = { agent_profile_id: 'ap_r', name: 'researcher', instructions: 'Read sources.', tool_policy: { agent: 'docket', network: true }, limits: {} };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      if (method === 'GET') return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [profile] }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, agent_profile_id: 'ap_new', name: 'x' }), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    const box = () => container.querySelector<HTMLInputElement>('input[type="checkbox"]:not([aria-label])')!;
+    const send = (label: string) => Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === label)!.click();
+    const body = (method: string) => JSON.parse((fetchMock.mock.calls.find((c) => (c[1] as RequestInit)?.method === method)![1] as RequestInit).body as string);
+    send('Edit');
+    await flush();
+    expect(container.textContent).toContain('This role needs the network (web search and reading sources)');
+    expect(box().checked).toBe(true);
+    box().click();
+    await flush();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    // Unticked: the key is gone (absent is off); the agent the profile names stays.
+    expect(body('PATCH').tool_policy.network).toBeUndefined();
+    expect(body('PATCH').tool_policy.agent).toBe('docket');
+    // A new profile starts unticked, and ticking it writes true.
+    send('+ Create agent profile');
+    await flush();
+    expect(box().checked).toBe(false);
+    box().click();
+    const type = (el: HTMLInputElement | HTMLTextAreaElement, v: string) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    type(container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!, 'scout');
+    type(container.querySelector<HTMLTextAreaElement>('textarea')!, 'Find sources.');
+    await flush();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    expect(body('POST').tool_policy.network).toBe(true);
+  });
+
   it('shows the Built-in chip and no Delete for a built-in, Delete for a custom profile', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
