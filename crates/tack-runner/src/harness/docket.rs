@@ -107,9 +107,9 @@ fn capabilities() -> FeatureCapabilities {
              and its process group",
         ),
         resume: capability(
-            CapabilitySupport::Unsupported,
-            "a runner that restarts reads the task's state and reports it; it does not \
-             reattach to the hop",
+            CapabilitySupport::Supported,
+            "a task still running when the runner restarts is taken back from the journal's \
+             handle and followed to its end; the time it ran before is not counted against it",
         ),
         decisions: capability(
             CapabilitySupport::Supported,
@@ -282,6 +282,29 @@ impl DocketAdapter {
             .await
             .get(process_id)
             .map(|live| Arc::clone(&live.info))
+    }
+
+    /// Makes the task known to `wait`, `cancel` and the channels the engine
+    /// takes, under the handle `pod/task`.
+    async fn register(&self, info: RunInfo) -> LocalRunHandle {
+        let process_id = format!("{}/{}", info.pod, info.task);
+        let (questions_tx, questions_rx) = mpsc::channel(1);
+        let (answers_tx, answers_rx) = mpsc::channel(1);
+        let (progress_tx, progress_rx) = mpsc::channel(PROGRESS_BUFFER);
+        self.live.lock().await.insert(
+            process_id.clone(),
+            Live {
+                info: Arc::new(info),
+                decisions: Some((questions_rx, answers_tx)),
+                progress: Some(progress_rx),
+                wait: Some(WaitSide {
+                    questions: questions_tx,
+                    answers: answers_rx,
+                    progress: progress_tx,
+                }),
+            },
+        );
+        LocalRunHandle { process_id }
     }
 
     /// `git reset --hard` of the runner's worktree onto the task's branch.
@@ -1104,33 +1127,17 @@ impl HarnessAdapter for DocketAdapter {
             }
         };
 
-        let process_id = format!("{pod}/{task}");
-        let (questions_tx, questions_rx) = mpsc::channel(1);
-        let (answers_tx, answers_rx) = mpsc::channel(1);
-        let (progress_tx, progress_rx) = mpsc::channel(PROGRESS_BUFFER);
-        let info = Arc::new(RunInfo {
-            pod,
-            task,
-            attempt_id,
-            workspace: spec.workspace.path.clone(),
-            started_at: Utc::now(),
-            timeout: Duration::from_secs(request.timeout_seconds),
-            refused,
-        });
-        self.live.lock().await.insert(
-            process_id.clone(),
-            Live {
-                info,
-                decisions: Some((questions_rx, answers_tx)),
-                progress: Some(progress_rx),
-                wait: Some(WaitSide {
-                    questions: questions_tx,
-                    answers: answers_rx,
-                    progress: progress_tx,
-                }),
-            },
-        );
-        Ok(LocalRunHandle { process_id })
+        Ok(self
+            .register(RunInfo {
+                pod,
+                task,
+                attempt_id,
+                workspace: spec.workspace.path.clone(),
+                started_at: Utc::now(),
+                timeout: Duration::from_secs(request.timeout_seconds),
+                refused,
+            })
+            .await)
     }
 
     async fn decision_channels(
@@ -1227,6 +1234,34 @@ impl HarnessAdapter for DocketAdapter {
             }
             _ => RecoveryObservation::Ambiguous,
         })
+    }
+
+    /// The task is in docket's daemon, not in a child of the runner, so it
+    /// outlives a restart: the handle is rebuilt from the journal's `pod/task`
+    /// and the claim, and `follow` reads the cursor it persisted. The attempt's
+    /// time starts over here, from the claim's own timeout.
+    async fn resume(
+        &self,
+        spec: &ExecutionSpec,
+        record: &AttemptJournal,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        let (pod, task) = record
+            .process_id
+            .as_deref()
+            .and_then(|process_id| process_id.split_once('/'))
+            .filter(|(_, task)| !task.starts_with("rejected-"))
+            .ok_or(HarnessError::RecoveryUnavailable)?;
+        Ok(self
+            .register(RunInfo {
+                pod: pod.to_owned(),
+                task: task.to_owned(),
+                attempt_id: record.attempt_id.as_str().to_owned(),
+                workspace: record.workspace.path.clone(),
+                started_at: Utc::now(),
+                timeout: Duration::from_secs(spec.work.request.timeout_seconds),
+                refused: None,
+            })
+            .await)
     }
 }
 

@@ -1091,9 +1091,24 @@ mod slot_loop {
 
         async fn reconcile(
             &self,
-            _journal: &crate::client::journal::AttemptJournal,
+            journal: &crate::client::journal::AttemptJournal,
         ) -> Result<RecoveryObservation, HarnessError> {
-            Ok(RecoveryObservation::ProcessStopped)
+            // A run left with a recorded process is still running.
+            Ok(if journal.process_id.is_some() {
+                RecoveryObservation::ProcessRunning
+            } else {
+                RecoveryObservation::ProcessStopped
+            })
+        }
+
+        async fn resume(
+            &self,
+            _spec: &ExecutionSpec,
+            record: &crate::client::journal::AttemptJournal,
+        ) -> Result<LocalRunHandle, HarnessError> {
+            Ok(LocalRunHandle {
+                process_id: record.process_id.clone().unwrap_or_default(),
+            })
         }
 
         async fn decision_channels(
@@ -1194,6 +1209,12 @@ mod slot_loop {
                     "start.response.json"
                 });
                 reply["attempt_id"] = json!(attempt_in_path);
+                ok(reply)
+            }
+            "recovery-observation" => {
+                let mut reply = from_fixture("recovery-observation.response.json");
+                reply["attempt_id"] = json!(attempt_in_path);
+                reply["recovery_key"] = body["recovery_key"].clone();
                 ok(reply)
             }
             "completion" => {
@@ -1311,6 +1332,148 @@ mod slot_loop {
 
         shutdown_handle.request();
         release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(30), serving)
+            .await
+            .expect("serve stops on shutdown")
+            .expect("serve task")
+            .expect("serve result");
+    }
+    /// A restart finds one agent still running and one journal behind it. The
+    /// running one is followed in a slot of its own: the ticker heartbeats its
+    /// lease with every other while it runs, and the journal behind it is
+    /// recovered without waiting for it to end.
+    #[tokio::test]
+    async fn a_resumed_agent_is_heartbeated_and_does_not_hold_back_the_next_journal() {
+        use crate::client::journal::{
+            AttemptJournal, JournalState, OwnerOnlyJournal, WorkspaceJournal,
+        };
+        use crate::client::{AttemptId, AttemptLease, ClaimedWork, WorkspaceId};
+
+        let resumed_id = "att_01J0000000000000000000009R";
+        let behind_id = "att_01J0000000000000000000009B";
+        let root = tempfile::tempdir().expect("state dir");
+        let journal = OwnerOnlyJournal::new(root.path().join("journal"));
+        let lease_of = |attempt: &str| {
+            let mut work: Value =
+                serde_json::from_str(&fixture("claim.response.json")).expect("claim");
+            work["lease"]["attempt_id"] = json!(attempt);
+            work["attempt"]["attempt_id"] = json!(attempt);
+            // The wire's lease carries neither; the claim keeps them on it.
+            work["lease"]["attempt_number"] = work["attempt"]["attempt_number"].clone();
+            work["lease"]["state"] = work["attempt"]["state"].clone();
+            work
+        };
+        let record_of = |attempt: &str, work: &Value| {
+            let lease: AttemptLease = serde_json::from_value(work["lease"].clone()).expect("lease");
+            AttemptJournal::prepared(
+                &lease,
+                WorkspaceJournal {
+                    workspace_id: WorkspaceId::new("ws_resumed"),
+                    path: root.path().join("workspaces").join(attempt),
+                    base_revision: "revision".into(),
+                },
+            )
+        };
+        let work = lease_of(resumed_id);
+        let mut resumed = record_of(resumed_id, &work);
+        resumed.state = JournalState::ProcessObservedRunning;
+        resumed.process_id = Some(format!("{resumed_id}|ws_resumed|revision"));
+        resumed.claimed_work =
+            Some(serde_json::from_value::<ClaimedWork>(work).expect("claimed work"));
+        journal
+            .persist_before_spawn(&resumed)
+            .expect("resumed journal");
+        let behind = record_of(behind_id, &lease_of(behind_id));
+        journal
+            .persist_before_spawn(&behind)
+            .expect("journal behind");
+
+        // Every claim finds no work, so the only lease is the resumed one.
+        let claims = Arc::new(AtomicUsize::new(2));
+        let heartbeats = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let unexpected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        {
+            let (claims, heartbeats, unexpected) = (
+                Arc::clone(&claims),
+                Arc::clone(&heartbeats),
+                Arc::clone(&unexpected),
+            );
+            Mock::given(any())
+                .respond_with(move |request: &Request| {
+                    respond(request, &claims, &heartbeats, &unexpected)
+                })
+                .mount(&server)
+                .await;
+        }
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let release = Arc::new(Semaphore::new(0));
+        let running = Arc::new(AtomicUsize::new(0));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::clone(&release),
+                running: Arc::clone(&running),
+            },
+            journal.clone(),
+            WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
+        )
+        .with_concurrency(2);
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.path().join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = Some(EnrollmentCredential::new(SECRET_ENROLLMENT));
+        config.max_concurrent_attempts = 2;
+        let runner =
+            HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+                .with_renewal_interval(Duration::from_millis(50));
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let serving = tokio::spawn(async move { runner.serve(shutdown).await });
+
+        let budget = Duration::from_secs(30);
+        // The journal behind is recovered while the resumed agent still runs.
+        let recovered = tack_test_support::poll_until(budget, async || {
+            (journal.load(&AttemptId::new(behind_id)).ok()?.state == JournalState::RecoveryObserved)
+                .then_some(())
+        })
+        .await;
+        assert!(
+            recovered.is_some() && running.load(Ordering::SeqCst) == 1,
+            "the journal behind is recovered while the resumed agent runs"
+        );
+        // Beyond the one heartbeat that took the lease back, the ticker carries it.
+        let carried = |heartbeats: &Mutex<Vec<Value>>| {
+            heartbeats
+                .lock()
+                .expect("heartbeats")
+                .iter()
+                .filter(|hb| {
+                    hb["active_attempts"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|lease| lease["attempt_id"] == resumed_id)
+                })
+                .count()
+        };
+        let ticked = tack_test_support::poll_until(budget, async || {
+            (carried(&heartbeats) >= 3).then_some(())
+        })
+        .await;
+        assert!(
+            ticked.is_some() && running.load(Ordering::SeqCst) == 1,
+            "the resumed lease is heartbeated while it runs: {:?}",
+            heartbeats.lock().expect("heartbeats"),
+        );
+        assert!(unexpected.lock().expect("unexpected").is_empty());
+
+        release.add_permits(1);
+        let ended = tack_test_support::poll_until(budget, async || {
+            journal.unresolved().ok()?.is_empty().then_some(())
+        })
+        .await;
+        assert!(ended.is_some(), "the resumed run reports and settles");
+        shutdown_handle.request();
         tokio::time::timeout(Duration::from_secs(30), serving)
             .await
             .expect("serve stops on shutdown")

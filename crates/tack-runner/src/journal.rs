@@ -11,7 +11,9 @@ use std::{
 
 use thiserror::Error;
 
-use super::{AttemptId, AttemptLease, Checkpoint, FencingToken, RunnerId, WorkspaceId};
+use super::{
+    AttemptId, AttemptLease, Checkpoint, ClaimedWork, FencingToken, RunnerId, WorkspaceId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,7 +62,7 @@ pub struct WorkspaceJournal {
     pub base_revision: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttemptJournal {
     pub attempt_id: AttemptId,
     pub runner_id: RunnerId,
@@ -89,6 +91,41 @@ pub struct AttemptJournal {
     /// provisioning. Absent in old journals: the run is then not pushed.
     #[serde(default)]
     pub push_remote: Option<String>,
+    /// The claim this attempt was started from, kept so a restarted runner can
+    /// follow an agent that is still running (`HarnessAdapter::resume`). It
+    /// holds references to secrets, never their values: a literal environment
+    /// value is dropped before it is written. Absent in old journals, which
+    /// recover as they always did.
+    #[serde(default, with = "claimed_work_as_json")]
+    pub claimed_work: Option<ClaimedWork>,
+}
+
+/// The claim is written as one JSON string: TOML has no `null`, and the
+/// snapshots in a claim are JSON all the way down.
+mod claimed_work_as_json {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+
+    use super::ClaimedWork;
+
+    pub fn serialize<S: Serializer>(
+        claim: &Option<ClaimedWork>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match claim {
+            Some(claim) => serde_json::to_string(claim)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<ClaimedWork>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|text| serde_json::from_str(&text).map_err(D::Error::custom))
+            .transpose()
+    }
 }
 
 impl AttemptJournal {
@@ -106,6 +143,7 @@ impl AttemptJournal {
             base_commit: None,
             config_before: None,
             push_remote: None,
+            claimed_work: None,
         }
     }
 }

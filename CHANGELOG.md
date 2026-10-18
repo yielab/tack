@@ -89,6 +89,13 @@ automation a template carries, and the removal of dollars per day.
   high-legibility font (Atkinson Hyperlegible Next) and reduced motion. The OS's reduced-motion
   setting is honoured as well.
 
+- **A docket run survives a restart of the board.** When the computer that runs agents restarts
+  while a docket team still holds the task, often waiting on a question, the run is picked up
+  again: the question already in the Inbox is not asked twice, and the run ends as it would have.
+  If the run cannot be shown to be its own any more, it goes to a person as before. Its time limit
+  starts over at the restart. Every other agent still goes to a person, since its process ended
+  with the runner.
+
 ### Changed
 
 - **The day's token limit is reserved when a run is admitted.** A run starts only if today's
