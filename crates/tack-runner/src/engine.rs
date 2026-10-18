@@ -189,6 +189,34 @@ fn token_limit_reached(outcome: &mut HarnessOutcome, limit: u64, counted: u64) {
     outcome.terminal_reason = serde_json::Value::Object(reason);
 }
 
+/// The attempt whose agent reported success and delivered no change ends failed, with the
+/// sentence its panel prints as the reason; what the harness reported stays beside it. A
+/// harness that left files uncommitted says how many in `untracked_files`.
+fn no_change_delivered(outcome: &mut HarnessOutcome) {
+    outcome.terminal_state = AttemptState::Failed;
+    let mut reason = match std::mem::take(&mut outcome.terminal_reason) {
+        serde_json::Value::Object(reason) => reason,
+        _ => serde_json::Map::new(),
+    };
+    let mut message =
+        "The agent reported success but delivered no change to review (the branch equals its base)"
+            .to_owned();
+    match reason
+        .get("untracked_files")
+        .and_then(serde_json::Value::as_u64)
+    {
+        Some(0) | None => {}
+        Some(1) => message.push_str("; 1 file was not committed and is not in the evidence"),
+        Some(count) => message.push_str(&format!(
+            "; {count} files were not committed and are not in the evidence"
+        )),
+    }
+    reason.insert("reason".to_owned(), "no_change".into());
+    reason.insert("code".to_owned(), "no_change".into());
+    reason.insert("message".to_owned(), message.into());
+    outcome.terminal_reason = serde_json::Value::Object(reason);
+}
+
 /// Posts `answer` back to the harness, if anything is still listening. Best
 /// effort: a dropped receiver means the run has already moved on without it.
 async fn send_answer(
@@ -910,6 +938,9 @@ where
                             serde_json::to_value(&published).unwrap_or_default(),
                         );
                     }
+                    // After the verifier, whose refusal of an empty change stays an
+                    // event: the empty change is the headline, not that refusal.
+                    Self::fail_without_change(&spec, &scratch, &mut staged, &mut outcome);
                 }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {
                     reason.insert("artifacts".to_owned(), serde_json::Value::Array(staged));
@@ -1544,6 +1575,46 @@ where
         evidence.worktree_dirty = Some(false);
         Self::restage_evidence(&evidence_path, staged, &evidence);
         Some(published)
+    }
+
+    /// A run that may change the repository, whose agent reported success and whose captured
+    /// evidence holds no change, ends failed: nothing reached review. A run that is read-only
+    /// (`ExecutionRequestSnapshot::expects_change`), or that staged a plan, delivered what it
+    /// was asked for and stays succeeded.
+    fn fail_without_change(
+        spec: &ExecutionSpec,
+        scratch: &std::path::Path,
+        staged: &mut [serde_json::Value],
+        outcome: &mut HarnessOutcome,
+    ) {
+        if outcome.terminal_state != AttemptState::Succeeded
+            || !spec.work.request.expects_change()
+            || staged
+                .iter()
+                .any(|entry| entry.get("kind").and_then(|kind| kind.as_str()) == Some("plan"))
+        {
+            return;
+        }
+        let evidence_path = scratch.join("src/evidence.json");
+        let Some(mut evidence) = std::fs::read(&evidence_path)
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
+            })
+            .filter(|evidence| {
+                evidence.captured
+                    && evidence.files.is_empty()
+                    && evidence
+                        .patch
+                        .as_ref()
+                        .is_none_or(|patch| patch.size_bytes == 0)
+            })
+        else {
+            return;
+        };
+        no_change_delivered(outcome);
+        evidence.terminal_reason = outcome.terminal_reason.clone();
+        Self::restage_evidence(&evidence_path, staged, &evidence);
     }
 
     /// Writes `evidence` over the staged `evidence.json`, keeping the

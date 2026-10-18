@@ -939,6 +939,7 @@ impl DocketAdapter {
                 let branch = task["worktree"]["branch"].as_str().unwrap_or_default();
                 match Self::bring_in(&info.workspace, branch).await {
                     Ok(()) => {
+                        let mut untracked = 0;
                         if let Ok(diff) = self.client.task_diff(&info.pod, &info.task).await
                             && diff.status == 200
                             && let Some(count) = diff.body["untracked"]
@@ -946,6 +947,7 @@ impl DocketAdapter {
                                 .map(Vec::len)
                                 .filter(|count| *count > 0)
                         {
+                            untracked = count;
                             let text = if count == 1 {
                                 "1 file docket did not commit is not in the evidence".to_owned()
                             } else {
@@ -959,12 +961,14 @@ impl DocketAdapter {
                                 usage: None,
                             });
                         }
-                        (
-                            AttemptState::Succeeded,
-                            json!({"code": "done", "team": info.pod, "task": info.task,
-                                   "branch": branch,
-                                   "base_commit": task["worktree"]["baseCommit"]}),
-                        )
+                        let mut reason = json!({"code": "done", "team": info.pod,
+                                                "task": info.task, "branch": branch,
+                                                "base_commit": task["worktree"]["baseCommit"]});
+                        // The engine names them when the branch turns out to equal its base.
+                        if untracked > 0 {
+                            reason["untracked_files"] = json!(untracked);
+                        }
+                        (AttemptState::Succeeded, reason)
                     }
                     Err(message) => (
                         AttemptState::Failed,

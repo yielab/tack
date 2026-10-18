@@ -3045,6 +3045,31 @@ async fn run_evidence_attempt_requesting(
     break_origin: bool,
     requested: (Option<bool>, Option<bool>, bool),
 ) -> EvidenceRun {
+    run_evidence_attempt_tuned(
+        label,
+        cancelled,
+        change,
+        verify,
+        git_config,
+        break_origin,
+        requested,
+        |_| {},
+    )
+    .await
+}
+
+/// `tune` edits the claimed work before the attempt runs.
+#[allow(clippy::too_many_arguments)]
+async fn run_evidence_attempt_tuned(
+    label: &str,
+    cancelled: bool,
+    change: fn(&Path),
+    verify: Option<crate::config::VerifyConfig>,
+    git_config: Option<crate::config::GitConfig>,
+    break_origin: bool,
+    requested: (Option<bool>, Option<bool>, bool),
+    tune: fn(&mut ClaimedWork),
+) -> EvidenceRun {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
     let seed = root.join("seed");
@@ -3076,6 +3101,7 @@ async fn run_evidence_attempt_requesting(
     assert!(output.status.success(), "bare origin");
 
     let mut claimed = work();
+    tune(&mut claimed);
     claimed.request.repository.base_revision = base.clone();
     claimed.attempt.base_revision = base;
     claimed.request.verify = requested.0;
@@ -3205,6 +3231,158 @@ async fn an_unchanged_attempt_stages_an_empty_patch_and_no_files() {
     let files: Vec<crate::evidence::FileChange> =
         serde_json::from_slice(&uploaded(&state, "files.json")).expect("files");
     assert!(files.is_empty());
+}
+
+/// The state and reason the attempt's only completion report carried.
+fn reported_end(run: &EvidenceRun) -> (AttemptState, serde_json::Value) {
+    let [report] = run.completions.as_slice() else {
+        panic!("one completion, got {}", run.completions.len());
+    };
+    (report.terminal_state, report.terminal_reason.clone())
+}
+
+const NO_CHANGE: &str =
+    "The agent reported success but delivered no change to review (the branch equals its base)";
+
+fn tools(work: &mut ClaimedWork, harness: &str, tools: &[&str]) {
+    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(harness);
+    work.request.permission_policy.tools = tools.iter().map(|t| (*t).to_owned()).collect();
+}
+
+#[tokio::test]
+async fn a_run_that_may_write_and_delivers_no_change_ends_failed_with_the_reason() {
+    let run = run_evidence_attempt_requesting(
+        "evidence-no-change",
+        false,
+        |_| {},
+        None,
+        None,
+        false,
+        (None, None, false),
+    )
+    .await;
+    let (state, reason) = reported_end(&run);
+    assert_eq!(state, AttemptState::Failed);
+    assert_eq!(reason["code"], "no_change");
+    assert_eq!(reason["message"], NO_CHANGE);
+    // The evidence is still there, and says the same.
+    let state = run.data_protocol.state.lock().expect("lock");
+    let evidence: crate::evidence::AttemptEvidence =
+        serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+    assert_eq!(evidence.terminal_reason["code"], "no_change");
+}
+
+#[tokio::test]
+async fn a_verifier_refusing_an_empty_change_leaves_its_event_beside_the_failure() {
+    let script = crate::harness::fixtures::fake_harness_path().with_file_name("fake_verifier.sh");
+    let config = crate::config::VerifyConfig {
+        enabled: true,
+        kind: crate::config::VerifyKind::Command,
+        program: "env".to_owned(),
+        args: vec![
+            "TACK_FAKE_VERIFIER_EXIT_CODE=2".to_owned(),
+            "sh".to_owned(),
+            script.display().to_string(),
+        ],
+        timeout_seconds: 60,
+        sign_key: None,
+    };
+    let run = run_evidence_attempt_requesting(
+        "verify-no-change",
+        false,
+        |_| {},
+        Some(config),
+        None,
+        false,
+        (None, None, false),
+    )
+    .await;
+    assert_eq!(reported_end(&run).1["code"], "no_change");
+    let state = run.data_protocol.state.lock().expect("lock");
+    let refused: Vec<_> = state
+        .events
+        .iter()
+        .flat_map(|batch| batch.events.iter())
+        .filter(|event| event.kind == "attempt.verify_failed")
+        .collect();
+    assert_eq!(refused.len(), 1, "the verifier's refusal stays as evidence");
+    assert_eq!(refused[0].payload["exit_code"], 2);
+}
+
+#[tokio::test]
+async fn a_run_that_delivers_no_change_and_cannot_write_stays_succeeded() {
+    for (label, tune) in [
+        (
+            "read-claude",
+            (|w: &mut ClaimedWork| tools(w, "claude-code", &["Read", "Grep", "Glob"]))
+                as fn(&mut ClaimedWork),
+        ),
+        ("read-codex", |w| tools(w, "codex", &[])),
+        ("read-opencode", |w| tools(w, "opencode", &["webfetch"])),
+        ("reviewer-kind", |w| {
+            tools(w, "codex", &["*"]);
+            w.request
+                .resolved_agent_profile
+                .additional
+                .insert("kind".into(), "reviewer".into());
+        }),
+    ] {
+        let run = run_evidence_attempt_tuned(
+            label,
+            false,
+            |_| {},
+            None,
+            None,
+            false,
+            (None, None, false),
+            tune,
+        )
+        .await;
+        let (state, _) = reported_end(&run);
+        assert_eq!(state, AttemptState::Succeeded, "{label}");
+    }
+}
+
+#[tokio::test]
+async fn a_run_that_changes_something_stays_succeeded() {
+    let run = run_evidence_attempt_requesting(
+        "evidence-changed-ok",
+        false,
+        write_one_delete_one,
+        None,
+        None,
+        false,
+        (None, None, false),
+    )
+    .await;
+    assert_eq!(reported_end(&run).0, AttemptState::Succeeded);
+}
+
+#[tokio::test]
+async fn files_the_harness_did_not_commit_are_counted_in_the_reason() {
+    let mut one = serde_json::json!({"code": "done", "untracked_files": 1});
+    let mut outcome = {
+        let mut outcome = HarnessOutcome {
+            terminal_state: AttemptState::Succeeded,
+            terminal_reason: one.take(),
+            final_checkpoint: None,
+            actual_execution: actual_execution(),
+            usage: usage(),
+        };
+        no_change_delivered(&mut outcome);
+        outcome
+    };
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        format!("{NO_CHANGE}; 1 file was not committed and is not in the evidence")
+    );
+    outcome.terminal_reason["untracked_files"] = 3.into();
+    no_change_delivered(&mut outcome);
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        format!("{NO_CHANGE}; 3 files were not committed and are not in the evidence")
+    );
 }
 
 #[tokio::test]

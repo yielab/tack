@@ -1345,8 +1345,8 @@ async fn load_profile(
     profile_id: &str,
     input: &mut CreateExecution,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT name, instructions, tool_policy, limits FROM agent_profiles WHERE id = ?",
+    let row: Option<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT name, instructions, tool_policy, limits, kind FROM agent_profiles WHERE id = ?",
     )
     .bind(profile_id)
     .fetch_optional(repo.pool())
@@ -1359,7 +1359,7 @@ async fn load_profile(
             json!({}),
         )
     })?;
-    let Some((name, instructions, tool_policy, limits)) = row else {
+    let Some((name, instructions, tool_policy, limits, kind)) = row else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
@@ -1387,6 +1387,7 @@ async fn load_profile(
     }
     Ok(json!({
         "name": name,
+        "kind": kind,
         "instructions": instructions,
         "tool_policy": tool_policy,
         "timeout_seconds": timeout_seconds,

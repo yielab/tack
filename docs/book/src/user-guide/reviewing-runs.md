@@ -22,8 +22,12 @@ to check it:
 - **Log** opens the full log.
 - **Accept** and **Reject**, with an optional note, while the run waits for you.
 
-**Succeeded** is green only when the changes were captured. It is amber when the agent changed nothing, or
-when the changes could not be read. A failed run leads with why it failed.
+**Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
+change files changed nothing, or when the changes could not be read. A run is meant to change files when its
+tools include one that writes, or, when its tools are all tools, unless its profile is a Reviewer, Researcher
+or Planner. A run that was meant to change files and changed nothing is shown as **Failed**, with the reason
+"The agent reported success but delivered no change to review", and the number of files the agent left
+uncommitted when there were any. A failed run leads with why it failed.
 
 ### What you see on the board
 
