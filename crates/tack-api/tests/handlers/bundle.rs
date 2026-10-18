@@ -197,13 +197,18 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     let app = app().await;
     let projects = count(&app, "/api/projects").await;
     let profiles = count(&app, "/api/agent-profiles").await;
-    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", FABULADA).await;
+    // An older file still says `usd_per_day`: it imports without it, and the preview says so.
+    let older = FABULADA.replace(
+        "tokens_per_day: 2000000,",
+        "tokens_per_day: 2000000, usd_per_day: 20,",
+    );
+    let (status, out) = import(&app, "/api/projects/outline?dry_run=true", &older).await;
     assert_eq!(status, StatusCode::OK, "{out}");
     assert_eq!(out["dry_run"], true);
-    // The fixture still says `usd_per_day`: it imports without it, and the preview says so.
-    assert_eq!(
-        out["warnings"][0],
-        "Dollars per day is no longer a limit; this value is ignored."
+    let ignored = json!("Dollars per day is no longer a limit; this value is ignored.");
+    assert!(
+        out["warnings"].as_array().unwrap().contains(&ignored),
+        "{out}"
     );
     assert_eq!(section(&out, "roles")["created"], 7);
     assert_eq!(count(&app, "/api/projects").await, projects);

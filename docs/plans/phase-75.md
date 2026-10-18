@@ -1,6 +1,6 @@
 # Plan: Phase 75 — limits in tokens, and a lean context
 
-**Status: opened 2026-10-18.** Serves ADR 0083 (`docs/adr/0083-limits-in-tokens-and-a-lean-context.md`).
+**Status: opened 2026-10-18; Rounds 1 and 2 (A, G, B, D, E) in `develop` the same day.** Serves ADR 0083 (`docs/adr/0083-limits-in-tokens-and-a-lean-context.md`).
 Written against `develop` at `973dcd33`. Every path and line below was read that day; re-run
 `rg -n` before trusting a line number.
 
@@ -233,11 +233,36 @@ with the reason "the run reached its token limit (N)".
 
 A capture of the request Claude Code sends, measuring what each default tool's definition costs
 and whether `--setting-sources ""` keeps the project's `CLAUDE.md` and the user's memory out.
-Then the profile's `tool_policy.tools` names the tools; the default stays today's list.
+Then the profile's `tool_policy.tools` names the tools; the default stays today's list. Its test is
+at the arguments Claude Code is given (`harness/claude_code/tests.rs`), not through a project file,
+whose import Phase 76 rewrites; a profile without `tool_policy.tools` reads the same before and
+after, so no file changes.
 
 ### Z — the integrator's round
 
 Live token progress on a run's timeline (docket's `hop_finished` usage, and C's lines); the User
 and Administrator guides (Merging → Budgets, Reviewing runs); the changelog's `[Unreleased]`;
 the roadmap. Then Fabulada's runs again, on the maintainer's word, once docket has fixed its
-context and count.
+context and count. Also Z's, left by Rounds 1 and 2:
+
+- An attempt's usage panel (`AttemptList.tsx`) still prints tokens in and out, not the counted
+  figure and the cache reads beside it.
+- The pack's tokens (`pack_tokens`) are its `tokens_in + tokens_out`: the pack contract has no
+  cache field, so a pack-only run counts its cache reads.
+- The run dialog does not print the limit sentence before a run starts, and a measured agent's
+  admission does not say it can cross the day's limit.
+- A run reserves its whole limit until it ends, because its usage is stored only at the end;
+  live progress is what lets the reservation shrink.
+
+## How it went
+
+Rounds 1 and 2, 2026-10-18, five Sonnet agents, each reviewed before its merge. What the review
+changed: G's data sentence first quoted the fence marker and broke a replay's fingerprint, so it
+was reworded; a rework could cut a card's own `## Fix` heading, so the cut matches the verifier's
+lead sentence too; D's replay of a run given the day's room answered 409, so a stored
+`limit_source = "day"` replays (its test was red first); D's admission said "0 open runs" when the
+run alone was past the day, so it has its own sentence; E said every agent "reports its tokens at
+the end", which is not true of all, so a measured agent says Tack reads its tokens but cannot stop
+it yet. Phase 76, proposed the same day, takes migrations 093 and 094 and reads the file through
+`read_outline` so the `usd_per_day` warning reaches its plan; the Fabulada fixture lost its
+`usd_per_day`, and the one test of the warning adds it back inline.

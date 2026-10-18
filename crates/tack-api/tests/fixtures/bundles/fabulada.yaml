@@ -119,7 +119,7 @@ automation:
       - { name: content, paths: ["content/**", "public/stories/**"], item_types: [feature, task], level: L4 }
       - { name: code, paths: ["src/**", "package.json"], item_types: [], level: L3 }
     verify_require: [criteria, suite, anti_tautology, static_analysis]
-    budgets: { tokens_per_day: 2000000, usd_per_day: 20, auto_merges_per_day: 10, queue_items_max: 8 }
+    budgets: { tokens_per_day: 2000000, auto_merges_per_day: 10, queue_items_max: 8 }
     merge_on_done: true
     # the attestation public key is never in a bundle: it is pasted on the Merge rung.
   auto_start:

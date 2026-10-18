@@ -69,6 +69,11 @@ plan or the page named beside it.
 - A profile's team can be set from a project file or the CLI, not from the profile form.
 - Retrying a run request after its task's type or priority changed answers 409, because the
   task's metadata is part of the request's fingerprint.
+- Only docket stops a run at its token limit. Claude Code, Codex and opencode are measured, not
+  enforced: their tokens are read when they finish, and the screen says so. A run keeps its whole
+  limit reserved against the day until it ends.
+- A run's attempt list still shows tokens in and out rather than the counted figure, and the run
+  dialog shows the limit only after the run starts.
 - Only docket reports a running agent's steps on its timeline; Codex, Claude Code and opencode
   need their tool lines captured from the real programs first.
 - `docs/screenshots/automation.png` and `factory-metrics.png` predate the four-rung Automation
@@ -78,7 +83,9 @@ plan or the page named beside it.
 
 ## Phase 76 — the project file is kept in sync
 
-**Status:** proposed 2026-10-18; ADR 0084 proposed the same day, with its four defaults.
+**Status:** proposed 2026-10-18; ADR 0084 proposed the same day, with its four defaults. Checked
+against Phase 75's Rounds 1 and 2 the same day: nothing in Phase 75 changes; Phase 76 takes
+migrations 093 and 094, and an older file's dollars-per-day warning reaches its preview.
 **ADR:** 0084 (amends 0081 §2 and §6). **Plan:**
 [`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md).
 
@@ -124,7 +131,9 @@ the file.
 
 **Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
 the same day. Rounds 1 and 2 landed in `develop` the same day, with the guides; Round 3 waits on a
-capture of Claude Code's and opencode's live usage, and Round 4 on docket's context and count. **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
+capture of Claude Code's and opencode's live usage, which costs model calls, and Round 4 on
+docket's context and count. What Rounds 1 and 2 left is in the plan's task Z and in Open above.
+**ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
 Dollars are a token count multiplied by a price list someone typed. A model with no price
@@ -138,7 +147,7 @@ provider. Tokens are what every agent measures. So:
   shown beside them and never count. In Fabulada's measured runs they were 70% to 92% of the
   input.
 - **Every limit says who applies it and where it is changed**, and "no limit" names the brake
-  that still applies: "No limit set in Tack · docket stops each step at 100 000 tokens (docket's
+  that still applies: "No limit set in Tack · docket stops each step at its own limit (docket's
   setting)". An agent that only reports its tokens says "measured, not enforced".
 - **The daily limit is reserved when a run is admitted:** a run starts only if today's use,
   the open runs' limits and its own fit, so the day's limit is never crossed.
