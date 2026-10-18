@@ -89,6 +89,11 @@ automation a template carries, and the removal of dollars per day.
   high-legibility font (Atkinson Hyperlegible Next) and reduced motion. The OS's reduced-motion
   setting is honoured as well.
 
+- **The board makes its own decision token.** `tack serve` keeps a `decision-token` file
+  (owner-only) beside `api-token` and creates it when missing, so a new board can answer an
+  agent's questions from the Inbox; `TACK_EXECUTION_DECISION_TOKEN` still wins. The desktop app
+  hands it to its window, and a browser asks for it once per session and says which file holds it.
+
 ### Changed
 
 - **The day's token limit is reserved when a run is admitted.** A run starts only if today's

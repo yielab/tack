@@ -297,7 +297,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
           placeholder="TACK_EXECUTION_DECISION_TOKEN"
           value={tokenInput()}
           onInput={(e) => setTokenInput(e.currentTarget.value)}
-          hint="Stored only in this browser. Required to resolve — never sent when just viewing."
+          hint="Find it in the decision-token file beside the board's database. Kept only for this browser session. Required to answer — never sent when just viewing."
           class="min-w-56 flex-1"
         />
         <Button size="sm" variant="secondary" onClick={saveToken}>
