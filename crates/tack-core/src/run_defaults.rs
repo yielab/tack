@@ -85,6 +85,37 @@ pub fn token_count(n: i64) -> String {
     }
 }
 
+/// What a profile's `limits` may hold: `budgets.tokens` and `timeout_seconds` are positive whole
+/// numbers or absent, and `budgets.cost_usd` was removed. The message names the field in full.
+pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
+    let whole = |value: &serde_json::Value| value.as_u64().filter(|n| *n > 0).is_some();
+    let Some(limits) = limits.as_object() else {
+        return if limits.is_null() {
+            Ok(())
+        } else {
+            Err("limits must be an object".to_owned())
+        };
+    };
+    if let Some(budgets) = limits.get("budgets") {
+        let Some(budgets) = budgets.as_object() else {
+            return Err("limits.budgets must be an object".to_owned());
+        };
+        if budgets.contains_key("cost_usd") {
+            return Err(
+                "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)"
+                    .to_owned(),
+            );
+        }
+        if budgets.get("tokens").is_some_and(|v| !whole(v)) {
+            return Err("limits.budgets.tokens must be a positive whole number".to_owned());
+        }
+    }
+    if limits.get("timeout_seconds").is_some_and(|v| !whole(v)) {
+        return Err("limits.timeout_seconds must be a positive whole number".to_owned());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +236,64 @@ mod tests {
                 source,
             });
             assert_eq!(got, want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn a_profiles_limits_hold_positive_whole_numbers_and_no_dollars() {
+        use serde_json::json;
+        // (limits, the message it is refused with, None when it is fine)
+        let rows = [
+            (json!({}), None),
+            (json!(null), None),
+            (
+                json!({"budgets": {"tokens": 300_000}, "timeout_seconds": 1800}),
+                None,
+            ),
+            (json!({"budgets": {}}), None),
+            (json!({"tokens": 1000}), None),
+            (
+                json!({"budgets": {"tokens": 0}}),
+                Some("limits.budgets.tokens must be a positive whole number"),
+            ),
+            (
+                json!({"budgets": {"tokens": -5}}),
+                Some("limits.budgets.tokens must be a positive whole number"),
+            ),
+            (
+                json!({"budgets": {"tokens": "many"}}),
+                Some("limits.budgets.tokens must be a positive whole number"),
+            ),
+            (
+                json!({"budgets": {"tokens": 1.5}}),
+                Some("limits.budgets.tokens must be a positive whole number"),
+            ),
+            (
+                json!({"budgets": {"tokens": null}}),
+                Some("limits.budgets.tokens must be a positive whole number"),
+            ),
+            (
+                json!({"timeout_seconds": 0}),
+                Some("limits.timeout_seconds must be a positive whole number"),
+            ),
+            (
+                json!({"timeout_seconds": "1h"}),
+                Some("limits.timeout_seconds must be a positive whole number"),
+            ),
+            (
+                json!({"budgets": {"cost_usd": 2.0}}),
+                Some(
+                    "limits.budgets.cost_usd was removed; a limit is in tokens (limits.budgets.tokens)",
+                ),
+            ),
+            (
+                json!({"budgets": 5}),
+                Some("limits.budgets must be an object"),
+            ),
+            (json!(["tokens"]), Some("limits must be an object")),
+        ];
+        for (limits, refused) in rows {
+            assert_eq!(check_limits(&limits).err().as_deref(), refused, "{limits}");
         }
     }
 }

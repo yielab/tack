@@ -900,6 +900,7 @@ pub async fn create_profile(
         input.fleet_id.as_deref(),
     )
     .await?;
+    check_limits(&input.limits)?;
     let id = format!("ap_{}", Uuid::new_v4());
     let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|_| {
         error(
@@ -1026,6 +1027,18 @@ fn profile_from_row(
 /// The agent kinds a runner can run: what `tool_policy.agent` may name.
 pub(crate) const HARNESS_KINDS: [&str; 4] = ["claude-code", "codex", "opencode", "docket"];
 
+/// A profile's `limits` through the one rule (`tack_core::run_defaults::check_limits`).
+fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
+    tack_core::run_defaults::check_limits(limits).map_err(|message| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "limits"}),
+        )
+    })
+}
+
 /// 400 when `tool_policy.agent` is not a known agent kind, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
 async fn check_profile_fields(
     repo: &Repository,
@@ -1121,6 +1134,9 @@ pub async fn update_profile(
         input.fleet_id.as_ref().and_then(|f| f.as_deref()),
     )
     .await?;
+    if let Some(limits) = &input.limits {
+        check_limits(limits)?;
+    }
     let tool_policy = input.tool_policy.map(|v| v.to_string());
     let limits = input.limits.map(|v| v.to_string());
     let (set_fleet, fleet_id) = match input.fleet_id {

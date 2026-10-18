@@ -148,7 +148,10 @@ automation a template carries, and the removal of dollars per day.
   the profile form, which now has "Token limit per run" and "Time limit") was stored and never
   applied: the run copied only what the run dialog sent, `{}`. A run now takes its profile's
   limit unless it sets its own, `budgets.tokens: null` runs it without one, and a zero or
-  negative limit is refused. `timeout_seconds` is optional on the API, MCP and `tack execution
+  negative limit is refused. A profile's own limits are checked where they are written: saving a
+  profile with a zero, negative or non-numeric limit, or the old `cost_usd`, answers 400, the
+  project file's check names the profile, and a profile stored that way before is refused at
+  the run instead of running with no limit. `timeout_seconds` is optional on the API, MCP and `tack execution
   create`: absent, the profile's time limit applies, else one hour. The run dialog pre-fills
   both from the profile (ADR 0083 decision 1).
 - **A run that cannot start ends Failed with the reason**, whether the folder could not be

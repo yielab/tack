@@ -7181,9 +7181,14 @@
         "description": "Response body for `GET /api/items/{id}/agent-context`.",
         "required": [
           "text",
-          "limits"
+          "limits",
+          "limit"
         ],
         "properties": {
+          "limit": {
+            "$ref": "#/components/schemas/RunLimit",
+            "description": "The limit a run with that profile would have, who applies it and the sentence every screen\nprints, from the same rule as a stored run's `limit`."
+          },
           "limits": {
             "description": "That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the\nrun dialog pre-fills its limits from it."
           },

@@ -431,6 +431,9 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
                 "{at}: tool_policy.docket.team must match ^[a-z0-9][a-z0-9-]{{0,63}}$"
             ));
         }
+        if let Err(message) = crate::run_defaults::check_limits(&profile.limits) {
+            problems.push(format!("{at}: {message}"));
+        }
         if let Some(fleet) = profile.fleet.as_deref().map(str::trim)
             && !board.fleets.iter().any(|(_, n)| n.trim() == fleet)
         {

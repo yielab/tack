@@ -976,6 +976,8 @@ fn run_limits(
             json!({"field": field}),
         )
     };
+    tack_core::run_defaults::check_limits(profile_limits)
+        .map_err(|message| refused(&message, "limits"))?;
     let mut budgets = if input.budgets.is_null() {
         json!({})
     } else {
@@ -994,7 +996,7 @@ fn run_limits(
     }
     let positive = |value: &Value| value.as_u64().filter(|n| *n > 0);
     let (tokens, source) = match object.get("tokens") {
-        None => match positive(&profile_limits["budgets"]["tokens"]) {
+        None => match profile_limits["budgets"]["tokens"].as_u64() {
             Some(n) => (Some(n), LimitSource::Profile),
             None => (None, LimitSource::None),
         },
@@ -1015,7 +1017,7 @@ fn run_limits(
     };
     let timeout = input
         .timeout_seconds
-        .or_else(|| positive(&profile_limits["timeout_seconds"]))
+        .or_else(|| profile_limits["timeout_seconds"].as_u64())
         .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
     Ok((budgets, timeout, source))
 }
@@ -2476,6 +2478,9 @@ pub struct AgentContextResponse {
     /// That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the
     /// run dialog pre-fills its limits from it.
     pub limits: Value,
+    /// The limit a run with that profile would have, who applies it and the sentence every screen
+    /// prints, from the same rule as a stored run's `limit`.
+    pub limit: RunLimit,
 }
 
 /// Query parameters for `GET /api/items/{id}/agent-context`.
@@ -2624,11 +2629,21 @@ pub async fn get_item_agent_context(
         project.definition_of_done.as_deref(),
     );
 
+    let limit = limit_source(
+        &json!({
+            "budgets": {"tokens": profile["limits"]["budgets"]["tokens"]},
+            "metadata": {"limit_source": "profile"},
+            "resolved_agent_profile": {"name": profile["name"]},
+        }),
+        profile["tool_policy"]["agent"].as_str(),
+    );
+
     Ok(Json(AgentContextResponse {
         text: composed,
         profile_id: answered_profile_id,
         profile_source: answered_source,
         limits: profile["limits"].clone(),
+        limit,
     }))
 }
 
