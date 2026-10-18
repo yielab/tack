@@ -3129,6 +3129,13 @@ export interface components {
             attempt_number: number;
             base_revision?: string | null;
             completion_id?: string | null;
+            /**
+             * Format: int64
+             * @description The tokens counted against a limit: new input plus output, cache reads
+             *     left out (`Usage::counted`). `null` when nothing was measured, which is
+             *     not zero.
+             */
+            counted_tokens?: number | null;
             created_at: string;
             ended_at?: string | null;
             /**

@@ -106,6 +106,9 @@ export interface AttemptUsage {
   /** Every input token the model read, cache reads and writes included. */
   tokensIn: number | null;
   tokensOut: number | null;
+  /** The tokens counted against a limit, as the server counted them (cache
+   *  reads left out); `null` when nothing was measured. Never recomputed here. */
+  counted: number | null;
   cacheRead: number | null;
   cacheWrite: number | null;
   modelCalls: number | null;
@@ -146,6 +149,7 @@ export function readAttemptUsage(attempt: AttemptSummary): AttemptUsage {
   return {
     tokensIn,
     tokensOut: value('tokens_out'),
+    counted: num(attempt.counted_tokens),
     cacheRead,
     cacheWrite,
     modelCalls,
@@ -164,16 +168,15 @@ export function formatTokenCount(n: number): string {
 }
 
 /** `48 210`: a whole number with a space between thousands. */
-const spaced = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+export const formatTokenGroups = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 /** What a run used, counted the way every limit counts it: a counted token is
  *  a new one, so the input the cache served is shown beside the figure and
- *  never in it. `null` when the attempt measured no tokens at all. */
+ *  never in it. The figure is the server's; `null` when it measured none. */
 export function formatCountedTokens(u: AttemptUsage): string | null {
-  if (u.tokensIn === null && u.tokensOut === null) return null;
-  const counted = Math.max((u.tokensIn ?? 0) - (u.cacheRead ?? 0), 0) + (u.tokensOut ?? 0);
-  const cache = u.cacheRead === null ? 'cache not reported' : `+ ${spaced(u.cacheRead)} read from cache, not counted`;
-  return `${spaced(counted)} tokens (${cache})`;
+  if (u.counted === null) return null;
+  const cache = u.cacheRead === null ? 'cache not reported' : `+ ${formatTokenGroups(u.cacheRead)} read from cache, not counted`;
+  return `${formatTokenGroups(u.counted)} tokens (${cache})`;
 }
 
 /** A harness's own dollar figure is its estimate (claude-code prices tokens at

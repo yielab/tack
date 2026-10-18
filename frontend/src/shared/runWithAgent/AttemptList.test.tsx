@@ -28,6 +28,7 @@ function attempt(overrides: Partial<AttemptSummary> = {}): AttemptSummary {
     actual_execution: null,
     terminal_reason: null,
     usage: null,
+    counted_tokens: null,
     started_at: '2026-08-06T12:00:05Z',
     ended_at: '2026-08-06T12:05:00Z',
     created_at: '2026-08-06T12:00:00Z',
@@ -148,6 +149,7 @@ describe('AttemptList', () => {
           model_calls: 6,
           models: ['claude-sonnet-5-5'],
         },
+        counted_tokens: 289_710,
         usage_economics: {
           model_token_cost_usd_estimated: { value: 1.3368, source: 'measured' },
           runner_time_cost: { wall_clock_ms: 113_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
@@ -155,8 +157,13 @@ describe('AttemptList', () => {
       }),
     ]);
     const usage = c.querySelector('[data-testid="attempt-usage"]')!;
-    expect(usage.querySelector('[data-testid="usage-tokens"]')!.textContent).toBe('1.08M tokens in · 3.3K out');
-    expect(usage.textContent).toContain('Of the input: 791K read from cache, 286K written to cache, 12 new.');
+    // The headline is the server's counted figure: the 791 447 cache reads are not in it.
+    expect(usage.querySelector('[data-testid="usage-counted"]')!.textContent).toBe('289 710 tokens counted');
+    expect(usage.querySelector('[data-testid="usage-counted"]')!.getAttribute('title')).toContain('289 710'.replace(' ', ','));
+    expect(usage.querySelector('[data-testid="usage-in-out"]')!.textContent).toBe('1 077 873 in · 3 284 out');
+    expect(usage.querySelector('[data-testid="usage-in-out"]')!.getAttribute('title')).toContain('1,077,873 tokens in');
+    expect(usage.textContent).toContain('Of the input: 791K read from cache (not counted), 286K written to cache.');
+    expect(usage.textContent).not.toContain('new.');
     expect(usage.textContent).toContain('6 model calls');
     expect(usage.textContent).toContain('1m 53s');
     expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
@@ -169,6 +176,7 @@ describe('AttemptList', () => {
   it('reads the cache and calls from the result line of a claude-code run recorded before the runner did', () => {
     const c = mount([
       attempt({
+        counted_tokens: 3_296,
         usage: { tokens_in: { value: 12, source: 'measured' }, tokens_out: { value: 3_284, source: 'measured' } },
         terminal_reason: {
           type: 'result',
@@ -178,9 +186,42 @@ describe('AttemptList', () => {
         },
       }),
     ]);
-    expect(c.querySelector('[data-testid="usage-tokens"]')!.textContent).toBe('1.08M tokens in · 3.3K out');
+    // The server counted the old row's uncached input as it was stored; the cache reads stay out of the headline.
+    expect(c.querySelector('[data-testid="usage-counted"]')!.textContent).toBe('3 296 tokens counted');
+    expect(c.querySelector('[data-testid="usage-in-out"]')!.textContent).toBe('1 077 873 in · 3 284 out');
     expect(c.textContent).toContain('6 model calls');
     expect(c.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
+  });
+
+  it('keeps the in and out figures when the server counted nothing, and never adds a counted headline of its own', () => {
+    const c = mount([
+      attempt({
+        counted_tokens: null,
+        usage: {
+          tokens_in: { value: 1_077_873, source: 'measured' },
+          tokens_out: { value: 3_284, source: 'measured' },
+          cache_read_tokens: 791_447,
+        },
+      }),
+    ]);
+    expect(c.querySelector('[data-testid="usage-tokens"]')!.textContent).toBe('1.08M tokens in · 3.3K out');
+    expect(c.querySelector('[data-testid="usage-counted"]')).toBeNull();
+  });
+
+  it('a row whose cache reads dwarf its new input is headlined by the counted figure, not by in plus out', () => {
+    const c = mount([
+      attempt({
+        counted_tokens: 12_000,
+        usage: {
+          tokens_in: { value: 2_000_000, source: 'measured' },
+          tokens_out: { value: 4_000, source: 'measured' },
+          cache_read_tokens: 1_992_000,
+        },
+      }),
+    ]);
+    expect(c.querySelector('[data-testid="usage-counted"]')!.textContent).toBe('12 000 tokens counted');
+    expect(c.querySelector('[data-testid="usage-in-out"]')!.textContent).toBe('2 000 000 in · 4 000 out');
+    expect(c.textContent).toContain('Of the input: 1.99M read from cache (not counted).');
   });
 
   it('a running attempt says the agent is working instead of showing empty figures', () => {

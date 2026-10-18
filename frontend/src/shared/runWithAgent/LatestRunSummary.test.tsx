@@ -16,6 +16,7 @@ const ATTEMPT = {
     tokens_in: { value: 1_077_873, source: 'measured' }, tokens_out: { value: 3_284, source: 'measured' },
     cache_read_tokens: 791_447, cache_write_tokens: 286_414, model_calls: 6, models: ['claude-sonnet-5-5'],
   },
+  counted_tokens: 289_710,
   started_at: '2026-10-08T12:00:05Z', ended_at: '2026-10-08T12:02:00Z',
   created_at: '2026-10-08T12:00:00Z', updated_at: '2026-10-08T12:02:00Z', model_provenance: null,
   usage_economics: {
