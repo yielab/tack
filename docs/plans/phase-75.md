@@ -323,3 +323,19 @@ as its own resource so typing never refetches the composed text. A measured agen
 room says it can go past today's limit. Left: the dialog says "No limit set in Tack" in a project
 with a daily limit, where the run will be given the day's room when it is chosen; and Fabulada's
 runs, on docket's fixes.
+
+Round 4 (CT), the same day, on one capture: `scripts/capture-agent-usage-fixtures.sh`, free against
+loopback stand-ins and, with the maintainer's word, four short billed Sonnet calls. What it found:
+Claude Code's `assistant` lines carry each call's usage once per message id, with the output low
+until the `result` line; opencode's `step_finish` carries each step's, with `tokens.input` leaving the
+cache reads out; `--setting-sources ""` keeps every `CLAUDE.md` out but not the auto-memory index;
+`--tools default` makes a call's prompt 16 142 tokens against 7 600 for the eight file, shell and web
+tools. No opencode model was paid for: its Zen key had expired and 1.18.30 lists no Anthropic
+provider, so its stop rests on the free capture. Two Sonnet agents, reviewed before merging. The
+runner sends each call's usage as progress (the server already sums progress lines, so a running
+sum would count twice) and stops every agent but docket at `budgets.tokens`; Claude Code sets
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. docket's session reported that its `hop_finished` and task
+`usage` carry `cached` and `cacheWrite` inside `input` (docket `da556114`, `e187be8a`), so the
+adapter maps them; the review kept a 0 as 0, since docket writes 0 for "none reported" and a real
+zero alike. Left for the maintainer: whether Claude Code's default tool list becomes the eight and
+whether its attribution reminder is turned off (`--settings '{"includeCoAuthoredBy":false}'`).

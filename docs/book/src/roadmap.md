@@ -132,10 +132,11 @@ the file.
 ## Phase 75 — limits in tokens, and a lean context
 
 **Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
-the same day. Rounds 1 to 3 landed in `develop` the same day, with the guides; Round 4 waits on a
-capture of Claude Code's and opencode's live usage, which costs model calls. Round 5's screens
-(the attempt's counted tokens, the run dialog's limit line) are in `develop` too; its run of
-Fabulada waits on docket's context and count. What is left is in Open above.
+the same day. Every round is in `develop` the same day, with the guides: Round 4 on one capture
+of Claude Code's and opencode's live usage (four short paid calls), so Tack now stops both at a
+run's token limit and counts docket's cache reads as docket does; Round 5's screens print the
+attempt's counted tokens and the run dialog's limit line. Fabulada's runs wait on docket's context
+and count. What is left is in Open above.
 **ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
