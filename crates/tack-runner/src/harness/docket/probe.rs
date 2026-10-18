@@ -55,7 +55,7 @@ pub(super) async fn status(client: &Client) -> Result<(Vec<String>, Option<Strin
     Ok((models.into_iter().collect(), version))
 }
 
-/// The teams docket reports, each with its profile's violations.
+/// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
 pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     let list = client.pods().await?;
     if list.status != 200 {
@@ -90,6 +90,13 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
                     fix: violation["fix"].as_str().unwrap_or_default().to_owned(),
                 })
                 .collect(),
+            // An older docket sends no key; that stays unknown rather than becoming "none".
+            read_only: report.body["readOnly"].as_array().map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|path| path.as_str().map(str::to_owned))
+                    .collect()
+            }),
         });
     }
     Ok(teams)

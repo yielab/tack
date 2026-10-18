@@ -750,7 +750,7 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
             "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
             "teams": [
                 {"name": "reviewers", "profile": "default", "violations": [{"requirement": "r", "fix": "run it lights-out"}]},
-                {"name": "writers", "profile": "lights-out", "violations": []}],
+                {"name": "writers", "profile": "lights-out", "violations": [], "read_only": ["/opt/node-22"]}],
         }]}).to_string())
         .execute(pool).await.unwrap();
     let got = get().await;
@@ -773,6 +773,20 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
             .find(|l| l.0 == n)
             .unwrap_or_else(|| panic!("{n} missing: {got}"))
     };
+    // The folders a team's sandbox reads travel with its line; a team that did not say, or that
+    // no runner reports, has none to show.
+    let reads = |n: &str| {
+        got["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == n)
+            .unwrap()["read_only"]
+            .clone()
+    };
+    assert_eq!(reads("writers"), json!(["/opt/node-22"]), "{got}");
+    assert_eq!(reads("reviewers"), Value::Null, "{got}");
+    assert_eq!(reads("ghosts"), Value::Null, "{got}");
     assert_eq!(line("writers").1, Value::Null, "{got}");
     assert_eq!(line("writers").2, Value::Null, "{got}");
     assert_eq!(line("ghosts").1, "L3", "{got}");

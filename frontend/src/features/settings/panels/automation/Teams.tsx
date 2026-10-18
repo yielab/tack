@@ -39,6 +39,16 @@ const Teams: Component<Props> = (props) => {
     return [team ?? 'no team', team ? stateOf(team) : null, machine].filter(Boolean).join(' · ');
   };
 
+  /** What the team's sandbox reads besides its own work, in words; empty while nothing reports it. */
+  const readsOf = (id: string | null | undefined) => {
+    const team = teamOf(profile(id));
+    const paths = team ? props.settings()?.teams?.find((t) => t.name === team)?.read_only : null;
+    if (!paths) return '';
+    return paths.length
+      ? `Its sandbox also reads ${paths.join(', ')}, and cannot change them.`
+      : 'Its sandbox reads only its own work. A team that runs tests needs its toolchain granted: on the computer that runs docket, run docket setup sandbox read add <folder>.';
+  };
+
   const saveRole = async (role: Role, value: string) => {
     try {
       await api.roles.update(role.id, { agent_profile_id: value || null });
@@ -77,6 +87,7 @@ const Teams: Component<Props> = (props) => {
               <ProfileSelect label={`Profile for ${role.name}`} value={role.agent_profile_id} onChange={(v) => void saveRole(role, v)} />
             </div>
             <Show when={line(role.agent_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
+            <Show when={readsOf(role.agent_profile_id)}>{(text) => <Note testid="team-reads">{text()}</Note>}</Show>
           </div>
         )}
       </For>
@@ -86,6 +97,7 @@ const Teams: Component<Props> = (props) => {
           <ProfileSelect label="Profile for a task with no role" value={props.project()?.default_profile_id} onChange={(v) => props.onDefaultProfile(v || null)} />
         </div>
         <Show when={line(props.project()?.default_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
+        <Show when={readsOf(props.project()?.default_profile_id)}>{(text) => <Note testid="team-reads">{text()}</Note>}</Show>
       </div>
       <div class="flex flex-wrap items-center gap-3">
         <a href="/agents#profiles" class="text-sm underline" style={{ color: 'var(--color-text-secondary)' }}>Manage profiles →</a>

@@ -12585,6 +12585,16 @@
           "profile": {
             "type": "string",
             "description": "The Tack agent profile that names the team."
+          },
+          "read_only": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The folders the team's sandbox reads besides its own work; `[]` for none, `null` when no\ncomputer reports the team or its harness does not say."
           }
         }
       },

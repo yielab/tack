@@ -90,6 +90,10 @@
     "profile": {
       "value": "lights-out",
       "source": "set"
+    },
+    "readOnly": {
+      "value": "none",
+      "source": "set"
     }
   },
   "approvalMode": {
@@ -103,6 +107,7 @@
     "mode": "none",
     "scope": "default"
   },
+  "budgetUnpriced": [],
   "configSource": "",
   "configDigest": "",
   "drift": "",
@@ -124,5 +129,6 @@
     ]
   },
   "pipelineSource": "blueprint 'software'",
-  "repoConfigDir": "/scratch/repo2/.docket"
+  "repoConfigDir": "/scratch/repo2/.docket",
+  "readOnly": []
 }

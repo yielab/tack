@@ -272,6 +272,46 @@ async fn probe_on_api_5_reports_each_team_and_the_ceiling() {
 }
 
 #[tokio::test]
+async fn probe_reports_the_folders_each_teams_sandbox_reads() {
+    let fake = pods_fake().await;
+    fake.add_pod("saas-granted", "lights-out", &[]);
+    fake.set_read_only(
+        "saas-granted",
+        Some(&["/home/x/.nvm/versions/node/v22.17.1", "/home/x/venv"]),
+    );
+    fake.add_pod("saas-narrowed", "lights-out", &[]);
+    fake.set_read_only("saas-narrowed", Some(&[]));
+    fake.add_pod("saas-old", "lights-out", &[]);
+    fake.set_read_only("saas-old", None);
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let teams = adapter.probe().await.teams.expect("teams");
+    let read_only = |name: &str| {
+        teams
+            .iter()
+            .find(|t| t.name == name)
+            .unwrap()
+            .read_only
+            .clone()
+    };
+    assert_eq!(
+        read_only("saas-granted"),
+        Some(vec![
+            "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
+            "/home/x/venv".to_owned()
+        ])
+    );
+    assert_eq!(read_only("saas-narrowed"), Some(Vec::new()));
+    assert_eq!(read_only("saas-old"), None, "no key is unknown, not none");
+    // The capture itself: the attended team keeps the machine's one grant.
+    assert_eq!(
+        read_only(POD),
+        Some(vec!["/scratch/toolchain/node".to_owned()])
+    );
+}
+
+#[tokio::test]
 async fn registers_with_the_registry_because_cancel_goes_over_the_api() {
     let fake = pods_fake().await;
     let scene = scene();

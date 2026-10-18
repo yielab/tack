@@ -4923,6 +4923,11 @@ export interface components {
             name: string;
             /** @description The Tack agent profile that names the team. */
             profile: string;
+            /**
+             * @description The folders the team's sandbox reads besides its own work; `[]` for none, `null` when no
+             *     computer reports the team or its harness does not say.
+             */
+            read_only?: string[] | null;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional

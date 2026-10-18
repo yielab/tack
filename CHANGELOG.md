@@ -51,6 +51,12 @@ automation a template carries, and the removal of dollars per day.
 - **Usage per model.** A run's usage keeps its tokens per model (Claude Code's `modelUsage`,
   docket's `usage.byModel`); one query prices the Factory page and the daily dollar budget; the
   page shows cost by model and, when a run names a team, by team.
+- **Which folders a docket team's sandbox reads.** `tack runner doctor` ends each team's line with
+  what its sandbox reads besides its own work (`reads /home/me/.nvm/versions/node/v22.17.1`,
+  `reads nothing outside its work`, or `reads: not reported by this docket`), and the Teams rung of
+  Settings → Automation says the same under the role, with the docket command that grants a
+  toolchain under your home (`docket setup sandbox read add <folder>`). Read from docket's
+  `GET /pods/<team>` (`readOnly`).
 - **A profile can say its role needs the network.** The profile form on the Agents page has a box,
   "This role needs the network (web search and reading sources)", and the project file takes
   `tool_policy.network: true`; absent is off, as before. The run dialog's **Web tools** switch
