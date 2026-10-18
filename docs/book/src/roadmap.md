@@ -52,13 +52,12 @@ plan or the page named beside it.
 
 **Waiting on a partner:**
 
-- docket's context and its token count (Phase 75's requests to docket): each step resends
-  every earlier tool result to the model, its per-step limit counts cache reads at full weight,
-  and it throws away a finished answer that crossed the limit. Fabulada's first steps ended on
-  that limit with their largest single request at about 26 000 tokens. Until docket fixes it,
-  Fabulada's runs on paid models wait, and so do the live run of `scripts/docket-prill-e2e.sh`
-  and the end-to-end scenario with two teams and a rework. Runs already reach their teams, and
-  the docket tests answer from captures of a real docket.
+- docket's context and its token count (Phase 75's requests to docket) are fixed in docket's
+  `develop` (its Phase 44): a rerun of Fabulada's first steps counted at most 59 575 tokens a task,
+  and no step reached docket's own per-step limit. The live run of `scripts/docket-prill-e2e.sh`
+  passes against it (2026-10-18), inside docket's sandbox with a read-only grant for the
+  toolchain. Fabulada's runs from the board wait on the operator granting its Node install and
+  its `node_modules`; the end-to-end scenario with two teams and a rework is still to write.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -221,8 +220,8 @@ each fact is owned, so no rule is computed twice:
 
 **Status:** opened 2026-10-14 and built: the six waves landed in `develop` on 2026-10-14, the
 seventh, a whole project in and out through one file (ADR 0081), on 2026-10-17, followed the
-same day by the book's three guides. What remains is the live proof on docket `0.2.0-beta.6`,
-which is Phase 74's last round.
+same day by the book's three guides. The live proof, `scripts/docket-prill-e2e.sh`, passes on
+docket's `develop` since 2026-10-18; Fabulada's runs through its teams are Phase 74's last round.
 **ADRs:** 0080 (amends 0078 decision 7 and 0074 decision 1), 0081 (extends 0076). **Plan:**
 [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
 
