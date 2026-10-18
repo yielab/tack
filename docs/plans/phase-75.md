@@ -1,6 +1,6 @@
 # Plan: Phase 75 — limits in tokens, and a lean context
 
-**Status: opened 2026-10-18; Rounds 1 and 2 (A, G, B, D, E) in `develop` the same day.** Serves ADR 0083 (`docs/adr/0083-limits-in-tokens-and-a-lean-context.md`).
+**Status: opened 2026-10-18; Rounds 1 to 3 (A, G, B, D, E, V, L) in `develop` the same day.** Serves ADR 0083 (`docs/adr/0083-limits-in-tokens-and-a-lean-context.md`).
 Written against `develop` at `973dcd33`. Every path and line below was read that day; re-run
 `rg -n` before trusting a line number.
 
@@ -301,3 +301,15 @@ the end", which is not true of all, so a measured agent says Tack reads its toke
 it yet. Phase 76, proposed the same day, takes migrations 093 and 094 and reads the file through
 `read_outline` so the `usd_per_day` warning reaches its plan; the Fabulada fixture lost its
 `usd_per_day`, and the one test of the warning adds it back inline.
+
+Round 3, the same day, two Sonnet agents (V was planned for the integrator). V added one wrapper
+in `runner_admin.rs` that only builds the 400; a profile stored with a bad limit now refuses its
+run instead of running with none (none of the operator's thirteen profiles had one). L needed no
+migration and no change to `submit_events` or `repo/execution.rs`: a progress line's payload
+carries `usage` and is stored whole, and `budgets.rs`'s `running_counted_join` sums
+`COUNTED_TOKENS_SQL` over an open attempt's lines, read by `spent_today` and `day_room`. Two parts
+of L were dropped: the pack is the MRP pack (`docs/contracts/mrp-v1/`, not runner-v1), whose
+`usage` is prill's own tokens and admits no other key, and prill reports no cache figure, so
+`pack_tokens` reading `cache_read_tokens` would read a field no valid pack has; and the timeline's
+text stays "N tokens in, M out", which is docket's counted figure while docket reports no cache.
+The runner-v1 event fixture was left as it is, since `usage` rides in the event's free payload.

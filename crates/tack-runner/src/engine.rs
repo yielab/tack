@@ -51,11 +51,15 @@ pub struct Question {
 /// kind of step it was (`agent.tool_call`, `agent.model_turn`) and a line
 /// saying it. Read off a line of stdout by
 /// [`HarnessGrammar::signal`](crate::harness::local_process::HarnessGrammar::signal)
-/// and submitted as a runner event of that `kind` whose payload is `{"text": …}`.
+/// and submitted as a runner event of that `kind` whose payload is `{"text": …}`,
+/// plus `"usage"` when the step reports what it used: the server adds those up as
+/// the attempt's running counted sum (`running_counted_join` in `tack-db`'s `budgets.rs`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Progress {
     pub kind: String,
     pub text: String,
+    /// What this step used, when it says; the shape of the completion's usage.
+    pub usage: Option<tack_orch::execution::Usage>,
 }
 
 /// What one line of a harness's stdout means to the core, when the run is
@@ -1602,8 +1606,8 @@ where
     }
 
     /// Submits the steps a running harness reported since the last flush,
-    /// each a runner event of its own `kind` whose payload is `{"text": …}`,
-    /// numbered on from the attempt's last event. Best effort, like every
+    /// each a runner event of its own `kind` whose payload is `{"text": …}`
+    /// (and `"usage"` when the step has one), numbered on from the attempt's last event. Best effort, like every
     /// event: a batch the server does not take is logged and dropped, never
     /// retried, so a step can be missing from the timeline but never shown
     /// twice. `prompt` is scrubbed from each text as it is from a decision.
@@ -1636,7 +1640,15 @@ where
                     occurred_at: Timestamp::new(occurred_at.clone()),
                     source: "runner".to_owned(),
                     kind: step.kind.clone(),
-                    payload: serde_json::json!({ "text": scrub_with_prompt(&step.text, prompt) }),
+                    payload: {
+                        let mut payload =
+                            serde_json::json!({ "text": scrub_with_prompt(&step.text, prompt) });
+                        if let Some(usage) = &step.usage {
+                            payload["usage"] = serde_json::to_value(usage)
+                                .expect("usage is plain data and always serializes");
+                        }
+                        payload
+                    },
                 })
                 .collect();
             let report = EventBatchReport {

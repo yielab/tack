@@ -828,6 +828,40 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         (room.counted, room.reserved, room.open_runs, room.room),
         (0, 1_600_000, 2, 400_000)
     );
+    // An open run that has counted 400k so far (500k in, 150k of them read from the
+    // cache, 50k out) reserves 400k less; the day's room is the same, the 400k now counted.
+    let usage = serde_json::json!({
+        "tokens_in": {"value": 500_000, "source": "measured"},
+        "tokens_out": {"value": 50_000, "source": "measured"},
+        "cache_read_tokens": 150_000,
+    });
+    sqlx::query(
+        "INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) \
+         VALUES('row-usage','attempt-1','evt-usage',1,'runner','agent.hop_finished',?,?,?)",
+    )
+    .bind(serde_json::json!({"text": "done", "usage": usage}).to_string())
+    .bind(now.to_rfc3339())
+    .bind(now.to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .expect("a progress line with usage");
+    let running = tack_db::repo::budgets::day_room(repo.pool(), &project_id, now)
+        .await
+        .expect("no db error")
+        .expect("a daily limit");
+    assert_eq!(
+        (
+            running.counted,
+            running.reserved,
+            running.open_runs,
+            running.room
+        ),
+        (400_000, 1_200_000, 2, 400_000)
+    );
+    sqlx::query("DELETE FROM execution_events WHERE id = 'row-usage'")
+        .execute(repo.pool())
+        .await
+        .expect("back to no usage");
 
     // A third that asks for 500k waits, and says why; one that asks for nothing is
     // admitted with the 400k that is left as its limit.

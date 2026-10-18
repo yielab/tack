@@ -3828,6 +3828,7 @@ async fn reported_steps_reach_the_timeline_in_order_before_the_terminal_event() 
                 .send(Progress {
                     kind: kind.to_owned(),
                     text,
+                    usage: None,
                 })
                 .await
                 .expect("send");

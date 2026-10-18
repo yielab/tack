@@ -453,6 +453,7 @@ async fn a_run_without_questions_reports_its_steps_scrubbed() {
                     StreamSignal::Progress(Progress {
                         kind: "agent.step".to_owned(),
                         text: line.to_owned(),
+                        usage: None,
                     })
                 } else {
                     StreamSignal::Question(Question {
