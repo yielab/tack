@@ -79,6 +79,11 @@ automation a template carries.
 
 ### Changed
 
+- **What Tack sends an agent carries nothing twice.** To docket the brief goes once, as the
+  structured brief docket renders, not again in the description; a rework replaces the previous
+  round's fix section instead of adding one; a card's comments go newest first up to 4 000
+  characters, with a line counting the ones left out; the sentence saying a card's text is data
+  is said once (ADR 0083).
 - **Headings use Bricolage Grotesque** instead of Caprasimo. All text is sized in rem, so it
   follows the text size; `npm run lint:tokens` fails on a new px font size.
 - **The palette moved from the sidebar to Settings.** The sidebar keeps the light/dark button and

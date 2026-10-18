@@ -6,6 +6,9 @@ use tack_orch::execution::ExecutionRequestSnapshot;
 /// What docket's `gate` gets when a criterion does not say how long.
 const GATE_TIMEOUT_SECONDS: u64 = 600;
 
+/// Where `compose_instructions` puts the rendered brief.
+const BRIEF_HEADING: &str = "\n## The brief\n\n";
+
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
@@ -138,8 +141,22 @@ pub(super) fn body(
 ) -> Value {
     let instructions = &request.resolved_agent_profile.instructions;
     let docket = request.resolved_agent_profile.tool_policy.get("docket");
+    // The brief goes to docket once, as the structured `brief`: the description
+    // drops the section from its heading to the end of its fence.
+    let mut description = instructions.clone();
+    if request.brief.is_some()
+        && let Some(start) = description.find(BRIEF_HEADING)
+        && let Some(open) = description[start..].find("<<<card-text id=")
+        && let Some(close) = description[start + open + 16..].find(">>>")
+    {
+        let id = &description[start + open + 16..start + open + 16 + close];
+        let closing = format!("\n<<</card-text id={id}>>>\n");
+        if let Some(end) = description[start..].find(&closing) {
+            description.replace_range(start..start + end + closing.len(), "");
+        }
+    }
     let mut body = Map::new();
-    body.insert("description".into(), json!(instructions));
+    body.insert("description".into(), json!(description));
     body.insert(
         "externalRef".into(),
         json!(format!(
@@ -169,6 +186,16 @@ pub(super) fn body(
         }
         if !constraints.is_empty() {
             document.insert("constraints".into(), json!(constraints));
+        }
+        let context: Vec<String> = [
+            text(brief, "risk").map(|risk| format!("Risk: {risk}")),
+            text(brief, "definition_of_done").map(|done| format!("Definition of done: {done}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if !context.is_empty() {
+            document.insert("context".into(), json!(context));
         }
         body.insert("brief".into(), Value::Object(document));
         if let Some(gate) = brief

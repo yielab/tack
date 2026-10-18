@@ -263,6 +263,13 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
             follow_ups: 1,
         },
         Row {
+            name: "second round replaces the fix section",
+            cap: 3,
+            first: pack(|_| {}),
+            second: Some((pack(other_code), false)),
+            follow_ups: 2,
+        },
+        Row {
             name: "previous follow-up cancelled",
             cap: 3,
             first: pack(|_| {}),
@@ -316,6 +323,27 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
         }
         let made = follow_ups(&b, &a1.request_id).await;
         assert_eq!(made.len(), row.follow_ups, "{}: follow-ups", row.name);
+        for (_, _, text) in &made {
+            let snapshot: Value = serde_json::from_str(text).unwrap();
+            let instructions = snapshot["resolved_agent_profile"]["instructions"]
+                .as_str()
+                .unwrap();
+            assert!(
+                instructions
+                    .matches("## What the verifier asks you to fix")
+                    .count()
+                    <= 1,
+                "{}: at most one fix section: {instructions}",
+                row.name
+            );
+            if row.name == "second round replaces the fix section" && text == &made[1].2 {
+                assert!(instructions.contains("fix lint"), "{instructions}");
+                assert!(
+                    !instructions.contains("Build failed with compilation error"),
+                    "{instructions}"
+                );
+            }
+        }
         if row.name == "loop" {
             let snapshot: Value = serde_json::from_str(&made[0].2).unwrap();
             let original: Value = sqlx::query_scalar::<_, String>(
