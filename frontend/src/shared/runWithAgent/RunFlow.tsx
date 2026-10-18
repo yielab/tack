@@ -54,6 +54,8 @@ export interface RunFlowProps {
   project: Accessor<Project | undefined>;
   /** What the agent will read, from `GET /items/{id}/agent-context`. */
   agentContext: Accessor<string | undefined>;
+  /** The token limit the selected profile sets; null when it sets none. */
+  profileLimit: Accessor<number | null>;
   /** Where the shown profile came from (`GET /items/{id}/agent-context`'s `profile_source`); null once the person picked another. */
   profileSource?: Accessor<string | null | undefined>;
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
@@ -300,11 +302,22 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               : 'The profile gives this agent none.'}`}
           />
           <Field
+            label="Token limit"
+            type="number"
+            min="1"
+            value={props.form.tokenLimit}
+            placeholder="No limit"
+            onInput={(e) => props.setForm({ tokenLimit: e.currentTarget.value, tokenLimitEdited: true })}
+            hint={props.profileLimit() !== null && !props.form.tokenLimitEdited
+              ? `From the profile ${profileName()}. Clear it for no limit.`
+              : 'Leave empty for no limit.'}
+          />
+          <Field
             label="Timeout (seconds)"
             type="number"
             min="1"
             value={props.form.timeoutSeconds}
-            onInput={(e) => props.setForm('timeoutSeconds', Number(e.currentTarget.value))}
+            onInput={(e) => props.setForm({ timeoutSeconds: Number(e.currentTarget.value), timeoutEdited: true })}
           />
           <Prerequisite
             state={props.verifyConfigured() ? 'ok' : 'deferred'}

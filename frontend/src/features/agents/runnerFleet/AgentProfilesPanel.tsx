@@ -10,7 +10,8 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * Create/edit/delete UI for `agent_profiles`. The tool policy is built from a
  * per-harness checklist (`KNOWN_TOOLS`) plus a free-text line, and stored as
  * `{"tools": {"<harness>": [names] | ["*"]}}`; keys other than `tools` in an
- * existing policy are kept untouched on edit. Limits are not edited here.
+ * existing policy are kept untouched on edit. The limits form edits `limits.budgets.tokens`
+ * and `limits.timeout_seconds`; any other key in an existing `limits` is kept.
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
 
@@ -44,6 +45,21 @@ const namesFor = (h: string, st: ToolState): string[] =>
         ...st.extra.split(/[\s,]+/).filter((n) => n && !st.checked.includes(n)),
       ];
 
+/** A limit field as a number: `null` for empty, `undefined` for text that is no positive whole number. */
+const limitNumber = (text: string): number | null | undefined => {
+  if (text.trim() === '') return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+};
+
+const limitsFrom = (limits: unknown): { tokens: string; seconds: string } => {
+  const l = (limits ?? {}) as { budgets?: { tokens?: unknown }; timeout_seconds?: unknown };
+  return {
+    tokens: typeof l.budgets?.tokens === 'number' ? String(l.budgets.tokens) : '',
+    seconds: typeof l.timeout_seconds === 'number' ? String(l.timeout_seconds) : '',
+  };
+};
+
 const AgentProfilesPanel: Component = () => {
   const [profiles, { refetch, mutate }] = createResource(() => agentProfilesApi.list());
 
@@ -54,6 +70,8 @@ const AgentProfilesPanel: Component = () => {
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
+  const [tokenLimit, setTokenLimit] = createSignal('');
+  const [timeLimit, setTimeLimit] = createSignal('');
   const [saving, setSaving] = createSignal(false);
 
   const rows = (): AgentProfileSummary[] => profiles()?.data.data ?? [];
@@ -64,22 +82,40 @@ const AgentProfilesPanel: Component = () => {
     setSummary(profile?.summary ?? '');
     setInstructions(profile?.instructions ?? '');
     setTools(toolsFromPolicy(profile?.tool_policy));
+    const { tokens, seconds } = limitsFrom(profile?.limits);
+    setTokenLimit(tokens);
+    setTimeLimit(seconds);
     setShowForm(true);
   };
 
+  const limitsInvalid = () => limitNumber(tokenLimit()) === undefined || limitNumber(timeLimit()) === undefined;
+
   const submit = async (e: Event) => {
     e.preventDefault();
-    if (!name().trim() || !instructions().trim()) return;
+    if (!name().trim() || !instructions().trim() || limitsInvalid()) return;
     const existing = editing();
     const base = (existing?.tool_policy ?? {}) as Record<string, unknown>;
     const tool_policy = {
       ...base,
       tools: Object.fromEntries(HARNESSES.map((h) => [h, namesFor(h, tools[h])])),
     };
+    // The edited keys replace the profile's; every other key of its limits stays.
+    const old = (existing?.limits ?? {}) as { budgets?: Record<string, unknown> } & Record<string, unknown>;
+    const limits: Record<string, unknown> = { ...old };
+    const budgets: Record<string, unknown> = { ...old.budgets };
+    const tokens = limitNumber(tokenLimit());
+    const seconds = limitNumber(timeLimit());
+    delete budgets.tokens;
+    if (tokens) budgets.tokens = tokens;
+    delete limits.budgets;
+    if (Object.keys(budgets).length > 0) limits.budgets = budgets;
+    delete limits.timeout_seconds;
+    if (seconds) limits.timeout_seconds = seconds;
     const fields = {
       name: name().trim(),
       instructions: instructions().trim(),
       tool_policy,
+      ...(existing || Object.keys(limits).length > 0 ? { limits } : {}),
       ...(summary().trim() || existing ? { summary: summary().trim() } : {}),
     };
     setSaving(true);
@@ -211,6 +247,24 @@ const AgentProfilesPanel: Component = () => {
             value={summary()}
             onInput={(e) => setSummary(e.currentTarget.value)}
           />
+          <Field
+            label="Token limit per run"
+            type="number"
+            min="1"
+            placeholder="No limit"
+            hint="Empty means no limit. A run can set its own."
+            value={tokenLimit()}
+            onInput={(e) => setTokenLimit(e.currentTarget.value)}
+          />
+          <Field
+            label="Time limit (seconds)"
+            type="number"
+            min="1"
+            placeholder="Default"
+            hint="Empty uses the default time limit."
+            value={timeLimit()}
+            onInput={(e) => setTimeLimit(e.currentTarget.value)}
+          />
           <FieldShell label="Tools">
             <div class="space-y-3">
               <For each={HARNESSES}>
@@ -251,7 +305,7 @@ const AgentProfilesPanel: Component = () => {
             </div>
           </FieldShell>
           <div class="flex gap-2">
-            <Button type="submit" loading={saving()} disabled={saving() || !name().trim() || !instructions().trim()}>
+            <Button type="submit" loading={saving()} disabled={saving() || !name().trim() || !instructions().trim() || limitsInvalid()}>
               {editing() ? 'Save' : 'Create'}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setShowForm(false)} disabled={saving()}>

@@ -73,6 +73,9 @@ export interface RunWithAgentFormValues {
    *  agent, otherwise the agent uses its own. */
   model: string | null;
   timeoutSeconds: number;
+  /** Absent: the run takes its profile's token limit. `null` is no limit for this run even
+   *  when the profile has one; a number is that limit. */
+  tokenLimit?: number | null;
   allowNetwork: boolean;
   tools: string[];
   /** `'auto'` (default) omits `permission_policy.approvals` on the wire;
@@ -111,9 +114,10 @@ export interface RunWithAgentFormValues {
  * A live test against a real server confirmed defaulting
  * `permission_policy` to `{}` gets a 400 `missing
  * field \`network\`` — this module's fields exist specifically because that
- * mistake is already documented. `budgets`/`environment`/`metadata` are left
+ * mistake is already documented. `environment`/`metadata` are left
  * at `{}`, which that same test confirmed is genuinely safe to default
- * (untyped `Value` fields end-to-end).
+ * (untyped `Value` fields end-to-end). `budgets` is `{}` too until the person
+ * changes the token limit: absent, the server uses the profile's.
  */
 export function buildCreateExecutionInput(values: RunWithAgentFormValues): CreateExecutionInput {
   return {
@@ -135,7 +139,7 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
       network: values.allowNetwork,
       ...(values.approvals === 'ask' ? { approvals: 'ask' } : {}),
     },
-    budgets: {},
+    budgets: values.tokenLimit === undefined ? {} : { tokens: values.tokenLimit },
     environment: {},
     metadata: {},
     timeout_seconds: values.timeoutSeconds,

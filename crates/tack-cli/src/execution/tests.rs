@@ -20,7 +20,7 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
         requested_harness_kind: Some("claude_code"),
         requested_model: Some("claude-sonnet"),
         permission_policy: PERMISSION_POLICY_JSON,
-        timeout_seconds: 3600,
+        timeout_seconds: Some(3600),
         ..Default::default()
     };
     let body = build_create_execution_body(Some(&selector), &args).unwrap();
@@ -34,7 +34,7 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
     assert_eq!(typed.selector_id.as_deref(), Some("runr_1"));
     assert_eq!(typed.agent_profile_id.as_deref(), Some("ap_1"));
     assert_eq!(typed.requested_harness_kind.as_deref(), Some("claude_code"));
-    assert_eq!(typed.timeout_seconds, 3600);
+    assert_eq!(typed.timeout_seconds, Some(3600));
 }
 
 /// `permission_policy` is re-validated server-side against
@@ -58,7 +58,7 @@ fn create_execution_body_defaults_optional_blobs_to_empty() {
         agent_profile_id: Some("ap_1"),
         requested_harness_kind: Some("codex"),
         permission_policy: PERMISSION_POLICY_JSON,
-        timeout_seconds: 60,
+        timeout_seconds: Some(60),
         ..Default::default()
     };
     let body = build_create_execution_body(Some(&selector), &args).unwrap();
@@ -82,7 +82,7 @@ fn create_execution_rejects_invalid_json_in_a_named_field() {
         requested_harness_kind: Some("codex"),
         permission_policy: PERMISSION_POLICY_JSON,
         budgets: Some("not json"),
-        timeout_seconds: 1,
+        timeout_seconds: Some(1),
         ..Default::default()
     };
     let err = build_create_execution_body(Some(&selector), &args).unwrap_err();
@@ -97,7 +97,7 @@ fn create_execution_args_require_policy() {
         agent_profile_id: Some("ap"),
         requested_harness_kind: Some("codex"),
         permission_policy: "",
-        timeout_seconds: 1,
+        timeout_seconds: Some(1),
         ..Default::default()
     };
     assert!(build_create_execution_body(Some(&selector), &missing_policy).is_err());
@@ -127,7 +127,7 @@ fn create_execution_omits_each_key_the_server_resolves() {
         agent_profile_id: profile,
         requested_harness_kind: harness,
         permission_policy: PERMISSION_POLICY_JSON,
-        timeout_seconds: 60,
+        timeout_seconds: Some(60),
         ..Default::default()
     };
     // (selector, profile, harness, keys that must be absent)

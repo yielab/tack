@@ -314,10 +314,16 @@ pub struct CreateExecution {
     /// `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
     /// matched harness does not attest `decisions: supported`.
     pub permission_policy: Value,
+    /// A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
+    /// `null`: no limit for this run even when the profile has one; a positive integer: that
+    /// many. `0`, a negative number or a non-number is refused (`invalid_request`, field
+    /// `budgets.tokens`).
     pub budgets: Value,
     pub environment: Value,
     pub metadata: Value,
-    pub timeout_seconds: u64,
+    /// Absent: the profile's `limits.timeout_seconds`, else the default time limit.
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
     /// `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
     /// with `invalid_request`. Omitted leaves the item's status untouched.
     #[serde(default)]
@@ -916,6 +922,77 @@ pub async fn create_execution(
     create_as(state, principal(&headers)?, input).await
 }
 
+/// What a run is given when neither the request nor its profile sets a time limit.
+const DEFAULT_TIMEOUT_SECONDS: u64 = 3600;
+
+/// Who set a run's token limit.
+enum LimitSource {
+    Profile,
+    Run,
+    None,
+}
+
+impl LimitSource {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Profile => "profile",
+            Self::Run => "run",
+            Self::None => "none",
+        }
+    }
+}
+
+/// A run's limits, from the one rule: the request's value, else the profile's `limits`, else none
+/// (tokens) or `DEFAULT_TIMEOUT_SECONDS` (time). The snapshot's two copies of `budgets` both take
+/// what this returns.
+fn run_limits(
+    input: &CreateExecution,
+    profile_limits: &Value,
+) -> Result<(Value, u64, LimitSource), (StatusCode, Json<Value>)> {
+    let refused = |message: &str, field: &str| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            message,
+            json!({"field": field}),
+        )
+    };
+    let mut budgets = if input.budgets.is_null() {
+        json!({})
+    } else {
+        input.budgets.clone()
+    };
+    let Some(object) = budgets.as_object_mut() else {
+        return Err(refused("budgets must be an object", "budgets"));
+    };
+    let positive = |value: &Value| value.as_u64().filter(|n| *n > 0);
+    let (tokens, source) = match object.get("tokens") {
+        None => match positive(&profile_limits["budgets"]["tokens"]) {
+            Some(n) => (Some(n), LimitSource::Profile),
+            None => (None, LimitSource::None),
+        },
+        Some(Value::Null) => (None, LimitSource::None),
+        Some(value) => match positive(value) {
+            Some(n) => (Some(n), LimitSource::Run),
+            None => {
+                return Err(refused(
+                    "budgets.tokens must be a positive whole number, or null for no limit",
+                    "budgets.tokens",
+                ));
+            }
+        },
+    };
+    match tokens {
+        Some(n) => object.insert("tokens".to_owned(), json!(n)),
+        None => object.remove("tokens"),
+    };
+    let timeout = input
+        .timeout_seconds
+        .or_else(|| positive(&profile_limits["timeout_seconds"]))
+        .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+    Ok((budgets, timeout, source))
+}
+
 /// `create_execution` for a caller that is the server itself: the principal is a string,
 /// not a header, and the profile, agent and machine are resolved as for any other run.
 pub(crate) async fn create_as(
@@ -1006,7 +1083,7 @@ pub(crate) async fn create_as(
         input.selector_kind = Some(kind);
         input.selector_id = Some(id);
     }
-    let profile = load_profile(&state.repo, &resolved.profile_id, &input).await?;
+    let profile = load_profile(&state.repo, &resolved.profile_id, &mut input).await?;
     enqueue_as(state, principal, input, profile, repository).await
 }
 
@@ -1121,26 +1198,28 @@ pub(crate) async fn default_selector(
 }
 
 /// The agent profile as the database has it now, shaped as the snapshot the
-/// request records.
+/// request records. The run's limits are resolved here, from the request and the
+/// profile, and written back to `input`, so the snapshot's two copies cannot differ.
 async fn load_profile(
     repo: &tack_db::Repository,
     profile_id: &str,
-    input: &CreateExecution,
+    input: &mut CreateExecution,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
-    let row: Option<(String, String, String)> =
-        sqlx::query_as("SELECT name, instructions, tool_policy FROM agent_profiles WHERE id = ?")
-            .bind(profile_id)
-            .fetch_optional(repo.pool())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not load agent profile",
-                    json!({}),
-                )
-            })?;
-    let Some((name, instructions, tool_policy)) = row else {
+    let row: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT name, instructions, tool_policy, limits FROM agent_profiles WHERE id = ?",
+    )
+    .bind(profile_id)
+    .fetch_optional(repo.pool())
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not load agent profile",
+            json!({}),
+        )
+    })?;
+    let Some((name, instructions, tool_policy, limits)) = row else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
@@ -1148,11 +1227,18 @@ async fn load_profile(
             json!({"resource": "agent_profile", "reason": "agent_profile_not_found"}),
         ));
     };
+    let limits = serde_json::from_str::<Value>(&limits).unwrap_or_else(|_| json!({}));
+    let (budgets, timeout_seconds, source) = run_limits(input, &limits)?;
+    input.budgets = budgets;
+    input.timeout_seconds = Some(timeout_seconds);
+    if let Some(metadata) = input.metadata.as_object_mut() {
+        metadata.insert("limit_source".into(), json!(source.as_str()));
+    }
     Ok(json!({
         "name": name,
         "instructions": instructions,
         "tool_policy": serde_json::from_str::<Value>(&tool_policy).unwrap_or_else(|_| json!({})),
-        "timeout_seconds": input.timeout_seconds,
+        "timeout_seconds": timeout_seconds,
         "budgets": input.budgets,
     }))
 }
@@ -1194,15 +1280,16 @@ pub(crate) async fn enqueue_as(
     repository_snapshot: Value,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let idempotency_scope = format!("operator:{authenticated_principal}");
-    let (Some(selector_kind), Some(selector_id), Some(agent_profile_id)) = (
+    let (Some(selector_kind), Some(selector_id), Some(agent_profile_id), Some(timeout_seconds)) = (
         input.selector_kind.clone(),
         input.selector_id.clone(),
         input.agent_profile_id.clone(),
+        input.timeout_seconds,
     ) else {
         return Err(error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
-            "selector_kind, selector_id and agent_profile_id must be resolved before enqueue",
+            "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
             json!({"field": "selector_kind"}),
         ));
     };
@@ -1382,7 +1469,7 @@ pub(crate) async fn enqueue_as(
         "requested_model": resolved_model.clone(),
         "repository": repository_snapshot,
         "permission_policy": input.permission_policy,
-        "timeout_seconds": input.timeout_seconds,
+        "timeout_seconds": timeout_seconds,
         "budgets": input.budgets,
         "status_map_policy_id": input.status_map_policy_id,
         "environment": input.environment,
@@ -1451,7 +1538,7 @@ pub(crate) async fn enqueue_as(
     let budgets = serialized_field("budgets", "budgets")?;
     let environment = serialized_field("environment", "environment")?;
     let metadata = serialized_field("metadata", "metadata")?;
-    let timeout_seconds = i64::try_from(input.timeout_seconds).map_err(|_| {
+    let timeout_seconds = i64::try_from(timeout_seconds).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -2241,6 +2328,9 @@ pub struct AgentContextResponse {
     /// Where that profile came from: `role:{name}`, `project_default`, `run_settings`,
     /// `implementer` or `ambiguous`; `null` when `profile_id` was named in the query.
     pub profile_source: Option<String>,
+    /// That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the
+    /// run dialog pre-fills its limits from it.
+    pub limits: Value,
 }
 
 /// Query parameters for `GET /api/items/{id}/agent-context`.
@@ -2320,8 +2410,8 @@ pub async fn get_item_agent_context(
         .as_ref()
         .and_then(|r| profile_source_label(&r.source));
     let profile = if let Some(resolved) = resolved {
-        let profile: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT id, name, instructions, tool_policy FROM agent_profiles WHERE id = ?",
+        let profile: Option<(String, String, String, String, String)> = sqlx::query_as(
+            "SELECT id, name, instructions, tool_policy, limits FROM agent_profiles WHERE id = ?",
         )
         .bind(&resolved.profile_id)
         .fetch_optional(state.repo.pool())
@@ -2334,12 +2424,13 @@ pub async fn get_item_agent_context(
                 json!({}),
             )
         })?;
-        profile.map(|(id, name, instructions, tool_policy)| {
+        profile.map(|(id, name, instructions, tool_policy, limits)| {
             serde_json::json!({
                 "agent_profile_id": id,
                 "name": name,
                 "instructions": instructions,
                 "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
+                "limits": serde_json::from_str::<serde_json::Value>(&limits).unwrap_or_else(|_| json!({})),
             })
         })
     } else {
@@ -2351,6 +2442,7 @@ pub async fn get_item_agent_context(
             "name": "Default",
             "instructions": "",
             "tool_policy": serde_json::json!({}),
+            "limits": serde_json::json!({}),
         })
     });
 
@@ -2391,5 +2483,6 @@ pub async fn get_item_agent_context(
         text: composed,
         profile_id: answered_profile_id,
         profile_source: answered_source,
+        limits: profile["limits"].clone(),
     }))
 }

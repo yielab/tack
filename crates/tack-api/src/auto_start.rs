@@ -250,7 +250,7 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         budgets: json!({}),
         environment: json!({}),
         metadata: json!({ "started_by": "auto_start" }),
-        timeout_seconds: 3600,
+        timeout_seconds: None,
         status_map_policy_id: None,
         verify: None,
         push_branch: None,

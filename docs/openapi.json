@@ -7180,9 +7180,13 @@
         "type": "object",
         "description": "Response body for `GET /api/items/{id}/agent-context`.",
         "required": [
-          "text"
+          "text",
+          "limits"
         ],
         "properties": {
+          "limits": {
+            "description": "That profile's `limits` (`budgets.tokens`, `timeout_seconds`), `{}` when it sets none; the\nrun dialog pre-fills its limits from it."
+          },
           "profile_id": {
             "type": [
               "string",
@@ -8766,8 +8770,7 @@
           "permission_policy",
           "budgets",
           "environment",
-          "metadata",
-          "timeout_seconds"
+          "metadata"
         ],
         "properties": {
           "agent_profile_id": {
@@ -8777,7 +8780,9 @@
             ],
             "description": "Omitted, the server picks one: run settings, the item's role, the project's\ndefault, the implementer, and records which in `metadata.profile_source`."
           },
-          "budgets": {},
+          "budgets": {
+            "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`)."
+          },
           "environment": {},
           "idempotency_key": {
             "type": "string"
@@ -8842,8 +8847,12 @@
             "description": "`done_on_success` or `done_on_mrp_accepted`; any other id is rejected\nwith `invalid_request`. Omitted leaves the item's status untouched."
           },
           "timeout_seconds": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
+            "description": "Absent: the profile's `limits.timeout_seconds`, else the default time limit.",
             "minimum": 0
           },
           "verify": {

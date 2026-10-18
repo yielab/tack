@@ -88,6 +88,8 @@ function mockFetch(
     agentProfiles?: unknown[];
     project?: unknown;
     agentContext?: string;
+    /** The resolved profile's `limits`, as the agent-context route returns them. */
+    limits?: Record<string, unknown>;
     /** What the server resolved for the item: the profile and where it came from. */
     resolved?: { profile_id: string | null; profile_source: string | null };
     runSettings?: Record<string, unknown> | null;
@@ -121,7 +123,7 @@ function mockFetch(
       const fallback = (project as { default_profile_id?: string | null }).default_profile_id
         ?? (agentProfiles.length === 1 ? (agentProfiles[0] as { agent_profile_id: string }).agent_profile_id : null);
       const resolved = opts.resolved ?? { profile_id: fallback, profile_source: fallback ? 'project_default' : null };
-      return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', ...resolved }), { status: 200 });
+      return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', limits: opts.limits ?? {}, ...resolved }), { status: 200 });
     }
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
@@ -246,6 +248,32 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(field('Timeout').value).toBe('120');
+  });
+
+  it('pre_fills_the_limits_from_the_profile_and_sends_a_token_limit_only_when_changed', async () => {
+    const limits = { budgets: { tokens: 300000 }, timeout_seconds: 1800 };
+    mount({}, { runners: [RUNNER], fleets: [], limits });
+    await flush();
+    await flush();
+    expect(field('Token limit').value).toBe('300000');
+    expect(field('Timeout').value).toBe('1800');
+    expect(document.body.textContent).toContain('From the profile Reviewer');
+    submitButton().click();
+    await flush();
+    await flush();
+    // Untouched: the server takes the profile's own limit, and the time shown is sent.
+    expect(lastCreateBody).toMatchObject({ budgets: {}, timeout_seconds: 1800 });
+    teardown();
+    mount({}, { runners: [RUNNER], fleets: [], limits });
+    await flush();
+    await flush();
+    setField(field('Token limit'), '');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ budgets: { tokens: null }, timeout_seconds: 1800 });
+    // Nothing about the time was changed, so the task does not remember it.
+    expect(lastItemPatch).toBeUndefined();
   });
 
   it('asks_the_server_for_the_profile_and_says_who_chose_it', async () => {

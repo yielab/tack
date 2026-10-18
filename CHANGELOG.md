@@ -123,6 +123,13 @@ automation a template carries.
 
 ### Fixed
 
+- **A profile's token limit reaches its run.** A limit set on a profile (in the project file or
+  the profile form, which now has "Token limit per run" and "Time limit") was stored and never
+  applied: the run copied only what the run dialog sent, `{}`. A run now takes its profile's
+  limit unless it sets its own, `budgets.tokens: null` runs it without one, and a zero or
+  negative limit is refused. `timeout_seconds` is optional on the API, MCP and `tack execution
+  create`: absent, the profile's time limit applies, else one hour. The run dialog pre-fills
+  both from the profile (ADR 0083 decision 1).
 - **A run that cannot start ends Failed with the reason**, whether the folder could not be
   prepared or the agent refused the run at validation or at start (for docket: "docket did not
   accept the team"). Before, it stayed in "Preparing" with no reason anywhere.

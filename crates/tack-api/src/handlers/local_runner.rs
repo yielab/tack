@@ -541,7 +541,7 @@ pub async fn post_test_run(
         budgets: json!({}),
         environment: json!({}),
         metadata: json!({}),
-        timeout_seconds: 300,
+        timeout_seconds: Some(300),
         status_map_policy_id: None,
         verify: None,
         push_branch: None,

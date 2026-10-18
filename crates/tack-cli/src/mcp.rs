@@ -339,7 +339,10 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
                     return Err(format!("unknown argument: {key}"));
                 }
             }
-            let timeout_seconds = require_u64(args, "timeout_seconds")?;
+            let timeout_seconds = match args.get("timeout_seconds") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(require_u64(args, "timeout_seconds")?),
+            };
             let idempotency_key = opt_str(args, "idempotency_key");
             let model = opt_str(args, "model");
             let status_map_policy_id = opt_str(args, "status_map_policy_id");
@@ -831,16 +834,15 @@ fn tool_specs() -> Value {
                     "fleet_id": { "type": "string", "description": "Fleet id (at most one of runner_id/fleet_id)" },
                     "agent_profile_id": { "type": "string", "description": "Omit to use the item's role profile, else the project default" },
                     "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude-code. Omit to use the profile's agent, else the project's default agent" },
-                    "timeout_seconds": { "type": "integer" },
+                    "timeout_seconds": { "type": "integer", "description": "Omit to use the profile's time limit" },
                     "model": { "type": "string", "description": "The model to run, passed to the agent as given. Omit to use the project's default for its default agent, else the agent's own choice" },
-                    "budgets": { "type": "object", "description": "Default: {}" },
+                    "budgets": { "type": "object", "description": "Default: {}. tokens: omit to use the profile's limit, null for no limit, or a positive number" },
                     "metadata": { "type": "object", "description": "Default: {}" },
                     "status_map_policy_id": { "type": "string", "enum": ["done_on_success", "done_on_mrp_accepted"], "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched" },
                     "idempotency_key": { "type": "string", "description": "Defaults to a fresh key each call; pass a stable value to safely retry the exact same request" }
                 },
                 "required": [
-                    "item_id",
-                    "timeout_seconds"
+                    "item_id"
                 ]
             })
         ),
