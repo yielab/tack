@@ -26,7 +26,7 @@ use tack_runner::{
 
 mod common;
 mod fake_docket;
-use fake_docket::{FakeDocket, Gate, Script};
+use fake_docket::{FakeDocket, Gate, Script, fixture};
 
 const POD: &str = "fab-dev";
 
@@ -417,7 +417,7 @@ async fn a_422_fails_the_attempt_with_the_bodys_text_and_posts_nothing_again() {
     let (outcome, steps) = run_to_end(&adapter, &refused).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    let message = "restrictions.deniedTools names an unknown tool: \"zap\"";
+    let message = "restrictions.deniedTools: 'zap' is not a known tool (bash, consult, edit, fetch, glob, grep, read, skill, write)";
     assert_eq!(outcome.terminal_reason["message"], json!(message));
     assert!(
         steps.iter().any(|(_, text)| text == message),
@@ -438,9 +438,7 @@ async fn a_400_on_the_pod_fails_the_attempt_with_the_bodys_text_and_posts_no_tas
     let docket = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/pods"))
-        .respond_with(
-            ResponseTemplate::new(400).set_body_json(json!({"error": "project is required"})),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(fixture("post-pods-old-fields")))
         .mount(&docket)
         .await;
     let fake = FakeDocket::start().await;
@@ -459,7 +457,7 @@ async fn a_400_on_the_pod_fails_the_attempt_with_the_bodys_text_and_posts_no_tas
         panic!("docket refused the team, so the attempt cannot start");
     };
 
-    assert!(reason.ends_with("project is required"), "{reason}");
+    assert!(reason.ends_with("name is required"), "{reason}");
     let requests = docket.received_requests().await.expect("recorded");
     assert!(
         requests.iter().all(|request| request.url.path() == "/pods"),
@@ -643,7 +641,7 @@ async fn failures_carry_docket_kind_and_text() {
         fake.script(Script {
             status: status.to_owned(),
             failure_kind: Some(kind.to_owned()),
-            error: format!("docket says {kind}"),
+            reason: format!("docket says {kind}"),
             ..Script::default()
         });
         let scene = scene();
@@ -658,7 +656,7 @@ async fn failures_carry_docket_kind_and_text() {
     let fake = pods_fake().await;
     fake.script(Script {
         status: "blocked".to_owned(),
-        error: "needs a person".to_owned(),
+        reason: "needs a person".to_owned(),
         ..Script::default()
     });
     let scene = scene();
@@ -1147,4 +1145,329 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
     handle.request();
     let ended = tokio::time::timeout(Duration::from_secs(30), serving).await;
     assert!(ended.is_ok(), "the runner stops on shutdown");
+}
+
+// ── The fake is the captures ──────────────────────────────────────────────────
+
+/// Every route `src/harness/docket/client.rs` sends, as its provenance files
+/// name it.
+const CLIENT_ROUTES: [&str; 13] = [
+    "GET /status.json",
+    "GET /health",
+    "GET /pods",
+    "GET /pods/<pod>",
+    "POST /pods",
+    "POST /tasks/<pod>",
+    "GET /tasks/<pod>/<id>",
+    "POST /tasks/<pod>/<id>/cancel",
+    "GET /tasks/<pod>/<id>/diff",
+    "GET /traces/<pod>",
+    "GET /inbox",
+    "POST /approvals/<token>",
+    "POST /tasks/<id>/answer",
+];
+
+/// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
+const NOT_IN_CLIENT: [&str; 1] = ["GET /health"];
+
+#[test]
+fn every_route_the_client_sends_has_a_captured_file() {
+    let client = include_str!("../src/harness/docket/client.rs");
+    assert_eq!(
+        client.matches("self.send(").count(),
+        CLIENT_ROUTES.len() - NOT_IN_CLIENT.len(),
+        "client.rs sends a route this test does not list (or lists one it does not send)"
+    );
+    let provenances = fake_docket::provenances();
+    for route in CLIENT_ROUTES {
+        let captured: Vec<_> = provenances
+            .iter()
+            .filter(|found| found.state == "captured" && found.get("route") == Some(route))
+            .collect();
+        assert!(
+            !captured.is_empty(),
+            "no captured file for {route}: rerun scripts/capture-docket-fixtures.sh"
+        );
+        for found in captured {
+            let answer = fake_docket::fixtures_dir().join(format!("{}.json", found.name));
+            assert!(answer.exists(), "{} has no answer file", found.name);
+        }
+    }
+}
+
+#[test]
+fn every_fixture_says_whether_it_was_captured_or_constructed() {
+    let provenances = fake_docket::provenances();
+    let directory = fake_docket::fixtures_dir();
+    for entry in std::fs::read_dir(&directory).expect("directory") {
+        let name = entry.expect("entry").file_name().into_string().unwrap();
+        if let Some(stem) = name.strip_suffix(".json")
+            && !stem.ends_with(".request")
+        {
+            assert!(
+                provenances.iter().any(|found| found.name == stem),
+                "{name} has no .provenance beside it"
+            );
+        }
+    }
+    for found in &provenances {
+        assert!(
+            matches!(found.state.as_str(), "captured" | "constructed"),
+            "{}: the first line is {:?}",
+            found.name,
+            found.state
+        );
+        for key in ["route", "status", "docket", "date"] {
+            assert!(found.get(key).is_some(), "{} lacks {key}:", found.name);
+        }
+        if let Some(request) = found.get("request") {
+            assert!(directory.join(request).exists(), "{request} is missing");
+        }
+        if found.state == "captured" {
+            assert!(
+                found.get("docket").unwrap().contains("(API 5)"),
+                "{} was not captured from API 5",
+                found.name
+            );
+        }
+    }
+}
+
+#[test]
+fn the_capture_script_refuses_the_operators_docket_home() {
+    let script = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/capture-docket-fixtures.sh"),
+    )
+    .expect("the script");
+    assert!(script.contains(r#"[ -n "${DOCKET_HOME:-}" ] || die "DOCKET_HOME is unset""#));
+    assert!(script.contains(r#"die "DOCKET_HOME is the operator's ~/.docket""#));
+    assert!(script.contains("/var/tmp/docket-capture-*/home/.docket"));
+}
+
+/// Both values have the same keys, object by object; an array is compared by
+/// its first element and a `null` stands for any value.
+fn same_shape(left: &Value, right: &Value, at: &str) -> Result<(), String> {
+    match (left, right) {
+        (Value::Null, _) | (_, Value::Null) => Ok(()),
+        (Value::Object(left), Value::Object(right)) => {
+            let (left_keys, right_keys): (Vec<_>, Vec<_>) = (
+                left.keys().cloned().collect(),
+                right.keys().cloned().collect(),
+            );
+            if left_keys.iter().collect::<std::collections::BTreeSet<_>>()
+                != right_keys.iter().collect::<std::collections::BTreeSet<_>>()
+            {
+                return Err(format!(
+                    "{at}: the fake has {left_keys:?}, docket {right_keys:?}"
+                ));
+            }
+            left.iter()
+                .try_for_each(|(key, value)| same_shape(value, &right[key], &format!("{at}.{key}")))
+        }
+        (Value::Array(left), Value::Array(right)) => match (left.first(), right.first()) {
+            (Some(left), Some(right)) => same_shape(left, right, &format!("{at}[0]")),
+            _ => Ok(()),
+        },
+        (left, right) if std::mem::discriminant(left) == std::mem::discriminant(right) => Ok(()),
+        (left, right) => Err(format!("{at}: the fake sent {left}, docket {right}")),
+    }
+}
+
+async fn ask(fake: &FakeDocket, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+    let token = std::fs::read_to_string(fake.token_file()).expect("token");
+    let client = reqwest::Client::new();
+    let mut request = client
+        .request(method.parse().unwrap(), format!("{}{path}", fake.base_url))
+        .bearer_auth(token.trim());
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+    let response = request.send().await.expect("the fake answers");
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+fn request_file(name: &str) -> Value {
+    let text =
+        std::fs::read_to_string(fake_docket::fixtures_dir().join(format!("{name}.request.json")))
+            .expect("request file");
+    serde_json::from_str(&text).expect("JSON")
+}
+
+#[tokio::test]
+async fn the_fake_answers_with_the_keys_of_the_captures() {
+    let fake = FakeDocket::start().await;
+    let mut seen: Vec<(&str, Value)> = Vec::new();
+    let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
+
+    get("health", ask(&fake, "GET", "/health", None).await);
+    get(
+        "status-empty",
+        ask(&fake, "GET", "/status.json", None).await,
+    );
+    get("pods-empty", ask(&fake, "GET", "/pods", None).await);
+    get("inbox-empty", ask(&fake, "GET", "/inbox", None).await);
+    let created = ask(
+        &fake,
+        "POST",
+        "/pods",
+        Some(request_file("post-pods-created")),
+    )
+    .await;
+    assert_eq!(created.0, 201, "{created:?}");
+    get("post-pods-created", created);
+    get(
+        "post-pods-existing",
+        ask(
+            &fake,
+            "POST",
+            "/pods",
+            Some(request_file("post-pods-existing")),
+        )
+        .await,
+    );
+    get("pods", ask(&fake, "GET", "/pods", None).await);
+    get(
+        "pod-attended",
+        ask(&fake, "GET", "/pods/fab-dev", None).await,
+    );
+    get("pod-unknown", ask(&fake, "GET", "/pods/nope", None).await);
+    get("status", ask(&fake, "GET", "/status.json", None).await);
+
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("pipeline".to_owned()),
+        reason: "unknown pipeline".to_owned(),
+        ..Script::default()
+    });
+    let posted = ask(
+        &fake,
+        "POST",
+        "/tasks/fab-dev",
+        Some(request_file("post-task-created")),
+    )
+    .await;
+    assert_eq!(posted.0, 201, "{posted:?}");
+    let id = posted.1["task"].as_str().unwrap().to_owned();
+    get("post-task-created", posted);
+    get(
+        "task-failed-pipeline",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{id}"), None).await,
+    );
+    get(
+        "task-diff-failed",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{id}/diff"), None).await,
+    );
+    get(
+        "task-cancel-finished",
+        ask(
+            &fake,
+            "POST",
+            &format!("/tasks/fab-dev/{id}/cancel"),
+            Some(json!({"reason": "x"})),
+        )
+        .await,
+    );
+    get(
+        "task-unknown",
+        ask(&fake, "GET", "/tasks/fab-dev/task-unknown", None).await,
+    );
+    get(
+        "approval-unknown",
+        ask(
+            &fake,
+            "POST",
+            "/approvals/nope",
+            Some(request_file("approval-unknown")),
+        )
+        .await,
+    );
+    get(
+        "answer-unknown",
+        ask(
+            &fake,
+            "POST",
+            "/tasks/task-unknown/answer",
+            Some(request_file("answer-unknown")),
+        )
+        .await,
+    );
+
+    let mut wrong = Vec::new();
+    for (name, answer) in &seen {
+        if let Err(why) = same_shape(answer, &fake_docket::fixture(name), name) {
+            wrong.push(why);
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[tokio::test]
+async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is_a_400() {
+    let fake = FakeDocket::start().await;
+    // The fields docket stopped reading: the capture of its own refusal is the proof.
+    let old = ask(
+        &fake,
+        "POST",
+        "/pods",
+        Some(json!({"project": "fab-dev", "path": "/x", "blueprint": "software", "ensure": true})),
+    )
+    .await;
+    assert_eq!(old.0, 400);
+    assert!(
+        old.1["error"].as_str().unwrap().contains("no key"),
+        "{old:?}"
+    );
+    let missing = ask(
+        &fake,
+        "POST",
+        "/pods",
+        Some(json!({"name": "fab-dev", "location": "/x", "ensure": true})),
+    )
+    .await;
+    assert_eq!(missing.0, 400);
+    assert!(
+        missing.1["error"]
+            .as_str()
+            .unwrap()
+            .contains("\"blueprint\""),
+        "{missing:?}"
+    );
+    let mut task = request_file("post-task-created");
+    task["bogus"] = json!(1);
+    fake.add_pod(POD, "attended", &[]);
+    let unknown = ask(&fake, "POST", "/tasks/fab-dev", Some(task)).await;
+    assert_eq!(unknown.0, 400);
+    assert!(
+        unknown.1["error"].as_str().unwrap().contains("\"bogus\""),
+        "{unknown:?}"
+    );
+    assert!(fake.task_ids().is_empty());
+}
+
+/// docket's task record gives the sentence in `reason` and has no `error`
+/// key; the attempt's reason must carry it, as the capture of a task refused
+/// at claim shows.
+#[tokio::test]
+async fn a_failed_tasks_sentence_reaches_the_attempts_message() {
+    let captured = fixture("task-failed-pipeline");
+    let sentence = captured["reason"].as_str().expect("a sentence").to_owned();
+    assert!(
+        captured.get("error").is_none(),
+        "docket's task has no error key"
+    );
+    assert_eq!(captured["failureKind"], json!("pipeline"));
+
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("pipeline".to_owned()),
+        reason: sentence.clone(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("pipeline"));
+    assert_eq!(outcome.terminal_reason["message"], json!(sentence));
 }

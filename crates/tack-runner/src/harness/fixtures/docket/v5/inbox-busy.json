@@ -1,0 +1,69 @@
+{
+  "needsYou": [
+    {
+      "token": "approval-token",
+      "pod": "fab-dev",
+      "taskId": "task-00000000-0000-0000-0000-000000000000",
+      "role": "implementer",
+      "tool": "bash",
+      "action": "rm -rf build",
+      "policy": "ask-bash",
+      "state": "pending",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "expiresAt": null,
+      "a2aState": "INPUT_REQUIRED"
+    },
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "waiting_input",
+      "a2aState": "INPUT_REQUIRED",
+      "reason": null,
+      "description": "x",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "question": {
+        "id": "q-1",
+        "taskId": "task-00000000-0000-0000-0000-000000000000",
+        "pod": "fab-dev",
+        "step": "implementer",
+        "message": "Which one?",
+        "requestedSchema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer"
+          ]
+        },
+        "createdAt": "2026-01-01T00:00:00Z",
+        "expiresAt": null
+      },
+      "approvalToken": null,
+      "brief": null
+    }
+  ],
+  "failed": [],
+  "doneSince": [],
+  "running": [
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "running",
+      "a2aState": "WORKING",
+      "reason": null,
+      "description": "x",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "question": null,
+      "approvalToken": null,
+      "brief": null
+    }
+  ],
+  "next": "2026-01-01T00:00:00Z"
+}

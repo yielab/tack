@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "created": true,
+  "project": "fab-dev",
+  "blueprint": "software",
+  "members": [
+    {
+      "id": "fab-dev-lead",
+      "role": "lead",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    {
+      "id": "fab-dev-implementer",
+      "role": "implementer",
+      "model": "anthropic/claude-sonnet-4-6"
+    }
+  ]
+}

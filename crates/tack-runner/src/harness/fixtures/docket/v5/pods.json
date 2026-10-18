@@ -1,0 +1,32 @@
+{
+  "pods": [
+    {
+      "name": "fab-dev",
+      "codebase": "/scratch/repo",
+      "members": 2,
+      "profile": "attended",
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingApproval": 0,
+        "waitingInput": 0,
+        "failed": 0,
+        "completed": 0
+      }
+    },
+    {
+      "name": "fab-lights",
+      "codebase": "/scratch/repo2",
+      "members": 2,
+      "profile": "lights-out",
+      "queue": {
+        "pending": 0,
+        "running": 0,
+        "waitingApproval": 0,
+        "waitingInput": 0,
+        "failed": 0,
+        "completed": 0
+      }
+    }
+  ]
+}

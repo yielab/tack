@@ -1,0 +1,56 @@
+{
+  "apiVersion": "5",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "channels": [],
+  "agents": [
+    {
+      "id": "fab-dev-implementer",
+      "name": "fab-dev implementer",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-sonnet-4-6",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "fab-dev-lead",
+      "name": "fab-dev lead",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-haiku-4-5",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "fab-lights-implementer",
+      "name": "fab-lights implementer",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-sonnet-4-6",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    },
+    {
+      "id": "fab-lights-lead",
+      "name": "fab-lights lead",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-haiku-4-5",
+      "registered": true,
+      "bindings": [],
+      "lastActivity": "2026-01-01",
+      "costUsd": 0.0,
+      "budgetUsd": null
+    }
+  ],
+  "totalCostUsd": 0.0
+}

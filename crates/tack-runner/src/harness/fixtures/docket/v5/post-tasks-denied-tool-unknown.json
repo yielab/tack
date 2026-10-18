@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "restrictions.deniedTools: 'no-such-tool' is not a known tool (bash, consult, edit, fetch, glob, grep, read, skill, write)"
+}

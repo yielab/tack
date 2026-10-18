@@ -1,0 +1,7 @@
+constructed
+route: GET /tasks/<pod>/<id>
+status: 200
+built-from: task-failed-pipeline.json, with the hop and usage keys read off a record whose hop failed on a missing key (observed once, not kept) and docket's _hop_record in core/dispatch.py
+docket: 0.2.0b6 (API 5), source checkout a9f6f81c
+date: 2026-10-18
+note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.

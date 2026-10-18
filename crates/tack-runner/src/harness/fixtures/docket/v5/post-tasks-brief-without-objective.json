@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "invalid brief: 1 validation error for TaskBrief\nobjective\n  Value error, objective must not be empty [type=value_error, input_value='', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.14/v/value_error"
+}

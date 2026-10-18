@@ -1,0 +1,6 @@
+{
+  "name": "fab-dev",
+  "location": "/scratch/repo",
+  "blueprint": "software",
+  "ensure": true
+}

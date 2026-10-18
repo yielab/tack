@@ -1,0 +1,6 @@
+{
+  "name": "fab-lights",
+  "location": "/scratch/repo2",
+  "blueprint": "software",
+  "ensure": true
+}

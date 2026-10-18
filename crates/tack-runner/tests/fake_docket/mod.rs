@@ -1,16 +1,19 @@
-//! An in-process docket, implemented key by key from its published specs:
-//! `specs/api/operator-api.spec.md` (version 5.0.1) and
-//! `specs/data/serve-read-api.spec.md` (`/status.json`, `/traces`, `/inbox`,
-//! `/approvals`, `/tasks/<id>/answer`). Which spec version it mirrors, and
-//! every key it leaves out, is in
-//! `src/harness/fixtures/docket/v5/README.md`.
+//! An in-process docket that answers from the files in
+//! `src/harness/fixtures/docket/v5/`: what a real docket 0.2.0b6 sent
+//! (`captured`, recorded by `scripts/capture-docket-fixtures.sh`) and the
+//! answers a model has to run for (`constructed`, marked so). A route's answer
+//! is its file with this run's names and numbers put in, so the fake has the
+//! keys docket has and no others; a request body is checked against the keys
+//! of the captured requests Tack sends, and an unknown or missing key is a
+//! `400` that names it, so the fake is never more lenient than the capture.
+//! What it leaves out is in `src/harness/fixtures/docket/v5/README.md`.
 //!
 //! It serves on a loopback port the OS picked, so nothing is ever spawned and
 //! no real model is ever called. A test scripts a task before the adapter posts
 //! it; the fake records every request for assertion.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
@@ -27,10 +30,132 @@ use serde_json::{Value, json};
 
 pub const TOKEN: &str = "fake-docket-token";
 
-/// The tool names `restrictions.deniedTools` accepts (`pod set deniedTools`).
-const TOOLS: [&str; 9] = [
-    "read", "write", "edit", "glob", "grep", "bash", "fetch", "skill", "consult",
-];
+/// Where the captures and the constructed answers are.
+pub fn fixtures_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/harness/fixtures/docket/v5")
+}
+
+/// One fixture's answer, as the file holds it.
+pub fn fixture(name: &str) -> Value {
+    let path = fixtures_dir().join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|why| panic!("fixture {}: {why}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|why| panic!("fixture {}: {why}", path.display()))
+}
+
+/// A fixture with this run's names where the file has its own. The swap is on
+/// the text, so a name inside a sentence or a path changes with the key.
+fn fixture_with(name: &str, swaps: &[(&str, &str)]) -> Value {
+    let mut text = fixture(name).to_string();
+    for (from, to) in swaps {
+        text = text.replace(&json_text(from), &json_text(to));
+    }
+    serde_json::from_str(&text).expect("a swapped fixture is still JSON")
+}
+
+/// `text` as it sits inside a JSON string.
+fn json_text(text: &str) -> String {
+    let quoted = json!(text).to_string();
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+/// What a `<name>.json.provenance` says: its first line, then `key: value`.
+#[derive(Clone, Debug)]
+pub struct Provenance {
+    pub name: String,
+    pub state: String,
+    pub fields: BTreeMap<String, String>,
+}
+
+impl Provenance {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.fields.get(key).map(String::as_str)
+    }
+}
+
+/// Every provenance file of the directory, by fixture name.
+pub fn provenances() -> Vec<Provenance> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(fixtures_dir()).expect("the fixtures directory") {
+        let path = entry.expect("entry").path();
+        let Some(file) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(name) = file.strip_suffix(".json.provenance") else {
+            continue;
+        };
+        let text = std::fs::read_to_string(&path).expect("provenance");
+        let mut lines = text.lines();
+        let state = lines.next().unwrap_or_default().to_owned();
+        let fields = lines
+            .filter_map(|line| line.split_once(": "))
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect();
+        found.push(Provenance {
+            name: name.to_owned(),
+            state,
+            fields,
+        });
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    found
+}
+
+/// The status docket answered with, from the provenance.
+fn fixture_status(name: &str) -> u16 {
+    provenances()
+        .iter()
+        .find(|found| found.name == name)
+        .and_then(|found| found.get("status")?.parse().ok())
+        .unwrap_or_else(|| panic!("fixture {name} names no status"))
+}
+
+/// The keys a request to one route may carry, and must.
+#[derive(Clone, Debug, Default)]
+struct KeySpec {
+    allowed: BTreeSet<String>,
+    required: Option<BTreeSet<String>>,
+}
+
+/// The request keys of every route, from the captured requests Tack sends: any
+/// key one of them has is allowed, and a key every one of them has is required
+/// unless a provenance lists it as optional.
+fn request_keys() -> HashMap<String, KeySpec> {
+    let mut routes: HashMap<String, KeySpec> = HashMap::new();
+    let mut optional: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for found in provenances() {
+        let (Some(route), Some(request)) = (found.get("route"), found.get("request")) else {
+            continue;
+        };
+        if found.state != "captured" || found.get("tack-sends") != Some("yes") {
+            continue;
+        }
+        let text = std::fs::read_to_string(fixtures_dir().join(request)).expect("request");
+        let Ok(Value::Object(body)) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        let keys: BTreeSet<String> = body.keys().cloned().collect();
+        let spec = routes.entry(route.to_owned()).or_default();
+        spec.allowed.extend(keys.iter().cloned());
+        spec.required = Some(match spec.required.take() {
+            Some(required) => required.intersection(&keys).cloned().collect(),
+            None => keys,
+        });
+        optional.entry(route.to_owned()).or_default().extend(
+            found
+                .get("optional-keys")
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned),
+        );
+    }
+    for (route, spec) in &mut routes {
+        if let (Some(required), Some(optional)) = (&mut spec.required, optional.get(route)) {
+            required.retain(|key| !optional.contains(key));
+        }
+    }
+    routes
+}
 
 /// What a task waits on before it can finish.
 #[derive(Clone, Debug)]
@@ -61,7 +186,8 @@ pub struct Script {
     pub after: Vec<(String, Value)>,
     pub status: String,
     pub failure_kind: Option<String>,
-    pub error: String,
+    /// The sentence docket's task record carries in `reason`.
+    pub reason: String,
     /// A file docket commits on the task's branch: `(path, content)`.
     pub commit: Option<(String, String)>,
     pub untracked: Vec<String>,
@@ -76,7 +202,7 @@ impl Default for Script {
             after: Vec::new(),
             status: "done".to_owned(),
             failure_kind: None,
-            error: String::new(),
+            reason: String::new(),
             commit: None,
             untracked: Vec::new(),
             usage: json!({"input": 0, "output": 0, "byModel": {}}),
@@ -122,6 +248,7 @@ struct World {
     next: u32,
     repository: Option<PathBuf>,
     models: Vec<String>,
+    keys: HashMap<String, KeySpec>,
 }
 
 pub struct FakeDocket {
@@ -143,6 +270,7 @@ impl FakeDocket {
             next: 0,
             repository: None,
             models: vec!["local/local-model".to_owned()],
+            keys: request_keys(),
         }));
         let app = Router::new()
             .fallback(handle)
@@ -225,8 +353,16 @@ fn reply(status: u16, body: Value) -> Response {
         .into_response()
 }
 
+/// An error docket has no capture of: its `{"ok": false, "error"}` shape, a
+/// sentence of the fake's own.
 fn error(status: u16, sentence: &str) -> Response {
-    reply(status, json!({"error": sentence}))
+    reply(status, json!({"ok": false, "error": sentence}))
+}
+
+/// A refusal as docket gave it, with this run's names where the capture has
+/// its own.
+fn refusal(name: &str, swaps: &[(&str, &str)]) -> Response {
+    reply(fixture_status(name), fixture_with(name, swaps))
 }
 
 fn git(directory: &Path, args: &[&str]) -> String {
@@ -255,18 +391,46 @@ fn timestamp(index: usize) -> String {
     format!("2026-10-14T10:{:02}:{:02}Z", seconds / 60, seconds % 60)
 }
 
+/// One trace line: the envelope of a captured event, with this event's own
+/// payload.
 fn trace_event(state: &mut World, pod: &str, task: &str, event_type: &str, payload: Value) {
     let mut payload = payload;
     payload["task"] = json!(task);
-    let line = json!({
-        "ts": timestamp(state.trace.len()),
-        "project": pod,
-        "session_id": format!("agent:{pod}:{task}"),
-        "agent_role": payload["role"].as_str().unwrap_or("implementer"),
-        "event_type": event_type,
-        "payload": payload,
-    });
+    let template = fixture("traces-events");
+    let mut line: Value =
+        serde_json::from_str(template["events"][0].as_str().expect("an event line"))
+            .expect("an event is JSON");
+    line["ts"] = json!(timestamp(state.trace.len()));
+    line["project"] = json!(pod);
+    line["session_id"] = json!(format!("agent:{pod}:{task}"));
+    line["agent_role"] = json!(payload["role"].as_str().unwrap_or("implementer"));
+    line["event_type"] = json!(event_type);
+    line["payload"] = payload;
     state.trace.push((pod.to_owned(), line));
+}
+
+/// `400` for a key the captured requests to this route never carry, or one
+/// every one of them carries and this one lacks.
+fn check_keys(state: &World, route: &str, body: &Value) -> Option<Response> {
+    let spec = state.keys.get(route)?;
+    let object = body.as_object()?;
+    for key in object.keys() {
+        if !spec.allowed.contains(key) {
+            return Some(error(
+                400,
+                &format!("the fake: {route} has no key {key:?} in any captured request"),
+            ));
+        }
+    }
+    for key in spec.required.iter().flatten() {
+        if !object.contains_key(key) {
+            return Some(error(
+                400,
+                &format!("the fake: {route} lacks the key {key:?} every captured request has"),
+            ));
+        }
+    }
+    None
 }
 
 async fn handle(
@@ -295,28 +459,43 @@ async fn handle(
             .get("authorization")
             .and_then(|value| value.to_str().ok());
         if sent != Some(&format!("Bearer {TOKEN}")) {
-            return error(401, "Unauthorized");
+            return refusal("unauthorized", &[]);
         }
     }
     let raw_body = !body.is_empty() && parsed.is_null();
+    let keyed = |route: &str| {
+        if raw_body {
+            None
+        } else {
+            check_keys(&state, route, &parsed)
+        }
+    };
+    let refused_keys = match (method.as_str(), segments.as_slice()) {
+        ("POST", ["pods"]) => keyed("POST /pods"),
+        ("POST", ["tasks", _, _, "cancel"]) => keyed("POST /tasks/<pod>/<id>/cancel"),
+        ("POST", ["tasks", _, "answer"]) => keyed("POST /tasks/<id>/answer"),
+        ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
+        ("POST", ["approvals", _]) => keyed("POST /approvals/<token>"),
+        _ => None,
+    };
+    if let Some(refused) = refused_keys {
+        return refused;
+    }
     match (method.as_str(), segments.as_slice()) {
         ("GET", ["status.json"]) => status(&state),
-        ("GET", ["health"]) => reply(
-            200,
-            json!({"ok": true, "apiVersion": state.api_version,
-                   "dispatch": {"on": true, "inflight": [], "stopping": false, "workers": 4}}),
-        ),
+        ("GET", ["health"]) => {
+            let mut answer = fixture("health");
+            answer["apiVersion"] = json!(state.api_version);
+            reply(200, answer)
+        }
         ("GET", ["pods"]) => pods(&state),
         ("GET", ["pods", pod]) => pod_report(&state, pod),
-        ("POST", ["pods"]) if raw_body => error(400, "Invalid JSON body"),
+        ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
-        ("POST", ["tasks", pod]) if raw_body => {
-            let _ = pod;
-            error(400, "Invalid JSON body")
-        }
+        ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
         ("GET", ["tasks", pod, id]) => get_task(&state, pod, id),
-        ("POST", ["tasks", pod, id, "cancel"]) => cancel_task(&mut state, pod, id, &parsed),
+        ("POST", ["tasks", pod, id, "cancel"]) => cancel_task(&mut state, pod, id),
         ("GET", ["tasks", pod, id, "diff"]) => diff(&state, pod, id),
         ("POST", ["tasks", id, "answer"]) => answer(&mut state, id, &parsed),
         ("GET", ["traces", pod]) => traces(&state, pod, &query),
@@ -327,40 +506,48 @@ async fn handle(
 }
 
 fn status(state: &World) -> Response {
+    let template = fixture("status");
     let agents: Vec<Value> = state
         .models
         .iter()
         .enumerate()
         .map(|(index, model)| {
-            json!({"id": format!("member-{index}"), "name": "member", "kind": "project",
-                   "scope": "project", "model": model, "registered": true,
-                   "bindings": [], "lastActivity": "never", "costUsd": 0.0, "budgetUsd": null})
+            let mut agent = template["agents"][0].clone();
+            agent["id"] = json!(format!("member-{index}"));
+            agent["model"] = json!(model);
+            agent
         })
         .collect();
-    reply(
-        200,
-        json!({"apiVersion": state.api_version, "timestamp": "2026-10-14T10:00:00Z",
-               "channels": [], "agents": agents, "totalCostUsd": 0.0}),
-    )
+    let mut answer = template;
+    answer["apiVersion"] = json!(state.api_version);
+    answer["agents"] = json!(agents);
+    reply(200, answer)
 }
 
 fn pods(state: &World) -> Response {
+    let template = fixture("pods")["pods"][0].clone();
     let pods: Vec<Value> = state
         .pods
         .iter()
         .map(|(name, pod)| {
-            let pending = state
-                .tasks
-                .iter()
-                .filter(|task| &task.pod == name && task.status == "pending")
-                .count();
-            let running = state
-                .tasks
-                .iter()
-                .filter(|task| &task.pod == name && task.status == "running")
-                .count();
-            json!({"name": name, "codebase": pod.codebase, "members": 2,
-                   "profile": pod.profile, "queue": {"pending": pending, "running": running}})
+            let count = |status: &str| {
+                state
+                    .tasks
+                    .iter()
+                    .filter(|task| &task.pod == name && task.status == status)
+                    .count()
+            };
+            let mut entry = template.clone();
+            entry["name"] = json!(name);
+            entry["codebase"] = json!(pod.codebase);
+            entry["profile"] = json!(pod.profile);
+            entry["queue"] = json!({
+                "pending": count("pending"), "running": count("running"),
+                "waitingApproval": count("waiting_approval"),
+                "waitingInput": count("waiting_input"),
+                "failed": count("failed"), "completed": count("done"),
+            });
+            entry
         })
         .collect();
     reply(200, json!({"pods": pods}))
@@ -368,33 +555,36 @@ fn pods(state: &World) -> Response {
 
 fn pod_report(state: &World, name: &str) -> Response {
     let Some(pod) = state.pods.get(name) else {
-        return error(404, "no such pod");
+        return refusal("pod-unknown", &[("no-such-team", name)]);
     };
+    let mut report = fixture_with("pod-attended", &[("fab-dev", name)]);
     let violations: Vec<Value> = pod
         .violations
         .iter()
         .map(|(requirement, fix)| json!({"requirement": requirement, "fix": fix}))
         .collect();
-    reply(
-        200,
-        json!({"members": [{"role": "implementer", "model": "local/local-model", "modelSource": "pod"}],
-               "settings": {}, "pipeline": {}, "configOfRecord": "pod", "mcpServers": [],
-               "skills": [], "exporters": [],
-               "profile": {"name": pod.profile, "violations": violations},
-               "pipelineSource": "pod", "repoConfigDir": ""}),
-    )
+    report["profile"] = json!({"name": pod.profile, "violations": violations});
+    if let Some(model) = state.models.first() {
+        for member in report["members"].as_array_mut().into_iter().flatten() {
+            member["model"]["value"] = json!(model);
+        }
+    }
+    reply(200, report)
 }
 
 fn post_pod(state: &mut World, body: &Value) -> Response {
     let Some(name) = body["name"].as_str().filter(|name| !name.is_empty()) else {
-        return error(400, "name is required");
+        return refusal("post-pods-old-fields", &[]);
     };
     let ensure = body["ensure"] == json!(true);
     if state.pods.contains_key(name) {
         return if ensure {
-            reply(200, json!({"ok": true, "created": false, "project": name}))
+            reply(
+                200,
+                fixture_with("post-pods-existing", &[("fab-dev", name)]),
+            )
         } else {
-            error(409, "pod already exists")
+            refusal("post-pods-conflict", &[("fab-dev", name)])
         };
     }
     state.pods.insert(
@@ -405,70 +595,70 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             violations: Vec::new(),
         },
     );
-    reply(201, json!({"ok": true, "created": true, "project": name}))
+    reply(201, fixture_with("post-pods-created", &[("fab-dev", name)]))
 }
 
-/// The body rules of `POST /tasks/<pod>`: `400` for a wrong shape, `422` for
-/// a restriction that would widen.
+/// The body rules of `POST /tasks/<pod>` that docket's captured refusals show:
+/// `400` for a wrong shape, `422` for a restriction that would widen. What
+/// docket accepts without comment (a blank description, any priority) is
+/// accepted here too.
 fn check_task_body(body: &Value) -> Option<Response> {
     let Some(object) = body.as_object() else {
-        return Some(error(400, "Invalid JSON body"));
+        return Some(error(400, "Request body must be a JSON object"));
     };
     if object
         .get("description")
         .and_then(Value::as_str)
-        .is_none_or(|text| text.trim().is_empty())
+        .is_none_or(str::is_empty)
     {
-        return Some(error(400, "description is required"));
+        return Some(refusal("post-tasks-no-description", &[]));
     }
     for key in ["externalRef", "idempotencyKey"] {
         if let Some(value) = object.get(key)
-            && !value
-                .as_str()
-                .is_some_and(|text| (1..=200).contains(&text.chars().count()))
+            && value.as_str().is_none_or(str::is_empty)
         {
-            return Some(error(400, &format!("{key} must be 1-200 characters")));
-        }
-    }
-    for key in ["baseRef", "pipeline"] {
-        if object.get(key).is_some_and(|value| !value.is_string()) {
-            return Some(error(400, &format!("{key} must be a string")));
+            return Some(refusal(
+                "post-tasks-empty-external-ref",
+                &[("externalRef", key)],
+            ));
         }
     }
     if let Some(gate) = object.get("gate")
         && !gate["command"].as_str().is_some_and(|c| !c.is_empty())
     {
-        return Some(error(400, "gate.command must be a string"));
+        return Some(refusal("post-tasks-gate-without-command", &[]));
     }
     if let Some(max) = object.get("maxTokens")
         && max.as_u64().is_none_or(|n| n == 0)
     {
-        return Some(error(400, "maxTokens must be an integer above 0"));
-    }
-    if let Some(priority) = object.get("priority")
-        && !matches!(priority.as_str(), Some("high" | "normal" | "low"))
-    {
-        return Some(error(400, "priority must be high, normal or low"));
+        return Some(refusal("post-tasks-max-tokens-zero", &[]));
     }
     if let Some(brief) = object.get("brief")
         && !brief["objective"]
             .as_str()
             .is_some_and(|text| !text.trim().is_empty())
     {
-        return Some(error(422, "brief: objective must not be empty"));
+        return Some(refusal("post-tasks-brief-without-objective", &[]));
     }
     if let Some(restrictions) = object.get("restrictions") {
         if restrictions["network"]
             .as_str()
             .is_some_and(|n| n != "none")
         {
-            return Some(error(422, "restrictions.network may only be none"));
+            return Some(refusal("post-tasks-network-open", &[]));
         }
+        // The tools `restrictions.deniedTools` accepts are in the capture's own sentence.
+        let known = fixture("post-tasks-denied-tool-unknown")["error"]
+            .as_str()
+            .and_then(|sentence| sentence.split_once('('))
+            .map(|(_, list)| list.trim_end_matches(')').to_owned())
+            .unwrap_or_default();
         for tool in restrictions["deniedTools"].as_array().into_iter().flatten() {
-            if !tool.as_str().is_some_and(|name| TOOLS.contains(&name)) {
-                return Some(error(
-                    422,
-                    &format!("restrictions.deniedTools names an unknown tool: {tool}"),
+            let name = tool.as_str().unwrap_or_default();
+            if !known.split(", ").any(|known| known == name) {
+                return Some(refusal(
+                    "post-tasks-denied-tool-unknown",
+                    &[("no-such-tool", name)],
                 ));
             }
         }
@@ -478,7 +668,7 @@ fn check_task_body(body: &Value) -> Option<Response> {
 
 fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     if !state.pods.contains_key(pod) {
-        return error(404, "no such pod");
+        return refusal("post-tasks-unknown-pod", &[("no-such-team", pod)]);
     }
     if let Some(refused) = check_task_body(body) {
         return refused;
@@ -491,11 +681,11 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
             .iter()
             .find(|task| &task.id == id)
             .expect("task");
-        return reply(
-            200,
-            json!({"ok": true, "created": false, "task": task.id, "project": pod,
-                   "status": task.status}),
-        );
+        let mut answer = fixture("post-task-existing");
+        answer["task"] = json!(task.id);
+        answer["project"] = json!(pod);
+        answer["status"] = json!(task.status);
+        return reply(200, answer);
     }
     state.next += 1;
     let id = format!("task-{:04x}", state.next);
@@ -537,10 +727,10 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     } else if matches!(state.tasks[index].script.gate, Gate::Approval { .. }) {
         state.tasks[index].status = "waiting_approval".to_owned();
     }
-    reply(
-        201,
-        json!({"ok": true, "created": true, "task": id, "project": pod, "status": "pending"}),
-    )
+    let mut answer = fixture("post-task-created");
+    answer["task"] = json!(id);
+    answer["project"] = json!(pod);
+    reply(201, answer)
 }
 
 /// Writes the `after` events, commits the file on the task's branch and sets
@@ -577,22 +767,61 @@ fn finish(state: &mut World, index: usize) {
     state.tasks[index].gate_open = false;
 }
 
+/// A task as `GET /tasks/<pod>/<id>` sends it: the captured record of a task
+/// that failed (or the constructed one of a task that finished), with this
+/// task's own values. The keys of the request that docket stores come back
+/// only when the request had them; the sentence is `reason`, and a task has no
+/// `error` key.
 fn task_record(task: &Task) -> Value {
     let body = &task.body;
-    let mut record = json!({
-        "id": task.id, "status": task.status,
-        "priority": body["priority"].as_str().unwrap_or("normal"),
-        "externalRef": body["externalRef"], "idempotencyKey": body["idempotencyKey"],
-        "baseRef": body["baseRef"], "pipeline": body["pipeline"], "gate": body["gate"],
-        "maxTokens": body["maxTokens"], "restrictions": body["restrictions"],
-        "worktree": {"dir": "", "branch": task.branch, "baseCommit": task.base_commit},
-        "usage": task.script.usage, "hops": task.hops,
-        "error": task.script.error,
+    let mut record = fixture(if task.status == "done" {
+        "task-done"
+    } else {
+        "task-failed-pipeline"
     });
-    if let Some(kind) = &task.script.failure_kind
-        && matches!(task.status.as_str(), "failed" | "blocked")
-    {
-        record["failureKind"] = json!(kind);
+    record["id"] = json!(task.id);
+    record["description"] = body["description"].clone();
+    record["status"] = json!(task.status);
+    record["priority"] = json!(body["priority"].as_str().unwrap_or("normal"));
+    for key in [
+        "externalRef",
+        "idempotencyKey",
+        "baseRef",
+        "pipeline",
+        "gate",
+        "maxTokens",
+        "restrictions",
+        "brief",
+    ] {
+        match body.get(key) {
+            // docket fills a brief out to the whole document.
+            Some(Value::Object(given)) if key == "brief" => {
+                for (name, value) in given {
+                    record["brief"][name] = value.clone();
+                }
+            }
+            Some(value) => record[key] = value.clone(),
+            None => {
+                record.as_object_mut().expect("record").remove(key);
+            }
+        }
+    }
+    record["worktree"]["branch"] = json!(task.branch);
+    record["worktree"]["baseCommit"] = json!(task.base_commit);
+    record["worktree"]["baseRef"] = body["baseRef"].clone();
+    record["reason"] = json!(task.script.reason);
+    record["hops"] = json!(task.hops);
+    if task.status == "done" {
+        record["usage"] = task.script.usage.clone();
+    }
+    let object = record.as_object_mut().expect("record");
+    match &task.script.failure_kind {
+        Some(kind) if matches!(task.status.as_str(), "failed" | "blocked") => {
+            object.insert("failureKind".to_owned(), json!(kind));
+        }
+        _ => {
+            object.remove("failureKind");
+        }
     }
     record
 }
@@ -600,30 +829,43 @@ fn task_record(task: &Task) -> Value {
 fn get_task(state: &World, pod: &str, id: &str) -> Response {
     match state.tasks.iter().find(|t| t.pod == pod && t.id == id) {
         Some(task) => reply(200, task_record(task)),
-        None => error(404, "no such task"),
+        None => refusal("task-unknown", &[("fab-dev", pod), ("task-unknown", id)]),
     }
 }
 
-fn cancel_task(state: &mut World, pod: &str, id: &str, body: &Value) -> Response {
-    let _ = body;
+fn cancel_task(state: &mut World, pod: &str, id: &str) -> Response {
     let Some(index) = state.tasks.iter().position(|t| t.pod == pod && t.id == id) else {
-        return error(404, "no such task");
+        return refusal(
+            "task-cancel-unknown",
+            &[("fab-dev", pod), ("task-unknown", id)],
+        );
     };
     let status = state.tasks[index].status.clone();
     if !matches!(
         status.as_str(),
         "running" | "waiting_input" | "waiting_approval" | "pending"
     ) {
-        return error(409, &format!("task is {status}, not running or parked"));
+        return refusal(
+            "task-cancel-finished",
+            &[
+                ("task-00000000-0000-0000-0000-000000000000", id),
+                (" failed;", &format!(" {status};")),
+            ],
+        );
     }
     state.tasks[index].status = "cancelled".to_owned();
     state.tasks[index].gate_open = false;
-    reply(200, json!({"ok": true, "task": id, "status": "cancelled"}))
+    let mut answer = fixture("cancel-accepted");
+    answer["task"] = json!(id);
+    reply(200, answer)
 }
 
 fn diff(state: &World, pod: &str, id: &str) -> Response {
     let Some(task) = state.tasks.iter().find(|t| t.pod == pod && t.id == id) else {
-        return error(404, "no such task");
+        return refusal(
+            "task-diff-unknown",
+            &[("fab-dev", pod), ("task-unknown", id)],
+        );
     };
     let (head, patch) = match &state.repository {
         Some(repository) => (
@@ -635,12 +877,14 @@ fn diff(state: &World, pod: &str, id: &str) -> Response {
         ),
         None => (String::new(), String::new()),
     };
-    reply(
-        200,
-        json!({"task": id, "branch": task.branch, "baseCommit": task.base_commit,
-               "head": head, "patch": patch, "untracked": task.script.untracked,
-               "worktreePresent": true}),
-    )
+    let mut answer = fixture("task-diff-failed");
+    answer["task"] = json!(id);
+    answer["branch"] = json!(task.branch);
+    answer["baseCommit"] = json!(task.base_commit);
+    answer["head"] = json!(head);
+    answer["patch"] = json!(patch);
+    answer["untracked"] = json!(task.script.untracked);
+    reply(200, answer)
 }
 
 /// `GET /traces/<pod>?since=`: verbatim JSONL lines and the compound
@@ -684,15 +928,10 @@ fn traces(state: &World, pod: &str, query: &str) -> Response {
 }
 
 fn inbox(state: &World) -> Response {
+    let template = fixture("inbox-busy");
     let mut needs_you = Vec::new();
     let mut running = Vec::new();
     for task in &state.tasks {
-        let view = |status: &str| {
-            json!({"id": task.id, "pod": task.pod, "status": status,
-                   "a2aState": "WORKING", "description": task.body["description"],
-                   "priority": "normal", "createdAt": "2026-10-14T10:00:00Z",
-                   "updatedAt": "2026-10-14T10:00:00Z"})
-        };
         match (&task.script.gate, task.gate_open, task.status.as_str()) {
             (
                 Gate::Approval {
@@ -703,46 +942,54 @@ fn inbox(state: &World) -> Response {
                 true,
                 "waiting_approval",
             ) => {
-                needs_you.push(json!({
-                    "token": token, "pod": task.pod, "taskId": task.id, "role": "implementer",
-                    "tool": tool, "action": action, "policy": "ask-bash", "state": "pending",
-                    "createdAt": "2026-10-14T10:00:00Z", "expiresAt": null,
-                    "a2aState": "INPUT_REQUIRED"
-                }));
-            }
-            (Gate::Consult { question, property }, true, "waiting_input") => {
-                let mut item = view("waiting_input");
-                item["a2aState"] = json!("INPUT_REQUIRED");
-                item["question"] = json!({
-                    "id": format!("q-{}", task.id), "taskId": task.id, "pod": task.pod,
-                    "step": "implementer", "message": question,
-                    "requestedSchema": {"type": "object", "properties": {property: {"type": "string"}},
-                                        "required": [property]},
-                    "createdAt": "2026-10-14T10:00:00Z", "expiresAt": null
-                });
+                let mut item = template["needsYou"][0].clone();
+                item["token"] = json!(token);
+                item["pod"] = json!(task.pod);
+                item["taskId"] = json!(task.id);
+                item["tool"] = json!(tool);
+                item["action"] = json!(action);
                 needs_you.push(item);
             }
-            (_, _, "running") => running.push(view("running")),
+            (Gate::Consult { question, property }, true, "waiting_input") => {
+                let mut item = template["needsYou"][1].clone();
+                item["id"] = json!(task.id);
+                item["pod"] = json!(task.pod);
+                item["description"] = task.body["description"].clone();
+                item["question"]["id"] = json!(format!("q-{}", task.id));
+                item["question"]["taskId"] = json!(task.id);
+                item["question"]["pod"] = json!(task.pod);
+                item["question"]["message"] = json!(question);
+                item["question"]["requestedSchema"] = json!({
+                    "type": "object", "properties": {property: {"type": "string"}},
+                    "required": [property]});
+                needs_you.push(item);
+            }
+            (_, _, "running") => {
+                let mut item = template["running"][0].clone();
+                item["id"] = json!(task.id);
+                item["pod"] = json!(task.pod);
+                item["description"] = task.body["description"].clone();
+                running.push(item);
+            }
             _ => {}
         }
     }
-    reply(
-        200,
-        json!({"needsYou": needs_you, "failed": [], "doneSince": [], "running": running,
-               "next": "2026-10-14T10:00:00+00:00"}),
-    )
+    let mut answer = template;
+    answer["needsYou"] = json!(needs_you);
+    answer["running"] = json!(running);
+    reply(200, answer)
 }
 
 fn approve(state: &mut World, token: &str, body: &Value) -> Response {
     let Some(object) = body.as_object() else {
-        return error(400, "Invalid JSON body");
+        return refusal("post-tasks-invalid-json", &[]);
     };
     let action = object
         .get("action")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if !matches!(action, "grant" | "deny") {
-        return error(400, "action must be \"grant\" or \"deny\"");
+        return refusal("approval-bad-action", &[]);
     }
     let channel = object.get("channel").cloned().unwrap_or(json!("http"));
     if !matches!(channel.as_str(), Some("http" | "tack")) {
@@ -763,7 +1010,7 @@ fn approve(state: &mut World, token: &str, body: &Value) -> Response {
     let Some(index) = state.tasks.iter().position(
         |task| matches!(&task.script.gate, Gate::Approval { token: t, .. } if t == token),
     ) else {
-        return error(404, "no such approval");
+        return refusal("approval-unknown", &[]);
     };
     if !state.tasks[index].gate_open {
         return error(409, "approval already resolved");
@@ -773,19 +1020,20 @@ fn approve(state: &mut World, token: &str, body: &Value) -> Response {
     } else {
         state.tasks[index].gate_open = false;
         state.tasks[index].status = "blocked".to_owned();
-        state.tasks[index].script.error = "the approval was denied".to_owned();
+        state.tasks[index].script.reason = "the approval was denied".to_owned();
     }
-    let outcome = if action == "grant" {
+    let mut answer = fixture("approval-granted");
+    answer["state"] = json!(if action == "grant" {
         "granted"
     } else {
         "denied"
-    };
-    reply(200, json!({"ok": true, "state": outcome}))
+    });
+    reply(200, answer)
 }
 
 fn answer(state: &mut World, id: &str, body: &Value) -> Response {
     let Some(object) = body.as_object() else {
-        return error(400, "Invalid JSON body");
+        return refusal("post-tasks-invalid-json", &[]);
     };
     let pod = object
         .get("pod")
@@ -795,8 +1043,8 @@ fn answer(state: &mut World, id: &str, body: &Value) -> Response {
         .get("action")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if pod.is_empty() || action.is_empty() {
-        return error(400, "pod and action are required");
+    if pod.is_empty() {
+        return refusal("answer-without-pod", &[]);
     }
     if object
         .get("content")
@@ -805,10 +1053,10 @@ fn answer(state: &mut World, id: &str, body: &Value) -> Response {
         return error(400, "content must be an object");
     }
     if !matches!(action, "accept" | "decline" | "cancel") {
-        return error(422, "action must be accept, decline or cancel");
+        return refusal("answer-bad-action", &[("maybe", action)]);
     }
     let Some(index) = state.tasks.iter().position(|t| t.pod == pod && t.id == id) else {
-        return error(404, "task not found in pod");
+        return refusal("answer-unknown", &[("fab-dev", pod), ("task-unknown", id)]);
     };
     if state.tasks[index].status != "waiting_input" {
         return error(409, "task is not waiting_input");
@@ -824,12 +1072,11 @@ fn answer(state: &mut World, id: &str, body: &Value) -> Response {
     } else {
         state.tasks[index].gate_open = false;
         state.tasks[index].status = "blocked".to_owned();
-        state.tasks[index].script.error = "the question was declined".to_owned();
+        state.tasks[index].script.reason = "the question was declined".to_owned();
     }
-    reply(
-        200,
-        json!({"id": id, "pod": pod, "status": state.tasks[index].status,
-               "a2aState": "WORKING", "description": "", "priority": "normal",
-               "createdAt": "", "updatedAt": ""}),
-    )
+    let mut answer = fixture("answer-accepted");
+    answer["id"] = json!(id);
+    answer["pod"] = json!(pod);
+    answer["status"] = json!(state.tasks[index].status);
+    reply(200, answer)
 }

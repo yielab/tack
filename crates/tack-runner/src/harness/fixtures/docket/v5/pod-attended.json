@@ -1,0 +1,115 @@
+{
+  "pod": "fab-dev",
+  "members": [
+    {
+      "id": "fab-dev-lead",
+      "role": "lead",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/workspaces/projects/fab-dev-lead",
+      "verifyCmd": ""
+    },
+    {
+      "id": "fab-dev-implementer",
+      "role": "implementer",
+      "model": {
+        "value": "anthropic/claude-sonnet-4-6",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer",
+      "verifyCmd": ""
+    }
+  ],
+  "settings": {
+    "budgetUsd": {
+      "value": 0.0,
+      "source": "default"
+    },
+    "maxReworkCycles": {
+      "value": 1,
+      "source": "default"
+    },
+    "turnTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "verifyTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "approvalMode": {
+      "value": "wait",
+      "source": "default"
+    },
+    "approvalExpiryHours": {
+      "value": 24,
+      "source": "default"
+    },
+    "inputExpiryHours": {
+      "value": 72,
+      "source": "default"
+    },
+    "allowCommands": {
+      "value": "",
+      "source": "default"
+    },
+    "pipeline": {
+      "value": null,
+      "source": "default"
+    },
+    "schedule": {
+      "value": null,
+      "source": "default"
+    },
+    "projectInstructions": {
+      "value": "",
+      "source": "default"
+    },
+    "mcpServers": {
+      "value": null,
+      "source": "default"
+    },
+    "deniedTools": {
+      "value": "",
+      "source": "default"
+    },
+    "requireVerify": {
+      "value": false,
+      "source": "default"
+    },
+    "maxConsultationsPerTask": {
+      "value": 3,
+      "source": "default"
+    },
+    "network": {
+      "value": "open",
+      "source": "default"
+    },
+    "profile": {
+      "value": "attended",
+      "source": "default"
+    }
+  },
+  "approvalMode": {
+    "effective": "park",
+    "source": "unset"
+  },
+  "pipeline": {
+    "source": "blueprint 'software'"
+  },
+  "network": {
+    "mode": "none",
+    "scope": "default"
+  },
+  "configSource": "",
+  "configDigest": "",
+  "drift": "",
+  "profile": {
+    "name": "attended",
+    "violations": []
+  },
+  "pipelineSource": "blueprint 'software'",
+  "repoConfigDir": "/scratch/repo/.docket"
+}
