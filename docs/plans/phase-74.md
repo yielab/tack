@@ -346,4 +346,9 @@ is docket's decision (`docket-triage.md` recommends the same default).
     reason. Added at integration: `isInstalled`, `isReady` and `versionText` in
     `runnerObservations.ts` are the one rule for the five agents screens, since docket publishes no
     version of its own.
+  - F merged (`92dc79c8`). As built: one private `apply_recovery` holds the transition after
+    the attempt row is read; `recover_attempt` (the runner's own report, with its runner check)
+    and `expire_unheld_leases` (the claim poll, any holder state) both call it, and the sentence is
+    written only when the attempt moved. The crash tests crash for real (a provisioner that never
+    returns, aborted), since a failing provisioner is now a clean Failed.
   - W merged (`90fad17d`). Known, not in scope: Escape in a dialog opened from another closes both, because each `Modal` listens on `document`.
