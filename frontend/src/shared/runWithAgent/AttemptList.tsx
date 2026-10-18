@@ -16,6 +16,7 @@ import {
   isReviewableAttempt,
   isTerminalAttemptState,
   readAttemptUsage,
+  formatTokenGroups,
 } from './attemptFormat';
 import ArtifactDownloadPanel, { ArtifactView } from './ArtifactDownloadPanel';
 import { invoke } from '@tauri-apps/api/core';
@@ -485,12 +486,8 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
     const u = usage();
     if (u.cacheRead === null && u.cacheWrite === null) return null;
     const parts: string[] = [];
-    if (u.cacheRead !== null) parts.push(`${formatTokenCount(u.cacheRead)} read from cache`);
+    if (u.cacheRead !== null) parts.push(`${formatTokenCount(u.cacheRead)} read from cache (not counted)`);
     if (u.cacheWrite !== null) parts.push(`${formatTokenCount(u.cacheWrite)} written to cache`);
-    if (u.tokensIn !== null) {
-      const fresh = u.tokensIn - (u.cacheRead ?? 0) - (u.cacheWrite ?? 0);
-      if (fresh >= 0) parts.push(`${formatTokenCount(fresh)} new`);
-    }
     return `Of the input: ${parts.join(', ')}.`;
   };
   const facts = () => {
@@ -509,9 +506,28 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
           fallback={<span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Tokens: <Unmeasured /></span>}
         >
           <span data-testid="usage-tokens" class="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            <span title={`${exact(usage().tokensIn)} tokens in`}>{usage().tokensIn === null ? '?' : formatTokenCount(usage().tokensIn!)} tokens in</span>
-            {' · '}
-            <span title={`${exact(usage().tokensOut)} tokens out`}>{usage().tokensOut === null ? '?' : formatTokenCount(usage().tokensOut!)} out</span>
+            <Show
+              when={usage().counted !== null}
+              fallback={
+                <>
+                  <span title={`${exact(usage().tokensIn)} tokens in`}>{usage().tokensIn === null ? '?' : formatTokenCount(usage().tokensIn!)} tokens in</span>
+                  {' · '}
+                  <span title={`${exact(usage().tokensOut)} tokens out`}>{usage().tokensOut === null ? '?' : formatTokenCount(usage().tokensOut!)} out</span>
+                </>
+              }
+            >
+              <span data-testid="usage-counted" title={`${exact(usage().counted)} tokens counted against a limit: the input less the cache reads, plus the output`}>
+                {formatTokenGroups(usage().counted!)} tokens counted
+              </span>
+              <span
+                data-testid="usage-in-out"
+                class="ml-2 text-xs font-normal"
+                title={`${exact(usage().tokensIn)} tokens in (cache reads included), ${exact(usage().tokensOut)} out`}
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                {usage().tokensIn === null ? '?' : formatTokenGroups(usage().tokensIn!)} in · {usage().tokensOut === null ? '?' : formatTokenGroups(usage().tokensOut!)} out
+              </span>
+            </Show>
           </span>
         </Show>
         <Show

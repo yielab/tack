@@ -7514,6 +7514,15 @@
               "null"
             ]
           },
+          "counted_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The tokens counted against a limit: new input plus output, cache reads\nleft out (`Usage::counted`). `null` when nothing was measured, which is\nnot zero.",
+            "minimum": 0
+          },
           "created_at": {
             "type": "string"
           },

@@ -545,6 +545,10 @@ pub struct AttemptSummary {
     /// `tack_orch::execution::Usage` once reported, else `null` — never a
     /// fabricated zero.
     pub usage: Option<Value>,
+    /// The tokens counted against a limit: new input plus output, cache reads
+    /// left out (`Usage::counted`). `null` when nothing was measured, which is
+    /// not zero.
+    pub counted_tokens: Option<u64>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub created_at: String,
@@ -1062,6 +1066,10 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
             };
             let who = if docket {
                 "docket stops the task there".to_owned()
+            } else if matches!(source, LimitSource::Day) {
+                format!(
+                    "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet, so this run can go past today's limit)"
+                )
             } else {
                 format!(
                     "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet)"
@@ -2089,6 +2097,11 @@ pub async fn list_execution_attempts(
                 attempt.ended_at.as_deref().and_then(parse_rfc3339),
                 None,
             );
+            let counted_tokens = attempt
+                .usage
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<tack_orch::execution::Usage>(raw).ok())
+                .and_then(|usage| usage.counted());
             let start_report = attempt
                 .start_report
                 .as_deref()
@@ -2143,6 +2156,7 @@ pub async fn list_execution_attempts(
                     .usage
                     .as_deref()
                     .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+                counted_tokens,
                 started_at: attempt.started_at,
                 ended_at: attempt.ended_at,
                 created_at: attempt.created_at,
@@ -2698,6 +2712,15 @@ mod tests {
                 "day",
                 "docket",
                 "400 000 tokens · what was left of today's limit · docket stops the task there",
+            ),
+            // A measured agent given what is left of the day can go past it.
+            (
+                &json!({"budgets": {"tokens": 400000}, "metadata": {"limit_source": "day"}}),
+                "claude-code",
+                Some(400_000),
+                "day",
+                "measured",
+                "400 000 tokens · what was left of today's limit · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet, so this run can go past today's limit)",
             ),
             // A run stored before the source was recorded still names a limit it carries.
             (

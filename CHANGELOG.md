@@ -96,6 +96,11 @@ automation a template carries, and the removal of dollars per day.
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
   reported" for an agent that does not say). Dollars still price every kind at its own rate
   (ADR 0083 decision 2).
+- **A run's usage leads with the tokens that were counted.** The attempt's panel prints
+  "289 710 tokens counted" with the input and output beside it in smaller text and the cache
+  reads named as not counted; the server does the arithmetic, so the screen and the limit never
+  differ. A run given what was left of today's limit by an agent Tack only measures says it can go
+  past that limit.
 - **What Tack sends an agent carries nothing twice.** To docket the brief goes once, as the
   structured brief docket renders, not again in the description; a rework replaces the previous
   round's fix section instead of adding one; a card's comments go newest first up to 4 000

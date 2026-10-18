@@ -792,3 +792,58 @@ async fn a_harness_sandbox_report_shows_in_the_runner_capabilities() {
     assert_eq!(harness["sandbox"], "none", "{runners}");
     assert_eq!(harness["sandbox_reason"], "x", "{runners}");
 }
+
+/// The attempt's counted figure is the one rule applied to its stored usage:
+/// input less the cache reads, plus output; `null` when nothing was measured.
+#[tokio::test]
+async fn the_attempt_list_carries_the_counted_tokens() {
+    let measured = |value: u64| json!({"value": value, "source": "measured"});
+    let unmeasured = json!({"value": null, "source": "not_measured"});
+    let cases = [
+        (
+            "cache reads are left out",
+            Some(
+                json!({"tokens_in": measured(1_000_000), "tokens_out": measured(9_000),
+                "duration_ms": unmeasured, "cost_usd": unmeasured, "cache_read_tokens": 412_000}),
+            ),
+            json!(597_000),
+        ),
+        (
+            "no cache figure counts the whole input",
+            Some(
+                json!({"tokens_in": measured(48_000), "tokens_out": measured(210),
+                "duration_ms": unmeasured, "cost_usd": unmeasured}),
+            ),
+            json!(48_210),
+        ),
+        (
+            "nothing measured is null, not zero",
+            Some(json!({"tokens_in": unmeasured, "tokens_out": unmeasured,
+                "duration_ms": unmeasured, "cost_usd": unmeasured})),
+            Value::Null,
+        ),
+        ("no usage reported is null", None, Value::Null),
+    ];
+    for (label, usage, counted) in cases {
+        let (app, repo, item_id) = setup().await;
+        let (request_id, attempt_id) = request_and_claim(&app, &item_id, "counted").await;
+        if let Some(usage) = &usage {
+            sqlx::query("UPDATE execution_attempts SET usage = ? WHERE id = ?")
+                .bind(usage.to_string())
+                .bind(&attempt_id)
+                .execute(repo.pool())
+                .await
+                .expect("store usage");
+        }
+        let (status, listed, _) = common::send_with_raw(
+            &app,
+            "GET",
+            &format!("/api/executions/{request_id}/attempts"),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{label}: {listed}");
+        assert_eq!(listed["data"][0]["counted_tokens"], counted, "{label}");
+    }
+}

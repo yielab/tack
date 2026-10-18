@@ -193,17 +193,17 @@ describe('formatTokenCount / formatApproxCost', () => {
 });
 
 describe('formatCountedTokens — a counted token is a new one', () => {
-  const attempt = (usage: Record<string, unknown>) =>
-    readAttemptUsage({ usage, terminal_reason: null, actual_execution: null, usage_economics: { model_token_cost_usd_estimated: { value: null, source: 'not_measured' }, runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } } } } as never);
+  const attempt = (usage: Record<string, unknown>, counted_tokens: number | null = null) =>
+    readAttemptUsage({ usage, counted_tokens, terminal_reason: null, actual_execution: null, usage_economics: { model_token_cost_usd_estimated: { value: null, source: 'not_measured' }, runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } } } } as never);
   const measured = (value: number) => ({ value, source: 'measured' });
 
-  it('counts the input the cache did not serve, and shows the reads beside it', () => {
-    const usage = attempt({ tokens_in: measured(460_622), tokens_out: measured(2_000), cache_read_tokens: 412_000 });
+  it("prints the server's counted figure and shows the reads beside it, never recomputing", () => {
+    const usage = attempt({ tokens_in: measured(460_622), tokens_out: measured(2_000), cache_read_tokens: 412_000 }, 50_622);
     expect(formatCountedTokens(usage)).toBe('50 622 tokens (+ 412 000 read from cache, not counted)');
   });
 
   it('says the cache was not reported when the attempt has no cache figure, and is silent when nothing was measured', () => {
-    expect(formatCountedTokens(attempt({ tokens_in: measured(48_000), tokens_out: measured(210) }))).toBe(
+    expect(formatCountedTokens(attempt({ tokens_in: measured(48_000), tokens_out: measured(210) }, 48_210))).toBe(
       '48 210 tokens (cache not reported)',
     );
     expect(formatCountedTokens(attempt({}))).toBeNull();
