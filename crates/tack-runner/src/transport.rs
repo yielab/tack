@@ -31,7 +31,9 @@
 
 use std::{
     fs,
+    future::Future,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -1088,6 +1090,10 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
 // The daemon
 // ---------------------------------------------------------------------
 
+/// How often an idle runner asks its harnesses again what they report, so a team
+/// or an agent added after it started reaches the board without a restart.
+pub const CAPABILITY_REPROBE_INTERVAL: Duration = Duration::from_secs(300);
+
 /// The production [`RunnerProtocolClient`]: enroll (or resume), replay
 /// unresolved journal records, then claim and heartbeat until shutdown.
 pub struct HttpRunnerClient<A, W, C> {
@@ -1099,6 +1105,12 @@ pub struct HttpRunnerClient<A, W, C> {
     sequence: AtomicU64,
     /// How often the one ticker heartbeats every lease held.
     renewal_interval: Duration,
+    /// How often, and how, the harnesses are probed again; `None` reports once.
+    #[allow(clippy::type_complexity)] // an interval and one boxed async probe
+    reprobe: Option<(
+        Duration,
+        Box<dyn Fn() -> Pin<Box<dyn Future<Output = RunnerCapabilities> + Send>> + Send + Sync>,
+    )>,
 }
 
 impl<A, W, C> HttpRunnerClient<A, W, C>
@@ -1122,7 +1134,20 @@ where
             capabilities,
             sequence: AtomicU64::new(0),
             renewal_interval: LEASE_RENEWAL_INTERVAL,
+            reprobe: None,
         }
+    }
+
+    /// Probes the harnesses again every `interval` and after each attempt, and
+    /// sends a refresh when the report differs from the last one sent.
+    #[must_use]
+    pub fn with_reprobe<F, Fut>(mut self, interval: Duration, probe: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RunnerCapabilities> + Send + 'static,
+    {
+        self.reprobe = Some((interval, Box::new(move || Box::pin(probe()))));
+        self
     }
 
     /// A shorter heartbeat period, so a test need not wait out the real one.
@@ -1150,6 +1175,33 @@ where
 
     fn capability_report(&self) -> RunnerCapabilities {
         self.capabilities.clone()
+    }
+
+    /// Probes again and, when the report differs from `last` (the time of the
+    /// probe aside), sends it as a refresh and keeps it as `last`.
+    async fn refresh_capabilities(&self, session: &RunnerSession, last: &mut RunnerCapabilities) {
+        let Some((_, probe)) = &self.reprobe else {
+            return;
+        };
+        let fresh = probe().await;
+        let mut compared = fresh.clone();
+        compared.reported_at = last.reported_at;
+        for (harness, sent) in compared.harnesses.iter_mut().zip(&last.harnesses) {
+            harness.probed_at = sent.probed_at;
+        }
+        if serde_json::to_value(&compared).ok() == serde_json::to_value(&*last).ok() {
+            return;
+        }
+        let request = RefreshRequest {
+            runner_name: self.config.runner_id.clone(),
+            runner_version: env!("CARGO_PKG_VERSION").to_owned(),
+            rotate_credential: false,
+            capabilities: fresh.clone(),
+        };
+        match self.engine.refresh(session, request).await {
+            Ok(_) => *last = fresh,
+            Err(error) => tracing::warn!(%error, "the new capability report could not be sent"),
+        }
     }
 
     /// Resumes a persisted session, or enrolls. A persisted session is
@@ -1275,6 +1327,13 @@ where
         let mut ticker = tokio::time::interval(self.renewal_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut claim_not_before = tokio::time::Instant::now();
+        let mut reprobe_ticker = self.reprobe.as_ref().map(|(interval, _)| {
+            let mut ticker =
+                tokio::time::interval_at(tokio::time::Instant::now() + *interval, *interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            ticker
+        });
+        let mut last_sent = self.capability_report();
         loop {
             if shutdown.is_requested() {
                 return Ok(());
@@ -1303,6 +1362,12 @@ where
                         tracing::warn!(%error, "heartbeat failed");
                     }
                 }
+                () = async {
+                    match reprobe_ticker.as_mut() {
+                        Some(ticker) => { ticker.tick().await; }
+                        None => std::future::pending().await,
+                    }
+                } => self.refresh_capabilities(&session, &mut last_sent).await,
                 Some(joined) = slots.join_next(), if !slots.is_empty() => match joined {
                     Ok((Ok(RunCycle::NoWork { retry_after }), asked_at)) => {
                         // The server says when to ask again. `wait` only asks
@@ -1313,7 +1378,10 @@ where
                         claim_not_before = tokio::time::Instant::now()
                             + idle_pause(retry_after, asked_at.elapsed());
                     }
-                    Ok((Ok(outcome), _)) => tracing::info!(?outcome, "run cycle finished"),
+                    Ok((Ok(outcome), _)) => {
+                        tracing::info!(?outcome, "run cycle finished");
+                        self.refresh_capabilities(&session, &mut last_sent).await;
+                    }
                     Ok((Err(error), _)) => {
                         // A failed cycle is logged and paced, never retried
                         // immediately: the engine has already journaled

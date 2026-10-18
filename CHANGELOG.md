@@ -135,6 +135,14 @@ automation a template carries.
 - The Agents page's title and breadcrumb say Agents; the Overview names item types in the
   project's words; a settings tab follows the address; a new project can start from a project
   file, with the same preview and confirm as Settings → Data.
+- **A team created after the computer started is seen without a restart:** the computer checks
+  its agents again every five minutes and after each run, and tells the board only when
+  something changed.
+- **The merge ceiling is each run's own team's.** A lights-out team is no longer held at L3
+  because another team on the same computer needs a person; a team the computer does not report
+  yet holds the merge with "Team … is not reported yet by this computer". The Ceiling rung never
+  promises more than what it lists, and the Teams rung shows the board's own verdict on each
+  team.
 - Turning on **Start a task by itself** saves the status the list shows; before, nothing started
   until the status was picked by hand.
 - A run on docket shows "Sandboxed by docket in its own jail" in the run dialog and on the

@@ -67,8 +67,9 @@ pub struct AutonomySettings {
     #[serde(default)]
     #[schema(read_only)]
     pub automatic_merge_blocked_by: Vec<String>,
-    /// Read only: the most autonomy the teams this project's roles use allow,
-    /// `L5`, `L4` or `L3`.
+    /// Read only: the most autonomy this project can reach now: the lowest any
+    /// team its roles use allows, `L3` while anything stops Tack merging by
+    /// itself, otherwise `L5`.
     #[serde(default = "full_ceiling")]
     #[schema(read_only)]
     pub ceiling: String,
@@ -281,8 +282,14 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
             team.fix.as_deref().unwrap_or_default()
         ));
     }
-    if teams.iter().any(reported_attended) {
-        settings.ceiling = Level::L3.to_string();
+    // The lowest any team allows, and L3 while anything stops Tack merging by itself.
+    let lowest = teams
+        .iter()
+        .filter_map(|team| team.caps_at.as_deref()?.parse::<Level>().ok())
+        .chain((!blocked.is_empty()).then_some(Level::L3))
+        .min();
+    if let Some(lowest) = lowest {
+        settings.ceiling = lowest.to_string();
     }
     settings.teams = teams;
     settings.automatic_merge_blocked_by = blocked;

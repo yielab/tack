@@ -3178,8 +3178,9 @@ export interface components {
             automatic_merge_blocked_by?: string[];
             budgets: components["schemas"]["BudgetSettings"];
             /**
-             * @description Read only: the most autonomy the teams this project's roles use allow,
-             *     `L5`, `L4` or `L3`.
+             * @description Read only: the most autonomy this project can reach now: the lowest any
+             *     team its roles use allows, `L3` while anything stops Tack merging by
+             *     itself, otherwise `L5`.
              */
             readonly ceiling?: string;
             /** @description Replaces the project's domains. */

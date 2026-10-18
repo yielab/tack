@@ -1,7 +1,7 @@
 import { type Accessor, type Component, createResource } from 'solid-js';
 import { api } from '../../../../shared/api';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
-import type { AgentProfileSummary, RunnerSummary } from '../../../../shared/execution';
+import type { AgentProfileSummary } from '../../../../shared/execution';
 import type { Project, UpdateProject } from '../../../../shared/types';
 import { toast } from '../../../../shared/ui/toast';
 import Teams from './Teams';
@@ -14,7 +14,6 @@ interface Props {
   project: Accessor<Project | undefined>;
   statuses: Accessor<{ name: string; order: number; category?: string }[]>;
   profiles: Accessor<AgentProfileSummary[]>;
-  runners: Accessor<RunnerSummary[]>;
   saveProject: (patch: UpdateProject) => void | Promise<void>;
 }
 
@@ -47,7 +46,7 @@ const Ladder: Component<Props> = (props) => {
       <Teams
         roles={roleList}
         profiles={props.profiles}
-        runners={props.runners}
+        settings={settings}
         project={props.project}
         onRoleSaved={() => void refetchRoles()}
         onDefaultProfile={(id) => void props.saveProject({ default_profile_id: id })}
