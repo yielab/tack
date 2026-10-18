@@ -68,7 +68,7 @@ offers; see [CLI](cli.md#runner).
 
 - **Claude Code.** Reports the tokens it used, how many model calls it made and every model it touched. It
   also reports its own cost estimate at list price, which is an estimate and not your bill. It honours the
-  tools you allow; when the run names none, the profile's list for Claude Code is used. Tack stops it when the tokens it has used reach the run's token limit. A run that turns web tools off blocks only Claude Code's own web fetch
+  tools you allow; when the run names none, the profile's list for Claude Code is used. Tack stops it when the run's counted tokens reach the token limit. A run that turns web tools off blocks only Claude Code's own web fetch
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
@@ -213,9 +213,10 @@ Every run says its limit and who applies it, in one line:
 - "300 000 tokens · from the profile Implementer · docket stops the task there"
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
   a limit of its own for each step, which you change in docket, not in Tack.
-- Claude Code and opencode: Tack stops them when the tokens they have used reach the limit, and the attempt
-  fails with "the run reached its token limit (300 000)". They report each call as it finishes and a call's
-  output is only complete at the end, so a run can end a little past its limit.
+- "300 000 tokens · set for this run · Tack stops Claude Code's run there": Claude Code and opencode
+  report each model call's tokens as it finishes, and Tack stops the run when the tokens counted reach the
+  limit. The attempt fails with "the run reached its token limit (300 000)". A call's output is complete
+  only at the end, so a run can end a little past its limit.
 - "measured, not enforced": Codex reports its tokens, but Tack cannot stop it at a limit yet. The limit is
   still shown, and still counts against the project's day. A run given what was left of the day says it can
   go past today's limit.

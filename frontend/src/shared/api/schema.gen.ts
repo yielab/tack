@@ -4724,7 +4724,11 @@ export interface components {
         };
         /** @description A run's token limit, who set it and who applies it, with the one sentence every screen prints. */
         RunLimit: {
-            /** @description `docket` stops the task itself; `measured`: Tack reads the agent's tokens and cannot stop it. */
+            /**
+             * @description Who stops the run at the limit: `docket` stops the task itself; `claude-code` and
+             *     `opencode`: the runner stops the agent when its counted tokens reach it; `measured`: Tack
+             *     reads the agent's tokens and cannot stop it.
+             */
             enforced_by: string;
             sentence: string;
             /** @description `profile`, `run` or `none`. */

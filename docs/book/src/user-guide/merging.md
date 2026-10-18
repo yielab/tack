@@ -125,8 +125,8 @@ the day. Otherwise it waits and says why: "Today's token limit is reserved by 2 
 Tokens are counted as [Token limits](running-agents.md#token-limits) explains: what the cache served does
 not count. A bar under the limit shows the day: counted, reserved and what is left, amber from 80%.
 
-An agent Tack cannot stop at a limit (Claude Code, Codex and opencode today) can use more than it was given,
-so its run can still take the day past its limit; docket stops at it.
+An agent Tack cannot stop at a limit (Codex today) can use more than it was given, so its run can still
+take the day past its limit; docket, Claude Code and opencode are stopped at it.
 
 A limit that stops new runs says which one on the task; runs already going finish. A day starts at midnight
 UTC. There is no limit in dollars: a dollar figure is a price list applied to tokens, and a model with no

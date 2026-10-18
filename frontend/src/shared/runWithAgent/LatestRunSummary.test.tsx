@@ -103,7 +103,8 @@ describe('LatestRunSummary', () => {
 
   it.each([
     '300 000 tokens · from the profile Implementer · docket stops the task there',
-    "300 000 tokens · set for this run · measured, not enforced (Tack reads Claude Code's tokens but cannot stop it at a limit yet)",
+    "300 000 tokens · set for this run · Tack stops Claude Code's run there",
+    "300 000 tokens · set for this run · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet)",
     "No limit set in Tack · docket stops each step at its own limit (docket's setting)",
     'No limit set in Tack',
   ])('prints the limit sentence the server wrote, composing none: %s', async (sentence) => {
