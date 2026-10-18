@@ -338,4 +338,12 @@ is docket's decision (`docket-triage.md` recommends the same default).
 
 - **Round 0** done 2026-10-17: ADR 0082 accepted with its three defaults, this plan, the roadmap section.
 - **Round 1** started 2026-10-17: F, I and W.
+  - I merged (`9899036c`). As built: the refused-credential codes are `unauthorized` (401) and
+    `runner_revoked` (403); `api_version` rides in the capability's flattened `additional` map, read
+    and written through two accessors; `is_online` takes `(active, last_heartbeat_at, now)` because the
+    API and the scheduler hold different runner types; with no runner online, `default_selector`
+    keeps every active one, so a single sleeping runner still gets the run and it waits with its
+    reason. Added at integration: `isInstalled`, `isReady` and `versionText` in
+    `runnerObservations.ts` are the one rule for the five agents screens, since docket publishes no
+    version of its own.
   - W merged (`90fad17d`). Known, not in scope: Escape in a dialog opened from another closes both, because each `Modal` listens on `document`.
