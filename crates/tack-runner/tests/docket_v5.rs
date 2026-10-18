@@ -1186,6 +1186,7 @@ async fn a_consult_round_trip_answers_the_parked_question() {
         gate: Gate::Consult {
             question: "Which database should the retry log use?".into(),
             property: "database".into(),
+            options: Vec::new(),
         },
         ..Script::default()
     });
@@ -1227,6 +1228,256 @@ async fn a_consult_round_trip_answers_the_parked_question() {
         posted[0].body,
         json!({"pod": POD, "action": "accept", "content": {"database": "sqlite"}, "actor": "tack"})
     );
+}
+
+/// What a parked decision sent and how the run ended: every question asked,
+/// the timeline's lines and the attempt's end. Each answer in `answers` goes to
+/// the next question.
+async fn consult_run(
+    fake: &FakeDocket,
+    options: &[&str],
+    answers: Vec<DecisionAnswer>,
+) -> (
+    Vec<tack_runner::client::engine::Question>,
+    Vec<(String, String)>,
+    AttemptState,
+) {
+    fake.script(Script {
+        gate: Gate::Consult {
+            question: "Please approve the changelog.".into(),
+            property: "note".into(),
+            options: options.iter().map(|id| (*id).to_owned()).collect(),
+        },
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = Arc::new(adapter(fake, &scene));
+    let handle = adapter
+        .start(&spec(&scene, "attempt-1", 1))
+        .await
+        .expect("starts");
+    let (mut questions, sender) = adapter.decision_channels(&handle).await.expect("channels");
+    let mut progress = adapter.progress_channel(&handle).await.expect("progress");
+    let waiting = tokio::spawn({
+        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+        async move { adapter.wait(&handle).await }
+    });
+    let mut asked = Vec::new();
+    for answer in answers {
+        let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
+            .await
+            .expect("a question in time")
+            .expect("a question");
+        asked.push(question);
+        sender.send(answer).await.expect("answer");
+    }
+    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("finishes")
+        .expect("joins")
+        .expect("outcome");
+    let mut lines = Vec::new();
+    while let Ok(step) = progress.try_recv() {
+        lines.push((step.kind, step.text));
+    }
+    (asked, lines, outcome.terminal_state)
+}
+
+fn choosing(option: &str, text: Option<&str>) -> DecisionAnswer {
+    DecisionAnswer {
+        option_id: Some(option.to_owned()),
+        text: text.map(str::to_owned),
+    }
+}
+
+fn answers_posted(fake: &FakeDocket) -> Vec<Value> {
+    fake.requests_to("POST", "/tasks/task-")
+        .into_iter()
+        .filter(|request| request.path.ends_with("/answer"))
+        .map(|request| request.body)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_question_with_options_offers_docket_options_and_its_recommendation() {
+    let fake = pods_fake().await;
+    let (asked, _, state) = consult_run(
+        &fake,
+        &["approve", "modify"],
+        vec![choosing("approve", None)],
+    )
+    .await;
+    assert_eq!(state, AttemptState::Succeeded);
+    let question = &asked[0];
+    assert_eq!(question.kind, "consult");
+    let ids: Vec<_> = question
+        .options
+        .iter()
+        .map(|o| o.option_id.as_str())
+        .collect();
+    assert_eq!(ids, ["approve", "modify", "decline"]);
+    // The wording is docket's: label, description, risks and tokens come from the task view.
+    assert_eq!(question.options[0].label, "Option approve");
+    assert_eq!(
+        question.options[0].description.as_deref(),
+        Some("Create CHANGELOG.md with the identified functions.")
+    );
+    assert_eq!(question.options[0].estimated_tokens, None);
+    let recommendation = question.recommendation.as_ref().expect("recommendation");
+    assert_eq!(recommendation.option_id, "approve");
+    assert!(
+        recommendation
+            .rationale
+            .as_deref()
+            .is_some_and(|text| text.contains("functions exported")),
+        "{recommendation:?}"
+    );
+}
+
+#[tokio::test]
+async fn choosing_a_docket_option_posts_its_id_in_content_with_the_text_when_typed() {
+    let fake = pods_fake().await;
+    let (_, _, state) = consult_run(
+        &fake,
+        &["approve", "modify"],
+        vec![choosing("modify", Some("also list multiply"))],
+    )
+    .await;
+    assert_eq!(state, AttemptState::Succeeded);
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"pod": POD, "action": "accept", "actor": "tack",
+                "content": {"optionId": "modify", "note": "also list multiply"}})]
+    );
+
+    // No text, and docket does not require the property: only the option.
+    let fake = pods_fake().await;
+    consult_run(
+        &fake,
+        &["approve", "modify"],
+        vec![choosing("approve", None)],
+    )
+    .await;
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"pod": POD, "action": "accept", "actor": "tack",
+                "content": {"optionId": "approve"}})]
+    );
+}
+
+#[tokio::test]
+async fn declining_a_question_with_options_posts_a_decline() {
+    let fake = pods_fake().await;
+    let (_, _, state) = consult_run(
+        &fake,
+        &["approve", "modify"],
+        vec![choosing("decline", Some("not now"))],
+    )
+    .await;
+    assert_eq!(state, AttemptState::Failed);
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"pod": POD, "action": "decline", "actor": "tack"})]
+    );
+}
+
+#[tokio::test]
+async fn a_question_without_options_is_still_answered_in_text_or_declined() {
+    let fake = pods_fake().await;
+    let (asked, _, _) = consult_run(&fake, &[], vec![choosing("accept", Some("sqlite"))]).await;
+    let ids: Vec<_> = asked[0]
+        .options
+        .iter()
+        .map(|o| o.option_id.as_str())
+        .collect();
+    assert_eq!(ids, ["accept", "decline"]);
+    assert!(asked[0].recommendation.is_none());
+    // Its property is required, so it is sent.
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"pod": POD, "action": "accept", "actor": "tack",
+                "content": {"note": "sqlite"}})]
+    );
+
+    let fake = pods_fake().await;
+    consult_run(&fake, &[], vec![choosing("decline", None)]).await;
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"pod": POD, "action": "decline", "actor": "tack"})]
+    );
+}
+
+#[tokio::test]
+async fn an_answer_docket_refuses_is_asked_again_as_a_new_decision() {
+    let fake = pods_fake().await;
+    fake.refuse_answers(1);
+    let (asked, lines, state) = consult_run(
+        &fake,
+        &["approve", "modify"],
+        vec![choosing("approve", None), choosing("approve", None)],
+    )
+    .await;
+    assert_eq!(state, AttemptState::Succeeded);
+    assert_eq!(asked.len(), 2);
+    // Tack keys a decision by this id, so the second must differ from the first.
+    assert_ne!(asked[0].vendor_id, asked[1].vendor_id);
+    assert_eq!(asked[0].prompt, asked[1].prompt);
+    assert_eq!(answers_posted(&fake).len(), 2);
+    let refusal: Vec<_> = lines
+        .iter()
+        .filter(|(kind, _)| kind == "agent.answer_failed")
+        .collect();
+    assert_eq!(refusal.len(), 1, "{lines:?}");
+    assert!(
+        refusal[0].1.contains("blocked by policy 'pre_input'") && refusal[0].1.contains("again"),
+        "{}",
+        refusal[0].1
+    );
+}
+
+#[tokio::test]
+async fn an_approval_docket_refuses_is_asked_again() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Approval {
+            token: "apr-9".into(),
+            tool: "bash".into(),
+            action: "tool call 'bash'".into(),
+        },
+        ..Script::default()
+    });
+    fake.refuse_answers(1);
+    let scene = scene();
+    let adapter = Arc::new(adapter(&fake, &scene));
+    let handle = adapter
+        .start(&spec(&scene, "attempt-1", 1))
+        .await
+        .expect("starts");
+    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
+    let waiting = tokio::spawn({
+        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+        async move { adapter.wait(&handle).await }
+    });
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
+            .await
+            .expect("a question in time")
+            .expect("a question");
+        ids.push(question.vendor_id);
+        answers
+            .send(granting("approve_once"))
+            .await
+            .expect("answer");
+    }
+    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("finishes")
+        .expect("joins")
+        .expect("outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_ne!(ids[0], ids[1]);
+    assert_eq!(fake.requests_to("POST", "/approvals/apr-9").len(), 2);
 }
 
 #[tokio::test]
@@ -1821,6 +2072,68 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         )
         .await,
     );
+    fake.script(Script {
+        gate: Gate::Consult {
+            question: "Which one?".into(),
+            property: "note".into(),
+            options: vec!["approve".into(), "modify".into()],
+        },
+        ..Script::default()
+    });
+    let mut third = request_file("post-task-created");
+    third["idempotencyKey"] = json!("capture-attempt-3");
+    // The capture's request named no pipeline, no limit and no denied tool.
+    for key in ["pipeline", "maxTokens"] {
+        third.as_object_mut().unwrap().remove(key);
+    }
+    third["restrictions"] = json!({"network": "none"});
+    let asking = ask(&fake, "POST", "/tasks/fab-dev", Some(third)).await;
+    assert_eq!(asking.0, 201, "{asking:?}");
+    let asking_id = asking.1["task"].as_str().unwrap().to_owned();
+    get(
+        "task-waiting-input-options",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{asking_id}"), None).await,
+    );
+    let inbox = ask(&fake, "GET", "/inbox", None).await;
+    let listed = inbox.1["needsYou"]
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["id"] == json!(asking_id)))
+        .cloned()
+        .expect("the parked task is listed");
+    assert!(listed["question"].get("options").is_none(), "{listed}");
+    let mut inbox = inbox.1;
+    inbox["needsYou"] = json!([listed]);
+    get("inbox-waiting-input-options", (200, inbox));
+    // docket's own refusals of an accept that names no option, or one it does not have.
+    for (content, why) in [
+        (
+            json!({}),
+            "accept requires optionId when the question has options",
+        ),
+        (json!({"optionId": "zap"}), "optionId 'zap' names no option"),
+    ] {
+        let refused = ask(
+            &fake,
+            "POST",
+            &format!("/tasks/{asking_id}/answer"),
+            Some(
+                json!({"pod": "fab-dev", "action": "accept", "actor": "tack", "content": content}),
+            ),
+        )
+        .await;
+        assert_eq!((refused.0, refused.1["error"].as_str()), (422, Some(why)));
+    }
+    let taken = ask(
+        &fake,
+        "POST",
+        &format!("/tasks/{asking_id}/answer"),
+        Some(
+            json!({"pod": "fab-dev", "action": "accept", "actor": "tack",
+                    "content": {"optionId": "modify"}}),
+        ),
+    )
+    .await;
+    assert_eq!(taken.0, 200, "{taken:?}");
 
     let mut wrong = Vec::new();
     for (name, answer) in &seen {

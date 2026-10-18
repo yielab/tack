@@ -1,0 +1,6 @@
+captured
+route: GET /tasks/<pod>/<id>
+status: 200
+docket: 0.2.0b6 (API 5), operator API 5.8.0, source develop ce8c41a7 working tree (after a20af9bf)
+date: 2026-10-18
+note: a real local-model run of scripts/docket-prill-e2e.sh, parked on a lead's consultation (kind decision) with two options and a recommendation. The inbox's question carries no options; the task view's does, and docket refuses an accept without optionId when options exist (operator_contract.validate_answer_v11). Scratch folder rewritten to /capture; the description, brief, hops and consultations are cut.

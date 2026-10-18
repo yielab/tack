@@ -185,6 +185,15 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A question a docket team parks is answered with docket's own options, and a refused answer is
+  asked again.** Tack offered "Answer" and "Decline" and posted `accept` with the text; a
+  decision question (one with options) is refused by docket without the chosen `optionId`, so the
+  decision was resolved in Tack while the run sat `running` with nothing pending. The harness now
+  reads the question from the task view, where the options and the recommendation are (the inbox's
+  has neither), offers docket's options with its wording and recommendation plus a decline, and
+  posts the chosen id in `content.optionId`; a question without options is answered in text as
+  before. When docket refuses an answer to a question or an approval, the timeline says why and
+  the question comes back as a new decision.
 - **A profile's token limit reaches its run.** A limit set on a profile (in the project file or
   the profile form, which now has "Token limit per run" and "Time limit") was stored and never
   applied: the run copied only what the run dialog sent, `{}`. A run now takes its profile's

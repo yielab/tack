@@ -96,9 +96,9 @@ A `400` or `422` from docket makes the attempt fail with docket's text and the t
 `follow` polls every two seconds (`POLL_INTERVAL`):
 
 1. It reads the trace page since the cursor and turns `hop_started` and `hop_finished` records for this task into timeline lines. The cursor lives in `<state_dir>/docket/<attempt id>.cursor` and is written by rename after each page is delivered, so a second adapter over the same directory resumes where the first stopped.
-2. It reads the inbox. An item with a `token` for this task becomes a decision of kind `approval` (options `approve_once`, `approve_task`, `deny`). A task in `waiting_input` becomes a decision of kind `consult`. Both go through the existing decision channels, so the inbox needs no new route.
+2. It reads the inbox. An item with a `token` for this task becomes a decision of kind `approval` (options `approve_once`, `approve_task`, `deny`). A task in `waiting_input` becomes a decision of kind `consult`: its options are docket's own (read from the task view, which the inbox's question lacks) with docket's recommendation and a decline, or Answer and Decline when the question has none. Both go through the existing decision channels, so the inbox needs no new route.
 3. It reads the task. In `done`, `failed`, `blocked` or `cancelled` it stops. When the attempt's own timeout passes it cancels the task and ends the attempt with `timeout`.
-4. A person's answer arrives on the answer channel and is posted at once; a `409` from docket means it had already resolved and is not an error.
+4. A person's answer arrives on the answer channel and is posted at once; a `409` from docket means it had already resolved and is not an error. Any other refusal is written on the timeline and the question is asked again as a new decision.
 
 ### The branch comes back
 
