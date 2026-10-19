@@ -1,6 +1,6 @@
-import { type Component, createResource, createSignal, createEffect, For, Show, type JSX } from 'solid-js';
+import { type Component, createResource, createSignal, createEffect, on, For, Show, type JSX } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import RichTextEditor from '../../../shared/ui/RichTextEditor';
+import RichTextEditor, { sanitizeRichText } from '../../../shared/ui/RichTextEditor';
 import { api, ApiError } from '../../../shared/api';
 import type {
   AcceptanceCriterion,
@@ -52,6 +52,8 @@ interface CriterionRow {
   unit: string;
   path: string;
   text: string;
+  /** A manual check a person has ticked on the "Done when" list. */
+  checked: boolean;
 }
 
 /** A constraint as edited: one text value whose meaning follows its kind. */
@@ -74,6 +76,7 @@ const blankCriterion = (kind: CriterionKind, id: string): CriterionRow => ({
   unit: '',
   path: '',
   text: '',
+  checked: false,
 });
 
 const orNull = (s: string) => (s.trim() === '' ? null : s);
@@ -97,6 +100,7 @@ function toRow(c: AcceptanceCriterion): CriterionRow {
       break;
     case 'manual':
       row.text = c.text;
+      row.checked = c.checked ?? false;
       break;
   }
   return row;
@@ -116,7 +120,7 @@ function fromRow(r: CriterionRow): AcceptanceCriterion {
     case 'absent':
       return { kind: 'absent', id, title, path: r.path };
     case 'manual':
-      return { kind: 'manual', id, title, text: r.text };
+      return { kind: 'manual', id, title, text: r.text, ...(r.checked ? { checked: true } : {}) };
   }
 }
 
@@ -186,6 +190,30 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
   );
   const [draft, setDraft] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+
+  // The description reads as text and becomes the editor on a click. The text
+  // shown follows what was typed, so leaving the editor never flashes the
+  // value from before the debounced save lands.
+  const [editing, setEditing] = createSignal(false);
+  const [html, setHtml] = createSignal(props.item.description ?? '');
+  let editorBox: HTMLDivElement | undefined;
+  createEffect(
+    on(
+      () => props.item.description,
+      (d) => {
+        if (!editing()) setHtml(d ?? '');
+      },
+      { defer: true },
+    ),
+  );
+  const edit = () => {
+    setEditing(true);
+    queueMicrotask(() => editorBox?.querySelector<HTMLElement>('[role="textbox"]')?.focus());
+  };
+  const typed = (value: string) => {
+    setHtml(value);
+    props.onDescriptionChange(value);
+  };
 
   const linkIssue = async () => {
     // One field, split on the last `#`: "owner/repo#42".
@@ -287,6 +315,9 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
     }
   };
 
+  const ticked = () => checks.filter((c) => c.checked && c.text.trim() !== '').length;
+  const listed = () => checks.filter((c) => c.text.trim() !== '').length;
+
   const agentSummary = () => {
     const parts: string[] = [];
     if (criteria.length) parts.push(COUNT_FORMAT(criteria.length, 'check', 'checks'));
@@ -373,26 +404,73 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
   return (
     <div class="space-y-4">
       <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
-      <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
-        Description
-      </h3>
-      <RichTextEditor
-        label="Description"
-        value={props.item.description ?? ''}
-        onChange={props.onDescriptionChange}
-        placeholder="Add details or notes…"
-      />
+        <div class="flex items-center gap-2">
+          <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
+            Description
+          </h3>
+          <Show when={!editing() && html().trim() !== ''}>
+            <Button class="ml-auto" variant="ghost" size="sm" type="button" aria-label="Edit description" onClick={edit}>
+              Edit
+            </Button>
+          </Show>
+          <Show when={editing()}>
+            <Button class="ml-auto" variant="ghost" size="sm" type="button" onClick={() => setEditing(false)}>
+              Done
+            </Button>
+          </Show>
+        </div>
+        <Show
+          when={editing()}
+          fallback={
+            <Show
+              when={html().trim() !== ''}
+              fallback={
+                <button
+                  type="button"
+                  class="w-full rounded-[20px] border border-dashed px-4 py-6 text-left text-sm"
+                  style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-tertiary)' }}
+                  onClick={edit}
+                >
+                  Click to edit
+                </button>
+              }
+            >
+              <div
+                class="prose prose-sm dark:prose-invert max-w-none cursor-text"
+                data-testid="description"
+                innerHTML={sanitizeRichText(html())}
+                onClick={(e) => {
+                  if (!(e.target as HTMLElement).closest('a')) edit();
+                }}
+              />
+            </Show>
+          }
+        >
+          <div ref={editorBox}>
+            <RichTextEditor
+              label="Description"
+              value={html()}
+              onChange={typed}
+              placeholder="Add details or notes…"
+            />
+          </div>
+        </Show>
       </section>
 
       <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
-            Acceptance criteria
+            Done when
           </h3>
-          <HelpHint label="Acceptance criteria" help={HELP.acceptanceCriteria} />
+          <HelpHint label="Done when" help={HELP.acceptanceCriteria} />
+          <Show when={listed() > 0}>
+            <span class="ml-auto text-sm" aria-live="polite" style={{ color: 'var(--color-text-tertiary)' }}>
+              {ticked()} of {listed()}
+            </span>
+          </Show>
         </div>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          One line per thing a person checks before calling this done.
+          One line per thing a person checks before calling this done. Tick each one as you check it.
         </p>
         <Show when={errors().acceptance}>
           <p role="alert" class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
@@ -402,6 +480,17 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         <For each={checks}>
           {(c, i) => (
             <div class="flex items-center gap-2" data-testid="check">
+              <input
+                type="checkbox"
+                class="h-4 w-4 shrink-0"
+                aria-label={c.text.trim() ? `Done: ${c.text}` : 'Done'}
+                disabled={c.text.trim() === '' || saving()}
+                checked={c.checked}
+                onChange={(e) => {
+                  setChecks(i(), 'checked', e.currentTarget.checked);
+                  void save();
+                }}
+              />
               <input
                 aria-label="Acceptance criterion"
                 value={c.text}

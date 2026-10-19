@@ -14,7 +14,7 @@ import FilesTab from './tabs/FilesTab';
 import FieldsTab from './tabs/FieldsTab';
 
 const BASE_TABS: TabItem[] = [
-  { id: 'details', label: 'Details' },
+  { id: 'details', label: 'Overview' },
   { id: 'activity', label: 'Activity' },
   // "Execution" — the neutral execution domain (`ExecutionRequest`/
   // `ExecutionAttempt` via `tack-runner`). Always present — an item with

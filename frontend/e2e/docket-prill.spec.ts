@@ -684,7 +684,7 @@ test.describe.serial('docket runs, prill verifies', () => {
         await page.reload();
         await waitForApp(page);
         await page.setViewportSize({ width: 1440, height: 1400 });
-        await drawer.getByRole('heading', { name: 'Acceptance criteria' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
+        await drawer.getByRole('heading', { name: 'Done when' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
         await page.waitForTimeout(300);
         await shot(drawer, 'item-checklist-bug');
         await page.setViewportSize({ width: 1440, height: 900 });

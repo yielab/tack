@@ -722,6 +722,7 @@ pub async fn create_subtasks_from_plan(
                     id: format!("m{}", i + 1),
                     title,
                     text: text.clone(),
+                    checked: false,
                 });
             }
 
