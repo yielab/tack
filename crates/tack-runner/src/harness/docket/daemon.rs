@@ -98,10 +98,20 @@ pub async fn describe(config: &DocketConfig) -> Result<String, String> {
 /// when `[docket].home` is set, `DOCKET_HOME`: nothing else the runner holds
 /// reaches the daemon.
 pub fn command(config: &DocketConfig) -> std::process::Command {
-    let program = config
-        .binary
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("docket"));
+    // A configured path wins as written; a bare name (or none) is looked for
+    // in the same places as every other agent.
+    let program = match config.binary.clone() {
+        Some(binary) if binary.components().count() > 1 => binary,
+        named => {
+            let name = named.unwrap_or_else(|| PathBuf::from("docket"));
+            let (path, home) = super::super::locate::snapshot();
+            name.to_str()
+                .and_then(|name| {
+                    super::super::locate::locate(name, path.as_deref(), home.as_deref()).ok()
+                })
+                .unwrap_or(name)
+        }
+    };
     let mut command = std::process::Command::new(program);
     command
         .args(["start", "--dispatch", "--bind", "127.0.0.1", "--port"])

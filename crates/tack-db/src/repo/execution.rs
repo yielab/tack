@@ -1763,6 +1763,28 @@ impl Repository {
         Ok(())
     }
 
+    /// Renames a runner whose name is still one the board generated for a local
+    /// runner (`local-` and a UUID) and nothing else: a name a person chose is
+    /// never touched. Whether a row changed is the answer; a taken `name` is
+    /// the usual unique violation.
+    pub async fn rename_generated_local_runner(
+        &self,
+        runner_id: &str,
+        name: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE agent_runners SET name = ?, updated_at = ? WHERE id = ? \
+             AND name GLOB 'local-????????-????-????-????-????????????'",
+        )
+        .bind(name)
+        .bind(stamp(clock))
+        .bind(runner_id)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub async fn enrollment_token_metadata(
         &self,
         runner_id: &str,
