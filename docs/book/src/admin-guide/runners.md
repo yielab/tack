@@ -424,11 +424,19 @@ next run with the same lockfile gets its own `node_modules` whose files are hard
 ones, so it prepares in seconds without running the command and without copying the packages; the
 state folder and the workspaces must therefore be on the same filesystem, and when they are not the
 command simply runs every time. A file named `.tack-prepared` in that folder marks it as the runner's, and
-the folder is not counted as the agent's change. `uv sync`, `poetry install`, `cargo fetch` and a
+the folder is not counted as the agent's change; when the project's `.gitignore` already lists it,
+git leaves it out by itself. `uv sync`, `poetry install`, `cargo fetch` and a
 command a project replaced keep nothing and run every time. If the command exits with an error or
 runs out of time, the run ends as failed before the agent starts and spends no tokens; its reason is
 "Could not prepare the dependencies", the command and how it ended, and the last lines of its output.
 A docket run is prepared by docket, not by the runner.
+
+The runner installs only what the agent can use. When a run's tools are named and none of them runs
+a command (only Read, Grep, Glob, WebFetch and WebSearch) and the card has no check that runs
+something (a command, a test or a metric), nothing is installed, whatever the project's install
+setting says, and the run's timeline says "No install: this profile runs no commands". A run with
+every tool, with no tool list, or with a check installs as before. The agent's sandbox stays on for
+every run.
 
 ## Non-loopback and security posture
 
