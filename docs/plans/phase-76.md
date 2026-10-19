@@ -4,7 +4,7 @@
 (`docs/adr/0084-the-project-file-is-kept-in-sync-not-only-imported.md`). Written against `develop`
 at `cebaef77`. Every path and line below was read that day; re-run `rg -n` before trusting a line
 number. Re-checked the same day against Phase 75's task D (`d72be6ce`): migration 092 is
-`092_drop_usd_per_day`, so this phase's two are 093 and 094; D also moved lines in
+`092_drop_usd_per_day`, so this phase's two are 095 and 096 (Phase 77 took 093 and 094 on 2026-10-19); D also moved lines in
 `handlers/outline.rs` (`read_outline` now warns on an old file's `usd_per_day`, `write_automation`
 no longer writes it), `export.rs` and `templates.rs`. Nothing else in this plan changes.
 
@@ -41,7 +41,7 @@ Every row of ADR 0084's table and its four defaults, plus:
 
 | Question | Decision |
 |---|---|
-| Migrations | Two, in the style of `MIGRATION_091` (several statements under one name; `apply_migrations` runs them in one transaction, `migrations.rs` line 391 — `CONTRIBUTING.md`'s "one ALTER per name" predates that and task Z corrects it). `093_config_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`; `UPDATE … SET key = lower(replace(trim(name), ' ', '-'))`; a second `UPDATE` suffixing `'-' \|\| substr(id, 1, 8)` on every row whose `(project_id, key)` (for profiles: `key`) is not the first of its group; `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key)` (`agent_profiles(key)`). `094_config_revisions`: the table below. The SQL backfill is ASCII-lowercase; a key is opaque after creation, so it need not equal `key_of(name)`. |
+| Migrations | Two, in the style of `MIGRATION_091` (several statements under one name; `apply_migrations` runs them in one transaction, `migrations.rs` line 391 — `CONTRIBUTING.md`'s "one ALTER per name" predates that and task Z corrects it). `095_config_keys`: for each of `roles`, `custom_field_definitions`, `sprints`, `agent_profiles`: `ADD COLUMN key TEXT NOT NULL DEFAULT ''`; `UPDATE … SET key = lower(replace(trim(name), ' ', '-'))`; a second `UPDATE` suffixing `'-' \|\| substr(id, 1, 8)` on every row whose `(project_id, key)` (for profiles: `key`) is not the first of its group; `CREATE UNIQUE INDEX idx_<table>_key ON <table>(project_id, key)` (`agent_profiles(key)`). `096_config_revisions`: the table below. The SQL backfill is ASCII-lowercase; a key is opaque after creation, so it need not equal `key_of(name)`. |
 | The revisions table | `project_config_revisions (project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, number INTEGER NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('board','file','revert')), hash TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (project_id, number))`. `body` is the configuration as canonical JSON (`serde_json::to_string` of the `Outline` with `items` empty; keys of every map sorted — `Outline` already serializes maps sorted). `hash` is the SHA-256 of `body`, hex. |
 | The key | `key_of(name)`: trim; lowercase (Unicode); every run of characters that are not alphanumeric (`char::is_alphanumeric`) becomes one `-`; leading and trailing `-` removed; cut to 64 chars at a char boundary; empty → `unnamed`. A key in a file must already be of that form (`^[\p{L}\p{N}][\p{L}\p{N}-]{0,63}$`, lowercase) or the file is refused naming the entry. |
 | Matching | File entry has `key` → the board row with that key; none → create with that key, unless the key is taken by a row of another name (refused: "roles: key \"dev\" is already the key of \"Dev Team\""); a row with the same *name* but another key → refused ("roles: \"Dev\" is \"dev-team\" on the board; write that key or drop the name"). File entry has no `key` → the board row with that name, as today; none → create with `key_of(name)`, refused if that key is taken. The rule lives once, in `match_rows`, and serves the outline import and the sync alike. |
@@ -227,7 +227,7 @@ uses). Nothing else; no I/O; no new dependency (`serde_json` and `sha2` are not 
 
 ### A — a key on every configured thing (Sonnet, two layers)
 
-**Files:** `crates/tack-db/src/migrations.rs` (`MIGRATION_093` + its line in `all_migrations()`),
+**Files:** `crates/tack-db/src/migrations.rs` (`MIGRATION_095` + its line in `all_migrations()`),
 a new `crates/tack-db/tests/migrations/config_keys.rs` registered in
 `crates/tack-db/tests/migrations.rs`, `crates/tack-core/src/models.rs` (`Role`, `Sprint`,
 `CustomFieldDefinition`, `CreateRole`, `CreateSprint`, `CreateCustomField`),
@@ -300,7 +300,7 @@ through unchanged — read only to confirm), `crates/tack-api/tests/handlers/bun
 (the paths and the schemas: `ConfigStatus`, `ConfigPlan`, `ConfigApplied`, `RevisionSummary`,
 `Deletion`, and `sync::{Change, Conflict, FieldChange, Verb, Prefer}` — the last five need
 `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` added in `sync.rs`, which is the one
-line this task may change there), `crates/tack-db/src/migrations.rs` (`MIGRATION_094` + its line),
+line this task may change there), `crates/tack-db/src/migrations.rs` (`MIGRATION_096` + its line),
 a new `crates/tack-db/src/repo/config.rs` (+ `pub mod config;` in `repo.rs`),
 `crates/tack-api/src/handlers/export.rs` (`bundle_of`, the revision on export),
 `crates/tack-api/src/handlers/templates.rs` (`save_project_as_template` reads `bundle_of`),
