@@ -304,6 +304,31 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(status, StatusCode::OK);
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert!(body["auto_start_status"].is_null());
+
+    // The install command: detected until set, trimmed, empty means off, one line only.
+    assert!(body["prepare_command"].is_null());
+    for (sent, stored) in [
+        (json!("  make deps "), json!("make deps")),
+        (json!(""), json!("")),
+    ] {
+        let (status, body) =
+            common::send(&app, "PATCH", &uri, json!({"prepare_command": sent}), &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["prepare_command"], stored);
+    }
+    let (status, _) = common::send(
+        &app,
+        "PATCH",
+        &uri,
+        json!({"prepare_command": "npm ci\nrm -rf /"}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, body) =
+        common::send(&app, "PATCH", &uri, json!({"prepare_command": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["prepare_command"].is_null());
 }
 
 #[tokio::test]

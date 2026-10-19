@@ -661,6 +661,12 @@ fn check_automation(
             _ => {}
         }
     }
+    if let Some(prepare) = auto.prepare.as_deref() {
+        match crate::prepare::clean_command(prepare) {
+            Ok(command) => auto.prepare = Some(command),
+            Err(_) => problems.push("automation.prepare must be a single line".into()),
+        }
+    }
     if let Some(harness) = auto.default_harness.as_deref().map(str::trim)
         && !board.harness_kinds.contains(&harness)
     {
@@ -920,6 +926,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
         repository: project.repository.clone(),
         default_branch: project.default_branch.clone(),
         workspace_mode: Some(project.workspace_mode.to_string()),
+        prepare: project.prepare_command.clone(),
         push_after_run: Some(project.push_after_run),
         default_harness: project.default_harness.clone(),
         default_profile: project

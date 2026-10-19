@@ -62,6 +62,9 @@ pub struct Project {
     pub auto_start_status: Option<String>,
     /// How many runs the project keeps open at once on its own.
     pub auto_start_max_open: i64,
+    /// How a run installs the project's dependencies: absent detects the command from the
+    /// lockfile, empty turns the install off, any other text replaces the detected command.
+    pub prepare_command: Option<String>,
     /// Why auto-start switched itself off (the project dropped to L3); read, never written.
     pub auto_start_disabled_reason: Option<String>,
 }
@@ -655,6 +658,10 @@ pub struct UpdateProject {
     pub auto_start_status: Option<Option<String>>,
     #[validate(range(min = 1, message = "auto_start_max_open must be at least 1"))]
     pub auto_start_max_open: Option<i64>,
+    /// Omitted leaves it untouched; `null` detects the command from the lockfile, `""` turns the
+    /// install off, any other single line replaces the detected command.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub prepare_command: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

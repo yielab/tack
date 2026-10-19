@@ -272,6 +272,7 @@ async fn check_folder_reports_git_facts() {
     std::fs::create_dir(&repo).unwrap();
     git(&repo, &["init", "-b", "trunk"]);
     std::fs::write(repo.join("a.txt"), "a").unwrap();
+    std::fs::write(repo.join("package-lock.json"), "{}").unwrap();
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-m", "first"]);
     git(
@@ -297,13 +298,13 @@ async fn check_folder_reports_git_facts() {
     assert_eq!(
         body,
         serde_json::json!({"exists": true, "is_dir": true, "is_git": true, "branch": "trunk",
-            "remote_url": "https://example.com/r.git", "dirty_files": 1})
+            "remote_url": "https://example.com/r.git", "dirty_files": 1, "install": {"command": "npm ci", "lockfile": "package-lock.json"}})
     );
     let (_, body) = check(&plain).await;
     assert_eq!(
         body,
         serde_json::json!({"exists": true, "is_dir": true, "is_git": false, "branch": null,
-            "remote_url": null, "dirty_files": 0})
+            "remote_url": null, "dirty_files": 0, "install": null})
     );
     let (_, body) = check(&file).await;
     assert_eq!(body["exists"], true);

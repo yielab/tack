@@ -169,6 +169,10 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("automation.repository must be a URL"),
         ),
         (
+            "automation: { prepare: \"npm ci\\nrm -rf /\" }",
+            Problem("automation.prepare must be a single line"),
+        ),
+        (
             "automation: { default_harness: gpt }",
             Problem("automation.default_harness \"gpt\""),
         ),
@@ -326,6 +330,7 @@ fn synthetic_project() -> Project {
         auto_start_enabled: false,
         auto_start_status: None,
         auto_start_max_open: 3,
+        prepare_command: None,
         auto_start_disabled_reason: None,
     }
 }
@@ -475,4 +480,33 @@ fn a_preset_is_the_preset_and_statuses_are_a_custom_workflow() {
     let workflow = workflow_of(statuses.project.as_ref(), &ProjectType::Web).expect("statuses");
     assert_eq!(workflow.workflow_type, WorkflowType::Custom);
     assert_eq!(workflow.status_names(), ["A", "B", "C"]);
+}
+
+#[test]
+fn the_install_setting_round_trips_through_the_file() {
+    let mut board = Owned::empty();
+    for stored in [None, Some(""), Some("make deps")] {
+        let mut project = synthetic_project();
+        project.prepare_command = stored.map(str::to_owned);
+        board.workflow = project.workflow.clone();
+        let outline = to_bundle(&Parts {
+            project: &project,
+            fields: &[],
+            profiles: &[],
+            roles: &[],
+            sprints: &[],
+            autonomy: None,
+            auto_start: BundleAutoStart::default(),
+            items: &[],
+            item_roles: &[],
+            item_fields: &[],
+            dependencies: &[],
+            fleets: &[],
+        });
+        let text = serde_saphyr::to_string(&outline).expect("yaml");
+        let read: Outline = serde_saphyr::from_str(&text).expect("the export parses");
+        let plan = board.check(&read).expect("the export checks clean");
+        let prepare = plan.automation.and_then(|a| a.prepare);
+        assert_eq!(prepare.as_deref(), stored, "{text}");
+    }
 }
