@@ -26,6 +26,12 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The Overview tab: edit the description in place, and tick "Done when".** The item's Details tab
+  becomes Overview (`?tab=details` still opens it); the description reads as text and opens its
+  editor on a click ("Click to edit" when empty); the manual checks become a "Done when" list a
+  person ticks, with its progress ("1 of 3"). A manual criterion carries an optional `checked`
+  (absent means not ticked, so older items and files read as before); the brief and the verifier
+  ignore it.
 - **A project says how its dependencies are installed.** Settings → Automation → "Where the code
   is" shows what a run installs before the agent starts, from the repository's lockfile
   (`package-lock.json` → `npm ci`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock`, `poetry.lock`,
