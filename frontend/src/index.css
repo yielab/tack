@@ -179,6 +179,11 @@
   /* Panel: the second ground tone. Large containers (board columns, setting
      cards, the sidebar) sit on it; the items inside them go back to bg-base. */
   --color-bg-panel: var(--color-bg-sidebar);
+  /* Scrollbars: the thumb is the tertiary text tone, which every palette keeps
+     above 4.5:1 on app and panel grounds (3:1 is the floor for a control). The
+     track is the app ground; a column on a panel overrides it with the panel. */
+  --scrollbar-thumb: var(--color-text-tertiary);
+  --scrollbar-track: var(--color-bg-app);
   /* accent2 as readable text on accent2-soft. */
   --color-accent2-ink: var(--color-accent2);
   --color-chip: var(--color-bg-subtle);
@@ -828,19 +833,23 @@ body {
   background-color: var(--color-bg-app);
 }
 
-/* Themed scrollbars. */
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb {
-  background: var(--color-border-light);
-  border-radius: 99px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
+/* Themed scrollbars. Thin, with the thumb and track tokens above in every
+   palette and mode. WebKit engines without `scrollbar-color` get the same
+   tokens through the pseudo-elements; where it is supported they are ignored. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-tertiary);
-  background-clip: padding-box;
+@supports not (scrollbar-color: auto) {
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 }
-*::-webkit-scrollbar-track { background: transparent; }
 
 /* Animations. */
 /* Fades via `background-color`, never `opacity` — `opacity` composites the
