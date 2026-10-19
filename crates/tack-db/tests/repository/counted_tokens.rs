@@ -105,7 +105,6 @@ async fn a_profiles_history_counts_its_last_successful_measured_runs() {
     let workspace = common::create_test_workspace(&repo).await;
     let project = common::make_project(&repo, workspace).await;
     let item = common::make_item(&repo, &project).await.id.to_string();
-    let at = "2026-10-18T09:00:00Z";
     for sql in [
         "INSERT INTO agent_runners (id, name, credential_hash, state, labels, total_capacity, \
          available_capacity, capability_snapshot, protocol_version, created_at, updated_at) \
