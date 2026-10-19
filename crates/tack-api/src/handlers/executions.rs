@@ -10,7 +10,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -254,6 +254,17 @@ fn fence_id(snapshot: &str) -> Option<&str> {
 
 fn fingerprint(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
+}
+
+/// The fingerprint of a create request: what the request says, not what the task is now. A retry
+/// after the task's type or priority changed is the same request, so the task's metadata is left
+/// out (the replay check in tack-db compares the same way).
+fn request_fingerprint(snapshot: &Value) -> Result<String, (StatusCode, Json<Value>)> {
+    let text = canonical_string(
+        tack_db::repo::execution::without_task_metadata(snapshot),
+        "request_snapshot",
+    )?;
+    Ok(fingerprint(&text))
 }
 
 /// Parses a stored `TEXT` timestamp column (always written via
@@ -1047,8 +1058,9 @@ fn run_limits(
 /// the snapshot (`budgets.tokens`, `metadata.limit_source`, the profile's name) and the agent that
 /// ran it: the latest attempt's, else the one requested. docket stops its own task at the limit and
 /// the runner stops Claude Code and opencode when their counted tokens reach it; every other agent
-/// is measured, and says so.
-fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
+/// is measured, and says so. `day_room` is what is left of the project's daily token limit, when it
+/// has one: a run with no limit of its own gets that when it is claimed (`budgets::limit_to_day_room`).
+fn limit_source(snapshot: &Value, harness_kind: Option<&str>, day_room: Option<i64>) -> RunLimit {
     let tokens = snapshot["budgets"]["tokens"].as_u64().filter(|n| *n > 0);
     let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {
         (None, _) => LimitSource::None,
@@ -1070,13 +1082,34 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
         Some("opencode") => "OpenCode",
         _ => "the agent",
     };
-    let sentence = match tokens {
-        None if docket => {
+    // Who stops the run at its limit, as the sentence names it.
+    let who = |source: &LimitSource| {
+        if docket {
+            "docket stops the task there".to_owned()
+        } else if enforced_by != "measured" {
+            format!("Tack stops {agent}'s run there")
+        } else if matches!(source, LimitSource::Day) {
+            format!(
+                "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet, so this run can go past today's limit)"
+            )
+        } else {
+            format!(
+                "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet)"
+            )
+        }
+    };
+    let sentence = match (tokens, day_room) {
+        (None, Some(room)) => format!(
+            "No limit of its own · gets what is left of today's limit ({} tokens left) · {}",
+            tack_core::run_defaults::token_count(room.max(0)),
+            who(&LimitSource::Day)
+        ),
+        (None, None) if docket => {
             "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
                 .to_owned()
         }
-        None => "No limit set in Tack".to_owned(),
-        Some(n) => {
+        (None, None) => "No limit set in Tack".to_owned(),
+        (Some(n), _) => {
             let spaced = tack_core::run_defaults::token_count(i64::try_from(n).unwrap_or(i64::MAX));
             let from = match source {
                 LimitSource::Profile => {
@@ -1088,25 +1121,13 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
                 LimitSource::Day => "what was left of today's limit".to_owned(),
                 _ => "set for this run".to_owned(),
             };
-            let who = if docket {
-                "docket stops the task there".to_owned()
-            } else if enforced_by != "measured" {
-                format!("Tack stops {agent}'s run there")
-            } else if matches!(source, LimitSource::Day) {
-                format!(
-                    "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet, so this run can go past today's limit)"
-                )
-            } else {
-                format!(
-                    "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet)"
-                )
-            };
             if matches!(source, LimitSource::Provisional) {
                 format!(
-                    "Provisional limit: {spaced} tokens (no measured runs yet) · set in Settings → Automation · {who}"
+                    "Provisional limit: {spaced} tokens (no measured runs yet) · set in Settings → Automation · {}",
+                    who(&source)
                 )
             } else {
-                format!("{spaced} tokens · {from} · {who}")
+                format!("{spaced} tokens · {from} · {}", who(&source))
             }
         }
     };
@@ -1119,28 +1140,43 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
     }
 }
 
-/// The limit of each listed request, read from its stored snapshot and the agent that ran it.
+/// The limit of each listed request, read from its stored snapshot and the agent that ran it, and
+/// what is left of its project's daily limit (for a run with no limit of its own).
 async fn run_limits_of(
     pool: &sqlx::SqlitePool,
     ids: &[String],
+    now: DateTime<Utc>,
 ) -> Result<std::collections::HashMap<String, RunLimit>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT r.id,
                 json_extract(r.request_snapshot, '$.budgets') AS budgets,
                 json_extract(r.request_snapshot, '$.metadata.limit_source') AS source,
                 json_extract(r.request_snapshot, '$.resolved_agent_profile.name') AS profile,
+                i.project_id AS project_id,
                 COALESCE((SELECT json_extract(a.actual_execution, '$.harness_kind')
                             FROM execution_attempts a
                            WHERE a.request_id = r.id AND a.actual_execution IS NOT NULL
                            ORDER BY a.attempt_number DESC LIMIT 1),
                          r.requested_harness_kind) AS harness_kind
            FROM execution_requests r
+           JOIN items i ON i.id = r.item_id
           WHERE r.id IN (SELECT value FROM json_each(?))",
     )
     .bind(json!(ids).to_string())
     .fetch_all(pool)
     .await?;
     let used = tack_db::repo::budgets::counted_by_request(pool, ids).await?;
+    let mut rooms: std::collections::HashMap<String, Option<i64>> =
+        std::collections::HashMap::new();
+    for row in &rows {
+        let project: String = row.get("project_id");
+        if let std::collections::hash_map::Entry::Vacant(slot) = rooms.entry(project.clone()) {
+            let room = tack_db::repo::budgets::day_room(pool, &project, now)
+                .await?
+                .map(|day| day.room);
+            slot.insert(room);
+        }
+    }
     Ok(rows
         .iter()
         .map(|row| {
@@ -1152,7 +1188,9 @@ async fn run_limits_of(
             });
             let kind: Option<String> = row.get("harness_kind");
             let id: String = row.get("id");
-            let mut limit = limit_source(&snapshot, kind.as_deref());
+            let project: String = row.get("project_id");
+            let day_room = rooms.get(&project).copied().flatten();
+            let mut limit = limit_source(&snapshot, kind.as_deref(), day_room);
             limit.used = used.get(&id).and_then(|n| u64::try_from(*n).ok());
             (id, limit)
         })
@@ -1710,7 +1748,7 @@ pub(crate) async fn enqueue_as(
         )
     })?;
     let request_snapshot = canonical_string(snapshot_value.clone(), "request_snapshot")?;
-    let request_fingerprint = fingerprint(&request_snapshot);
+    let request_fingerprint = request_fingerprint(&snapshot_value)?;
     let root = snapshot_value.as_object().ok_or_else(|| {
         error(
             StatusCode::BAD_REQUEST,
@@ -1847,36 +1885,33 @@ pub async fn list_executions(
             json!({}),
         )
     })?;
-    let unexplained = rows
-        .iter()
-        .any(|row| row.state == "queued" && row.waiting_reason.is_none());
-    let offline = unexplained
-        && no_runner_online(&state.repo, state.clock.now())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not list runners",
-                    json!({}),
-                )
-            })?;
+    let now = state.clock.now();
+    let runners = queued_runners(&state.repo, rows.iter().any(|row| row.state == "queued")).await?;
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
-    let mut limits = run_limits_of(state.repo.pool(), &ids).await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not read the runs' limits",
-            json!({}),
-        )
-    })?;
+    let mut limits = run_limits_of(state.repo.pool(), &ids, now)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not read the runs' limits",
+                json!({}),
+            )
+        })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| ExecutionSummary {
             limit: limits
                 .remove(&row.id)
-                .unwrap_or_else(|| limit_source(&Value::Null, None)),
-            waiting_reason: waiting_reason_or_offline(&row.state, row.waiting_reason, offline),
+                .unwrap_or_else(|| limit_source(&Value::Null, None, None)),
+            waiting_reason: queued_reason(
+                &row.state,
+                row.waiting_reason,
+                &row.selector_kind,
+                &row.selector_id,
+                &runners,
+                now,
+            ),
             request_id: row.id,
             item_id: row.item_id,
             state: row.state,
@@ -1910,20 +1945,74 @@ pub(crate) fn runner_is_online(runner: &RunnerListingRow, now: DateTime<Utc>) ->
     )
 }
 
-async fn no_runner_online(repo: &Repository, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
-    Ok(!repo
-        .list_runners()
-        .await?
-        .iter()
-        .any(|runner| runner_is_online(runner, now)))
+/// Every runner, read only when a listed run is queued: the queue's reasons need them.
+async fn queued_runners(
+    repo: &Repository,
+    any_queued: bool,
+) -> Result<Vec<RunnerListingRow>, (StatusCode, Json<Value>)> {
+    if !any_queued {
+        return Ok(Vec::new());
+    }
+    repo.list_runners().await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not list runners",
+            json!({}),
+        )
+    })
 }
 
-/// A queued request's reason, or the read-time one when nothing explains it.
-fn waiting_reason_or_offline(state: &str, reason: Option<String>, offline: bool) -> Option<String> {
-    match reason {
-        None if state == "queued" && offline => Some(NO_RUNNER_ONLINE.to_string()),
-        reason => reason,
+/// When the computer a queued run asked for last answered, if it has stopped answering: the newest
+/// heartbeat of the named runner, or of a group's (fleet's) members, is past the liveness window.
+/// `None` while one answers, and when none ever did (there is then no time to name).
+fn silent_since(
+    selector_kind: &str,
+    selector_id: &str,
+    runners: &[RunnerListingRow],
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let asked: Vec<&RunnerListingRow> = match selector_kind {
+        "exact_runner" => runners.iter().filter(|r| r.id == selector_id).collect(),
+        "fleet" => runners
+            .iter()
+            .filter(|r| r.fleet_ids.iter().any(|fleet| fleet == selector_id))
+            .collect(),
+        _ => return None,
+    };
+    let last = asked
+        .iter()
+        .filter_map(|runner| runner.last_heartbeat_at.as_deref().and_then(parse_rfc3339))
+        .max()?;
+    // The scheduler's own rule for "answering": past its window, nothing in the group answers.
+    (!SchedulingPolicy::default().is_online(true, Some(last), now)).then_some(last)
+}
+
+/// A listed run's reason. A queued run waits for the computer it asked for when that has stopped
+/// answering, and names when: a poll's stored reason is from before that, so it gives way. Otherwise
+/// it shows what a poll stored, and with nothing stored, "no runner is online" when none is. Other
+/// states show what is stored. Read at read time; never stored.
+fn queued_reason(
+    state: &str,
+    stored: Option<String>,
+    selector_kind: &str,
+    selector_id: &str,
+    runners: &[RunnerListingRow],
+    now: DateTime<Utc>,
+) -> Option<String> {
+    if state != "queued" {
+        return stored;
     }
+    if let Some(since) = silent_since(selector_kind, selector_id, runners, now) {
+        return Some(format!(
+            "The computer this run asked for has not answered since {}",
+            since.to_rfc3339_opts(SecondsFormat::Secs, true)
+        ));
+    }
+    stored.or_else(|| {
+        (!runners.iter().any(|runner| runner_is_online(runner, now)))
+            .then(|| NO_RUNNER_ONLINE.to_string())
+    })
 }
 
 #[utoipa::path(
@@ -1940,7 +2029,7 @@ pub async fn get_execution(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
-    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
+    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
         .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1957,22 +2046,14 @@ pub async fn get_execution(
             json!({"resource": "execution_request"}),
         ));
     };
+    let now = state.clock.now();
     let request_state: String = row.get("state");
     let waiting_reason: Option<String> = row.get("waiting_reason");
-    let offline = request_state == "queued"
-        && waiting_reason.is_none()
-        && no_runner_online(&state.repo, state.clock.now())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not list runners",
-                    json!({}),
-                )
-            })?;
+    let selector_kind: String = row.get("selector_kind");
+    let selector_id: String = row.get("selector_id");
+    let runners = queued_runners(&state.repo, request_state == "queued").await?;
     let request_id: String = row.get("id");
-    let limit = run_limits_of(state.repo.pool(), std::slice::from_ref(&request_id))
+    let limit = run_limits_of(state.repo.pool(), std::slice::from_ref(&request_id), now)
         .await
         .map_err(|_| {
             error(
@@ -1983,7 +2064,7 @@ pub async fn get_execution(
             )
         })?
         .remove(&request_id)
-        .unwrap_or_else(|| limit_source(&Value::Null, None));
+        .unwrap_or_else(|| limit_source(&Value::Null, None, None));
     Ok(Json(ExecutionDetailResponse {
         protocol_version: 1,
         request_id,
@@ -1993,7 +2074,14 @@ pub async fn get_execution(
         cancellation_requested_at: row.get("cancellation_requested_at"),
         created_at: row.get("created_at"),
         instructions: row.get("instructions"),
-        waiting_reason: waiting_reason_or_offline(&request_state, waiting_reason, offline),
+        waiting_reason: queued_reason(
+            &request_state,
+            waiting_reason,
+            &selector_kind,
+            &selector_id,
+            &runners,
+            now,
+        ),
         waiting_since: row.get("waiting_since"),
     }))
 }
@@ -2764,6 +2852,21 @@ pub async fn get_item_agent_context(
         .map(str::trim)
         .filter(|h| !h.is_empty())
         .or_else(|| profile["tool_policy"]["agent"].as_str());
+    let day_room = tack_db::repo::budgets::day_room(
+        state.repo.pool(),
+        &item.project_id.to_string(),
+        Utc::now(),
+    )
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not load the project's limits",
+            json!({}),
+        )
+    })?
+    .map(|day| day.room);
     let limit = limit_source(
         &json!({
             "budgets": {"tokens": tokens},
@@ -2771,6 +2874,7 @@ pub async fn get_item_agent_context(
             "resolved_agent_profile": {"name": profile["name"]},
         }),
         harness,
+        day_room,
     );
 
     Ok(Json(AgentContextResponse {
@@ -2903,7 +3007,7 @@ mod tests {
             ),
         ];
         for (snapshot, agent, tokens, source, enforced_by, sentence) in rows {
-            let limit = limit_source(snapshot, Some(agent));
+            let limit = limit_source(snapshot, Some(agent), None);
             assert_eq!(
                 (
                     limit.tokens,

@@ -1887,6 +1887,123 @@ async fn a_queued_request_reads_no_runner_is_online_until_a_runner_is() {
     assert_eq!(reason(&body), json!("codex needs a model named"), "{body}");
 }
 
+#[tokio::test]
+async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_did() {
+    let (app, repo, item_id) = setup().await;
+    let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let request_id = created["request_id"].as_str().expect("id").to_owned();
+    // A reason a poll stored while the computer still answered is older than its silence.
+    sqlx::query(
+        "UPDATE execution_requests SET waiting_reason = 'codex needs a model named' WHERE id = ?",
+    )
+    .bind(&request_id)
+    .execute(repo.pool())
+    .await
+    .expect("a poll's reason");
+    let answered = Utc::now() - Duration::minutes(10);
+    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = 'runner-active'")
+        .bind(answered.to_rfc3339())
+        .execute(repo.pool())
+        .await
+        .expect("last heartbeat");
+    let expected = format!(
+        "The computer this run asked for has not answered since {}",
+        answered.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    );
+
+    let (_, body) = snd(
+        &app,
+        "GET",
+        &format!("/executions?item_ids={item_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(body["data"][0]["waiting_reason"], json!(expected), "{body}");
+    let (_, detail) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{request_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(detail["waiting_reason"], json!(expected), "{detail}");
+}
+
+#[tokio::test]
+async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request() {
+    let (app, repo, item_id) = setup().await;
+    let (first_status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(first_status, StatusCode::OK, "{first}");
+    sqlx::query("UPDATE items SET item_type = 'bug', priority = 'high' WHERE id = ?")
+        .bind(&item_id)
+        .execute(repo.pool())
+        .await
+        .expect("the task changes");
+
+    let (status, retry) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    assert_eq!(retry["request_id"], first["request_id"]);
+    assert_eq!(retry["replayed"], true);
+}
+
+#[tokio::test]
+async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_of_the_day() {
+    let (app, repo, item_id) = setup().await;
+    let project: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    tack_db::repo::budgets::put(
+        repo.pool(),
+        &project,
+        &tack_db::repo::budgets::ProjectBudgets {
+            tokens_per_day: Some(1_000_000),
+            provisional_tokens_per_run: None,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id: "profile-open",
+            name: "Open",
+            instructions: "x",
+            tool_policy: "{}",
+            limits: "{}",
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("profile");
+    let mut body = bare_body(&item_id, "k-day");
+    body["agent_profile_id"] = json!("profile-open");
+    body["budgets"] = json!({"tokens": null});
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+
+    let (_, detail) = snd(
+        &app,
+        "GET",
+        &format!(
+            "/executions/{}",
+            created["request_id"].as_str().expect("id")
+        ),
+        String::new(),
+    )
+    .await;
+    assert_eq!(detail["limit"]["tokens"], Value::Null, "{detail}");
+    assert_eq!(
+        detail["limit"]["sentence"],
+        json!(
+            "No limit of its own · gets what is left of today's limit (1 000 000 tokens left) · measured, not enforced (Tack reads Codex's tokens but cannot stop it at a limit yet, so this run can go past today's limit)"
+        ),
+        "{detail}"
+    );
+}
+
 fn bare_body(item_id: &str, key: &str) -> Value {
     let mut body: Value = serde_json::from_str(&create_body(item_id)).unwrap();
     body["idempotency_key"] = json!(key);
