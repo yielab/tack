@@ -956,6 +956,44 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
     );
 }
 
+// A provisional limit is not the run's own: a day with less room than it admits the
+// run with what is left, and a day with more keeps the provisional limit.
+#[tokio::test]
+async fn a_provisional_limit_gives_way_to_the_days_room() {
+    for (day, expected) in [
+        (300_000, (300_000, "day")),
+        (5_000_000, (2_000_000, "provisional")),
+    ] {
+        let (repo, item_id) = setup_repo().await;
+        let now = Utc::now();
+        setup_codex_runner(&repo, "runner-a", 5, 5, Some(0), now).await;
+        set_budgets(&repo, &item_id, Some(day), None).await;
+        enqueue_for_runner(&repo, &item_id, "prov", "runner-a", ALPHA_MODEL, "{}", now).await;
+        set_run_limit(&repo, "prov", 2_000_000).await;
+        sqlx::query(
+            "UPDATE execution_requests SET request_snapshot = \
+             json_set(request_snapshot, '$.metadata.limit_source', 'provisional') WHERE id = 'prov'",
+        )
+        .execute(repo.pool())
+        .await
+        .expect("provisional source");
+        let chosen =
+            choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
+                .await
+                .expect("no db error");
+        assert_eq!(chosen.as_deref(), Some("prov"), "day {day}");
+        let (tokens, source): (i64, String) = sqlx::query_as(
+            "SELECT json_extract(request_snapshot, '$.budgets.tokens'), \
+             json_extract(request_snapshot, '$.metadata.limit_source') \
+             FROM execution_requests WHERE id = 'prov'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("snapshot");
+        assert_eq!((tokens, source.as_str()), expected, "day {day}");
+    }
+}
+
 async fn set_run_limit(repo: &Repository, request_id: &str, tokens: i64) {
     sqlx::query(
         "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.budgets.tokens', ?) WHERE id = ?",

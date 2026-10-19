@@ -31,7 +31,7 @@ automation a template carries, and the removal of dollars per day.
   (`package-lock.json` → `npm ci`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock`, `poetry.lock`,
   `Cargo.lock`), and lets a project replace the command or turn the install off; the Run dialog
   shows the same line. The project API carries `prepare_command`, the project file `prepare`, and a
-  run's request records the setting under `repository.prepare`. Migration 095. The runner does not
+  run's request records the setting under `repository.prepare`. Migration 093. The runner does not
   act on it yet.
 - **A limit learnt per profile.** A run whose profile sets no token limit runs under a provisional one,
   2 000 000 tokens until it is changed or emptied in Settings → Automation; once a profile has 5
