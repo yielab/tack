@@ -168,11 +168,11 @@ pub async fn capture<P: WorktreeProvisioner>(
     head: Option<&str>,
 ) -> (PathBuf, Vec<serde_json::Value>) {
     let attempt_id = workspace.attempt_id.as_str();
-    // A folder linked to a kept install is not the agent's work, whether or not
-    // the project ignores it.
+    // An install the runner prepared is not the agent's work, whether or not the
+    // project ignores it.
     let mut exclude = vec![RUNNER_DIR, PLAN_FILE];
     if head.is_none() {
-        exclude.extend(crate::prepare::linked_folders(&workspace.path));
+        exclude.extend(crate::prepare::prepared_folders(&workspace.path));
     }
     let captured = match (head, base_commit) {
         (Some(head), Some(base_commit)) => {

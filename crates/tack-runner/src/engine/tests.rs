@@ -4480,18 +4480,18 @@ async fn a_docket_run_installs_nothing() {
     assert_eq!(starts, 1, "docket prepares its own copy");
 }
 
-/// A folder linked to a kept install never reaches the evidence, though the project does not
-/// ignore it, while the agent's own changes do.
+/// A folder the runner prepared never reaches the evidence, though the project does not ignore
+/// it, while the agent's own changes do.
 #[tokio::test]
-async fn a_linked_install_is_not_part_of_the_evidence() {
+async fn a_prepared_install_is_not_part_of_the_evidence() {
     let (data_protocol, _) = run_evidence_attempt(
         "install-evidence",
         false,
         |workspace| {
-            let kept = workspace.join("..").join("kept");
-            std::fs::create_dir_all(kept.join("pkg")).expect("kept install");
-            std::fs::write(kept.join("pkg/index.js"), "x\n").expect("file");
-            std::os::unix::fs::symlink(&kept, workspace.join("node_modules")).expect("link");
+            let installed = workspace.join("node_modules");
+            std::fs::create_dir_all(installed.join("pkg")).expect("install");
+            std::fs::write(installed.join("pkg/index.js"), "x\n").expect("file");
+            std::fs::write(installed.join(".tack-prepared"), "").expect("marker");
             write_one_delete_one(workspace);
         },
         None,
@@ -4505,4 +4505,24 @@ async fn a_linked_install_is_not_part_of_the_evidence() {
     assert_eq!(paths, ["gone.txt", "new.txt"]);
     let patch = String::from_utf8(uploaded(&state, "changes.patch")).expect("utf8");
     assert!(!patch.contains("node_modules"));
+}
+
+/// Without the marker a root `node_modules` is the agent's work like any other folder.
+#[tokio::test]
+async fn an_unmarked_node_modules_is_still_the_agents_change() {
+    let (data_protocol, _) = run_evidence_attempt(
+        "install-unmarked",
+        false,
+        |workspace| {
+            std::fs::create_dir_all(workspace.join("node_modules")).expect("folder");
+            std::fs::write(workspace.join("node_modules/a.js"), "x\n").expect("file");
+        },
+        None,
+    )
+    .await;
+    let state = data_protocol.state.lock().expect("lock");
+    let files: Vec<crate::evidence::FileChange> =
+        serde_json::from_slice(&uploaded(&state, "files.json")).expect("files");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "node_modules/a.js");
 }

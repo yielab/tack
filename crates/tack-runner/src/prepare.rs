@@ -2,9 +2,11 @@
 //!
 //! The command comes from the repository's lockfile unless the project replaced or turned off the
 //! install (`tack_core::prepare`). It runs in the checkout with the runner's own environment,
-//! network included; the agent's sandbox is not involved. What a lockfile installs into a folder
-//! (`node_modules`, `.venv`) is kept once, under the runner's state directory, and linked into each
-//! checkout, so the next attempt with the same lockfile does not install again.
+//! network included; the agent's sandbox is not involved. What npm, pnpm and yarn install into
+//! `node_modules` is kept once, under the runner's state directory, and each checkout gets its own
+//! tree of directories whose files are hard links to the kept ones, so the next attempt with the
+//! same lockfile does not install again and the agent's sandbox, which sees only the checkout, can
+//! read it.
 
 use std::{
     fs, io,
@@ -20,9 +22,12 @@ use crate::harness::{
     sha256::sha256_hex,
 };
 
-/// Every folder a cached install can be linked as. The evidence of an attempt leaves out the ones
-/// that are links, because a link is not the agent's work.
-const LINKED_FOLDERS: [&str; 2] = ["node_modules", ".venv"];
+/// The folder a cached install fills.
+const FOLDER: &str = "node_modules";
+
+/// A file the runner puts in that folder to say it prepared it. The evidence of an attempt leaves
+/// the folder out when it holds this file, because the install is not the agent's work.
+const MARKER: &str = ".tack-prepared";
 
 /// Output kept from a command, per stream.
 const OUTPUT_BYTES: usize = 1024 * 1024;
@@ -72,28 +77,25 @@ fn root_files(checkout: &Path) -> io::Result<Vec<String>> {
     Ok(names)
 }
 
-/// The folders under `checkout` that are links to a cached install.
-pub fn linked_folders(checkout: &Path) -> Vec<&'static str> {
-    LINKED_FOLDERS
-        .into_iter()
-        .filter(|folder| {
-            fs::symlink_metadata(checkout.join(folder))
-                .is_ok_and(|metadata| metadata.file_type().is_symlink())
-        })
-        .collect()
-}
-
-/// The folder a detected install fills, when one is worth keeping: poetry and cargo keep their
-/// packages in a cache of their own.
-fn cached_folder(lockfile: &str) -> Option<&'static str> {
-    match lockfile {
-        "package-lock.json" | "pnpm-lock.yaml" | "yarn.lock" => Some("node_modules"),
-        "uv.lock" => Some(".venv"),
-        _ => None,
+/// The folders under `checkout` that the runner prepared.
+pub fn prepared_folders(checkout: &Path) -> Vec<&'static str> {
+    if checkout.join(FOLDER).join(MARKER).is_file() {
+        vec![FOLDER]
+    } else {
+        Vec::new()
     }
 }
 
-/// Runs `command`, or links the install a previous attempt kept for the same lockfile.
+/// Whether the install a lockfile implies is kept: poetry, uv and cargo keep their packages in a
+/// cache of their own.
+fn is_kept(lockfile: &str) -> bool {
+    matches!(
+        lockfile,
+        "package-lock.json" | "pnpm-lock.yaml" | "yarn.lock"
+    )
+}
+
+/// Runs `command`, or builds the install a previous attempt kept for the same lockfile.
 async fn install(
     checkout: &Path,
     command: &str,
@@ -101,12 +103,13 @@ async fn install(
     state_dir: &Path,
     timeout: Duration,
 ) -> Result<(), PrepareError> {
+    let installed = checkout.join(FOLDER);
     // A replaced command is the project's own and may do anything, so it always runs. A folder the
     // repository already holds is the project's own too.
     let kept = lockfile
-        .and_then(|lockfile| Some((lockfile, cached_folder(lockfile)?)))
-        .filter(|(_, folder)| fs::symlink_metadata(checkout.join(folder)).is_err());
-    let Some((lockfile, folder)) = kept else {
+        .filter(|lockfile| is_kept(lockfile))
+        .filter(|_| fs::symlink_metadata(&installed).is_err());
+    let Some(lockfile) = kept else {
         return run(checkout, command, timeout).await;
     };
     let Ok(lock) = fs::read(checkout.join(lockfile)) else {
@@ -114,62 +117,64 @@ async fn install(
     };
     let cache = state_dir.join("prepare-cache");
     let entry = cache.join(sha256_hex(&lock));
-    if link(&entry.join(folder), &checkout.join(folder)).is_ok() {
-        tracing::info!("linked the dependencies kept for {lockfile}");
-        return Ok(());
+    if link_tree(&entry.join(FOLDER), &installed).is_ok() {
+        tracing::info!("reused the dependencies kept for {lockfile}");
+        return mark(&installed);
     }
+    // Nothing usable was kept, or it could not be linked: whatever was half built goes.
+    let _ = fs::remove_dir_all(&installed);
     run(checkout, command, timeout).await?;
-    keep(checkout, folder, &cache, &entry)
+    keep(checkout, &cache, &entry);
+    mark(&installed)
 }
 
-/// Moves the freshly installed `folder` into the cache as `entry` and links it back. The entry
-/// appears whole or not at all: it is built beside the cache's other entries and renamed into
-/// place, and when another attempt renamed first, theirs is used and this copy is dropped. A
-/// folder that cannot be moved stays in the checkout, which still has its install.
-fn keep(checkout: &Path, folder: &str, cache: &Path, entry: &Path) -> Result<(), PrepareError> {
+/// Keeps the install in the checkout as `entry`, built from hard links beside the cache's other
+/// entries and renamed into place, so an entry appears whole or not at all. When another attempt
+/// renamed first, theirs stays and this copy is dropped. The checkout keeps its own install either
+/// way, so a failure here only means the next attempt installs again.
+fn keep(checkout: &Path, cache: &Path, entry: &Path) {
     let staging = cache.join(format!(
         ".staging-{}",
         checkout
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
     ));
-    let installed = checkout.join(folder);
     let _ = fs::remove_dir_all(&staging);
-    let moved =
-        fs::create_dir_all(&staging).and_then(|()| fs::rename(&installed, staging.join(folder)));
-    if let Err(error) = moved {
-        tracing::warn!("the installed dependencies were not kept: {error}");
+    let kept = fs::create_dir_all(&staging)
+        .and_then(|()| link_tree(&checkout.join(FOLDER), &staging.join(FOLDER)))
+        .and_then(|()| fs::rename(&staging, entry));
+    if let Err(error) = kept {
+        tracing::info!("the installed dependencies were not kept: {error}");
         let _ = fs::remove_dir_all(&staging);
-        return Ok(());
     }
-    if let Err(error) = fs::rename(&staging, entry)
-        && !entry.join(folder).is_dir()
-    {
-        tracing::warn!("the installed dependencies were not kept: {error}");
-        let given_back = fs::rename(staging.join(folder), &installed);
-        let _ = fs::remove_dir_all(&staging);
-        return given_back
-            .map_err(|error| PrepareError(format!("Could not keep the dependencies: {error}")));
-    }
-    let _ = fs::remove_dir_all(&staging);
-    link(&entry.join(folder), &installed)
-        .map_err(|error| PrepareError(format!("Could not link the dependencies: {error}")))
 }
 
-/// Makes `to` a link to the directory `from`.
-fn link(from: &Path, to: &Path) -> io::Result<()> {
-    if !from.is_dir() {
-        return Err(io::ErrorKind::NotFound.into());
+/// Says the runner prepared `installed`, with a file of its own (not a link to a kept one).
+fn mark(installed: &Path) -> Result<(), PrepareError> {
+    fs::write(installed.join(MARKER), "")
+        .map_err(|error| PrepareError(format!("Could not prepare the dependencies: {error}")))
+}
+
+/// Builds `to` as a copy of the directory tree `from`: real directories, symlinks recreated, and
+/// every file a hard link to the original.
+fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            link_tree(&entry.path(), &target)?;
+        } else if kind.is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(fs::read_link(entry.path())?, &target)?;
+            #[cfg(not(unix))]
+            return Err(io::ErrorKind::Unsupported.into());
+        } else {
+            fs::hard_link(entry.path(), &target)?;
+        }
     }
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(from, to)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = to;
-        Err(io::ErrorKind::Unsupported.into())
-    }
+    Ok(())
 }
 
 /// Runs `command` with `sh -c` in `checkout`, bounded by `timeout`.
