@@ -246,6 +246,14 @@ pub struct FolderCheck {
     pub branch: Option<String>,
     pub remote_url: Option<String>,
     pub dirty_files: usize,
+    /// The install command the checked-out commit's lockfile implies, when it has one.
+    pub install: Option<DetectedInstall>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DetectedInstall {
+    pub command: String,
+    pub lockfile: String,
 }
 
 type FolderError = (StatusCode, Json<Value>);
@@ -327,13 +335,21 @@ pub async fn check_local_runner_folder(
         && run_git(&path, &["rev-parse", "--is-inside-work-tree"])
             .await
             .is_some_and(|out| out == "true");
-    let (mut branch, mut remote_url, mut dirty_files) = (None, None, 0);
+    let (mut branch, mut remote_url, mut dirty_files, mut install) = (None, None, 0, None);
     if is_git {
         branch = run_git(&path, &["rev-parse", "--abbrev-ref", "HEAD"]).await;
         remote_url = run_git(&path, &["remote", "get-url", "origin"]).await;
         dirty_files = run_git(&path, &["status", "--porcelain"])
             .await
             .map_or(0, |out| out.lines().count());
+        let root_files = run_git(&path, &["ls-tree", "--name-only", "HEAD"])
+            .await
+            .unwrap_or_default();
+        let root_files: Vec<&str> = root_files.lines().collect();
+        install = tack_core::prepare::detect(&root_files).map(|found| DetectedInstall {
+            command: found.command.to_owned(),
+            lockfile: found.lockfile.to_owned(),
+        });
     }
     Ok(Json(FolderCheck {
         exists,
@@ -342,6 +358,7 @@ pub async fn check_local_runner_folder(
         branch,
         remote_url,
         dirty_files,
+        install,
     }))
 }
 

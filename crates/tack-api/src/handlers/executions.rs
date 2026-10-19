@@ -922,6 +922,7 @@ fn project_repository(
         "workspace_mode": mode.to_string(),
         "repository_path": local.then_some(repository),
         "push_after_run": project.push_after_run,
+        "prepare": tack_core::prepare::PrepareSetting::from_stored(project.prepare_command.as_deref()),
     }))
 }
 

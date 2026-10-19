@@ -154,6 +154,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("090_auto_start", &MIGRATION_090[..]),
         ordinary("091_template_bundle", &MIGRATION_091[..]),
         ordinary("092_drop_usd_per_day", &MIGRATION_092[..]),
+        ordinary("093_project_prepare_command", &MIGRATION_093[..]),
     ]
 }
 
@@ -1863,3 +1864,7 @@ const MIGRATION_091: [&str; 3] = [
 
 // 092: dollars per day is no longer a limit (ADR 0083): every limit is in tokens.
 const MIGRATION_092: [&str; 1] = ["ALTER TABLE project_budgets DROP COLUMN usd_per_day"];
+
+// 093: how a run installs the project's dependencies: NULL detects the command from the lockfile,
+// '' turns the install off, any other text replaces the detected command.
+const MIGRATION_093: [&str; 1] = ["ALTER TABLE projects ADD COLUMN prepare_command TEXT"];

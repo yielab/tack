@@ -128,10 +128,16 @@ pub async fn get_project(
 pub async fn update_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(input): Json<UpdateProject>,
+    Json(mut input): Json<UpdateProject>,
 ) -> Response {
     if let Err(e) = input.validate() {
         return ApiError::BadRequest(e.to_string()).into_response();
+    }
+    if let Some(Some(command)) = &mut input.prepare_command {
+        match tack_core::prepare::clean_command(command) {
+            Ok(clean) => *command = clean,
+            Err(message) => return ApiError::BadRequest(message.to_owned()).into_response(),
+        }
     }
     let current = match state.repo.get_project(id).await {
         Ok(Some(project)) => project,

@@ -403,6 +403,18 @@ operator token:
 `GET /api/executions/{request_id}/attempts/{n}/artifacts/{artifact_id}/content`. Each upload is
 checked against its checksum.
 
+## Installing the project's dependencies
+
+A project can say how its dependencies are installed before an agent works on its code. By default
+the command comes from the lockfile at the root of the repository: `npm ci` for
+`package-lock.json`, `pnpm install --frozen-lockfile` for `pnpm-lock.yaml`, `yarn install
+--immutable` for `yarn.lock`, `uv sync --frozen` for `uv.lock`, `poetry install` for `poetry.lock`
+and `cargo fetch` for `Cargo.lock`; with several lockfiles the first in that order wins, and with
+none nothing is installed. In Settings → Automation, under **Where the code is**, a project can
+replace the command with its own single line or turn the install off. The same screen and the Run
+dialog show what will run. For a folder on the board's own computer the board reads the lockfile
+itself; for any other project the line says it is detected on the runner when the run starts.
+
 ## Non-loopback and security posture
 
 The routes a runner uses (`/api/runner/v1/*`) are separate from the operator routes. They do not use

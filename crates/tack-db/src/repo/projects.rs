@@ -77,6 +77,7 @@ impl Repository {
             auto_start_enabled: false,
             auto_start_status: None,
             auto_start_max_open: 3,
+            prepare_command: None,
             auto_start_disabled_reason: None,
         })
     }
@@ -86,7 +87,7 @@ impl Repository {
         let row = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
-                    auto_start_enabled, auto_start_status, auto_start_max_open,
+                    auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
                         SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
                         WHERE i.project_id = projects.id AND c.content = ?
@@ -107,7 +108,7 @@ impl Repository {
         let rows = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
-                    auto_start_enabled, auto_start_status, auto_start_max_open,
+                    auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
                         SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
                         WHERE i.project_id = projects.id AND c.content = ?
@@ -247,6 +248,7 @@ impl Repository {
             ("definition_of_done", input.definition_of_done),
             ("default_model", input.default_model),
             ("auto_start_status", input.auto_start_status),
+            ("prepare_command", input.prepare_command),
         ] {
             if let Some(value) = value {
                 sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -301,6 +303,7 @@ struct ProjectRow {
     auto_start_enabled: i32,
     auto_start_status: Option<String>,
     auto_start_max_open: i64,
+    prepare_command: Option<String>,
     auto_start_disabled_reason: Option<String>,
 }
 
@@ -339,6 +342,7 @@ impl ProjectRow {
             auto_start_enabled: self.auto_start_enabled != 0,
             auto_start_status: self.auto_start_status,
             auto_start_max_open: self.auto_start_max_open,
+            prepare_command: self.prepare_command,
             auto_start_disabled_reason: self.auto_start_disabled_reason,
         })
     }

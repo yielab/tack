@@ -1151,7 +1151,23 @@ async fn the_repository_comes_from_the_project_when_omitted() {
     assert_eq!(
         snapshot["repository"],
         serde_json::json!({"kind":"git","remote":"/work/repo","base_revision":"HEAD","subdirectory":null,
-            "workspace_mode":"in_place","repository_path":"/work/repo","push_after_run":true})
+            "workspace_mode":"in_place","repository_path":"/work/repo","push_after_run":true,
+            "prepare":{"mode":"detect"}})
+    );
+
+    // The project's install setting is copied into the request as it stands.
+    sqlx::query("UPDATE projects SET prepare_command = 'make deps' WHERE id = ?")
+        .bind(&project_id)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    body["idempotency_key"] = serde_json::json!("prepare-key");
+    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+    assert_eq!(
+        snapshot["repository"]["prepare"],
+        serde_json::json!({"mode":"replace","command":"make deps"})
     );
 
     // A url project always clones and has no local path.

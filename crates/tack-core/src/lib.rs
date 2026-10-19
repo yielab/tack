@@ -6,6 +6,7 @@ pub mod error;
 pub mod models;
 pub mod mrp;
 pub mod outline;
+pub mod prepare;
 pub mod rate_card;
 pub mod recurrence;
 pub mod rich_text;

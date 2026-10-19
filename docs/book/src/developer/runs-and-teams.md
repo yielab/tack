@@ -140,6 +140,7 @@ The Factory page (`handlers/metrics.rs`) and the daily dollar budget (`scheduler
 | `089_item_recurrence` | `items.recurrence` (`weekly`, `monthly`, `quarterly`) and `items.recurrence_of` |
 | `090_auto_start` | `projects.auto_start_enabled` (default 0), `auto_start_status`, `auto_start_max_open` (default 3, at least 1) |
 | `091_template_bundle` | `project_templates.roles`, `.profiles` and `.automation`; see [The Project File Format](project-file.md) |
+| `095_project_prepare_command` | `projects.prepare_command`: NULL detects the install command from the lockfile, `''` turns the install off, any other text replaces it |
 
 ## The fake docket
 
