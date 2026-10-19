@@ -7314,7 +7314,10 @@
           "tool_policy",
           "limits",
           "kind",
-          "builtin"
+          "builtin",
+          "changes_files",
+          "runs_commands",
+          "uses_network"
         ],
         "properties": {
           "agent_profile_id": {
@@ -7322,6 +7325,18 @@
           },
           "builtin": {
             "type": "boolean"
+          },
+          "changes_files": {
+            "type": "boolean",
+            "description": "Read only: whether its tools can change files, derived from `tool_policy`.",
+            "readOnly": true
+          },
+          "delivers": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One line on what the profile delivers: \"a change on a branch\", \"a document in a folder\", \"an answer\"."
           },
           "fleet_id": {
             "type": [
@@ -7339,13 +7354,23 @@
           "name": {
             "type": "string"
           },
+          "runs_commands": {
+            "type": "boolean",
+            "description": "Read only: whether its tools can run commands, derived from `tool_policy`.",
+            "readOnly": true
+          },
           "summary": {
             "type": [
               "string",
               "null"
             ]
           },
-          "tool_policy": {}
+          "tool_policy": {},
+          "uses_network": {
+            "type": "boolean",
+            "description": "Read only: whether its tools or its network flag reach the network, derived from `tool_policy`.",
+            "readOnly": true
+          }
         }
       },
       "ArtifactListResponse": {
@@ -8385,6 +8410,13 @@
           "name"
         ],
         "properties": {
+          "delivers": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One line on what the profile delivers: \"a change on a branch\", \"a document in a folder\", \"an answer\"."
+          },
           "fleet": {
             "type": [
               "string",
@@ -9234,6 +9266,13 @@
           "instructions"
         ],
         "properties": {
+          "delivers": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One line on what the profile delivers; empty or absent is no line."
+          },
           "fleet_id": {
             "type": [
               "string",
@@ -13075,6 +13114,13 @@
       "UpdateProfile": {
         "type": "object",
         "properties": {
+          "delivers": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves the line untouched; JSON `null` or an empty string clears it."
+          },
           "fleet_id": {
             "type": [
               "string",

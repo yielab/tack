@@ -1167,6 +1167,7 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         tool_policy: serde_json::json!({"agent": "docket"}),
         limits: serde_json::json!({}),
         fleet_id: Some("f1".into()),
+        delivers: Some("an answer".into()),
         builtin: true,
     };
     repo.write_agent_profile(&row, &SystemExecutionClock)
@@ -1181,5 +1182,6 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
     assert_eq!(mine.len(), 1);
     assert_eq!(mine[0].name, "Second");
     assert_eq!(mine[0].fleet_id.as_deref(), Some("f1"));
+    assert_eq!(mine[0].delivers.as_deref(), Some("an answer"));
     assert!(!mine[0].builtin, "builtin is never written");
 }

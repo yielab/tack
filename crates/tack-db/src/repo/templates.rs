@@ -287,6 +287,7 @@ fn builtin_profile(name: &str, kind: &str, instructions: &str) -> BundleProfile 
         limits: json!({}),
         fleet: None,
         summary: None,
+        delivers: None,
     }
 }
 

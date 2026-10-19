@@ -14,6 +14,7 @@ fn profile_row(name: &str, builtin: bool) -> ProfileRow {
         tool_policy: serde_json::json!({}),
         limits: serde_json::json!({}),
         fleet_id: None,
+        delivers: None,
         builtin,
     }
 }

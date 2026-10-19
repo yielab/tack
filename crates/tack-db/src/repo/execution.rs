@@ -2912,7 +2912,7 @@ impl Repository {
     ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, sqlx::Error> {
         use sqlx::Row;
         let rows = sqlx::query(
-            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id \
+            "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers \
              FROM agent_profiles ORDER BY name",
         )
         .fetch_all(self.pool())
@@ -2929,6 +2929,7 @@ impl Repository {
                 tool_policy: json(r.get("tool_policy")),
                 limits: json(r.get("limits")),
                 fleet_id: r.get("fleet_id"),
+                delivers: r.get("delivers"),
                 builtin: r.get::<i64, _>("builtin") != 0,
             })
             .collect())
@@ -2952,11 +2953,12 @@ impl Repository {
         let now = stamp(clock);
         sqlx::query(
             "INSERT INTO agent_profiles \
-             (id, name, instructions, tool_policy, limits, kind, fleet_id, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
              instructions = excluded.instructions, tool_policy = excluded.tool_policy, \
              limits = excluded.limits, kind = excluded.kind, fleet_id = excluded.fleet_id, \
+             delivers = excluded.delivers, \
              updated_at = excluded.updated_at",
         )
         .bind(&row.id)
@@ -2966,6 +2968,7 @@ impl Repository {
         .bind(row.limits.to_string())
         .bind(&row.kind)
         .bind(&row.fleet_id)
+        .bind(&row.delivers)
         .bind(&now)
         .bind(&now)
         .execute(self.pool())

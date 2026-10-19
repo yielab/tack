@@ -138,6 +138,9 @@ pub struct BundleProfile {
     /// One line shown beside the profile's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivers: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
