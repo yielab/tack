@@ -36,6 +36,22 @@ export interface paths {
         patch: operations["update_profile"];
         trace?: never;
     };
+    "/api/agent-profiles/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["profile_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/attachments/{id}": {
         parameters: {
             query?: never;
@@ -3294,6 +3310,12 @@ export interface components {
         BudgetSettings: {
             /** Format: int64 */
             auto_merges_per_day?: number | null;
+            /**
+             * Format: int64
+             * @description The token limit of a run whose profile sets none; `null` turns it off, and a body that
+             *     leaves it out keeps the default.
+             */
+            provisional_tokens_per_run?: number | null;
             /** Format: int64 */
             queue_items_max?: number | null;
             /** Format: int64 */
@@ -4517,6 +4539,26 @@ export interface components {
         };
         /** @enum {string} */
         Priority: "critical" | "high" | "medium" | "low" | "none";
+        /** @description What a profile's last successful runs counted, and the limit proposed from them. */
+        ProfileHistory: {
+            /** Format: int64 */
+            max?: number | null;
+            /** Format: int64 */
+            min?: number | null;
+            /** @description Successful runs measured, at most the last 20. */
+            n: number;
+            /** Format: int64 */
+            p50?: number | null;
+            /** Format: int64 */
+            p90?: number | null;
+            /**
+             * Format: int64
+             * @description 1.5 times the 90th percentile, rounded up to two figures; `null` under 5 runs.
+             */
+            proposal?: number | null;
+            /** @description How many successful runs it takes before a limit is proposed. */
+            runs_needed: number;
+        };
         Project: {
             archived: boolean;
             /** @description Why auto-start switched itself off (the project dropped to L3); read, never written. */
@@ -4748,13 +4790,18 @@ export interface components {
              */
             enforced_by: string;
             sentence: string;
-            /** @description `profile`, `run` or `none`. */
+            /** @description `profile`, `provisional`, `run`, `day` or `none`. */
             source: string;
             /**
              * Format: int64
              * @description Absent when the run has no limit set in Tack.
              */
             tokens?: number | null;
+            /**
+             * Format: int64
+             * @description What the run's latest attempt has counted so far, live while it runs; absent before any attempt.
+             */
+            used?: number | null;
         };
         /**
          * @description The run dialog's Advanced values a task overrides. Every field is optional;
@@ -5334,6 +5381,38 @@ export interface operations {
             };
             /** @description conflict (name already exists) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    profile_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent profile id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counted tokens of the profile's last successful runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileHistory"];
+                };
+            };
+            /** @description not_found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

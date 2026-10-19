@@ -133,7 +133,13 @@ const ItemDetailDrawer: Component = () => {
               class="flex flex-wrap items-start gap-3 rounded-[28px] px-5 py-4"
               style={{ 'background-color': 'var(--color-bg-panel)' }}
             >
-              <LatestRunSummary itemId={it().id} onOpen={() => setActiveTab('execution')} />
+              <LatestRunSummary
+                itemId={it().id}
+                itemTitle={it().title}
+                projectId={it().project_id}
+                onCreated={() => setActiveTab('execution')}
+                onOpen={() => setActiveTab('execution')}
+              />
               <RunWithAgentButton
                 itemId={it().id}
                 itemTitle={it().title}
@@ -152,7 +158,7 @@ const ItemDetailDrawer: Component = () => {
                 <ActivityTab itemId={it().id} />
               </Show>
               <Show when={activeTab() === 'execution'}>
-                <ExecutionTimeline itemId={it().id} />
+                <ExecutionTimeline itemId={it().id} itemTitle={it().title} projectId={it().project_id} />
               </Show>
               <Show when={activeTab() === 'dependencies'}>
                 <DependenciesTab item={it()} />

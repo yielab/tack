@@ -3,7 +3,7 @@ import { createStore, produce } from 'solid-js/store';
 import { Badge, Button, EmptyState, Field, FieldShell, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
-import { agentProfilesApi, type AgentProfileSummary } from '../../../shared/execution';
+import { agentProfilesApi, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
 import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
 
 /**
@@ -61,6 +61,28 @@ const limitsFrom = (limits: unknown): { tokens: string; seconds: string } => {
   };
 };
 
+const spaced = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+/** What a profile's last successful runs used, and the limit proposed from them. */
+export const HistoryLine: Component<{ history: ProfileHistory; onApply: (tokens: number) => void; busy?: boolean }> = (props) => (
+  <Show
+    when={props.history.proposal !== null && props.history.min !== null && props.history.max !== null}
+    fallback={
+      <p data-testid="profile-history" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        {props.history.n} of {props.history.runs_needed} successful runs measured before a limit is proposed
+      </p>
+    }
+  >
+    <p data-testid="profile-history" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      The last {props.history.n} runs used {spaced(props.history.min!)} to {spaced(props.history.max!)} tokens. Proposed limit:{' '}
+      <strong>{spaced(props.history.proposal!)}</strong>{' '}
+      <Button type="button" size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onApply(props.history.proposal!)}>
+        Apply
+      </Button>
+    </p>
+  </Show>
+);
+
 const AgentProfilesPanel: Component = () => {
   const [profiles, { refetch, mutate }] = createResource(() => agentProfilesApi.list());
 
@@ -77,6 +99,33 @@ const AgentProfilesPanel: Component = () => {
   const [saving, setSaving] = createSignal(false);
 
   const rows = (): AgentProfileSummary[] => profiles()?.data.data ?? [];
+
+  // The history of the profile being edited; a new profile has none.
+  const [history, { refetch: refetchHistory }] = createResource(
+    () => (showForm() ? editing()?.agent_profile_id : undefined),
+    (id) => agentProfilesApi.history(id).catch(() => null),
+  );
+
+  // Writes the proposed limit to the profile now, through the same update the form's Save uses.
+  const applyProposal = async (tokens: number) => {
+    const existing = editing();
+    if (!existing) return;
+    const old = (existing.limits ?? {}) as { budgets?: Record<string, unknown> } & Record<string, unknown>;
+    const limits = { ...old, budgets: { ...old.budgets, tokens } };
+    setSaving(true);
+    try {
+      await agentProfilesApi.update(existing.agent_profile_id, { limits });
+      setEditing({ ...existing, limits });
+      setTokenLimit(String(tokens));
+      toast.success(`Token limit of "${existing.name}" set to ${spaced(tokens)}`);
+      void refetch();
+      void refetchHistory();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set the token limit');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const openForm = (profile: AgentProfileSummary | null) => {
     setEditing(profile);
@@ -256,11 +305,14 @@ const AgentProfilesPanel: Component = () => {
             label="Token limit per run"
             type="number"
             min="1"
-            placeholder="No limit"
-            hint="Empty means no limit. A run can set its own."
+            placeholder="Provisional limit"
+            hint="Empty uses the provisional limit set in Settings → Automation, if there is one. A run can set its own."
             value={tokenLimit()}
             onInput={(e) => setTokenLimit(e.currentTarget.value)}
           />
+          <Show when={history()}>
+            {(h) => <HistoryLine history={h()} onApply={(tokens) => void applyProposal(tokens)} busy={saving()} />}
+          </Show>
           <Field
             label="Time limit (seconds)"
             type="number"

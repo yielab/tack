@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (96 paths, 134 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (97 paths, 135 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1312,6 +1312,17 @@ Harness-agnostic runner fleet (Part III): PM-side execution-request/fleet/runner
 | 200 | Agent profile updated | `AgentProfileSummary` |
 | 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict (name already exists) | `RunnerV1ErrorEnvelope` |
+
+#### `GET /api/agent-profiles/{id}/history`
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Agent profile id |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The counted tokens of the profile's last successful runs | `ProfileHistory` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`
 

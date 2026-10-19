@@ -5,10 +5,15 @@ import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
 import { describeAttemptStatus } from './attemptFormat';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
-import type { ExecutionRequestRecord } from '../execution';
+import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
+import RunLimitNote from './RunLimitNote';
+import { stoppedByLimit } from './runLimit';
 
 export interface ExecutionTimelineProps {
   itemId: string;
+  /** With the task's title and project, a run its limit stopped offers "Run again with more". */
+  itemTitle?: string;
+  projectId?: string;
 }
 
 /**
@@ -70,7 +75,15 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
         <ul class="space-y-3">
           {/* Newest first, so the first row is the latest run. */}
           <For each={requests()}>
-            {(record, i) => <RequestRow record={record} itemId={props.itemId} number={requests().length - i()} />}
+            {(record, i) => (
+              <RequestRow
+                record={record}
+                itemId={props.itemId}
+                itemTitle={props.itemTitle}
+                projectId={props.projectId}
+                number={requests().length - i()}
+              />
+            )}
           </For>
         </ul>
       </Show>
@@ -78,7 +91,13 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   );
 };
 
-const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; number: number }> = (props) => {
+const RequestRow: Component<{
+  record: ExecutionRequestRecord;
+  itemId: string;
+  itemTitle?: string;
+  projectId?: string;
+  number: number;
+}> = (props) => {
   const store = useExecutionStore();
   const [reconcileOpen, setReconcileOpen] = createSignal(false);
   const [recoveryKey, setRecoveryKey] = createSignal('');
@@ -138,6 +157,12 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
     const a = attempts();
     return a.status === 'ready' ? a.data : [];
   };
+
+  const latestAttempt = () =>
+    readyAttempts().reduce<AttemptSummary | undefined>(
+      (max, x) => (!max || x.attempt_number > max.attempt_number ? x : max),
+      undefined,
+    );
 
   // One status per run: its latest attempt's, which knows more (Running,
   // needs your review, Accepted) than the request's own state, which stays
@@ -206,9 +231,15 @@ const RequestRow: Component<{ record: ExecutionRequestRecord; itemId: string; nu
 
       <Show when={summary()?.limit}>
         {(limit) => (
-          <p data-testid="run-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            {limit().sentence}
-          </p>
+          <RunLimitNote
+            limit={limit()}
+            running={!isTerminalStateString(state())}
+            stopped={state() === 'failed' && stoppedByLimit(latestAttempt()?.terminal_reason)}
+            testId="run-limit"
+            itemId={props.itemId}
+            itemTitle={props.itemTitle}
+            projectId={props.projectId}
+          />
         )}
       </Show>
 

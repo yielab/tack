@@ -199,12 +199,13 @@ is not on the agent's list), rather than leaving **Run** disabled with no explan
 
 ### Token limits
 
-A limit is in tokens, and nothing has one unless you set it. You can set one in three places:
+A limit is in tokens, and a run always has one while the provisional limit is on. You can set one in four places:
 
 | Where | What it limits |
 |---|---|
 | A profile, on the Agents page: **Token limit per run** and **Time limit** | Every run of that profile |
-| The dialog's **Advanced** section | This run only; it replaces the profile's, and an empty box runs it with no limit |
+| The dialog's **Advanced** section | This run only; it replaces the profile's and the provisional limit, and an empty box runs it with the profile's, else the provisional one |
+| Settings → Automation → Merge, **Provisional tokens per run** | Every run whose profile sets no limit; 2 000 000 tokens until you change it, and empty means no limit |
 | Settings → Automation → Merge, **Tokens per day** | The project's day; see [Budgets](merging.md#budgets) |
 
 A token counted is a new one: the input the agent's cache did not serve, what it wrote to the cache, and
@@ -213,6 +214,11 @@ read it again at full price. A run's summary reads, for example, "48 210 tokens 
 not counted)", or says "cache not reported" for an agent that does not separate it.
 
 Every run says its limit and who applies it, in one line:
+
+- "Provisional limit: 2 000 000 tokens (no measured runs yet) · set in Settings → Automation · …": the
+  profile sets none, so the run takes the provisional limit, which is the cap the SWE-Effi benchmark gives
+  one software task. Failed runs cost about four times a successful one, so it is there to stop a run that
+  has run away, not to trim good runs.
 
 - "300 000 tokens · from the profile Implementer · docket stops the task there"
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
@@ -227,6 +233,25 @@ Every run says its limit and who applies it, in one line:
 
 The dialog prints the same line under **Token limit** before you start, and it changes as you edit the
 limit, clear it or choose another agent.
+
+#### A limit learnt from a profile's own runs
+
+When you edit an agent profile, a line under **Token limit per run** tells what its last successful runs
+used. A run counts as successful when its attempt succeeded and nobody, neither a person nor the
+verifier, refused its result; the last 20 count.
+
+- With fewer than 5: "3 of 5 successful runs measured before a limit is proposed".
+- With 5 or more: "The last 7 runs used 180 000 to 520 000 tokens. Proposed limit: 790 000", with an
+  **Apply** button. The proposal is the 90th percentile of those runs times 1.5, rounded up to two
+  significant figures. Tack never applies it by itself: **Apply** writes it as the profile's limit, and you
+  can type another number instead.
+
+#### A run that reached its limit
+
+While a run works, the line "Used 1 650 000 of 2 000 000 tokens" shows its count and turns amber at 80% of
+the limit. A run stopped by its limit says "Stopped at its limit: 2 000 000 of 2 000 000" and offers
+**Run again with more**, which opens the Run dialog for the same task with the token limit already typed as
+twice the old one. Change it or press **Run**.
 
 Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 

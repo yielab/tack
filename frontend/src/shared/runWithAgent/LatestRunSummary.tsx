@@ -12,10 +12,16 @@ import {
   NOT_MEASURED_TEXT,
 } from './attemptFormat';
 import MergeButton from './MergeButton';
+import RunLimitNote from './RunLimitNote';
+import { stoppedByLimit } from './runLimit';
 import { describeExecutionState, relativeTimeFromIso } from './shared';
 
 export interface LatestRunSummaryProps {
   itemId: string;
+  /** With the task's title and project, a run its limit stopped offers "Run again with more". */
+  itemTitle?: string;
+  projectId?: string;
+  onCreated?: (requestId: string) => void;
   /** Opens the run's full report (the item's Execution tab). */
   onOpen: () => void;
 }
@@ -148,9 +154,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
           </Show>
           <Show when={latest()?.limit}>
             {(limit) => (
-              <p data-testid="latest-run-limit" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {limit().sentence}
-              </p>
+              <RunLimitNote
+                limit={limit()}
+                running={!finished() && latest()?.state !== 'queued'}
+                stopped={finished() && stoppedByLimit(attempt()?.terminal_reason)}
+                testId="latest-run-limit"
+                itemId={props.itemId}
+                itemTitle={props.itemTitle}
+                projectId={props.projectId}
+                onCreated={props.onCreated}
+              />
             )}
           </Show>
           <Show when={finished() && attempt()?.merge && !attempt()!.merge!.merged}>
