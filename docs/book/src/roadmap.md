@@ -84,6 +84,18 @@ plan or the page named beside it.
 - `docs/screenshots/automation.png` and `factory-metrics.png` predate the four-rung Automation
   screen and the cost cards.
 
+**Found starting the desktop app (2026-10-19)**, not fixed yet:
+
+- Opened from the desktop menu, the app's server gets the desktop session's `PATH`, which on
+  Linux leaves out Homebrew and other per-user folders: an agent installed there (opencode under
+  Homebrew) is not found, while Claude Code is, because harness discovery looks outside `PATH`
+  for it. Discovery should look in the same places for every agent.
+- Ending `tack-desktop` with a signal leaves the server it started running, and the next app that
+  opens attaches to that orphan. Only the tray's Quit is known to stop both.
+- The runner the app starts keeps its state under the app's own data folder, so it enrolls as a
+  new runner, and the runner the terminal board used stays listed after it stopped sending
+  heartbeats.
+
 ---
 
 ## Phase 76 — the project file is kept in sync
