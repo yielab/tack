@@ -10,6 +10,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
+use tack_core::prepare::PrepareSetting;
 use tack_orch::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
     HarnessKind, RunnerId as DomainRunnerId,
@@ -230,6 +231,97 @@ async fn probe_on_api_4_names_beta_6_and_no_task_is_posted() {
         "{refused:?}"
     );
     assert!(fake.requests_to("POST", "/tasks").is_empty());
+}
+
+#[tokio::test]
+async fn probe_on_a_later_api_is_accepted_and_names_the_version_it_answered() {
+    let fake = pods_fake().await;
+    fake.set_api_version("6");
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let capability = adapter.probe().await;
+    assert_eq!(capability.probe_error, None);
+    assert_eq!(capability.api_version(), Some("6"));
+    adapter
+        .validate(&spec(&scene, "attempt-1", 1))
+        .await
+        .expect("API 6 is accepted");
+    let (outcome, _) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.actual_execution.harness_version, "API 6");
+}
+
+#[tokio::test]
+async fn a_version_below_5_or_not_a_number_is_refused_with_the_sentence() {
+    for found in ["4", "abc", ""] {
+        let fake = pods_fake().await;
+        fake.set_api_version(found);
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+
+        assert_eq!(
+            adapter.probe().await.probe_error,
+            Some(format!(
+                "needs docket 0.2.0-beta.6 (API 5); this docket answers API {found}"
+            ))
+        );
+        assert!(
+            adapter
+                .validate(&spec(&scene, "attempt-1", 1))
+                .await
+                .is_err(),
+            "{found:?}"
+        );
+        assert!(fake.requests_to("POST", "/tasks").is_empty());
+    }
+}
+
+#[tokio::test]
+async fn an_api_5_run_reports_api_5_as_its_harness_version() {
+    let fake = pods_fake().await;
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.actual_execution.harness_version, "API 5");
+}
+
+/// The `prepare` key of the body posted for a run whose project says `setting`, on docket `api`.
+async fn prepare_sent(api: &str, setting: Option<PrepareSetting>) -> Option<Value> {
+    let fake = pods_fake().await;
+    fake.set_api_version(api);
+    let scene = scene();
+    let mut attempt = spec(&scene, "attempt-1", 1);
+    attempt.work.request.repository.prepare = setting;
+    run_to_end(&adapter(&fake, &scene), &attempt).await;
+    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    assert_eq!(posted.len(), 1);
+    posted[0].body.get("prepare").cloned()
+}
+
+#[tokio::test]
+async fn prepare_goes_to_api_6_as_the_command_or_an_empty_string() {
+    let command = PrepareSetting::Replace {
+        command: "npm ci".to_owned(),
+    };
+    assert_eq!(
+        prepare_sent("6", Some(command)).await,
+        Some(json!("npm ci"))
+    );
+    assert_eq!(
+        prepare_sent("6", Some(PrepareSetting::Off)).await,
+        Some(json!(""))
+    );
+    assert_eq!(prepare_sent("6", Some(PrepareSetting::Detect)).await, None);
+    assert_eq!(prepare_sent("6", None).await, None);
+}
+
+#[tokio::test]
+async fn prepare_never_goes_to_api_5() {
+    let command = PrepareSetting::Replace {
+        command: "npm ci".to_owned(),
+    };
+    for setting in [Some(command), Some(PrepareSetting::Off), None] {
+        assert_eq!(prepare_sent("5", setting).await, None);
+    }
 }
 
 #[tokio::test]
@@ -915,6 +1007,30 @@ async fn failures_carry_docket_kind_and_text() {
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
     assert_eq!(outcome.terminal_reason["code"], json!("blocked"));
     assert_eq!(outcome.terminal_reason["message"], json!("needs a person"));
+}
+
+#[tokio::test]
+async fn a_failed_install_fails_the_attempt_with_dockets_reason_and_no_work() {
+    let fake = pods_fake().await;
+    fake.set_api_version("6");
+    let reason = "prepare failed: npm ci (exit 1): ERR! lockfile out of date";
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("prepare".to_owned()),
+        reason: reason.to_owned(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("prepare"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!(format!(
+            "Could not prepare the dependencies (docket): {reason}"
+        ))
+    );
+    assert!(outcome.terminal_reason.get("head_commit").is_none());
 }
 
 #[tokio::test]
