@@ -47,6 +47,38 @@ async fn put_then_get_round_trips_the_example() {
 }
 
 #[tokio::test]
+async fn a_manual_criterion_keeps_its_tick_and_reads_unticked_without_one() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let iid = common::create_item(&app, pid, "Item").await;
+    let uri = format!("/api/items/{iid}/brief");
+    let body = json!({
+        "acceptance": [
+            {"kind": "manual", "id": "a", "title": "x", "text": "x"},
+            {"kind": "manual", "id": "b", "title": "y", "text": "y", "checked": true},
+        ],
+        "constraints": [],
+    });
+
+    let (status, put) = common::send(&app, "PUT", &uri, body, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{put}");
+    let (_, got) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert_eq!(
+        got["acceptance"][0].get("checked"),
+        None,
+        "unticked is not stored"
+    );
+    assert_eq!(got["acceptance"][1]["checked"], true);
+
+    // Unticking is a plain false on the same route.
+    let mut body = normalised(got);
+    body["acceptance"][1]["checked"] = json!(false);
+    let (status, put) = common::send(&app, "PUT", &uri, body, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{put}");
+    assert_eq!(put["acceptance"][1].get("checked"), None);
+}
+
+#[tokio::test]
 async fn brief_rejects_a_duplicate_criterion_id_and_a_missing_item() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;

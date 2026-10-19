@@ -359,8 +359,8 @@ test.describe.serial('README screenshots', () => {
     const drawer = page.getByRole('dialog');
     // No Brief tab any more: the criteria are a checklist under the description,
     // with the machine checks in the collapsed "For the agent" block.
-    await expect(drawer.getByRole('heading', { name: 'Acceptance criteria' })).toBeVisible();
-    await drawer.getByRole('heading', { name: 'Acceptance criteria' }).scrollIntoViewIfNeeded();
+    await expect(drawer.getByRole('heading', { name: 'Done when' })).toBeVisible();
+    await drawer.getByRole('heading', { name: 'Done when' }).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'brief.png') });
   });

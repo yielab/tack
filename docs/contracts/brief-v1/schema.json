@@ -107,7 +107,8 @@
               "kind": {"const": "manual"},
               "id": {"type": "string"},
               "title": {"type": "string"},
-              "text": {"type": "string"}
+              "text": {"type": "string"},
+              "checked": {"type": "boolean", "description": "Ticked by a person on the board; absent means not ticked. Verifiers ignore it."}
             }
           }
         ]
