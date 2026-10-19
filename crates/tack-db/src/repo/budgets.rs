@@ -91,13 +91,17 @@ pub async fn provisional_tokens(
 }
 
 /// The project that owns a queued or running request, through its item, and the
-/// token limit its snapshot carries (`None`: the run has none of its own).
+/// token limit its snapshot carries (`None`: the run has none of its own). A
+/// provisional limit is not the run's own: like no limit, it gives way to what is
+/// left of the day.
 pub async fn project_of_request(
     pool: &SqlitePool,
     request_id: &str,
 ) -> Result<Option<(String, Option<i64>)>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT i.project_id, json_extract(r.request_snapshot, '$.budgets.tokens')
+        "SELECT i.project_id,
+                CASE WHEN json_extract(r.request_snapshot, '$.metadata.limit_source') = 'provisional'
+                     THEN NULL ELSE json_extract(r.request_snapshot, '$.budgets.tokens') END
          FROM execution_requests r JOIN items i ON i.id = r.item_id WHERE r.id = ?",
     )
     .bind(request_id)
@@ -108,22 +112,32 @@ pub async fn project_of_request(
 /// A queued run with no limit of its own, in a project with a daily limit, runs
 /// with what is left of the day: writes `tokens` as its limit in the snapshot's
 /// two copies of `budgets` and in the row's own columns, and `metadata.limit_source`
-/// as `day`. A request that has a limit of its own, or is no longer queued, is left alone.
+/// as `day`. A run under the provisional limit keeps the smaller of the two, and its
+/// source says which. A request that has a limit of its own, or is no longer queued,
+/// is left alone.
 pub async fn limit_to_day_room(
     pool: &SqlitePool,
     request_id: &str,
     tokens: i64,
 ) -> Result<(), sqlx::Error> {
+    // Every expression reads the row as it was before the update.
     sqlx::query(
         "UPDATE execution_requests SET
            request_snapshot = json_set(request_snapshot,
-             '$.budgets.tokens', ?1,
-             '$.resolved_agent_profile.budgets.tokens', ?1,
-             '$.metadata.limit_source', 'day'),
-           budgets = json_set(budgets, '$.tokens', ?1),
-           metadata = json_set(metadata, '$.limit_source', 'day')
+             '$.budgets.tokens', MIN(?1, COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1)),
+             '$.resolved_agent_profile.budgets.tokens',
+               MIN(?1, COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1)),
+             '$.metadata.limit_source',
+               CASE WHEN ?1 < COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1 + 1)
+                    THEN 'day' ELSE 'provisional' END),
+           budgets = json_set(budgets, '$.tokens',
+             MIN(?1, COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1))),
+           metadata = json_set(metadata, '$.limit_source',
+             CASE WHEN ?1 < COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1 + 1)
+                  THEN 'day' ELSE 'provisional' END)
          WHERE id = ?2 AND state = 'queued'
-           AND json_extract(request_snapshot, '$.budgets.tokens') IS NULL",
+           AND (json_extract(request_snapshot, '$.budgets.tokens') IS NULL
+                OR json_extract(request_snapshot, '$.metadata.limit_source') = 'provisional')",
     )
     .bind(tokens)
     .bind(request_id)
