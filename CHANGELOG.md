@@ -31,6 +31,15 @@ automation a template carries, and the removal of dollars per day.
   built-in ones apart; a profile that runs no commands says "No install: this profile runs no commands";
   a machine that does not answer is shown disabled with since when, and with one machine and no group the
   field is one line, "Runs on this computer".
+- **The latest run is one card whose colour and actions follow the run.** Running shows its last
+  steps, its tokens against the limit, **Follow live** and **Stop**; a run that needs your verdict
+  shows the opening of its report, its duration, steps and files changed, **Accept**, **Reject…**
+  and **See what it did**; failed, merged and queued runs each have their own card (a queued one
+  gives the reason it waits and **Run on another computer**). A run that changed no file shows the
+  agent's answer as what it delivered and offers Accept, not Merge; Merge, when it cannot run,
+  stays disabled and says why ("No branch was pushed"). The card sits in the item page's side
+  column and at the top of the drawer; Accept and Reject… are one component, shared with the
+  attempt list.
 - **A profile says what it delivers.** Each profile carries one line, "a change on a branch", "a
   document in a folder" or "an answer", shown beside its agent in the Agents page, with three chips
   (changes files, runs commands, uses the network) read from its tools, never typed. The profile

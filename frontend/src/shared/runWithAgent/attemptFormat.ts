@@ -249,15 +249,51 @@ export function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'ter
   );
 }
 
+type AttemptDelivery = Pick<AttemptSummary, 'state' | 'terminal_reason'> &
+  Partial<Pick<AttemptSummary, 'actual_execution' | 'pull_request'>>;
+
+/** A run that succeeded and left nothing to merge: no patch, no kept workspace, no
+ *  pushed branch and no pull request. What it delivered is the agent's answer. */
+export function changedNoFile(attempt: AttemptDelivery): boolean {
+  return (
+    attempt.state === 'succeeded' &&
+    !isReviewableAttempt(attempt) &&
+    !attempt.pull_request &&
+    obj(obj(attempt.actual_execution).git).pushed !== true
+  );
+}
+
+/** Whether a person can still give the attempt a verdict: it changed files, or it only answered. */
+export function needsVerdict(attempt: AttemptDelivery): boolean {
+  return isReviewableAttempt(attempt) || changedNoFile(attempt);
+}
+
+/** How many files a unified diff touches. */
+export function countPatchFiles(patch: string): number {
+  return (patch.match(/^diff --git /gm) ?? []).length;
+}
+
+/** The last few steps a running agent reported, newest last: the `text` of its `agent.*` events. */
+export function lastSteps(events: ReadonlyArray<{ kind: string; payload: unknown }>, count = 3): string[] {
+  const lines: string[] = [];
+  for (const e of events) {
+    const text = obj(e.payload).text;
+    if (e.kind.startsWith('agent.') && typeof text === 'string' && text.trim() !== '') lines.push(text.trim());
+  }
+  return lines.slice(-count);
+}
+
 /** The one status an attempt shows: its review verdict, then what its outcome
  *  says, then its lifecycle state. The run's heading shows its latest
  *  attempt's, so a run never shows two states at once. */
 export function describeAttemptStatus(
-  attempt: Pick<AttemptSummary, 'state' | 'terminal_reason'>,
+  attempt: AttemptDelivery,
   review: AttemptSummary['review'] | undefined = null,
 ): { label: string; tone: StateTone } {
+  if (review && needsVerdict(attempt)) {
+    return review.verdict === 'accepted' ? { label: 'Accepted', tone: 'success' } : { label: 'Rejected', tone: 'neutral' };
+  }
   if (isReviewableAttempt(attempt)) {
-    if (review) return review.verdict === 'accepted' ? { label: 'Accepted', tone: 'success' } : { label: 'Rejected', tone: 'neutral' };
     return attemptPatchBytes(attempt.terminal_reason) > 0
       ? { label: 'Finished — needs your review', tone: 'warning' }
       : { label: 'Finished — changes could not be read, needs your review', tone: 'warning' };
