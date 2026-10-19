@@ -107,6 +107,33 @@ plan or the page named beside it.
   purpose; "No runner is online" appears only when no runner answers at all. The card should say
   "The computer this run asked for has not answered since" and the time and offer to run it on another.
 
+**Proposed, Phase 78 (2026-10-19): what the first runs from the desktop app found.** Not started;
+the maintainer asked for it to be recorded:
+
+1. **A prepared `node_modules` breaks every run's evidence.** The runner excludes the folder it
+   installed from the agent's change, and when the project's `.gitignore` already ignores it, as
+   almost every project does, `git add` refuses the exclusion ("The following paths are ignored")
+   and the run ends "changes could not be read". Seen on Fabulada's first research run; the tests
+   only used a folder git did not ignore. Exclude it only when git does not already ignore it.
+2. **Install only when the agent can run commands.** A profile whose tools cannot run a command
+   (Read, Grep, Glob, WebFetch, WebSearch) and a run with no check need no dependencies; the Run
+   dialog then says "No install: this profile runs no commands". For docket, its pipeline decides.
+   The sandbox stays on for every run: it keeps the agent away from the home folder, keys and other
+   repositories, which matters most for an agent that reads the web. Its note says so in those words.
+3. **A profile sets its agent.** The Run dialog never reads the agent a profile names
+   (`tool_policy.agent`); it keeps the one the task remembered or the project's default, so
+   "Fabulada research" (a docket profile) was offered with Claude Code and a warning that it has no
+   tools. Picking a profile picks its agent, and a remembered one that differs is replaced, saying so.
+4. **A profile says what it delivers, and the card shows that.** Each profile carries one line: what
+   it delivers (a change on a branch, a document in a folder, an answer), on which agent, and
+   whether it changes files, runs commands or uses the network. The dialog lists the project's
+   profiles first and the built-in ones apart. A run that changed no file shows the agent's answer
+   as what it delivered and offers Accept, not Merge; the Merge button's reason today ("has not
+   finished with a pushed branch") is true but tells a person nothing. What the agent did shows
+   paths inside the project, not the runner's workspace path.
+5. **Where a run goes, and why it waits:** the two items above on the Run dialog's runner list and on
+   a run queued for a runner that does not answer.
+
 **Found auditing the board screen (2026-10-19)**, not fixed yet. A column with many cards cannot
 be scrolled and the horizontal bar can sit below the screen, so the cards past the fold are out of
 reach; found by reading the code, to be reproduced in a browser first:
