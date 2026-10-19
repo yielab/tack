@@ -141,6 +141,8 @@ and so does opencode when its own settings name one. docket needs a model named,
 its settings have none. A run for such an agent with no model waits, and the task says why ("Waiting: docket
 needs a model named"). If a runner looks at it and finds it cannot take it, and nothing changes for 30 minutes, it fails with that reason.
 
+A run waiting for a computer that has stopped answering says so with the time it last did: "The computer this run asked for has not answered since" followed by that time. It waits until the computer answers again, or you run it on another computer.
+
 ---
 
 ## Running an item with an agent
@@ -223,6 +225,9 @@ Every run says its limit and who applies it, in one line:
 - "300 000 tokens · from the profile Implementer · docket stops the task there"
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
   a limit of its own for each step, which you change in docket, not in Tack.
+- "No limit of its own · gets what is left of today's limit (400 000 tokens left) · …": the run names no
+  limit and its project has a daily limit, so the run takes what is left of the day when Tack starts it. The
+  sentence gives the tokens left at the time you look.
 - "300 000 tokens · set for this run · Tack stops Claude Code's run there": Claude Code and opencode
   report each model call's tokens as it finishes, and Tack stops the run when the tokens counted reach the
   limit. The attempt fails with "the run reached its token limit (300 000)". A call's output is complete

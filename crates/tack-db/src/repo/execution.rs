@@ -406,10 +406,10 @@ pub struct RunnerListingRow {
 }
 
 /// One row of `GET /api/executions` (unscoped, one-item, or the
-/// `item_ids` batch) or `GET /api/executions/{id}`'s detail — the five
-/// scalar columns this surface exposes. Deliberately thinner than
-/// `execution_requests`' full row (no selector, agent profile, requested
-/// harness/model, repository/permission/budget/timeout/metadata columns).
+/// `item_ids` batch) or `GET /api/executions/{id}`'s detail — the scalar
+/// columns this surface exposes, plus the selector a queued run waits on.
+/// Deliberately thinner than `execution_requests`' full row (no agent profile,
+/// requested harness/model, repository/permission/budget/timeout/metadata columns).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionListingRow {
     pub id: String,
@@ -419,6 +419,9 @@ pub struct ExecutionListingRow {
     pub created_at: String,
     pub waiting_reason: Option<String>,
     pub waiting_since: Option<String>,
+    /// `exact_runner` or `fleet`, with the runner or fleet id in `selector_id`.
+    pub selector_kind: String,
+    pub selector_id: String,
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts` — every column
@@ -891,6 +894,32 @@ fn event_batch_fingerprint(
         "events": values?,
     }))
     .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+}
+
+/// A request snapshot as an idempotent retry is compared: the task's own metadata (its type,
+/// priority and trust, which the server writes into `metadata.item`) left out, so a retry after
+/// the task changed answers the request it made, not a conflict. Everything else the request says
+/// still counts.
+pub fn without_task_metadata(snapshot: &serde_json::Value) -> serde_json::Value {
+    let mut value = snapshot.clone();
+    if let Some(metadata) = value.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        metadata.remove("item");
+    }
+    value
+}
+
+/// Whether two stored or submitted request snapshots name the same request, ignoring the task's
+/// metadata. An unreadable snapshot is never the same request.
+fn same_request(stored: &str, request: &str) -> bool {
+    match (
+        serde_json::from_str::<serde_json::Value>(stored),
+        serde_json::from_str::<serde_json::Value>(request),
+    ) {
+        (Ok(stored), Ok(request)) => {
+            without_task_metadata(&stored) == without_task_metadata(&request)
+        }
+        _ => false,
+    }
 }
 
 /// Whether a stored snapshot's limit was written by the claim from the day's room.
@@ -2666,14 +2695,14 @@ impl Repository {
     ) -> Result<Vec<ExecutionListingRow>, sqlx::Error> {
         let rows = match item_id {
             Some(item_id) => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
                     .bind(item_id)
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
             }
             None => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM execution_requests ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM execution_requests ORDER BY created_at DESC LIMIT ?")
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
@@ -2688,6 +2717,8 @@ impl Repository {
                 cancellation_requested_at: row.get("cancellation_requested_at"),
                 created_at: row.get("created_at"),
                 waiting_reason: row.get("waiting_reason"),
+                selector_kind: row.get("selector_kind"),
+                selector_id: row.get("selector_id"),
                 waiting_since: row.get("waiting_since"),
             })
             .collect())
@@ -2713,8 +2744,8 @@ impl Repository {
         }
         let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!(
-            "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since FROM ( \
-                 SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, \
+            "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM ( \
+                 SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, \
                         ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY created_at DESC, id DESC) AS rn \
                  FROM execution_requests WHERE item_id IN ({placeholders}) \
              ) WHERE rn = 1"
@@ -2733,6 +2764,8 @@ impl Repository {
                 cancellation_requested_at: row.get("cancellation_requested_at"),
                 created_at: row.get("created_at"),
                 waiting_reason: row.get("waiting_reason"),
+                selector_kind: row.get("selector_kind"),
+                selector_id: row.get("selector_id"),
                 waiting_since: row.get("waiting_since"),
             })
             .collect())
@@ -2969,7 +3002,7 @@ impl Repository {
                 // The claim may since have given a limitless run what was left of the day
                 // (`budgets::limit_to_day_room`); the fingerprint is still the one it was sent with.
                 if fingerprint == input.request_fingerprint
-                    && (stored_snapshot == request_snapshot
+                    && (same_request(&stored_snapshot, &request_snapshot)
                         || given_the_days_room(&stored_snapshot))
                 {
                     EnqueueResult::Replayed(id)
