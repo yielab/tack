@@ -257,11 +257,11 @@ pub async fn disabled_reason(state: &AppState, attempt_id: &str) -> Option<Strin
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
         .map(|v| v["git"].clone())
         .unwrap_or(Value::Null);
-    if attempt_state.as_deref() != Some("succeeded")
-        || git["pushed"] != true
-        || git["head_commit"].as_str().is_none()
-    {
-        return Some("The run has not finished with a pushed branch to merge".to_owned());
+    if attempt_state.as_deref() != Some("succeeded") {
+        return Some("The run has not succeeded".to_owned());
+    }
+    if git["pushed"] != true || git["head_commit"].as_str().is_none() {
+        return Some("No branch was pushed".to_owned());
     }
     let Ok(Some(pr)) = pull_requests::get_for_attempt(pool, attempt_id).await else {
         let linked = match context.item_id.parse() {

@@ -172,11 +172,11 @@ Clicking the chip opens the task's **Execution** tab:
 <img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the 'Draft the launch announcement' card carries a live 'Queued' chip.">
 
 The drawer follows the run as it happens: the **Last run** panel at the top reads **Running** —
-*The agent is working on it* — with **Follow the run**, and the Execution tab shows **Run 1**
+*The agent is working on it* — with **Follow live** and **Stop**, and the Execution tab shows **Run 1**
 with the runner that took it. What the agent did, the tokens it used and its cost appear when it
 finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip reads Starting, the Last run panel reads Running with 'The agent is working on it' and Follow the run, and the Execution tab shows Run 1 Running, started just now, with a note that what it did, its tokens and its cost appear when it finishes.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip reads Starting, the Last run panel reads Running with 'The agent is working on it' and Follow live and Stop, and the Execution tab shows Run 1 Running, started just now, with a note that what it did, its tokens and its cost appear when it finishes.">
 
 ## 10. See the result
 

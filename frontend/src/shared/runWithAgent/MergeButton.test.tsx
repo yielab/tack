@@ -37,10 +37,10 @@ describe('MergeButton', () => {
 
   it('the_merge_button_is_disabled_with_its_reason', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
-    const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: false, reason: 'The run has not finished with a pushed branch to merge' }} />);
+    const el = mountIn(() => <MergeButton attemptId="att_1" merge={{ enabled: false, reason: 'No branch was pushed' }} />);
     const b = el.querySelector('button')!;
     expect(b.disabled).toBe(true);
-    expect(el.textContent).toContain('The run has not finished with a pushed branch to merge');
+    expect(el.textContent).toContain('No branch was pushed');
     b.click();
     await flush();
     expect(spy).not.toHaveBeenCalled();
