@@ -78,6 +78,30 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
     />
   );
 
+  // Run with agent — the neutral execution surface (`ExecutionRequest`/`ExecutionAttempt`
+  // via `tack-runner`). A successful run switches straight to the "Execution" tab so the
+  // request that just appeared is immediately visible. Once the item has a run, its latest
+  // one is one card whose colour and actions follow it, so coming back to the task shows
+  // what the agent did and what is left to do. It sits at the top of the drawer and in the
+  // page's side column.
+  const run = (
+    <div class="space-y-3">
+      <LatestRunSummary
+        itemId={props.item.id}
+        itemTitle={props.item.title}
+        projectId={props.item.project_id}
+        onCreated={() => props.onTabChange('execution')}
+        onOpen={() => props.onTabChange('execution')}
+      />
+      <RunWithAgentButton
+        itemId={props.item.id}
+        itemTitle={props.item.title}
+        projectId={props.item.project_id}
+        onCreated={() => props.onTabChange('execution')}
+      />
+    </div>
+  );
+
   return (
     <div class="space-y-6">
       <ItemHeader
@@ -87,36 +111,13 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
         focusTitle={page()}
       />
 
-      <Show when={!page()}>{properties}</Show>
+      <Show when={!page()}>
+        {run}
+        {properties}
+      </Show>
 
       <div class={page() ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]' : 'space-y-6'}>
         <div class="min-w-0 space-y-6">
-          {/* Run with agent — the neutral execution surface
-              (`ExecutionRequest`/`ExecutionAttempt` via `tack-runner`). A
-              successful run switches straight to the "Execution" tab so
-              the request that just appeared is immediately visible,
-              without a page navigation. Once the item has a run, its
-              latest one is summed up here, so coming back to the task
-              shows what the agent did. */}
-          <div
-            class="flex flex-wrap items-start gap-3 rounded-[28px] px-5 py-4"
-            style={{ 'background-color': 'var(--color-bg-panel)' }}
-          >
-            <LatestRunSummary
-              itemId={props.item.id}
-              itemTitle={props.item.title}
-              projectId={props.item.project_id}
-              onCreated={() => props.onTabChange('execution')}
-              onOpen={() => props.onTabChange('execution')}
-            />
-            <RunWithAgentButton
-              itemId={props.item.id}
-              itemTitle={props.item.title}
-              projectId={props.item.project_id}
-              onCreated={() => props.onTabChange('execution')}
-            />
-          </div>
-
           <Tabs tabs={tabs()} active={props.tab} onChange={props.onTabChange}>
             <Show when={props.tab === 'details'}>
               <DetailsTab item={props.item} onDescriptionChange={props.editor.onDescriptionChange} />
@@ -145,9 +146,10 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
 
         <Show when={page()}>
           <aside
-            class="rounded-[28px] p-5"
+            class="space-y-5 rounded-[28px] p-5"
             style={{ 'background-color': 'var(--color-bg-panel)' }}
           >
+            {run}
             {properties}
           </aside>
         </Show>

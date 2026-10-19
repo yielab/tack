@@ -13,7 +13,8 @@ import {
   formatTokenCount,
   formatWallClock,
   harnessName,
-  isReviewableAttempt,
+  changedNoFile,
+  needsVerdict,
   isTerminalAttemptState,
   readAttemptUsage,
   formatTokenGroups,
@@ -29,6 +30,7 @@ import DecisionInbox from './DecisionInbox';
 import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
 import MergeButton from './MergeButton';
+import ReviewActions from './ReviewActions';
 import PlanPanel from './PlanPanel';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
@@ -283,7 +285,7 @@ const AttemptRow: Component<{
   const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
   const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
   const status = () => describeAttemptStatus(props.attempt, review());
-  const awaitingReview = () => isReviewableAttempt(props.attempt) && !review();
+  const showMerge = () => terminal() && !!merge() && !merge()!.merged && !changedNoFile(props.attempt);
   const terminal = () => isTerminalAttemptState(props.attempt.state);
   // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
   const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
@@ -298,27 +300,6 @@ const AttemptRow: Component<{
     props.onReviewed?.();
     window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
   };
-  const [note, setNote] = createSignal('');
-  const [reviewing, setReviewing] = createSignal(false);
-  const [reviewError, setReviewError] = createSignal<string | null>(null);
-  const submitReview = async (verdict: 'accepted' | 'rejected') => {
-    setReviewing(true);
-    setReviewError(null);
-    try {
-      const n = note().trim();
-      await attemptsApi.review(props.requestId, props.attempt.attempt_number, { verdict, ...(n ? { note: n } : {}) });
-      const list = await attemptsApi.list(props.requestId);
-      const mine = list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number);
-      setFresh(mine?.review ?? null);
-      props.onReviewed?.();
-      window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
-    } catch (e) {
-      setReviewError(e instanceof Error ? e.message : 'The verdict could not be saved');
-    } finally {
-      setReviewing(false);
-    }
-  };
-
   return (
     <li data-testid="attempt" class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
       <div class="flex flex-wrap items-center gap-2">
@@ -376,38 +357,19 @@ const AttemptRow: Component<{
         )}
       </Show>
 
-      <Show when={review()}>
-        {(r) => (
-          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {r().verdict === 'accepted' ? 'Accepted' : 'Rejected'} {relativeTimeFromIso(r().reviewed_at)}
-            {r().note ? ` — ${r().note}` : ''}
-          </p>
-        )}
-      </Show>
-      <Show when={terminal() && merge() && !merge()!.merged}>
+      <Show when={showMerge()}>
         <MergeButton attemptId={props.attempt.attempt_id} merge={merge()!} onMerged={() => void refreshMerge()} />
       </Show>
-      <Show when={awaitingReview()}>
-        <div class="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            aria-label="Review note (optional)"
-            placeholder="Note (optional)"
-            value={note()}
-            onInput={(e) => setNote(e.currentTarget.value)}
-            class="min-w-[12rem] flex-1 rounded-full px-3 py-1.5 text-sm"
-            style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)', border: 'none' }}
-          />
-          <Button size="sm" disabled={reviewing()} onClick={() => void submitReview('accepted')}>
-            Accept
-          </Button>
-          <Button size="sm" variant="secondary" disabled={reviewing()} onClick={() => void submitReview('rejected')}>
-            Reject
-          </Button>
-          <Show when={reviewError()}>
-            <span class="text-xs" style={{ color: 'var(--color-danger-700)' }}>{reviewError()}</span>
-          </Show>
-        </div>
+      <Show when={needsVerdict(props.attempt) || review()}>
+        <ReviewActions
+          requestId={props.requestId}
+          attemptNumber={props.attempt.attempt_number}
+          review={review()}
+          onReviewed={(r) => {
+            setFresh(r);
+            props.onReviewed?.();
+          }}
+        />
       </Show>
 
       <AttemptTools requestId={props.requestId} attempt={props.attempt} itemId={props.itemId} />

@@ -152,9 +152,21 @@ After Tack acts on a task, badges say so on the board, list and table: **Started
 
 ## Execution tab
 
-The record of every time an agent was handed this item. Above the tabs, a **Last run** panel
-says how the latest run is doing, what the agent said, its tokens and approximate cost, and offers
-**Run again**; the board card carries the same status as a chip.
+The record of every time an agent was handed this item. The **Last run** card, at the top of the
+drawer and in the side column of the item's page, takes the colour and the buttons of the run:
+
+- **Running** shows the agent's last steps, the tokens it has used against its limit, **Follow live**
+  and **Stop**.
+- **Needs your review** shows the opening of the agent's report, how long it took, how many steps
+  it took and how many files it changed, with **Accept**, **Reject…** (which asks for an optional
+  reason) and **See what it did**. A run that changed no file shows the agent's answer as what it
+  delivered and offers **Accept**, not **Merge**.
+- **Failed** says why it stopped. **Merged** says when. **Queued** says why the run still waits
+  (for example, that the computer it asked for has not answered) and offers **Run on another
+  computer**.
+
+**Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
+in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
 On the tab, each run (**Run 1**, **Run 2**, …) shows one status — *Running*, *Finished — needs
 your review*, *Finished — no changes recorded* (a run that was not meant to change files), *Failed*

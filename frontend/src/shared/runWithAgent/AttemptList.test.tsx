@@ -96,12 +96,12 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('Attempt');
   });
 
-  it('a terminal attempt with a kept workspace and no patch shows Accept and Reject', () => {
+  it('a terminal attempt with a kept workspace and no patch shows Accept and Reject…', () => {
     const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]);
     // A single attempt's status is the run's heading (`ExecutionTimeline`), not repeated here.
     expect(c.textContent).not.toContain('needs your review');
     expect(Array.from(c.querySelectorAll('button')).map((b) => b.textContent)).toEqual(
-      expect.arrayContaining(['Accept', 'Reject']),
+      expect.arrayContaining(['Accept', 'Reject…']),
     );
   });
 
