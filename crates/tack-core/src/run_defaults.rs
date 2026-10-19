@@ -151,9 +151,95 @@ pub fn check_network(tool_policy: &serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// What a profile's `delivers` line may be: one line of at most 160 characters. An empty line is
+/// no line; the caller stores it as absent.
+pub fn check_delivers(delivers: &str) -> Result<(), String> {
+    if delivers.contains(['\n', '\r']) || delivers.chars().count() > 160 {
+        return Err("delivers must be one line of at most 160 characters".to_owned());
+    }
+    Ok(())
+}
+
+/// What a profile lets its agent do, read from its tools and never typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProfileCapabilities {
+    pub changes_files: bool,
+    pub runs_commands: bool,
+    pub uses_network: bool,
+}
+
+/// The capabilities of a profile's `tool_policy`. The tools are `tools[agent]`, with `agent`
+/// absent read as `claude-code`, the one agent whose tool names Tack knows; `*` is all three.
+/// Edit, Write, MultiEdit and NotebookEdit change files, Bash runs commands, WebFetch and
+/// WebSearch use the network (names match in any case, as the runner matches them). A docket
+/// profile is all three: its pipeline decides and the profile does not record it. The profile's
+/// `network` flag also counts as the network.
+pub fn profile_capabilities(tool_policy: &serde_json::Value) -> ProfileCapabilities {
+    let agent = tool_policy
+        .get("agent")
+        .and_then(|a| a.as_str())
+        .unwrap_or("claude-code");
+    let every = ProfileCapabilities {
+        changes_files: true,
+        runs_commands: true,
+        uses_network: true,
+    };
+    if agent == "docket" {
+        return every;
+    }
+    let names: Vec<&str> = tool_policy["tools"][agent]
+        .as_array()
+        .map(|tools| tools.iter().filter_map(|t| t.as_str()).collect())
+        .unwrap_or_default();
+    if names.contains(&"*") {
+        return every;
+    }
+    let has = |wanted: &[&str]| {
+        names
+            .iter()
+            .any(|name| wanted.iter().any(|w| name.eq_ignore_ascii_case(w)))
+    };
+    ProfileCapabilities {
+        changes_files: has(&["Edit", "Write", "MultiEdit", "NotebookEdit"]),
+        runs_commands: has(&["Bash"]),
+        uses_network: has(&["WebFetch", "WebSearch"]) || profile_network(tool_policy),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capabilities_are_read_from_the_tools_of_the_agent() {
+        let caps = |policy: serde_json::Value| profile_capabilities(&policy);
+        let none = ProfileCapabilities::default();
+        assert_eq!(caps(serde_json::json!({})), none);
+        assert_eq!(
+            caps(serde_json::json!({"tools": {"claude-code": ["Read", "Grep", "WebFetch"]}})),
+            ProfileCapabilities {
+                uses_network: true,
+                ..none
+            }
+        );
+        assert_eq!(
+            caps(serde_json::json!({"tools": {"claude-code": ["Read", "edit", "Bash"]}})),
+            ProfileCapabilities {
+                changes_files: true,
+                runs_commands: true,
+                ..none
+            }
+        );
+        // The list of the profile's own agent is the one that counts, and `*` is everything.
+        let codex = serde_json::json!({"agent": "codex", "tools": {"claude-code": ["Bash"], "codex": ["*"]}});
+        assert!(caps(codex).uses_network);
+        let docket = serde_json::json!({"agent": "docket", "tools": {"docket": []}});
+        assert!(caps(docket).changes_files);
+        // The role's network flag is the network too.
+        assert!(caps(serde_json::json!({"network": true})).uses_network);
+        assert!(check_delivers("a change on a branch").is_ok());
+        assert!(check_delivers("two\nlines").is_err());
+    }
 
     fn cands() -> Vec<Candidate> {
         ["pe", "ps", "pc", "pd", "pi", "pf"]

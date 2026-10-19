@@ -156,6 +156,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("092_drop_usd_per_day", &MIGRATION_092[..]),
         ordinary("093_project_prepare_command", &MIGRATION_093[..]),
         ordinary("094_provisional_tokens_per_run", &MIGRATION_094[..]),
+        ordinary("095_profile_delivers", &MIGRATION_095[..]),
     ]
 }
 
@@ -1874,3 +1875,7 @@ const MIGRATION_093: [&str; 1] = ["ALTER TABLE projects ADD COLUMN prepare_comma
 // default; NULL turns it off. A project with no budgets row has the default.
 const MIGRATION_094: [&str; 1] =
     ["ALTER TABLE project_budgets ADD COLUMN provisional_tokens_per_run INTEGER DEFAULT 2000000"];
+
+// 095: a profile says in one line what it delivers (a change on a branch, a document in a folder, an
+// answer); NULL says nothing. What it may do is read from its tools, not stored.
+const MIGRATION_095: [&str; 1] = ["ALTER TABLE agent_profiles ADD COLUMN delivers TEXT"];
