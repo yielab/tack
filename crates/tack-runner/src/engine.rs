@@ -1120,9 +1120,10 @@ where
                     });
                     // An `in_place` folder is the user's own: never moved, and
                     // `cleanup` below only releases its lock.
-                    let in_place = spec.work.workspace_repository().is_ok_and(|repository| {
-                        repository.workspace_mode == WorkspaceMode::InPlace
-                    });
+                    let in_place = Self::in_repository(&spec.work)
+                        || spec.work.workspace_repository().is_ok_and(|repository| {
+                            repository.workspace_mode == WorkspaceMode::InPlace
+                        });
                     let kept = if worktree_kept || in_place {
                         Ok(spec.workspace.path.clone())
                     } else {
@@ -1140,7 +1141,10 @@ where
                         worktree_kept = true;
                         spec.workspace.path.clone()
                     });
-                    if let Some(reason) = outcome.terminal_reason.as_object_mut() {
+                    // A repository is the user's own: nothing of the run's is kept in it.
+                    if !Self::in_repository(&spec.work)
+                        && let Some(reason) = outcome.terminal_reason.as_object_mut()
+                    {
                         reason.insert(
                             "workspace_kept_at".to_owned(),
                             serde_json::Value::String(kept.display().to_string()),
@@ -1596,6 +1600,16 @@ where
         if !captured {
             return;
         }
+        // A command verifier reads a work tree, and a repository has none.
+        if config.kind == crate::config::VerifyKind::Command && Self::in_repository(&spec.work) {
+            let payload = serde_json::json!({
+                "exit_code": null,
+                "reason": "this run made no working copy for a command verifier to read; use kind = \"prill\"",
+            });
+            self.submit_event(session, record, "attempt.verify_failed", payload)
+                .await;
+            return;
+        }
         // The verifier may run for its whole `timeout_seconds`; the runner's
         // ticker renews the lease meanwhile.
         let result = crate::verify::run(config, limits, &spec.workspace, scratch).await;
@@ -1634,10 +1648,12 @@ where
         // A `local_branch` attempt always keeps its branch in the user's
         // repository; the push is a separate, doubly-opt-in step: the request
         // asks (`push_after_run`) and this runner's `[git] push_branches` is on.
-        let local_branch = spec
-            .work
-            .workspace_repository()
-            .is_ok_and(|repository| repository.workspace_mode == WorkspaceMode::LocalBranch);
+        let in_repository = Self::in_repository(&spec.work);
+        let local_branch = in_repository
+            || spec
+                .work
+                .workspace_repository()
+                .is_ok_and(|repository| repository.workspace_mode == WorkspaceMode::LocalBranch);
         let push = if local_branch {
             let asked = spec
                 .work
@@ -1692,15 +1708,23 @@ where
         // A push to a slow remote can outlast the lease; the runner's ticker
         // renews it meanwhile.
         let remote = record.push_remote.clone();
-        let publishing = self.workspaces.publish_branch(
-            &spec.workspace,
-            &branch,
-            push,
-            remote.as_deref(),
-            captured,
-            head,
-        );
-        let result = publishing.await;
+        let result = if in_repository {
+            // A commit in the repository cannot change after it was verified.
+            self.workspaces
+                .publish_range(&spec.workspace, &branch, push, remote.as_deref(), captured)
+                .await
+        } else {
+            self.workspaces
+                .publish_branch(
+                    &spec.workspace,
+                    &branch,
+                    push,
+                    remote.as_deref(),
+                    captured,
+                    head,
+                )
+                .await
+        };
         let published = match result {
             Ok(Some(published)) if published.head_commit == captured => published,
             // What would be pushed is not what was verified: the attempt
@@ -1811,6 +1835,15 @@ where
         usage: serde_json::Value,
     ) -> Option<(std::path::PathBuf, Vec<serde_json::Value>)> {
         self.data_protocol.as_ref()?;
+        // A run in the repository itself ended where its harness says, or
+        // where it began when it made no commit.
+        let head = Self::in_repository(&spec.work).then(|| {
+            terminal_reason["head_commit"]
+                .as_str()
+                .or(base_commit)
+                .unwrap_or_default()
+                .to_owned()
+        });
         let harness_kind = serde_json::to_value(&spec.work.request.requested_harness_kind)
             .ok()
             .and_then(|value| value.as_str().map(str::to_owned))
@@ -1830,6 +1863,7 @@ where
                 spec.work.request.brief.as_ref(),
                 base_commit,
                 (&self.git.author, &message),
+                head.as_deref(),
             )
             .await,
         )
@@ -2238,6 +2272,12 @@ where
         }
         *record = acknowledged;
         Ok(cycle)
+    }
+
+    /// Whether the attempt works in the repository itself, with no copy made.
+    fn in_repository(work: &ClaimedWork) -> bool {
+        work.workspace_repository()
+            .is_ok_and(|repository| repository.workspace_mode == WorkspaceMode::Repository)
     }
 
     fn workspace_from_journal(record: &AttemptJournal) -> Workspace {

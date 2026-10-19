@@ -151,7 +151,10 @@ pub const EVIDENCE_REASON_NO_REPOSITORY: &str = "this worktree provisioner reads
 /// `terminal_reason.artifact` already has.
 ///
 /// `base_commit` is the commit id fixed at provisioning, and `commit` the
-/// author and message of the commit the capture makes of the work.
+/// author and message of the commit the capture makes of the work. With a
+/// `head`, the workspace is a repository with no work tree: the evidence is
+/// the difference from `base_commit` to that commit, `commit` is not used, and
+/// the plan file is not looked for.
 #[allow(clippy::too_many_arguments)]
 pub async fn capture<P: WorktreeProvisioner>(
     workspaces: &WorkspaceManager<P>,
@@ -162,12 +165,25 @@ pub async fn capture<P: WorktreeProvisioner>(
     brief: Option<&serde_json::Value>,
     base_commit: Option<&str>,
     commit: (&str, &str),
+    head: Option<&str>,
 ) -> (PathBuf, Vec<serde_json::Value>) {
     let attempt_id = workspace.attempt_id.as_str();
-    let (git, reason) = match workspaces
-        .capture_evidence(workspace, &[RUNNER_DIR, PLAN_FILE], base_commit, commit)
-        .await
-    {
+    let exclude = [RUNNER_DIR, PLAN_FILE];
+    let captured = match (head, base_commit) {
+        (Some(head), Some(base_commit)) => {
+            workspaces
+                .capture_range(workspace, &exclude, base_commit, head)
+                .await
+        }
+        // A range with no base was never recorded: nothing to read.
+        (Some(_), None) => Err(crate::client::workspace::WorkspaceError::Git),
+        (None, _) => {
+            workspaces
+                .capture_evidence(workspace, &exclude, base_commit, commit)
+                .await
+        }
+    };
+    let (git, reason) = match captured {
         Ok(Some(git)) => (Some(git), None),
         Ok(None) => (None, Some(EVIDENCE_REASON_NO_REPOSITORY)),
         Err(_) => (None, Some(EVIDENCE_REASON_GIT_UNREADABLE)),
@@ -266,7 +282,11 @@ pub async fn capture<P: WorktreeProvisioner>(
     }
     // Read after capture, from the workspace that is about to be deleted. A
     // missing file is not a failure.
-    if let Ok(bytes) = fs::read(workspace.path.join(PLAN_FILE)) {
+    let plan = head
+        .is_none()
+        .then(|| fs::read(workspace.path.join(PLAN_FILE)).ok())
+        .flatten();
+    if let Some(bytes) = plan {
         let parsed = serde_json::from_slice::<PlanV1>(&bytes)
             .map_err(|error| error.to_string())
             .and_then(|plan| {
