@@ -417,14 +417,17 @@ itself; for any other project the line says it is detected on the runner when th
 
 For Claude Code, Codex and opencode the runner makes the copy of the code the agent works in, so it
 also runs the command there, before the agent starts. It runs with the runner's own environment,
-network included, and within the run's time limit. What a lockfile installs into `node_modules`
-(npm, pnpm, yarn) or `.venv` (uv) is kept once in the runner's state folder, under `prepare-cache`,
-and linked into each copy, so the next run with the same lockfile prepares in seconds without running
-the command. `poetry install` and `cargo fetch` keep their packages in a cache of their own, and a
-command a project replaced runs every time. If the command exits with an error or runs out of time, the
-run ends as failed before the agent starts and spends no tokens; its reason is "Could not prepare the
-dependencies", the command and how it ended, and the last lines of its output. The folder that is
-linked is not counted as the agent's change. A docket run is prepared by docket, not by the runner.
+network included, and within the run's time limit. What npm, pnpm and yarn install into
+`node_modules` is kept once in the runner's state folder, under `prepare-cache`, per lockfile. The
+next run with the same lockfile gets its own `node_modules` whose files are hard links to the kept
+ones, so it prepares in seconds without running the command and without copying the packages; the
+state folder and the workspaces must therefore be on the same filesystem, and when they are not the
+command simply runs every time. A file named `.tack-prepared` in that folder marks it as the runner's, and
+the folder is not counted as the agent's change. `uv sync`, `poetry install`, `cargo fetch` and a
+command a project replaced keep nothing and run every time. If the command exits with an error or
+runs out of time, the run ends as failed before the agent starts and spends no tokens; its reason is
+"Could not prepare the dependencies", the command and how it ended, and the last lines of its output.
+A docket run is prepared by docket, not by the runner.
 
 ## Non-loopback and security posture
 

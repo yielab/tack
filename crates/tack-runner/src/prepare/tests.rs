@@ -46,6 +46,13 @@ fn is_link(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
 
+/// Whether two paths are the same file on disk.
+fn same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let (a, b) = (fs::metadata(a).expect("a"), fs::metadata(b).expect("b"));
+    a.dev() == b.dev() && a.ino() == b.ino()
+}
+
 #[tokio::test]
 async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() {
     let setup = Setup::new();
@@ -63,10 +70,20 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
     .expect("first install");
 
     assert_eq!(setup.runs(), 1);
-    assert!(is_link(&first.join("node_modules")), "the folder is linked");
-    assert!(first.join("node_modules/x").exists());
+    assert!(
+        !is_link(&first.join("node_modules")),
+        "the folder is the checkout's own"
+    );
+    assert!(first.join("node_modules/.tack-prepared").is_file());
     let entry = setup.entry("lock one");
-    assert!(entry.join("node_modules/x").exists(), "the cache keeps it");
+    assert!(same_file(
+        &first.join("node_modules/x"),
+        &entry.join("node_modules/x")
+    ));
+    assert!(
+        !entry.join("node_modules/.tack-prepared").exists(),
+        "the cache has no marker"
+    );
     let leftovers: Vec<_> = fs::read_dir(setup.state.join("prepare-cache"))
         .expect("cache")
         .map(|entry| entry.expect("entry").file_name())
@@ -92,8 +109,17 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         1,
         "the second attempt does not run the command"
     );
-    assert!(is_link(&second.join("node_modules")));
-    assert!(second.join("node_modules/x").exists());
+    assert!(!is_link(&second.join("node_modules")));
+    assert!(same_file(
+        &second.join("node_modules/x"),
+        &entry.join("node_modules/x")
+    ));
+    let marker = second.join("node_modules/.tack-prepared");
+    assert!(marker.is_file(), "the reused install is marked");
+    assert!(
+        !same_file(&marker, &first.join("node_modules/.tack-prepared")),
+        "the marker is its own file"
+    );
 
     let other = setup.checkout("a3", "lock two");
     install(
@@ -107,7 +133,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
     .expect("another lockfile");
     assert_eq!(setup.runs(), 2, "a different lockfile installs again");
 
-    // A checkout's removal takes the link and leaves what it linked to.
+    // A checkout's removal leaves what the cache kept.
     fs::remove_dir_all(&second).expect("remove");
     assert!(entry.join("node_modules/x").exists());
 }
@@ -125,8 +151,8 @@ async fn a_detected_command_is_resolved_from_the_lockfile_and_hits_the_cache() {
         .await
         .expect("prepared");
 
-    assert!(is_link(&checkout.join("node_modules")));
     assert!(checkout.join("node_modules/x").exists());
+    assert!(checkout.join("node_modules/.tack-prepared").is_file());
 }
 
 #[tokio::test]
@@ -159,8 +185,8 @@ async fn a_replaced_command_runs_every_time_and_keeps_nothing() {
         prepare(&checkout, &setting, &setup.state, LIMIT)
             .await
             .expect("replaced");
-        assert!(!is_link(&checkout.join("node_modules")));
         assert!(checkout.join("node_modules/x").exists());
+        assert!(!checkout.join("node_modules/.tack-prepared").exists());
     }
     assert_eq!(setup.runs(), 2);
     assert!(!setup.state.join("prepare-cache").exists());
@@ -182,13 +208,13 @@ async fn a_folder_the_repository_holds_is_left_alone() {
     .await
     .expect("install");
 
-    assert!(!is_link(&checkout.join("node_modules")));
     assert!(checkout.join("node_modules/y").exists());
+    assert!(!checkout.join("node_modules/.tack-prepared").exists());
     assert!(!setup.state.join("prepare-cache").exists());
 }
 
 #[tokio::test]
-async fn an_attempt_that_loses_the_race_uses_the_winners_install() {
+async fn an_attempt_that_loses_the_race_keeps_its_own_install_and_the_winners_entry() {
     let setup = Setup::new();
     let winner = setup.entry("lock").join("node_modules");
     let checkout = setup.checkout("a1", "lock");
@@ -208,9 +234,9 @@ async fn an_attempt_that_loses_the_race_uses_the_winners_install() {
     .await
     .expect("install");
 
-    assert!(is_link(&checkout.join("node_modules")));
-    assert!(checkout.join("node_modules/theirs").exists());
-    assert!(!checkout.join("node_modules/mine").exists());
+    assert!(checkout.join("node_modules/mine").exists());
+    assert!(winner.join("theirs").exists());
+    assert!(!winner.join("mine").exists());
     assert_eq!(
         fs::read_dir(setup.state.join("prepare-cache"))
             .expect("cache")
@@ -218,6 +244,52 @@ async fn an_attempt_that_loses_the_race_uses_the_winners_install() {
         1,
         "the losing copy is dropped"
     );
+}
+
+#[tokio::test]
+async fn an_install_that_cannot_be_hard_linked_still_runs_and_is_just_not_kept() {
+    let setup = Setup::new();
+    // A cache entry that is not a directory cannot be linked from, and is not replaced.
+    let entry = setup.entry("lock");
+    fs::create_dir_all(entry.parent().expect("cache")).expect("cache");
+    fs::write(&entry, "in the way").expect("entry");
+    let checkout = setup.checkout("a1", "lock");
+
+    install(
+        &checkout,
+        &setup.install_command(),
+        Some("package-lock.json"),
+        &setup.state,
+        LIMIT,
+    )
+    .await
+    .expect("install");
+
+    assert_eq!(setup.runs(), 1);
+    assert!(checkout.join("node_modules/x").exists());
+    assert!(checkout.join("node_modules/.tack-prepared").is_file());
+}
+
+#[tokio::test]
+async fn a_python_install_is_never_kept() {
+    let setup = Setup::new();
+    let checkout = setup.state.join("workspaces/a1");
+    fs::create_dir_all(&checkout).expect("checkout");
+    fs::write(checkout.join("uv.lock"), "lock").expect("lockfile");
+    let command = format!("echo ran >> {}", setup.state.join("ran").display());
+
+    for _ in 0..2 {
+        prepare_with(&checkout, &command, "uv.lock", &setup.state).await;
+    }
+
+    assert_eq!(setup.runs(), 2);
+    assert!(!setup.state.join("prepare-cache").exists());
+}
+
+async fn prepare_with(checkout: &Path, command: &str, lockfile: &str, state: &Path) {
+    install(checkout, command, Some(lockfile), state, LIMIT)
+        .await
+        .expect("install");
 }
 
 #[tokio::test]
@@ -272,13 +344,12 @@ async fn a_command_that_outlasts_the_time_limit_is_stopped() {
 }
 
 #[test]
-fn only_a_linked_folder_is_reported_as_linked() {
+fn only_a_folder_with_the_marker_is_reported_as_prepared() {
     let setup = Setup::new();
     let checkout = setup.checkout("a1", "lock");
     fs::create_dir(checkout.join("node_modules")).expect("real folder");
-    let target = setup.state.join("target");
-    fs::create_dir(&target).expect("target");
-    std::os::unix::fs::symlink(&target, checkout.join(".venv")).expect("link");
+    assert!(prepared_folders(&checkout).is_empty());
 
-    assert_eq!(linked_folders(&checkout), [".venv"]);
+    fs::write(checkout.join("node_modules/.tack-prepared"), "").expect("marker");
+    assert_eq!(prepared_folders(&checkout), ["node_modules"]);
 }
