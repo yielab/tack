@@ -26,9 +26,11 @@ const ATTEMPT = {
   pull_request: null, review: null,
 };
 
-function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT]) {
+function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = []) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
+    if (url.includes('/events')) return new Response(JSON.stringify({ protocol_version: 1, data: events }), { status: 200 });
     if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: attempts }), { status: 200 });
     if (url.includes('/executions')) return new Response(JSON.stringify({ protocol_version: 1, data: executions }), { status: 200 });
     return new Response('{}', { status: 200 });
@@ -38,7 +40,7 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
   const dispose = render(
     () => (
       <ExecutionStoreProvider>
-        <LatestRunSummary itemId="item-1" onOpen={onOpen} />
+        <LatestRunSummary itemId="item-1" itemTitle="Fix it" projectId="proj-1" onOpen={onOpen} />
       </ExecutionStoreProvider>
     ),
     container,
@@ -75,9 +77,66 @@ describe('LatestRunSummary', () => {
     expect(panel.querySelector('[data-testid="latest-run-usage"]')!.textContent).toBe(
       '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 (estimated) · 6 model calls · claude-sonnet-5-5',
     );
-    const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what the agent did')!;
+    const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what it did')!;
     open.click();
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  const buttons = (c: Element) => [...c.querySelectorAll('button')].map((b) => b.textContent);
+
+  it('a run that needs a verdict is an amber card with the opening of its report, its duration, Accept and Reject…', async () => {
+    const c = mount([RUN]);
+    for (let i = 0; i < 4; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('review');
+    expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toBe('1m 55s');
+    expect(buttons(card)).toEqual(expect.arrayContaining(['Accept', 'Reject…', 'See what it did']));
+  });
+
+  it('a run that changed no file shows the answer as what it delivered and offers Accept, not Merge', async () => {
+    const answer = { ...ATTEMPT, terminal_reason: { result: 'The answer is 42.' }, merge: { enabled: false, reason: 'No branch was pushed' } };
+    const c = mount([RUN], () => {}, [answer]);
+    for (let i = 0; i < 4; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.textContent).toContain('What it delivered');
+    expect(card.querySelector('[data-testid="latest-run-said"]')!.textContent).toBe('“The answer is 42.”');
+    expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toContain('no files changed');
+    expect(buttons(card)).toContain('Accept');
+    expect(buttons(card)).not.toContain('Merge');
+  });
+
+  it('merge, when it cannot run, is disabled and says why in plain words', async () => {
+    const pushedNothing = { ...ATTEMPT, merge: { enabled: false, reason: 'No branch was pushed' } };
+    const c = mount([RUN], () => {}, [pushedNothing]);
+    for (let i = 0; i < 4; i++) await flush();
+    const merge = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Merge')!;
+    expect(merge.disabled).toBe(true);
+    expect(c.querySelector('[data-testid="merge-reason"]')!.textContent).toBe('No branch was pushed');
+  });
+
+  it('a running card shows the last steps, how far into its limit it is, Follow live and Stop', async () => {
+    const onOpen = vi.fn();
+    const events = ['one', 'two', 'three', 'four'].map((text, i) => ({ event_id: `e${i}`, sequence: i, source: 'runner', kind: 'agent.tool_call', payload: { text }, occurred_at: '2026-10-08T12:00:00Z', created_at: '2026-10-08T12:00:00Z' }));
+    const limit = { tokens: 300_000, source: 'run', enforced_by: 'claude-code', sentence: '300 000 tokens', used: 120_000 };
+    const c = mount([{ ...RUN, state: 'running', limit }], onOpen, [{ ...ATTEMPT, state: 'running', terminal_reason: null, ended_at: null }], events);
+    for (let i = 0; i < 6; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('running');
+    expect([...card.querySelectorAll('[data-testid="latest-run-steps"] li')].map((li) => li.textContent)).toEqual(['two', 'three', 'four']);
+    expect(card.querySelector('[data-testid="run-limit-used"]')!.textContent).toBe('Used 120 000 of 300 000 tokens');
+    expect(buttons(card)).toEqual(expect.arrayContaining(['Follow live', 'Stop']));
+    [...card.querySelectorAll('button')].find((b) => b.textContent === 'Follow live')!.click();
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('a queued card offers to run on another computer', async () => {
+    const waiting = { ...RUN, state: 'queued', waiting_reason: 'The computer this run asked for has not answered since 2026-10-19T10:00:00Z', waiting_since: null };
+    const c = mount([waiting], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('queued');
+    expect(card.textContent).toContain('The computer this run asked for has not answered since 2026-10-19T10:00:00Z');
+    expect(buttons(card)).toContain('Run on another computer');
   });
 
   it('a queued run says why it waits and for how long; a capacity wait has no duration; a request that failed for want of a runner shows the reason as its failure', async () => {
