@@ -39,7 +39,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 - **Accepted 2026-10-19, from the Fabulada rerun:** ADR 0085 (built: the runner's default settings
   file, and a card with no check says so) and ADR 0086 (not built: whoever makes the agent's copy
   installs its dependencies from the lockfile, and Tack makes no copy of its own for a docket run;
-  docket's side is its ADR 0029). Token limits by kind of task are still open there.
+  docket's side is its ADR 0029). Token limits by kind of task are its decision 5 (accepted the same day); Phase 77 (`docs/plans/phase-77.md`) builds Tack's side.
 - **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
   develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.

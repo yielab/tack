@@ -1,8 +1,9 @@
 # ADR 0086: whoever makes the agent's working copy prepares it
 
 **Status: ACCEPTED 2026-10-19.** The maintainer accepted decisions 1 to 4 on 2026-10-19, after the
-Fabulada onboarding rerun. Token limits by kind of task were proposed in the same conversation
-and are **not** decided here (see "Not decided").
+Fabulada onboarding rerun, and decision 5 (token limits by kind of task) later the same day. Decision 5
+amends ADR 0083 decision 1: a run now always has a limit. Executed by Phase 77
+(`docs/plans/phase-77.md`).
 
 **Decide:** that a run's dependencies are installed by **whoever makes the copy of the code the
 agent works in**: docket for a docket run, Tack's runner for Claude Code, Codex and opencode. That
@@ -29,11 +30,15 @@ that tries works around it with its own wrapper script.
 | 3 | **The install command comes from the lockfile.** `package-lock.json` → `npm ci`, `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`, `yarn.lock` → `yarn install --immutable`, `uv.lock` → `uv sync --frozen`, `poetry.lock` → `poetry install`, `Cargo.lock` → `cargo fetch`. A project can replace it, or turn it off, in Settings → Automation → "Where the code is"; Tack sends that value to docket with the task. No lockfile means no install, and the screen says so | "Prepares with `npm ci` (from package-lock.json)", or "No lockfile: nothing is installed" |
 | 4 | **Network only to install, a cache, and a clear failure.** The install has network; the agent then has its team's network. What one lockfile installs is kept once and linked into each copy, so the second run with the same lockfile prepares in seconds. A failed install ends the run before the agent starts, with the command's output as its reason. A command that runs on this machine is shown before it runs: the detected or replaced command is on the settings screen and in the Run dialog, and docket asks its review code for it like any other command | "Could not prepare the dependencies: `npm ci` exited 1" and its output, with no tokens spent |
 
-## Not decided
+| 5 | **A token limit per kind of work, learnt from its own runs.** A kind of work is a profile: a project with dozens of cards has a handful. A profile with no limit of its own runs under a **provisional limit**, 2 000 000 tokens by default, which is the cap the SWE-Effi benchmark gives one software task, and which can be changed under Settings → Automation. Once a profile has **5 successful runs**, the board **proposes** a limit: the 90th percentile of its last 20 successful runs × 1.5, rounded up. It never applies it by itself: the person does, with one click. A run can still set its own limit in the Run dialog. A run shows amber at 80% of its limit, and one stopped by it says how much it used of how much and can be run again with more | "Provisional limit: 2 000 000 (no measured runs yet)"; then "The last 7 runs used 180 000 to 520 000. Proposed limit: 720 000 [Apply]"; and "Stopped at its limit: 720 000 of 720 000 [Run again with more]" |
 
-- **A token limit by kind of task.** Proposed on 2026-10-19: a limit per profile learnt from that
-  profile's past runs, with a starting value measured in the calibration run. It would change
-  ADR 0083 decision 1 (no default limit), so it waits on the maintainer.
+Decision 5 in practice: the limit is not estimated card by card, because how hard a card looks
+predicts badly how many tokens it takes (the same task varies up to 30×), while a profile's own
+history is a stable measure. A failed run costs about four times a successful one, so the limit is
+there mostly to cut runaway failures, not to trim good runs. docket needs no change for it: given a
+task's `maxTokens`, each of its steps already gets what is left of it, so docket's own per-step
+setting (`AGENT_LOOP_TOKEN_BUDGET`) only applies to a task that comes with no limit, and from Tack
+none does.
 
 ## Not done, on purpose
 
@@ -57,6 +62,14 @@ that tries works around it with its own wrapper script.
 - **prill already does it this way:** `prepare.command` runs once, with network, in a container
   whose result is kept; every check after it has no network; its configuration is read from the
   base commit.
+- **Token use per task (decision 5).** Bai et al. 2026 (arXiv 2604.22750): the same task varies up to
+  30× in tokens between runs, a task's difficulty predicts its use weakly (Kendall τb 0.32), accuracy
+  stops improving past a point, and early warnings are the recommended brake. SWE-Effi (arXiv
+  2509.09853): failed runs use about 4× the tokens of successful ones; the benchmark caps a task at
+  2 million tokens. SWE-bench Science (arXiv 2608.19799, Table 2): mean input 3.7–7.4 million and
+  output 40 000–160 000 tokens per task, most of the input cache reads, which Tack does not count
+  (ADR 0083 decision 2). docket gives each step what is left of the task's `maxTokens`
+  (`serve.py`, `dispatch.py`).
 - **Others do the same:** Codex cloud runs a setup script with internet and the agent without it;
   GitHub's Copilot coding agent has `copilot-setup-steps.yml`; Cursor's cloud agents have an
   `install` step kept in a build; Claude Code copies ignored files into its worktrees with

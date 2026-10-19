@@ -5,6 +5,10 @@ the work to start the same day. Executed by Phase 75 (`docs/plans/phase-75.md`).
 decision 5 (the money budget), ADR 0080 decision 7 (the dollar budget priced per model) and
 ADR 0070 decision 6 (which limits reach docket).
 
+**Amended 2026-10-19 by ADR 0086 decision 5:** decision 1's "nothing has one by default" no longer
+holds. A profile with no limit runs under a provisional limit (2 000 000 tokens by default, changed in
+Settings → Automation) until the board proposes one from its own runs and the person applies it.
+
 **Decide:** that every limit Tack sets is **in tokens**, and **nothing has one by default**; that
 a token counted is a **new** one (uncached input, cache writes, output), and **cache reads are
 shown, never counted**; that **dollars per day goes away** and dollars are only **an estimate**;
