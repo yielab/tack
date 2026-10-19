@@ -175,6 +175,15 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   "Saved on this task", "The built-in Implementer", or "More than one role has a profile, so the project
   default is used". To use another profile for this run, press another name in the **Profile** row.
   [Teams](automation.md#teams) explains how a role chooses.
+- **The profile row follows the profile.** The profiles you made come first, each with the line saying
+  what it delivers, and the built-in ones sit apart below. Pressing a profile also picks the agent it is
+  written for (a profile with a docket team means docket; otherwise the agent it lists tools for), when
+  this computer offers that agent, and a line under the row says so when it replaces the agent the task
+  had. A profile that runs no commands says "No install: this profile runs no commands" where the dialog
+  tells what is installed before the agent starts.
+- **Machine or group.** Lists this computer and the other machines by name, then the groups. A machine that
+  has stopped answering is shown disabled, with the time it was last heard. With one machine answering and
+  no group there is nothing to choose, so the field is one line, "Runs on this computer".
 - **What the agent will read** shows the real text it will be given: the profile's instructions, the task's
   title and description, its acceptance criteria, the project's **Definition of done**, and anything in the
   task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).

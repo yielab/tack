@@ -13,7 +13,7 @@ import {
 import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
-  shouldHideTargetPicker, isExecutionOff, resolveRunModel,
+  isAnsweringRunner, silentRunnerLabel, profileAgents, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
   isDecisionsAttested, profileNetworkFor, profileToolsFor,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
@@ -63,6 +63,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const runnersData = (): RunnerSummary[] => (liveRunners.error !== undefined ? [] : (liveRunners() ?? []));
   const activeRunners = (): RunnerSummary[] => runnersData().filter((r) => isActiveRunnerState(r.state));
+  // The ones whose heartbeat is current: the only machines a run can be sent to.
+  const answeringRunners = (): RunnerSummary[] => activeRunners().filter(isAnsweringRunner);
 
   const capabilities = (): RunnerCapabilities[] => props.capabilities?.() ?? targetCapabilities();
 
@@ -78,6 +80,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [form, setForm] = createStore<RunForm>(initialForm());
   // Set only by a click on a profile pill: an auto-selected profile is not remembered.
   const [profilePicked, setProfilePicked] = createSignal(false);
+  // What a click on a profile did to the agent; shown only while that choice stands.
+  const [agentSwitch, setAgentSwitch] = createSignal<{ profileId: string; harness: string; text: string } | null>(null);
   // The profile the server would choose for this item and why; the dialog does not choose it.
   const [resolved] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
@@ -112,13 +116,14 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!props.isOpen) return;
     settingsApplied = false;
     setProfilePicked(false);
+    setAgentSwitch(null);
     setForm(initialForm());
     if (props.initialTokenLimit) setForm({ tokenLimit: String(props.initialTokenLimit), tokenLimitEdited: true });
   });
 
   createEffect(() => {
     if (!props.isOpen || form.selectorId) return;
-    const runners = activeRunners();
+    const runners = answeringRunners();
     if (runners.length === 1 && fleetsData().length === 0) {
       setForm('selectorKind', 'exact_runner');
       setForm('selectorId', runners[0].runner_id);
@@ -128,14 +133,23 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const targetOptions = createMemo(() => [
     ...fleetsData().map((f) => ({ value: `fleet:${f.fleet_id}`, label: f.name })),
-    ...activeRunners().map((r) => ({ value: `exact_runner:${r.runner_id}`, label: r.name })),
+    ...activeRunners().map((r) => isAnsweringRunner(r)
+      ? { value: `exact_runner:${r.runner_id}`, label: r.name }
+      : { value: `exact_runner:${r.runner_id}`, label: silentRunnerLabel(r.name, r.last_heartbeat_at), disabled: true }),
   ]);
+  // One answering machine and no group: nothing to choose, so the field is a line saying where it runs.
+  const fixedTarget = (): string | null => {
+    if (!shouldHideTargetPicker(activeRunners().length, fleetsData().length)) return null;
+    const runner = answeringRunners()[0];
+    if (!runner) return null;
+    return runner.name.startsWith('This computer') ? 'Runs on this computer' : `Runs on ${runner.name}`;
+  };
 
   const targetCapabilities = createMemo((): RunnerCapabilities[] => {
     const kind = form.selectorKind;
     const id = form.selectorId;
     if (!id) return [];
-    const runners = activeRunners().filter((r) => (kind === 'exact_runner' ? r.runner_id === id : r.fleet_ids.includes(id)));
+    const runners = answeringRunners().filter((r) => (kind === 'exact_runner' ? r.runner_id === id : r.fleet_ids.includes(id)));
     return runners.map(runnerSummaryToCapabilities).filter((c): c is RunnerCapabilities => c !== null);
   });
 
@@ -174,6 +188,17 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   /** Where the shown profile came from, while it is still the server's choice. */
   const profileSource = () => (resolved()?.id === form.agentProfileId ? resolved()?.source ?? null : null);
+
+  /** A click on a profile picks the agent it is written for, when this computer offers that agent. */
+  const pickProfile = (profile: AgentProfileSummary) => {
+    setProfilePicked(true);
+    const agents = profileAgents(profile).filter((kind) => harnessOptions().some((h) => h.value === kind));
+    if (agents.length === 0 || agents.includes(form.harnessKind)) return;
+    const label = (kind: string) => harnessOptions().find((h) => h.value === kind)?.label ?? kind;
+    const [next, was] = [agents[0], form.harnessKind];
+    setForm('harnessKind', next);
+    setAgentSwitch({ profileId: profile.agent_profile_id, harness: next, text: `${profile.name} runs on ${label(next)}, so the agent is now ${label(next)} instead of ${label(was)}.` });
+  };
 
   const createDefaultProfile = async () => {
     setCreatingProfile(true);
@@ -412,9 +437,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           <RunFlow
             form={form}
             setForm={setForm}
-            onProfilePicked={() => setProfilePicked(true)}
+            onProfilePicked={pickProfile}
+            agentNotice={() => { const s = agentSwitch(); return s && s.profileId === form.agentProfileId && s.harness === form.harnessKind ? s.text : null; }}
             projectId={props.projectId}
-            hideTargetPicker={() => shouldHideTargetPicker(activeRunners().length, fleetsData().length)}
+            fixedTarget={fixedTarget}
             runnersLoading={() => liveRunners.loading}
             targetOptions={targetOptions}
             target={() => (form.selectorId ? `${form.selectorKind}:${form.selectorId}` : '')}

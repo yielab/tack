@@ -36,11 +36,14 @@ export interface RunFlowProps {
   form: RunForm;
   setForm: SetStoreFunction<RunForm>;
   /** A click on a profile pill, as opposed to the dialog's own choice. */
-  onProfilePicked: () => void;
+  onProfilePicked: (profile: AgentProfileSummary) => void;
+  /** Said when the click replaced the agent; null otherwise. */
+  agentNotice: Accessor<string | null>;
   projectId: string;
-  hideTargetPicker: Accessor<boolean>;
+  /** The one line standing for the machine field when there is nothing to choose; null when there is. */
+  fixedTarget: Accessor<string | null>;
   runnersLoading: Accessor<boolean>;
-  targetOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
+  targetOptions: Accessor<ReadonlyArray<{ value: string; label: string; disabled?: boolean }>>;
   target: Accessor<string>;
   onTarget: (value: string) => void;
   rows: { runner: Accessor<PrerequisiteState>; harness: Accessor<PrerequisiteState>; profile: Accessor<PrerequisiteState>; model: Accessor<PrerequisiteState> };
@@ -144,7 +147,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
   return (
     <>
-      <Show when={!props.hideTargetPicker()}>
+      <Show
+        when={props.fixedTarget()}
+        fallback={
         <Select
           label="Machine or group"
           value={props.target()}
@@ -154,6 +159,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             ...props.targetOptions(),
           ]}
         />
+        }
+      >
+        {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
       </Show>
 
       <p data-testid="run-summary" class="rounded-[20px] px-4 py-3 text-sm" style={PILL}>
@@ -196,25 +204,24 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         }
       >
         <FieldShell label="Profile" help={HELP.profile}>
-        <div role="group" aria-label="Profile" class="flex flex-wrap gap-2">
-          <For each={sortedProfiles()}>
-            {(p) => (
-              <button
-                type="button"
-                title={p.summary}
-                aria-pressed={props.form.agentProfileId === p.agent_profile_id}
-                class="rounded-full px-4 py-1.5 text-sm font-semibold"
-                style={props.form.agentProfileId === p.agent_profile_id
-                  ? { 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }
-                  : PILL}
-                onClick={() => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(); }}
-              >
-                {p.name}
-              </button>
-            )}
-          </For>
+        <div role="group" aria-label="Profile" class="space-y-3">
+          <ProfileGroup
+            title={props.profiles().some((p) => p.builtin) ? 'Your profiles' : undefined}
+            profiles={sortedProfiles().filter((p) => !p.builtin)}
+            selected={props.form.agentProfileId}
+            onPick={(p) => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
+          />
+          <ProfileGroup
+            title={props.profiles().some((p) => !p.builtin) ? 'Built in' : undefined}
+            profiles={sortedProfiles().filter((p) => p.builtin)}
+            selected={props.form.agentProfileId}
+            onPick={(p) => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
+          />
         </div>
         </FieldShell>
+        <Show when={props.agentNotice()}>
+          {(text) => <p data-testid="profile-agent-notice" class="-mt-3 px-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>}
+        </Show>
       </Show>
       <Show when={props.rows.profile() === 'missing'}>
         <Prerequisite state="missing" label="An agent profile exists" href="/agents" fixLabel="Add an agent profile" />
@@ -228,7 +235,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show when={props.project()}>
         {(project) => (
           <p data-testid="run-dialog-install" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            {installLine(project().prepare_command, folderCheck())}
+            {installLine(project().prepare_command, folderCheck(), props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.runs_commands)}
           </p>
         )}
       </Show>
@@ -410,6 +417,46 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     </>
   );
 };
+
+/** Profiles as pills, each with the line saying what it delivers beneath it. */
+const ProfileGroup: Component<{
+  title?: string;
+  profiles: AgentProfileSummary[];
+  selected: string;
+  onPick: (profile: AgentProfileSummary) => void;
+}> = (props) => (
+  <Show when={props.profiles.length > 0}>
+    <div class="space-y-1.5">
+      <Show when={props.title}>
+        <p class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{props.title}</p>
+      </Show>
+      <div class="flex flex-wrap gap-x-3 gap-y-2">
+        <For each={props.profiles}>
+          {(p) => (
+            <div class="flex max-w-56 flex-col items-start gap-0.5">
+              <button
+                type="button"
+                title={p.summary}
+                aria-pressed={props.selected === p.agent_profile_id}
+                aria-describedby={p.delivers ? `delivers-${p.agent_profile_id}` : undefined}
+                class="rounded-full px-4 py-1.5 text-sm font-semibold"
+                style={props.selected === p.agent_profile_id
+                  ? { 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }
+                  : PILL}
+                onClick={() => props.onPick(p)}
+              >
+                {p.name}
+              </button>
+              <Show when={p.delivers}>
+                <span id={`delivers-${p.agent_profile_id}`} class="px-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{p.delivers}</span>
+              </Show>
+            </div>
+          )}
+        </For>
+      </div>
+    </div>
+  </Show>
+);
 
 const ModelGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
   <div class="space-y-1.5">

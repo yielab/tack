@@ -24,4 +24,9 @@ describe('installLine', () => {
     expect(installLine('make deps', check)).toBe('Replaced: make deps');
     expect(installLine('', check)).toBe('Install turned off');
   });
+
+  it('says a profile that runs no commands installs nothing, whatever the project prepares', () => {
+    expect(installLine('make deps', null, false)).toBe('No install: this profile runs no commands');
+    expect(installLine('make deps', null, true)).toBe('Replaced: make deps');
+  });
 });

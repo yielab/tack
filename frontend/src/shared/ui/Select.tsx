@@ -11,6 +11,7 @@ import { FieldShell, type FieldHelp } from './Field';
 export interface SelectOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 export interface SelectProps
@@ -83,7 +84,7 @@ const Select: Component<SelectProps> = (props) => {
       >
         {local.options ? (
           <For each={local.options}>
-            {(o) => <option value={o.value}>{o.label}</option>}
+            {(o) => <option value={o.value} disabled={o.disabled}>{o.label}</option>}
           </For>
         ) : (
           local.children

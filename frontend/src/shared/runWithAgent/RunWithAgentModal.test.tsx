@@ -461,6 +461,76 @@ describe('RunWithAgentModal', () => {
     expect(lastCreateBody).toMatchObject({ selector_kind: 'exact_runner', selector_id: 'runner-1' });
   });
 
+  it('a runner that does not answer is shown disabled with since when, and is never the fixed line', async () => {
+    const silent = { ...runnerRow('runner-2', 'Build box', runnerCapabilitySnapshot()), online: false };
+    mount({}, { runners: [RUNNER, silent], fleets: [] });
+    await flush();
+    await flush();
+    const option = [...select('Machine or group').options].find((o) => o.value === 'exact_runner:runner-2')!;
+    expect(option.disabled).toBe(true);
+    expect(option.textContent).toMatch(/^Build box \(not answering since .+\)$/);
+    expect(document.querySelector('[data-testid="run-target-fixed"]')).toBeNull();
+    // The one that answers is still chosen for the person.
+    expect(select('Machine or group').value).toBe('exact_runner:runner-1');
+  });
+
+  it('one answering runner and no group is one fixed line, "Runs on this computer" for this computer', async () => {
+    mount({}, { runners: [{ ...RUNNER, name: 'This computer (dev)' }], fleets: [] });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-target-fixed"]')?.textContent).toBe('Runs on this computer');
+    expect(document.querySelector('label[for]')?.textContent).not.toContain('Machine or group');
+  });
+
+  it('a profile pick picks its agent and says so, only while that choice stands', async () => {
+    const both = runnerRow('runner-9', 'Two agents', runnerCapabilitySnapshot({
+      harnesses: ['codex', 'claude-code'].map((harness_kind) => ({
+        harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: false,
+      })),
+    }));
+    const claudeProfile = { ...PROFILE_2, tool_policy: { tools: { 'claude-code': ['Read'] } } };
+    mount({}, {
+      runners: [both], fleets: [], agentProfiles: [PROFILE, claudeProfile],
+      project: { ...PROJECT, default_profile_id: 'profile-1' }, runSettings: { harness: 'codex' },
+    });
+    await flush();
+    await flush();
+    const notice = () => document.querySelector('[data-testid="profile-agent-notice"]')?.textContent;
+    expect(select('Agent').value).toBe('codex');
+    expect(notice()).toBeUndefined();
+    const pill = (name: string) => Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === name) as HTMLButtonElement;
+    pill('Fixer').click();
+    await flush();
+    expect(select('Agent').value).toBe('claude-code');
+    expect(notice()).toContain('Fixer runs on Claude Code');
+    // Choosing the agent by hand afterwards ends the notice.
+    setSelect(select('Agent'), 'codex');
+    await flush();
+    expect(notice()).toBeUndefined();
+  });
+
+  it('lists the profiles the person made first, each with what it delivers, and the built-in ones apart', async () => {
+    const mine = { ...PROFILE_2, name: 'Fixer', delivers: 'a change on a branch' };
+    const builtIn = { ...PROFILE, name: 'Reviewer', builtin: true, kind: 'reviewer' };
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [builtIn, mine] });
+    await flush();
+    await flush();
+    const group = document.querySelector('[role="group"][aria-label="Profile"]')!;
+    const names = [...group.querySelectorAll('button')].map((b) => b.textContent);
+    expect(names).toEqual(['Fixer', 'Reviewer']);
+    expect(group.textContent).toContain('Your profiles');
+    expect(group.textContent).toContain('Built in');
+    expect(group.textContent).toContain('a change on a branch');
+  });
+
+  it('a profile that runs no commands says nothing is installed', async () => {
+    const reader = { ...PROFILE, runs_commands: false };
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [reader] });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-install"]')?.textContent).toBe('No install: this profile runs no commands');
+  });
+
   it('shows a combined machine/group picker, by name, when more than one target exists', async () => {
     mount({}, { runners: [RUNNER], fleets: [FLEET] });
     await flush();
