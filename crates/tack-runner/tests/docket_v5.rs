@@ -785,7 +785,7 @@ async fn a_task_without_cache_figures_counts_whole() {
 }
 
 #[tokio::test]
-async fn a_done_task_brings_its_branch_into_the_worktree() {
+async fn a_done_task_names_its_branch_head_and_leaves_the_worktree_alone() {
     let fake = pods_fake().await;
     let scene = scene();
     fake.script(Script {
@@ -798,14 +798,22 @@ async fn a_done_task_brings_its_branch_into_the_worktree() {
     let (outcome, steps) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    // Nothing is checked out or reset: the work is read from the branch.
+    assert_eq!(git(&scene.workspace, &["rev-parse", "HEAD"]), base);
+    assert!(!scene.workspace.join("src/retry.rs").exists());
+    let branch = outcome.terminal_reason["branch"].as_str().unwrap();
+    let head = outcome.terminal_reason["head_commit"].as_str().unwrap();
     assert_eq!(
-        std::fs::read_to_string(scene.workspace.join("src/retry.rs")).unwrap(),
-        "pub fn retry() {}\n"
+        git(
+            &scene.repository,
+            &["rev-parse", &format!("refs/heads/{branch}")]
+        ),
+        head
     );
     assert_eq!(
         git(
-            &scene.workspace,
-            &["diff", "--name-only", &format!("{base}..HEAD")]
+            &scene.repository,
+            &["diff", "--name-only", &format!("{base}..{head}")]
         ),
         "src/retry.rs"
     );
@@ -1646,9 +1654,13 @@ async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
         .expect("joins")
         .expect("outcome");
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let branch = outcome.terminal_reason["branch"].as_str().unwrap();
     assert_eq!(
-        std::fs::read_to_string(scene.workspace.join("src/retry.rs")).unwrap(),
-        "pub fn retry() {}\n"
+        git(
+            &scene.repository,
+            &["show", &format!("refs/heads/{branch}:src/retry.rs")]
+        ),
+        "pub fn retry() {}"
     );
     assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
     assert_eq!(fake.requests_to("POST", "/approvals/apr-1").len(), 1);

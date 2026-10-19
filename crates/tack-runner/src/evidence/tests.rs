@@ -57,6 +57,7 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
         None,
         None,
         ("Tack <t@localhost>", "work"),
+        None,
     )
     .await;
 
@@ -133,6 +134,7 @@ async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
             None,
             None,
             ("Tack <t@localhost>", "work"),
+            None,
         )
     };
 

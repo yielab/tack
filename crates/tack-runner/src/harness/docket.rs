@@ -3,8 +3,9 @@
 //! [`HarnessProbe`] directly against docket's operator API (version 5): it
 //! posts the attempt as a task to the team the profile names, follows the
 //! task's hops on the trace, carries docket's approvals and questions to the
-//! person, and brings the finished branch into the runner's own worktree so
-//! evidence, the verifier and the push read it unchanged.
+//! person, and names the finished branch's commit in the user's repository, where
+//! the evidence, the verifier and the push read it. The runner makes no copy of
+//! the code for a docket run.
 //!
 //! What the API and the fake that stands in for it are built on is in
 //! `fixtures/docket/v5/README.md`.
@@ -118,8 +119,8 @@ fn capabilities() -> FeatureCapabilities {
         ),
         artifacts: capability(
             CapabilitySupport::Supported,
-            "the task's branch is brought into the runner's worktree, so the evidence is the \
-             diff of what docket committed",
+            "the evidence is the diff, in the repository, from the base commit to the task's \
+             branch, which is what docket committed",
         ),
         usage: capability(
             CapabilitySupport::Supported,
@@ -307,42 +308,51 @@ impl DocketAdapter {
         LocalRunHandle { process_id }
     }
 
-    /// `git reset --hard` of the runner's worktree onto the task's branch.
-    async fn bring_in(workspace: &Path, branch: &str) -> Result<(), String> {
+    /// The commit the task's branch stands on in the repository, which is
+    /// where docket left the work. Nothing is checked out or moved.
+    async fn branch_head(repository: &Path, branch: &str) -> Result<String, String> {
         if branch.is_empty() || branch.starts_with('-') {
             return Err("docket named no usable branch for the task".to_owned());
         }
         let output = tokio::process::Command::new("git")
             .arg("-C")
-            .arg(workspace)
-            .args(["reset", "--hard", &format!("refs/heads/{branch}")])
+            .arg(repository)
+            .args([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{branch}^{{commit}}"),
+            ])
             .output()
             .await
             .map_err(|_| "git could not be run".to_owned())?;
-        if output.status.success() {
-            Ok(())
+        let head = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if output.status.success() && !head.is_empty() {
+            Ok(head)
         } else {
             Err(format!(
-                "the task's branch could not be brought into the worktree: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
+                "the task's branch {branch:?} is not in the repository"
             ))
         }
     }
 
-    /// The commit the runner's worktree stands on, which is where the task
-    /// branch is cut; the request's own base revision when git cannot say.
+    /// The commit the request's base revision names in the repository, which
+    /// is where the task branch is cut; the revision as written when git
+    /// cannot say.
     async fn base_commit(spec: &ExecutionSpec) -> String {
-        let head = tokio::process::Command::new("git")
+        let revision = &spec.workspace.base_revision;
+        let commit = tokio::process::Command::new("git")
             .arg("-C")
             .arg(&spec.workspace.path)
-            .args(["rev-parse", "HEAD"])
+            .args(["rev-parse", "--verify", "--quiet"])
+            .arg(format!("{revision}^{{commit}}"))
             .output()
             .await
             .ok()
             .filter(|output| output.status.success())
             .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-            .filter(|head| !head.is_empty());
-        head.unwrap_or_else(|| spec.workspace.base_revision.clone())
+            .filter(|commit| !commit.is_empty());
+        commit.unwrap_or_else(|| revision.clone())
     }
 }
 
@@ -960,8 +970,8 @@ impl DocketAdapter {
         let (state, reason) = match status {
             "done" => {
                 let branch = task["worktree"]["branch"].as_str().unwrap_or_default();
-                match Self::bring_in(&info.workspace, branch).await {
-                    Ok(()) => {
+                match Self::branch_head(&info.workspace, branch).await {
+                    Ok(head) => {
                         let mut untracked = 0;
                         if let Ok(diff) = self.client.task_diff(&info.pod, &info.task).await
                             && diff.status == 200
@@ -984,8 +994,10 @@ impl DocketAdapter {
                                 usage: None,
                             });
                         }
+                        // `head_commit` is where the engine reads the work from.
                         let mut reason = json!({"code": "done", "team": info.pod,
                                                 "task": info.task, "branch": branch,
+                                                "head_commit": head,
                                                 "base_commit": task["worktree"]["baseCommit"]});
                         // The engine names them when the branch turns out to equal its base.
                         if untracked > 0 {
@@ -1040,7 +1052,7 @@ impl HarnessAdapter for DocketAdapter {
             .work
             .workspace_repository()
             .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
-        if repository.workspace_mode != crate::client::WorkspaceMode::LocalBranch {
+        if repository.workspace_mode != crate::client::WorkspaceMode::Repository {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
         let team = Self::named_team(spec);

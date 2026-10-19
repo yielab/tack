@@ -37,6 +37,8 @@ use tack_runner::{
 mod common;
 use common::temp_dir as temp_root;
 use common::usage;
+#[allow(dead_code)] // the fake serves more routes than these tests use
+mod fake_docket;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///
@@ -1326,4 +1328,351 @@ async fn a_change_to_how_the_work_is_checked_is_named_in_the_pack() {
             "{path} is missing from {reasons:?}"
         );
     }
+}
+
+// ---------------------------------------------------------------------
+// A docket run makes no checkout of its own.
+// ---------------------------------------------------------------------
+
+/// The user's repository, with a bare `origin` to push to, and a working tree
+/// that is dirty on purpose: a staged file, an unstaged edit and an untracked
+/// file. Returns (repository, remote, base commit).
+fn dirty_repository(root: &Path) -> (PathBuf, PathBuf, String) {
+    let repository = root.join("repository");
+    std::fs::create_dir_all(&repository).expect("repository");
+    run_git(
+        &repository,
+        &["-c", "init.defaultBranch=main", "init", "--quiet"],
+    );
+    run_git(&repository, &["config", "user.email", "me@example.invalid"]);
+    run_git(&repository, &["config", "user.name", "Me"]);
+    std::fs::write(repository.join("README.md"), "base\n").expect("readme");
+    std::fs::write(repository.join("kept.txt"), "kept\n").expect("kept");
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "--quiet", "-m", "base"]);
+    let base = run_git(&repository, &["rev-parse", "HEAD"]);
+    let remote = bare_clone(&repository, root, "remote.git");
+    run_git(
+        &repository,
+        &["remote", "add", "origin", remote.to_str().expect("utf-8")],
+    );
+    std::fs::write(repository.join("README.md"), "edited, not staged\n").expect("edit");
+    std::fs::write(repository.join("staged.txt"), "staged\n").expect("staged");
+    run_git(&repository, &["add", "staged.txt"]);
+    std::fs::write(repository.join("untracked.txt"), "untracked\n").expect("untracked");
+    (repository, remote, base)
+}
+
+/// Everything about a repository's working tree, index and `HEAD` that a run
+/// must leave as it found them.
+fn tree_state(repository: &Path) -> Vec<String> {
+    vec![
+        run_git(repository, &["rev-parse", "HEAD"]),
+        run_git(repository, &["symbolic-ref", "HEAD"]),
+        run_git(repository, &["status", "--porcelain=v1", "-uall"]),
+        run_git(repository, &["ls-files", "--stage"]),
+        std::fs::read_to_string(repository.join("README.md")).expect("readme"),
+        std::fs::read_to_string(repository.join("untracked.txt")).expect("untracked"),
+    ]
+}
+
+/// The frozen claim, as the board makes one for a docket team on a local repository.
+fn docket_work(attempt: &str, repository: &Path, revision: &str) -> ClaimedWork {
+    let mut claimed = work(attempt, repository, revision);
+    claimed.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("docket");
+    claimed.request.requested_model = None;
+    claimed.request.resolved_agent_profile.tool_policy =
+        serde_json::json!({"docket": {"team": "fab-dev"}});
+    claimed.request.permission_policy.network = false;
+    claimed.request.metadata = serde_json::json!({"item": {"type": "feature", "trusted": true}});
+    let additional = &mut claimed.request.repository.additional;
+    additional.insert("workspace_mode".to_owned(), "local_branch".into());
+    additional.insert("push_after_run".to_owned(), true.into());
+    additional.insert(
+        "repository_path".to_owned(),
+        repository.display().to_string().into(),
+    );
+    claimed
+}
+
+struct DocketRun {
+    _root: tempfile::TempDir,
+    repository: PathBuf,
+    remote: PathBuf,
+    workspaces: PathBuf,
+    base: String,
+    fake: fake_docket::FakeDocket,
+    uploads: RecordedUploads,
+    report: CompletionReport,
+    state_before: Vec<String>,
+    state_after: Vec<String>,
+    prill_args: String,
+    prill_document: serde_json::Value,
+}
+
+/// One docket attempt through the real engine, the real git provisioner and
+/// the in-process docket, against a dirty repository, with a prill that
+/// records its command line. `by_name` asks for the base as `main`.
+async fn run_docket(label: &str, by_name: bool) -> DocketRun {
+    let root_dir = temp_root(label);
+    let root = root_dir.path();
+    let (repository, remote, base) = dirty_repository(root);
+    let fake = fake_docket::FakeDocket::start().await;
+    fake.add_pod("fab-dev", "lights-out", &[]);
+    fake.set_repository(&repository);
+    fake.script(fake_docket::Script {
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        ..fake_docket::Script::default()
+    });
+    let adapter = tack_runner::harness::docket::DocketAdapter::new(
+        tack_runner::config::DocketConfig {
+            base_url: Some(fake.base_url.clone()),
+            token_file: Some(fake.token_file()),
+            ..Default::default()
+        },
+        root.join("state"),
+    );
+    let revision = if by_name { "main" } else { base.as_str() };
+    let protocol = FakeProtocol::new(docket_work(label, &repository, revision), false);
+    let completions = protocol.completions.clone();
+    let uploads = RecordedUploads::default();
+    let workspaces = root.join("workspaces");
+    let args_file = root.join("prill-args");
+    // Records its command line and the evidence document it was handed.
+    let program = script(
+        root,
+        "prill.sh",
+        &format!(
+            "printf '%s\\n' \"$@\" > {}\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --evidence ]; then cp \"$2\" {}; fi\n  shift\ndone\necho '{{}}'\n",
+            args_file.display(),
+            root.join("received-evidence").display()
+        ),
+    );
+    let engine = git_engine(
+        protocol,
+        adapter,
+        OwnerOnlyJournal::new(root.join("journal")),
+        &workspaces,
+    )
+    .with_data_protocol(Arc::new(uploads.clone()))
+    .with_git(tack_runner::config::GitConfig {
+        push_branches: true,
+        ..Default::default()
+    })
+    .with_verify(
+        verifier(tack_runner::config::VerifyKind::Prill, &program),
+        tack_runner::harness::process::ProcessLimits::new(
+            1 << 20,
+            1 << 20,
+            Duration::from_secs(60),
+        ),
+    );
+    let state_before = tree_state(&repository);
+    engine
+        .run_once(&session(), claim(label))
+        .await
+        .expect("the attempt runs");
+    let state_after = tree_state(&repository);
+    let report = completions.lock().expect("completions")[0].clone();
+    DocketRun {
+        prill_args: std::fs::read_to_string(&args_file).unwrap_or_default(),
+        prill_document: std::fs::read(root.join("received-evidence"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default(),
+        _root: root_dir,
+        repository,
+        remote,
+        workspaces,
+        base,
+        fake,
+        uploads,
+        report,
+        state_before,
+        state_after,
+    }
+}
+
+#[tokio::test]
+async fn a_docket_run_makes_no_checkout_and_sends_the_base_commit() {
+    let ran = run_docket("docket-nocheckout", true).await;
+    assert_eq!(
+        ran.report.terminal_state,
+        AttemptState::Succeeded,
+        "{}",
+        ran.report.terminal_reason
+    );
+    assert_eq!(
+        std::fs::read_dir(&ran.workspaces).expect("root").count(),
+        0,
+        "no directory is made for the attempt"
+    );
+    // The base was asked for as `main`; docket is told the commit it names.
+    let posted = ran.fake.requests_to("POST", "/tasks/fab-dev");
+    assert_eq!(posted[0].body["baseRef"], serde_json::json!(ran.base));
+    assert_eq!(ran.report.actual_execution.base_revision, "main");
+}
+
+#[tokio::test]
+async fn a_docket_run_leaves_a_dirty_working_tree_exactly_as_it_was() {
+    let ran = run_docket("docket-dirty", false).await;
+    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(ran.state_before, ran.state_after);
+    assert!(
+        ran.state_after[2].contains("untracked.txt"),
+        "the tree was dirty"
+    );
+}
+
+#[tokio::test]
+async fn a_docket_runs_evidence_and_push_come_from_its_branch() {
+    let ran = run_docket("docket-evidence", false).await;
+    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    let docket_branch = ran.report.terminal_reason["branch"]
+        .as_str()
+        .expect("branch");
+    let head = run_git(
+        &ran.repository,
+        &["rev-parse", &format!("refs/heads/{docket_branch}")],
+    );
+
+    let evidence: serde_json::Value =
+        serde_json::from_slice(&ran.uploads.named("evidence.json").expect("evidence"))
+            .expect("json");
+    assert_eq!(evidence["captured"], true);
+    assert_eq!(evidence["base_commit"], ran.base.as_str());
+    assert_eq!(evidence["head_commit"], head.as_str());
+    let files: serde_json::Value =
+        serde_json::from_slice(&ran.uploads.named("files.json").expect("files")).expect("json");
+    assert_eq!(
+        files,
+        serde_json::json!([{"path": "src/retry.rs", "op": "added"}])
+    );
+    let patch =
+        String::from_utf8_lossy(&ran.uploads.named("changes.patch").expect("patch")).into_owned();
+    assert!(patch.contains("+pub fn retry() {}"), "{patch}");
+    assert!(
+        !patch.contains("untracked.txt") && !patch.contains("staged.txt"),
+        "the user's own changes are not the run's"
+    );
+
+    // The branch the runner makes is docket's commit, in the repository and on the remote.
+    let pushed = remote_branches(&ran.remote);
+    assert_eq!(pushed.lines().count(), 1, "{pushed}");
+    assert_eq!(
+        run_git(&ran.remote, &["rev-parse", &format!("refs/heads/{pushed}")]),
+        head
+    );
+    assert_eq!(
+        run_git(
+            &ran.repository,
+            &["rev-parse", &format!("refs/heads/{pushed}")]
+        ),
+        head
+    );
+    assert_eq!(
+        ran.report.actual_execution.additional["git"]["pushed"],
+        true
+    );
+}
+
+#[tokio::test]
+async fn prill_is_given_the_repository_and_the_two_commits() {
+    let ran = run_docket("docket-prill", false).await;
+    let repository = std::fs::canonicalize(&ran.repository).expect("repository");
+    let args: Vec<&str> = ran.prill_args.lines().collect();
+    assert_eq!(
+        &args[..3],
+        ["verify", "--repo", repository.to_str().expect("utf-8")]
+    );
+    // The commits ride the evidence document, which prill takes in place of --base/--head.
+    let docket_branch = ran.report.terminal_reason["branch"]
+        .as_str()
+        .expect("branch");
+    let head = run_git(
+        &ran.repository,
+        &["rev-parse", &format!("refs/heads/{docket_branch}")],
+    );
+    assert_eq!(ran.prill_document["baseCommit"], ran.base.as_str());
+    assert_eq!(ran.prill_document["headCommit"], head.as_str());
+}
+
+/// An unsettled docket attempt in the journal, whose workspace is `path`
+/// (made by `workspace`), and the restart that follows. Returns the restart's
+/// outcomes.
+async fn recover_unsettled_docket_attempt(
+    label: &str,
+    workspace: impl FnOnce(&Path, &Path, &str, &str) -> PathBuf,
+) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let root_dir = temp_root(label);
+    let root = root_dir.path();
+    let (repository, _remote, base) = dirty_repository(root);
+    let workspaces = root.join("workspaces");
+    std::fs::create_dir_all(&workspaces).expect("workspaces");
+    let claimed = docket_work(label, &repository, &base);
+    let hex: String = label.bytes().map(|byte| format!("{byte:02x}")).collect();
+    let path = workspace(&repository, &workspaces.join(&hex), label, &base);
+    let journal = OwnerOnlyJournal::new(root.join("journal"));
+    let mut record = tack_runner::client::AttemptJournal::prepared(
+        &claimed.lease,
+        tack_runner::client::WorkspaceJournal {
+            workspace_id: tack_runner::client::WorkspaceId::new(format!("ws_{hex}")),
+            path: path.clone(),
+            base_revision: base,
+        },
+    );
+    record.claimed_work = Some(claimed.clone());
+    journal.persist_before_spawn(&record).expect("journal");
+
+    let restarted = git_engine(
+        FakeProtocol::new(claimed, false),
+        RealProcessAdapter::default(),
+        journal.clone(),
+        &workspaces,
+    );
+    let outcomes = restarted.recover(&session()).await.expect("recovery");
+    assert_eq!(outcomes.len(), 1);
+    assert!(journal.unresolved().expect("journal").is_empty());
+    (root_dir, repository, path)
+}
+
+#[tokio::test]
+async fn the_restart_removes_the_checkout_an_older_runner_made_for_a_docket_run() {
+    let (_root, repository, old) =
+        recover_unsettled_docket_attempt("docket-old", |repository, target, label, base| {
+            run_git(
+                repository,
+                &[
+                    "worktree",
+                    "add",
+                    "--detach",
+                    target.to_str().expect("utf-8"),
+                    base,
+                ],
+            );
+            std::fs::write(target.join(".tack-attempt"), label).expect("marker");
+            std::fs::write(target.join(CHECKOUT_MARKER), base).expect("checkout marker");
+            target.to_path_buf()
+        })
+        .await;
+    assert!(!old.exists(), "the old-style checkout is cleaned as before");
+    assert!(repository.join("kept.txt").exists());
+}
+
+#[tokio::test]
+async fn the_restart_never_removes_the_repository_a_docket_run_worked_from() {
+    let (_root, repository, path) =
+        recover_unsettled_docket_attempt("docket-new", |repository, _, _, _| {
+            std::fs::canonicalize(repository).expect("repository")
+        })
+        .await;
+    assert_eq!(
+        path,
+        std::fs::canonicalize(&repository).expect("repository")
+    );
+    assert!(repository.join("kept.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(repository.join("README.md")).expect("readme"),
+        "edited, not staged\n"
+    );
 }

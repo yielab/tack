@@ -211,6 +211,12 @@ pub enum WorkspaceMode {
     LocalBranch,
     /// Parsed so the request is understood; not provisioned yet.
     InPlace,
+    /// The user's repository itself, with no copy made: the harness works in
+    /// its own checkout and leaves commits here, which are read as they are.
+    /// Never read from a claim: [`ClaimedWork::workspace_repository`] picks
+    /// it for the harness that works this way.
+    #[serde(skip_deserializing)]
+    Repository,
 }
 
 #[derive(Debug, Clone)]
@@ -301,10 +307,18 @@ impl ClaimedWork {
             return Err(ClaimedWorkError::RepositoryRevisionMismatch);
         }
         let additional = &self.request.repository.additional;
-        let workspace_mode = additional
+        let mut workspace_mode = additional
             .get("workspace_mode")
             .and_then(|mode| serde_json::from_value(mode.clone()).ok())
             .unwrap_or_default();
+        // docket makes and works in its own worktree of the repository, so a
+        // second copy here would only be read for two commits.
+        if workspace_mode == WorkspaceMode::LocalBranch
+            && self.request.requested_harness_kind.as_str()
+                == crate::harness::docket::DESCRIPTOR.kind
+        {
+            workspace_mode = WorkspaceMode::Repository;
+        }
         let repository_path = additional
             .get("repository_path")
             .and_then(|path| path.as_str())
