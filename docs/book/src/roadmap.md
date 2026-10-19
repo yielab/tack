@@ -95,6 +95,17 @@ plan or the page named beside it.
 - The runner the app starts keeps its state under the app's own data folder, so it enrolls as a
   new runner, and the runner the terminal board used stays listed after it stopped sending
   heartbeats.
+- The Run dialog's "Machine or group" cannot be read and can pick a dead runner:
+  - The board names its own runner `local-<random id>`. It should be named "This computer
+    (<host name>)", and a runner on another machine after that machine.
+  - The list offers every enrolled runner, including one that stopped answering. A runner that does
+    not answer should be shown disabled, with "not answering since <time>".
+  - With one live runner and no group, the field should be one fixed line ("Runs on this
+    computer"), not a choice. Today a dead runner in the list makes it a choice between two ids.
+- A run queued for a runner that does not answer waits forever without a reason. The reason is
+  written only by a polling runner, and a runner the request does not name writes none on
+  purpose; "No runner is online" appears only when no runner answers at all. The card should say
+  "The computer this run asked for has not answered since <time>" and offer to run it on another.
 
 ---
 
