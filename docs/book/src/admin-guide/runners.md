@@ -415,6 +415,20 @@ replace the command with its own single line or turn the install off. The same s
 dialog show what will run. For a folder on the board's own computer the board reads the lockfile
 itself; for any other project the line says it is detected on the runner when the run starts.
 
+For Claude Code, Codex and opencode the runner makes the copy of the code the agent works in, so it
+also runs the command there, before the agent starts. It runs with the runner's own environment,
+network included, and within the run's time limit. What npm, pnpm and yarn install into
+`node_modules` is kept once in the runner's state folder, under `prepare-cache`, per lockfile. The
+next run with the same lockfile gets its own `node_modules` whose files are hard links to the kept
+ones, so it prepares in seconds without running the command and without copying the packages; the
+state folder and the workspaces must therefore be on the same filesystem, and when they are not the
+command simply runs every time. A file named `.tack-prepared` in that folder marks it as the runner's, and
+the folder is not counted as the agent's change. `uv sync`, `poetry install`, `cargo fetch` and a
+command a project replaced keep nothing and run every time. If the command exits with an error or
+runs out of time, the run ends as failed before the agent starts and spends no tokens; its reason is
+"Could not prepare the dependencies", the command and how it ended, and the last lines of its output.
+A docket run is prepared by docket, not by the runner.
+
 ## Non-loopback and security posture
 
 The routes a runner uses (`/api/runner/v1/*`) are separate from the operator routes. They do not use
