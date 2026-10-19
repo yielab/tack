@@ -236,6 +236,7 @@ fn main() {
             let paths = DataPaths::resolve().map_err(|e| e.to_string())?;
 
             tray::build(&handle).map_err(|e| e.to_string())?;
+            lifecycle::exit_on_signal(handle.clone());
 
             tauri::async_runtime::spawn(async move {
                 // Runs on a runtime worker thread, not the one `setup()`
@@ -379,8 +380,8 @@ fn main() {
         .expect("error while building the tauri application")
         .run(|app_handle, event| {
             // The window hides rather than closes, so this fires only from
-            // an explicit Quit or an external signal — never from a window
-            // close. Either way, a spawned child must never outlive the app.
+            // an explicit Quit or a stop signal (`lifecycle::exit_on_signal`)
+            // — never from a window close. Either way, a spawned child must never outlive the app.
             if let RunEvent::ExitRequested { .. } = event
                 && let Some(state) = app_handle.try_state::<DesktopState>()
             {

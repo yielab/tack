@@ -135,6 +135,52 @@ fn quit_warning_message(in_flight: usize) -> String {
     format!("{in_flight} agent {noun} {verb} running. Quit anyway?")
 }
 
+/// Registers SIGTERM, SIGINT and SIGHUP (Ctrl-C only, off Unix) and returns
+/// the future that resolves on the first of them. Registration happens in this
+/// call, so a signal sent right after it is not lost. Needs a Tokio runtime.
+fn stop_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate())?;
+        let mut interrupt = signal(SignalKind::interrupt())?;
+        let mut hangup = signal(SignalKind::hangup())?;
+        Ok(async move {
+            tokio::select! {
+                _ = term.recv() => {}
+                _ = interrupt.recv() => {}
+                _ = hangup.recv() => {}
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+    }
+}
+
+/// Makes a signal sent to the app end it the way the tray's Quit does, minus
+/// the confirmation (a signal is not someone at the tray): `exit` reaches
+/// `main.rs`'s `ExitRequested` handler, which stops a server this app started
+/// and leaves an attached one alone. Without this, SIGTERM killed the app and
+/// left its server running as an orphan for the next app to attach to.
+pub fn exit_on_signal(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let stop = match stop_signal() {
+            Ok(stop) => stop,
+            Err(err) => {
+                tracing::error!(error = %err, "cannot listen for stop signals");
+                return;
+            }
+        };
+        stop.await;
+        tracing::info!("stop signal received; quitting");
+        app.exit(0);
+    });
+}
+
 /// A fetch or parse failure counts as zero in flight: Quit must never hang
 /// or become unusable because a health check hiccuped. The graceful-then-kill
 /// shutdown a spawned server gets either way does not depend on this count.
@@ -162,6 +208,17 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_hangup_resolves_the_stop_signal_instead_of_ending_the_process() {
+        let stop = stop_signal().expect("handlers register");
+        // SAFETY: raises a signal on this process, whose handler is installed.
+        unsafe { libc::raise(libc::SIGHUP) };
+        tokio::time::timeout(Duration::from_secs(5), stop)
+            .await
+            .expect("the signal reaches the listener");
+    }
 
     #[test]
     fn quit_warning_message_agrees_with_the_count() {

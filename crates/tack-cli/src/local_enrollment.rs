@@ -35,10 +35,42 @@ pub(crate) fn stored_session_placeholder() -> EnrollmentCredential {
     EnrollmentCredential::new("stored-session-on-disk-no-token-needed")
 }
 
+/// This computer's host name, empty when the system will not say.
+fn host_name() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .unwrap_or_default()
+}
+
+/// Names the runner the stored session belongs to after this computer, when it
+/// still has the generated name an earlier version gave it: the runner keeps
+/// its identity and its credential, and only reads differently on the board.
+/// A runner a person named is left alone. Best effort: a failure is logged,
+/// never a reason not to start.
+pub async fn name_stored_runner_after_this_computer(state_dir: &Path, database_url: &str) {
+    let Some(runner_id) = tack_runner::client::persisted_session_runner_id(state_dir) else {
+        return;
+    };
+    match runner_admin::name_local_runner_after_host(database_url, &runner_id, &host_name()).await {
+        Ok(true) => tracing::info!(%runner_id, "named the embedded runner after this computer"),
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(%error, "could not name the embedded runner after this computer");
+        }
+    }
+}
+
 /// Self-provisions a runner and returns its one-time token, redacted and
 /// never logged; the caller redeems it over loopback HTTP like any runner.
 pub async fn self_provision(database_url: &str) -> anyhow::Result<EnrollmentCredential> {
-    let response = runner_admin::provision_local_runner(database_url)
+    let response = runner_admin::provision_local_runner(database_url, &host_name())
         .await
         .map_err(|err| anyhow::anyhow!("self-provisioning a local runner failed: {err}"))?;
     tracing::info!(

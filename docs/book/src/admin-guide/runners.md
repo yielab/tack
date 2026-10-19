@@ -140,6 +140,10 @@ running.
 - **No enrollment.** On a fresh state directory it creates its own pending runner and redeems its own
   token. No token is printed or configured. A later start with the same state directory reuses the
   stored credential instead of creating a second runner.
+- **Its name** is "This computer (host name)", the name of the machine it runs on. A runner the
+  board enrolled earlier under a generated `local-…` name takes it on its next start and keeps its
+  identity and credential; a name you chose yourself is never changed. A runner on another machine
+  has the name you gave it when you enrolled it.
 - **Loopback only.** `TACK_HOST` must be a loopback address. A board bound anywhere else refuses to
   start with the embedded runner, before it opens a socket or the database, and never falls back to
   a board without a runner. The Agents page then says the embedded runner is not available. An
@@ -167,8 +171,8 @@ run) applies to an embedded runner exactly as to a separate one.
 
 <a id="where-tack-looks-for-a-harness-binary"></a>
 
-The Agents page's "installed" check and the runner's own start-up probe find `codex`, `claude` and
-`opencode` the same way. They look on the runner process's own `PATH` first, as a shell would. If
+The Agents page's "installed" check and the runner's own start-up probe find `codex`, `claude`,
+`opencode` and `docket` the same way. They look on the runner process's own `PATH` first, as a shell would. If
 that finds nothing, the runner checks a fixed list of per-user install folders. A terminal usually
 has them on its `PATH`, but a desktop launcher or a systemd user service usually does not:
 
@@ -177,7 +181,9 @@ has them on its `PATH`, but a desktop launcher or a systemd user service usually
 - `~/.bun/bin`
 - `~/.npm-global/bin` and `~/.npm/bin`
 - the `bin` folder of every Node version under `~/.nvm/versions/node/`
-- `/opt/homebrew/bin` and `/usr/local/bin` (Homebrew)
+- `~/.linuxbrew/bin`
+- `/opt/homebrew/bin` (Homebrew on macOS), `/home/linuxbrew/.linuxbrew/bin` (Homebrew on Linux) and
+  `/usr/local/bin`
 - on Windows, `%APPDATA%\npm` and `%LOCALAPPDATA%\nvm`
 
 The list is fixed; no `TACK_*` variable changes it. A machine whose shell already sees the install is
@@ -185,9 +191,14 @@ unaffected, because `PATH` is searched first and the first match wins. If neithe
 program, the error names every folder it checked. Install the agent in any of them, or put it on the
 `PATH` the runner inherits.
 
-docket is not found this way. It is a daemon the runner talks to, so the runner knows it only through
-the `[docket]` table. Without one, the doctor reports "docket is not configured: add a [docket] table
-with its binary or base_url".
+docket is still turned on only by the `[docket]` table, because it is a daemon the runner talks to.
+Without one, the doctor reports "docket is not configured: add a [docket] table with its binary or
+base_url". When the table's `binary` is a bare name such as `docket`, the runner looks for it in the
+folders above; a path is used as written.
+
+When the desktop app starts the board, it also stops it: quitting from the tray, or sending the app
+`SIGTERM`, `SIGINT` or `SIGHUP`, stops the board and its embedded runner. A board the app found
+already running is left running.
 
 ## Local credential handling
 

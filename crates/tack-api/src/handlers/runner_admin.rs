@@ -757,36 +757,86 @@ pub enum ProvisionLocalRunnerError {
     Provision(#[from] ProvisionError),
 }
 
+/// How many names ("This computer (host)", then "... 2", "... 3") are tried
+/// before a taken name is reported as a conflict.
+const LOCAL_NAME_ATTEMPTS: usize = 20;
+
+/// The name of the runner the board itself hosts: "This computer (host)", or
+/// "This computer" when the host has no name. `n` > 1 is the suffix a taken
+/// name gets (a revoked runner keeps its row, and names are unique).
+pub fn this_computer_name(host: &str, n: usize) -> String {
+    let base = match host.trim() {
+        "" => "This computer".to_owned(),
+        host => format!("This computer ({host})"),
+    };
+    if n > 1 { format!("{base} {n}") } else { base }
+}
+
 /// Self-provisions a single local runner by calling
 /// [`provision_pending_runner`] in-process against `database_url` — the same
 /// URL `tack_api::server`'s boot sequence opens — instead of over HTTP.
 /// Exists for `tack serve --with-runner`'s zero-touch local case: creating
 /// the pending runner and minting its one-time token is an admin/bootstrap
 /// concern here, not the runner protocol — the returned token is still
-/// *redeemed* over real runner-v1 HTTP, unchanged. The runner name is
-/// suffixed with a fresh UUID so a retry (e.g. after a crash between
-/// provisioning and storing the session) can't collide with an earlier
-/// pending runner.
+/// *redeemed* over real runner-v1 HTTP, unchanged. The runner is named after
+/// this computer ([`this_computer_name`], `host` being its host name); a name
+/// already taken (an earlier pending runner left by a crash, a revoked one)
+/// gets the next number, so a retry cannot collide.
 ///
 /// Opens and drops its own connection pool rather than reusing the
 /// server's: SQLite's WAL mode makes a second, short-lived pool against the
 /// same file safe — one more connection, not a competing writer.
 pub async fn provision_local_runner(
     database_url: &str,
+    host: &str,
 ) -> Result<CreatePendingRunnerResponse, ProvisionLocalRunnerError> {
     let pool = tack_db::init_pool(database_url).await?;
     let repo = Repository::new(pool);
-    let input = CreatePendingRunner {
-        name: format!("local-{}", Uuid::new_v4()),
-        labels: empty(),
-        total_capacity: 1,
-        available_capacity: 1,
-        capability_snapshot: empty(),
-        protocol_version: protocol_v1(),
-        enrollment_lifetime_seconds: default_enrollment_lifetime_seconds(),
-    };
-    let response = provision_pending_runner(&repo, &SystemExecutionClock, input).await?;
-    Ok(response)
+    let mut attempt = 1;
+    loop {
+        let input = CreatePendingRunner {
+            name: this_computer_name(host, attempt),
+            labels: empty(),
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: empty(),
+            protocol_version: protocol_v1(),
+            enrollment_lifetime_seconds: default_enrollment_lifetime_seconds(),
+        };
+        match provision_pending_runner(&repo, &SystemExecutionClock, input).await {
+            Err(ProvisionError::NameConflict) if attempt < LOCAL_NAME_ATTEMPTS => attempt += 1,
+            result => return Ok(result?),
+        }
+    }
+}
+
+/// Gives a local runner that still carries the name the board used to
+/// generate for it (`local-` and a UUID) the name [`provision_local_runner`]
+/// would give it now, so a runner enrolled earlier keeps its identity and
+/// still reads as this computer. A runner with any other name was named by a
+/// person and is left alone, as is one whose id is unknown. Returns whether a
+/// runner was renamed.
+pub async fn name_local_runner_after_host(
+    database_url: &str,
+    runner_id: &str,
+    host: &str,
+) -> Result<bool, ProvisionLocalRunnerError> {
+    let pool = tack_db::init_pool(database_url).await?;
+    let repo = Repository::new(pool);
+    for attempt in 1..=LOCAL_NAME_ATTEMPTS {
+        match repo
+            .rename_generated_local_runner(
+                runner_id,
+                &this_computer_name(host, attempt),
+                &SystemExecutionClock,
+            )
+            .await
+        {
+            Err(err) if is_unique_violation(&err) => {}
+            result => return Ok(result?),
+        }
+    }
+    Ok(false)
 }
 
 /// Whether `runner_id` still exists at `database_url` — opens and drops its
