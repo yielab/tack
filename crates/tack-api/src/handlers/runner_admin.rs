@@ -74,6 +74,7 @@ pub fn routes(state: OperatorExecutionState) -> Router {
             "/agent-profiles/{id}",
             patch(update_profile).delete(delete_profile),
         )
+        .route("/agent-profiles/{id}/history", get(profile_history))
         .with_state(state)
 }
 
@@ -1193,6 +1194,62 @@ pub async fn update_profile(
     .await
     .map_err(|_| profile_db_error("Could not read agent profile"))?;
     Ok(Json(profile_from_row(&row)?))
+}
+
+/// What a profile's last successful runs counted, and the limit proposed from them.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ProfileHistory {
+    /// Successful runs measured, at most the last 20.
+    pub n: usize,
+    pub p50: Option<i64>,
+    pub p90: Option<i64>,
+    pub min: Option<i64>,
+    pub max: Option<i64>,
+    /// 1.5 times the 90th percentile, rounded up to two figures; `null` under 5 runs.
+    pub proposal: Option<i64>,
+    /// How many successful runs it takes before a limit is proposed.
+    pub runs_needed: usize,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent-profiles/{id}/history",
+    tag = "execution-operator",
+    params(("id" = String, Path, description = "Agent profile id")),
+    responses(
+        (status = 200, description = "The counted tokens of the profile's last successful runs", body = ProfileHistory),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn profile_history(
+    State(state): State<OperatorExecutionState>,
+    Path(id): Path<String>,
+) -> Result<Json<ProfileHistory>, (StatusCode, Json<Value>)> {
+    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM agent_profiles WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(state.repo.pool())
+        .await
+        .map_err(|_| profile_db_error("Could not read agent profile"))?;
+    if exists.is_none() {
+        return Err(profile_not_found());
+    }
+    let mut runs =
+        tack_db::repo::metrics::profile_successful_run_tokens(state.repo.pool(), &id, 20)
+            .await
+            .map_err(|_| profile_db_error("Could not read the profile's runs"))?;
+    runs.sort_unstable();
+    let p90 = tack_core::run_defaults::percentile(&runs, 90);
+    Ok(Json(ProfileHistory {
+        n: runs.len(),
+        p50: tack_core::run_defaults::percentile(&runs, 50),
+        p90,
+        min: runs.first().copied(),
+        max: runs.last().copied(),
+        proposal: p90
+            .filter(|_| runs.len() >= tack_core::run_defaults::RUNS_BEFORE_PROPOSAL)
+            .map(tack_core::run_defaults::proposed_limit),
+        runs_needed: tack_core::run_defaults::RUNS_BEFORE_PROPOSAL,
+    }))
 }
 
 #[utoipa::path(

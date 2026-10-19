@@ -10,6 +10,24 @@ pub struct ProjectBudgets {
     pub tokens_per_day: Option<i64>,
     pub auto_merges_per_day: Option<i64>,
     pub queue_items_max: Option<i64>,
+    /// The token limit of a run whose profile sets none; `None` turns it off.
+    pub provisional_tokens_per_run: Option<i64>,
+}
+
+/// The provisional limit of a project that has not changed it: the cap the SWE-Effi
+/// benchmark gives one software task.
+pub const DEFAULT_PROVISIONAL_TOKENS: i64 = 2_000_000;
+
+impl Default for ProjectBudgets {
+    /// A project with no row: no daily limits, the default provisional limit.
+    fn default() -> Self {
+        Self {
+            tokens_per_day: None,
+            auto_merges_per_day: None,
+            queue_items_max: None,
+            provisional_tokens_per_run: Some(DEFAULT_PROVISIONAL_TOKENS),
+        }
+    }
 }
 
 /// 00:00 UTC of `now`'s day, as the RFC 3339 text the tables store.
@@ -26,7 +44,7 @@ pub async fn get(
     project_id: &str,
 ) -> Result<Option<ProjectBudgets>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT tokens_per_day, auto_merges_per_day, queue_items_max
+        "SELECT tokens_per_day, auto_merges_per_day, queue_items_max, provisional_tokens_per_run
          FROM project_budgets WHERE project_id = ?",
     )
     .bind(project_id)
@@ -40,20 +58,36 @@ pub async fn put(
     budgets: &ProjectBudgets,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max)
-         VALUES (?, ?, ?, ?)
+        "INSERT INTO project_budgets (project_id, tokens_per_day, auto_merges_per_day, queue_items_max,
+                                      provisional_tokens_per_run)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(project_id) DO UPDATE SET
            tokens_per_day = excluded.tokens_per_day,
            auto_merges_per_day = excluded.auto_merges_per_day,
-           queue_items_max = excluded.queue_items_max",
+           queue_items_max = excluded.queue_items_max,
+           provisional_tokens_per_run = excluded.provisional_tokens_per_run",
     )
     .bind(project_id)
     .bind(budgets.tokens_per_day)
     .bind(budgets.auto_merges_per_day)
     .bind(budgets.queue_items_max)
+    .bind(budgets.provisional_tokens_per_run)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// The token limit a run takes when neither the request nor its profile sets one:
+/// the project's provisional limit, the default when it has no row, `None` when turned off.
+pub async fn provisional_tokens(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<Option<i64>, sqlx::Error> {
+    Ok(get(pool, project_id)
+        .await?
+        .unwrap_or_default()
+        .provisional_tokens_per_run
+        .filter(|n| *n > 0))
 }
 
 /// The project that owns a queued or running request, through its item, and the
@@ -152,6 +186,28 @@ pub async fn spent_today(
     .bind(day_start(now))
     .fetch_one(pool)
     .await
+}
+
+/// What each listed request's latest attempt has counted ([`COUNTED_TOKENS_SQL`]), an open one
+/// by what it has counted so far. A request without an attempt is left out.
+pub async fn counted_by_request(
+    pool: &SqlitePool,
+    request_ids: &[String],
+) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
+    // The fragments are constants of this crate; only values are bound.
+    let rows: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT r.id, {COUNTED_TOKENS_SQL} + COALESCE(live.counted, 0)
+         FROM execution_attempts a
+         {}
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.id IN (SELECT value FROM json_each(?))
+           AND a.attempt_number = (SELECT MAX(attempt_number) FROM execution_attempts WHERE request_id = r.id)",
+        running_counted_join()
+    )))
+    .bind(serde_json::json!(request_ids).to_string())
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// A project's token limit for today and what is already spoken for. An open run

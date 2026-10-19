@@ -965,6 +965,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::runner_admin::create_profile,
         handlers::runner_admin::list_profiles,
         handlers::runner_admin::update_profile,
+        handlers::runner_admin::profile_history,
         handlers::runner_admin::delete_profile,
     ),
     components(schemas(
@@ -1068,6 +1069,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::runner_admin::CreateProfile,
         handlers::runner_admin::CreateProfileResponse,
         handlers::runner_admin::AgentProfileSummary,
+        handlers::runner_admin::ProfileHistory,
         handlers::runner_admin::AgentProfileListResponse,
         handlers::runner_admin::UpdateProfile,
         // Core domain models + DTOs

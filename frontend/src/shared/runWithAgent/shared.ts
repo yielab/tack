@@ -385,6 +385,8 @@ export interface RunWithAgentModalProps {
   projectId: string;
   /** Called with the new request id after a successful create. */
   onCreated?: (requestId: string) => void;
+  /** Opens the dialog with this token limit already typed, as "Run again with more" does. */
+  initialTokenLimit?: number;
   /** Tests only: replaces the capabilities the submit gate reads. The target
    *  picker always reads the live `GET /runners`. */
   capabilities?: () => RunnerCapabilities[];
