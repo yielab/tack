@@ -145,6 +145,12 @@ pub trait LocalRunnerControl: Send + Sync {
     async fn verify_program(&self) -> Option<String> {
         None
     }
+
+    /// The settings file the runner read at start; `None` when it runs on
+    /// defaults, which means no `[docket]`, no `[verify]` and no `[git]`.
+    fn config_file(&self) -> Option<String> {
+        None
+    }
 }
 
 fn require_control(state: &AppState) -> ApiResult<Arc<dyn LocalRunnerControl>> {
@@ -183,6 +189,7 @@ pub async fn get_local_runner(State(state): State<AppState>) -> ApiResult<Json<V
         "since": status.since,
         "max_concurrent_attempts": status.max_concurrent_attempts,
         "active_attempts": status.active_attempts,
+        "config_file": control.config_file(),
     })))
 }
 

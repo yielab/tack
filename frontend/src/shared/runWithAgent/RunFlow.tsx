@@ -42,6 +42,8 @@ export interface RunFlowProps {
   target: Accessor<string>;
   onTarget: (value: string) => void;
   rows: { runner: Accessor<PrerequisiteState>; harness: Accessor<PrerequisiteState>; profile: Accessor<PrerequisiteState>; model: Accessor<PrerequisiteState> };
+  /** Whether the card's brief has an acceptance check; undefined while it loads. Never blocks the run. */
+  checkedCard?: Accessor<boolean | undefined>;
   profilesLoading: Accessor<boolean>;
   profiles: Accessor<AgentProfileSummary[]>;
   creatingProfile: Accessor<boolean>;
@@ -209,6 +211,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
       <Show when={props.rows.harness() === 'missing'}>
         <Prerequisite state="missing" label="The agent is installed and signed in" href="/agents" fixLabel="Check the agent" />
+      </Show>
+      <Show when={props.checkedCard?.() === false}>
+        <Prerequisite state="notice" label="This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" />
       </Show>
 
       <div class="space-y-2">

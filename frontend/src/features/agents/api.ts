@@ -42,6 +42,8 @@ export interface LocalRunnerStatus {
   max_concurrent_attempts: number;
   /** How many it is running right now. */
   active_attempts: number;
+  /** The settings file the runner read; null when it runs on defaults (no docket, no verifier). */
+  config_file?: string | null;
 }
 
 export interface UpdateLocalRunnerBody {

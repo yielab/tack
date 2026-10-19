@@ -99,6 +99,14 @@ const ExecutionToggle: Component = () => {
           {' · '}
           {status()!.active_attempts} running
         </p>
+        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }} data-testid="runner-settings-file">
+          <Show
+            when={status()!.config_file}
+            fallback="No settings file: this computer runs no docket team and verifies nothing. Write ~/.config/tack/runner.toml and restart Tack."
+          >
+            Settings from {status()!.config_file}
+          </Show>
+        </p>
       </Show>
     </section>
   );

@@ -62,6 +62,17 @@ describe('ExecutionToggle', () => {
     expect(container.textContent).toContain(line);
   });
 
+  it.each([
+    [{ config_file: '/home/me/.config/tack/runner.toml' }, 'Settings from /home/me/.config/tack/runner.toml'],
+    [{ config_file: null }, 'No settings file: this computer runs no docket team and verifies nothing'],
+  ])('says which settings file the runner read (%j)', async (file, line) => {
+    mockFetch({ ...STOPPED_STATUS, ...file });
+    const { container } = mount();
+    await flush();
+
+    expect(container.querySelector('[data-testid="runner-settings-file"]')!.textContent).toContain(line);
+  });
+
   it('turning it on PUTs enabled:true and reflects the new state', async () => {
     mockFetch(STOPPED_STATUS);
     const { container } = mount();
