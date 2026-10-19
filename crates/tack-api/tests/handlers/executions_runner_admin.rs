@@ -1713,7 +1713,8 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
     };
     let measured =
         "measured, not enforced (Tack reads the agent's tokens but cannot stop it at a limit yet)";
-    // (harness, tokens, no_limit, tokens it reports, source, the sentence)
+    // (harness, tokens, no_limit, tokens it reports, source, the sentence); an empty field falls to
+    // the profile's limit like a run that sends `null`.
     let rows = vec![
         (
             None,
@@ -1743,17 +1744,17 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             None,
             None,
             Some(true),
-            None,
-            "none",
-            "No limit set in Tack".into(),
+            Some(300_000),
+            "profile",
+            format!("300 000 tokens · from the profile B · {measured}"),
         ),
         (
             None,
             Some("120000"),
             Some(true),
-            None,
-            "none",
-            "No limit set in Tack".into(),
+            Some(300_000),
+            "profile",
+            format!("300 000 tokens · from the profile B · {measured}"),
         ),
         (
             Some("docket"),
@@ -1775,10 +1776,9 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             Some("docket"),
             None,
             Some(true),
-            None,
-            "none",
-            "No limit set in Tack · docket stops each step at its own limit (docket's setting)"
-                .into(),
+            Some(300_000),
+            "profile",
+            "300 000 tokens · from the profile B · docket stops the task there".into(),
         ),
         (
             Some("codex"),
@@ -2061,23 +2061,180 @@ async fn the_request_snapshot_carries_what_the_item_is() {
     assert_eq!(snapshot["metadata"]["mine"], 1);
 }
 
-// A run's limits: its own when the request sets them, else its profile's, else none (tokens)
-// or the default hour (time).
+// With the provisional limit turned off, a run with no limit of its own has none, and a request
+// that says `null` falls to its profile's.
 #[tokio::test]
-async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
+async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_sets_one() {
+    let (app, repo, item_id) = setup().await;
+    let project: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&item_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    tack_db::repo::budgets::put(
+        repo.pool(),
+        &project,
+        &tack_db::repo::budgets::ProjectBudgets {
+            provisional_tokens_per_run: None,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for (n, (limits, budgets, tokens)) in [
+        ("{}", json!({}), None),
+        ("{}", json!({"tokens": null}), None),
+        (
+            r#"{"budgets":{"tokens":300000}}"#,
+            json!({"tokens": null}),
+            Some(300_000),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("profile-off-{n}");
+        repo.create_agent_profile(
+            NewAgentProfile {
+                id: &id,
+                name: &id,
+                instructions: "x",
+                tool_policy: "{}",
+                limits,
+            },
+            &SystemExecutionClock,
+        )
+        .await
+        .expect("profile");
+        let mut body = bare_body(&item_id, &format!("k-off-{n}"));
+        body["agent_profile_id"] = json!(id);
+        body["budgets"] = budgets;
+        let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::OK, "row {n}: {created}");
+        let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
+        assert_eq!(
+            snapshot["budgets"].get("tokens").and_then(Value::as_u64),
+            tokens,
+            "row {n}"
+        );
+    }
+}
+
+// A profile's history: nothing proposed before 5 successful runs, then 1.5 times the 90th
+// percentile rounded up to two figures.
+#[tokio::test]
+async fn a_profiles_history_proposes_a_limit_after_five_successful_runs() {
+    let (app, repo, item_id) = setup().await;
+    add_profile(&repo, "profile-history").await;
+    let (status, none) = snd(
+        &app,
+        "GET",
+        "/agent-profiles/profile-history/history",
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{none}");
+    assert_eq!(
+        (
+            none["n"].as_u64(),
+            none["p90"].is_null(),
+            none["proposal"].is_null()
+        ),
+        (Some(0), true, true)
+    );
+    let (status, _) = snd(&app, "GET", "/agent-profiles/nobody/history", String::new()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Counted tokens of the runs: 100 000 to 520 000, from output alone.
+    for (n, out) in [100_000, 200_000, 300_000, 400_000, 523_000]
+        .into_iter()
+        .enumerate()
+    {
+        let mut body = bare_body(&item_id, &format!("k-history-{n}"));
+        body["agent_profile_id"] = json!("profile-history");
+        let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let usage = json!({"tokens_in": {"value": 10, "source": "measured"}, "tokens_out": {"value": out - 10, "source": "measured"}});
+        sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,usage) VALUES (?,?,1,'runner-active',1,'succeeded','t','t',?,?,?)")
+            .bind(format!("attempt-history-{n}")).bind(created["request_id"].as_str().unwrap())
+            .bind(format!("2026-10-18T09:0{n}:00Z")).bind(format!("2026-10-18T09:0{n}:00Z")).bind(usage.to_string())
+            .execute(repo.pool()).await.unwrap();
+        let (_, history) = snd(
+            &app,
+            "GET",
+            "/agent-profiles/profile-history/history",
+            String::new(),
+        )
+        .await;
+        assert_eq!(history["n"], n + 1);
+        assert_eq!(history["proposal"].is_null(), n + 1 < 5, "{history}");
+    }
+    let (_, history) = snd(
+        &app,
+        "GET",
+        "/agent-profiles/profile-history/history",
+        String::new(),
+    )
+    .await;
+    assert_eq!(
+        (
+            history["min"].as_i64(),
+            history["p50"].as_i64(),
+            history["p90"].as_i64(),
+            history["max"].as_i64(),
+            history["proposal"].as_i64()
+        ),
+        (
+            Some(100_000),
+            Some(300_000),
+            Some(523_000),
+            Some(523_000),
+            Some(790_000)
+        )
+    );
+}
+
+// A run's limits: its own when the request sets them, else its profile's, else the project's
+// provisional limit (tokens); the request's, else the profile's, else the default hour (time).
+#[tokio::test]
+async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provisional_limit() {
     let (app, repo, item_id) = setup().await;
     let with_tokens = r#"{"budgets":{"tokens":300000}}"#;
     let with_time = r#"{"timeout_seconds":1800}"#;
-    // (profile limits, request budgets, request timeout, tokens it runs with, seconds it runs with)
+    // (profile limits, request budgets, request timeout, tokens it runs with, where they come from,
+    // seconds it runs with); a project that did not change its provisional limit has 2 000 000.
     let rows = [
-        (with_tokens, json!({}), None, Some(300_000), 3600),
-        (with_tokens, json!({"tokens": null}), None, None, 3600),
-        (with_tokens, json!({"tokens": 5000}), None, Some(5000), 3600),
-        ("{}", json!({}), None, None, 3600),
-        (with_time, json!({}), None, None, 1800),
-        (with_time, json!({}), Some(60), None, 60),
+        (with_tokens, json!({}), None, 300_000, "profile", 3600),
+        (
+            with_tokens,
+            json!({"tokens": null}),
+            None,
+            300_000,
+            "profile",
+            3600,
+        ),
+        (
+            with_tokens,
+            json!({"tokens": 5000}),
+            None,
+            5000,
+            "run",
+            3600,
+        ),
+        ("{}", json!({}), None, 2_000_000, "provisional", 3600),
+        (
+            "{}",
+            json!({"tokens": null}),
+            None,
+            2_000_000,
+            "provisional",
+            3600,
+        ),
+        (with_time, json!({}), None, 2_000_000, "provisional", 1800),
+        (with_time, json!({}), Some(60), 2_000_000, "provisional", 60),
     ];
-    for (n, (limits, budgets, timeout, tokens, seconds)) in rows.into_iter().enumerate() {
+    for (n, (limits, budgets, timeout, tokens, source, seconds)) in rows.into_iter().enumerate() {
+        let tokens = Some(tokens);
         let id = format!("profile-limits-{n}");
         repo.create_agent_profile(
             NewAgentProfile {
@@ -2153,17 +2310,14 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_nothing() {
             detail["limit"]["enforced_by"], "docket",
             "row {n}: {detail}"
         );
-        assert_eq!(
-            detail["limit"]["source"],
-            if tokens.is_none() {
-                "none"
-            } else if n == 2 {
-                "run"
-            } else {
-                "profile"
-            },
-            "row {n}: {detail}"
-        );
+        assert_eq!(detail["limit"]["source"], source, "row {n}: {detail}");
+        if source == "provisional" {
+            assert_eq!(
+                detail["limit"]["sentence"],
+                "Provisional limit: 2 000 000 tokens (no measured runs yet) · set in Settings → Automation · docket stops the task there",
+                "row {n}"
+            );
+        }
     }
     for refused in [json!(0), json!(-5), json!("many")] {
         let mut body = bare_body(&item_id, "k-limits-refused");

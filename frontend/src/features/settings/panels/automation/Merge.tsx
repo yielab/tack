@@ -11,6 +11,8 @@ const LEVELS = [
   { value: 'L5', sentence: 'Tack merges any change that passes its checks.' },
 ] as const;
 
+const PROVISIONAL = 'provisional_tokens_per_run';
+
 /** prill's L4 example for the stages it must run. */
 const PRILL_STAGES = ['criteria', 'suite', 'anti_tautology', 'static_analysis'];
 
@@ -49,7 +51,7 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
     return { limit, counted, reserved, room: s.day_room, runs: s.day_open_runs ?? 0, warn: (counted + reserved) / limit >= DAY_WARNING };
   };
   const share = (n: number, limit: number) => `${Math.min(100, (n / limit) * 100)}%`;
-  const saveBudget = (key: (typeof BUDGETS)[number]['key'], raw: string, integer: boolean) => {
+  const saveBudget = (key: (typeof BUDGETS)[number]['key'] | typeof PROVISIONAL, raw: string, integer: boolean) => {
     const text = raw.trim();
     const n = text === '' ? null : integer ? Math.trunc(Number(text)) : Number(text);
     if (n !== null && (!Number.isFinite(n) || n < 0)) return void toast.error('A limit is a number from 0 up, or empty for none');
@@ -259,6 +261,27 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
                   )}
                 </For>
               </div>
+            </FieldShell>
+
+            <FieldShell label="Limit for a run whose profile sets none">
+              <label class="flex flex-col gap-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                Provisional tokens per run
+                <input
+                  type="number"
+                  min="0"
+                  class={inputClass}
+                  style={inputStyle}
+                  aria-label="Provisional tokens per run"
+                  placeholder="No limit"
+                  value={s().budgets?.provisional_tokens_per_run ?? ''}
+                  onChange={(e) => void saveBudget(PROVISIONAL, e.currentTarget.value, true)}
+                />
+              </label>
+              <Note>
+                Applies to a run whose agent profile has no token limit of its own. The default, 2 000 000 tokens, is the
+                cap the SWE-Effi benchmark gives one software task. Empty means such a run has no limit. Once a profile has
+                5 successful runs, its form proposes a limit from them.
+              </Note>
             </FieldShell>
           </>
         )}

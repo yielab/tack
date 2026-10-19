@@ -66,7 +66,9 @@ async fn migration_092_drops_dollars_per_day_and_keeps_the_other_limits() {
             "project_id",
             "tokens_per_day",
             "auto_merges_per_day",
-            "queue_items_max"
+            "queue_items_max",
+            // Added by the later migration the upgrade runs through.
+            "provisional_tokens_per_run"
         ]
     );
     let kept: (i64, i64, i64) = sqlx::query_as(

@@ -33,6 +33,12 @@ automation a template carries, and the removal of dollars per day.
   shows the same line. The project API carries `prepare_command`, the project file `prepare`, and a
   run's request records the setting under `repository.prepare`. Migration 095. The runner does not
   act on it yet.
+- **A limit learnt per profile.** A run whose profile sets no token limit runs under a provisional one,
+  2 000 000 tokens until it is changed or emptied in Settings → Automation; once a profile has 5
+  successful runs its form proposes a limit (the 90th percentile of its last 20 × 1.5, rounded up to two
+  figures) that the person applies with one click. A running run shows its count amber at 80% of its
+  limit, and one stopped by its limit says how much it used and offers **Run again with more**. A request
+  that sends `budgets.tokens: null` now also takes the profile's or the provisional limit. Migration 094.
 - **The embedded runner finds its settings file by itself.** With no `--runner-config` and no
   `TACK_LOCAL_RUNNER_CONFIG`, it reads `~/.config/tack/runner.toml` when that file exists, so its
   `[docket]` and `[verify]` tables survive a restart, a wiped data folder and `tack service

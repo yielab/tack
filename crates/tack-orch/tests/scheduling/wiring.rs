@@ -648,6 +648,7 @@ async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queu
             tokens_per_day: tokens,
             auto_merges_per_day: None,
             queue_items_max: queue,
+            ..Default::default()
         },
     )
     .await

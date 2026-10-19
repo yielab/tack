@@ -70,13 +70,7 @@ pub async fn get_settings(
         verify_require: list_of(&require),
         attestation_public_key: key,
         verify_loop_max_attempts: loop_max,
-        budgets: budgets::get(pool, project_id)
-            .await?
-            .unwrap_or(ProjectBudgets {
-                tokens_per_day: None,
-                auto_merges_per_day: None,
-                queue_items_max: None,
-            }),
+        budgets: budgets::get(pool, project_id).await?.unwrap_or_default(),
         merge_on_done: on_done != 0,
     }))
 }

@@ -381,13 +381,15 @@ pub struct ExecutionSummary {
 pub struct RunLimit {
     /// Absent when the run has no limit set in Tack.
     pub tokens: Option<u64>,
-    /// `profile`, `run` or `none`.
+    /// `profile`, `provisional`, `run`, `day` or `none`.
     pub source: String,
     /// Who stops the run at the limit: `docket` stops the task itself; `claude-code` and
     /// `opencode`: the runner stops the agent when its counted tokens reach it; `measured`: Tack
     /// reads the agent's tokens and cannot stop it.
     pub enforced_by: String,
     pub sentence: String,
+    /// What the run's latest attempt has counted so far, live while it runs; absent before any attempt.
+    pub used: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -953,6 +955,8 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 3600;
 enum LimitSource {
     Profile,
     Run,
+    /// The project's provisional limit: the profile sets none.
+    Provisional,
     /// What was left of the project's day when a computer took the run.
     Day,
     None,
@@ -963,18 +967,31 @@ impl LimitSource {
         match self {
             Self::Profile => "profile",
             Self::Run => "run",
+            Self::Provisional => "provisional",
             Self::Day => "day",
             Self::None => "none",
         }
     }
 }
 
-/// A run's limits, from the one rule: the request's value, else the profile's `limits`, else none
-/// (tokens) or `DEFAULT_TIMEOUT_SECONDS` (time). The snapshot's two copies of `budgets` both take
-/// what this returns.
+/// The token limit of a run that sets none: its profile's, else the provisional one, else none.
+fn unset_tokens(profile_limits: &Value, provisional: Option<u64>) -> (Option<u64>, LimitSource) {
+    match (profile_limits["budgets"]["tokens"].as_u64(), provisional) {
+        (Some(n), _) => (Some(n), LimitSource::Profile),
+        (None, Some(n)) => (Some(n), LimitSource::Provisional),
+        (None, None) => (None, LimitSource::None),
+    }
+}
+
+/// A run's limits, from the one rule: the request's value, else the profile's `limits`, else the
+/// project's provisional token limit, else none (tokens); the request's, else the profile's, else
+/// `DEFAULT_TIMEOUT_SECONDS` (time). A request that says `null` for its tokens takes the profile's
+/// or the provisional limit like one that leaves them out, so a run has a limit while the provisional
+/// one is on. The snapshot's two copies of `budgets` both take what this returns.
 fn run_limits(
     input: &CreateExecution,
     profile_limits: &Value,
+    provisional: Option<u64>,
 ) -> Result<(Value, u64, LimitSource), (StatusCode, Json<Value>)> {
     let refused = |message: &str, field: &str| {
         error(
@@ -1004,11 +1021,7 @@ fn run_limits(
     }
     let positive = |value: &Value| value.as_u64().filter(|n| *n > 0);
     let (tokens, source) = match object.get("tokens") {
-        None => match profile_limits["budgets"]["tokens"].as_u64() {
-            Some(n) => (Some(n), LimitSource::Profile),
-            None => (None, LimitSource::None),
-        },
-        Some(Value::Null) => (None, LimitSource::None),
+        None | Some(Value::Null) => unset_tokens(profile_limits, provisional),
         Some(value) => match positive(value) {
             Some(n) => (Some(n), LimitSource::Run),
             None => {
@@ -1040,6 +1053,7 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
     let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {
         (None, _) => LimitSource::None,
         (Some(_), Some("profile")) => LimitSource::Profile,
+        (Some(_), Some("provisional")) => LimitSource::Provisional,
         (Some(_), Some("day")) => LimitSource::Day,
         (Some(_), _) => LimitSource::Run,
     };
@@ -1087,7 +1101,13 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
                     "measured, not enforced (Tack reads {agent}'s tokens but cannot stop it at a limit yet)"
                 )
             };
-            format!("{spaced} tokens · {from} · {who}")
+            if matches!(source, LimitSource::Provisional) {
+                format!(
+                    "Provisional limit: {spaced} tokens (no measured runs yet) · set in Settings → Automation · {who}"
+                )
+            } else {
+                format!("{spaced} tokens · {from} · {who}")
+            }
         }
     };
     RunLimit {
@@ -1095,6 +1115,7 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>) -> RunLimit {
         source: source.as_str().to_owned(),
         enforced_by: enforced_by.to_owned(),
         sentence,
+        used: None,
     }
 }
 
@@ -1119,6 +1140,7 @@ async fn run_limits_of(
     .bind(json!(ids).to_string())
     .fetch_all(pool)
     .await?;
+    let used = tack_db::repo::budgets::counted_by_request(pool, ids).await?;
     Ok(rows
         .iter()
         .map(|row| {
@@ -1129,7 +1151,10 @@ async fn run_limits_of(
                 "resolved_agent_profile": {"name": row.get::<Option<String>, _>("profile")},
             });
             let kind: Option<String> = row.get("harness_kind");
-            (row.get("id"), limit_source(&snapshot, kind.as_deref()))
+            let id: String = row.get("id");
+            let mut limit = limit_source(&snapshot, kind.as_deref());
+            limit.used = used.get(&id).and_then(|n| u64::try_from(*n).ok());
+            (id, limit)
         })
         .collect())
 }
@@ -1224,7 +1249,19 @@ pub(crate) async fn create_as(
         input.selector_kind = Some(kind);
         input.selector_id = Some(id);
     }
-    let profile = load_profile(&state.repo, &resolved.profile_id, &mut input).await?;
+    let provisional =
+        tack_db::repo::budgets::provisional_tokens(state.repo.pool(), &item.project_id.to_string())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not load the project's limits",
+                    json!({}),
+                )
+            })?
+            .and_then(|n| u64::try_from(n).ok());
+    let profile = load_profile(&state.repo, &resolved.profile_id, provisional, &mut input).await?;
     enqueue_as(state, principal, input, profile, repository).await
 }
 
@@ -1344,6 +1381,7 @@ pub(crate) async fn default_selector(
 async fn load_profile(
     repo: &tack_db::Repository,
     profile_id: &str,
+    provisional: Option<u64>,
     input: &mut CreateExecution,
 ) -> Result<Value, (StatusCode, Json<Value>)> {
     let row: Option<(String, String, String, String, String)> = sqlx::query_as(
@@ -1380,7 +1418,7 @@ async fn load_profile(
             json!(tack_core::run_defaults::profile_network(&tool_policy)),
         );
     }
-    let (budgets, timeout_seconds, source) = run_limits(input, &limits)?;
+    let (budgets, timeout_seconds, source) = run_limits(input, &limits, provisional)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);
     if let Some(metadata) = input.metadata.as_object_mut() {
@@ -2681,8 +2719,21 @@ pub async fn get_item_agent_context(
     // The profile's limit, unless the dialog has its own: a different number is the run's, none is
     // "no limit". The sentence is still `limit_source`'s, over a snapshot of the same shape.
     let profile_tokens = profile["limits"]["budgets"]["tokens"].as_u64();
+    let provisional =
+        tack_db::repo::budgets::provisional_tokens(state.repo.pool(), &project.id.to_string())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not load the project's limits",
+                    json!({}),
+                )
+            })?
+            .and_then(|n| u64::try_from(n).ok());
     let (tokens, limit_from) = if query.no_limit == Some(true) {
-        (json!(null), "none")
+        let (tokens, source) = unset_tokens(&profile["limits"], provisional);
+        (json!(tokens), source.as_str())
     } else if let Some(typed) = query.tokens.as_deref() {
         let typed = typed
             .trim()
@@ -2704,7 +2755,8 @@ pub async fn get_item_agent_context(
         };
         (json!(typed), from)
     } else {
-        (json!(profile_tokens), "profile")
+        let (tokens, source) = unset_tokens(&profile["limits"], provisional);
+        (json!(tokens), source.as_str())
     };
     let harness = query
         .harness
@@ -2797,6 +2849,14 @@ mod tests {
                 "none",
                 "measured",
                 "No limit set in Tack",
+            ),
+            (
+                &json!({"budgets": {"tokens": 2000000}, "metadata": {"limit_source": "provisional"}}),
+                "claude-code",
+                Some(2_000_000),
+                "provisional",
+                "claude-code",
+                "Provisional limit: 2 000 000 tokens (no measured runs yet) · set in Settings → Automation · Tack stops Claude Code's run there",
             ),
             (
                 &json!({"budgets": {"tokens": 400000}, "metadata": {"limit_source": "day"}}),

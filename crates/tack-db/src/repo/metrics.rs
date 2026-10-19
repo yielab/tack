@@ -110,6 +110,34 @@ pub async fn attempt_totals(
     Ok(totals)
 }
 
+/// The counted tokens (`COUNTED_TOKENS_SQL`) of a profile's last `limit` successful, measured
+/// attempts, newest first. Successful: the attempt succeeded and no verdict refused it, whether a
+/// person's on the pack or the attempt, or the verifier's, which shows as the rework it asked for.
+pub async fn profile_successful_run_tokens(
+    pool: &SqlitePool,
+    profile_id: &str,
+    limit: i64,
+) -> Result<Vec<i64>, sqlx::Error> {
+    // The fragment is a constant of this crate; only values are bound.
+    sqlx::query_scalar(AssertSqlSafe(format!(
+        "SELECT {COUNTED_TOKENS_SQL}
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.agent_profile_id = ? AND a.state = 'succeeded'
+           AND (json_extract(a.usage, '$.tokens_in.value') IS NOT NULL
+                OR json_extract(a.usage, '$.tokens_out.value') IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM mrp_reviews m WHERE m.attempt_id = a.id AND m.verdict = 'reject')
+           AND NOT EXISTS (SELECT 1 FROM attempt_reviews v WHERE v.attempt_id = a.id AND v.verdict = 'rejected')
+           AND NOT EXISTS (SELECT 1 FROM execution_requests w WHERE w.idempotency_key = 'rework-' || a.id)
+         ORDER BY a.created_at DESC, a.rowid DESC
+         LIMIT ?"
+    )))
+    .bind(profile_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 /// Resolved decisions created in the window.
 pub async fn decision_waits(
     pool: &SqlitePool,
