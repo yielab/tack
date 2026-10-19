@@ -118,6 +118,7 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- A docket run makes one copy of the code, docket's own: the runner no longer checks out a second one, and reads the base commit and the task's branch from the project's repository, whose working tree, index and `HEAD` it never changes. A command verifier (`kind = "command"`) has no working copy to read for such a run and records `attempt.verify_failed`; use `kind = "prill"`.
 - **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
   prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.
 - **The day's token limit is reserved when a run is admitted.** A run starts only if today's
