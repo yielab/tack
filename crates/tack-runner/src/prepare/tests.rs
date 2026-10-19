@@ -353,3 +353,35 @@ fn only_a_folder_with_the_marker_is_reported_as_prepared() {
     fs::write(checkout.join("node_modules/.tack-prepared"), "").expect("marker");
     assert_eq!(prepared_folders(&checkout), ["node_modules"]);
 }
+
+#[test]
+fn a_run_installs_nothing_only_when_its_tools_run_no_command_and_it_has_no_check() {
+    let request = |harness: &str, tools: &[&str], checked: bool| {
+        let mut request = crate::harness::test_support::spec(harness, Path::new("unused"))
+            .work
+            .request;
+        request.permission_policy.tools = tools.iter().map(|tool| (*tool).to_owned()).collect();
+        if !checked {
+            request.brief = None;
+        }
+        request
+    };
+    let reads = ["Read", "grep", "Glob", "WebFetch", "WebSearch"];
+    assert!(needs_no_install(&request("codex", &reads, false)));
+    // A command, an unnamed list, a check, or docket's own pipeline each keep the install.
+    assert!(!needs_no_install(&request(
+        "codex",
+        &["Read", "Bash"],
+        false
+    )));
+    assert!(!needs_no_install(&request("codex", &["*"], false)));
+    assert!(!needs_no_install(&request("codex", &[], false)));
+    assert!(!needs_no_install(&request("codex", &reads, true)));
+    assert!(!needs_no_install(&request("docket", &reads, false)));
+
+    // The profile's own list for the run's agent counts when the run names none.
+    let mut from_profile = request("codex", &[], false);
+    from_profile.resolved_agent_profile.tool_policy =
+        serde_json::json!({"tools": {"codex": ["Read", "Grep"]}});
+    assert!(needs_no_install(&from_profile));
+}
