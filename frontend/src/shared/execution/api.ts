@@ -304,6 +304,13 @@ export interface AgentProfileSummary {
   uses_network?: boolean;
 }
 
+/** What a profile's `tool_policy.docket.team` names, or null. */
+export function teamOf(profile: { tool_policy?: unknown } | undefined): string | null {
+  const policy = profile?.tool_policy as { docket?: { team?: unknown } } | null | undefined;
+  const team = policy?.docket?.team;
+  return typeof team === 'string' && team ? team : null;
+}
+
 export interface AgentProfileListResult {
   protocol_version: number;
   data: AgentProfileSummary[];
