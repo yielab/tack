@@ -34,7 +34,8 @@ const PROCESS_LIMITS: ProcessLimits =
 /// human-readable rendering, so it can be diffed byte-for-byte against
 /// whatever a real enrollment or refresh sent a server.
 pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
-    let config = read_config(config_path)?;
+    let config_path = config_path.or_else(crate::local_runner::runner_config_path);
+    let config = read_config(config_path.clone())?;
     let runtime = tokio::runtime::Runtime::new()?;
     let (report, verify, daemon) = runtime.block_on(probe(config));
 
@@ -43,19 +44,37 @@ pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    render_settings_file(config_path.as_deref());
     render(&report, daemon.as_ref());
     render_verify(&verify);
     Ok(())
 }
 
-/// The runner's own file (`--config`, else `TACK_LOCAL_RUNNER_CONFIG`), read the way a live
-/// runner reads it: a broken file is an error, never a silent default.
+/// Which file the runner reads. With none it runs on defaults: no docket, no
+/// verifier and no branch push, which is otherwise silent.
+fn render_settings_file(path: Option<&std::path::Path>) {
+    match path {
+        Some(path) => println!("settings file: {}", path.display()),
+        None => {
+            let default = crate::local_runner::default_runner_config_path().map_or_else(
+                || "~/.config/tack/runner.toml".to_owned(),
+                |p| p.display().to_string(),
+            );
+            println!(
+                "settings file: none — no docket, no verifier, no branch push (write {default}, or pass --config)"
+            );
+        }
+    }
+    println!();
+}
+
+/// The runner's own file (`--config`, else `TACK_LOCAL_RUNNER_CONFIG`, else
+/// `~/.config/tack/runner.toml` when it exists), read the way a live runner reads it: a
+/// broken file is an error, never a silent default.
 fn read_config(config_path: Option<PathBuf>) -> anyhow::Result<RunnerConfig> {
     Ok(crate::local_runner::load_runner_config(
         ConfigOverrides::default(),
-        config_path
-            .or_else(crate::local_runner::runner_config_path)
-            .as_deref(),
+        config_path.as_deref(),
     )?)
 }
 

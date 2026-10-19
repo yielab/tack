@@ -38,7 +38,7 @@ The server reads `tack.toml` from its working directory, then environment variab
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only. Values below 60 are raised to 60 with a warning — a tighter loop copies the database more often than it can change |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
 | `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs — the same gate `tack serve --with-runner` sets; either satisfies it. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. The **Turn on** and **Turn off** button on the Agents page overrides it while the board runs and remembers the choice — see [Embedded runner](#embedded-runner-tack-serve---with-runner) below. Off by default and refused outright (never silently downgraded) on a non-loopback bind |
-| `TACK_LOCAL_RUNNER_CONFIG` | _(none)_ | The TOML file the embedded runner loads; `tack serve --runner-config <path>` sets it. See [Embedded runner](#embedded-runner-tack-serve---with-runner) |
+| `TACK_LOCAL_RUNNER_CONFIG` | _(none: `~/.config/tack/runner.toml` when it exists)_ | The TOML file the embedded runner loads; `tack serve --runner-config <path>` sets it. Set but empty, the runner reads no file at all. See [Embedded runner](#embedded-runner-tack-serve---with-runner) |
 | `TACK_EXECUTION_RETENTION_ENABLE` | `false` | Enables the execution-domain retention sweep. **Off by default**: this sweep deletes rows **and on-disk blobs**, so data deletion must be an explicit operator opt-in. Covers four things: (a) replay and idempotency bookkeeping, (b) the purge of finished `execution_events`, (c) `execution_artifacts` rows **and their `TACK_STORAGE_DIR/execution-artifacts` blobs** and (d) expiry of overdue decisions (`pending` → `expired`). Artifact blobs are typically the largest consumer in this domain. Decision expiry shares this one gate rather than running always-on. A question whose run has ended is closed when the run ends, whatever this says |
 | `TACK_EXECUTION_RETENTION_DAYS` | `90` | Days of history kept before the sweep purges it — applies to all four categories above (replay/idempotency bookkeeping, terminal `execution_events`, `execution_artifacts` rows and blobs, and decision expiry deadlines) |
 | `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Interval, in seconds, between execution-retention sweeps |
@@ -106,10 +106,14 @@ enroll` call, no token to copy anywhere.
 - **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`)
   names the TOML file the embedded runner loads — the same file `tack runner start --config`
   reads, with the same precedence (file, then environment, then the state directory this
-  server scopes for it). `tack runner doctor` reads the same variable. It is the only way to give
-  the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]` table, since
-  those have no environment variable. Without it the embedded runner runs on defaults: no verifier,
-  no branch push and no docket.
+  server scopes for it). `tack runner doctor` reads the same variable. Without the variable the
+  runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux)
+  when that file exists; it lives outside the data directory, so wiping the data or starting from
+  `tack service install`'s unit keeps it. It is the only way to give the embedded runner a
+  `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]` table, since those have no
+  environment variable. With no file the embedded runner runs on defaults: no verifier, no branch
+  push and no docket. `GET /api/local-runner` names the file it read (`config_file`, `null` with
+  none), the Agents page says it, and `tack runner doctor` prints it first.
 - **State directory.** Defaults to `<TACK_STORAGE_DIR>/runner` — scoped to the same
   configuration as the database, so a server started against a different
   `TACK_DATABASE_URL` (paired, as every other per-install artifact in this crate already

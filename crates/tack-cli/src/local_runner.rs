@@ -115,17 +115,45 @@ fn migrate_legacy_state_dir(new_dir: &Path) {
 
 /// The variable `tack serve --runner-config` sets, naming the TOML file the
 /// embedded runner loads — the same file `tack runner start --config` reads.
-/// Without it the embedded runner has defaults only, which leaves its
-/// `[verify]`, `[git]`, `[secrets]` and `[environment]` tables unset: those have no
-/// environment equivalent.
+/// Without it the runner reads [`default_runner_config_path`] when that file
+/// exists; with neither it has defaults only, which leaves its `[docket]`,
+/// `[verify]`, `[git]`, `[secrets]` and `[environment]` tables unset: those
+/// have no environment equivalent.
 pub const RUNNER_CONFIG_ENV: &str = "TACK_LOCAL_RUNNER_CONFIG";
 
-/// The embedded runner's configuration file, when one is named; an empty
-/// value counts as none.
+/// The embedded runner's configuration file: the one `TACK_LOCAL_RUNNER_CONFIG`
+/// names, else [`default_runner_config_path`] when that file exists. The
+/// default lives in the per-user config directory, not beside the database,
+/// so a board whose data directory is wiped, or one started by
+/// `tack service install`'s unit, still finds it.
 pub fn runner_config_path() -> Option<PathBuf> {
-    std::env::var_os(RUNNER_CONFIG_ENV)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+    // A unit test never reads the settings file of the machine it runs on.
+    let default = if cfg!(test) {
+        None
+    } else {
+        default_runner_config_path()
+    };
+    config_path_from(std::env::var_os(RUNNER_CONFIG_ENV), default)
+}
+
+/// The variable's file when it names one. Set but empty, it names none and the
+/// default is not read either: that is how a script asks for defaults only.
+/// Unset, the default when that file exists.
+fn config_path_from(
+    variable: Option<std::ffi::OsString>,
+    default: Option<PathBuf>,
+) -> Option<PathBuf> {
+    match variable {
+        Some(value) if value.is_empty() => None,
+        Some(value) => Some(PathBuf::from(value)),
+        None => default.filter(|path| path.is_file()),
+    }
+}
+
+/// `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on
+/// Linux), whether or not it exists.
+pub fn default_runner_config_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|dir| dir.join("tack").join("runner.toml"))
 }
 
 /// Whether the embedded runner should start at boot, combining
@@ -265,6 +293,8 @@ struct State {
 /// `AppState::local_runner` and this module's own boot-time wiring.
 pub struct EmbeddedRunnerControl {
     server_config: tack_api::config::AppConfig,
+    /// The file the runner configuration was read from; `None` is defaults only.
+    config_path: Option<PathBuf>,
     state: Mutex<State>,
 }
 
@@ -292,6 +322,7 @@ impl EmbeddedRunnerControl {
         let runner_config = load_runner_config(command_line, config_path.as_deref())?;
         Ok(Self {
             server_config,
+            config_path,
             state: Mutex::new(State {
                 bound_addr: None,
                 runner_config,
@@ -370,6 +401,12 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
         let state = self.state.lock().await;
         let verify = &state.runner_config.verify;
         (verify.enabled && verify.kind == VerifyKind::Prill).then(|| verify.program.clone())
+    }
+
+    fn config_file(&self) -> Option<String> {
+        self.config_path
+            .as_ref()
+            .map(|path| path.display().to_string())
     }
 
     async fn resolve_secret(&self, reference: &str) -> Result<String, LocalRunnerControlError> {

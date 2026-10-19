@@ -272,7 +272,8 @@ docket". When the `[docket]` table has a `base_url` but nothing answers there, t
 A `docket` program on the `PATH` does not count, and a table with only `home`, `port` or `token_file` does
 not turn it on either. The runner starts the daemon only when `binary` is set, `base_url` is not, and
 nothing already answers on the port. The embedded runner of `tack serve --with-runner` reads no `[docket]`
-table at all unless you gave it a settings file.
+table at all unless it has a settings file: `~/.config/tack/runner.toml`, or the one `--runner-config`
+names. The Agents page says which file it read.
 
 **What to do.** Add `binary` to the runner's `[docket]` table and restart the runner:
 

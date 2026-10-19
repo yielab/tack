@@ -2,7 +2,8 @@ import { type Component, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Badge } from '../ui';
 
-export type PrerequisiteState = 'ok' | 'missing' | 'deferred';
+/** `notice` is a fact the run goes ahead with, never a blocker. */
+export type PrerequisiteState = 'ok' | 'missing' | 'deferred' | 'notice';
 
 export interface PrerequisiteProps {
   state: PrerequisiteState;
@@ -37,7 +38,9 @@ const Prerequisite: Component<PrerequisiteProps> = (props) => (
             when={props.state === 'ok' && props.onToggle}
             fallback={
               <span class="flex items-center gap-2">
-                <Badge tone={props.state === 'ok' ? 'success' : 'danger'}>{props.state === 'ok' ? 'Ready' : 'Missing'}</Badge>
+                <Badge tone={props.state === 'ok' ? 'success' : props.state === 'notice' ? 'warning' : 'danger'}>
+                  {props.state === 'ok' ? 'Ready' : props.state === 'notice' ? 'Note' : 'Missing'}
+                </Badge>
                 {props.label}
               </span>
             }

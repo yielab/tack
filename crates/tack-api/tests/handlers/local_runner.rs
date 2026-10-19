@@ -184,6 +184,10 @@ async fn loopback_bind_with_control_mounts_routes_and_starts_it() {
     assert!(body["since"].is_null());
     assert_eq!(body["max_concurrent_attempts"], 2);
     assert_eq!(body["active_attempts"], 0);
+    assert!(
+        body["config_file"].is_null(),
+        "a runner on defaults names no settings file"
+    );
 
     let put_response = app
         .clone()

@@ -149,12 +149,14 @@ running.
 - **Its state directory** is `<TACK_STORAGE_DIR>/runner` unless `TACK_RUNNER_STATE_DIR` says
   otherwise. Tying it to the storage directory keeps two boards from sharing one runner's state. A
   state directory from an older default location is moved there once, never the other way.
-- **Its settings file.** Pass `tack serve --runner-config <path>` (or set `TACK_LOCAL_RUNNER_CONFIG`).
-  It is the same file `tack runner start --config` reads. It is the only way to give the embedded
-  runner a `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]` table, because those have
-  no environment variable. Without it the embedded runner runs on defaults: no verifier, no branch
-  push and no docket. A service installed by `tack service install` sets no such file; add
-  `Environment=TACK_LOCAL_RUNNER_CONFIG=<path>` to its unit if you need one.
+- **Its settings file.** Put it at `~/.config/tack/runner.toml` and the embedded runner reads it on
+  every start, including a service installed by `tack service install`. Wiping the board's data
+  folder leaves it in place. To use another file, pass `tack serve --runner-config <path>` (or set
+  `TACK_LOCAL_RUNNER_CONFIG`). It is the same file `tack runner start --config` reads. It is the only
+  way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]`
+  table, because those have no environment variable. With no file the embedded runner runs on
+  defaults: no verifier, no branch push and no docket. The Agents page says which file it read, or
+  that it read none, and so does `tack runner doctor`.
 - **Its log lines** are in the board's log by default: enrollment, claims, refusals and
   completions. For every step, start the board with `RUST_LOG=tack=debug`.
 

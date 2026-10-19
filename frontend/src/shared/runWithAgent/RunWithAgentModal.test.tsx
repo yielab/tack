@@ -95,6 +95,8 @@ function mockFetch(
     runSettings?: Record<string, unknown> | null;
     /** Holds the item back, so the runners land before the project's settings are applied. */
     itemDelayMs?: number;
+    /** The item's brief; absent answers 404, as an item with no brief does. */
+    brief?: Record<string, unknown>;
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -113,6 +115,11 @@ function mockFetch(
     }
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
+    if (url.endsWith('/items/item-1/brief')) {
+      return opts.brief
+        ? new Response(JSON.stringify(opts.brief), { status: 200 })
+        : new Response(JSON.stringify({ error: { status: 404, message: 'Item item-1 has no brief' } }), { status: 404 });
+    }
     if (url.endsWith('/items/item-1')) {
       if (opts.itemDelayMs) await new Promise((r) => setTimeout(r, opts.itemDelayMs));
       if (init?.method === 'PATCH') lastItemPatch = JSON.parse(String(init.body));
@@ -395,6 +402,22 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(lastCreateBody).not.toHaveProperty('repository_snapshot');
+  });
+
+  it.each([
+    [undefined, true],
+    [{ acceptance: [] }, true],
+    [{ acceptance: [{ id: 'a1', kind: 'command', title: 'tests pass', run: 'npm test', expect_exit: 0 }] }, false],
+  ])('a card with no acceptance check says so, and Run stays enabled (brief %j)', async (brief, notice) => {
+    const claude = runnerRow('runner-3', 'Claude box', runnerCapabilitySnapshot({
+      harnesses: [{ harness_kind: 'claude-code', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: false }],
+    }));
+    mount({}, { runners: [claude], fleets: [], brief });
+    await flush();
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent?.includes('This card has no acceptance check')).toBe(notice);
+    expect(submitButton().disabled).toBe(false);
   });
 
   it('a project with no code is blocked by one sentence and a link, and has no Run', async () => {

@@ -21,8 +21,7 @@ pub struct Unavailable;
 const ATTEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// What the board says when it cannot start prill; every caller reads it from here.
-pub const NOT_INSTALLED: &str =
-    "prill is not installed on the board (set TACK_PRILL_PROGRAM to its path)";
+pub const NOT_INSTALLED: &str = "prill is not installed on the board (give the runner a [verify] table naming prill in its settings file, or set TACK_PRILL_PROGRAM to its path)";
 
 /// Runs `program args…` with a null stdin and `PATH` as its only variable.
 /// A program that cannot start, or does not finish within `timeout`, is

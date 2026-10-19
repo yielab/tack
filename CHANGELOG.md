@@ -26,6 +26,15 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The embedded runner finds its settings file by itself.** With no `--runner-config` and no
+  `TACK_LOCAL_RUNNER_CONFIG`, it reads `~/.config/tack/runner.toml` when that file exists, so its
+  `[docket]` and `[verify]` tables survive a restart, a wiped data folder and `tack service
+  install`'s unit. The Agents page and `tack runner doctor` say which file the runner read, or that
+  it read none and so runs no docket team and verifies nothing; `GET /api/local-runner` carries it
+  as `config_file`. `TACK_LOCAL_RUNNER_CONFIG` set but empty still means no file.
+- **The run dialog says when nothing will check the work.** A card whose brief has no acceptance
+  check shows a note: nothing tests what the agent delivers, so a person reviews it. The run is not
+  blocked.
 - **The runner runs several attempts at once.** `max_concurrent_attempts` in the runner's
   config, `TACK_RUNNER_MAX_CONCURRENT_ATTEMPTS` and `--max-concurrent-attempts` (default 1).
   One heartbeat per runner carries every lease, and a cancellation asked mid-run now reaches the
@@ -102,6 +111,8 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
+  prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.
 - **The day's token limit is reserved when a run is admitted.** A run starts only if today's
   counted tokens, the limits of the project's open runs and its own fit in the day; otherwise it
   waits with "Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)". A run

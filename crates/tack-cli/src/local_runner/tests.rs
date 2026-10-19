@@ -141,6 +141,7 @@ fn control_with_state_dir(state_dir: &Path) -> EmbeddedRunnerControl {
     runner_config.state_dir = state_dir.to_path_buf();
     EmbeddedRunnerControl {
         server_config: unreachable_database_url(),
+        config_path: None,
         state: Mutex::new(State {
             bound_addr: None,
             runner_config,
@@ -334,6 +335,35 @@ fn migrate_legacy_state_dir_is_noop_when_neither_dir_exists() {
 // share one test binary process per test function, not per server —
 // still test at most one real embedded server each. Two genuinely
 // separate `tack` processes have no such conflict.
+
+#[test]
+fn with_no_variable_the_runner_reads_the_default_settings_file_only_when_it_exists() {
+    let root = unique_temp_dir("default-config");
+    let default = root.path().join("tack").join("runner.toml");
+    let named = root.path().join("named.toml");
+
+    assert_eq!(
+        config_path_from(None, Some(default.clone())),
+        None,
+        "no file at the default, no file"
+    );
+    std::fs::create_dir_all(default.parent().unwrap()).expect("config dir");
+    std::fs::write(&default, "[verify]\nenabled = true\n").expect("default file");
+    assert_eq!(
+        config_path_from(None, Some(default.clone())),
+        Some(default.clone())
+    );
+    assert_eq!(
+        config_path_from(Some(named.clone().into_os_string()), Some(default.clone())),
+        Some(named),
+        "the variable wins over the default"
+    );
+    assert_eq!(
+        config_path_from(Some(std::ffi::OsString::new()), Some(default)),
+        None,
+        "set but empty asks for defaults only"
+    );
+}
 
 #[tokio::test]
 async fn the_embedded_runner_loads_the_file_tack_local_runner_config_names() {

@@ -4,7 +4,7 @@ import { A } from '@solidjs/router';
 import { Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { BOOK } from '../help/routes';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import type { AgentContextRun } from '../api/briefs';
 import {
   fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds,
@@ -82,6 +82,15 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [resolved] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.agentContext(id).then((r) => ({ id: r.profile_id ?? null, source: r.profile_source ?? null }), () => null),
+  );
+  // Whether something can test what the agent delivers: the brief's acceptance checks.
+  // A card with no brief has none; any other failure says nothing rather than guess.
+  const [checkedCard] = createResource(
+    () => (props.isOpen ? props.itemId : undefined),
+    (id) => api.briefs.get(id).then(
+      (brief) => (brief.acceptance?.length ?? 0) > 0,
+      (error) => (error instanceof ApiError && error.status === 404 ? false : undefined),
+    ),
   );
   const [agentContext] = createResource(
     () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
@@ -410,6 +419,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
               setForm('selectorId', ok ? (id ?? '') : '');
             }}
             rows={rows}
+            checkedCard={() => (checkedCard.loading ? undefined : checkedCard())}
             profilesLoading={() => agentProfiles.loading}
             profiles={agentProfilesData}
             creatingProfile={creatingProfile}
