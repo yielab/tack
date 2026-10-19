@@ -296,6 +296,12 @@ export interface AgentProfileSummary {
   kind?: 'implementer' | 'reviewer' | 'researcher' | 'planner' | 'custom';
   builtin?: boolean;
   summary?: string;
+  /** One line on what the profile delivers: "a change on a branch", "an answer". */
+  delivers?: string | null;
+  /** Read only, derived from the tool policy: what the profile's tools can do. */
+  changes_files?: boolean;
+  runs_commands?: boolean;
+  uses_network?: boolean;
 }
 
 export interface AgentProfileListResult {
@@ -309,6 +315,8 @@ export interface CreateAgentProfileInput {
   tool_policy?: unknown;
   limits?: unknown;
   summary?: string;
+  /** `null` clears the line on an update. */
+  delivers?: string | null;
 }
 
 export interface CreateAgentProfileResult {

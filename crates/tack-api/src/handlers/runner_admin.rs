@@ -97,6 +97,9 @@ pub struct CreateProfile {
     /// The fleet a run with this profile goes to when it names no selector.
     #[serde(default)]
     pub fleet_id: Option<String>,
+    /// One line on what the profile delivers; empty or absent is no line.
+    #[serde(default)]
+    pub delivers: Option<String>,
 }
 fn empty() -> Value {
     json!({})
@@ -235,6 +238,17 @@ pub struct AgentProfileSummary {
     pub builtin: bool,
     pub summary: Option<String>,
     pub fleet_id: Option<String>,
+    /// One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer".
+    pub delivers: Option<String>,
+    /// Read only: whether its tools can change files, derived from `tool_policy`.
+    #[schema(read_only)]
+    pub changes_files: bool,
+    /// Read only: whether its tools can run commands, derived from `tool_policy`.
+    #[schema(read_only)]
+    pub runs_commands: bool,
+    /// Read only: whether its tools or its network flag reach the network, derived from `tool_policy`.
+    #[schema(read_only)]
+    pub uses_network: bool,
 }
 
 /// Keeps a present `null` apart from an absent key: `Some(None)` clears, `None` leaves alone.
@@ -255,6 +269,10 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "set_or_clear")]
     #[schema(value_type = Option<String>)]
     pub fleet_id: Option<Option<String>>,
+    /// Omitted leaves the line untouched; JSON `null` or an empty string clears it.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<String>)]
+    pub delivers: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -899,6 +917,7 @@ pub async fn create_profile(
         &state.repo,
         Some(&input.tool_policy),
         input.fleet_id.as_deref(),
+        input.delivers.as_deref(),
     )
     .await?;
     check_limits(&input.limits)?;
@@ -932,10 +951,16 @@ pub async fn create_profile(
             state.clock.as_ref(),
         )
         .await;
+    let delivers = input
+        .delivers
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty());
     let result = match (result, input.fleet_id.as_deref()) {
-        (Ok(()), Some(fleet_id)) => {
-            sqlx::query("UPDATE agent_profiles SET fleet_id = ? WHERE id = ?")
+        (Ok(()), fleet_id) if fleet_id.is_some() || delivers.is_some() => {
+            sqlx::query("UPDATE agent_profiles SET fleet_id = ?, delivers = ? WHERE id = ?")
                 .bind(fleet_id)
+                .bind(delivers)
                 .bind(&id)
                 .execute(state.repo.pool())
                 .await
@@ -976,7 +1001,7 @@ pub async fn list_profiles(
     State(state): State<OperatorExecutionState>,
 ) -> Result<Json<AgentProfileListResponse>, (StatusCode, Json<Value>)> {
     let rows = sqlx::query(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id FROM agent_profiles",
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
         " ORDER BY name"
     ))
     .fetch_all(state.repo.pool())
@@ -1010,18 +1035,24 @@ fn profile_from_row(
             json!({}),
         )
     };
+    let tool_policy: Value = serde_json::from_str(&r.get::<String, _>("tool_policy"))
+        .map_err(|_| corrupt("Agent profile policy is corrupt"))?;
+    let caps = tack_core::run_defaults::profile_capabilities(&tool_policy);
     Ok(AgentProfileSummary {
         agent_profile_id: r.get("id"),
         name: r.get("name"),
         instructions: r.get("instructions"),
-        tool_policy: serde_json::from_str(&r.get::<String, _>("tool_policy"))
-            .map_err(|_| corrupt("Agent profile policy is corrupt"))?,
+        tool_policy,
         limits: serde_json::from_str(&r.get::<String, _>("limits"))
             .map_err(|_| corrupt("Agent profile limits are corrupt"))?,
         kind: r.get("kind"),
         builtin: r.get::<i64, _>("builtin") != 0,
         summary: r.get("summary"),
         fleet_id: r.get("fleet_id"),
+        delivers: r.get("delivers"),
+        changes_files: caps.changes_files,
+        runs_commands: caps.runs_commands,
+        uses_network: caps.uses_network,
     })
 }
 
@@ -1040,12 +1071,21 @@ fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
     })
 }
 
-/// 400 when `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
+/// 400 when `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, or `fleet_id` names no fleet.
 async fn check_profile_fields(
     repo: &Repository,
     tool_policy: Option<&Value>,
     fleet_id: Option<&str>,
+    delivers: Option<&str>,
 ) -> Result<(), (StatusCode, Json<Value>)> {
+    if let Some(Err(message)) = delivers.map(tack_core::run_defaults::check_delivers) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &message,
+            json!({"field": "delivers"}),
+        ));
+    }
     if let Some(agent) = tool_policy.and_then(|p| p.get("agent"))
         && !agent.as_str().is_some_and(|a| HARNESS_KINDS.contains(&a))
     {
@@ -1143,6 +1183,7 @@ pub async fn update_profile(
         &state.repo,
         input.tool_policy.as_ref(),
         input.fleet_id.as_ref().and_then(|f| f.as_deref()),
+        input.delivers.as_ref().and_then(|d| d.as_deref()),
     )
     .await?;
     if let Some(limits) = &input.limits {
@@ -1154,12 +1195,20 @@ pub async fn update_profile(
         Some(value) => (1, value),
         None => (0, None),
     };
+    let (set_delivers, delivers) = match input.delivers {
+        Some(value) => (
+            1,
+            value.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
+        ),
+        None => (0, None),
+    };
     let now = state.clock.now().to_rfc3339();
     let result = sqlx::query(
         "UPDATE agent_profiles SET name = COALESCE(?, name), instructions = COALESCE(?, instructions), \
          tool_policy = COALESCE(?, tool_policy), limits = COALESCE(?, limits), \
          summary = COALESCE(?, summary), \
-         fleet_id = CASE WHEN ? = 1 THEN ? ELSE fleet_id END, updated_at = ? WHERE id = ?",
+         fleet_id = CASE WHEN ? = 1 THEN ? ELSE fleet_id END, \
+         delivers = CASE WHEN ? = 1 THEN ? ELSE delivers END, updated_at = ? WHERE id = ?",
     )
     .bind(&input.name)
     .bind(&input.instructions)
@@ -1168,6 +1217,8 @@ pub async fn update_profile(
     .bind(&input.summary)
     .bind(set_fleet)
     .bind(&fleet_id)
+    .bind(set_delivers)
+    .bind(&delivers)
     .bind(&now)
     .bind(&id)
     .execute(state.repo.pool())
@@ -1186,7 +1237,7 @@ pub async fn update_profile(
         Err(_) => return Err(profile_db_error("Could not update agent profile")),
     }
     let row = sqlx::query(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id FROM agent_profiles",
+        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
         " WHERE id = ?"
     ))
     .bind(&id)

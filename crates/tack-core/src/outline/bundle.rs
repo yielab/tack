@@ -39,6 +39,7 @@ pub struct ProfileRow {
     pub tool_policy: Value,
     pub limits: Value,
     pub fleet_id: Option<String>,
+    pub delivers: Option<String>,
     pub builtin: bool,
 }
 
@@ -435,6 +436,13 @@ pub fn check(outline: &Outline, board: &Board<'_>) -> Result<Plan, OutlineError>
             problems.push(format!("{at}: {message}"));
         }
         if let Err(message) = crate::run_defaults::check_limits(&profile.limits) {
+            problems.push(format!("{at}: {message}"));
+        }
+        if let Some(Err(message)) = profile
+            .delivers
+            .as_deref()
+            .map(crate::run_defaults::check_delivers)
+        {
             problems.push(format!("{at}: {message}"));
         }
         if let Some(fleet) = profile.fleet.as_deref().map(str::trim)
@@ -891,6 +899,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
                     .map(|(_, name)| name.clone())
             }),
             summary: None,
+            delivers: p.delivers.clone(),
         })
         .collect();
 

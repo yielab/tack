@@ -26,6 +26,11 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **A profile says what it delivers.** Each profile carries one line, "a change on a branch", "a
+  document in a folder" or "an answer", shown beside its agent in the Agents page, with three chips
+  (changes files, runs commands, uses the network) read from its tools, never typed. The profile
+  form sets the line and the profile's team. The project file reads and writes `delivers`; older
+  files import as before. Migration 095.
 - **An item has a page of its own.** The drawer's "Expand" opens `/projects/<id>/items/<id>` (the
   tab carries over in `?tab=`), with a breadcrumb, the tabs in a main column and every field in a side
   column, and "Copy link" copies its address. The fields are one properties list in both places,

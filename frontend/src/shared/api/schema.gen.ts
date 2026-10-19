@@ -3060,13 +3060,21 @@ export interface components {
         AgentProfileSummary: {
             agent_profile_id: string;
             builtin: boolean;
+            /** @description Read only: whether its tools can change files, derived from `tool_policy`. */
+            readonly changes_files: boolean;
+            /** @description One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer". */
+            delivers?: string | null;
             fleet_id?: string | null;
             instructions: string;
             kind: string;
             limits: unknown;
             name: string;
+            /** @description Read only: whether its tools can run commands, derived from `tool_policy`. */
+            readonly runs_commands: boolean;
             summary?: string | null;
             tool_policy: unknown;
+            /** @description Read only: whether its tools or its network flag reach the network, derived from `tool_policy`. */
+            readonly uses_network: boolean;
         };
         ArtifactListResponse: {
             data: components["schemas"]["ArtifactSummary"][];
@@ -3412,6 +3420,8 @@ export interface components {
             validation?: unknown;
         };
         BundleProfile: {
+            /** @description One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer". */
+            delivers?: string | null;
             /** @description The name of the fleet that runs it; absent: any computer. */
             fleet?: string | null;
             /** @description What the agent is told before the task. */
@@ -3726,6 +3736,8 @@ export interface components {
             token_id: string;
         };
         CreateProfile: {
+            /** @description One line on what the profile delivers; empty or absent is no line. */
+            delivers?: string | null;
             /** @description The fleet a run with this profile goes to when it names no selector. */
             fleet_id?: string | null;
             instructions: string;
@@ -5090,6 +5102,8 @@ export interface components {
             enabled: boolean;
         };
         UpdateProfile: {
+            /** @description Omitted leaves the line untouched; JSON `null` or an empty string clears it. */
+            delivers?: string | null;
             /** @description Omitted leaves the fleet untouched; JSON `null` clears it. */
             fleet_id?: string | null;
             instructions?: string | null;

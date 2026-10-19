@@ -62,6 +62,7 @@ On an existing project the whole `project` block is ignored with a warning: the 
 | `limits` | object | Budgets and the time the agent may take |
 | `fleet` | text | A fleet's name. Absent means any computer |
 | `summary` | text | One line beside the profile's name |
+| `delivers` | text | What the profile delivers, in one line of at most 160 characters. Absent keeps the board's line, or none for a new profile |
 
 ### `roles`
 
