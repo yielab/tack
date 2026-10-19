@@ -9,6 +9,12 @@ dependencies installed, or fails before the agent with the install's output; a d
 runner checkout; every run shows a limit and where it comes from; a profile with 5 successful runs
 offers a proposed limit; and Fabulada's code card passes its check through a team.
 
+**Status (2026-10-19):** S, L, N and P merged into `develop` (`3a378747`); `pre-push` and the full
+suites pass (1 426 Rust, 719 frontend). Fixed at integration: the cached `node_modules` is a
+hard-linked tree inside the copy, because the agent's sandbox cannot follow a link out of it, and
+`.venv` is not cached; a run under the provisional limit still takes what is left of the day. K waits
+on docket's API 6.
+
 ## Tasks
 
 | Id | Task | Owns | Waits on |

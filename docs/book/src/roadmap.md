@@ -56,10 +56,12 @@ plan or the page named beside it.
   `develop` (its Phase 44): a rerun of Fabulada's first steps counted at most 59 575 tokens a task,
   and no step reached docket's own per-step limit. The live run of `scripts/docket-prill-e2e.sh`
   passes against it (2026-10-18), inside docket's sandbox with a read-only grant for the
-  toolchain. Fabulada's code runs from the board wait on their dependencies: ADR 0086 (accepted
-  2026-10-19) has whoever makes the agent's copy install them from the lockfile, docket for a
-  docket run and the runner for the others, and is not built yet; the end-to-end scenario with
-  two teams and a rework is still to write.
+  toolchain. Fabulada's code runs through a team wait on docket installing their dependencies: ADR 0086
+  (accepted 2026-10-19) has whoever makes the agent's copy install them from the lockfile. Tack's
+  side is in `develop` (Phase 77: the runner installs for Claude Code, Codex and opencode, a docket
+  run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
+  ADR 0029, and Tack sends it the command (Phase 77 task K) once docket's API 6 has it. The
+  end-to-end scenario with two teams and a rework is still to write.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
