@@ -23,7 +23,8 @@ which is also the live proof of Phase 73. Phase 75 puts every limit in tokens, w
 only as an estimate, and keeps what an agent is sent free of repeated material. Phase 76 makes
 the project file a place the configuration is kept, not only imported from: a key that survives a
 rename, an import that removes what the file removed and keeps what the board changed, the cost of
-every removal shown first, and a revision to go back to. Tack
+every removal shown first, and a revision to go back to. Phase 78 is one pass over everything
+else still open, ordered so each screen is changed once, and gives each item a page of its own. Tack
 keeps the same three neighbours it never contains: an agent runtime such as docket, which runs
 the work; an independent verifier such as prill, which judges it; and GitHub. Each still works
 alone, and without a verifier a project stays at Level 3.
@@ -69,94 +70,53 @@ plan or the page named beside it.
 
 - "Apply the repository's teams" is disabled: the board has no channel to the runner, so the
   Teams rung tells you the `docket init` command to run in the project's folder.
-- A profile's team can be set from a project file or the CLI, not from the profile form.
-- Retrying a run request after its task's type or priority changed answers 409, because the
-  task's metadata is part of the request's fingerprint.
 - Only docket stops a run at its token limit. Claude Code, Codex and opencode are measured, not
   enforced: their tokens are read when they finish, and the screen says so. Their runs keep their
   whole limit reserved against the day until they end; a docket run reserves only what its
   steps have not yet used.
-- The run dialog's limit line says "No limit set in Tack" for a run without one even in a project
-  with a daily limit, where the run will be given what is left of the day when it is chosen.
 - The tokens a verifier spends count whole, cache included: prill reports no cache figure.
 - Only docket reports a running agent's steps on its timeline; Codex, Claude Code and opencode
   need their tool lines captured from the real programs first.
-- `docs/screenshots/automation.png` and `factory-metrics.png` predate the four-rung Automation
-  screen and the cost cards.
 
-**Found starting the desktop app (2026-10-19)**, not fixed yet:
+**Everything else that is open** is in [Phase 78](#phase-78--one-pass-over-what-is-still-open) below:
+what the desktop app's first runs found, the board screen audit, the earlier gaps that are a
+fix, and the item screen's new design, ordered so each screen and each module is changed once.
 
-- Opened from the desktop menu, the app's server gets the desktop session's `PATH`, which on
-  Linux leaves out Homebrew and other per-user folders: an agent installed there (opencode under
-  Homebrew) is not found, while Claude Code is, because harness discovery looks outside `PATH`
-  for it. Discovery should look in the same places for every agent.
-- Ending `tack-desktop` with a signal leaves the server it started running, and the next app that
-  opens attaches to that orphan. Only the tray's Quit is known to stop both.
-- The runner the app starts keeps its state under the app's own data folder, so it enrolls as a
-  new runner, and the runner the terminal board used stays listed after it stopped sending
-  heartbeats.
-- The Run dialog's "Machine or group" cannot be read and can pick a dead runner:
-  - The board names its own runner `local-<random id>`. It should be named "This computer
-    (its host name)", and a runner on another machine after that machine.
-  - The list offers every enrolled runner, including one that stopped answering. A runner that does
-    not answer should be shown disabled, with "not answering since" and the time.
-  - With one live runner and no group, the field should be one fixed line ("Runs on this
-    computer"), not a choice. Today a dead runner in the list makes it a choice between two ids.
-- A run queued for a runner that does not answer waits forever without a reason. The reason is
-  written only by a polling runner, and a runner the request does not name writes none on
-  purpose; "No runner is online" appears only when no runner answers at all. The card should say
-  "The computer this run asked for has not answered since" and the time and offer to run it on another.
+---
 
-**Proposed, Phase 78 (2026-10-19): what the first runs from the desktop app found.** Not started;
-the maintainer asked for it to be recorded:
+## Phase 78 — one pass over what is still open
 
-1. **A prepared `node_modules` breaks every run's evidence.** The runner excludes the folder it
-   installed from the agent's change, and when the project's `.gitignore` already ignores it, as
-   almost every project does, `git add` refuses the exclusion ("The following paths are ignored")
-   and the run ends "changes could not be read". Seen on Fabulada's first research run; the tests
-   only used a folder git did not ignore. Exclude it only when git does not already ignore it.
-2. **Install only when the agent can run commands.** A profile whose tools cannot run a command
-   (Read, Grep, Glob, WebFetch, WebSearch) and a run with no check need no dependencies; the Run
-   dialog then says "No install: this profile runs no commands". For docket, its pipeline decides.
-   The sandbox stays on for every run: it keeps the agent away from the home folder, keys and other
-   repositories, which matters most for an agent that reads the web. Its note says so in those words.
-3. **A profile sets its agent.** The Run dialog never reads the agent a profile names
-   (`tool_policy.agent`); it keeps the one the task remembered or the project's default, so
-   "Fabulada research" (a docket profile) was offered with Claude Code and a warning that it has no
-   tools. Picking a profile picks its agent, and a remembered one that differs is replaced, saying so.
-4. **A profile says what it delivers, and the card shows that.** Each profile carries one line: what
-   it delivers (a change on a branch, a document in a folder, an answer), on which agent, and
-   whether it changes files, runs commands or uses the network. The dialog lists the project's
-   profiles first and the built-in ones apart. A run that changed no file shows the agent's answer
-   as what it delivered and offers Accept, not Merge; the Merge button's reason today ("has not
-   finished with a pushed branch") is true but tells a person nothing. What the agent did shows
-   paths inside the project, not the runner's workspace path.
-5. **Where a run goes, and why it waits:** the two items above on the Run dialog's runner list and on
-   a run queued for a runner that does not answer.
+**Status:** proposed 2026-10-19, not started. It gathers what the first runs from the desktop app
+found, the board screen audit, the gaps of earlier phases that are a fix, and the item screen's new
+design, and orders them so each screen and each module is changed by one task, once. No ADR:
+nothing here changes a decision; the one model change is a tick on a manual check. Phase 76 goes
+after it, since both change the profile table and the project file.
 
-**Found auditing the board screen (2026-10-19)**, not fixed yet. A column with many cards cannot
-be scrolled and the horizontal bar can sit below the screen, so the cards past the fold are out of
-reach; found by reading the code, to be reproduced in a browser first:
+| Id | Task | Owns | Waits on |
+|---|---|---|---|
+| R | **The runner prepares only what is needed.** The folder it installed is excluded from the agent's change only when git does not already ignore it: today a project whose `.gitignore` lists `node_modules`, almost every one, ends every run "changes could not be read", because `git add` refuses the exclusion. Dependencies are installed only when the agent can run commands: a profile whose tools cannot (Read, Grep, Glob, WebFetch, WebSearch) with no check installs nothing, and the request says why; for docket its pipeline decides. The sandbox stays on for every run. | the runner's prepare and evidence code, the request snapshot | — |
+| D | **The desktop app finds, stops and names what it starts.** Every agent is looked for in the same places, so opencode under Homebrew is found when the app opens from the desktop menu, whose `PATH` leaves out per-user folders. Ending `tack-desktop` with a signal stops the server it started, so the next app does not attach to an orphan. The app's runner keeps this computer's runner identity instead of enrolling anew, and is named "This computer (host name)"; a runner on another machine is named after that machine. | `tack-desktop`, agent discovery, the runner's enrollment and state folder | — |
+| W | **Where a run waits, and why.** The runner list carries each runner's last heartbeat. A run queued for a runner that does not answer says "The computer this run asked for has not answered since" and the time. Retrying a request after its task's type or priority changed no longer answers 409: the task's metadata leaves the request's fingerprint. A run with no limit, in a project with a daily limit, is told it gets what is left of the day. | the execution and runner handlers, the queue's reason, the limit sentence | — |
+| P | **A profile says what it delivers.** Each profile carries one line: what it delivers (a change on a branch, a document in a folder, an answer) and on which agent; whether it changes files, runs commands or uses the network is read from its tools, not typed. The profile form also sets its team, which today only the project file or the CLI can. | the profile model and its migration, profile handlers, the project file, the profiles panel | — |
+| B | **The board scrolls and works by keyboard.** Reproduced in a browser first. The page that holds the five views gets a height chain, so each column scrolls inside itself and the horizontal bar sits at the bottom of the screen. Scrollbars use `scrollbar-color` and `scrollbar-width` with a thumb of 3:1 in every palette, light and dark, and a stable gutter. Containers that must not scroll are `overflow: clip`, and a column keeps its scroll (`overscroll-behavior: contain`). Each card has a "Move to…" menu, reachable by keyboard and announced. Each column is a named region the keyboard reaches. "Add item" is 24 px and has a visible name. | the work layout, the board and its columns, the scrollbar tokens | — |
+| I | **The item has a page of its own.** The drawer's body becomes one component shown two ways: in the drawer, as today, and as a page, `/projects/:id/items/:itemId`, with a breadcrumb, a main column and a side column. The drawer gets "Expand" and the page "Copy link". The header keeps the type, id, creation date, title and status. The fields (priority, due date, assignee, now editable, estimate, sprint, repeats, last update, tags, automation, what it blocks) become one properties list: the side column on the page, the same grid as today in the drawer. Tabs show a count where the number is already loaded. | the item detail's drawer and header, a properties component, `Drawer`, `Tabs`, `Breadcrumb`, the routes | — |
+| O | **Overview, and "Done when" can be ticked.** Details is renamed Overview, and `?tab=details` still opens it. The description is edited in place, with "Click to edit". The manual checks become a "Done when" list a person ticks, with its progress ("1 of 3"). "For the agent" is a folded card. The manual criterion gains `checked`, false by default, so older items and files read as today; the brief and the verifier ignore it. | the details tab, the manual criterion in core and the items handler, the regenerated schema | — |
+| Q | **The Run dialog follows the profile.** Picking a profile picks its agent, and says so when it replaces the one the task remembered. The project's profiles are listed first, each with its "delivers" line, and the built-in ones apart. A profile that installs nothing says "No install: this profile runs no commands". "Machine or group" names this computer and the others by machine. A runner that does not answer is shown disabled, with since when. With one live runner and no group the field is one fixed line, "Runs on this computer". | the Run dialog and its limit note | R, D, W, P |
+| C | **The run card.** The latest-run summary becomes one card whose colour and actions follow the run. Running: its last steps, its tokens against the limit, "Follow live" and "Stop". Needs review: the opening of the report, duration, steps and files changed, "Accept", "Reject…" and "See what it did". Failed and merged each get their own state. Queued: W's reason and "Run on another computer". A run that changed no file shows the agent's answer as what it delivered and offers Accept, not Merge. Merge, when it cannot run, says why in plain words ("No branch was pushed"), disabled, never hidden. The review actions leave the attempt list for a component of their own. The card sits in the page's side column and at the top of the drawer. | the latest-run summary, the merge button, the review actions | W, P, I |
+| E | **The Execution tab.** Chips pick the run, with "Run again". Above the run sits the review banner with an optional note. "What the agent concluded" shows the report as written, with "Read full report". "What the agent did" groups the steps by tool, targets as chips, or shows the timeline. Paths are shown inside the project, not the runner's workspace. On the page, a side column holds the run, what the agent got, the usage folded (tokens and the share of the limit), and the ids with the raw log. | the execution timeline, the attempt list, the run log parser | C |
+| Z | **Integration, once.** The one gate on the merged tree. `e2e/a11y.spec.ts` learns the board's checks: a column of thirty cards scrolls to its last card, the horizontal bar is inside the screen, and every scrollable region takes keyboard focus. One end-to-end test opens the item page. The screenshots are retaken once, after every screen has changed: `automation.png` and `factory-metrics.png` (both older than the four-rung Automation screen and the cost cards), the item page, the Run dialog, and the tutorial shots that show them. | the gate, e2e, `docs/screenshots/` | all |
 
-- The board has no fixed height. The page that holds the five views is not a flexible, shrinkable
-  box, so the board's `height: 100%` and each column's `max-height: 100%` resolve to nothing: a
-  column grows to its content and the container above clips it. The fix is the height chain, so
-  each column scrolls inside itself and the horizontal bar sits at the bottom of the screen.
-- The scrollbars are nearly invisible where they do exist: the thumb is the border colour on the
-  app background (about 1.1:1, WCAG 1.4.11 asks 3:1), the track is transparent, Firefox ignores
-  the styling, and overlay scrollbars hide until you scroll. They should use the standard
-  `scrollbar-color` and `scrollbar-width` with a thumb colour of their own that reaches 3:1 in
-  every palette, light and dark, and a stable gutter.
-- Containers that should never scroll are `overflow: hidden`, which the browser still scrolls when
-  you drag a selection or focus a clipped card, with no bar to scroll back. They should be
-  `overflow: clip`, and a column keeps its scroll to itself (`overscroll-behavior: contain`).
-- A card can only be moved by dragging it. A "Move to…" menu on each card, reachable by keyboard
-  and announced when it is done, is the other way (WCAG 2.1.1 and 2.5.7).
-- The scrolling regions cannot be reached by keyboard and the columns have no name for a screen
-  reader: each needs `tabindex="0"`, a region role and a label. The "Add item" button is 22 px
-  (24 px is the minimum, WCAG 2.5.8) and is named only by its tooltip.
-- `e2e/a11y.spec.ts` checks none of this: a column of thirty cards scrolls to its last card, the
-  horizontal bar is inside the screen, and no scrollable region lacks keyboard focus.
+Rounds: **1** = R, D, W, P, B, I, O, which share no file; **2** = Q and C; **3** = E; **4** = Z.
+
+Each task writes its own guide paragraph and changelog line; there is no separate docs task. While a
+round is building, a task runs only the tests of what it touched: its crate's `cargo nextest run -p`
+and `npx vitest run` on its own files. It fixes the tests its change breaks, and adds a test for a
+behaviour that changes, never for a restyle or a component that moved. The full suites, the
+end-to-end tests and `.githooks/pre-push` run once, in Round 4.
+
+Left out because nothing records it: who created an item and who last changed it (the page shows
+the dates), a "short answer" cut out of the agent's report (the report is shown as written), and the
+time each group of steps took (a step has no time).
 
 ---
 
