@@ -107,6 +107,30 @@ plan or the page named beside it.
   purpose; "No runner is online" appears only when no runner answers at all. The card should say
   "The computer this run asked for has not answered since" and the time and offer to run it on another.
 
+**Found auditing the board screen (2026-10-19)**, not fixed yet. A column with many cards cannot
+be scrolled and the horizontal bar can sit below the screen, so the cards past the fold are out of
+reach; found by reading the code, to be reproduced in a browser first:
+
+- The board has no fixed height. The page that holds the five views is not a flexible, shrinkable
+  box, so the board's `height: 100%` and each column's `max-height: 100%` resolve to nothing: a
+  column grows to its content and the container above clips it. The fix is the height chain, so
+  each column scrolls inside itself and the horizontal bar sits at the bottom of the screen.
+- The scrollbars are nearly invisible where they do exist: the thumb is the border colour on the
+  app background (about 1.1:1, WCAG 1.4.11 asks 3:1), the track is transparent, Firefox ignores
+  the styling, and overlay scrollbars hide until you scroll. They should use the standard
+  `scrollbar-color` and `scrollbar-width` with a thumb colour of their own that reaches 3:1 in
+  every palette, light and dark, and a stable gutter.
+- Containers that should never scroll are `overflow: hidden`, which the browser still scrolls when
+  you drag a selection or focus a clipped card, with no bar to scroll back. They should be
+  `overflow: clip`, and a column keeps its scroll to itself (`overscroll-behavior: contain`).
+- A card can only be moved by dragging it. A "Move to…" menu on each card, reachable by keyboard
+  and announced when it is done, is the other way (WCAG 2.1.1 and 2.5.7).
+- The scrolling regions cannot be reached by keyboard and the columns have no name for a screen
+  reader: each needs `tabindex="0"`, a region role and a label. The "Add item" button is 22 px
+  (24 px is the minimum, WCAG 2.5.8) and is named only by its tooltip.
+- `e2e/a11y.spec.ts` checks none of this: a column of thirty cards scrolls to its last card, the
+  horizontal bar is inside the screen, and no scrollable region lacks keyboard focus.
+
 ---
 
 ## Phase 76 — the project file is kept in sync
