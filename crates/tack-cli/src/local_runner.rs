@@ -259,6 +259,11 @@ async fn ensure_runner_credential(
                  no longer using; provisioning a fresh identity instead of reusing it"
             );
         } else {
+            crate::local_enrollment::name_stored_runner_after_this_computer(
+                &runner_config.state_dir,
+                &server_config.database_url,
+            )
+            .await;
             runner_config.enrollment_credential =
                 Some(crate::local_enrollment::stored_session_placeholder());
             return Ok(());
