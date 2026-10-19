@@ -34,6 +34,7 @@ export type {
   CreateFleetInput,
   CreateFleetResult,
   AgentProfileSummary,
+  ProfileHistory,
   AgentProfileListResult,
   CreateAgentProfileInput,
   CreateAgentProfileResult,

@@ -155,6 +155,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("091_template_bundle", &MIGRATION_091[..]),
         ordinary("092_drop_usd_per_day", &MIGRATION_092[..]),
         ordinary("093_project_prepare_command", &MIGRATION_093[..]),
+        ordinary("094_provisional_tokens_per_run", &MIGRATION_094[..]),
     ]
 }
 
@@ -1868,3 +1869,8 @@ const MIGRATION_092: [&str; 1] = ["ALTER TABLE project_budgets DROP COLUMN usd_p
 // 093: how a run installs the project's dependencies: NULL detects the command from the lockfile,
 // '' turns the install off, any other text replaces the detected command.
 const MIGRATION_093: [&str; 1] = ["ALTER TABLE projects ADD COLUMN prepare_command TEXT"];
+
+// 094: a run whose profile sets no token limit runs under the project's provisional one, 2 000 000 by
+// default; NULL turns it off. A project with no budgets row has the default.
+const MIGRATION_094: [&str; 1] =
+    ["ALTER TABLE project_budgets ADD COLUMN provisional_tokens_per_run INTEGER DEFAULT 2000000"];

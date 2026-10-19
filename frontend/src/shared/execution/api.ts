@@ -79,9 +79,11 @@ export interface ExecutionSummary {
 /** `RunLimit` from the server, which owns the sentence. */
 export interface RunLimit {
   tokens: number | null;
-  source: 'profile' | 'run' | 'none';
+  source: 'profile' | 'provisional' | 'run' | 'day' | 'none';
   enforced_by: 'docket' | 'claude-code' | 'opencode' | 'measured';
   sentence: string;
+  /** What the run's latest attempt has counted so far, live while it runs. */
+  used?: number | null;
 }
 
 export interface ExecutionListResult {
@@ -315,8 +317,20 @@ export interface CreateAgentProfileResult {
   name: string;
 }
 
+/** What a profile's last successful runs counted; `proposal` once `n` reaches `runs_needed`. */
+export interface ProfileHistory {
+  n: number;
+  p50: number | null;
+  p90: number | null;
+  min: number | null;
+  max: number | null;
+  proposal: number | null;
+  runs_needed: number;
+}
+
 export const agentProfilesApi = {
   list: () => requestWithHeaders<AgentProfileListResult>('/agent-profiles'),
+  history: (id: string) => request<ProfileHistory>(`/agent-profiles/${encodeURIComponent(id)}/history`),
   create: (input: CreateAgentProfileInput) =>
     request<CreateAgentProfileResult>('/agent-profiles', {
       method: 'POST',

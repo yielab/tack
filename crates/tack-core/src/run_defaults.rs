@@ -85,6 +85,27 @@ pub fn token_count(n: i64) -> String {
     }
 }
 
+/// How many successful runs a profile needs before a limit is proposed.
+pub const RUNS_BEFORE_PROPOSAL: usize = 5;
+
+/// The value at percentile `pct` (1..=100) of `sorted` (ascending), by nearest rank.
+/// `None` for an empty list.
+pub fn percentile(sorted: &[i64], pct: usize) -> Option<i64> {
+    let rank = (sorted.len() * pct).div_ceil(100).max(1);
+    sorted.get(rank - 1).copied()
+}
+
+/// The limit proposed for a profile whose runs' 90th percentile is `p90`: that × 1.5, rounded up
+/// to two significant figures (523 000 → 790 000, 1 234 → 1 900).
+pub fn proposed_limit(p90: i64) -> i64 {
+    let raised = (p90.max(0).cast_unsigned() * 3).div_ceil(2);
+    let mut unit = 1;
+    while raised / unit >= 100 {
+        unit *= 10;
+    }
+    i64::try_from(raised.div_ceil(unit) * unit).unwrap_or(i64::MAX)
+}
+
 /// What a profile's `limits` may hold: `budgets.tokens` and `timeout_seconds` are positive whole
 /// numbers or absent, and `budgets.cost_usd` was removed. The message names the field in full.
 pub fn check_limits(limits: &serde_json::Value) -> Result<(), String> {
@@ -335,5 +356,28 @@ mod tests {
             );
             assert!(!profile_network(&bad));
         }
+    }
+
+    #[test]
+    fn the_proposal_is_the_90th_percentile_times_one_and_a_half_rounded_up_to_two_figures() {
+        for (p90, proposed) in [
+            (523_000, 790_000),
+            (1_234, 1_900),
+            (400_000, 600_000),
+            (60, 90),
+            (1, 2),
+            (0, 0),
+        ] {
+            assert_eq!(proposed_limit(p90), proposed, "p90 {p90}");
+        }
+    }
+
+    #[test]
+    fn a_percentile_is_the_value_at_its_nearest_rank() {
+        let runs: Vec<i64> = (1..=10).map(|n| n * 100).collect();
+        assert_eq!(percentile(&runs, 50), Some(500));
+        assert_eq!(percentile(&runs, 90), Some(900));
+        assert_eq!(percentile(&runs[..5], 90), Some(500));
+        assert_eq!(percentile(&[], 90), None);
     }
 }

@@ -108,7 +108,13 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
   let settingsApplied = false;
-  createEffect(() => { if (props.isOpen) { settingsApplied = false; setProfilePicked(false); setForm(initialForm()); } });
+  createEffect(() => {
+    if (!props.isOpen) return;
+    settingsApplied = false;
+    setProfilePicked(false);
+    setForm(initialForm());
+    if (props.initialTokenLimit) setForm({ tokenLimit: String(props.initialTokenLimit), tokenLimitEdited: true });
+  });
 
   createEffect(() => {
     if (!props.isOpen || form.selectorId) return;

@@ -19,6 +19,8 @@ mod item_recurrence;
 mod item_source_migration;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
+#[path = "migrations/provisional_limit.rs"]
+mod provisional_limit;
 #[path = "migrations/role_profile_fleet.rs"]
 mod role_profile_fleet;
 #[path = "migrations/template_bundle.rs"]

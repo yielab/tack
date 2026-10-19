@@ -175,6 +175,47 @@
         }
       }
     },
+    "/api/agent-profiles/{id}/history": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "operationId": "profile_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent profile id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counted tokens of the profile's last successful runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileHistory"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/attachments/{id}": {
       "get": {
         "tags": [
@@ -8032,6 +8073,14 @@
             ],
             "format": "int64"
           },
+          "provisional_tokens_per_run": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The token limit of a run whose profile sets none; `null` turns it off, and a body that\nleaves it out keeps the default."
+          },
           "queue_items_max": {
             "type": [
               "integer",
@@ -11517,6 +11566,62 @@
           "none"
         ]
       },
+      "ProfileHistory": {
+        "type": "object",
+        "description": "What a profile's last successful runs counted, and the limit proposed from them.",
+        "required": [
+          "n",
+          "runs_needed"
+        ],
+        "properties": {
+          "max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "n": {
+            "type": "integer",
+            "description": "Successful runs measured, at most the last 20.",
+            "minimum": 0
+          },
+          "p50": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "p90": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "proposal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "1.5 times the 90th percentile, rounded up to two figures; `null` under 5 runs."
+          },
+          "runs_needed": {
+            "type": "integer",
+            "description": "How many successful runs it takes before a limit is proposed.",
+            "minimum": 0
+          }
+        }
+      },
       "Project": {
         "type": "object",
         "required": [
@@ -12153,7 +12258,7 @@
           },
           "source": {
             "type": "string",
-            "description": "`profile`, `run` or `none`."
+            "description": "`profile`, `provisional`, `run`, `day` or `none`."
           },
           "tokens": {
             "type": [
@@ -12162,6 +12267,15 @@
             ],
             "format": "int64",
             "description": "Absent when the run has no limit set in Tack.",
+            "minimum": 0
+          },
+          "used": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "What the run's latest attempt has counted so far, live while it runs; absent before any attempt.",
             "minimum": 0
           }
         }
