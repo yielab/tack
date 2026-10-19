@@ -1,4 +1,4 @@
-import { createMemo, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
+import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
@@ -20,6 +20,7 @@ import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
+import MoveMenu from './MoveMenu';
 
 /** Short, human id for the card header (real ids are UUIDs). */
 function shortId(id: string): string {
@@ -29,7 +30,10 @@ function shortId(id: string): string {
 export const ItemCard: Component<{
   item: Item;
   typeLabel: string;
+  /** Every column's status, for the "Move to…" menu. */
+  statuses: string[];
   onEdit: (item: Item) => void;
+  onMove: (itemId: string, status: string) => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
@@ -54,6 +58,8 @@ export const ItemCard: Component<{
   return (
     <div
       draggable={true}
+      data-item-id={props.item.id}
+      class="group"
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
@@ -80,6 +86,10 @@ export const ItemCard: Component<{
           {shortId(props.item.id)}
         </span>
         <div style={{ 'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px' }}>
+          <MoveMenu
+            statuses={props.statuses.filter((status) => status !== props.item.status)}
+            onMove={(status) => props.onMove(props.item.id, status)}
+          />
           <RunWithAgentButton
             itemId={props.item.id}
             itemTitle={props.item.title}
@@ -137,13 +147,16 @@ export const ItemCard: Component<{
 
 const BoardColumnView: Component<{
   column: BoardColumn;
+  statuses: string[];
   dotColor: string;
   typeLabelOf: (item: Item) => string;
   onItemDrop: (itemId: string, newStatus: string) => void;
+  onMoveItem: (itemId: string, newStatus: string) => void;
   onAddItem: (status: string) => void;
   onEditItem: (item: Item) => void;
 }> = (props) => {
   const [isDragOver, setIsDragOver] = createSignal(false);
+  const headingId = createUniqueId();
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -159,14 +172,21 @@ const BoardColumnView: Component<{
   };
 
   return (
-    <section style={{
-      width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column', gap: '6px',
-      'max-height': '100%', background: 'var(--color-bg-panel)',
-      'border-radius': '26px', padding: '12px 10px',
-    }}>
+    <section
+      role="region"
+      aria-labelledby={headingId}
+      style={{
+        width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column', gap: '6px',
+        'max-height': '100%', background: 'var(--color-bg-panel)',
+        'border-radius': '26px', padding: '12px 10px',
+        // The scrolling body below sits on the panel, so its track is the panel.
+        '--scrollbar-track': 'var(--color-bg-panel)',
+      }}
+    >
       <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
         <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
-        <h3 style={{
+        <h3 id={headingId} style={{
+          'min-width': 0, 'overflow-wrap': 'anywhere',
           'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
           'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
         }}>
@@ -181,25 +201,34 @@ const BoardColumnView: Component<{
         <button
           onClick={() => props.onAddItem(props.column.status)}
           title="Add item"
+          aria-label={`Add item to ${props.column.status}`}
           class="focus:outline-none focus-visible:ring-2"
           style={{
-            'margin-left': 'auto', width: '22px', height: '22px', 'border-radius': '50%', border: 'none',
+            'margin-left': 'auto', 'min-width': '24px', 'min-height': '24px', 'border-radius': 'var(--radius-pill)', border: 'none',
             background: 'var(--color-bg-app)', cursor: 'pointer', color: 'var(--color-text-secondary)',
-            display: 'grid', 'place-items': 'center', padding: 0, 'flex-shrink': 0,
+            display: 'inline-flex', 'align-items': 'center', gap: '4px', padding: '0 9px 0 7px', 'flex-shrink': 0,
+            'font-size': '0.75rem', 'font-weight': 600, 'white-space': 'nowrap',
             transition: 'color .12s, box-shadow .12s',
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary-600)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
           <IconPlus size={13} />
+          Add item
         </button>
       </div>
+      {/* The column's own scroll: focusable, so the keyboard can scroll it, and
+          it keeps the wheel to itself instead of passing it to the board. */}
       <div
+        role="group"
+        aria-labelledby={headingId}
+        tabindex={0}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         style={{
-          flex: 1, 'overflow-y': 'auto', display: 'flex', 'flex-direction': 'column', gap: '8px',
+          flex: 1, 'min-height': 0, 'overflow-y': 'auto', 'overscroll-behavior': 'contain', 'scrollbar-gutter': 'stable',
+          display: 'flex', 'flex-direction': 'column', gap: '8px',
           padding: '2px 2px 4px',
           'border-radius': 'var(--radius-item)',
           outline: isDragOver() ? '2px dashed var(--color-primary-600)' : 'none',
@@ -213,7 +242,9 @@ const BoardColumnView: Component<{
             <ItemCard
               item={item()}
               typeLabel={props.typeLabelOf(item())}
+              statuses={props.statuses}
               onEdit={props.onEditItem}
+              onMove={props.onMoveItem}
             />
           )}
         </ForById>
@@ -300,6 +331,8 @@ const Board: Component = () => {
     (currentBoard()?.columns ?? []).map((column) => ({ id: column.status, column })),
   );
 
+  const statusNames = createMemo(() => columnsByStatus().map((entry) => entry.id));
+
   // Unique assignees across the board → toolbar avatar stack.
   const assignees = createMemo(() => {
     const set = new Set<string>();
@@ -384,6 +417,13 @@ const Board: Component = () => {
     await refetch();
   };
 
+  // The menu's move: the same action as a drop, then the keyboard lands on the
+  // card in its new column, which is a new element, so focus would be lost.
+  const handleMoveItem = async (itemId: string, newStatus: string) => {
+    await handleItemDrop(itemId, newStatus);
+    document.querySelector<HTMLElement>(`[data-item-id="${itemId}"] [aria-label="Move to…"]`)?.focus();
+  };
+
   const handleAddItem = (status: string) => {
     setModalMode('create');
     setEditingItem(null);
@@ -412,7 +452,7 @@ const Board: Component = () => {
         : { bg: 'var(--color-warning-100)', fg: 'var(--color-warning-600)', dot: 'var(--color-warning-600)' };
 
   return (
-    <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, height: '100%' }}>
+    <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, 'min-height': 0 }}>
       {/* board toolbar */}
       <div style={{ 'flex-shrink': 0, padding: '16px 22px 10px', display: 'flex', 'align-items': 'center', gap: '12px' }}>
         <h1 style={{ 'font-size': '2.125rem', 'line-height': 1.1, margin: 0, color: 'var(--color-text-primary)' }}>
@@ -455,21 +495,32 @@ const Board: Component = () => {
             </div>
           </Show>
 
-          <div style={{ flex: 1, 'overflow-x': 'auto', 'overflow-y': 'hidden', padding: '6px 22px 22px' }}>
-            <div style={{ display: 'flex', gap: '14px', height: '100%', 'align-items': 'flex-start' }}>
-              <ForById each={columnsByStatus()}>
-                {(entry) => (
-                  <BoardColumnView
-                    column={entry().column}
-                    dotColor={dotColor(entry().id)}
-                    typeLabelOf={typeLabelOf}
-                    onItemDrop={handleItemDrop}
-                    onAddItem={handleAddItem}
-                    onEditItem={handleEditItem}
-                  />
-                )}
-              </ForById>
-            </div>
+          {/* The last link of the height chain (Layout → WorkLayout → here): this
+              row takes what is left of the screen, so each column scrolls inside
+              itself and the horizontal bar sits at the bottom of the screen. */}
+          <div
+            role="group"
+            aria-label="Board columns"
+            tabindex={0}
+            style={{
+              flex: 1, 'min-height': 0, display: 'flex', gap: '14px', 'align-items': 'flex-start',
+              'overflow-x': 'auto', 'overflow-y': 'hidden', 'scrollbar-gutter': 'stable', padding: '6px 22px 22px',
+            }}
+          >
+            <ForById each={columnsByStatus()}>
+              {(entry) => (
+                <BoardColumnView
+                  column={entry().column}
+                  statuses={statusNames()}
+                  dotColor={dotColor(entry().id)}
+                  typeLabelOf={typeLabelOf}
+                  onItemDrop={handleItemDrop}
+                  onMoveItem={handleMoveItem}
+                  onAddItem={handleAddItem}
+                  onEditItem={handleEditItem}
+                />
+              )}
+            </ForById>
           </div>
         </Show>
       </Show>
