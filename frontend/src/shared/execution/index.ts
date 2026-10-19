@@ -45,7 +45,7 @@ export type {
   RunnerSummary,
   RunnerListResult,
 } from './api';
-export { executionsApi, fleetsApi, agentProfilesApi, runnersApi } from './api';
+export { executionsApi, fleetsApi, agentProfilesApi, runnersApi, teamOf } from './api';
 
 export type {
   ModelProvenance,

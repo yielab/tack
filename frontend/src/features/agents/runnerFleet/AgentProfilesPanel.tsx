@@ -3,9 +3,8 @@ import { createStore, produce } from 'solid-js/store';
 import { Badge, Button, EmptyState, Field, FieldShell, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
-import { agentProfilesApi, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
+import { agentProfilesApi, teamOf, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
 import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
-import { inputStyle, teamOf } from '../../settings/panels/automation/parts';
 
 /**
  * Create/edit/delete UI for `agent_profiles`. The tool policy is built from a
@@ -342,7 +341,11 @@ const AgentProfilesPanel: Component = () => {
               value={team()}
               onChange={(e) => setTeam(e.currentTarget.value)}
               class="rounded-full border px-3 py-1 text-sm"
-              style={inputStyle}
+              style={{
+                'background-color': 'var(--color-bg-base)',
+                color: 'var(--color-text-primary)',
+                'border-color': 'var(--color-border-medium)',
+              }}
             >
               <option value="" selected={!team()}>No team</option>
               <For each={teams()}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
