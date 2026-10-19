@@ -162,3 +162,70 @@ async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
     assert!(reason.contains("subtasks"), "{reason}");
     fs::remove_dir_all(scratch).expect("scratch");
 }
+
+#[tokio::test]
+async fn an_install_the_project_already_ignores_does_not_stop_the_capture() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("skipped: the git binary is not on PATH");
+        return;
+    }
+    // Ignored in each way a project writes it, then not ignored at all: the install is the
+    // runner's, never the agent's work, and the capture reads either way.
+    for gitignore in ["node_modules\n", "node_modules/\n", "/node_modules/*\n", ""] {
+        let root = tempfile::tempdir().expect("temp dir");
+        let path = root.path().join("ws");
+        fs::create_dir_all(&path).expect("workspace");
+        assert!(git(&path, &["init", "--quiet"]));
+        fs::write(path.join(".gitignore"), gitignore).expect("gitignore");
+        assert!(git(&path, &["add", "-A"]));
+        assert!(git(&path, &["commit", "--quiet", "-m", "base"]));
+        let base = Command::new("git")
+            .current_dir(&path)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse");
+        let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
+        fs::create_dir_all(path.join("node_modules")).expect("installed folder");
+        fs::write(path.join("node_modules/dep.js"), "dep\n").expect("dependency");
+        fs::write(path.join("node_modules/.tack-prepared"), "").expect("marker");
+        fs::write(path.join("new.txt"), "new\n").expect("add");
+        fs::write(path.join(".tack-attempt"), "attempt").expect("marker");
+
+        let workspace = Workspace {
+            attempt_id: AttemptId::new("attempt"),
+            id: WorkspaceId::new("ws_attempt"),
+            path: path.clone(),
+            base_revision: base,
+        };
+        let workspaces =
+            WorkspaceManager::new(root.path().join("root"), GitWorktreeProvisioner::default());
+        let (scratch, staged) = capture(
+            &workspaces,
+            &workspace,
+            "codex".to_owned(),
+            serde_json::json!({"code": "completed"}),
+            serde_json::Value::Null,
+            None,
+            None,
+            ("Tack <t@localhost>", "work"),
+            None,
+        )
+        .await;
+
+        let evidence = staged
+            .iter()
+            .find(|item| item["name"] == "evidence.json")
+            .expect("evidence is staged");
+        let evidence: AttemptEvidence =
+            serde_json::from_slice(&fs::read(evidence["staged_path"].as_str().unwrap()).unwrap())
+                .unwrap();
+        assert!(evidence.captured, "{gitignore:?}: {:?}", evidence.reason);
+        let paths: Vec<_> = evidence
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect();
+        assert_eq!(paths, ["new.txt"], "{gitignore:?}");
+        fs::remove_dir_all(scratch).expect("scratch");
+    }
+}
