@@ -42,6 +42,10 @@ automation a template carries, and the removal of dollars per day.
   figures) that the person applies with one click. A running run shows its count amber at 80% of its
   limit, and one stopped by its limit says how much it used and offers **Run again with more**. A request
   that sends `budgets.tokens: null` now also takes the profile's or the provisional limit. Migration 094.
+- **A docket change that edits its own check asks a person.** When docket parks a task because its
+  change touches what checks it (a lockfile, a manifest, a lint or test configuration, CI), the
+  Inbox asks "The change edits what checks it: <files>. Accept it after reading those files?"
+  instead of asking to allow a tool call; a deny ends the run with docket's reason.
 - **A Claude Code, Codex or opencode run starts with its dependencies installed.** The runner runs
   the project's install command in its copy of the code before the agent starts, keeps what npm,
   pnpm and yarn install into `node_modules` and gives the next run's copy the same files as hard

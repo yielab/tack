@@ -539,8 +539,23 @@ fn approval_question(view: &Value) -> Option<Question> {
 
 /// The question for the approval a task holds (`status: waiting_approval`,
 /// `approvalToken`). Its details are the record in `GET /approvals`; without
-/// one, the task's `reason` is all docket said.
+/// one, the task's `reason` is all docket said. A change that edits the files
+/// its own check reads (`checkChanged`) asks about those files, not a tool call.
 fn held_approval_question(task: &Value, token: &str, record: Option<&Value>) -> Question {
+    let changed: Vec<&str> = task["checkChanged"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !changed.is_empty() {
+        let prompt = format!(
+            "The change edits what checks it: {}. Accept it after reading those files?",
+            changed.join(", ")
+        );
+        let options = record.map_or(&Value::Null, |record| &record["options"]);
+        return approval_asking(token, prompt, None, &task["role"], &Value::Null, options);
+    }
     match record {
         Some(record) => {
             let tool = record["context"]["tool"].as_str();
@@ -1437,3 +1452,6 @@ impl DocketAdapter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
