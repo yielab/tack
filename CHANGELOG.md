@@ -26,6 +26,11 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The Run dialog follows the profile.** Pressing a profile picks the agent it is written for and says
+  so when that replaces the task's; profiles you made are listed first with their "delivers" line, the
+  built-in ones apart; a profile that runs no commands says "No install: this profile runs no commands";
+  a machine that does not answer is shown disabled with since when, and with one machine and no group the
+  field is one line, "Runs on this computer".
 - **A profile says what it delivers.** Each profile carries one line, "a change on a branch", "a
   document in a folder" or "an answer", shown beside its agent in the Agents page, with three chips
   (changes files, runs commands, uses the network) read from its tools, never typed. The profile

@@ -15,6 +15,7 @@
 // `tack-runner`) exclusively — it has no other "run an agent" concept to
 // stay compatible with.
 
+import { teamOf } from '../execution';
 import type {
   CreateExecutionInput,
   RunnerCapabilities,
@@ -320,8 +321,28 @@ export function isActiveRunnerState(state: string): boolean {
   return state === 'active';
 }
 
-/** Whether the target picker should stay hidden and the one active runner
- *  used directly, with no free-text id anywhere — hidden when exactly one
+/** Whether a runner is active and answering: `online` is the server's own reading of its heartbeat
+ *  (the scheduler's window), so the dialog keeps no second threshold. A row without it counts as answering. */
+export function isAnsweringRunner(runner: { state: string; online?: boolean }): boolean {
+  return isActiveRunnerState(runner.state) && runner.online !== false;
+}
+
+/** A runner that does not answer, in words: since when its last heartbeat says. */
+export function silentRunnerLabel(name: string, lastHeartbeatAt: string | null): string {
+  const at = lastHeartbeatAt ? new Date(lastHeartbeatAt) : null;
+  const since = at && !Number.isNaN(at.getTime()) ? at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  return `${name} (not answering${since ? ` since ${since}` : ''})`;
+}
+
+/** The agents a profile is written for: its docket team means docket, else the agents it lists tools for. */
+export function profileAgents(profile: { tool_policy?: unknown }): string[] {
+  if (teamOf(profile)) return ['docket'];
+  const tools = (profile.tool_policy as { tools?: unknown } | null | undefined)?.tools;
+  return tools && typeof tools === 'object' ? Object.keys(tools) : [];
+}
+
+/** Whether the target picker gives way to one fixed line and the one active runner
+ *  is used directly, with no free-text id anywhere — when exactly one
  *  machine is active, the common case. More than one active runner, or a
  *  fleet also existing as an alternative, means a real choice exists and
  *  the picker must render. */
