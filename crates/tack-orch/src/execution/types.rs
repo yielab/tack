@@ -277,6 +277,10 @@ pub struct RepositorySnapshot {
     pub remote: String,
     pub base_revision: String,
     pub subdirectory: Option<String>,
+    /// How the project installs its dependencies, as it stood when the request was made. Absent
+    /// means detect from the lockfile, as it does for a runner that predates the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepare: Option<tack_core::prepare::PrepareSetting>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

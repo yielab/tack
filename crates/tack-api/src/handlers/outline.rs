@@ -612,6 +612,7 @@ async fn write_automation(
     let mut update = UpdateProject {
         repository: auto.repository.clone().map(Some),
         default_branch: auto.default_branch.clone().map(Some),
+        prepare_command: auto.prepare.clone().map(Some),
         push_after_run: auto.push_after_run,
         default_harness: auto
             .default_harness

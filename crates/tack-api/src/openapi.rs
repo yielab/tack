@@ -1012,6 +1012,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::settings::UpdateBackupSettings,
         handlers::local_runner::UpdateLocalRunner,
         handlers::local_runner::FolderCheck,
+        handlers::local_runner::DetectedInstall,
         // ── Harness-agnostic runner fleet: operator execution API DTOs ──────
         handlers::executions::CreateExecution,
         handlers::executions::CreateExecutionResponse,

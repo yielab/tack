@@ -91,6 +91,7 @@ Only the keys the file names change. On an export every key is written.
 | `repository` | text | An absolute path for a folder origin, a URL for a `url` origin |
 | `default_branch` | text | |
 | `workspace_mode` | text | `local_branch`, `in_place` or `clone` |
+| `prepare` | text, optional | The install command that replaces the one the lockfile implies; empty turns the install off. Absent leaves the project's setting as it is; one line only |
 | `push_after_run` | bool | |
 | `default_harness` | text | The agent a run uses when none is named; one of the four kinds above |
 | `default_profile` | text | A profile name |

@@ -196,6 +196,11 @@ pub struct BundleAutomation {
     /// local_branch, in_place or clone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_mode: Option<String>,
+    /// How a run installs the project's dependencies: a one-line command replaces the one the
+    /// lockfile implies, an empty one turns the install off. Absent, an import leaves it as it is
+    /// and an export means the lockfile decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepare: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_after_run: Option<bool>,
     /// The agent a run uses when none is named.

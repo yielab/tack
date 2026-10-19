@@ -8145,6 +8145,13 @@
             ],
             "description": "The status a card moves to when its run finishes."
           },
+          "prepare": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How a run installs the project's dependencies: a one-line command replaces the one the\nlockfile implies, an empty one turns the install off. Absent, an import leaves it as it is\nand an export means the lockfile decides."
+          },
           "push_after_run": {
             "type": [
               "boolean",
@@ -9804,6 +9811,21 @@
           "duplicates"
         ]
       },
+      "DetectedInstall": {
+        "type": "object",
+        "required": [
+          "command",
+          "lockfile"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "lockfile": {
+            "type": "string"
+          }
+        }
+      },
       "DomainSettings": {
         "type": "object",
         "description": "One named area of the repository with its own level.",
@@ -10344,6 +10366,17 @@
           },
           "exists": {
             "type": "boolean"
+          },
+          "install": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DetectedInstall",
+                "description": "The install command the checked-out commit's lockfile implies, when it has one."
+              }
+            ]
           },
           "is_dir": {
             "type": "boolean"
@@ -11592,6 +11625,13 @@
               "string",
               "null"
             ]
+          },
+          "prepare_command": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How a run installs the project's dependencies: absent detects the command from the\nlockfile, empty turns the install off, any other text replaces the detected command."
           },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
@@ -13040,6 +13080,13 @@
               "string",
               "null"
             ]
+          },
+          "prepare_command": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted leaves it untouched; `null` detects the command from the lockfile, `\"\"` turns the\ninstall off, any other single line replaces the detected command."
           },
           "push_after_run": {
             "type": [

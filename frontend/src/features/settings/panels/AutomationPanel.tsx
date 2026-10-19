@@ -4,6 +4,7 @@ import { ApiError } from '../../../shared/api/client';
 import type { AgentModelsReport } from '../../../shared/runWithAgent/models';
 import ModelField from '../../../shared/runWithAgent/ModelField';
 import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
+import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
 import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
@@ -179,6 +180,25 @@ const AutomationPanel: Component = () => {
           <Show when={hasFolder() && check()}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
+          <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={p()?.prepare_command !== ''}
+              onChange={(e) => void save({ prepare_command: e.currentTarget.checked ? null : '' })}
+            />
+            Install dependencies before each run
+          </label>
+          <Show when={p()?.prepare_command !== ''}>
+            <Field
+              label="Install command"
+              aria-label="Install command"
+              value={p()?.prepare_command ?? ''}
+              placeholder="Taken from the lockfile"
+              onChange={(e) => void save({ prepare_command: e.currentTarget.value.trim() || null })}
+            />
+          </Show>
+          <Note>{installLine(p()?.prepare_command, hasFolder() ? check() : null)}</Note>
         </Show>
       </Fold>
 
