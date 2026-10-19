@@ -584,6 +584,13 @@ async fn write_profiles(
                         .map(|(id, _)| id.clone())
                 })
                 .or_else(|| old.and_then(|o| o.fleet_id.clone())),
+            delivers: value
+                .delivers
+                .as_deref()
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(str::to_owned)
+                .or_else(|| old.and_then(|o| o.delivers.clone())),
             builtin: false,
         };
         repo.write_agent_profile(&profile, &SystemExecutionClock)

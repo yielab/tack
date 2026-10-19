@@ -5,6 +5,7 @@ import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
 import { agentProfilesApi, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
 import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
+import { inputStyle, teamOf } from '../../settings/panels/automation/parts';
 
 /**
  * Create/edit/delete UI for `agent_profiles`. The tool policy is built from a
@@ -12,7 +13,10 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * `{"tools": {"<harness>": [names] | ["*"]}}`; keys other than `tools` in an
  * existing policy are kept untouched on edit, except `network`: the "needs the network" box sets
  * `network: true`, and unticked it leaves the key out (absent is off). The limits form edits `limits.budgets.tokens`
- * and `limits.timeout_seconds`; any other key in an existing `limits` is kept.
+ * and `limits.timeout_seconds`; any other key in an existing `limits` is kept. The team select sets
+ * `tool_policy.docket.team` (the other `docket` keys stay); its options are the teams the board's
+ * profiles already name. "Delivers" is one line the profile carries; what the profile can do is
+ * derived by the server from its tools and only shown.
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
 
@@ -61,6 +65,22 @@ const limitsFrom = (limits: unknown): { tokens: string; seconds: string } => {
   };
 };
 
+/** The three derived capabilities as chips: always shown, dimmed when the profile cannot. */
+const CapabilityChips: Component<{ profile: AgentProfileSummary }> = (props) => {
+  const chip = (can: boolean | undefined, yes: string, no: string, id: string) => (
+    <span data-testid={`cap-${id}`} data-can={can ? 'yes' : 'no'} class={can ? '' : 'opacity-50'}>
+      <Badge tone={can ? 'primary' : 'neutral'}>{can ? yes : no}</Badge>
+    </span>
+  );
+  return (
+    <span class="flex flex-wrap gap-1">
+      {chip(props.profile.changes_files, 'Changes files', 'Changes no files', 'files')}
+      {chip(props.profile.runs_commands, 'Runs commands', 'Runs no commands', 'commands')}
+      {chip(props.profile.uses_network, 'Uses the network', 'No network', 'network')}
+    </span>
+  );
+};
+
 const spaced = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 /** What a profile's last successful runs used, and the limit proposed from them. */
@@ -84,12 +104,15 @@ export const HistoryLine: Component<{ history: ProfileHistory; onApply: (tokens:
 );
 
 const AgentProfilesPanel: Component = () => {
-  const [profiles, { refetch, mutate }] = createResource(() => agentProfilesApi.list());
+  const [profiles, { refetch }] = createResource(() => agentProfilesApi.list());
 
   const [showForm, setShowForm] = createSignal(false);
   const [editing, setEditing] = createSignal<AgentProfileSummary | null>(null);
   const [name, setName] = createSignal('');
   const [summary, setSummary] = createSignal('');
+  const [delivers, setDelivers] = createSignal('');
+  const [team, setTeam] = createSignal('');
+  const teamId = createUniqueId();
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
@@ -99,6 +122,9 @@ const AgentProfilesPanel: Component = () => {
   const [saving, setSaving] = createSignal(false);
 
   const rows = (): AgentProfileSummary[] => profiles()?.data.data ?? [];
+  /** The teams the board's profiles name, and the one being edited, once each. */
+  const teams = (): string[] =>
+    [...new Set([...rows().map((p) => teamOf(p)), team()].filter((t): t is string => !!t))].sort();
 
   // The history of the profile being edited; a new profile has none.
   const [history, { refetch: refetchHistory }] = createResource(
@@ -131,6 +157,8 @@ const AgentProfilesPanel: Component = () => {
     setEditing(profile);
     setName(profile?.name ?? '');
     setSummary(profile?.summary ?? '');
+    setDelivers(profile?.delivers ?? '');
+    setTeam(teamOf(profile ?? undefined) ?? '');
     setInstructions(profile?.instructions ?? '');
     setTools(toolsFromPolicy(profile?.tool_policy));
     setNetwork((profile?.tool_policy as { network?: unknown } | null)?.network === true);
@@ -147,9 +175,12 @@ const AgentProfilesPanel: Component = () => {
     if (!name().trim() || !instructions().trim() || limitsInvalid()) return;
     const existing = editing();
     const base = (existing?.tool_policy ?? {}) as Record<string, unknown>;
-    const { network: _network, ...rest } = base;
+    const { network: _network, docket, ...rest } = base;
+    const { team: _team, ...docketRest } = (docket ?? {}) as Record<string, unknown>;
+    const nextDocket = team() ? { ...docketRest, team: team() } : docketRest;
     const tool_policy = {
       ...rest,
+      ...(Object.keys(nextDocket).length > 0 ? { docket: nextDocket } : {}),
       ...(network() ? { network: true } : {}),
       tools: Object.fromEntries(HARNESSES.map((h) => [h, namesFor(h, tools[h])])),
     };
@@ -171,6 +202,7 @@ const AgentProfilesPanel: Component = () => {
       tool_policy,
       ...(existing || Object.keys(limits).length > 0 ? { limits } : {}),
       ...(summary().trim() || existing ? { summary: summary().trim() } : {}),
+      ...(delivers().trim() ? { delivers: delivers().trim() } : existing?.delivers ? { delivers: null } : {}),
     };
     setSaving(true);
     try {
@@ -181,17 +213,7 @@ const AgentProfilesPanel: Component = () => {
       } else {
         const created = await agentProfilesApi.create(fields);
         toast.success(`Created agent profile "${created.name}"`);
-        mutate((prev) =>
-          prev
-            ? {
-                ...prev,
-                data: {
-                  ...prev.data,
-                  data: [...prev.data.data, { agent_profile_id: created.agent_profile_id, limits: {}, builtin: false, kind: 'custom', ...fields }],
-                },
-              }
-            : prev,
-        );
+        void refetch();
       }
       setShowForm(false);
     } catch (err) {
@@ -251,6 +273,12 @@ const AgentProfilesPanel: Component = () => {
                       </Show>
                     </span>
                   </div>
+                  <div class="flex flex-wrap items-center gap-2 text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+                    <span data-testid="profile-delivers">
+                      {profile.delivers || 'Delivers: not said'} · on {(profile.tool_policy as { agent?: string } | null)?.agent ?? 'any agent'}
+                    </span>
+                    <CapabilityChips profile={profile} />
+                  </div>
                   <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
                 </li>
               )}
@@ -301,6 +329,25 @@ const AgentProfilesPanel: Component = () => {
             value={summary()}
             onInput={(e) => setSummary(e.currentTarget.value)}
           />
+          <Field
+            label="Delivers"
+            placeholder="a change on a branch"
+            hint="One line: what a run of this profile hands back, such as a change on a branch, a document in a folder or an answer."
+            value={delivers()}
+            onInput={(e) => setDelivers(e.currentTarget.value)}
+          />
+          <FieldShell label="Team" for={teamId} hint="The docket team that runs this profile. Teams come from the board's profiles.">
+            <select
+              id={teamId}
+              value={team()}
+              onChange={(e) => setTeam(e.currentTarget.value)}
+              class="rounded-full border px-3 py-1 text-sm"
+              style={inputStyle}
+            >
+              <option value="" selected={!team()}>No team</option>
+              <For each={teams()}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
+            </select>
+          </FieldShell>
           <Field
             label="Token limit per run"
             type="number"

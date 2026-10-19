@@ -156,6 +156,42 @@ describe('AgentProfilesPanel', () => {
     expect(body('POST').tool_policy.network).toBe(true);
   });
 
+  it('shows what a profile delivers and can do, and the form sends the delivers line and the team', async () => {
+    const profiles = [
+      { agent_profile_id: 'ap_a', name: 'writer', instructions: 'Write.', tool_policy: { agent: 'claude-code', docket: { team: 'fab-content', denied_tools: ['x'] } }, limits: {}, delivers: 'a document in a folder', changes_files: true, runs_commands: false, uses_network: false },
+      { agent_profile_id: 'ap_b', name: 'scout', instructions: 'Look.', tool_policy: {}, limits: {} },
+    ];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      const body = method === 'GET' ? { protocol_version: 1, data: profiles } : {};
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    const rows = container.querySelectorAll('li');
+    expect(rows[0].querySelector('[data-testid="profile-delivers"]')!.textContent).toBe('a document in a folder · on claude-code');
+    expect(rows[0].querySelector('[data-testid="cap-files"]')!.getAttribute('data-can')).toBe('yes');
+    // A capability the profile lacks is shown, dimmed, never hidden.
+    expect(rows[0].querySelector('[data-testid="cap-commands"]')!.textContent).toBe('Runs no commands');
+    expect(rows[1].querySelector('[data-testid="profile-delivers"]')!.textContent).toContain('on any agent');
+
+    Array.from(rows[1].querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const type = (el: HTMLInputElement, v: string) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    type(container.querySelector<HTMLInputElement>('input[placeholder="a change on a branch"]')!, 'an answer');
+    const select = container.querySelector<HTMLSelectElement>('select')!;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['No team', 'fab-content']);
+    select.value = 'fab-content';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    const patch = fetchMock.mock.calls.find((c) => (c[1] as RequestInit)?.method === 'PATCH')!;
+    const sent = JSON.parse((patch[1] as RequestInit).body as string);
+    expect(sent.delivers).toBe('an answer');
+    expect(sent.tool_policy.docket).toEqual({ team: 'fab-content' });
+  });
+
   it('shows the Built-in chip and no Delete for a built-in, Delete for a custom profile', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

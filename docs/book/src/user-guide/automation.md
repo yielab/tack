@@ -321,3 +321,10 @@ You pick one with the pills in the run dialog; each pill has a tooltip saying wh
 profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when
 the request is created, so editing it later never changes the history of an earlier run. A profile that gives
 the agent no tools gets a warning in the dialog: it can only answer in text.
+
+Each profile also carries one line saying what it delivers (a change on a branch, a document in a folder, an
+answer), which the Agents page shows beside the agent that runs it. Three chips beside it say whether the
+profile's tools can change files, run commands or use the network; they are read from the tools you tick, so
+you never type them, and a chip that does not apply stays on the row, dimmed. The profile form also has a
+**Team** select, for the team that takes its runs; it lists the teams your profiles already name, and "No team"
+leaves the choice to docket.

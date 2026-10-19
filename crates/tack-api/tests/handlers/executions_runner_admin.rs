@@ -2791,3 +2791,81 @@ async fn a_profile_whose_network_is_not_a_boolean_is_refused() {
         assert_eq!(status, StatusCode::OK, "{network}: {body}");
     }
 }
+
+// A profile's `delivers` line and its docket team (in `tool_policy`) go in on create and change on
+// update, `null` clears the line, and the capabilities come back derived from the tools.
+#[tokio::test]
+async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_do() {
+    let (app, _repo, _item_id) = setup().await;
+    let policy = json!({"agent": "claude-code", "docket": {"team": "fab-content"},
+        "tools": {"claude-code": ["Read", "Edit", "WebFetch"]}});
+    let create = json!({"name": "Writer", "instructions": "x", "delivers": " a document in a folder ", "tool_policy": policy});
+    let (status, created) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["agent_profile_id"].as_str().unwrap().to_owned();
+    let (_, list) = snd(&app, "GET", "/agent-profiles", String::new()).await;
+    let row = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["agent_profile_id"] == id.as_str())
+        .unwrap();
+    assert_eq!(row["delivers"], "a document in a folder");
+    assert_eq!(row["tool_policy"]["docket"]["team"], "fab-content");
+    assert_eq!(
+        (
+            row["changes_files"].as_bool(),
+            row["runs_commands"].as_bool(),
+            row["uses_network"].as_bool()
+        ),
+        (Some(true), Some(false), Some(true))
+    );
+
+    let patch = json!({"delivers": "an answer", "tool_policy": {"agent": "claude-code", "docket": {"team": "other"}, "tools": {"claude-code": ["Bash"]}}});
+    let (status, patched) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        patch.to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    assert_eq!(patched["delivers"], "an answer");
+    assert_eq!(patched["tool_policy"]["docket"]["team"], "other");
+    assert_eq!(
+        (
+            patched["changes_files"].as_bool(),
+            patched["runs_commands"].as_bool()
+        ),
+        (Some(false), Some(true))
+    );
+
+    let (_, kept) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"name": "Writer 2"}).to_string(),
+    )
+    .await;
+    assert_eq!(
+        kept["delivers"], "an answer",
+        "an omitted key leaves the line alone"
+    );
+    let (_, cleared) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"delivers": null}).to_string(),
+    )
+    .await;
+    assert_eq!(cleared["delivers"], Value::Null);
+    let (status, err) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"delivers": "two\nlines"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["details"]["field"], "delivers");
+}
