@@ -31,14 +31,18 @@ automation a template carries, and the removal of dollars per day.
   (`package-lock.json` → `npm ci`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock`, `poetry.lock`,
   `Cargo.lock`), and lets a project replace the command or turn the install off; the Run dialog
   shows the same line. The project API carries `prepare_command`, the project file `prepare`, and a
-  run's request records the setting under `repository.prepare`. Migration 093. The runner does not
-  act on it yet.
+  run's request records the setting under `repository.prepare`. Migration 093.
 - **A limit learnt per profile.** A run whose profile sets no token limit runs under a provisional one,
   2 000 000 tokens until it is changed or emptied in Settings → Automation; once a profile has 5
   successful runs its form proposes a limit (the 90th percentile of its last 20 × 1.5, rounded up to two
   figures) that the person applies with one click. A running run shows its count amber at 80% of its
   limit, and one stopped by its limit says how much it used and offers **Run again with more**. A request
   that sends `budgets.tokens: null` now also takes the profile's or the provisional limit. Migration 094.
+- **A Claude Code, Codex or opencode run starts with its dependencies installed.** The runner runs
+  the project's install command in its copy of the code before the agent starts, keeps what npm,
+  pnpm and yarn install into `node_modules` and gives the next run's copy the same files as hard
+  links, and a failed or timed-out install ends the run with the command's last output and spends
+  no tokens.
 - **The embedded runner finds its settings file by itself.** With no `--runner-config` and no
   `TACK_LOCAL_RUNNER_CONFIG`, it reads `~/.config/tack/runner.toml` when that file exists, so its
   `[docket]` and `[verify]` tables survive a restart, a wiped data folder and `tack service

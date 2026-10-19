@@ -874,6 +874,34 @@ where
             // They reach the journal with the update that follows the start.
             (record.base_commit, record.push_remote) =
                 self.workspaces.provisioned(&spec.workspace).await;
+            // The runner made this copy, so the runner installs what the agent
+            // needs in it. A scratch folder has no lockfile, `in_place` is the
+            // user's own folder and a docket run is prepared by docket.
+            if !scratch
+                && matches!(
+                    repository.workspace_mode,
+                    WorkspaceMode::Clone | WorkspaceMode::LocalBranch
+                )
+            {
+                let rejected = |reason: String| HarnessError::Rejected { reason };
+                crate::prepare::prepare(
+                    &spec.workspace.path,
+                    &spec
+                        .work
+                        .request
+                        .repository
+                        .prepare
+                        .clone()
+                        .unwrap_or_default(),
+                    &self
+                        .workspaces
+                        .state_dir()
+                        .map_err(|e| rejected(e.to_string()))?,
+                    std::time::Duration::from_secs(spec.work.request.timeout_seconds),
+                )
+                .await
+                .map_err(|e| rejected(e.to_string()))?;
+            }
             self.adapter.validate(&spec).await?;
             // What git will read as configuration is fixed here: the harness
             // runs next, and anything it changed in it is not the

@@ -198,6 +198,14 @@ where
         }
     }
 
+    /// The runner's state directory, which the workspaces root sits under.
+    pub fn state_dir(&self) -> Result<PathBuf, WorkspaceError> {
+        let root = self.ensure_safe_root()?;
+        root.parent()
+            .map(Path::to_path_buf)
+            .ok_or(WorkspaceError::UnsafeRoot)
+    }
+
     pub async fn prepare(
         &self,
         lease: &AttemptLease,
