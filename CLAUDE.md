@@ -40,7 +40,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   file, and a card with no check says so) and ADR 0086 (whoever makes the agent's copy installs its
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a
   limit per profile learnt from its runs). Phase 77 (`docs/plans/phase-77.md`) built tasks S, L, N
-  and P in `develop` (2026-10-19); K waits on docket's ADR 0029 reaching its API 6.
+  and P in `develop` (2026-10-19); K's first part too (docket API 6); its `check_changed` waits on docket.
 - **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
   develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
