@@ -60,7 +60,7 @@ plan or the page named beside it.
   (accepted 2026-10-19) has whoever makes the agent's copy install them from the lockfile. Tack's
   side is in `develop` (Phase 77: the runner installs for Claude Code, Codex and opencode, a docket
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
-  ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check waits on docket. The
+  ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
   end-to-end scenario with two teams and a rework is still to write.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
