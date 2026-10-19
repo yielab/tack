@@ -120,6 +120,34 @@ pub trait WorktreeProvisioner: Send + Sync {
         Ok(None)
     }
 
+    /// [`Self::capture_evidence`] for a `repository` attempt, which has no
+    /// work tree: the difference from `base_commit` to the commit `head` in
+    /// the repository, read with git plumbing alone. `Ok(None)` is a
+    /// provisioner with no repository to read.
+    async fn capture_range(
+        &self,
+        _workspace: &Workspace,
+        _exclude: &[&str],
+        _base_commit: &str,
+        _head: &str,
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        Ok(None)
+    }
+
+    /// [`Self::publish_branch`] for a `repository` attempt: `branch` is made
+    /// in the repository at the commit `head` and, when `push` is set, that
+    /// commit is pushed to `remote`.
+    async fn publish_range(
+        &self,
+        _workspace: &Workspace,
+        _branch: &str,
+        _push: bool,
+        _remote: Option<&str>,
+        _head: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
+        Ok(None)
+    }
+
     /// Puts the `captured` commit on `branch` and, when `push` is set, pushes
     /// exactly that commit to `remote`. It refuses
     /// ([`WorkspaceError::TreeChanged`]) unless `HEAD` is still `head`, the
@@ -189,8 +217,12 @@ where
     ) -> Result<Workspace, WorkspaceError> {
         let root = self.ensure_safe_root()?;
         let key = encode_id(lease.attempt_id.as_str());
-        // `in_place`: the workspace IS the user's folder, never under `root`.
-        let path = if repository.workspace_mode == WorkspaceMode::InPlace {
+        // `in_place` and `repository`: the workspace IS the user's folder,
+        // never under `root`.
+        let path = if matches!(
+            repository.workspace_mode,
+            WorkspaceMode::InPlace | WorkspaceMode::Repository
+        ) {
             repository
                 .repository_path
                 .as_deref()
@@ -224,7 +256,11 @@ where
             }
             return provisioned;
         }
-        self.reserve_directory(workspace)?;
+        // Nothing is made for `repository`: the provisioner only reads the
+        // commit the base revision names.
+        if repository.workspace_mode != WorkspaceMode::Repository {
+            self.reserve_directory(workspace)?;
+        }
         self.provisioner.provision(workspace, repository).await?;
         Ok(())
     }
@@ -316,6 +352,31 @@ where
     ) -> Result<Option<GitEvidence>, WorkspaceError> {
         self.provisioner
             .capture_evidence(workspace, exclude, base_commit, commit)
+            .await
+    }
+
+    pub async fn capture_range(
+        &self,
+        workspace: &Workspace,
+        exclude: &[&str],
+        base_commit: &str,
+        head: &str,
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        self.provisioner
+            .capture_range(workspace, exclude, base_commit, head)
+            .await
+    }
+
+    pub async fn publish_range(
+        &self,
+        workspace: &Workspace,
+        branch: &str,
+        push: bool,
+        remote: Option<&str>,
+        head: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
+        self.provisioner
+            .publish_range(workspace, branch, push, remote, head)
             .await
     }
 

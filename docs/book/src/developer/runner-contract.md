@@ -55,7 +55,7 @@ A harness entry may also carry `teams` (a docket report of each team, its profil
 | `cancel` | `supported` for docket (its own cancel route), `advisory` for everything else | Only a harness that announces its process groups, or stops them over its own API, can be held to stopping them. `AdapterRegistry::register_probe` rejects a stronger claim from any other |
 | `resume` | `supported` for docket; `unsupported` for the others | Only an agent that lives outside the runner can be taken back: a docket task stays in docket's daemon, and `HarnessAdapter::resume` rebuilds its handle from the journal's claim and `<team>/<task id>`. Every harness that runs as a child of the runner keeps the trait's default, `Unsupported`, because its process died with the runner |
 | `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work for claude-code, codex, opencode and docket, and only when the request asks for it |
-| `artifacts` | `supported` for docket, whose task branch is brought into the worktree, `advisory` otherwise | The other harnesses cannot guarantee artifact discovery |
+| `artifacts` | `supported` for docket, whose task branch is read from the repository, `advisory` otherwise | The other harnesses cannot guarantee artifact discovery |
 | `usage` | `supported` for docket (the task record carries tokens in total and by model); `advisory` otherwise | Token totals may be absent from the output of the other harnesses |
 
 ## `needs_operator` and recovery
@@ -88,7 +88,7 @@ docket is reached as any other agent: as a harness (`--harness docket`) on a run
 
 - Any other `apiVersion` is reported as "needs docket 0.2.0-beta.6 (API 5); this docket answers API N" and no task is posted.
 - `docket exec`, the contract probe, the NDJSON output parser and the stdin answers of the earlier adapter are gone. Nothing in the runner starts a throwaway docket per run.
-- One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and brings the task's branch into the runner's worktree.
+- One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.
 
 Every call, the task body and the team rules are in [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter). The separate Docket control-plane bridge, with its own dispatch, approval and budget routes, was retired earlier; docket has no scheduling path or API surface of its own in Tack.

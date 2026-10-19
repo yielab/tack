@@ -69,6 +69,10 @@ pub struct GitWorktreeProvisioner {
     /// cache between provisioning and [`WorktreeProvisioner::provisioned`];
     /// the engine keeps the durable copy in the attempt journal.
     remotes: Arc<Mutex<HashMap<String, String>>>,
+    /// The commit each `repository` attempt's base revision resolved to: it
+    /// has no checkout whose marker could say so. Between provisioning and
+    /// [`WorktreeProvisioner::provisioned`], like `remotes`.
+    bases: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Default for GitWorktreeProvisioner {
@@ -84,6 +88,7 @@ impl GitWorktreeProvisioner {
             timeout,
             baselines: Arc::default(),
             remotes: Arc::default(),
+            bases: Arc::default(),
         }
     }
 
@@ -554,6 +559,52 @@ impl GitWorktreeProvisioner {
         })
     }
 
+    /// The URL of the repository's `origin`; empty for a repository with
+    /// none, which simply has nowhere to push.
+    async fn origin_of(&self, repo: &Path) -> Result<String, WorkspaceError> {
+        let origin = self
+            .git(
+                repo,
+                &["remote", "get-url", "origin"],
+                &SecretMaterial::new(),
+            )
+            .await?;
+        Ok(if origin.success {
+            origin.stdout
+        } else {
+            String::new()
+        })
+    }
+
+    /// `repository` provisions nothing either: the workspace is the user's
+    /// repository, and all that is fixed is the commit the base revision
+    /// names and the remote the branch is pushed to. No file in the
+    /// repository is written, checked out or locked.
+    async fn provision_repository(
+        &self,
+        workspace: &Workspace,
+        repository: &RepositorySpec,
+    ) -> Result<(), WorkspaceError> {
+        let repo = repository
+            .repository_path
+            .as_deref()
+            .ok_or(WorkspaceError::RepositoryUnreachable)?;
+        let metadata = fs::symlink_metadata(repo).map_err(|_| WorkspaceError::UnsafePath)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() || repo != workspace.path {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let origin = self.origin_of(repo).await?;
+        self.record_remote(workspace, &origin)?;
+        let base = self
+            .resolve_revision(repo, &repository.base_revision, &SecretMaterial::new())
+            .await?;
+        self.bases
+            .lock()
+            .map_err(|_| WorkspaceError::Io)?
+            .insert(workspace.attempt_id.as_str().to_owned(), base);
+        Ok(())
+    }
+
     /// `in_place` provisions nothing: the attempt's workspace is the user's
     /// own folder, which is only validated here and gets its "before" — the
     /// tree of everything it holds, dirty or untracked, staged in a temporary
@@ -698,6 +749,9 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         if repository.workspace_mode == WorkspaceMode::InPlace {
             return self.provision_in_place(workspace, repository).await;
         }
+        if repository.workspace_mode == WorkspaceMode::Repository {
+            return self.provision_repository(workspace, repository).await;
+        }
         // Independent of `WorkspaceManager`'s own guard on purpose: this impl
         // deletes files, so it re-proves for itself that the directory is a
         // real directory this runner stamped for this exact attempt.
@@ -713,7 +767,9 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
 
         match repository.workspace_mode {
             WorkspaceMode::Clone => self.record_remote(workspace, &repository.remote)?,
-            WorkspaceMode::InPlace => return Err(WorkspaceError::UnsafePath),
+            WorkspaceMode::InPlace | WorkspaceMode::Repository => {
+                return Err(WorkspaceError::UnsafePath);
+            }
             WorkspaceMode::LocalBranch => {
                 // A worktree of the user's own repository, detached at the
                 // resolved base; `publish_branch` names the branch.
@@ -723,15 +779,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                     .as_deref()
                     .filter(|repo| repo.is_dir())
                     .ok_or(WorkspaceError::RepositoryUnreachable)?;
-                let origin = self
-                    .git(repo, &["remote", "get-url", "origin"], &secrets)
-                    .await?;
-                // A repository with no `origin` simply has nowhere to push.
-                let origin = if origin.success {
-                    origin.stdout
-                } else {
-                    String::new()
-                };
+                let origin = self.origin_of(repo).await?;
                 self.record_remote(workspace, &origin)?;
                 if path.join(CHECKOUT_MARKER).exists() && path.join(".git").is_file() {
                     return Ok(());
@@ -854,10 +902,17 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
     }
 
     async fn provisioned(&self, workspace: &Workspace) -> (Option<String>, Option<String>) {
-        let base_commit = fs::read_to_string(workspace.path.join(CHECKOUT_MARKER))
+        let recorded = self
+            .bases
+            .lock()
             .ok()
-            .map(|marker| marker.trim().to_owned())
-            .filter(|marker| !marker.is_empty());
+            .and_then(|bases| bases.get(workspace.attempt_id.as_str()).cloned());
+        let base_commit = recorded.or_else(|| {
+            fs::read_to_string(workspace.path.join(CHECKOUT_MARKER))
+                .ok()
+                .map(|marker| marker.trim().to_owned())
+                .filter(|marker| !marker.is_empty())
+        });
         let remote = self.remotes.lock().ok().and_then(|remotes| {
             remotes
                 .get(workspace.attempt_id.as_str())
@@ -892,6 +947,119 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
             .await;
         let _ = fs::remove_dir_all(&scratch);
         result.map(Some)
+    }
+
+    async fn capture_range(
+        &self,
+        workspace: &Workspace,
+        exclude: &[&str],
+        base_commit: &str,
+        head: &str,
+    ) -> Result<Option<GitEvidence>, WorkspaceError> {
+        let repo = workspace.path.as_path();
+        let secrets = SecretMaterial::new();
+        let commit_of = |revision: &str| format!("{revision}^{{commit}}");
+        let base = self
+            .git_ok(
+                repo,
+                &["rev-parse", "--verify", &commit_of(base_commit)],
+                &secrets,
+            )
+            .await?
+            .stdout;
+        let head = self
+            .git_ok(repo, &["rev-parse", "--verify", &commit_of(head)], &secrets)
+            .await?
+            .stdout;
+        let pathspec = evidence_pathspec(exclude);
+        // A patch must reach the server byte for byte, so git writes it to a
+        // file; outside the repository, which is the user's.
+        let scratch = index_scratch(workspace)?;
+        let patch_file = scratch.join("tack-evidence.patch");
+        let output_arg = format!("--output={}", patch_file.display());
+        let mut patch_args = vec![
+            "diff",
+            "--binary",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            &output_arg,
+            base.as_str(),
+            head.as_str(),
+            "--",
+        ];
+        patch_args.extend(pathspec.iter().map(String::as_str));
+        let mut names_args = vec![
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-status",
+            "-z",
+            base.as_str(),
+            head.as_str(),
+            "--",
+        ];
+        names_args.extend(pathspec.iter().map(String::as_str));
+        let read = async {
+            self.git_ok(repo, &patch_args, &secrets).await?;
+            let listing = self.git_ok(repo, &names_args, &secrets).await?;
+            let patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
+            Ok::<_, WorkspaceError>((patch, listing))
+        }
+        .await;
+        let _ = fs::remove_dir_all(&scratch);
+        let (mut patch, listing) = read?;
+        let truncated = patch.len() > PATCH_CAP_BYTES;
+        patch.truncate(PATCH_CAP_BYTES);
+        Ok(Some(GitEvidence {
+            base_commit: base,
+            head_commit: head.clone(),
+            captured_commit: head,
+            worktree_dirty: false,
+            files: parse_name_status(listing.stdout.as_bytes()),
+            patch,
+            truncated,
+            snapshot: None,
+        }))
+    }
+
+    async fn publish_range(
+        &self,
+        workspace: &Workspace,
+        branch: &str,
+        push: bool,
+        remote: Option<&str>,
+        head: &str,
+    ) -> Result<Option<PublishedBranch>, WorkspaceError> {
+        let repo = workspace.path.as_path();
+        let remote = if push {
+            remote
+                .filter(|remote| !remote.is_empty())
+                .ok_or(WorkspaceError::Git)?
+        } else {
+            ""
+        };
+        let secrets = remote_secrets(remote);
+        self.git_ok(
+            repo,
+            &["branch", "--no-track", "--", branch, head],
+            &secrets,
+        )
+        .await?;
+        if push {
+            let refspec = format!("{head}:refs/heads/{branch}");
+            self.git_ok(
+                repo,
+                &["push", "--no-verify", "--", remote, &refspec],
+                &secrets,
+            )
+            .await?;
+        }
+        Ok(Some(PublishedBranch {
+            branch: branch.to_owned(),
+            head_commit: head.to_owned(),
+            pushed: push,
+        }))
     }
 
     async fn publish_branch(

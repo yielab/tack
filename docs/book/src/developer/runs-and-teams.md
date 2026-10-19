@@ -81,7 +81,7 @@ Any other `apiVersion` is a probe error: "needs docket 0.2.0-beta.6 (API 5); thi
 - `idempotencyKey` is the attempt id, so a replayed post answers the same task.
 - `externalRef` is `<item id>/attempt-<n>`.
 - `description` is the instructions the server already composed. `brief` carries the objective, acceptance criteria and constraints. `gate` is the first acceptance criterion docket can run as a command (a `command` criterion, else a `test` or file check); a `metric` is never a gate.
-- `baseRef` is the commit the runner's worktree stands on, or the `rework_base` branch for a rework.
+- `baseRef` is the commit the request's base revision names in the repository, or the `rework_base` branch for a rework.
 - `maxTokens` comes from the request's token budget. `restrictions` carries `deniedTools` from `tool_policy.docket.denied_tools` and `network: "none"` when the run has the network off. A restriction can only narrow what the team already has (ADR 0077).
 - `pipeline` is read from `tool_policy.docket.pipeline_by_type` by item type. `priority` and `trusted` are sent when the request's metadata carries them.
 
@@ -102,7 +102,7 @@ A `400` or `422` from docket makes the attempt fail with docket's text and the t
 
 ### The branch comes back
 
-On `done`, `bring_in` runs `git reset --hard refs/heads/<task branch>` in the runner's worktree. Evidence, verification and push then run unchanged, as for every other agent. Files docket reports as untracked produce one timeline line ("N files docket did not commit are not in the evidence"). On a reset failure the attempt fails with `branch_not_applied`.
+On `done`, the adapter reads the commit of `refs/heads/<task branch>` in the repository and names it as the run's `head_commit`; nothing is checked out or reset, and the user's working tree, index and `HEAD` are never touched. Evidence is the difference from the base commit to that commit, the verifier is given the repository, and the push sends that commit. Files docket reports as untracked produce one timeline line ("N files docket did not commit are not in the evidence"). When the branch is not in the repository the attempt fails with `branch_not_applied`.
 
 ### Capabilities
 
