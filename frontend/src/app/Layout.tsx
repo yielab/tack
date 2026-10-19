@@ -41,7 +41,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
   const projectId = () => params.id as string | undefined;
 
-  // The board manages its own full-height horizontal-scroll layout.
+  // The board manages its own full-height horizontal-scroll layout: the height
+  // chain runs from here through WorkLayout and the board to each column.
   const fullBleed = () => location.pathname.endsWith('/board');
 
   // document.title — "<Project> — <View> · Tack"
@@ -124,7 +125,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
       </a>
       <Sidebar />
 
-      <div class="flex-1 overflow-hidden pt-14 lg:pt-0 flex flex-col min-w-0">
+      <div class="flex-1 overflow-clip pt-14 lg:pt-0 flex flex-col min-w-0">
         {/* Top bar */}
         <header
           class="sticky top-0 z-40 flex items-center gap-3.5"
@@ -184,7 +185,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
             when={fullBleed()}
             fallback={<div class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl">{props.children}</div>}
           >
-            <div class="flex-1 min-w-0 flex flex-col overflow-hidden">{props.children}</div>
+            <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-clip">{props.children}</div>
           </Show>
         </main>
       </div>

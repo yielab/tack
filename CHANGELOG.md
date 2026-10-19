@@ -233,6 +233,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The board scrolls and works by keyboard.** Each column scrolls inside itself and the horizontal
+  bar sits at the bottom of the screen, where before a long column ran off it and its last cards could
+  not be reached. Every card has a "Move to…" menu that moves it with the arrow keys and announces the
+  move, each column is a named region whose list takes focus, and "Add item" is a 24 px button with
+  its name written on it. Scrollbars are thin, with a thumb of at least 3:1 in every palette, light and
+  dark.
+
 - **A run that ended says why on the item, not only in its Execution tab.** The Last run panel of a
   failed, cancelled or lost run prints the reason where the agent's words go. A run whose time ran out
   says "The run's time ran out after 60 minutes", and "while it waited for an answer" when a docket team
