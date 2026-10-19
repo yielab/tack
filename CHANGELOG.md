@@ -354,6 +354,11 @@ automation a template carries, and the removal of dollars per day.
   Timeline bar reads at AA in Harbor. The axe scan now covers List, Table, Calendar, Timeline,
   Sprints, Templates and the new-item dialog.
 - **A run docket parks on a gated command asks the person in Tack.** It used to wait until docket's approval expired, because docket sends an approval a task holds as the task's own item and Tack looked only for a separate one; the decision now names the tool and the policy's sentence and offers docket's three answers.
+- **A queued run says why it waits, and a retry after a task change replays.** A run waiting for a computer
+  that has stopped answering says "The computer this run asked for has not answered since" with the time, in
+  place of an older stored reason. A retry with the same idempotency key after the task's type or priority
+  changed replays the request instead of answering 409, and a different request still conflicts. A run with
+  no limit in a project with a daily limit is told it gets what is left of today's limit, with the tokens left.
 
 ---
 
