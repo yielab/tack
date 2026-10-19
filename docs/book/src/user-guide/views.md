@@ -18,10 +18,11 @@ Kanban columns driven by the project's workflow statuses.
 
 - Each column corresponds to one workflow status. Names, order, and WIP limits come from **Settings → Workflow**. Columns derive directly from the workflow — no "create a board" step is needed.
 - **Drag and drop** a card to change its status. Changes save immediately with optimistic UI.
+- **Move a card by keyboard.** Tab to the small arrow on a card, or hover the card to see it, and press Enter or Space to open **Move to…**. The arrow keys choose a column, Enter moves the card and the page announces where it went, and Escape closes the menu. Each column is a named region that scrolls inside itself: Tab into its list and use the arrow keys or Page Down to reach the last card, while the board's own scroll bar stays at the bottom of the screen.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
 - **Click a card** to open the item detail drawer (tabs such as Details, Activity, Execution, Dependencies, Files and Fields).
 - **Badges on a card** say what has happened to it. **Needs your review** means a finished run is waiting for you to accept or reject it. **Repeats** means closing the task creates the next one. Three more show what Tack did without you: **Started by itself**, **Team: name** (the docket team that ran it) and **Merged by itself**. The List and Table views show the three automation badges too. See [Automating a Project](automation.md).
-- **Add an item** via the `+` button inside a column header (pre-sets the status) or the toolbar **+ New** button.
+- **Add an item** via the **Add item** button inside a column header (pre-sets the status) or the toolbar **+ New** button.
 - Board state syncs in real time via WebSocket — changes in one browser tab appear in another.
 - Empty projects show a three-step onboarding checklist until the first item is created.
 
