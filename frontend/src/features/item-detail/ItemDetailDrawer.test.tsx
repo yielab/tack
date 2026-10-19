@@ -5,6 +5,7 @@ import { ProjectContext, type ProjectContextValue } from '../../shared/state/pro
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import type { Resource } from 'solid-js';
 import ItemDetailDrawer from './ItemDetailDrawer';
+import ItemPage from './ItemPage';
 
 const ITEM = {
   id: 'item-1',
@@ -41,6 +42,7 @@ function jsonOf(url: string): unknown {
   // GET /api/items/{id} returns the detail envelope, matching the real handler
   // (crates/tack-api/src/handlers/items.rs) that api.items.get() unwraps.
   if (url.endsWith('/api/items/item-1')) return { item: ITEM, roles: [], dependencies: [] };
+  if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
   // `ExecutionStoreProvider` loads this once on mount —
   // an empty, well-formed list so `store.ts#loadList` has real data to
@@ -88,6 +90,7 @@ function mount() {
         <ProjectContext.Provider value={projectValue}>
           <MemoryRouter>
             <Route path="/" component={Host} />
+            <Route path="/projects/:id/items/:itemId" component={ItemPage} />
           </MemoryRouter>
         </ProjectContext.Provider>
       </ExecutionStoreProvider>
@@ -139,6 +142,23 @@ describe('ItemDetailDrawer', () => {
     );
     expect(patch).toBeTruthy();
     expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ status: 'done' });
+
+    dispose();
+  });
+
+  it('Expand closes the drawer and shows the item on its page', async () => {
+    const { container, dispose } = mount();
+    container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
+    await flush();
+
+    const expand = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+      .find((b) => b.textContent?.trim() === 'Expand')!;
+    expand.click();
+    await flush();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Item title"]')?.value).toBe('My item');
+    expect(document.querySelector('section[aria-label="Properties"]')).toBeTruthy();
 
     dispose();
   });

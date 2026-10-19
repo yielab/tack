@@ -3,6 +3,8 @@ import { A, useLocation } from '@solidjs/router';
 import { useProject } from '../state/projectContext';
 import { useVocab } from '../vocab/useVocab';
 import { pageOf } from '../../app/pages';
+import { getLastLens } from '../state/lastView';
+import { shortItemId } from '../shortItemId';
 
 // Work lenses (rendered under "Work"). `sprint` matches the singular `/sprint`
 // route and is relabelled via the project vocabulary.
@@ -32,6 +34,9 @@ export default function Breadcrumb() {
     return Object.keys(LENS_LABELS).some(l => p.endsWith(`/${l}`) || p.includes(`/${l}/`));
   };
 
+  // On an item's page the trail ends "Items › <id>"; "Items" goes back to the view last used.
+  const itemId = (): string | undefined => location.pathname.match(/^\/projects\/[^/]+\/items\/([^/]+)/)?.[1];
+
   return (
     <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-sm min-w-0">
       <Show when={project()}>
@@ -50,6 +55,28 @@ export default function Breadcrumb() {
         >
           {project()?.name}
         </span>
+        <Show when={itemId()}>
+          {(id) => (
+            <>
+              <span style={{ color: 'var(--color-text-tertiary)' }} class="shrink-0 mx-0.5">›</span>
+              <A
+                href={`/projects/${project()?.id}/${getLastLens()}`}
+                class="shrink-0 font-medium transition-colors hover:underline"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                Items
+              </A>
+              <span style={{ color: 'var(--color-text-tertiary)' }} class="shrink-0 mx-0.5">›</span>
+              <span
+                aria-current="page"
+                class="font-bold shrink-0"
+                style={{ color: 'var(--color-accent-ink)', 'font-family': 'var(--font-mono)' }}
+              >
+                {shortItemId(id())}
+              </span>
+            </>
+          )}
+        </Show>
         <Show when={section()}>
           <span style={{ color: 'var(--color-text-tertiary)' }} class="shrink-0 mx-0.5">›</span>
           <Show when={isWork()}>

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createResource } from 'solid-js';
 import { render } from 'solid-js/web';
+import { api } from '../../../shared/api';
 import { MemoryRouter, Route } from '@solidjs/router';
 import DependenciesTab from './DependenciesTab';
 import type { Item } from '../../../shared/types';
@@ -49,13 +51,19 @@ beforeEach(() => {
   });
 });
 
+/** Loads the edges as the item screen does and hands them to the tab. */
+function Host() {
+  const [dependencies, { refetch }] = createResource(() => api.dependencies.list(ITEM.id));
+  return <DependenciesTab item={ITEM} dependencies={dependencies} refetch={refetch} />;
+}
+
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const dispose = render(
     () => (
       <MemoryRouter>
-        <Route path="/" component={() => <DependenciesTab item={ITEM} />} />
+        <Route path="/" component={Host} />
       </MemoryRouter>
     ),
     container,

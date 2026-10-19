@@ -26,6 +26,11 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **An item has a page of its own.** The drawer's "Expand" opens `/projects/<id>/items/<id>` (the
+  tab carries over in `?tab=`), with a breadcrumb, the tabs in a main column and every field in a side
+  column, and "Copy link" copies its address. The fields are one properties list in both places,
+  now with an editable assignee, the last update and what the item blocks, and the Dependencies tab
+  shows its count.
 - **A project says how its dependencies are installed.** Settings → Automation → "Where the code
   is" shows what a run installs before the agent starts, from the repository's lockfile
   (`package-lock.json` → `npm ci`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock`, `poetry.lock`,

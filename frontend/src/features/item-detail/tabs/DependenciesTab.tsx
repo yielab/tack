@@ -3,6 +3,7 @@ import {
   createResource,
   createSignal,
   createMemo,
+  type Resource,
   For,
   Show,
 } from 'solid-js';
@@ -13,6 +14,9 @@ import type { Item, Dependency, DependencyType } from '../../../shared/types';
 
 export interface DependenciesTabProps {
   item: Item;
+  /** The item's dependency edges, loaded once by the item screen (it also counts them). */
+  dependencies: Resource<Dependency[]>;
+  refetch: () => unknown;
 }
 
 type Direction = 'blocks' | 'blockedBy';
@@ -23,7 +27,7 @@ interface Link {
 }
 
 /** Classify a dependency relative to `itemId`. */
-function classify(dep: Dependency, itemId: string): { dir: Direction | 'related'; otherId: string } {
+export function classify(dep: Dependency, itemId: string): { dir: Direction | 'related'; otherId: string } {
   const isSource = dep.source_item_id === itemId;
   const other = isSource ? dep.target_item_id : dep.source_item_id;
   if (dep.dependency_type === 'blocks') {
@@ -40,10 +44,8 @@ function classify(dep: Dependency, itemId: string): { dir: Direction | 'related'
 const DependenciesTab: Component<DependenciesTabProps> = (props) => {
   const [, setSearchParams] = useSearchParams();
 
-  const [deps, { refetch }] = createResource(
-    () => props.item.id,
-    (id) => api.dependencies.list(id),
-  );
+  const deps = () => props.dependencies();
+  const refetch = () => props.refetch();
   const [projectItems] = createResource(
     () => props.item.project_id,
     (pid) => api.items.list(pid),

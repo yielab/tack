@@ -1,36 +1,21 @@
-import { type Component, createSignal, createEffect, For, Show } from 'solid-js';
-import { createResource } from 'solid-js';
-import { Field, Select, Badge, TypeBadge, typeKey, Icons } from '../../shared/ui';
+import { type Component, type JSX, createSignal, createEffect, onMount, For, Show } from 'solid-js';
+import { TypeBadge, typeKey } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
-import { api } from '../../shared/api';
-import type { Item, UpdateItem, Priority, Recurrence } from '../../shared/types';
-import { estimateUnitLabel } from '../../shared/estimateUnit';
-
-const shortId = (id: string) => id.replace(/-/g, '').slice(0, 6).toUpperCase();
-
-const PRIORITIES: { value: Priority; label: string }[] = [
-  { value: 'critical', label: '🔥 Critical' },
-  { value: 'high', label: '⬆️ High' },
-  { value: 'medium', label: '➡️ Medium' },
-  { value: 'low', label: '⬇️ Low' },
-  { value: 'none', label: '➖ None' },
-];
-
-const RECURRENCES: { value: '' | Recurrence; label: string }[] = [
-  { value: '', label: 'Never' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-];
+import type { Item, UpdateItem } from '../../shared/types';
+import { shortItemId } from '../../shared/shortItemId';
 
 export interface ItemHeaderProps {
   item: Item;
   /** Apply a partial update (optimistic PATCH handled by the parent). */
   onPatch: (patch: UpdateItem) => void;
+  /** Buttons at the right of the type row (Copy link on the page). */
+  actions?: JSX.Element;
+  /** Put the keyboard on the title when the header appears (the page; the drawer focuses itself). */
+  focusTitle?: boolean;
 }
 
-/** Inline-editable core fields for an item. Each commit calls `onPatch`. */
+/** What an item is: type, id, creation date, an editable title and its status. */
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
   const vocab = useVocab();
@@ -43,36 +28,30 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
     if (next && next !== props.item.title) props.onPatch({ title: next });
   };
 
-  const [tagInput, setTagInput] = createSignal('');
-  const addTag = () => {
-    const tag = tagInput().trim();
-    if (tag && !props.item.tags.includes(tag)) {
-      props.onPatch({ tags: [...props.item.tags, tag] });
-    }
-    setTagInput('');
-  };
-  const removeTag = (tag: string) =>
-    props.onPatch({ tags: props.item.tags.filter((t) => t !== tag) });
-
-  const [sprints] = createResource(
-    () => props.item.project_id,
-    (id) => api.sprints.list(id),
-  );
+  let titleInput: HTMLInputElement | undefined;
+  onMount(() => { if (props.focusTitle) titleInput?.focus({ preventScroll: true }); });
 
   const statuses = () => workflow()?.statuses ?? [];
 
   return (
     <div class="space-y-5">
       {/* Type + id */}
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <TypeBadge type={props.item.item_type} label={vocab.t(typeKey(props.item.item_type))} />
         <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)' }}>
-          {shortId(props.item.id)}
+          {shortItemId(props.item.id)}
         </span>
+        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Created <time datetime={props.item.created_at}>{new Date(props.item.created_at).toLocaleDateString()}</time>
+        </span>
+        <Show when={props.actions}>
+          <div class="ml-auto flex items-center gap-2">{props.actions}</div>
+        </Show>
       </div>
 
       {/* Title */}
       <input
+        ref={titleInput}
         value={title()}
         onInput={(e) => setTitle(e.currentTarget.value)}
         onBlur={commitTitle}
@@ -118,104 +97,6 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
             );
           }}
         </For>
-      </div>
-
-      {/* Field grid */}
-      <div class="grid grid-cols-2 gap-x-[18px] gap-y-3.5">
-        <Select
-          label="Priority"
-          value={props.item.priority}
-          onChange={(e) => props.onPatch({ priority: e.currentTarget.value as Priority })}
-          options={PRIORITIES}
-        />
-
-        <Field
-          label={`Estimate${props.item.estimate_unit ? ` (${estimateUnitLabel(props.item.estimate_unit)})` : ''}`}
-          type="number"
-          min="0"
-          value={props.item.estimate ?? ''}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            props.onPatch({ estimate: v === '' ? undefined : Number(v) });
-          }}
-        />
-
-        <Field
-          label="Due date"
-          type="date"
-          value={props.item.due_date ? props.item.due_date.split('T')[0] : ''}
-          onChange={(e) =>
-            props.onPatch({ due_date: e.currentTarget.value || undefined })
-          }
-        />
-
-        <Select
-          label="Repeats"
-          value={props.item.recurrence ?? ''}
-          onChange={(e) =>
-            props.onPatch({ recurrence: (e.currentTarget.value || null) as Recurrence | null })
-          }
-          options={RECURRENCES}
-        />
-
-        <Select
-          label={vocab.t('sprint')}
-          value={props.item.sprint_id ?? ''}
-          onChange={(e) =>
-            props.onPatch({ sprint_id: e.currentTarget.value || undefined })
-          }
-        >
-          <option value="">— None —</option>
-          <For each={sprints() ?? []}>
-            {(s) => <option value={s.id}>{s.name}</option>}
-          </For>
-        </Select>
-      </div>
-
-      {/* Tags */}
-      <div>
-        <p class="mb-1.5 text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
-          Tags
-        </p>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <For each={props.item.tags}>
-            {(tag) => (
-              <Badge tone="primary">
-                <span class="flex items-center gap-1">
-                  {tag}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${tag}`}
-                    onClick={() => removeTag(tag)}
-                    class="grid place-items-center rounded-full leading-none hover:opacity-70 focus:outline-none focus-visible:ring-2"
-                    style={{ '--tw-ring-color': 'var(--color-focus-ring)' }}
-                  >
-                    <Icons.IconClose size={10} stroke-width={2.4} />
-                  </button>
-                </span>
-              </Badge>
-            )}
-          </For>
-          <input
-            aria-label="Add tag"
-            value={tagInput()}
-            onInput={(e) => setTagInput(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addTag();
-              }
-            }}
-            placeholder="Add tag…"
-            class="min-w-[6rem] flex-1 rounded-full border px-3.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2"
-            style={{
-              'background-color': 'var(--color-bg-base)',
-              color: 'var(--color-text-primary)',
-              'border-color': 'var(--color-border-medium)',
-              '--tw-ring-color': 'var(--color-focus-ring)',
-            }}
-          />
-        </div>
       </div>
 
       <Show when={props.item.parent_id}>
