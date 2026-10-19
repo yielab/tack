@@ -29,9 +29,8 @@ looks the same in the run dialog as one with three.
 ## Not decided
 
 Who puts a project's dependencies (for example `node_modules`) into the worktree an agent works
-in: the runner, docket, or the project's own setup. Today an onboarding script linked them, which
-decision 4 rules out. Until it is decided, a gate that needs them fails in the worktree, and that
-failure is reported as it is.
+in. Decided on 2026-10-19 by [ADR 0086](0086-whoever-makes-the-working-copy-prepares-it.md):
+whoever makes the copy prepares it, from the repository's lockfile.
 
 ## Not done, on purpose
 
