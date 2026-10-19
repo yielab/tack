@@ -388,6 +388,28 @@ impl GitWorktreeProvisioner {
         Ok(())
     }
 
+    /// The names in `exclude` that git does not already ignore. `git add` fails on an
+    /// exclusion that names a path `.gitignore` lists, and an ignored path is never staged
+    /// anyway, so only the others need excluding. A name git cannot answer for stays.
+    async fn not_ignored<'a>(
+        &self,
+        path: &Path,
+        exclude: &[&'a str],
+        secrets: &SecretMaterial,
+    ) -> Vec<&'a str> {
+        let mut kept = Vec::new();
+        for &name in exclude {
+            let ignored = self
+                .git(path, &["check-ignore", "-q", "--", name], secrets)
+                .await
+                .is_ok_and(|output| output.success);
+            if !ignored {
+                kept.push(name);
+            }
+        }
+        kept
+    }
+
     /// The staged diff of `workspace` against its resolved base. With a
     /// `scratch` directory (an `in_place` folder) staging happens in a
     /// temporary index in it and nothing is written into the folder's `.git`
@@ -410,7 +432,8 @@ impl GitWorktreeProvisioner {
         // harness's work, whatever the caller excludes; the diffs carry the
         // same pathspec, so an excluded file the baseline holds is not
         // reported as deleted.
-        let pathspec = evidence_pathspec(exclude);
+        let exclude = self.not_ignored(path, exclude, &secrets).await;
+        let pathspec = evidence_pathspec(&exclude);
         self.stage_worktree(path, &pathspec, &secrets, index)
             .await?;
 

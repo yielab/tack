@@ -238,6 +238,11 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A project that already ignores `node_modules` no longer ends every run "changes could not be
+  read".** The runner leaves the folder it installed out of the agent's change only when git does
+  not already ignore it. A run whose profile has only read tools (Read, Grep, Glob, WebFetch,
+  WebSearch) and no check installs nothing, and its timeline says "No install: this profile runs
+  no commands".
 - **A run that ended says why on the item, not only in its Execution tab.** The Last run panel of a
   failed, cancelled or lost run prints the reason where the agent's words go. A run whose time ran out
   says "The run's time ran out after 60 minutes", and "while it waited for an answer" when a docket team

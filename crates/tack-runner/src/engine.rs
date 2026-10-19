@@ -855,6 +855,12 @@ where
             work: work.clone(),
             workspace,
         };
+        let prepares = !scratch
+            && matches!(
+                repository.workspace_mode,
+                WorkspaceMode::Clone | WorkspaceMode::LocalBranch
+            );
+        let install_skipped = prepares && crate::prepare::needs_no_install(&spec.work.request);
         // Everything from here to the first sight of the agent running ends
         // the attempt `failed` with its reason when it fails; only a failure
         // to reach the board above stays an engine error.
@@ -875,14 +881,10 @@ where
             (record.base_commit, record.push_remote) =
                 self.workspaces.provisioned(&spec.workspace).await;
             // The runner made this copy, so the runner installs what the agent
-            // needs in it. A scratch folder has no lockfile, `in_place` is the
-            // user's own folder and a docket run is prepared by docket.
-            if !scratch
-                && matches!(
-                    repository.workspace_mode,
-                    WorkspaceMode::Clone | WorkspaceMode::LocalBranch
-                )
-            {
+            // needs in it, unless the agent runs no command. A scratch folder has
+            // no lockfile, `in_place` is the user's own folder and a docket run
+            // is prepared by docket.
+            if prepares && !install_skipped {
                 let rejected = |reason: String| HarnessError::Rejected { reason };
                 crate::prepare::prepare(
                     &spec.workspace.path,
@@ -941,6 +943,11 @@ where
             .is_err()
         {
             return self.quarantine_after_spawn(session, &record, &handle).await;
+        }
+        if install_skipped {
+            let payload = serde_json::json!({"reason": crate::prepare::NO_INSTALL_REASON});
+            self.submit_event(session, &mut record, "attempt.install_skipped", payload)
+                .await;
         }
 
         if !self.renew_lease(session, &record).await {

@@ -15,6 +15,7 @@ use std::{
 };
 
 use tack_core::prepare::{PrepareSetting, Resolution, Why};
+use tack_orch::execution::ExecutionRequestSnapshot;
 
 use crate::harness::{
     process::{ProcessExit, ProcessLimits, ProcessSpec},
@@ -39,6 +40,52 @@ const REASON_LINES: usize = 40;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct PrepareError(String);
+
+/// The tools that read and never run a command, compared case-insensitively.
+const READ_ONLY_TOOLS: [&str; 5] = ["read", "grep", "glob", "webfetch", "websearch"];
+
+/// The acceptance criteria that run something, and so need what the project installs.
+const RUNNING_CRITERIA: [&str; 3] = ["command", "test", "metric"];
+
+/// Why a run installs nothing, as the run's timeline says it.
+pub const NO_INSTALL_REASON: &str = "No install: this profile runs no commands";
+
+/// Whether `request` needs nothing installed: its tools are named and none of them runs a
+/// command, and the item has no check that does. The tools are the run's own, else the profile's
+/// for the run's agent; `*` or no list is not a list, and docket's pipeline decides for itself.
+pub fn needs_no_install(request: &ExecutionRequestSnapshot) -> bool {
+    let harness = request.requested_harness_kind.as_str();
+    if harness == "docket" {
+        return false;
+    }
+    let mut tools = request.permission_policy.tools.clone();
+    if tools.is_empty() {
+        tools = request.resolved_agent_profile.tool_policy["tools"][harness]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|tool| tool.as_str().map(str::to_owned))
+            .collect();
+    }
+    let reads_only = !tools.is_empty()
+        && tools.iter().all(|tool| {
+            READ_ONLY_TOOLS
+                .iter()
+                .any(|read| tool.eq_ignore_ascii_case(read))
+        });
+    let has_check = request
+        .brief
+        .as_ref()
+        .and_then(|brief| brief["acceptance"].as_array())
+        .into_iter()
+        .flatten()
+        .any(|criterion| {
+            criterion["kind"]
+                .as_str()
+                .is_some_and(|kind| RUNNING_CRITERIA.contains(&kind))
+        });
+    reads_only && !has_check
+}
 
 /// Prepares `checkout` as `setting` says, within `timeout`. Nothing runs when the install is off
 /// or the repository has no lockfile.
