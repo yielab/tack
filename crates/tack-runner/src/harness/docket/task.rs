@@ -1,6 +1,7 @@
 //! The body of `POST /tasks/<pod>`, built from the claimed request.
 
 use serde_json::{Map, Value, json};
+use tack_core::prepare::PrepareSetting;
 use tack_orch::execution::ExecutionRequestSnapshot;
 
 /// What docket's `gate` gets when a criterion does not say how long.
@@ -132,12 +133,13 @@ fn priority(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
 }
 
 /// The body of `POST /tasks/<pod>` for one attempt. `base_ref` is the branch
-/// or commit the task starts from.
+/// or commit the task starts from; `sends_prepare` says this docket reads the `prepare` field.
 pub(super) fn body(
     request: &ExecutionRequestSnapshot,
     attempt_id: &str,
     attempt_number: u32,
     base_ref: &str,
+    sends_prepare: bool,
 ) -> Value {
     let instructions = &request.resolved_agent_profile.instructions;
     let docket = request.resolved_agent_profile.tool_policy.get("docket");
@@ -219,6 +221,18 @@ pub(super) fn body(
         .filter(|tokens| *tokens > 0)
     {
         body.insert("maxTokens".into(), json!(tokens));
+    }
+    // Detecting is docket's own default, so only a stated command or "off" is sent.
+    if sends_prepare {
+        match &request.repository.prepare {
+            Some(PrepareSetting::Replace { command }) => {
+                body.insert("prepare".into(), json!(command));
+            }
+            Some(PrepareSetting::Off) => {
+                body.insert("prepare".into(), json!(""));
+            }
+            Some(PrepareSetting::Detect) | None => {}
+        }
     }
     let mut restrictions = Map::new();
     let denied: Vec<&str> = docket
