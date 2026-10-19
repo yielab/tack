@@ -260,9 +260,10 @@ team able to run without a person.
 ### Install docket and tell the runner
 
 Install docket 0.2.0-beta.6 from the [docket repository](https://github.com/yielab/docket). The
-runner speaks docket's HTTP API version 5, which that release provides. It checks the version before
-every task and accepts only `5`. Any other version is reported as "needs docket 0.2.0-beta.6 (API 5);
-this docket answers API N", and no task is sent to it.
+runner speaks docket's HTTP API version 5, which that release provides, and any later version. It
+checks the version before every task. A version below 5 is reported as "needs docket 0.2.0-beta.6
+(API 5); this docket answers API N", and no task is sent to it. A docket on version 6 or later also
+installs the project's dependencies in its own copy, using the project's install setting.
 
 Tack's support for this API was written from docket's published specification and exercised against a
 stand-in for docket. Run `tack runner doctor` before you rely on it.

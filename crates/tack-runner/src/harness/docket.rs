@@ -144,6 +144,8 @@ struct RunInfo {
     timeout: Duration,
     /// docket refused the task with this sentence; there is nothing to follow.
     refused: Option<String>,
+    /// The operator API version docket answered when the task started.
+    api: String,
 }
 
 /// The ends of the channels `wait` drives.
@@ -928,7 +930,7 @@ impl DocketAdapter {
             final_checkpoint: None,
             actual_execution: ActualExecution {
                 harness_kind: DomainHarnessKind::new(DESCRIPTOR.kind),
-                harness_version: format!("API {}", probe::API_VERSION),
+                harness_version: format!("API {}", info.api),
                 model_source: if model.is_some() {
                     ModelSource::Reported
                 } else {
@@ -1020,6 +1022,13 @@ impl DocketAdapter {
                 AttemptState::Failed,
                 json!({"code": "blocked", "message": why, "task": info.task}),
             ),
+            // The install failed before any hop; docket's reason names the command and its output.
+            _ if task["failureKind"] == "prepare" => (
+                AttemptState::Failed,
+                json!({"code": "prepare",
+                       "message": format!("Could not prepare the dependencies (docket): {why}"),
+                       "task": info.task}),
+            ),
             _ => (
                 AttemptState::Failed,
                 json!({"code": task["failureKind"].as_str().unwrap_or("failed"),
@@ -1056,7 +1065,7 @@ impl HarnessAdapter for DocketAdapter {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
         let team = Self::named_team(spec);
-        // The version first: a docket that is not API 5 gets no task.
+        // The version first: a docket older than API 5 gets no task.
         probe::status(&self.client).await.map_err(rejected)?;
         // The default pod is made when the task starts, like any other.
         let Some(team) = team else {
@@ -1113,11 +1122,14 @@ impl HarnessAdapter for DocketAdapter {
             Some(branch) if !branch.is_empty() => branch.to_owned(),
             _ => Self::base_commit(spec).await,
         };
+        // The answered version decides which fields the task body may carry.
+        let api = probe::status(&self.client).await.map_err(rejected)?.api;
         let body = task::body(
             request,
             &attempt_id,
             spec.work.lease.attempt_number,
             &base_ref,
+            probe::api_at_least(&api, probe::PREPARE_API_VERSION),
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
             tracing::warn!(why, "docket could not be reached to post the task");
@@ -1148,6 +1160,7 @@ impl HarnessAdapter for DocketAdapter {
                 started_at: Utc::now(),
                 timeout: Duration::from_secs(request.timeout_seconds),
                 refused,
+                api,
             })
             .await)
     }
@@ -1263,6 +1276,10 @@ impl HarnessAdapter for DocketAdapter {
             .and_then(|process_id| process_id.split_once('/'))
             .filter(|(_, task)| !task.starts_with("rejected-"))
             .ok_or(HarnessError::RecoveryUnavailable)?;
+        let api = probe::status(&self.client)
+            .await
+            .map(|status| status.api)
+            .unwrap_or_default();
         Ok(self
             .register(RunInfo {
                 pod: pod.to_owned(),
@@ -1272,6 +1289,7 @@ impl HarnessAdapter for DocketAdapter {
                 started_at: Utc::now(),
                 timeout: Duration::from_secs(spec.work.request.timeout_seconds),
                 refused: None,
+                api,
             })
             .await)
     }
