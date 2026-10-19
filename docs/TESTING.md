@@ -437,7 +437,7 @@ settings, a code item and a content item added at once, a rejection with its rew
 screenshot of the ladder, with a screenshot per step in `frontend/test-results/docket-prill/`. It
 checks what a person would: every run's steps reach the timeline before it ends, in order; prill's
 pack comes back for each run and is reviewed. The script dies before building when
-`GET /status.json` does not answer `apiVersion: "5"`. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`
+`GET /status.json` does not answer `apiVersion` 5 or later. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`
 when nothing in Tack changed; the script lists its knobs at the top.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a

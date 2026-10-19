@@ -83,7 +83,7 @@ exec "$PRILL_SRC/.venv/bin/prill" "\$@"
 EOF
 chmod +x "$WORK/bin/docket" "$WORK/bin/prill"
 # The API version first, and before anything is built: a docket that does not answer
-# apiVersion "5" cannot run this, however much else is in place.
+# apiVersion 5 or later cannot run this, however much else is in place.
 DOCKET_HOME_DIR="$AGENT_HOME/.docket"
 mkdir -p "$DOCKET_HOME_DIR"
 # The fixture's tests run inside docket's jail, whose HOME is a scratch one, so a pytest in the
@@ -129,8 +129,9 @@ for _ in $(seq 1 60); do
   [ -n "$STATUS_JSON" ] && break
   sleep 0.5
 done
-[ "$(jq -r '.apiVersion // empty' <<<"$STATUS_JSON" 2>/dev/null)" = "5" ] \
-  || die "docket at $DOCKET_SRC does not answer apiVersion \"5\" on GET /status.json (needs docket 0.2.0-beta.6) — point DOCKET_SRC at a checkout that does; see $WORK/docket-daemon.log"
+API_FOUND="$(jq -r '.apiVersion // empty' <<<"$STATUS_JSON" 2>/dev/null)"
+[[ "$API_FOUND" =~ ^[0-9]+$ ]] && [ "$API_FOUND" -ge 5 ] \
+  || die "docket at $DOCKET_SRC does not answer apiVersion 5 or later on GET /status.json (needs docket 0.2.0-beta.6) — point DOCKET_SRC at a checkout that does; see $WORK/docket-daemon.log"
 {
   echo "tack: $(git -C "$ROOT" rev-parse --short HEAD) ($(git -C "$ROOT" branch --show-current))$([ -n "$(git -C "$ROOT" status --porcelain)" ] && echo ' +uncommitted')"
   echo "docket: $("$WORK/bin/docket" --version 2>/dev/null | tail -1) from $DOCKET_SRC @ $(git -C "$DOCKET_SRC" rev-parse --short HEAD) ($(git -C "$DOCKET_SRC" branch --show-current))$([ -n "$(git -C "$DOCKET_SRC" status --porcelain)" ] && echo ' +uncommitted')"
