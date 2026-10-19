@@ -32,6 +32,10 @@ automation a template carries, and the removal of dollars per day.
   `Cargo.lock`), and lets a project replace the command or turn the install off; the Run dialog
   shows the same line. The project API carries `prepare_command`, the project file `prepare`, and a
   run's request records the setting under `repository.prepare`. Migration 093.
+- **A docket that answers API 6 installs the dependencies.** The runner now accepts docket's HTTP
+  API version 5 or later, and from 6 sends the project's install setting with the task (the command,
+  or an empty one for "off"; "detect" leaves it to docket). A task whose install fails ends the run
+  with "Could not prepare the dependencies (docket)" and the command's output.
 - **A limit learnt per profile.** A run whose profile sets no token limit runs under a provisional one,
   2 000 000 tokens until it is changed or emptied in Settings → Automation; once a profile has 5
   successful runs its form proposes a limit (the 90th percentile of its last 20 × 1.5, rounded up to two

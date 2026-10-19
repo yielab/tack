@@ -80,13 +80,13 @@ This calls `POST /api/executions/{id}/requeue`, which only succeeds for a reques
 
 Every runner-v1 request body that carries JSON holds `"protocol_version": 1`. The server rejects anything else outright. `check_protocol_version` in `crates/tack-api/src/handlers/runner_protocol.rs` returns `unsupported_protocol` (the fixture is `docs/contracts/runner-v1/errors/unsupported-protocol.json`) for any other number, and `invalid_request` when the field is missing or not a number, on every one of the 13 operations that carry a JSON body. There is no negotiated fallback: a v2 protocol, if it ever exists, is a new contract revision, not a version range this server tries to interpolate.
 
-Separately, each runner reports its own `runner_version` (a free-form string in the capability snapshot) and each harness reports its `installed_version`. Both are informational, logged and stored, and the server never uses them to gate behaviour. docket is the one place a version is enforced, and by the runner's probe, not by the protocol: the adapter reads `apiVersion` from docket's `GET /status.json` and accepts only `"5"`.
+Separately, each runner reports its own `runner_version` (a free-form string in the capability snapshot) and each harness reports its `installed_version`. Both are informational, logged and stored, and the server never uses them to gate behaviour. docket is the one place a version is enforced, and by the runner's probe, not by the protocol: the adapter reads `apiVersion` from docket's `GET /status.json` and accepts `"5"` or any later number.
 
 ## docket
 
 docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 5, which needs docket 0.2.0-beta.6.
 
-- Any other `apiVersion` is reported as "needs docket 0.2.0-beta.6 (API 5); this docket answers API N" and no task is posted.
+- An `apiVersion` below 5, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 5); this docket answers API N" and no task is posted.
 - `docket exec`, the contract probe, the NDJSON output parser and the stdin answers of the earlier adapter are gone. Nothing in the runner starts a throwaway docket per run.
 - One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.

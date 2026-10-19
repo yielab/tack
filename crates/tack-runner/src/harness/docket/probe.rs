@@ -12,19 +12,36 @@ use tack_orch::execution::{
 
 use super::client::Client;
 
-/// The only operator API version this harness speaks.
-pub const API_VERSION: &str = "5";
+/// The oldest operator API version this harness speaks; a later one is accepted too.
+pub const MIN_API_VERSION: u32 = 5;
+
+/// The first API version whose task body carries `prepare`.
+pub(super) const PREPARE_API_VERSION: u32 = 6;
 
 /// The profile a team must hold to run without a person.
 const LIGHTS_OUT: &str = "lights-out";
 
 fn needs_beta_6(found: &str) -> String {
-    format!("needs docket 0.2.0-beta.6 (API {API_VERSION}); this docket answers API {found}")
+    format!("needs docket 0.2.0-beta.6 (API {MIN_API_VERSION}); this docket answers API {found}")
 }
 
-/// `GET /status.json`: the model ids its team members run on and docket's own version when it
-/// sends one, or the sentence saying why this docket cannot be used.
-pub(super) async fn status(client: &Client) -> Result<(Vec<String>, Option<String>), String> {
+/// Whether the answered API version is at least `minimum`.
+pub(super) fn api_at_least(api: &str, minimum: u32) -> bool {
+    api.parse::<u32>().is_ok_and(|found| found >= minimum)
+}
+
+/// What `GET /status.json` says.
+pub(super) struct Status {
+    /// The model ids its team members run on.
+    pub models: Vec<String>,
+    /// docket's own version, when it sends one.
+    pub version: Option<String>,
+    /// The operator API version it answered, as it wrote it.
+    pub api: String,
+}
+
+/// `GET /status.json`, or the sentence saying why this docket cannot be used.
+pub(super) async fn status(client: &Client) -> Result<Status, String> {
     let reply = client
         .status()
         .await
@@ -37,7 +54,7 @@ pub(super) async fn status(client: &Client) -> Result<(Vec<String>, Option<Strin
         ));
     }
     let found = reply.body["apiVersion"].as_str().unwrap_or("unknown");
-    if found != API_VERSION {
+    if !api_at_least(found, MIN_API_VERSION) {
         return Err(needs_beta_6(found));
     }
     let models: BTreeSet<String> = reply.body["agents"]
@@ -52,7 +69,11 @@ pub(super) async fn status(client: &Client) -> Result<(Vec<String>, Option<Strin
         .as_str()
         .filter(|version| !version.is_empty())
         .map(str::to_owned);
-    Ok((models.into_iter().collect(), version))
+    Ok(Status {
+        models: models.into_iter().collect(),
+        version,
+        api: found.to_owned(),
+    })
 }
 
 /// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
@@ -137,7 +158,11 @@ pub(super) async fn probe(
         ]
         .into(),
     };
-    let (models, version) = match status(client).await {
+    let Status {
+        models,
+        version,
+        api,
+    } = match status(client).await {
         Ok(answer) => answer,
         Err(why) => {
             // An answer from the wrong API version still says which one.
@@ -151,7 +176,7 @@ pub(super) async fn probe(
         }
     };
     capability.installed_version = version.unwrap_or_default();
-    capability.set_api_version(API_VERSION);
+    capability.set_api_version(&api);
     let signed_in = !models.is_empty();
     capability.sign_in = Some(SignInReport {
         state: if signed_in {

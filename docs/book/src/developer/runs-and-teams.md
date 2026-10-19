@@ -60,7 +60,7 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 
 | Step | Call | Function |
 |---|---|---|
-| Version | `GET /status.json`; `apiVersion` must be `"5"` | `probe::status` |
+| Version | `GET /status.json`; `apiVersion` must be a number, 5 or later; `prepare` is posted only from 6 | `probe::status` |
 | Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each | `probe::teams` |
 | Make the team once per process | `POST /pods` with `ensure: true`, `blueprint: "software"` | `Client::ensure_pod` |
 | Post the attempt | `POST /tasks/<pod>` | `Client::enqueue_task` |
@@ -72,7 +72,9 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | Cancel | `POST /tasks/<pod>/<id>/cancel` | `cancel` |
 | Untracked files | `GET /tasks/<pod>/<id>/diff` | `finish` |
 
-Any other `apiVersion` is a probe error: "needs docket 0.2.0-beta.6 (API 5); this docket answers API N". `validate` runs the probe before any task is posted, so no task reaches a docket of another version.
+An `apiVersion` below 5, or one that is not a number, is a probe error: "needs docket 0.2.0-beta.6 (API 5); this docket answers API N". `validate` runs the probe before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
+
+From API 6, the task body carries `prepare` from the request's `repository.prepare`: a `Replace` sends its command, `Off` sends `""`, and `Detect` sends nothing, so docket uses its team's `prepare:` or the lockfile's command. A task docket settles `failed` with `failureKind: "prepare"` ends the attempt `failed` with the reason "Could not prepare the dependencies (docket): " followed by docket's own.
 
 ### The task
 
