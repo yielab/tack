@@ -26,6 +26,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **A project says how its dependencies are installed.** Settings → Automation → "Where the code
+  is" shows what a run installs before the agent starts, from the repository's lockfile
+  (`package-lock.json` → `npm ci`, `pnpm-lock.yaml`, `yarn.lock`, `uv.lock`, `poetry.lock`,
+  `Cargo.lock`), and lets a project replace the command or turn the install off; the Run dialog
+  shows the same line. The project API carries `prepare_command`, the project file `prepare`, and a
+  run's request records the setting under `repository.prepare`. Migration 095. The runner does not
+  act on it yet.
 - **The embedded runner finds its settings file by itself.** With no `--runner-config` and no
   `TACK_LOCAL_RUNNER_CONFIG`, it reads `~/.config/tack/runner.toml` when that file exists, so its
   `[docket]` and `[verify]` tables survive a restart, a wiped data folder and `tack service

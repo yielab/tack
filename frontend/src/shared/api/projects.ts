@@ -8,6 +8,8 @@ export interface FolderCheck {
   branch: string | null;
   remote_url: string | null;
   dirty_files: number;
+  /** The install command the checked-out commit's lockfile implies. */
+  install?: { command: string; lockfile: string } | null;
 }
 
 export const projects = {

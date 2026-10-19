@@ -3327,6 +3327,12 @@ export interface components {
             definition_of_done?: string | null;
             /** @description The status a card moves to when its run finishes. */
             on_finish_status?: string | null;
+            /**
+             * @description How a run installs the project's dependencies: a one-line command replaces the one the
+             *     lockfile implies, an empty one turns the install off. Absent, an import leaves it as it is
+             *     and an export means the lockfile decides.
+             */
+            prepare?: string | null;
             push_after_run?: boolean | null;
             /** @description An absolute path for a folder, a URL for a url origin. */
             repository?: string | null;
@@ -3873,6 +3879,10 @@ export interface components {
         };
         /** @enum {string} */
         DependencyType: "blocks" | "is_blocked_by" | "relates_to" | "duplicates";
+        DetectedInstall: {
+            command: string;
+            lockfile: string;
+        };
         /** @description One named area of the repository with its own level. */
         DomainSettings: {
             /** @description Item types the domain covers; empty means any. */
@@ -4072,6 +4082,7 @@ export interface components {
             branch?: string | null;
             dirty_files: number;
             exists: boolean;
+            install?: null | components["schemas"]["DetectedInstall"];
             is_dir: boolean;
             is_git: boolean;
             remote_url?: string | null;
@@ -4548,6 +4559,11 @@ export interface components {
             id: string;
             name: string;
             on_finish_status?: string | null;
+            /**
+             * @description How a run installs the project's dependencies: absent detects the command from the
+             *     lockfile, empty turns the install off, any other text replaces the detected command.
+             */
+            prepare_command?: string | null;
             project_type: components["schemas"]["ProjectType"];
             push_after_run: boolean;
             repository?: string | null;
@@ -5054,6 +5070,11 @@ export interface components {
             github_token_ref?: string | null;
             name?: string | null;
             on_finish_status?: string | null;
+            /**
+             * @description Omitted leaves it untouched; `null` detects the command from the lockfile, `""` turns the
+             *     install off, any other single line replaces the detected command.
+             */
+            prepare_command?: string | null;
             push_after_run?: boolean | null;
             /**
              * @description Omitted leaves the field untouched; JSON `null` clears it. Same for

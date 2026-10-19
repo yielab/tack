@@ -1,4 +1,4 @@
-import { type Accessor, type Component, For, Show, createSignal } from 'solid-js';
+import { type Accessor, type Component, For, Show, createResource, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
 import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
@@ -8,6 +8,8 @@ import { summarizeModels } from './models';
 import { HELP } from '../help/texts';
 import type { AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
+import { api } from '../api';
+import { installLine } from './install';
 import { gateHarnessModelSelection } from './shared';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
@@ -106,6 +108,14 @@ const tilde = (path: string) => path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/,
 /** The dialog as a pre-flight: what will run and where, with everything optional folded away. */
 const RunFlow: Component<RunFlowProps> = (props) => {
   const [advanced, setAdvanced] = createSignal(false);
+  // Only a folder on this computer can be read by the board; for anything else the runner decides.
+  const [folderCheck] = createResource(
+    () => {
+      const p = props.project();
+      return p && (p.code_origin === 'folder' || p.code_origin === 'new_folder') ? p.repository || null : null;
+    },
+    (path) => api.projects.checkFolder(path).catch(() => null),
+  );
   const tools = () => props.form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
   const toggleTool = (name: string, on: boolean) =>
     props.setForm('toolsText', (on ? [...tools(), name] : tools().filter((t) => t !== name)).join(', '));
@@ -214,6 +224,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
       <Show when={props.checkedCard?.() === false}>
         <Prerequisite state="notice" label="This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" />
+      </Show>
+      <Show when={props.project()}>
+        {(project) => (
+          <p data-testid="run-dialog-install" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            {installLine(project().prepare_command, folderCheck())}
+          </p>
+        )}
       </Show>
 
       <div class="space-y-2">

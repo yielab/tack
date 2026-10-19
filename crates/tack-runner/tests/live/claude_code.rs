@@ -101,6 +101,7 @@ fn spec_with(
             remote: "https://example.invalid/repo.git".to_string(),
             base_revision: "0123456789abcdef0123456789abcdef01234567".to_string(),
             subdirectory: None,
+            prepare: None,
             additional: Default::default(),
         },
         permission_policy: permission_policy(tools, network),

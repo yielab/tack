@@ -269,11 +269,14 @@ describe('Settings panels', () => {
     };
     const folder = container.querySelector<HTMLInputElement>('input[aria-label="Folder"]')!;
     const select = container.querySelector<HTMLSelectElement>('select')!;
-    const push = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const push = byText('label', 'Push the branch when a run finishes').querySelector('input')!;
+    const install = container.querySelector<HTMLInputElement>('input[aria-label="Install command"]')!;
     const rows: [string, () => void, object][] = [
       ['folder', () => { folder.value = '/tmp/other'; folder.dispatchEvent(new Event('change', { bubbles: true })); }, { repository: '/tmp/other', default_branch: 'main' }],
       ['mode', () => byText('label', 'In the folder, directly').querySelector('input')!.click(), { workspace_mode: 'in_place' }],
       ['push', () => push.click(), { push_after_run: true }],
+      ['install off', () => byText('label', 'Install dependencies before each run').querySelector('input')!.click(), { prepare_command: '' }],
+      ['install command', () => { install.value = ' make deps '; install.dispatchEvent(new Event('change', { bubbles: true })); }, { prepare_command: 'make deps' }],
       ['finish', () => { select.value = 'Done'; select.dispatchEvent(new Event('change', { bubbles: true })); }, { on_finish_status: 'Done' }],
       ['harness', () => byText('button', 'Codex').click(), { default_harness: 'codex' }],
       ['profile', () => byText('button', 'Implementer').click(), { default_profile_id: 'prof1' }],
