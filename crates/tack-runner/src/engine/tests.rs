@@ -3224,6 +3224,8 @@ struct EvidenceRun {
     completions: Vec<CompletionReport>,
     origin: PathBuf,
     item_id: String,
+    /// How many times the harness was started.
+    starts: usize,
     _root_dir: tempfile::TempDir,
 }
 
@@ -3330,12 +3332,11 @@ async fn run_evidence_attempt_tuned(
     let data_protocol = FakeDataProtocol::new();
     let fake_protocol = protocol(claimed, cancelled, false);
     let reported = fake_protocol.reported_completions.clone();
+    let inner = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    let start_calls = Arc::clone(&inner.start_calls);
     let engine = RunnerEngine::new(
         fake_protocol,
-        ChangingAdapter {
-            inner: adapter(journal.journal_path(&AttemptId::new("attempt"))),
-            change,
-        },
+        ChangingAdapter { inner, change },
         journal,
         WorkspaceManager::new(
             root.join("workspaces"),
@@ -3377,6 +3378,7 @@ async fn run_evidence_attempt_tuned(
         completions,
         origin,
         item_id,
+        starts: start_calls.load(Ordering::SeqCst),
         _root_dir: root_dir,
     }
 }
@@ -4382,4 +4384,125 @@ fn the_evidence_usage_names_the_agent_version_and_model() {
     assert_eq!(evidence["model"], "claude-x");
     assert_eq!(evidence["harness_version"], "1.0.0");
     assert!(evidence.get("tokens_in").is_some());
+}
+
+// -----------------------------------------------------------------
+// The runner installs the dependencies of the copy it makes.
+// -----------------------------------------------------------------
+
+const FAILING_INSTALL: &str = "echo oops >&2; exit 3";
+
+fn replacing_install(work: &mut ClaimedWork, command: &str) {
+    work.request.repository.prepare = Some(tack_core::prepare::PrepareSetting::Replace {
+        command: command.to_owned(),
+    });
+}
+
+/// Runs one attempt on a fake provisioner, after `tune` edits the claim (given the scratch root),
+/// and says how many times the harness was started.
+async fn starts_after_tuning(label: &str, tune: impl FnOnce(&mut ClaimedWork, &Path)) -> usize {
+    let (root_dir, journal) = fresh_journal(label);
+    let mut claimed = work();
+    tune(&mut claimed, root_dir.path());
+    let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    let start_calls = Arc::clone(&adapter.start_calls);
+    let engine = runner_engine(
+        protocol(claimed, false, false),
+        adapter,
+        journal,
+        root_dir.path(),
+    );
+    engine
+        .run_once(&session(), claim_request())
+        .await
+        .expect("a settled cycle");
+    start_calls.load(Ordering::SeqCst)
+}
+
+#[tokio::test]
+async fn a_failed_install_ends_the_attempt_before_any_agent_starts() {
+    let run = run_evidence_attempt_tuned(
+        "install-fails",
+        false,
+        |_| {},
+        None,
+        None,
+        false,
+        (None, None, false),
+        |work| replacing_install(work, FAILING_INSTALL),
+    )
+    .await;
+    let (state, reason) = reported_end(&run);
+    assert_eq!(state, AttemptState::Failed);
+    assert_eq!(reason["code"], "harness_rejected");
+    assert_eq!(
+        reason["message"],
+        format!("Could not prepare the dependencies: `{FAILING_INSTALL}` exited 3\noops")
+    );
+    assert_eq!(run.starts, 0, "no agent was started");
+}
+
+#[tokio::test]
+async fn a_successful_install_runs_in_the_checkout_before_the_agent() {
+    let starts = starts_after_tuning("install-succeeds", |work, _| {
+        replacing_install(work, "touch installed");
+    })
+    .await;
+    assert_eq!(starts, 1);
+}
+
+#[tokio::test]
+async fn a_scratch_run_installs_nothing() {
+    let starts = starts_after_tuning("install-scratch", |work, _| {
+        work.request.repository.kind = "scratch".into();
+        replacing_install(work, FAILING_INSTALL);
+    })
+    .await;
+    assert_eq!(starts, 1, "the failing command was never run");
+}
+
+#[tokio::test]
+async fn a_docket_run_installs_nothing() {
+    let starts = starts_after_tuning("install-docket", |work, root| {
+        let repository = root.join("repository");
+        std::fs::create_dir_all(&repository).expect("repository");
+        work.request.requested_harness_kind =
+            tack_orch::execution::HarnessKind::new(crate::harness::docket::DESCRIPTOR.kind);
+        let additional = &mut work.request.repository.additional;
+        additional.insert("workspace_mode".into(), "local_branch".into());
+        additional.insert(
+            "repository_path".into(),
+            repository.display().to_string().into(),
+        );
+        replacing_install(work, FAILING_INSTALL);
+    })
+    .await;
+    assert_eq!(starts, 1, "docket prepares its own copy");
+}
+
+/// A folder linked to a kept install never reaches the evidence, though the project does not
+/// ignore it, while the agent's own changes do.
+#[tokio::test]
+async fn a_linked_install_is_not_part_of_the_evidence() {
+    let (data_protocol, _) = run_evidence_attempt(
+        "install-evidence",
+        false,
+        |workspace| {
+            let kept = workspace.join("..").join("kept");
+            std::fs::create_dir_all(kept.join("pkg")).expect("kept install");
+            std::fs::write(kept.join("pkg/index.js"), "x\n").expect("file");
+            std::os::unix::fs::symlink(&kept, workspace.join("node_modules")).expect("link");
+            write_one_delete_one(workspace);
+        },
+        None,
+    )
+    .await;
+    let state = data_protocol.state.lock().expect("lock");
+    let files: Vec<crate::evidence::FileChange> =
+        serde_json::from_slice(&uploaded(&state, "files.json")).expect("files");
+    let mut paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
+    paths.sort_unstable();
+    assert_eq!(paths, ["gone.txt", "new.txt"]);
+    let patch = String::from_utf8(uploaded(&state, "changes.patch")).expect("utf8");
+    assert!(!patch.contains("node_modules"));
 }
