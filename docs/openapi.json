@@ -7214,6 +7214,10 @@
               "kind"
             ],
             "properties": {
+              "checked": {
+                "type": "boolean",
+                "description": "Ticked by a person on the \"Done when\" list. Only the board reads it:\nthe brief and the verifier ignore it. Absent means not ticked, so\nolder rows and files read as before and an unticked check is stored\nexactly as it always was."
+              },
               "id": {
                 "type": "string"
               },

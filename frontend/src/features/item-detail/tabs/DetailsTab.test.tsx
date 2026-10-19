@@ -155,6 +155,44 @@ describe('DetailsTab', () => {
     expect(block.querySelector('summary')!.textContent).toContain('2 checks · 1 limit');
   });
 
+  it('ticking_a_done_when_line_saves_checked_and_moves_the_progress', async () => {
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      const method = (init as RequestInit)?.method ?? 'GET';
+      if (url.endsWith('/api/items/i1/brief') && method === 'GET')
+        return Promise.resolve(
+          json({
+            acceptance: [
+              { kind: 'manual', id: 'a', title: 'Copy reads well', text: 'Copy reads well', checked: true },
+              { kind: 'manual', id: 'b', title: 'Works on a phone', text: 'Works on a phone' },
+              { kind: 'manual', id: 'c', title: 'Docs updated', text: 'Docs updated' },
+            ],
+            constraints: [],
+            definition_of_done: null,
+            risk: null,
+          }),
+        );
+      if (url.endsWith('/api/items/i1/brief') && method === 'PUT')
+        return Promise.resolve(json(JSON.parse((init as RequestInit).body as string)));
+      return Promise.resolve(json({}, 404));
+    });
+    const { container } = mount();
+    await flush();
+    expect(container.textContent).toContain('1 of 3');
+
+    container.querySelector<HTMLInputElement>('input[aria-label="Done: Works on a phone"]')!.click();
+    await flush();
+
+    const puts = fetchMock.mock.calls.filter((c) => (c[1] as RequestInit)?.method === 'PUT');
+    const body = JSON.parse((puts[puts.length - 1][1] as RequestInit).body as string);
+    expect(body.acceptance).toEqual([
+      { kind: 'manual', id: 'a', title: 'Copy reads well', text: 'Copy reads well', checked: true },
+      { kind: 'manual', id: 'b', title: 'Works on a phone', text: 'Works on a phone', checked: true },
+      { kind: 'manual', id: 'c', title: 'Docs updated', text: 'Docs updated' },
+    ]);
+    expect(container.textContent).toContain('2 of 3');
+  });
+
   it('save_sends_the_typed_brief', async () => {
     const { container } = mount();
     await flush();
@@ -204,6 +242,6 @@ describe('DetailsTab', () => {
     await flush();
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toBe('criterion id `m1` is used twice');
-    expect(alert.closest('section')!.textContent).toContain('Acceptance criteria');
+    expect(alert.closest('section')!.textContent).toContain('Done when');
   });
 });

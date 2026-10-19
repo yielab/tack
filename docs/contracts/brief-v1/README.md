@@ -42,6 +42,7 @@ the brief, and a human-readable `title`.
   - `path`: File path to check
 - **manual**: A criterion requiring human judgment
   - `text`: Description of what must be verified
+  - `checked`: Optional boolean, a person's tick on the board; absent means not ticked, and verifiers ignore it
 
 ## Constraints
 

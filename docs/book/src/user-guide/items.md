@@ -2,7 +2,7 @@
 
 This page is for anyone who works on individual tasks. After reading it you can open a task, edit its header and details, say what "done" means for it in a form an agent can check, make it repeat, give it a role, and use its tabs for runs, dependencies, files and comments.
 
-Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Details, Activity, Execution, Dependencies, Files, and Fields.
+Every piece of work in Tack — a task, bug, feature, building, work order, or whatever your project's vocabulary calls it — is an *item*. You inspect and edit an item through the **item detail drawer**, a panel with inline header editing and tabs for Overview, Activity, Execution, Dependencies, Files, and Fields.
 
 ---
 
@@ -27,18 +27,20 @@ All header edits save immediately (optimistic update: applied locally first, the
 
 ---
 
-## Details tab
+## Overview tab
 
-The Details tab is the task itself, top to bottom: its **description**, its **acceptance
-criteria**, what the agent gets beyond them (**For the agent**), and a linked GitHub issue.
+The Overview tab (older links and bookmarks that say `?tab=details` still open it) is the task
+itself, top to bottom: its **description**, its **Done when** list, what the agent gets beyond
+it (**For the agent**), and a linked GitHub issue.
 
-The description is edited with the rich-text editor and **autosaves** — edits are debounced
-and persisted automatically a short pause (about 0.6 seconds) after you stop typing. There is
-no save button.
+The description is edited in place: it reads as text, and clicking it (or **Click to edit**,
+when it is empty) opens the rich-text editor; **Done** closes it. Edits **autosave** — they are
+debounced and persisted automatically a short pause (about 0.6 seconds) after you stop typing.
+There is no save button.
 
 Core metadata — **assignee, priority, estimate, sprint, due date, and labels (tags)** — lives in the header above the tabs (see [Opening an item](#opening-an-item)), so it is always visible regardless of which tab is active.
 
-<img src="../screenshots/brief.png" width="50%" alt="The Details tab of an item: the description editor, an Acceptance criteria checklist with one check and Add check, a collapsed For the agent section summarised as 3 checks, 3 limits and risk noted, and Link GitHub issue.">
+<img src="../screenshots/brief.png" width="50%" alt="The Overview tab of an item: the description editor, a Done when checklist with one check and Add check, a collapsed For the agent section summarised as 3 checks, 3 limits and risk noted, and Link GitHub issue.">
 
 ---
 
@@ -47,9 +49,11 @@ Core metadata — **assignee, priority, estimate, sprint, due date, and labels (
 Together these say what "done" means for the item, in a form a person or a program can check.
 The agent receives them with the title and description, and every run keeps a copy.
 
-**Acceptance criteria** is a checklist: one line per thing a person checks before calling the
-item done. **Add check** adds a line, **Up** and **Down** reorder, **Remove** deletes; each line
-saves when you leave it.
+**Done when** is a checklist: one line per thing a person checks before calling the item
+done. Tick a line when you have checked it; the header counts them ("1 of 3"). **Add check**
+adds a line, **Up** and **Down** reorder, **Remove** deletes; each line saves when you leave it,
+and a tick saves at once. The tick is for people: the agent is not told which lines are ticked,
+and no automatic check reads it.
 
 **For the agent** is optional and collapsed by default; its summary line says what it holds
 (for example *3 checks · 3 limits · risk noted*). **Save for the agent** writes all three parts:

@@ -302,7 +302,7 @@ test.describe.serial('tutorial screenshots', () => {
       await page.waitForTimeout(500);
     }
     await page.waitForTimeout(4_500);
-    await drawer.getByRole('heading', { name: 'Acceptance criteria' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
+    await drawer.getByRole('heading', { name: 'Done when' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
     await page.waitForTimeout(300);
     await drawer.screenshot({ path: path.join(OUT_DIR, '06-brief.png') });
   });
