@@ -1,59 +1,19 @@
-import { type Component, createResource, createSignal, createEffect, untrack, Show } from 'solid-js';
-import { useSearchParams } from '@solidjs/router';
+import { type Component, createSignal, createEffect, untrack, Show } from 'solid-js';
+import { useSearchParams, useNavigate } from '@solidjs/router';
 import Drawer from '../../shared/ui/Drawer';
-import Tabs, { type TabItem } from '../../shared/ui/Tabs';
-import { api } from '../../shared/api';
-import { isItemVersionConflict } from '../../shared/api/items';
-import { toast } from '../../shared/ui/toast';
-import type { Item, UpdateItem } from '../../shared/types';
-import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
-import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
-import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
-import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
-import ItemHeader from './ItemHeader';
-import AutomationRow from './AutomationRow';
-import DetailsTab from './tabs/DetailsTab';
-import ActivityTab from './tabs/ActivityTab';
-import DependenciesTab from './tabs/DependenciesTab';
-import FilesTab from './tabs/FilesTab';
-import FieldsTab from './tabs/FieldsTab';
-
-const BASE_TABS: TabItem[] = [
-  { id: 'details', label: 'Details' },
-  { id: 'activity', label: 'Activity' },
-  // "Execution" — the neutral execution domain (`ExecutionRequest`/
-  // `ExecutionAttempt` via `tack-runner`). Always present — an item with
-  // zero execution requests is still a real, honest state worth a visible
-  // empty tab (`ExecutionTimeline`'s own `EmptyState`), not a hidden one.
-  { id: 'execution', label: 'Execution' },
-  { id: 'dependencies', label: 'Dependencies' },
-  { id: 'files', label: 'Files' },
-  { id: 'fields', label: 'Fields' },
-];
+import Button from '../../shared/ui/Button';
+import ItemBody, { tabFromSearchParam } from './ItemBody';
+import { useItemEditor } from './useItemEditor';
 
 /**
  * Item detail drawer. Mounted once at the app root; opens whenever the
  * `?item=<id>` query param is present (deep-linkable / shareable), fetches the
- * item, and exposes inline header editing + a tab bar. Built on the kit Drawer
- * (ESC + focus return).
+ * item, and shows the item screen's body in one column. "Expand" moves it to
+ * the item's page. Built on the kit Drawer (ESC + focus return).
  */
-/** Every tab id this drawer can land on directly. */
-const DEEP_LINKABLE_TAB_IDS = new Set(BASE_TABS.map((t) => t.id));
-
-function tabFromSearchParam(value: string | string[] | undefined): string {
-  // The old Brief tab is part of Details now.
-  if (value === 'brief') return 'details';
-  return typeof value === 'string' && DEEP_LINKABLE_TAB_IDS.has(value) ? value : 'details';
-}
-
 const ItemDetailDrawer: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const itemId = () => (searchParams.item as string | undefined) || undefined;
-
-  const [item, { mutate, refetch }] = createResource(
-    itemId,
-    (id) => (id ? api.items.get(id) : null),
-  );
 
   // Defaults to `details`, but a `?tab=` alongside `?item=` (the attempt-state
   // chip on a Board card, or `onCreated` switching this same drawer to
@@ -82,34 +42,31 @@ const ItemDetailDrawer: Component = () => {
 
   const close = () => setSearchParams({ item: undefined });
 
-  // Optimistic PATCH: apply locally, persist, then notify the host (or roll back).
-  const patch = async (p: UpdateItem) => {
-    const current = item();
-    if (!current) return;
-    mutate({ ...current, ...p } as Item);
-    try {
-      const updated = await api.items.update(current.id, p);
-      mutate(updated);
-      window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT, { detail: updated }));
-    } catch (err) {
-      void refetch(); // reconcile to the server value
-      toast.error(
-        isItemVersionConflict(err)
-          ? 'This item changed elsewhere. It has been refreshed; review it and retry your edit.'
-          : err instanceof Error ? err.message : 'Failed to update item',
-      );
-    }
-  };
+  const editor = useItemEditor(itemId);
+  const item = editor.item;
 
-  // Debounce description edits so we don't PATCH on every keystroke.
-  let descTimer: ReturnType<typeof setTimeout> | undefined;
-  const onDescriptionChange = (html: string) => {
-    if (descTimer) clearTimeout(descTimer);
-    descTimer = setTimeout(() => void patch({ description: html }), 600);
+  const navigate = useNavigate();
+  const expand = () => {
+    const it = item();
+    if (!it) return;
+    const tab = activeTab() === 'details' ? '' : `?tab=${activeTab()}`;
+    navigate(`/projects/${it.project_id}/items/${it.id}${tab}`);
   };
 
   return (
-    <Drawer isOpen={!!itemId()} onClose={close} title="Item details" width="lg">
+    <Drawer
+      isOpen={!!itemId()}
+      onClose={close}
+      title="Item details"
+      width="lg"
+      actions={
+        <Show when={item()}>
+          <Button size="sm" variant="secondary" onClick={expand}>
+            Expand
+          </Button>
+        </Show>
+      }
+    >
       <Show
         when={item()}
         fallback={
@@ -119,58 +76,7 @@ const ItemDetailDrawer: Component = () => {
         }
       >
         {(it) => (
-          <div class="space-y-6">
-            <ItemHeader item={it()} onPatch={patch} />
-
-            {/* Run with agent — the neutral execution surface
-                (`ExecutionRequest`/`ExecutionAttempt` via `tack-runner`). A
-                successful run switches straight to the "Execution" tab so
-                the request that just appeared is immediately visible,
-                without a page navigation. Once the item has a run, its
-                latest one is summed up here, so coming back to the task
-                shows what the agent did. */}
-            <div
-              class="flex flex-wrap items-start gap-3 rounded-[28px] px-5 py-4"
-              style={{ 'background-color': 'var(--color-bg-panel)' }}
-            >
-              <LatestRunSummary
-                itemId={it().id}
-                itemTitle={it().title}
-                projectId={it().project_id}
-                onCreated={() => setActiveTab('execution')}
-                onOpen={() => setActiveTab('execution')}
-              />
-              <RunWithAgentButton
-                itemId={it().id}
-                itemTitle={it().title}
-                projectId={it().project_id}
-                onCreated={() => setActiveTab('execution')}
-              />
-            </div>
-
-            <AutomationRow item={it()} />
-
-            <Tabs tabs={BASE_TABS} active={activeTab()} onChange={setActiveTab}>
-              <Show when={activeTab() === 'details'}>
-                <DetailsTab item={it()} onDescriptionChange={onDescriptionChange} />
-              </Show>
-              <Show when={activeTab() === 'activity'}>
-                <ActivityTab itemId={it().id} />
-              </Show>
-              <Show when={activeTab() === 'execution'}>
-                <ExecutionTimeline itemId={it().id} itemTitle={it().title} projectId={it().project_id} />
-              </Show>
-              <Show when={activeTab() === 'dependencies'}>
-                <DependenciesTab item={it()} />
-              </Show>
-              <Show when={activeTab() === 'files'}>
-                <FilesTab itemId={it().id} />
-              </Show>
-              <Show when={activeTab() === 'fields'}>
-                <FieldsTab item={it()} />
-              </Show>
-            </Tabs>
-          </div>
+          <ItemBody item={it()} editor={editor} layout="drawer" tab={activeTab()} onTabChange={setActiveTab} />
         )}
       </Show>
     </Drawer>

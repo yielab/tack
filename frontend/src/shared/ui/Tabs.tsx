@@ -1,8 +1,10 @@
-import { For, type Component, type JSX } from 'solid-js';
+import { For, Show, type Component, type JSX } from 'solid-js';
 
 export interface TabItem {
   id: string;
   label: string;
+  /** Shown beside the label when the number is already loaded. */
+  count?: number;
 }
 
 export interface TabsProps {
@@ -65,6 +67,14 @@ const Tabs: Component<TabsProps> = (props) => {
                 }}
               >
                 {tab.label}
+                <Show when={tab.count !== undefined}>
+                  <span
+                    class="ml-1.5 rounded-full px-1.5 py-px text-[0.6875rem] font-bold"
+                    style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                  >
+                    {tab.count}
+                  </span>
+                </Show>
               </button>
             );
           }}

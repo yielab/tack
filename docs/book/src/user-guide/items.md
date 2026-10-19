@@ -20,10 +20,15 @@ At the top of the drawer, the **header** shows:
 - A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
 - The editable **title**. Edit it inline; the change commits when you blur the field or press `Enter`.
 - A row of **status pills**, one per workflow status. Click any inactive pill to transition the item to that status. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
-- **Priority**, **Estimate**, **Due date**, **Repeats** and **Sprint** controls.
-- **Tags** — type a tag and press `Enter` to add; click the `×` on a tag to remove it.
+- The date the item was created.
 
-All header edits save immediately (optimistic update: applied locally first, then persisted).
+Under the header, one **properties** list holds **Priority**, **Due date**, **Assignee**, **Estimate**, **Sprint**, **Repeats**, the **last update**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it), the **Automation** row and what the item **blocks**. Every one but the last update can be edited in place.
+
+All edits save immediately (optimistic update: applied locally first, then persisted).
+
+### The item's page
+
+**Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item), the tabs in a main column and the properties list in a column at the side. **Copy link** at the top right copies the page's address; the open tab is part of it, so a link opens on the same tab. A tab shows a number beside its name when it is already known, as Dependencies does.
 
 ---
 

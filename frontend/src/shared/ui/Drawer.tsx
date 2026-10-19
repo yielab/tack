@@ -13,6 +13,8 @@ export interface DrawerProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  /** Buttons shown in the header, before Close. */
+  actions?: JSX.Element;
   /** Drawer width on desktop (Tailwind max-w-*). Full-screen sheet on mobile. */
   width?: 'md' | 'lg' | 'xl';
   children: JSX.Element;
@@ -89,6 +91,8 @@ const Drawer: Component<DrawerProps> = (props) => {
                 >
                   {props.title}
                 </h2>
+                <div class="flex items-center gap-2">
+                {props.actions}
                 <button
                   onClick={props.onClose}
                   aria-label="Close"
@@ -107,6 +111,7 @@ const Drawer: Component<DrawerProps> = (props) => {
                     />
                   </svg>
                 </button>
+                </div>
               </div>
             </Show>
             <div class="flex-1 overflow-y-auto px-6 py-4">{props.children}</div>

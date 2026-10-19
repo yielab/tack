@@ -17,6 +17,7 @@ const Templates     = lazy(() => import('../features/templates/Templates'));
 const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator'));
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
+const ItemPage      = lazy(() => import('../features/item-detail/ItemPage'));
 const Agents        = lazy(() => import('../features/agents/AgentsPage'));
 
 export const routes: RouteDefinition[] = [
@@ -31,6 +32,9 @@ export const routes: RouteDefinition[] = [
   { path: '/projects/:id/overview',   component: Dashboard },
   { path: '/projects/:id/factory',    component: FactoryMetrics },
   { path: '/projects/:id/settings',   component: ProjectSettings },
+
+  // An item on a page of its own (the drawer's "Expand")
+  { path: '/projects/:id/items/:itemId', component: ItemPage },
 
   // Work surface — all 5 lenses wrapped in WorkLayout
   {
