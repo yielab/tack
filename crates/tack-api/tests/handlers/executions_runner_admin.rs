@@ -526,7 +526,7 @@ async fn provision_local_runner_writes_through_own_pool_to_same_db() {
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
 
-    let response = runner_admin::provision_local_runner(&database_url)
+    let response = runner_admin::provision_local_runner(&database_url, "workstation")
         .await
         .expect("local provisioning should succeed against a migrated, file-backed database");
 
@@ -551,7 +551,7 @@ async fn provision_local_runner_writes_through_own_pool_to_same_db() {
 /// silently falling back to some other connection.
 #[tokio::test]
 async fn provision_local_runner_fails_on_an_unparseable_database_url() {
-    let error = runner_admin::provision_local_runner("not-a-real-database-url")
+    let error = runner_admin::provision_local_runner("not-a-real-database-url", "workstation")
         .await
         .expect_err("an unparseable database_url must not silently succeed");
 
@@ -559,6 +559,89 @@ async fn provision_local_runner_fails_on_an_unparseable_database_url() {
         error,
         runner_admin::ProvisionLocalRunnerError::Pool(_)
     ));
+}
+
+/// The embedded runner is named after the computer it runs on, a taken name
+/// gets the next number, and only a name the board generated is replaced: one a
+/// person chose stays.
+#[tokio::test]
+async fn the_embedded_runner_is_named_after_this_computer() {
+    assert_eq!(
+        runner_admin::this_computer_name("workstation", 1),
+        "This computer (workstation)"
+    );
+    assert_eq!(
+        runner_admin::this_computer_name("workstation", 2),
+        "This computer (workstation) 2"
+    );
+    assert_eq!(runner_admin::this_computer_name(" ", 1), "This computer");
+
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let database_url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("names.db").display()
+    );
+    let pool = init_pool(&database_url).await.expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    let repo = Repository::new(pool);
+    let name_of = |id: String| {
+        let pool = repo.pool().clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT name FROM agent_runners WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .expect("runner name")
+        }
+    };
+
+    let first = runner_admin::provision_local_runner(&database_url, "workstation")
+        .await
+        .expect("first");
+    let second = runner_admin::provision_local_runner(&database_url, "workstation")
+        .await
+        .expect("second");
+    assert_eq!(
+        name_of(first.runner_id.clone()).await,
+        "This computer (workstation)"
+    );
+    assert_eq!(
+        name_of(second.runner_id.clone()).await,
+        "This computer (workstation) 2"
+    );
+
+    // An earlier version's generated name becomes this computer's; a chosen one stays.
+    sqlx::query("UPDATE agent_runners SET name = ? WHERE id = ?")
+        .bind("local-2f1c9a2e-0b7d-4c55-9d1e-3a6f8b7c4d10")
+        .bind(&first.runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("old generated name");
+    sqlx::query("UPDATE agent_runners SET name = ? WHERE id = ?")
+        .bind("gpu-box")
+        .bind(&second.runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("chosen name");
+    assert!(
+        runner_admin::name_local_runner_after_host(&database_url, &first.runner_id, "workstation")
+            .await
+            .expect("rename")
+    );
+    assert!(
+        !runner_admin::name_local_runner_after_host(
+            &database_url,
+            &second.runner_id,
+            "workstation"
+        )
+        .await
+        .expect("left alone")
+    );
+    assert_eq!(
+        name_of(first.runner_id).await,
+        "This computer (workstation)"
+    );
+    assert_eq!(name_of(second.runner_id).await, "gpu-box");
 }
 
 /// `local_runner_id_exists` is the authoritative check for distinguishing a
@@ -576,7 +659,7 @@ async fn local_runner_id_exists_reports_presence_and_absence() {
     migrations::run_all(&pool).await.expect("migrations");
     drop(pool);
 
-    let response = runner_admin::provision_local_runner(&database_url)
+    let response = runner_admin::provision_local_runner(&database_url, "workstation")
         .await
         .expect("local provisioning should succeed against a migrated, file-backed database");
 

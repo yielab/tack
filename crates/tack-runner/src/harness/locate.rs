@@ -1,9 +1,9 @@
-//! Shared executable locator for both harness adapters.
+//! Shared executable locator for every agent harness.
 //!
 //! A plain `PATH` search is correct when the runner starts from an
 //! interactive shell, and wrong for the desktop app (`.desktop`
 //! entry/Finder/Start menu) and `tack service` under systemd — both inherit
-//! a minimal session `PATH` that lacks where `claude`/`codex` actually live,
+//! a minimal session `PATH` that lacks where `claude`/`codex`/`opencode` actually live,
 //! so a real install reads as "not installed".
 //!
 //! [`locate`] searches `PATH` first, then a fixed list of per-user install
@@ -67,21 +67,7 @@ pub fn locate(
 ) -> Result<PathBuf, NotFound> {
     let mut searched = Vec::new();
 
-    if let Some(path) = path {
-        for dir in std::env::split_paths(path) {
-            // An empty `PATH` entry means "current directory" to a shell;
-            // skipped on purpose since that's not where a harness is installed.
-            if dir.as_os_str().is_empty() {
-                continue;
-            }
-            if let Some(found) = check_dir(&dir, program) {
-                return Ok(found);
-            }
-            searched.push(dir);
-        }
-    }
-
-    for dir in well_known_dirs(home) {
+    for dir in candidate_dirs(path, home) {
         if let Some(found) = check_dir(&dir, program) {
             return Ok(found);
         }
@@ -92,6 +78,24 @@ pub fn locate(
         program: program.to_string(),
         searched,
     })
+}
+
+/// Every directory an agent is looked for in, in search order: the entries of
+/// `path` first, then the well-known per-user and package-manager folders
+/// under `home`. One list for claude-code, codex, opencode and docket alike,
+/// so no agent is found in more places than another.
+pub fn candidate_dirs(path: Option<&OsStr>, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = path
+        .map(|path| {
+            std::env::split_paths(path)
+                // An empty `PATH` entry means "current directory" to a shell;
+                // skipped on purpose since that's not where a harness is installed.
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    dirs.extend(well_known_dirs(home));
+    dirs
 }
 
 /// Impure convenience wrapper: snapshots the runner process's own `PATH`
@@ -159,6 +163,8 @@ fn well_known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
         // "EACCES" error npm gives on the system-wide default.
         dirs.push(home.join(".npm-global/bin"));
         dirs.push(home.join(".npm/bin"));
+        // Linuxbrew installed for one user.
+        dirs.push(home.join(".linuxbrew/bin"));
         // nvm never symlinks a version-independent "current" path outside
         // a sourced shell rc, so every installed Node version's own bin
         // directory is a candidate.
@@ -169,7 +175,10 @@ fn well_known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     {
         // Homebrew on Apple Silicon.
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
-        // Homebrew on Intel macOS, and Linuxbrew's default prefix.
+        // Homebrew on Linux (Linuxbrew's default prefix), which no session
+        // `PATH` carries when the app starts from the desktop menu.
+        dirs.push(PathBuf::from("/home/linuxbrew/.linuxbrew/bin"));
+        // Homebrew on Intel macOS, and a plain `make install`.
         dirs.push(PathBuf::from("/usr/local/bin"));
     }
 
@@ -257,6 +266,27 @@ mod tests {
         let found =
             locate("claude", Some(empty_path), Some(home.path())).expect("found in fallback dir");
         assert_eq!(found, fallback_binary.canonicalize().expect("canonicalize"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_agent_is_found_only_in_a_homebrew_prefix_with_an_empty_path() {
+        // The Homebrew prefixes are absolute, so a real one cannot be faked in
+        // a temp dir: the list must carry both, and a user-level prefix under
+        // `home` is searched the same way.
+        let dirs = candidate_dirs(Some(OsStr::new("")), None);
+        assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+        assert!(dirs.contains(&PathBuf::from("/home/linuxbrew/.linuxbrew/bin")));
+
+        let home = temp_home("locate-brew");
+        for program in ["claude", "codex", "opencode", "docket"] {
+            let binary = home.path().join(".linuxbrew/bin").join(program);
+            write_file(&binary, "#!/bin/sh\n");
+            make_executable(&binary);
+            let found = locate(program, Some(OsStr::new("")), Some(home.path()))
+                .expect("found in the Homebrew prefix");
+            assert_eq!(found, binary.canonicalize().expect("canonicalize"));
+        }
     }
 
     #[test]

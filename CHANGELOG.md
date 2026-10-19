@@ -249,6 +249,12 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The desktop app finds, stops and names what it starts.** Every agent, docket included, is looked
+  for in the same folders, Linuxbrew's among them, so opencode under Homebrew is found when the app
+  opens from the desktop menu. A SIGTERM, SIGINT or SIGHUP to `tack-desktop` stops the server it
+  started instead of leaving it for the next app to attach to. The embedded runner is named "This
+  computer (host name)", and a runner enrolled earlier under a generated name is renamed on its next
+  start, keeping its identity.
 - **A project that already ignores `node_modules` no longer ends every run "changes could not be
   read".** The runner leaves the folder it installed out of the agent's change only when git does
   not already ignore it. A run whose profile has only read tools (Read, Grep, Glob, WebFetch,
