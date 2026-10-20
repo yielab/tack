@@ -183,11 +183,11 @@ finishes:
 When the run finishes, the same tab is the record of what happened: one status, what the agent
 said, and its usage — tokens first, then the approximate cost, which is the agent's own estimate
 at list price, not your bill. This agent only wrote text and its profile allows only read tools, so no change was expected
-and the run reads **Finished — no changes recorded**, and **What the agent said** is the announcement itself:
+and the run reads **Finished — no changes recorded**, and **What the agent concluded** is the announcement itself:
 
 <img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run: Run 1 'Finished — no changes recorded', 'The agent ended without changing any files. What it said is below.', Copy path and Log buttons, What the agent said showing the announcement's headline and first paragraph, and usage reading 17K tokens in, 1.8K out, about $0.04, claude-sonnet-5-5 auto-selected, one model call, 16 seconds; the board card behind carries a Finished chip.">
 
-**Show timeline, questions & files** expands the run's full record. **Files from this run** are
+**Show questions & files** expands the run's full record. **Files from this run** are
 what it produced, each one click from viewing or downloading: the agent's own run log (the
 announcement is in it), and the record of the change — `changes.patch` (empty here: this agent
 only wrote text), `files.json`, the `brief.json` it was given, and the `evidence.json` manifest

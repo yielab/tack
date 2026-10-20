@@ -26,7 +26,7 @@ const ATTEMPT = {
   pull_request: null, review: null,
 };
 
-function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = []) {
+function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = [], reviewInTab = false) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
@@ -40,7 +40,7 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
   const dispose = render(
     () => (
       <ExecutionStoreProvider>
-        <LatestRunSummary itemId="item-1" itemTitle="Fix it" projectId="proj-1" onOpen={onOpen} />
+        <LatestRunSummary itemId="item-1" itemTitle="Fix it" projectId="proj-1" onOpen={onOpen} reviewInTab={reviewInTab} />
       </ExecutionStoreProvider>
     ),
     container,
@@ -91,6 +91,17 @@ describe('LatestRunSummary', () => {
     expect(card.getAttribute('data-state')).toBe('review');
     expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toBe('1m 55s');
     expect(buttons(card)).toEqual(expect.arrayContaining(['Accept', 'Reject…', 'See what it did']));
+  });
+
+  it('while the Execution tab is open the card keeps its state and its links but leaves out Accept and Reject…', async () => {
+    const c = mount([RUN], () => {}, [ATTEMPT], [], true);
+    for (let i = 0; i < 4; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('review');
+    expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toBe('1m 55s');
+    expect(buttons(card)).toContain('See what it did');
+    expect(buttons(card)).not.toContain('Accept');
+    expect(buttons(card)).not.toContain('Reject…');
   });
 
   it('a run that changed no file shows the answer as what it delivered and offers Accept, not Merge', async () => {

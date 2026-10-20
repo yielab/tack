@@ -273,6 +273,21 @@ export function countPatchFiles(patch: string): number {
   return (patch.match(/^diff --git /gm) ?? []).length;
 }
 
+/** A path, or text that holds paths, as the project knows it: the runner's workspace
+ *  prefix is left off, so `/var/tmp/ws-123/src/app.ts` reads `src/app.ts` and the
+ *  workspace itself reads `.`. Without a workspace the text comes back as it was. */
+export function inProject(text: string, workspace: string | null | undefined): string {
+  const root = (workspace ?? '').trim().replace(/\/+$/, '');
+  if (root === '' || text === '') return text;
+  const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`(?<![\\w.~-])${escaped}(/|(?![\\w.-]))`, 'g'), (_m, slash: string) => (slash ? '' : '.'));
+}
+
+/** The share of a token limit a run has used, as a whole percent; `null` without a limit. */
+export function limitShare(used: number | null | undefined, limit: number | null | undefined): number | null {
+  return typeof used === 'number' && typeof limit === 'number' && limit > 0 ? Math.round((used / limit) * 100) : null;
+}
+
 /** The last few steps a running agent reported, newest last: the `text` of its `agent.*` events. */
 export function lastSteps(events: ReadonlyArray<{ kind: string; payload: unknown }>, count = 3): string[] {
   const lines: string[] = [];

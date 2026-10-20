@@ -8,6 +8,8 @@ import {
   formatCountedTokens,
   formatTokenCount,
   describeModelProvenance,
+  inProject,
+  limitShare,
   formatRunnerTimeCost,
   formatUsageEconomics,
   formatUsdMeasurement,
@@ -223,5 +225,40 @@ describe('describeAttemptStatus — one status per attempt', () => {
     );
     expect(describeAttemptStatus({ state: 'running', terminal_reason: null })).toEqual({ label: 'Running', tone: 'primary' });
     expect(describeAttemptStatus({ state: 'leased', terminal_reason: null }).label).toBe('Starting');
+  });
+});
+
+describe('inProject — paths as the project knows them', () => {
+  const ws = '/var/tmp/tack/ws-123';
+  it('leaves the runner\'s workspace prefix off a path', () => {
+    expect(inProject(`${ws}/src/app.ts`, ws)).toBe('src/app.ts');
+    expect(inProject(`${ws}/src/app.ts`, `${ws}/`)).toBe('src/app.ts');
+  });
+  it('reads the workspace itself as the project root', () => {
+    expect(inProject(ws, ws)).toBe('.');
+  });
+  it('strips every path in a sentence or a command, and only whole workspace paths', () => {
+    expect(inProject(`cat ${ws}/a.ts ${ws}/b.ts`, ws)).toBe('cat a.ts b.ts');
+    expect(inProject(`Changed ${ws}/src/app.ts.`, ws)).toBe('Changed src/app.ts.');
+    expect(inProject(`/other${ws}/a.ts and ${ws}-2/a.ts`, ws)).toBe(`/other${ws}/a.ts and ${ws}-2/a.ts`);
+  });
+  it('returns the text as it was without a workspace, or when the path is elsewhere', () => {
+    expect(inProject('/repo/test.md', null)).toBe('/repo/test.md');
+    expect(inProject('/repo/test.md', '')).toBe('/repo/test.md');
+    expect(inProject('/repo/test.md', ws)).toBe('/repo/test.md');
+  });
+  it('is not fooled by characters that mean something in a pattern', () => {
+    expect(inProject('/w/a+b (1)/x.ts', '/w/a+b (1)')).toBe('x.ts');
+  });
+});
+
+describe('limitShare', () => {
+  it('is the whole percent of the limit used, and null without a limit or a count', () => {
+    expect(limitShare(100, 200)).toBe(50);
+    expect(limitShare(1, 3)).toBe(33);
+    expect(limitShare(250, 200)).toBe(125);
+    expect(limitShare(100, null)).toBeNull();
+    expect(limitShare(null, 200)).toBeNull();
+    expect(limitShare(100, 0)).toBeNull();
   });
 });
