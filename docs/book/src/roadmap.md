@@ -86,11 +86,16 @@ fix, and the item screen's new design, ordered so each screen and each module is
 
 ## Phase 78 — one pass over what is still open
 
-**Status:** proposed 2026-10-19, not started. It gathers what the first runs from the desktop app
-found, the board screen audit, the gaps of earlier phases that are a fix, and the item screen's new
-design, and orders them so each screen and each module is changed by one task, once. No ADR:
-nothing here changes a decision; the one model change is a tick on a manual check. Phase 76 goes
-after it, since both change the profile table and the project file.
+**Status:** Rounds 1 to 4 are in `develop` (2026-10-19): every task, and the gate once on the merged
+tree. What is left is the recordings that need a paid model: the tutorial's screenshots and
+`workflow.gif`, `hero.gif` and `agents-flow.gif` still show the screens before this phase, and are
+retaken with the maintainer's agents. Also open, small: a long status name wraps in its board
+column header, a retried request's fingerprint still includes the composed instructions (so a
+title edit answers 409), and the Dependencies tab's links open the drawer, not the page. It gathers
+what the first runs from the desktop app found, the board screen audit, the gaps of earlier phases
+that are a fix, and the item screen's new design, and orders them so each screen and each module is
+changed by one task, once. No ADR: nothing here changes a decision; the one model change is a tick
+on a manual check. Phase 76 goes after it, since both change the profile table and the project file.
 
 | Id | Task | Owns | Waits on |
 |---|---|---|---|

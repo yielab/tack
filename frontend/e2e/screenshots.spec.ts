@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
-import { API, acceptAndStartAttempt, claimOnceWithLease, setProjectDefaultModel, setProjectFolder, waitForApp } from './helpers';
+import { API, acceptAndStartAttempt, claimOnceWithLease, heartbeatRunner, setProjectDefaultModel, setProjectFolder, waitForApp } from './helpers';
 
 // Screenshot capture for the README and the book. Run with `make screenshots`.
 // Outputs PNG files to docs/screenshots/ at repo root.
@@ -88,7 +88,10 @@ async function enrollConfiguredRunner(request: APIRequestContext) {
     },
   });
   expect(enrolled.ok(), `enroll: ${enrolled.status()}`).toBeTruthy();
-  return { runnerId: pending.runner_id as string, credential: (await enrolled.json()).runner_credential as string };
+  const runner = { runnerId: pending.runner_id as string, credential: (await enrolled.json()).runner_credential as string };
+  // The Run dialog lists a runner that has not been heard from as not answering.
+  await heartbeatRunner(request, runner.runnerId, runner.credential, 2);
+  return runner;
 }
 
 /** Requests a run of `itemId` on the runner and drives it to `running`. */
@@ -396,7 +399,7 @@ test.describe.serial('README screenshots', () => {
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    await drawer.getByRole('button', { name: 'Show questions & files' }).first().click();
     await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByRole('heading', { name: 'Questions from the agent' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
@@ -409,11 +412,22 @@ test.describe.serial('README screenshots', () => {
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    await drawer.getByRole('button', { name: 'Show questions & files' }).first().click();
     await expect(drawer.getByText(/^Recommendation:/).first()).toBeVisible({ timeout: 10_000 });
     await drawer.getByText('Merge-readiness pack', { exact: true }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'merge-readiness.png') });
+  });
+
+  test('item-page', async ({ page }) => {
+    // The item on a page of its own: the run card and the properties in the side column.
+    await page.setViewportSize({ width: 1440, height: 1300 });
+    await page.goto(`/projects/${projectId}/items/${seeded.mrpItemId}`);
+    await waitForApp(page);
+    await expect(page.getByRole('region', { name: 'Properties' })).toBeVisible();
+    await expect(page.getByTestId('latest-run')).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(OUT_DIR, 'item-page.png') });
   });
 
   test('factory-metrics', async ({ page, request }) => {

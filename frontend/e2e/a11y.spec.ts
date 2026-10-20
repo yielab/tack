@@ -220,6 +220,77 @@ test('keyboard opens a board card, Tab stays in the drawer, Escape returns focus
   await expect(card).toBeFocused();
 });
 
+// The board's own checks. A column of thirty cards must scroll inside itself to its last
+// card, the board's horizontal bar must sit inside the screen, and every region that
+// scrolls must take the keyboard. A project of its own, for the same reason as above.
+async function boardWithThirtyCards(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+) {
+  const projectId = await createFreshProject(request, `A11y board ${Date.now()}`);
+  for (let n = 1; n <= 30; n++) {
+    await createFreshItem(request, projectId, `Column card ${String(n).padStart(2, '0')}`);
+  }
+  await page.goto(`/projects/${projectId}/board`);
+  await waitForApp(page);
+  await expect(page.getByText('Column card 30', { exact: true })).toHaveCount(1);
+}
+
+test('board — a column of thirty cards scrolls to its last card', async ({ page, request }) => {
+  await boardWithThirtyCards(page, request);
+  const column = page.getByRole('group', { name: /^(?!Board columns)/ }).filter({ has: page.getByText('Column card 01') });
+  const last = column.getByText('Column card 30', { exact: true });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeVisible();
+  const { top, bottom } = await column.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom };
+  });
+  const card = await last.boundingBox();
+  expect(card, 'the last card has a box').not.toBeNull();
+  // Inside the column, and the column inside the screen: the card is not cut off.
+  expect(card!.y + card!.height).toBeLessThanOrEqual(bottom + 1);
+  expect(card!.y).toBeGreaterThanOrEqual(top - 1);
+  expect(bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
+  expect(await column.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+});
+
+test("board — the horizontal scrollbar is inside the screen", async ({ page, request }) => {
+  await boardWithThirtyCards(page, request);
+  const row = page.getByRole('group', { name: 'Board columns' });
+  const { bottom, scrolls } = await row.evaluate((el) => ({
+    bottom: el.getBoundingClientRect().bottom,
+    scrolls: el.scrollWidth > el.clientWidth,
+  }));
+  expect(scrolls, 'the columns overflow the row, so it has a bar to show').toBe(true);
+  expect(bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
+});
+
+test('board — every scrollable region takes keyboard focus', async ({ page, request }) => {
+  await boardWithThirtyCards(page, request);
+  // axe's own rule first, then an explicit walk, since the rule only sees regions that
+  // overflow at the moment it runs.
+  const results = await new AxeBuilder({ page }).withRules(['scrollable-region-focusable']).analyze();
+  expect(results.violations.map((v) => v.id)).toEqual([]);
+  const unreachable = await page.evaluate(() => {
+    const focusable = 'a[href],button,input,select,textarea,summary,[tabindex]:not([tabindex^="-"])';
+    const isReachable = (el: Element) =>
+      (el instanceof HTMLElement && el.tabIndex >= 0) || el.querySelector(focusable) !== null;
+    return Array.from(document.querySelectorAll('*'))
+      .filter((el) => {
+        const style = getComputedStyle(el);
+        const scrolls = (overflow: string) => overflow === 'auto' || overflow === 'scroll';
+        return (
+          (scrolls(style.overflowY) && el.scrollHeight > el.clientHeight) ||
+          (scrolls(style.overflowX) && el.scrollWidth > el.clientWidth)
+        );
+      })
+      .filter((el) => !isReachable(el))
+      .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)}`);
+  });
+  expect(unreachable, 'scrollable regions the keyboard cannot reach').toEqual([]);
+});
+
 // Agents page — Advanced section (frontend/src/features/agents/runnerFleet/**).
 // The routes it calls (`/api/executions`, `/api/runner-fleets`,
 // `/api/runners/*`, `/api/agent-profiles`) are always on, so these scans hit
@@ -409,7 +480,7 @@ test('item detail Execution tab — expanded attempt detail (events/decisions/ar
   await drawer.getByRole('tab', { name: 'Execution' }).click();
   await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
 
-  await drawer.getByRole('button', { name: /Show timeline, questions & files/ }).click();
+  await drawer.getByRole('button', { name: /Show questions & files/ }).click();
   await expect(drawer.getByText('No events reported yet')).toBeVisible();
 
   const violations = await scan(page);

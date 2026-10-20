@@ -62,16 +62,15 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   // store's own poll — no reload needed, just time on the clock.
   // The click flow: POST /api/local-runner/test-run creates a request on this
   // machine's runner, the embedded runner claims it, and the shim exits 0
-  // having changed nothing — so the attempt finishes amber, "no changes
-  // recorded", with its runner named. The timeline below the button is the
-  // shared store's own poll; no reload.
+  // having changed nothing. The test run uses the Implementer profile, which is
+  // expected to deliver a change, so the attempt ends failed with that reason,
+  // and its runner is named. The timeline below the button is the shared
+  // store's own poll; no reload.
   await page.getByRole('button', { name: 'Run test' }).click();
   const attempt = page.getByTestId('attempt').first();
-  // The run's one status sits in its heading, above the attempt card.
-  const run = page.locator('li', { has: attempt }).first();
-  await expect(run).toContainText('Finished — no changes recorded', { timeout: 90_000 });
+  await expect(attempt).toContainText('The agent reported success but delivered no change to review', { timeout: 90_000 });
   await expect(attempt).toContainText(/runr_/);
-  await expect(attempt.getByRole('button', { name: 'Log' })).toBeVisible();
+  await expect(attempt.getByRole('button', { name: 'Raw log' })).toBeVisible();
 
   // Leave the machine as this test found it, for every other spec in this
   // suite that assumes agent execution starts off — but only when it is

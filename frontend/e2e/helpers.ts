@@ -353,9 +353,34 @@ function capabilities() {
 }
 
 /**
+ * One heartbeat, as `tack-runner` sends each cycle. A runner the server has not heard from is
+ * "not answering": the Run dialog lists it disabled, as it does for a real silent machine, so a
+ * test that sends work to a runner it enrolled makes it answer first.
+ */
+export async function heartbeatRunner(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  capacity = 1,
+): Promise<void> {
+  const res = await request.post(`${API}/runner/v1/heartbeat`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      heartbeat_id: `hb-${runnerId}-${Date.now()}`,
+      sent_at: new Date().toISOString(),
+      available_capacity: capacity,
+      active_attempts: [],
+    },
+  });
+  expect(res.ok(), `runner heartbeat failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+}
+
+/**
  * Enrolls a runner as `tack-runner` would: `POST /api/runners/enrollment`
  * (operator side, issues the one-time token) then `POST
- * /api/runner/v1/enroll` (the runner side of the exchange). Returns the
+ * /api/runner/v1/enroll` (the runner side of the exchange), then one heartbeat. Returns the
  * runner id and its bearer credential for later {@link claimOnce} calls.
  */
 export async function enrollRunner(
@@ -381,7 +406,10 @@ export async function enrollRunner(
   });
   expect(enrollRes.ok(), `runner enroll failed: ${enrollRes.status()}`).toBeTruthy();
   const enrolled = await enrollRes.json();
-  return { runnerId: pending.runner_id as string, credential: enrolled.runner_credential as string };
+  const runnerId = pending.runner_id as string;
+  const credential = enrolled.runner_credential as string;
+  await heartbeatRunner(request, runnerId, credential, capacity);
+  return { runnerId, credential };
 }
 
 /**

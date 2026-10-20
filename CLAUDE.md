@@ -41,10 +41,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a
   limit per profile learnt from its runs). Phase 77 (`docs/plans/phase-77.md`) built tasks S, L, N
   and P in `develop` (2026-10-19); and K (docket API 6, `check_changed`): Phase 77 is built, its proof is Fabulada's code card through a team.
-- **Proposed 2026-10-19:** Phase 78 (the roadmap's own section, no plan file, no ADR) — every other
-  open finding in one pass, one task per screen or module: the desktop app's first runs, the board
-  audit, a page of its own for each item with a run card and an Execution tab, and "Done when"
-  ticks. Each task runs only its own tests; the full suites and `pre-push` run once, in its last round.
+- **Built 2026-10-19:** Phase 78 (the roadmap's own section, no plan file, no ADR) — every other
+  open finding in one pass: the desktop app's first runs, the board audit, a page of its own for each
+  item with a run card and an Execution tab, and "Done when" ticks. Rounds 1 to 4 are in `develop`,
+  the gate run once; left are the billed recordings (the tutorial's shots and the three gifs show the
+  old screens) and three small items listed in the roadmap.
 - **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
   develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.

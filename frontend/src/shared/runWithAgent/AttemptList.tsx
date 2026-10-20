@@ -129,18 +129,20 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
 const IdRow: Component<{ label: string; value: string }> = (props) => (
   <div class="flex items-center gap-2">
     <dt class="w-14 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.label}</dt>
-    <dd class="min-w-0 flex-1 truncate" title={props.value} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-      {props.value}
+    <dd class="m-0 flex min-w-0 flex-1 items-center gap-2">
+      <span class="min-w-0 flex-1 truncate" title={props.value} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
+        {props.value}
+      </span>
+      <button
+        type="button"
+        aria-label={`Copy the ${props.label.toLowerCase()} id`}
+        class="min-h-6 min-w-6 flex-none px-1 text-xs font-semibold hover:underline"
+        style={{ color: 'var(--color-accent-ink)' }}
+        onClick={() => void copyText(props.value, `${props.label} id`)}
+      >
+        Copy
+      </button>
     </dd>
-    <button
-      type="button"
-      aria-label={`Copy the ${props.label.toLowerCase()} id`}
-      class="flex-none text-xs font-semibold hover:underline"
-      style={{ color: 'var(--color-accent-ink)' }}
-      onClick={() => void copyText(props.value, `${props.label} id`)}
-    >
-      Copy
-    </button>
   </div>
 );
 

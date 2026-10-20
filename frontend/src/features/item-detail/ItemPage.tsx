@@ -1,7 +1,8 @@
-import { type Component, Show } from 'solid-js';
+import { type Component, Show, createEffect } from 'solid-js';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { Button, Icons } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
+import { useProject } from '../../shared/state/projectContext';
 import ItemBody, { tabFromSearchParam } from './ItemBody';
 import { useItemEditor } from './useItemEditor';
 
@@ -15,6 +16,13 @@ const ItemPage: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const editor = useItemEditor(() => params.itemId);
   const item = editor.item;
+  const { project } = useProject();
+
+  // The tab names the item, not just the project the layout names it after.
+  createEffect(() => {
+    const it = item();
+    if (it) document.title = `${it.title} — ${project()?.name ?? 'Tack'} · Tack`;
+  });
 
   const copyLink = async () => {
     try {

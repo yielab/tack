@@ -461,7 +461,7 @@ function ItemCard(props: {
         />
         <p class="flex-1 min-w-0 text-[0.8125rem] font-bold truncate text-content">
           {/* Keyboard entry: its click bubbles to the card's own handler. */}
-          <button type="button" class="m-0 cursor-pointer border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
+          <button type="button" class="m-0 block min-h-6 max-w-full cursor-pointer truncate border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
             {props.item.title}
           </button>
         </p>

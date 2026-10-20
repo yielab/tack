@@ -43,6 +43,15 @@ describe('findThisMachineRunner / countOtherActiveRunners', () => {
     expect(countOtherActiveRunners(runners)).toBe(1);
   });
 
+  it('finds the embedded runner under the name "This computer (host name)" too', () => {
+    const runners = [
+      runner({ runner_id: 'a', name: 'This computer (box)', state: 'active' }),
+      runner({ runner_id: 'b', name: 'other-box', state: 'active' }),
+    ];
+    expect(findThisMachineRunner(runners)?.runner_id).toBe('a');
+    expect(countOtherActiveRunners(runners)).toBe(1);
+  });
+
   it('takes the online local- runner with the newest heartbeat, else the newest', () => {
     const rows = [
       runner({ runner_id: 'old', name: 'local-old', last_heartbeat_at: '2026-10-17T08:00:00Z', online: false }),
