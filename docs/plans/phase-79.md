@@ -11,6 +11,10 @@ locations.
 
 **Status (2026-10-20):** proposed. Nothing built.
 
+A companion guide in Spanish, [`phase-79-guia.md`](phase-79-guia.md), explains the concepts
+behind each step for someone learning architecture, Rust and AI engineering; this file is the
+operational plan.
+
 This plan is written for whoever executes it, person or agent, one phase at a time. Every phase
 says what a script does, what needs a model, which tests move or die, which filterset to run
 while working, and what the tree looks like when it is done.
