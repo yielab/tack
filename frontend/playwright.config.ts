@@ -162,6 +162,10 @@ export default defineConfig({
         // connection in the suite is refused and no spec can see a live event.
         TACK_ALLOWED_ORIGINS: `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`,
         PATH: `${HARNESS_SHIMS_DIR}:${process.env.PATH}`,
+        // Set but empty: the embedded runner runs on defaults only. Unset, it would read the
+        // operator's own `~/.config/tack/runner.toml`, whose docket and verifier settings turn on
+        // agents the shims above do not stand in for.
+        TACK_LOCAL_RUNNER_CONFIG: '',
         // The runner's secret store must never be the operator's own keychain,
         // so the bus is pointed at a socket that does not exist and the store
         // falls back to its owner-only file under `storage-e2e`. Linux only:
