@@ -101,6 +101,7 @@ describe('ItemPage', () => {
     expect(properties.textContent).toContain('Assignee');
     expect(properties.textContent).toContain('1 item'); // what it blocks
     expect(container.textContent).toContain('Copy link');
+    expect(document.title).toBe('My item — Proj · Tack');
 
     const dependenciesTab = [...container.querySelectorAll('[role="tab"]')].find((t) =>
       t.textContent?.startsWith('Dependencies'),

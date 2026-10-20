@@ -471,7 +471,7 @@ async function inspectFinishedRun(page: Page, key: ItemKey, requestId: string, c
   await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
   await waitForApp(page);
   await expect(page.getByText(/^Finished/).first()).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+  await page.getByRole('button', { name: 'Show questions & files' }).first().click();
   await expect(page.getByRole('heading', { name: 'Merge-readiness pack' })).toBeVisible();
   await expect(page.getByText(`Recommendation: ${pack.recommendation.decision}`)).toBeVisible();
   await expect(page.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
@@ -509,7 +509,7 @@ async function acceptAndMerge(page: Page, key: ItemKey, branch: string | null, c
   }
   await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
   await waitForApp(page);
-  await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+  await page.getByRole('button', { name: 'Show questions & files' }).first().click();
   const panel = page.getByRole('heading', { name: 'Merge-readiness pack' }).locator('xpath=..');
   await panel.getByLabel('Reason').fill('Checked the pack: the suite ran in the sandbox and every automatic criterion passed.');
   await panel.getByRole('button', { name: 'Accept', exact: true }).click();
@@ -809,7 +809,7 @@ test.describe.serial('docket runs, prill verifies', () => {
       .toBe('waiting_decision');
     await page.goto(`${BASE}/projects/${projectId}/board?item=${itemId}&tab=execution`);
     await waitForApp(page);
-    await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    await page.getByRole('button', { name: 'Show questions & files' }).first().click();
     const tokenField = page.getByLabel('Your decision token');
     await tokenField.fill(DECISION_TOKEN);
     await tokenField.locator('xpath=ancestor::div[.//button][1]').getByRole('button', { name: 'Save', exact: true }).click();
@@ -855,7 +855,7 @@ test.describe.serial('docket runs, prill verifies', () => {
       }
       await page.reload();
       await waitForApp(page);
-      await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+      await page.getByRole('button', { name: 'Show questions & files' }).first().click();
     }
     testInfo.annotations.push({ type: 'note', description: `docket asked: ${kinds.join(', ')}` });
     const end = await waitForRequestState(requestId, ['succeeded', 'failed', 'cancelled'], 600_000);

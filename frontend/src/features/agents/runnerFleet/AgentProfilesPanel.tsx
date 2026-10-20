@@ -67,7 +67,7 @@ const limitsFrom = (limits: unknown): { tokens: string; seconds: string } => {
 /** The three derived capabilities as chips: always shown, dimmed when the profile cannot. */
 const CapabilityChips: Component<{ profile: AgentProfileSummary }> = (props) => {
   const chip = (can: boolean | undefined, yes: string, no: string, id: string) => (
-    <span data-testid={`cap-${id}`} data-can={can ? 'yes' : 'no'} class={can ? '' : 'opacity-50'}>
+    <span data-testid={`cap-${id}`} data-can={can ? 'yes' : 'no'}>
       <Badge tone={can ? 'primary' : 'neutral'}>{can ? yes : no}</Badge>
     </span>
   );

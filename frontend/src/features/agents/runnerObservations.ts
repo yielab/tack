@@ -6,7 +6,7 @@
 //
 // Live-observed convention this module depends on: the embedded/
 // self-provisioned runner (`docs/CONFIG.md`'s "Embedded runner" section,
-// ADR 0061 decision 6) is always named `local-<uuid>` — confirmed against a
+// ADR 0061 decision 6) is named `local-<uuid>`, or "This computer (host name)" once the server renamed it — confirmed against a
 // real `tack serve --with-runner` process across a restart (the name is
 // stable, reused from the on-disk credential, never regenerated). There is
 // no dedicated wire field for "is this the embedded runner"; this is the
@@ -18,9 +18,12 @@ import type { RunnerSummary } from '../../shared/execution/api';
 import type { HarnessCapability, RunnerCapabilities } from '../../shared/execution/types';
 
 export const LOCAL_RUNNER_NAME_PREFIX = 'local-';
+/** What the embedded runner is named now: "This computer (host name)". A row enrolled before that
+ *  keeps its generated `local-` name until the server renames it. */
+export const THIS_COMPUTER_NAME_PREFIX = 'This computer';
 
 export function isThisMachineRunner(runner: RunnerSummary): boolean {
-  return runner.name.startsWith(LOCAL_RUNNER_NAME_PREFIX);
+  return runner.name.startsWith(LOCAL_RUNNER_NAME_PREFIX) || runner.name.startsWith(THIS_COMPUTER_NAME_PREFIX);
 }
 
 /** The active runner representing the embedded runner on this machine, or

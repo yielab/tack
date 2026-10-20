@@ -194,6 +194,10 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   // it round-trips through the actual API.
   const list = await request.get(`${API}/executions`).then((r) => r.json());
   expect((list.data as Array<{ item_id: string }>).some((r) => r.item_id === itemId)).toBe(true);
+
+  // The queued run's card offers the same dialog to send it somewhere else.
+  await drawer.getByRole('button', { name: 'Run on another computer' }).click();
+  await expect(page.getByRole('dialog', { name: /^Run with agent:/ })).toBeVisible();
 });
 
 test('the run form submits the project\'s configured model default, byte for byte, with zero hand-typed identifiers', async ({
