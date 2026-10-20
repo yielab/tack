@@ -90,7 +90,17 @@ const Sidebar: Component = () => {
   });
 
   const currentProjectId = () => params.id as string | undefined;
-  const [projects] = createResource(() => api.projects.list());
+  const [projects, { refetch: refetchProjects }] = createResource(() => api.projects.list());
+  // A project made after the list was read is missing from it, and the switcher would show no name:
+  // read the list again, once for each project that is not in it.
+  let refetchedFor: string | undefined;
+  createEffect(() => {
+    const id = currentProjectId();
+    if (!id || projects.loading || projects.error || refetchedFor === id) return;
+    if (projects()?.some((p) => p.id === id)) return;
+    refetchedFor = id;
+    void refetchProjects();
+  });
   const [health] = createResource(() => api.system.health());
 
   const handleProjectSwitch = (id: string) => {

@@ -96,7 +96,10 @@ async function screenshotFullContent(page: Page, outPath: string): Promise<void>
 async function apiFetch(p: string, init?: RequestInit) {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 6; attempt++) {
-    const res = await fetch(`${API}${p}`, init);
+    // The board requires its token; the browser gets it as a cookie from `/`.
+    const headers = new Headers(init?.headers);
+    headers.set('authorization', `Bearer ${process.env.TACK_API_TOKEN ?? ''}`);
+    const res = await fetch(`${API}${p}`, { ...init, headers });
     if (res.ok) {
       if (res.status === 204) return null;
       return res.json();
@@ -163,15 +166,16 @@ test.beforeAll(async () => {
   });
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    const runners = (await apiFetch('/runners')) as { data: Array<{ runner_id: string; state: string }> };
-    const active = runners.data.find((r) => r.state === 'active');
+    const runners = (await apiFetch('/runners')) as { data: Array<{ runner_id: string; state: string; online?: boolean }> };
+    // The Run dialog offers only a runner whose heartbeat is current (`online`).
+    const active = runners.data.find((r) => r.state === 'active' && r.online === true);
     if (active) {
       embeddedRunnerId = active.runner_id;
       break;
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  if (!embeddedRunnerId) throw new Error('the embedded runner never became active');
+  if (!embeddedRunnerId) throw new Error('the embedded runner never became active and online');
 
   const project = (await apiFetch('/projects', {
     method: 'POST',
@@ -186,7 +190,8 @@ test.beforeAll(async () => {
   await apiFetch(`/projects/${projectId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ default_harness: 'claude-code', default_model: 'claude-sonnet-5-5' }),
+    // The server fills a run's repository from the project: name the disposable fixture as its folder.
+    body: JSON.stringify({ default_harness: 'claude-code', default_model: 'claude-sonnet-5-5', code_origin: 'folder', repository: repoDir }),
   });
 
   const profile = (await apiFetch('/agent-profiles', {
@@ -221,12 +226,11 @@ test('hero gif', async ({ page }) => {
 
   // The dialog has no repository fields: the server fills the repository from
   // the project, so name the disposable git fixture as the project's folder.
-  const patched = await fetch(`${API}/projects/${projectId}`, {
+  await apiFetch(`/projects/${projectId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code_origin: 'folder', repository: repoDir }),
   });
-  expect(patched.ok, `set project folder: ${patched.status}`).toBeTruthy();
 
   await page.goto(`${BASE}/projects/${projectId}/board`);
   await waitForApp(page);
@@ -244,7 +248,7 @@ test('hero gif', async ({ page }) => {
 
   await page.getByText('Advanced for this run').click();
   await page.waitForTimeout(400);
-  await page.getByLabel('Agent', { exact: true }).selectOption('claude-code');
+  await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('claude-code');
   await page.waitForTimeout(900);
 
   // ── Scene: submit the real dialog ───────────────────────────────────────
@@ -286,8 +290,11 @@ test('hero gif', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Show questions & files' }).first().click();
   await page.waitForTimeout(1500);
-  await expect(page.getByText('Files from this run', { exact: true }).first()).toBeVisible();
-  await page.waitForTimeout(2500);
+  const filesHeading = page.getByText('Files from this run', { exact: true }).first();
+  await expect(filesHeading).toBeVisible();
+  // End on the files themselves: they sit below the fold of the drawer.
+  await filesHeading.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(3500);
 
   // ── Flush the video, convert to GIF ─────────────────────────────────────
   await page.close();
@@ -314,7 +321,7 @@ test('agents screenshot', async ({ page }) => {
 
   await page.goto(`${BASE}/agents`);
   await waitForApp(page);
-  await expect(page.getByText('Agent execution on this machine')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agent execution on this machine' })).toBeVisible();
   await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 
   // Step 5 — a real test run, through the Agents page's own control (not
@@ -355,7 +362,7 @@ test('agents flow gif', async ({ page }) => {
 
   await page.goto(`${BASE}/agents`);
   await waitForApp(page);
-  await expect(page.getByText('Agent execution on this machine')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agent execution on this machine' })).toBeVisible();
   await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 
   await page.evaluate(() => {
@@ -427,13 +434,6 @@ test('attempt screenshot', async ({ page }) => {
       agent_profile_id: agentProfileId,
       requested_harness_kind: 'claude-code',
       requested_model: 'claude-sonnet-5-5',
-      agent_profile_snapshot: {
-        name: PROFILE_NAME,
-        instructions: PROFILE_INSTRUCTIONS,
-        tool_policy: {},
-        timeout_seconds: 180,
-        budgets: {},
-      },
       repository_snapshot: { kind: 'git', remote: repoDir, base_revision: repoRev, subdirectory: null },
       permission_policy: { tools: [], network: false },
       budgets: {},

@@ -271,6 +271,8 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A project you just made is named in the sidebar's switcher.** The switcher read the project list once,
+  so a project created from the board stayed out of it and the switcher showed no name until a reload.
 - **The Agents page finds this computer's runner under its new name.** The runner is named "This computer
   (host name)" now, and the page looked only for the old generated name, so it said to turn agent
   execution on while it was running. Beside it: the profile chips "Changes no files", "Runs no commands"

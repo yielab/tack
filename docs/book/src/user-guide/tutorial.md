@@ -80,12 +80,12 @@ its items with an agent; this tutorial gets there in step 6:
 
 ## 5. Say what "done" means
 
-Click the task to open its drawer. The **Details** tab is the task itself: its description,
-its **Acceptance criteria**, and a collapsed **For the agent** block. Acceptance criteria are a
+Click the task to open its drawer. Its **Overview** tab is the task itself: its description,
+its **Done when** list (the acceptance criteria), and a collapsed **For the agent** block. **Done when** is a
 checklist — one line per thing a person checks before calling the task done. **Add check** adds
 a line, and each line saves when you leave it:
 
-<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' on its Details tab: the Run with agent button, the description, three acceptance criteria — About 400 words, Ends with a call to action, A post the team can publish on launch day — with Up, Down and Remove, an Add check button, a collapsed For the agent section, and Link GitHub issue.">
+<img src="../screenshots/tutorial/06-brief.png" width="50%" alt="The drawer of 'Draft the launch announcement' on its Overview tab: the Run with agent button and the task's fields above, then the description, a Done when list of three checks — About 400 words, Ends with a call to action, A post the team can publish on launch day — each with Up, Down and Remove, an Add check button, a collapsed For the agent section, and Link GitHub issue.">
 
 **For the agent** holds what only the agent needs — checks a machine runs, limits on what it
 may touch, and the risk you see — and this announcement needs none of it. The agent receives the
@@ -111,18 +111,18 @@ signed in. Run `<command>` in a terminal.** with a link to that agent's own docu
 holds no model key and never signs in for you. **Run test** at the bottom runs the agent once to
 prove it:
 
-<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1 and Claude Code v2.1.291 both installed, the Sign in step with one row per installed agent, saying Signed in or giving the command to run; the Test run section with a Run test button; and a collapsed Advanced section.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1, Claude Code v2.1.304 and OpenCode installed (docket not installed), the Sign in step with one row per installed agent, saying Signed in or giving the command to run; the Test run section with a Run test button; and a collapsed Advanced section.">
 
 ## 7. Set up the project's agent
 
 Everything a run needs from the project lives in its **Settings → Automation** tab: where the
 code is, how the agent works on it (on a new branch of your repo, or in the folder directly),
 what happens when a run finishes, and the **Agent** section — which agent, which model, and the
-default profile:
+default profile. Each section is a single line until you open it; the picture shows **Agent** open:
 
-<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings: agent choices Claude Code, Codex, docket and opencode; the Model field set to Agent's default; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
+<img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings, opened: 'No default agent'; agent choices Claude Code, Codex and OpenCode; the Model field reading 'Choose an agent first'; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">
 
-The **Model** field offers **Agent's default** (recommended: the agent uses whatever model it
+Once an agent is chosen, the **Model** field offers **Agent's default** (recommended: the agent uses whatever model it
 uses on its own), the models the agent listed or suggested, and **Another model…**, a text field
 for a name in the agent's own spelling. A line under it says where the list came from, or how to
 name a model, with a link to that agent's own documentation; Tack never checks a typed name. This tutorial leaves the agent unchosen and picks it per run in step 8. It points the
@@ -176,16 +176,18 @@ The drawer follows the run as it happens: the **Last run** panel at the top read
 with the runner that took it. What the agent did, the tokens it used and its cost appear when it
 finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip reads Starting, the Last run panel reads Running with 'The agent is working on it' and Follow live and Stop, and the Execution tab shows Run 1 Running, started just now, with a note that what it did, its tokens and its cost appear when it finishes.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Last run panel at the top of the drawer reads Running, 'The agent is working on it', 'Used 0 of 2 000 000 tokens', with Follow live and Stop buttons and a Run again button below it.">
 
 ## 10. See the result
 
-When the run finishes, the same tab is the record of what happened: one status, what the agent
-said, and its usage — tokens first, then the approximate cost, which is the agent's own estimate
-at list price, not your bill. This agent only wrote text and its profile allows only read tools, so no change was expected
+When the run finishes, the same tab is the record of what happened: one run card with its status,
+the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, what it did and
+what it got, and its usage — tokens counted against the limit, folded under **Usage**; opened, it
+also gives the approximate cost, which is the agent's own estimate at list price, not your bill.
+(The **Last run** panel at the top of the drawer gives the same in short.) This agent only wrote text and its profile allows only read tools, so no change was expected
 and the run reads **Finished — no changes recorded**, and **What the agent concluded** is the announcement itself:
 
-<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run: Run 1 'Finished — no changes recorded', 'The agent ended without changing any files. What it said is below.', Copy path and Log buttons, What the agent said showing the announcement's headline and first paragraph, and usage reading 17K tokens in, 1.8K out, about $0.04, claude-sonnet-5-5 auto-selected, one model call, 16 seconds; the board card behind carries a Finished chip.">
+<img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 'Finished — no changes recorded', a 'This run is waiting for your verdict' banner with Accept and Reject…, the agent and runner, 'The agent ended without changing any files. What it said is below.' with a Copy path button, What the agent concluded showing the opening of the announcement with a Read full report link, What the agent did as a timeline of three steps (Install skipped, agent.model_call, The run ended), What the agent got (Sandboxed with bwrap, no environment variables, the project's folder), a collapsed Usage line reading about 3 000 tokens counted and 0% of its limit, the request and attempt ids with Copy, a Raw log button, and Show questions & files; the board card behind carries a Finished chip.">
 
 **Show questions & files** expands the run's full record. **Files from this run** are
 what it produced, each one click from viewing or downloading: the agent's own run log (the
@@ -193,7 +195,7 @@ announcement is in it), and the record of the change — `changes.patch` (empty 
 only wrote text), `files.json`, the `brief.json` it was given, and the `evidence.json` manifest
 that ties them together:
 
-<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 17.6 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 6.8 KB), each with View and Download.">
+<img src="../screenshots/tutorial/15-artifacts.png" width="40%" alt="Files from this run: claude-code-run.log (log, 19.1 KB), changes.patch (patch, 0 B), files.json (files, 2 B), brief.json (brief, 721 B) and evidence.json (evidence, 7.0 KB), each with View and Download.">
 
 A run that changes files reads **Finished — needs your review** instead (and a run that was
 allowed to change files but changed nothing reads **Failed**, with that as its reason), and the card carries a

@@ -96,6 +96,18 @@ async function waitForRequestState(
   );
 }
 
+async function waitForRunnerAnswering(timeoutMs = 60_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const runners = (await apiFetch('/runners')) as {
+      data: Array<{ state: string; online?: boolean }>;
+    };
+    if (runners.data.some((r) => r.state === 'active' && r.online === true)) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error('no runner reported active and online within the timeout');
+}
+
 // Same internal-scroll-aware capture as agent-assets.spec.ts: the app's main
 // content area scrolls inside `Layout.tsx`'s overflow container, so a plain
 // screenshot only shows one viewport's worth.
@@ -334,12 +346,16 @@ test.describe.serial('tutorial screenshots', () => {
     // so the run below uses the agent's own default model.
     await page.goto(`${BASE}/projects/${projectId}/settings?tab=automation`);
     await waitForApp(page);
-    const agentSettings = page.locator('div').filter({
+    // Each Automation section is a fold: one line until opened. Open Agent
+    // and photograph that section alone.
+    const agentSettings = page.locator('details').filter({
       has: page.getByRole('heading', { name: 'Agent', exact: true }),
-    }).last();
-    await expect(page.getByRole('heading', { name: 'Agent', exact: true })).toBeVisible();
+    });
+    await expect(agentSettings).toHaveCount(1);
+    await agentSettings.locator('summary').click();
+    await expect(agentSettings.getByText('Default profile')).toBeVisible();
     await page.waitForTimeout(600);
-    await page.getByRole('heading', { name: 'Agent', exact: true }).scrollIntoViewIfNeeded();
+    await agentSettings.scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     await agentSettings.screenshot({
       path: path.join(OUT_DIR, '09-default-model.png'),
@@ -382,6 +398,10 @@ test.describe.serial('tutorial screenshots', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code_origin: 'folder', repository: repoDir }),
     });
+    // The dialog reads the runner list once, when it opens, and offers only a
+    // runner whose heartbeat is current: wait until the runner just turned on
+    // answers, or a fresh start opens the dialog on "Select where this runs".
+    await waitForRunnerAnswering();
     // Tall enough that the dialog (max 90vh) shows the whole flow unscrolled.
     await page.setViewportSize({ width: 1440, height: 2000 });
     await page.goto(`${BASE}/projects/${projectId}/board`);
@@ -466,12 +486,14 @@ test.describe.serial('tutorial screenshots', () => {
     await expect(
       page.getByText(/^Finished/).first(),
     ).toBeVisible({ timeout: 15_000 });
-    // Bring the attempt card fully into the drawer's own scroll viewport —
-    // its cost tiles sit below the fold otherwise.
+    // The whole of Run 1 in one frame: a viewport tall enough for the card,
+    // scrolled inside the drawer so the card's heading is at the top.
+    await page.setViewportSize({ width: 1440, height: 1500 });
+    await page.waitForTimeout(400);
     await page
-      .getByRole('button', { name: 'Show questions & files' })
+      .getByText('Run 1', { exact: true })
       .first()
-      .scrollIntoViewIfNeeded();
+      .evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(OUT_DIR, '14-execution-succeeded.png'),
