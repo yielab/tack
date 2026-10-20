@@ -71,7 +71,7 @@ describe('AttemptList', () => {
     document.body.appendChild(container);
     const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
     disposers.push(() => { dispose(); container.remove(); });
-    const toggle = () => Array.from(container.querySelectorAll('button')).find((b) => /timeline|Hide details/.test(b.textContent ?? ''))!;
+    const toggle = () => Array.from(container.querySelectorAll('button')).find((b) => /questions|Hide details/.test(b.textContent ?? ''))!;
     toggle().click();
     await flush();
     expect(toggle().textContent).toBe('Hide details');
@@ -81,19 +81,46 @@ describe('AttemptList', () => {
     expect(toggle().textContent).toBe('Hide details');
   });
 
-  it('renders every attempt with its number, state badge and runner id', () => {
+  it('several attempts are chips, newest first; the newest shows, and a chip picks another', async () => {
     const c = mount([attempt(), attempt({ attempt_id: 'att_2', attempt_number: 2, state: 'failed', runner_id: 'runner_2' })]);
-    expect(c.textContent).toContain('Attempt 1');
-    expect(c.textContent).toContain('Attempt 2');
-    expect(c.textContent).toContain('runner_1');
+    const chips = Array.from(c.querySelectorAll('[data-testid="attempt-chips"] [data-testid="run-chip"]')) as HTMLButtonElement[];
+    expect(chips.map((b) => b.textContent)).toEqual(['Attempt 2, Failed', 'Attempt 1, Finished']);
+    expect(chips[0].getAttribute('aria-pressed')).toBe('true');
+    // One attempt on screen: the newest.
+    expect(c.querySelectorAll('[data-testid="attempt"]')).toHaveLength(1);
     expect(c.textContent).toContain('runner_2');
-    expect(c.textContent).toContain('Finished');
-    expect(c.textContent).toContain('Failed');
+    expect(c.textContent).not.toContain('runner_1');
+    chips[1].click();
+    await flush();
+    expect(c.querySelectorAll('[data-testid="attempt"]')).toHaveLength(1);
+    expect(c.textContent).toContain('runner_1');
+    expect(c.textContent).not.toContain('runner_2');
   });
 
-  it('a single attempt carries no number: the run is numbered instead', () => {
+  it('a single attempt carries no number and no chips: the run is numbered instead', () => {
     const c = mount([attempt()]);
-    expect(c.textContent).not.toContain('Attempt');
+    expect(c.textContent).not.toContain('Attempt 1');
+    expect(c.querySelector('[data-testid="attempt-chips"]')).toBeNull();
+  });
+
+  it('the review banner holds Accept and Reject… once, with an optional note, above the run', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1' } })]);
+    const banner = c.querySelector('[data-testid="review-banner"]')!;
+    expect(banner.textContent).toContain('waiting for your verdict');
+    expect(c.querySelectorAll('[data-testid="review-actions"]')).toHaveLength(1);
+    expect(banner.contains(c.querySelector('[data-testid="review-actions"]'))).toBe(true);
+    // The banner comes before everything else in the run.
+    expect(c.querySelector('[data-testid="attempt"]')!.firstElementChild).toBe(banner);
+    (Array.from(banner.querySelectorAll('button')).find((b) => b.textContent === 'Reject…') as HTMLButtonElement).click();
+    await flush();
+    expect(banner.querySelector('input[aria-label="Why it is rejected (optional)"]')).not.toBeNull();
+  });
+
+  it('a run that needs no verdict has no banner', () => {
+    expect(mount([attempt({ state: 'failed' })]).querySelector('[data-testid="review-banner"]')).toBeNull();
   });
 
   it('a terminal attempt with a kept workspace and no patch shows Accept and Reject…', () => {
@@ -267,20 +294,19 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('opaque/model-beta');
   });
 
-  it('events/decisions/artifacts are collapsed by default and expand on demand', async () => {
+  it('decisions and artifacts are collapsed by default and expand on demand', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
     const c = mount([attempt()]);
-    expect(c.textContent).not.toContain('Loading events');
-    expect(c.textContent).not.toContain('No events reported yet');
+    expect(c.textContent).not.toContain('Questions from the agent');
+    expect(c.textContent).not.toContain('Files from this run');
 
-    const toggle = [...c.querySelectorAll('button')].find((b) => b.textContent?.includes('Show timeline'))!;
+    const toggle = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Show questions & files')!;
     toggle.click();
     await flush();
     await flush();
 
-    expect(c.textContent).toContain('No events reported yet');
     expect(c.textContent).toContain('Questions from the agent');
     expect(c.textContent).toContain('Files from this run');
   });
@@ -354,7 +380,9 @@ describe('AttemptList', () => {
       const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.' } })]);
       await flush();
       await flush();
-      expect(labels(c)).toEqual(['Open diff', 'Copy path', 'Log']);
+      expect(labels(c)).toEqual(['Open diff', 'Copy path']);
+      // The raw log is with the ids.
+      expect((c.querySelector('[data-testid="attempt-ids"] button:not([aria-label])') as HTMLButtonElement).textContent).toBe('Raw log');
       // What the agent said is on the card, not behind a button.
       expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
       (c.querySelector('[data-testid="attempt-tools"] button') as HTMLButtonElement).click();
@@ -390,13 +418,25 @@ describe('AttemptList', () => {
       expect(writeText).toHaveBeenCalledWith('/home/alice/app');
     });
 
-    it('without a patch only Log shows, and what the agent said is on the card', async () => {
+    it('without a patch no tool shows, the raw log is enabled, and what the agent said is on the card', async () => {
       mockApi([art('a2', 'log', 'run.log')]);
       const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
       await flush();
       await flush();
-      expect(labels(c)).toEqual(['Log']);
+      expect(labels(c)).toEqual([]);
+      const rawLog = Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Raw log') as HTMLButtonElement;
+      expect(rawLog.disabled).toBe(false);
       expect(c.querySelector('[data-testid="agent-result"]')?.textContent).toBe('Done.');
+    });
+
+    it('with no log the raw log is disabled and says why, never hidden', async () => {
+      mockApi([]);
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      await flush();
+      await flush();
+      const rawLog = Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Raw log') as HTMLButtonElement;
+      expect(rawLog.disabled).toBe(true);
+      expect(rawLog.title).toBe('This run left no log');
     });
 
     it('an empty patch offers no diff', async () => {
@@ -421,8 +461,97 @@ describe('AttemptList', () => {
       await flush();
       await flush();
       await flush();
-      expect(c.querySelector('[data-testid="agent-steps"]')?.textContent).toContain('Wrote /repo/test.md');
+      expect(c.querySelector('[data-testid="agent-steps"]')?.textContent).toContain('/repo/test.md');
       expect(c.textContent).toContain('The agent had no tools in this run');
+    });
+
+    const toolLog = (path: (name: string) => string) =>
+      [
+        JSON.stringify({ type: 'system', subtype: 'init', tools: ['Read', 'Bash'] }),
+        ...['a.ts', 'b.ts', 'a.ts'].map((f, i) =>
+          JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `r${i}`, name: 'Read', input: { file_path: path(f) } }] } }),
+        ),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'npm test' } }] } }),
+        JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'b1', is_error: true }] } }),
+      ].join('\n');
+    const mockLog = (log: string) =>
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/content')) return Promise.resolve(new Response(log));
+        if (url.endsWith('/events')) return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ kind: 'attempt.install_skipped', source: 'runner', occurred_at: '2026-08-06T12:00:01Z', payload: { reason: 'No install: this profile runs no commands' } }] })));
+        return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [art('a2', 'log', 'claude-code-run.log')] })));
+      });
+
+    it('what the agent did groups the steps by tool with the targets as chips, paths inside the project', async () => {
+      mockLog(toolLog((f) => `/var/tmp/ws-1/src/${f}`));
+      const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/var/tmp/ws-1', result: 'Done.' } })]);
+      for (let i = 0; i < 4; i++) await flush();
+      const groups = Array.from(c.querySelectorAll('[data-testid="tool-group"]'));
+      expect(groups.map((g) => g.querySelector('span')?.textContent)).toEqual(['Read', 'Bash']);
+      const read = groups[0];
+      expect(read.querySelector('[data-testid="tool-count"]')?.textContent).toBe('3 calls');
+      // Each target once, the workspace prefix left off.
+      expect(Array.from(read.querySelectorAll('[data-testid="tool-target"]')).map((t) => t.textContent)).toEqual(['src/a.ts', 'src/b.ts']);
+      expect(groups[1].textContent).toContain('1 failed');
+      expect(groups[1].querySelector('[data-testid="tool-target"]')?.textContent).toContain('npm test');
+      expect(c.textContent).not.toContain('/var/tmp/ws-1/src');
+    });
+
+    it('the Timeline view shows the events, with the reason an install was skipped', async () => {
+      mockLog(toolLog((f) => `/w/${f}`));
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      for (let i = 0; i < 4; i++) await flush();
+      expect(c.querySelector('[data-testid="did-tool"]')?.getAttribute('aria-pressed')).toBe('true');
+      expect(c.textContent).not.toContain('Install skipped');
+      (c.querySelector('[data-testid="did-timeline"]') as HTMLButtonElement).click();
+      for (let i = 0; i < 3; i++) await flush();
+      expect(c.querySelector('[data-testid="agent-steps"]')).toBeNull();
+      expect(c.textContent).toContain('Install skipped');
+      expect(c.textContent).toContain('No install: this profile runs no commands');
+    });
+
+    it('without steps the timeline shows at once and By tool is disabled with its reason', async () => {
+      mockApi([]);
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      for (let i = 0; i < 3; i++) await flush();
+      const byTool = c.querySelector('[data-testid="did-tool"]') as HTMLButtonElement;
+      expect(byTool.disabled).toBe(true);
+      expect(byTool.title).toBe("This agent's log does not name its steps");
+      expect(c.textContent).toContain('No events reported yet');
+    });
+
+    it('a running attempt shows its live timeline and says by-tool waits for the end', async () => {
+      mockApi([]);
+      const c = mount([attempt({ state: 'running', ended_at: null })]);
+      await flush();
+      const byTool = c.querySelector('[data-testid="did-tool"]') as HTMLButtonElement;
+      expect(byTool.disabled).toBe(true);
+      expect(byTool.title).toBe('The steps are listed by tool once the run ends');
+    });
+
+    it('what the agent concluded is clipped with Read full report, and shows paths inside the project', async () => {
+      mockApi([]);
+      const long = `Changed /var/tmp/ws-1/src/app.ts.\n${'More detail about the work. '.repeat(40)}`;
+      const c = mount([attempt({ terminal_reason: { workspace_kept_at: '/var/tmp/ws-1', result: long } })]);
+      await flush();
+      await flush();
+      const result = c.querySelector('[data-testid="agent-result"]') as HTMLElement;
+      expect(result.textContent).toContain('Changed src/app.ts.');
+      expect(result.textContent).not.toContain('/var/tmp');
+      expect(result.style.webkitLineClamp || result.getAttribute('style')).toContain('5');
+      const toggle = Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Read full report') as HTMLButtonElement;
+      toggle.click();
+      await flush();
+      expect(toggle.textContent).toBe('Show less');
+      expect(result.getAttribute('style')).not.toContain('line-clamp');
+    });
+
+    it('a short report is shown whole, with nothing to expand', async () => {
+      mockApi([]);
+      const c = mount([attempt({ terminal_reason: { result: 'Done.' } })]);
+      await flush();
+      await flush();
+      expect(Array.from(c.querySelectorAll('button')).some((b) => b.textContent === 'Read full report')).toBe(false);
     });
   });
   describe('what the agent got', () => {
@@ -440,7 +569,9 @@ describe('AttemptList', () => {
       await flush();
       expect(c.querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe("Not sandboxed: the agent has your user's access to this machine");
       expect(c.querySelector('[data-testid="agent-got-env"]')?.textContent).toContain('PATH, HOME');
-      expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).toContain('/w/1');
+      // The runner's own path is not shown: the agent worked in the project's folder.
+      expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).toContain("the project's folder");
+      expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).not.toContain('/w/1');
       expect(mount([attempt({ sandbox: 'bwrap' })]).querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe('Sandboxed with bwrap');
     });
 
@@ -495,6 +626,56 @@ describe('AttemptList', () => {
       } finally {
         delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
       }
+    });
+  });
+
+  describe('usage, ids and the page layout', () => {
+    const used = { tokens_in: { value: 90, source: 'measured' }, tokens_out: { value: 10, source: 'measured' } };
+    const limit = { tokens: 200, source: 'run', enforced_by: 'measured', sentence: 'This run stops at 200 tokens.', used: 100 } as const;
+
+    it('the usage is folded: its summary shows the tokens and the share of the limit', () => {
+      const c = mount([attempt({ usage: used as unknown as AttemptSummary['usage'], counted_tokens: 100 })]);
+      const fold = c.querySelector('[data-testid="attempt-usage-fold"]') as HTMLDetailsElement;
+      expect(fold.open).toBe(false);
+      expect(fold.querySelector('[data-testid="usage-summary"]')?.textContent).toBe('· 100 tokens counted');
+      expect(fold.querySelector('[data-testid="attempt-usage"]')).not.toBeNull();
+    });
+
+    it('the summary adds the share of the limit when the run has one', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[attempt({ counted_tokens: 100 })]} limit={limit} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      expect(container.querySelector('[data-testid="usage-summary"]')?.textContent).toBe('· 100 tokens counted · 50% of its limit');
+    });
+
+    it('the ids are copyable, request and attempt', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      const c = mount([attempt()]);
+      const ids = c.querySelector('[data-testid="attempt-ids"]')!;
+      expect(ids.textContent).toContain('exec_1');
+      expect(ids.textContent).toContain('att_1');
+      (ids.querySelector('button[aria-label="Copy the attempt id"]') as HTMLButtonElement).click();
+      expect(writeText).toHaveBeenCalledWith('att_1');
+    });
+
+    it('on the page, what the agent got, the usage and the ids go to the side column; in the drawer they stay in the one column', () => {
+      const side = document.createElement('div');
+      document.body.appendChild(side);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[attempt()]} layout="page" sideTarget={side} />, container);
+      disposers.push(() => { dispose(); container.remove(); side.remove(); });
+      expect(side.querySelector('[data-testid="agent-got"]')).not.toBeNull();
+      expect(side.querySelector('[data-testid="attempt-usage-fold"]')).not.toBeNull();
+      expect(side.querySelector('[data-testid="attempt-ids"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="attempt-ids"]')).toBeNull();
+      // The main column keeps the run.
+      expect(container.querySelector('[data-testid="agent-did"]')).not.toBeNull();
+      const drawer = mount([attempt()]);
+      expect(drawer.querySelector('[data-testid="agent-got"]')).not.toBeNull();
+      expect(drawer.querySelector('[data-testid="attempt-ids"]')).not.toBeNull();
     });
   });
 });

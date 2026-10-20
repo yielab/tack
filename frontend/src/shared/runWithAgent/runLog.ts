@@ -75,3 +75,33 @@ export function describeStep(step: RunStep): string {
   const action = verb[step.tool] ?? `Used ${step.tool}`;
   return target ? `${action} ${target}` : action;
 }
+
+export interface ToolGroup {
+  tool: string;
+  /** How many times the agent called it. */
+  count: number;
+  /** How many of those calls reported an error. */
+  failed: number;
+  /** What it was called on, each once, in the order first used. */
+  targets: Array<{ target: string; failed: boolean }>;
+}
+
+/** The steps grouped by tool, the most used first (ties keep the order first used). */
+export function groupByTool(steps: RunStep[]): ToolGroup[] {
+  const groups = new Map<string, ToolGroup>();
+  for (const step of steps) {
+    let group = groups.get(step.tool);
+    if (!group) {
+      group = { tool: step.tool, count: 0, failed: 0, targets: [] };
+      groups.set(step.tool, group);
+    }
+    group.count += 1;
+    if (step.failed) group.failed += 1;
+    if (step.target) {
+      const seen = group.targets.find((t) => t.target === step.target);
+      if (seen) seen.failed = seen.failed || step.failed;
+      else group.targets.push({ target: step.target, failed: step.failed });
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}

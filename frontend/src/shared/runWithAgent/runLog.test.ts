@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { describeStep, parseRunLog } from './runLog';
+import { describeStep, groupByTool, parseRunLog } from './runLog';
 
 const line = (o: unknown) => JSON.stringify(o);
 
@@ -28,5 +28,24 @@ describe('parseRunLog', () => {
   it('says when the agent was given no tools, and finds no steps in a log that is not stream-json', () => {
     expect(parseRunLog(line({ type: 'system', subtype: 'init', tools: [] })).toolsOffered).toEqual([]);
     expect(parseRunLog('codex output\nmore')).toEqual({ steps: [], toolsOffered: null });
+  });
+});
+
+describe('groupByTool', () => {
+  it('groups the steps by tool, most used first, each target once, failures counted', () => {
+    const step = (tool: string, target: string | null, failed = false) => ({ tool, target, failed });
+    const groups = groupByTool([
+      step('Bash', 'npm test', true),
+      step('Read', 'a.ts'),
+      step('Read', 'b.ts'),
+      step('Read', 'a.ts', true),
+      step('TodoWrite', null),
+    ]);
+    expect(groups.map((g) => [g.tool, g.count, g.failed])).toEqual([['Read', 3, 1], ['Bash', 1, 1], ['TodoWrite', 1, 0]]);
+    expect(groups[0].targets).toEqual([{ target: 'a.ts', failed: true }, { target: 'b.ts', failed: false }]);
+    expect(groups[2].targets).toEqual([]);
+  });
+  it('is empty for a log with no steps', () => {
+    expect(groupByTool([])).toEqual([]);
   });
 });

@@ -1,8 +1,10 @@
-import { type Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { type Component, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Badge, Button, EmptyState, Field, Icons } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
+import RunChips from './RunChips';
+import RunWithAgentModal from './RunWithAgentModal';
 import { describeAttemptStatus } from './attemptFormat';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
@@ -14,6 +16,9 @@ export interface ExecutionTimelineProps {
   /** With the task's title and project, a run its limit stopped offers "Run again with more". */
   itemTitle?: string;
   projectId?: string;
+  /** `page`: two columns, with what the agent got, its usage and the ids in the side one.
+   *  `drawer` (the default): one column, in that same order. */
+  layout?: 'drawer' | 'page';
 }
 
 /**
@@ -40,6 +45,26 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   createEffect(() => {
     void store.loadList(props.itemId);
   });
+
+  // The run the tab shows: the latest until a chip picks another.
+  const [pickedId, setPickedId] = createSignal<string | undefined>(undefined);
+  const numbered = createMemo(() =>
+    requests().map((record, i) => {
+      const number = requests().length - i;
+      return { record, number, id: record.summary?.request_id ?? `run-${number}` };
+    }),
+  );
+  const active = createMemo(() => numbered().find((r) => r.id === pickedId()) ?? numbered()[0]);
+  const chips = createMemo(() =>
+    numbered().map(({ record, number, id }) => {
+      const status = runStatus(store, record);
+      return { id, label: `Run ${number}`, tone: status.tone, state: status.label };
+    }),
+  );
+  const page = () => props.layout === 'page';
+  const [side, setSide] = createSignal<HTMLElement | undefined>(undefined);
+  const [again, setAgain] = createSignal(false);
+  const canRerun = () => !!props.itemTitle && !!props.projectId;
 
   return (
     <div class="space-y-3">
@@ -72,24 +97,73 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
           </Show>
         }
       >
-        <ul class="space-y-3">
-          {/* Newest first, so the first row is the latest run. */}
-          <For each={requests()}>
-            {(record, i) => (
-              <RequestRow
-                record={record}
-                itemId={props.itemId}
-                itemTitle={props.itemTitle}
-                projectId={props.projectId}
-                number={requests().length - i()}
-              />
-            )}
-          </For>
-        </ul>
+        <div data-testid="execution-columns" class={page() ? 'grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]' : 'space-y-3'}>
+          <div class="min-w-0 space-y-3">
+            {/* Newest first, so the first chip is the latest run. */}
+            <div class="flex flex-wrap items-center gap-2">
+              <Show when={requests().length > 1}>
+                <RunChips chips={chips()} active={active()?.id ?? ''} onPick={setPickedId} label="Runs" testId="run-chips" />
+              </Show>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="ml-auto"
+                disabled={!canRerun()}
+                title={canRerun() ? undefined : 'This screen does not know the task'}
+                onClick={() => setAgain(true)}
+              >
+                Run again
+              </Button>
+              <Show when={canRerun()}>
+                <RunWithAgentModal
+                  isOpen={again()}
+                  onClose={() => setAgain(false)}
+                  itemId={props.itemId}
+                  itemTitle={props.itemTitle!}
+                  projectId={props.projectId!}
+                  onCreated={() => setPickedId(undefined)}
+                />
+              </Show>
+            </div>
+            <Show when={active()?.id} keyed>
+              {(_id) => (
+                <Show when={active()}>
+                  {(a) => (
+                    <RequestRow
+                      record={a().record}
+                      itemId={props.itemId}
+                      itemTitle={props.itemTitle}
+                      projectId={props.projectId}
+                      number={a().number}
+                      layout={props.layout}
+                      sideTarget={side()}
+                    />
+                  )}
+                </Show>
+              )}
+            </Show>
+          </div>
+          <Show when={page()}>
+            <div ref={setSide} data-testid="execution-side" class="min-w-0 space-y-4" />
+          </Show>
+        </div>
       </Show>
     </div>
   );
 };
+
+/** The one status a run shows: its latest attempt's, which knows more (Running, needs your
+ *  review, Accepted) than the request's own state, which stays "leased" for as long as an
+ *  attempt is out. */
+function runStatus(store: ReturnType<typeof useExecutionStore>, record: ExecutionRequestRecord) {
+  const a = store.attemptsFor(record.summary?.request_id ?? '');
+  const latest = a.status === 'ready' ? latestOf(a.data) : undefined;
+  if (latest) return { ...describeAttemptStatus(latest, latest.review), known: true };
+  return describeExecutionState(record.summary?.state ?? 'unknown');
+}
+
+const latestOf = (attempts: AttemptSummary[]) =>
+  attempts.reduce<AttemptSummary | undefined>((max, x) => (!max || x.attempt_number > max.attempt_number ? x : max), undefined);
 
 const RequestRow: Component<{
   record: ExecutionRequestRecord;
@@ -97,6 +171,8 @@ const RequestRow: Component<{
   itemTitle?: string;
   projectId?: string;
   number: number;
+  layout?: 'drawer' | 'page';
+  sideTarget?: HTMLElement;
 }> = (props) => {
   const store = useExecutionStore();
   const [reconcileOpen, setReconcileOpen] = createSignal(false);
@@ -106,7 +182,6 @@ const RequestRow: Component<{
 
   const summary = () => props.record.summary;
   const state = () => summary()?.state ?? 'unknown';
-  const stateInfo = createMemo(() => describeExecutionState(state()));
 
   const canCancel = createMemo(() => {
     const s = summary();
@@ -158,23 +233,9 @@ const RequestRow: Component<{
     return a.status === 'ready' ? a.data : [];
   };
 
-  const latestAttempt = () =>
-    readyAttempts().reduce<AttemptSummary | undefined>(
-      (max, x) => (!max || x.attempt_number > max.attempt_number ? x : max),
-      undefined,
-    );
+  const latestAttempt = () => latestOf(readyAttempts());
 
-  // One status per run: its latest attempt's, which knows more (Running,
-  // needs your review, Accepted) than the request's own state, which stays
-  // "leased" for as long as an attempt is out.
-  const status = createMemo(() => {
-    const a = attempts();
-    const latest = a.status === 'ready'
-      ? a.data.reduce<(typeof a.data)[number] | undefined>((max, x) => (!max || x.attempt_number > max.attempt_number ? x : max), undefined)
-      : undefined;
-    if (latest) return { ...describeAttemptStatus(latest, latest.review), known: true };
-    return stateInfo();
-  });
+  const status = createMemo(() => runStatus(store, props.record));
 
   // Lazy first load: fetch attempts once per request the moment its row is
   // rendered, never repeatedly — a subsequent render with the same `idle`
@@ -188,7 +249,7 @@ const RequestRow: Component<{
   });
 
   return (
-    <li class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="run" class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
         <Badge tone={status().tone}>{status().label}</Badge>
@@ -200,9 +261,12 @@ const RequestRow: Component<{
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          {summary()?.request_id ?? '—'}
-        </span>
+        {/* Once there is an attempt the ids sit with it; before that, this is the only place. */}
+        <Show when={readyAttempts().length === 0}>
+          <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+            {summary()?.request_id ?? '—'}
+          </span>
+        </Show>
         <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>
           <Badge tone="warning">{props.record.cancellation.pending ? 'Cancellation pending' : 'Cancellation requested'}</Badge>
         </Show>
@@ -283,6 +347,9 @@ const RequestRow: Component<{
             requestId={summary()?.request_id ?? ''}
             attempts={readyAttempts()}
             itemId={props.itemId}
+            limit={summary()?.limit}
+            layout={props.layout}
+            sideTarget={props.sideTarget}
             onReviewed={() => {
               const id = summary()?.request_id;
               if (id) void store.loadAttempts(id).catch(() => undefined);
@@ -331,7 +398,7 @@ const RequestRow: Component<{
           </div>
         </form>
       </Show>
-    </li>
+    </section>
   );
 };
 

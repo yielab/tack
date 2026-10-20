@@ -109,4 +109,56 @@ describe('ItemPage', () => {
 
     dispose();
   });
+
+  it('on the Execution tab only the tab asks for the verdict, and the run has a side column', async () => {
+    const run = { request_id: 'req-1', item_id: ITEM.id, state: 'succeeded', cancellation_requested_at: null, created_at: '2026-10-08T12:00:00Z' };
+    const attempt = {
+      attempt_id: 'att-1', request_id: 'req-1', attempt_number: 1, runner_id: 'runner-1', fencing_token: 1, state: 'succeeded',
+      lease_issued_at: '2026-10-08T12:00:00Z', lease_expires_at: '2026-10-08T12:05:00Z', last_heartbeat_at: null,
+      event_checkpoint: null, completion_id: null, workspace_id: null, base_revision: null, actual_execution: null,
+      terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.' }, usage: null, counted_tokens: null,
+      started_at: '2026-10-08T12:00:05Z', ended_at: '2026-10-08T12:02:00Z', created_at: '2026-10-08T12:00:00Z',
+      updated_at: '2026-10-08T12:02:00Z', model_provenance: null,
+      usage_economics: {
+        model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
+        runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
+      },
+      pull_request: null, review: null,
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      let body: unknown;
+      if (url.includes('/artifacts') || url.includes('/events')) body = { protocol_version: 1, data: [] };
+      else if (url.includes('/attempts')) body = { protocol_version: 1, data: [attempt] };
+      else if (url.includes('/executions')) body = { protocol_version: 1, data: [run] };
+      else body = jsonOf(url);
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json', ETag: '"1"' } }));
+    });
+    const history = createMemoryHistory();
+    history.set({ value: `/projects/p1/items/${ITEM.id}?tab=execution` });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () => (
+        <ExecutionStoreProvider>
+          <ProjectContext.Provider value={projectValue}>
+            <MemoryRouter history={history}>
+              <Route path="/projects/:id/items/:itemId" component={ItemPage} />
+            </MemoryRouter>
+          </ProjectContext.Provider>
+        </ExecutionStoreProvider>
+      ),
+      container,
+    );
+    for (let i = 0; i < 8; i++) await flush();
+
+    const accepts = [...container.querySelectorAll('button')].filter((b) => b.textContent === 'Accept');
+    expect(accepts).toHaveLength(1);
+    expect(container.querySelector('[data-testid="review-banner"]')?.contains(accepts[0])).toBe(true);
+    // The run card keeps its state and its link to the report.
+    expect(container.querySelector('[data-testid="latest-run"]')?.textContent).toContain('See what it did');
+    // The side column of the tab holds the ids.
+    expect(container.querySelector('[data-testid="execution-side"] [data-testid="attempt-ids"]')).not.toBeNull();
+    dispose();
+  });
 });
