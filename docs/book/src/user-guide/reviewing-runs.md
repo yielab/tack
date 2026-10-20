@@ -11,16 +11,18 @@ board columns. Board, list and table all show it. It clears when you press **Acc
 attempt. If the project chose a column for finished runs (under **Settings → Automation**, see
 [When a run finishes](automation.md#when-a-run-finishes)), the task also moves there.
 
-Open the task and go to its **Execution** tab. Each run is a card that leads with the outcome and the tools
-to check it:
+Open the task and go to its **Execution** tab. Chips pick the run, and the run you picked leads with the
+outcome and the tools to check it:
 
+- **Accept** and **Reject…**, in a banner above the run while it waits for you; **Reject…** asks for a note,
+  which is optional.
 - **Open diff** shows what changed.
 - **Open folder** (or **Copy path**, when you are not in the desktop app) shows where the work is on this
   computer.
 - **Copy branch** copies the branch name, when the agent worked on a branch.
-- A summary of what the agent said it did, and **Why it stopped**.
-- **Log** opens the full log.
-- **Accept** and **Reject**, with an optional note, while the run waits for you.
+- **What the agent concluded**, the agent's report as written, and **Why it stopped**.
+- **What the agent did**, by tool or as a timeline.
+- **Raw log**, beside the run's ids, opens the full log.
 
 **Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
 change files changed nothing, or when the changes could not be read. A run is meant to change files when its
@@ -62,7 +64,7 @@ When the run's branch was pushed and its pull request is open, press **Merge** o
 
 ## Reviewing a merge-readiness pack
 
-When a verifier checks an attempt, it leaves a merge-readiness pack. Open **Show timeline, questions &
+When a verifier checks an attempt, it leaves a merge-readiness pack. Open **Show questions &
 files** on the attempt and the pack appears under **Merge-readiness pack**.
 
 <img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a succeeded attempt: Recommendation merge, Risk low, three reasons, a criteria table with every criterion passed and its evidence file, the verify command with exit code 0, mutation score, static analysis counts, a blind judge's verdicts, and Your review with a required reason before Accept or Reject.">

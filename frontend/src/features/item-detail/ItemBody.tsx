@@ -92,6 +92,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
         projectId={props.item.project_id}
         onCreated={() => props.onTabChange('execution')}
         onOpen={() => props.onTabChange('execution')}
+        reviewInTab={props.tab === 'execution'}
       />
       <RunWithAgentButton
         itemId={props.item.id}
@@ -126,7 +127,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
               <ActivityTab itemId={props.item.id} />
             </Show>
             <Show when={props.tab === 'execution'}>
-              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} />
+              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} />
             </Show>
             <Show when={props.tab === 'dependencies'}>
               <DependenciesTab

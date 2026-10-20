@@ -33,6 +33,9 @@ export interface LatestRunSummaryProps {
   onCreated?: (requestId: string) => void;
   /** Opens the run's full report (the item's Execution tab). */
   onOpen: () => void;
+  /** The Execution tab is open and asks for the verdict in its own banner, so the card leaves
+   *  out Accept and Reject… and keeps its state, its line and its other links. */
+  reviewInTab?: boolean;
 }
 
 /** Which card the run is: it sets the card's colour and its actions. */
@@ -346,7 +349,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 />
               </Show>
             </Show>
-            <Show when={attempt() && (kind() === 'review' || (kind() === 'done' && !!review()))}>
+            <Show when={!props.reviewInTab && attempt() && (kind() === 'review' || (kind() === 'done' && !!review()))}>
               <ReviewActions
                 requestId={attempt()!.request_id}
                 attemptNumber={attempt()!.attempt_number}

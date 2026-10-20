@@ -40,6 +40,14 @@ automation a template carries, and the removal of dollars per day.
   stays disabled and says why ("No branch was pushed"). The card sits in the item page's side
   column and at the top of the drawer; Accept and Reject… are one component, shared with the
   attempt list.
+- **The Execution tab picks a run and says what it concluded and did.** Chips pick the run (and its
+  attempt), newest first, with **Run again**; the review banner above the run holds **Accept** and
+  **Reject…** with an optional note, and the Last run card leaves them out while the tab is open.
+  **What the agent concluded** shows the report as written with **Read full report**; **What the
+  agent did** groups the steps by tool with the files and commands as chips, or shows the timeline
+  (`attempt.install_skipped` now says its reason). Paths are shown inside the project, not the
+  runner's workspace. On the item's page a side column holds what the agent got, the usage folded
+  (tokens and the share of the limit) and the ids with the raw log; in the drawer it is one column.
 - **A profile says what it delivers.** Each profile carries one line, "a change on a branch", "a
   document in a folder" or "an answer", shown beside its agent in the Agents page, with three chips
   (changes files, runs commands, uses the network) read from its tools, never typed. The profile
