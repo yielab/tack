@@ -5,11 +5,11 @@ import EventTimeline from './EventTimeline';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
-function mount(requestId = 'exec_1', attemptNumber = 1, live?: () => boolean) {
+function mount(requestId = 'exec_1', attemptNumber = 1, live?: () => boolean, workspace?: string) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const dispose = render(
-    () => <EventTimeline requestId={requestId} attemptNumber={attemptNumber} live={live?.()} />,
+    () => <EventTimeline requestId={requestId} attemptNumber={attemptNumber} live={live?.()} workspace={workspace} />,
     container,
   );
   disposers.push(() => {
@@ -32,6 +32,27 @@ const step = (sequence: number, kind: string, text: string) => ({
 });
 
 describe('EventTimeline', () => {
+  it('attempt.install_skipped is named, and its reason is shown', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.install_skipped', payload: { reason: 'No install: this profile runs no commands' }, occurred_at: '2026-10-11T12:00:00Z', created_at: '2026-10-11T12:00:00Z' }]),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Install skipped');
+    expect(c.textContent).toContain('No install: this profile runs no commands');
+    expect(c.textContent).not.toContain('{"reason"');
+  });
+
+  it('shows the paths an event names inside the project, not the runner\'s workspace', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([step(1, 'agent.tool_call', 'Read /var/tmp/ws-1/src/app.ts')]));
+    const c = mount('exec_1', 1, undefined, '/var/tmp/ws-1');
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Read src/app.ts');
+    expect(c.textContent).not.toContain('/var/tmp');
+  });
+
   it('reloads a live attempt so each step appears as the agent takes it, without blanking the rows', async () => {
     vi.useFakeTimers();
     try {

@@ -271,7 +271,7 @@ Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (
 
 ### While a run works
 
-The attempt's timeline (**Show timeline, questions & files** on the task's Execution tab) fills as the agent
+The run's **Timeline** (under **What the agent did** on the task's Execution tab) fills as the agent
 works: each call to the model with its tokens, each tool it ran (a shell command is shown as the command),
 and each call it was refused. It refreshes every couple of seconds until the run ends. Only docket reports
 its steps while it works. With Claude Code, Codex and opencode the timeline holds the run's events (a

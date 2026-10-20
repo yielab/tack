@@ -3,6 +3,7 @@ import { Badge, Button, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { api } from '../api';
 import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import type { RunLimit } from '../execution/api';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
   NOT_MEASURED_TEXT,
@@ -16,6 +17,7 @@ import {
   changedNoFile,
   needsVerdict,
   isTerminalAttemptState,
+  limitShare,
   readAttemptUsage,
   formatTokenGroups,
 } from './attemptFormat';
@@ -24,14 +26,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { request } from '../api/client';
 import { SANDBOX_TEXT } from '../help/texts';
 import { inDesktop } from './desktop';
-import { describeStep, parseRunLog } from './runLog';
+import { parseRunLog } from './runLog';
 import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
-import EventTimeline from './EventTimeline';
 import MrpPanel from './MrpPanel';
 import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import PlanPanel from './PlanPanel';
+import RunChips from './RunChips';
+import { AgentConcluded, AgentDid, SideSlot } from './AgentWork';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
@@ -41,53 +44,22 @@ export interface AttemptListProps {
   itemId?: string;
   /** Called once a review verdict is saved, so the host can refresh the run's status. */
   onReviewed?: () => void;
+  /** The run's token limit, whose share the folded usage shows. */
+  limit?: RunLimit;
+  /** `page`: what the agent got, its usage and the ids go to `sideTarget`, the page's side
+   *  column. `drawer` (the default): one column, in that same order. */
+  layout?: 'drawer' | 'page';
+  sideTarget?: HTMLElement;
 }
 
-/** What the agent did (its steps, from a claude-code log) and what it said at the end. */
-const AgentReport: Component<{ steps: ReturnType<typeof parseRunLog> | undefined; result: string | null }> = (props) => {
-  const [all, setAll] = createSignal(false);
-  const steps = () => props.steps?.steps ?? [];
-  const shown = () => (all() ? steps() : steps().slice(0, 8));
-  const noTools = () => props.steps?.toolsOffered?.length === 0;
-  return (
-    <div class="space-y-3">
-      <Show when={noTools()}>
-        <p class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
-          The agent had no tools in this run, so it could not read or change files.
-        </p>
-      </Show>
-      <Show when={steps().length > 0}>
-        <section>
-          <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent did</h4>
-          <ol data-testid="agent-steps" class="space-y-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            <For each={shown()}>
-              {(step) => (
-                <li class="flex gap-2 break-all">
-                  <span aria-hidden="true" style={{ color: step.failed ? 'var(--color-danger-600)' : 'var(--color-text-tertiary)' }}>{step.failed ? '✕' : '•'}</span>
-                  <span>{describeStep(step)}{step.failed ? ' (failed)' : ''}</span>
-                </li>
-              )}
-            </For>
-          </ol>
-          <Show when={steps().length > 8}>
-            <button type="button" class="mt-1 text-xs font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => setAll((v) => !v)}>
-              {all() ? 'Show fewer' : `Show all ${steps().length} steps`}
-            </button>
-          </Show>
-        </section>
-      </Show>
-      <Show when={props.result}>
-        {(r) => (
-          <section>
-            <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent said</h4>
-            <p data-testid="agent-result" class="max-h-60 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-sm"
-              style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{r()}</p>
-          </section>
-        )}
-      </Show>
-    </div>
-  );
-};
+async function copyText(text: string, what: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`${what} copied.`);
+  } catch {
+    toast.error(`Couldn't copy the ${what.toLowerCase()}: ${text}`);
+  }
+}
 
 /** The pack panel, shown only when the attempt's artifacts include a
  *  merge-readiness pack (kind `mrp`). */
@@ -107,6 +79,7 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number; merge?: Att
     </Show>
   );
 };
+
 
 /** What the agent was given: its sandbox, the names of its environment variables, where it
  *  worked, and (collapsed) the exact prompt it read. */
@@ -132,7 +105,11 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
         Environment variables: {names().length > 0 ? names().join(', ') : 'none reported'}
       </p>
       <Show when={props.workspace}>
-        {(w) => <p data-testid="agent-got-workspace" class="break-all">Workspace: {w()}</p>}
+        {(w) => (
+          <p data-testid="agent-got-workspace" class="break-all" title={w()}>
+            Workspace: the project's folder
+          </p>
+        )}
       </Show>
       <details onToggle={(e) => setOpened(e.currentTarget.open)}>
         <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent read</summary>
@@ -148,12 +125,42 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
   );
 };
 
-/** The row of actions on a terminal attempt: see what it did. */
-const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; itemId?: string }> = (props) => {
+/** One id the support or a bug report asks for, with a button that copies it. */
+const IdRow: Component<{ label: string; value: string }> = (props) => (
+  <div class="flex items-center gap-2">
+    <dt class="w-14 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.label}</dt>
+    <dd class="min-w-0 flex-1 truncate" title={props.value} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
+      {props.value}
+    </dd>
+    <button
+      type="button"
+      aria-label={`Copy the ${props.label.toLowerCase()} id`}
+      class="flex-none text-xs font-semibold hover:underline"
+      style={{ color: 'var(--color-accent-ink)' }}
+      onClick={() => void copyText(props.value, `${props.label} id`)}
+    >
+      Copy
+    </button>
+  </div>
+);
+
+/** What the run left to look at: its diff, its folder and branch; what the agent concluded and
+ *  did; and, beside the run, what the agent got, what it used and the ids with the raw log. */
+const AttemptTools: Component<{
+  requestId: string;
+  attempt: AttemptSummary;
+  itemId?: string;
+  limit?: RunLimit;
+  /** This is the run's newest attempt, the one the limit's live count belongs to. */
+  latest: boolean;
+  page: boolean;
+  sideTarget?: HTMLElement;
+}> = (props) => {
   const n = () => props.attempt.attempt_number;
+  const terminal = () => isTerminalAttemptState(props.attempt.state);
   const reason = () => (props.attempt.terminal_reason ?? {}) as { workspace_kept_at?: unknown; result?: unknown };
   const [artifacts] = createResource(
-    () => `${props.requestId}:${n()}`,
+    () => (terminal() ? `${props.requestId}:${n()}` : undefined),
     () => artifactsApi.list(props.requestId, n()).catch(() => []),
   );
   const patch = () => (artifacts() ?? []).find((a) => a.kind === 'patch');
@@ -190,6 +197,8 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
     },
   );
   const repository = () => project()?.repository ?? null;
+  // The runner's workspace: the folder the agent worked in. Every path this run shows is
+  // given inside it.
   const folder = () =>
     typeof reason().workspace_kept_at === 'string'
       ? (reason().workspace_kept_at as string)
@@ -210,17 +219,9 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
     async (p) => (await artifactsApi.download(props.requestId, n(), p.artifact_id)).text(),
   );
   const [logOpen, setLogOpen] = createSignal(false);
-  const copy = async (text: string, what: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${what} copied.`);
-    } catch {
-      toast.error(`Couldn't copy the ${what.toLowerCase()}: ${text}`);
-    }
-  };
   const canOpen = () => inDesktop() && repository() !== null;
   const openFolder = async (path: string) => {
-    if (!canOpen()) return copy(path, 'Path');
+    if (!canOpen()) return copyText(path, 'Path');
     try {
       await invoke('open_folder', { path, repository: repository() });
     } catch (err) {
@@ -228,9 +229,24 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
     }
   };
   const patchHasChanges = () => (patch()?.size_bytes ?? 0) > 0;
+
+  // What the run used, in one line for the fold: the tokens counted against a limit and, when
+  // the run has one, the share of it.
+  const usageLine = () => {
+    const u = readAttemptUsage(props.attempt);
+    let tokens: string;
+    if (u.counted !== null) tokens = `${formatTokenGroups(u.counted)} tokens counted`;
+    else if (u.tokensIn !== null || u.tokensOut !== null) {
+      tokens = `${u.tokensIn === null ? '?' : formatTokenCount(u.tokensIn)} in · ${u.tokensOut === null ? '?' : formatTokenCount(u.tokensOut)} out`;
+    } else tokens = `Tokens: ${NOT_MEASURED_TEXT}`;
+    const used = u.counted ?? (props.latest ? props.limit?.used ?? null : null);
+    const share = limitShare(used, props.limit?.tokens);
+    return share === null ? tokens : `${tokens} · ${share}% of its limit`;
+  };
+
   return (
-    <Show when={isTerminalAttemptState(props.attempt.state)}>
-      <div class="space-y-2">
+    <>
+      <Show when={terminal()}>
         <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
           <Show when={patchHasChanges()}>
             <Button size="sm" variant="secondary" onClick={() => setDiffOpen(true)}>Open diff</Button>
@@ -244,15 +260,21 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
           </Show>
           <Show when={branch()}>
             {(b) => (
-              <Button size="sm" variant="secondary" onClick={() => void copy(b(), 'Branch')}>Copy branch</Button>
+              <Button size="sm" variant="secondary" onClick={() => void copyText(b(), 'Branch')}>Copy branch</Button>
             )}
           </Show>
-          <Show when={log()}>
-            <Button size="sm" variant="secondary" onClick={() => setLogOpen(true)}>Log</Button>
-          </Show>
         </div>
-        <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-        <AgentReport steps={steps()} result={result()} />
+        <AgentConcluded result={result()} workspace={folder()} />
+      </Show>
+      <AgentDid
+        requestId={props.requestId}
+        attemptNumber={n()}
+        log={steps()}
+        reading={steps.loading}
+        terminal={terminal()}
+        workspace={folder()}
+      />
+      <Show when={terminal()}>
         <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
         <Show when={plan() && props.itemId}>
           {(itemId) => (
@@ -264,8 +286,39 @@ const AttemptTools: Component<{ requestId: string; attempt: AttemptSummary; item
             {(t) => <DiffView patch={t()} />}
           </Show>
         </Modal>
-      </div>
-    </Show>
+      </Show>
+      <SideSlot page={props.page} target={props.sideTarget}>
+        <div data-testid="attempt-side" class="space-y-4">
+          <Show when={terminal()}>
+            <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
+            <details data-testid="attempt-usage-fold" class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+              <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
+              </summary>
+              <div class="mt-2">
+                <UsagePanel attempt={props.attempt} />
+              </div>
+            </details>
+          </Show>
+          <section data-testid="attempt-ids" class="space-y-1.5 text-xs">
+            <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>
+            <dl class="space-y-1">
+              <IdRow label="Request" value={props.requestId} />
+              <IdRow label="Attempt" value={props.attempt.attempt_id} />
+            </dl>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!log()}
+              title={log() ? undefined : terminal() ? 'This run left no log' : 'The log is written when the run ends'}
+              onClick={() => setLogOpen(true)}
+            >
+              Raw log
+            </Button>
+          </section>
+        </div>
+      </SideSlot>
+    </>
   );
 };
 
@@ -274,6 +327,10 @@ const AttemptRow: Component<{
   attempt: AttemptSummary;
   itemId?: string;
   numbered: boolean;
+  limit?: RunLimit;
+  latest: boolean;
+  page: boolean;
+  sideTarget?: HTMLElement;
   onReviewed?: () => void;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
@@ -302,6 +359,32 @@ const AttemptRow: Component<{
   };
   return (
     <li data-testid="attempt" class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+      {/* The review banner sits above the run: the verdict, with its optional note, is asked
+          for here and nowhere else on this tab. */}
+      <Show when={needsVerdict(props.attempt)}>
+        <section
+          data-testid="review-banner"
+          class="space-y-2 rounded-[20px] px-4 py-3"
+          style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
+        >
+          <Show when={!review()}>
+            <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
+            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              Accept it, or reject it with a note saying why. The note is optional.
+            </p>
+          </Show>
+          <ReviewActions
+            requestId={props.requestId}
+            attemptNumber={props.attempt.attempt_number}
+            review={review()}
+            onReviewed={(r) => {
+              setFresh(r);
+              props.onReviewed?.();
+            }}
+          />
+        </section>
+      </Show>
+
       <div class="flex flex-wrap items-center gap-2">
         {/* A run with one attempt shows its status in the run's own heading. */}
         <Show when={props.numbered}>
@@ -360,46 +443,31 @@ const AttemptRow: Component<{
       <Show when={showMerge()}>
         <MergeButton attemptId={props.attempt.attempt_id} merge={merge()!} onMerged={() => void refreshMerge()} />
       </Show>
-      <Show when={needsVerdict(props.attempt) || review()}>
-        <ReviewActions
-          requestId={props.requestId}
-          attemptNumber={props.attempt.attempt_number}
-          review={review()}
-          onReviewed={(r) => {
-            setFresh(r);
-            props.onReviewed?.();
-          }}
-        />
+
+      <Show when={!terminal()}>
+        <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          {props.attempt.state === 'waiting_decision'
+            ? 'The agent is waiting for your answer — see Questions from the agent below.'
+            : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used appear here when it finishes.'}
+        </p>
       </Show>
 
-      <AttemptTools requestId={props.requestId} attempt={props.attempt} itemId={props.itemId} />
-
-      <Show
-        when={terminal()}
-        fallback={
-          <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            {props.attempt.state === 'waiting_decision'
-              ? 'The agent is waiting for your answer — see Questions from the agent below.'
-              : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used and its cost appear here when it finishes.'}
-          </p>
-        }
-      >
-        <UsagePanel attempt={props.attempt} />
-      </Show>
+      <AttemptTools
+        requestId={props.requestId}
+        attempt={props.attempt}
+        itemId={props.itemId}
+        limit={props.limit}
+        latest={props.latest}
+        page={props.page}
+        sideTarget={props.sideTarget}
+      />
 
       <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded()}>
-        {expanded() ? 'Hide details' : 'Show timeline, questions & files'}
+        {expanded() ? 'Hide details' : 'Show questions & files'}
       </Button>
 
       <Show when={expanded()}>
         <div class="space-y-5 border-t pt-4" style={{ 'border-color': 'var(--color-border-light)' }}>
-          <section>
-            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-              Timeline
-            </h4>
-            <EventTimeline requestId={props.requestId} attemptNumber={props.attempt.attempt_number} live={!terminal()} />
-          </section>
-
           <section>
             <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Questions from the agent
@@ -532,37 +600,63 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   );
 };
 
+
 /**
- * Every attempt made against one execution request, reading real data from
- * `store.ts#attemptsFor`/`loadAttempts`. Each row exposes model provenance,
- * usage economics, and (on demand, to avoid an eager fetch for every attempt
- * of every visible request) its normalized event timeline, decision inbox,
- * and artifact download action.
+ * The attempts made against one execution request, reading real data from
+ * `store.ts#attemptsFor`/`loadAttempts`. A run with several attempts offers chips to pick
+ * one, the newest by default, and shows only the one picked. The row exposes model
+ * provenance, usage and the run's timeline, and (on demand, to avoid an eager fetch for
+ * every attempt) its decision inbox and artifact download action.
  */
 const AttemptList: Component<AttemptListProps> = (props) => {
-  // Rows follow the attempt's id, not its object: a refresh that brings the
-  // same attempt changed (a new event moves its checkpoint) updates its row in
-  // place, so what the person opened on it stays open.
-  const ids = createMemo(() => props.attempts.map((attempt) => attempt.attempt_id));
+  const newest = createMemo(() =>
+    props.attempts.reduce<AttemptSummary | undefined>((max, x) => (!max || x.attempt_number > max.attempt_number ? x : max), undefined),
+  );
+  // The picked attempt follows its id, not its object: a refresh that brings the same attempt
+  // changed (a new event moves its checkpoint) updates its row in place, so what the person
+  // opened on it stays open. Until one is picked, the newest is shown, so a new attempt
+  // takes its place.
+  const [picked, setPicked] = createSignal<string | undefined>(undefined);
+  const activeId = createMemo(() => {
+    const p = picked();
+    return p && props.attempts.some((a) => a.attempt_id === p) ? p : newest()?.attempt_id;
+  });
   const byId = createMemo(() => new Map(props.attempts.map((attempt) => [attempt.attempt_id, attempt])));
+  const chips = createMemo(() =>
+    [...props.attempts]
+      .sort((a, b) => b.attempt_number - a.attempt_number)
+      .map((a) => {
+        const status = describeAttemptStatus(a, a.review);
+        return { id: a.attempt_id, label: `Attempt ${a.attempt_number}`, tone: status.tone, state: status.label };
+      }),
+  );
   return (
-    <ul class="space-y-2">
-      <For each={ids()}>
-        {(id) => (
-          <Show when={byId().get(id)}>
-            {(attempt) => (
-              <AttemptRow
-                requestId={props.requestId}
-                attempt={attempt()}
-                itemId={props.itemId}
-                numbered={props.attempts.length > 1}
-                onReviewed={props.onReviewed}
-              />
-            )}
-          </Show>
-        )}
-      </For>
-    </ul>
+    <div class="space-y-3">
+      <Show when={props.attempts.length > 1}>
+        <RunChips chips={chips()} active={activeId() ?? ''} onPick={setPicked} label="Attempts" testId="attempt-chips" />
+      </Show>
+      <ul class="space-y-2">
+        <Show when={activeId()} keyed>
+          {(id) => (
+            <Show when={byId().get(id)}>
+              {(attempt) => (
+                <AttemptRow
+                  requestId={props.requestId}
+                  attempt={attempt()}
+                  itemId={props.itemId}
+                  numbered={props.attempts.length > 1}
+                  limit={props.limit}
+                  latest={attempt().attempt_id === newest()?.attempt_id}
+                  page={props.layout === 'page'}
+                  sideTarget={props.sideTarget}
+                  onReviewed={props.onReviewed}
+                />
+              )}
+            </Show>
+          )}
+        </Show>
+      </ul>
+    </div>
   );
 };
 

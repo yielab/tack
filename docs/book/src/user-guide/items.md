@@ -168,18 +168,40 @@ drawer and in the side column of the item's page, takes the colour and the butto
 **Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
-On the tab, each run (**Run 1**, **Run 2**, …) shows one status — *Running*, *Finished — needs
-your review*, *Finished — no changes recorded* (a run that was not meant to change files), *Failed*
-(including a run that was meant to change files and changed nothing), *Accepted*, and so on — with the agent that ran,
-what it did and said, and its usage, tokens first. A finished run that changed files waits for you:
-**Accept** or **Reject**, with an optional note, and the card's *Needs your review* flag clears.
-When the run's branch became a pull request, a **PR #n** link and its state sit on the run.
-**Show timeline, questions & files** opens the timeline, the questions the agent asked, the files
-from the run and, when a verifier ran, the merge-readiness pack. While a docket run is going, its
-timeline fills as the agent works: each call to the model, each tool it ran (a shell command is
-shown as the command) and each call docket refused. A question that is still waiting appears on
-the same tab, with the command it is about, why the agent's policy stopped it, the options, their
-risks and the agent's recommendation. How to
+On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
+the colour of its state, and the latest is shown until you pick another. **Run again** starts a new
+run of the same task. A run that had several attempts has a second row of chips for them. The tab
+shows only the run you picked, in this order:
+
+- **The review banner**, when the run waits for your verdict: **Accept**, or **Reject…** with a note
+  saying why, which is optional. While this tab is open the Last run card leaves out its own
+  **Accept** and **Reject…**, so the verdict is asked for in one place.
+- The run's status — *Running*, *Finished — needs your review*, *Finished — no changes recorded* (a run
+  that was not meant to change files), *Failed* (including a run that was meant to change files and
+  changed nothing), *Accepted*, and so on — with the agent that ran and, when the run's branch became
+  a pull request, a **PR #n** link and its state.
+- **What the agent concluded**: the agent's report as it wrote it, cut to a few lines. **Read full
+  report** shows the rest.
+- **What the agent did**, two ways. **By tool** groups its steps by the tool it used, with how many
+  times, and shows the files and commands it worked on as chips. **Timeline** lists the run's
+  events as they happened, and fills while the run is going: each call to the model, each tool it
+  ran (a shell command is shown as the command) and each call docket refused. Only the Claude Code
+  log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
+  timeline is what there is.
+- **Show questions & files** opens the questions the agent asked, the files from the run and, when a
+  verifier ran, the merge-readiness pack. A question that is still waiting appears there, with the
+  command it is about, why the agent's policy stopped it, the options, their risks and the agent's
+  recommendation.
+
+Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on
+the computer that ran it.
+
+What the agent got (its sandbox, the names of its environment variables, where it worked, and the
+exact prompt it read), what the run used and its ids sit in a side column on the item's page, and
+under the run in the drawer. **Usage** is folded: its line gives the tokens counted against a limit
+and, when the run has one, the share of it used, and opening it shows the detail. The request and
+attempt ids copy with one press, and **Raw log** opens the run's full log.
+How to
 start a run is in [Running Agents on Tasks](running-agents.md), and how to judge one is in
 [Reviewing a Run](reviewing-runs.md). The item's
 [acceptance criteria](#acceptance-criteria-and-for-the-agent) are what the agent is given as the

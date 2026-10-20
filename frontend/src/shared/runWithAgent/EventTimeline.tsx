@@ -2,6 +2,7 @@ import { type Component, For, Show, createEffect, createResource, createSignal, 
 import { Badge, EmptyState } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
+import { inProject } from './attemptFormat';
 
 export interface EventTimelineProps {
   requestId: string;
@@ -9,6 +10,8 @@ export interface EventTimelineProps {
   /** The attempt is still going: the timeline reloads every few seconds, and
    *  once more when it ends, so the agent's steps appear as it takes them. */
   live?: boolean;
+  /** The runner's workspace: its prefix is left off every path an event names. */
+  workspace?: string | null;
 }
 
 /** How often a live attempt's timeline reloads. */
@@ -28,6 +31,7 @@ function describeEventPayload(payload: unknown): string {
     const obj = payload as Record<string, unknown>;
     if (typeof obj.text === 'string') return obj.text;
     if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.reason === 'string') return obj.reason;
     try {
       return JSON.stringify(payload);
     } catch {
@@ -43,6 +47,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
   'attempt.cancelled': { label: 'Cancelled' },
   'attempt.verify_skipped': { label: 'Verification skipped' },
   'attempt.verify_failed': { label: 'Verification failed', failed: true },
+  'attempt.install_skipped': { label: 'Install skipped' },
   'attempt.push_skipped': { label: 'Branch not pushed' },
   'attempt.push_failed': { label: 'Pushing the branch failed', failed: true },
   'attempt.evidence_failed': { label: 'Evidence could not be collected', failed: true },
@@ -74,7 +79,7 @@ const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) =>
   );
 };
 
-const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => {
+const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: string | null }> = (props) => {
   const known = () => EVENT_LABELS[props.event.kind];
   return (
   <li class="grid grid-cols-[14px_minmax(0,1fr)_auto] gap-3">
@@ -96,7 +101,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean }> = (props) => {
         when={props.event.kind === 'attempt.terminal' && props.event.payload && typeof props.event.payload === 'object'}
         fallback={
           <p class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
-            {describeEventPayload(props.event.payload)}
+            {inProject(describeEventPayload(props.event.payload), props.workspace)}
           </p>
         }
       >
@@ -157,7 +162,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
       <Show when={(loaded()?.length ?? 0) > 0}>
         <ul>
           <For each={loaded()}>
-            {(event, i) => <EventRow event={event} last={i() === (loaded() ?? []).length - 1} />}
+            {(event, i) => <EventRow event={event} last={i() === (loaded() ?? []).length - 1} workspace={props.workspace} />}
           </For>
         </ul>
       </Show>
