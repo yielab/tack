@@ -12,8 +12,9 @@ locations.
 **Status (2026-10-20):** proposed. Nothing built.
 
 A companion guide in Spanish, [`phase-79-guia.md`](phase-79-guia.md), explains the concepts
-behind each step for someone learning architecture, Rust and AI engineering; this file is the
-operational plan.
+behind each step for someone learning architecture, Rust and AI engineering, and
+[`phase-79-desde-cero.md`](phase-79-desde-cero.md) builds the target architecture from scratch,
+layer by layer; this file is the operational plan.
 
 This plan is written for whoever executes it, person or agent, one phase at a time. Every phase
 says what a script does, what needs a model, which tests move or die, which filterset to run

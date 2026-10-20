@@ -6,6 +6,9 @@ comandos correr*. Esta guía explica *por qué* cada paso existe, qué concepto 
 de Rust o de ingeniería con IA hay detrás, y cómo saber que quedó bien. Si ya conoces los
 conceptos, salta al plan; si estás aprendiendo, lee esto primero y ten el plan al lado.
 
+Si prefieres ver la arquitectura de destino construida desde cero, en orden de capas, en vez de
+como un refactor del código actual, lee [Construir Tack desde cero](phase-79-desde-cero.md).
+
 ---
 
 ## Parte I — Los conceptos que vas a usar
