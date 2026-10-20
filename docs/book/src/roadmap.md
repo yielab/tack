@@ -127,6 +127,22 @@ time each group of steps took (a step has no time).
 
 ---
 
+## Phase 79 — the crates say what depends on what
+
+**Status:** proposed 2026-10-20, from an architecture audit of `develop` the same day. Waits on
+the maintainer's "continúa". **ADR:** 0087. **Plan:**
+[`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
+
+The runner, the process that holds credentials, compiles SQLite because the types it shares with
+the board sit in a crate that depends on the database. An attempt's state is written in three
+places. About 190 SQL queries sit in the HTTP crate beside the repository made to hold them. The
+phase moves the runner-v1 contract into a crate of its own, puts every SQL line in `tack-db`,
+puts the rules of a run into use cases with ports, and adds a script to the pre-push hook that
+fails on any crate edge the plan does not allow. Nothing on the wire changes. Six phases; most
+of the work is `git mv` and `sed`, with six narrow model steps the plan names one by one.
+
+---
+
 ## Phase 76 — the project file is kept in sync
 
 **Status:** proposed 2026-10-18; ADR 0084 proposed the same day, with its four defaults. Checked
