@@ -271,6 +271,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The Agents page finds this computer's runner under its new name.** The runner is named "This computer
+  (host name)" now, and the page looked only for the old generated name, so it said to turn agent
+  execution on while it was running. Beside it: the profile chips "Changes no files", "Runs no commands"
+  and "No network" are no longer dimmed below the contrast floor, the ids and their Copy buttons in the
+  Execution tab's side column are 24 px and a proper definition list, the sprint lane's run and title
+  buttons are 24 px, and the item's page names the item in the browser tab.
+
 - **The desktop app finds, stops and names what it starts.** Every agent, docket included, is looked
   for in the same folders, Linuxbrew's among them, so opencode under Homebrew is found when the app
   opens from the desktop menu. A SIGTERM, SIGINT or SIGHUP to `tack-desktop` stops the server it

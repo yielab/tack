@@ -143,8 +143,8 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             setOpen(true);
           }}
           style={{
-            width: '20px',
-            height: '20px',
+            width: '24px',
+            height: '24px',
             'border-radius': '50%',
             border: 'none',
             background: 'var(--color-bg-panel)',

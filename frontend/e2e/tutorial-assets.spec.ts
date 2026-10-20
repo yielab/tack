@@ -469,7 +469,7 @@ test.describe.serial('tutorial screenshots', () => {
     // Bring the attempt card fully into the drawer's own scroll viewport —
     // its cost tiles sit below the fold otherwise.
     await page
-      .getByRole('button', { name: 'Show timeline, questions & files' })
+      .getByRole('button', { name: 'Show questions & files' })
       .first()
       .scrollIntoViewIfNeeded();
     await page.waitForTimeout(600);
@@ -484,7 +484,7 @@ test.describe.serial('tutorial screenshots', () => {
     // trade for attempt.png). The Artifacts section alone shows the result
     // without them.
     await page
-      .getByRole('button', { name: 'Show timeline, questions & files' })
+      .getByRole('button', { name: 'Show questions & files' })
       .first()
       .click();
     await page.waitForTimeout(1200);
@@ -628,7 +628,7 @@ test.describe('workflow gif', () => {
     await page.getByRole('button', { name: 'Accept', exact: true }).first().click();
     await expect(page.getByText(/^Accepted/).first()).toBeVisible();
     await page.waitForTimeout(2000);
-    await page.getByRole('button', { name: 'Show timeline, questions & files' }).first().click();
+    await page.getByRole('button', { name: 'Show questions & files' }).first().click();
     const files = page.getByRole('heading', { name: 'Files from this run', exact: true });
     await expect(files).toBeVisible();
     await files.scrollIntoViewIfNeeded();

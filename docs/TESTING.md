@@ -412,13 +412,13 @@ layer and not re-proved through a browser. The suite, in `frontend/e2e/`:
 | Spec | Journey |
 | --- | --- |
 | `smoke.spec.ts` | Every primary surface renders without a blank screen or a page error |
-| `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists |
+| `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists; the drawer's Expand opens the item's page with its breadcrumb, properties, tabs and Copy link |
 | `run-with-agent.spec.ts` | "Run with agent" from the board, the item and the sprint: required fields block submit, a run is created and shows up without navigation, the project's model default is sent unchanged |
 | `scheduler-e2e.spec.ts` | A request made in the UI is claimed by a runner and the UI shows it live |
 | `execution-attempt-detail.spec.ts` | An attempt's events, decisions and artifacts: a pending decision resolves through the UI, an artifact downloads, a poll tick never discards typed input |
 | `agents-page.spec.ts`, `execution-toggle.spec.ts` | Turning agent execution on and off, the installed agents it reveals, a test run reaching the timeline |
 | `board-websocket-subprotocol.spec.ts` | A real browser WebSocket offering `tack.v1` stays connected and receives a board event — only a browser enforces that handshake rule |
-| `a11y.spec.ts` | WCAG 2.0/2.1 A & AA scans via axe-core — new violations fail CI |
+| `a11y.spec.ts` | WCAG 2.0/2.1 A & AA scans via axe-core — new violations fail CI — and the board's own checks: a column of thirty cards scrolls to its last card, the horizontal bar is inside the screen, every scrollable region takes the keyboard |
 | `api.spec.ts` | Wire-contract checks: health shape, hardening headers, response envelopes, 404s |
 | `shared-project-identity.spec.ts` | Guards the suite itself: the shared project keeps one identity while specs run concurrently |
 
