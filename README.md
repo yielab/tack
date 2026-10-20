@@ -3,7 +3,7 @@
 **An open-source project manager that can assign tasks to AI agents.**
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Starting and Finished" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Asking you and Finished" />
 </p>
 
 <p align="center">
@@ -94,7 +94,7 @@ Scoop, Docker and building from source are in the [Quick Start](https://yielab.g
 
 **2. Add a task** and write its acceptance criteria: what must be true when it's done.
 
-<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Run with agent button, the description, three acceptance criteria and an Add check button." />
+<img src="docs/screenshots/tutorial/06-brief.png" width="45%" alt="A task's details: the Run with agent button, the description, a Done when list of three checks and an Add check button." />
 
 **3. Run it with an agent** and review the result on the task.
 

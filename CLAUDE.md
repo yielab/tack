@@ -44,8 +44,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 - **Built 2026-10-19:** Phase 78 (the roadmap's own section, no plan file, no ADR) — every other
   open finding in one pass: the desktop app's first runs, the board audit, a page of its own for each
   item with a run card and an Execution tab, and "Done when" ticks. Rounds 1 to 4 are in `develop`,
-  the gate run once; left are the billed recordings (the tutorial's shots and the three gifs show the
-  old screens) and three small items listed in the roadmap.
+  the gate run once; the billed recordings were retaken 2026-10-20 (tutorial shots, `workflow.gif`,
+  `hero.gif`, `attempt.png`); left are `agents.png` and `agents-flow.gif` (the test run starts Codex, whose
+  configured model its login rejects), the desktop shots, `recovery-demo.gif` (a released build) and three
+  small items listed in the roadmap.
 - **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
   develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.

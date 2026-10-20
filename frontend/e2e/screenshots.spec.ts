@@ -394,7 +394,9 @@ test.describe.serial('README screenshots', () => {
   });
 
   test('decision-inbox', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: DRAWER_HEIGHT });
+    // Short enough that the drawer can scroll the questions to its top: below the
+    // heading there is about 1000px, so a taller frame would keep the Ids block above it.
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`/projects/${projectId}/board?item=${seeded.decisionItemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
