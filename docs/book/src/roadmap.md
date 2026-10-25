@@ -132,17 +132,30 @@ time each group of steps took (a step has no time).
 
 ## Phase 79 — the crates say what depends on what
 
-**Status:** proposed 2026-10-20, from an architecture audit of `develop` the same day. Waits on
-the maintainer's "continúa". **ADR:** 0087. **Plan:**
-[`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
+**Status:** proposed 2026-10-20, from an architecture audit of `develop` the same day; revised
+2026-10-25 after an audit of the plan itself. Waits on the maintainer's "continúa". **ADR:** 0087.
+**Plan:** [`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
 
 The runner, the process that holds credentials, compiles SQLite because the types it shares with
 the board sit in a crate that depends on the database. An attempt's state is written in three
-places. About 190 SQL queries sit in the HTTP crate beside the repository made to hold them. The
+places. About 200 SQL queries sit in the HTTP crate beside the repository made to hold them. The
 phase moves the runner-v1 contract into a crate of its own, puts every SQL line in `tack-db`,
-puts the rules of a run into use cases with ports, and adds a script to the pre-push hook that
-fails on any crate edge the plan does not allow. Nothing on the wire changes. Six phases; most
-of the work is `git mv` and `sed`, with six narrow model steps the plan names one by one.
+puts the rules of a run into use cases that take the store and a clock, puts every background
+loop in one crate as a function the binary schedules, and adds a script to the pre-push hook
+that fails on any crate edge the plan does not allow. Nothing on the wire changes.
+
+The 2026-10-25 revision dropped the store traits, the in-memory fakes and the contract suite of
+the first draft: every test already runs on in-memory SQLite in milliseconds, and a fake would
+hide the transactions and fencing the store exists for. It also fixed four contradictions the
+first draft could not have executed (the HTTP crate must name the database crate; the
+scheduler's wiring names `sqlx` and had no step to move; only four of thirteen spawns are
+loops; the graph table omitted the dev edges its own script reported) and re-sliced the work:
+seven scripts and twenty-four model tasks, none with more than about 1 400 lines in scope,
+where the draft had six agents and two of them facing 7 000 lines.
+
+What is open, in order: Phase 0 (the graph check), Phase 1 (`tack-protocol`), Phase 2 (twelve
+tasks, the SQL), Phase 3 (seven tasks, `tack-app`), Phase 4 (shape), Phase 5 (the documents).
+The task list with each task's scope, input and done-when command is §5 of the plan.
 
 ---
 

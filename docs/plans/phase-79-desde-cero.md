@@ -1,5 +1,11 @@
 # Construir Tack desde cero
 
+> **Nota (2026-10-25):** el plan de la Fase 79 fue revisado tras una auditoría y ya no lleva
+> puertos sobre el almacén, fakes en memoria ni suite de contrato; los casos de uso reciben
+> `&Repository` y `&dyn Clock`, y los tests corren sobre SQLite en memoria. Donde esta guía
+> construye un puerto o un fake, está enseñando el concepto, no el diseño vigente. Lo que
+> manda es [`phase-79.md`](phase-79.md), §3 y §7.
+
 Una guía para quien quiere aprender arquitectura, Rust e ingeniería con IA construyendo un
 programa real. El programa es Tack. La guía no describe cómo se construyó Tack (eso está en el
 historial y tuvo sus vueltas); describe **cómo se construiría hoy, sabiendo adónde se quiere

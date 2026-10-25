@@ -1,5 +1,11 @@
 # Guía de la Fase 79, para quien está aprendiendo
 
+> **Nota (2026-10-25):** el plan fue revisado tras una auditoría. Ya no lleva puertos sobre el
+> almacén, fakes en memoria ni suite de contrato: los casos de uso reciben `&Repository` y
+> `&dyn Clock`, y cada test sigue corriendo sobre SQLite en memoria. Las secciones de esta guía
+> que explican esos conceptos siguen siendo válidas como enseñanza, pero describen el primer
+> borrador, no lo que se va a construir. Lo que manda es [`phase-79.md`](phase-79.md), §7.
+
 Esta guía acompaña al plan operativo [`phase-79.md`](phase-79.md) y a la decisión
 [ADR 0087](../adr/0087-the-protocol-is-a-crate-and-the-sql-has-one-home.md). El plan dice *qué
 comandos correr*. Esta guía explica *por qué* cada paso existe, qué concepto de arquitectura,
