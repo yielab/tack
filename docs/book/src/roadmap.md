@@ -63,6 +63,9 @@ plan or the page named beside it.
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
   ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
   end-to-end scenario with two teams and a rework is still to write.
+- docket's draft of one record for every wait for a person (not accepted yet): five of
+  [Phase 80](#phase-80--a-run-that-waits-on-a-person-and-one-record-for-every-wait)'s seven cards
+  wait on it, each on a named docket card.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -140,6 +143,22 @@ phase moves the runner-v1 contract into a crate of its own, puts every SQL line 
 puts the rules of a run into use cases with ports, and adds a script to the pre-push hook that
 fails on any crate edge the plan does not allow. Nothing on the wire changes. Six phases; most
 of the work is `git mv` and `sed`, with six narrow model steps the plan names one by one.
+
+---
+
+## Phase 80 — a run that waits on a person, and one record for every wait
+
+**Status:** proposed 2026-10-25; nothing is started. **Plan:**
+[`docs/plans/phase-80.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-80.md).
+
+A docket run parked on a question is cancelled when the attempt's own time passes, and the run reads
+as a timeout. docket's maintainers have drafted a phase that turns every wait for a person (a tool
+approval, a consultation, an input step) into one record, an escalation; the draft is not accepted,
+so every name in it is a proposal. Seven cards, in the order docket would ship what each needs. Two
+wait on nothing: the clock of a task that waits on a person stops, and the cost of polling docket is
+measured before anything replaces it. Five wait on a named docket card: the autonomy level sent on
+each task, one reader for escalations, one A2A client, what docket decided alone shown on the
+timeline and in the metrics, and the removal of the old shapes once docket removes them.
 
 ---
 
