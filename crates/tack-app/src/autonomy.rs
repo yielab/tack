@@ -290,7 +290,7 @@ async fn gather(
         (Some(envelope), Some(key)) => {
             // The envelope and the head commit of an attempt never change, so a
             // signature verified on an earlier tick still holds; saving the
-            // project's settings clears it (`put_settings`).
+            // project's settings clears it (`put_autonomy_settings`).
             let verified = queries::autonomy::merge_of_attempt(repo, attempt_id)
                 .await
                 .ok()

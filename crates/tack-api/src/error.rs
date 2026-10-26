@@ -47,7 +47,7 @@ pub enum ApiError {
         section: &'static str,
         kept: bool,
         #[source]
-        source: sqlx::Error,
+        source: StoreError,
     },
 
     #[error("Internal error: {0}")]
@@ -204,7 +204,7 @@ mod tests {
         let failed = |kept| ApiError::SectionFailed {
             section: "roles",
             kept,
-            source: sqlx::Error::RowNotFound,
+            source: StoreError::NotFound,
         };
         let (status, kept) = message_of(failed(true)).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);

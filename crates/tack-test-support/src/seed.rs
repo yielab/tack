@@ -921,8 +921,7 @@ pub async fn project_budgets(
     tokens_per_day: Option<i64>,
     queue_items_max: Option<i64>,
 ) {
-    tack_db::repo::budgets::put(
-        repo.pool(),
+    repo.put_project_budgets(
         project_id,
         &tack_db::repo::budgets::ProjectBudgets {
             tokens_per_day,
@@ -986,4 +985,30 @@ pub async fn execution_event_removed(repo: &Repository, row_id: &str) {
         .execute(repo.pool())
         .await
         .expect("seed execution_events removal");
+}
+
+/// Plants a runner into a fleet, directly rather than through the members route.
+pub async fn agent_fleet_member(repo: &Repository, fleet_id: &str, runner_id: &str, at: &str) {
+    sqlx::query(
+        "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
+    )
+    .bind(fleet_id)
+    .bind(runner_id)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_fleet_members");
+}
+
+/// Runs one statement of `sql` with `binds` bound as text, for a fixture that plants many rows
+/// of several tables at once and checks the numbers it adds up to by hand.
+pub async fn statement(repo: &Repository, sql: &'static str, binds: &[&str]) {
+    let mut query = sqlx::query(sql);
+    for bind in binds {
+        query = query.bind(*bind);
+    }
+    query
+        .execute(repo.pool())
+        .await
+        .unwrap_or_else(|e| panic!("seed statement {sql}: {e}"));
 }

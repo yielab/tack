@@ -398,20 +398,20 @@ pub async fn factory_metrics(
     };
     let since = since.as_deref();
     let project = id.to_string();
-    let pool = state.repo.pool();
+    let repo = &state.repo;
 
-    let totals = rows::attempt_totals(pool, &project, since).await?;
-    let decision_waits = rows::decision_waits(pool, &project, since).await?;
-    let mrp_waits = rows::mrp_waits(pool, &project, since).await?;
-    let mrp = rows::mrp_totals(pool, &project, MRP_MEDIA_TYPE, since).await?;
-    let prs = rows::pull_request_totals(pool, &project, since).await?;
-    let starts = rows::runs_by_start(pool, &project, since).await?;
-    let triggers = rows::merges_by_trigger(pool, &project, since).await?;
-    let (lights_off, merged_items) = rows::lights_off(pool, &project, since).await?;
+    let totals = rows::attempt_totals(repo, &project, since).await?;
+    let decision_waits = rows::decision_waits(repo, &project, since).await?;
+    let mrp_waits = rows::mrp_waits(repo, &project, since).await?;
+    let mrp = rows::mrp_totals(repo, &project, MRP_MEDIA_TYPE, since).await?;
+    let prs = rows::pull_request_totals(repo, &project, since).await?;
+    let starts = rows::runs_by_start(repo, &project, since).await?;
+    let triggers = rows::merges_by_trigger(repo, &project, since).await?;
+    let (lights_off, merged_items) = rows::lights_off(repo, &project, since).await?;
 
     let storage = ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
     let (mut verification_tokens, mut verification_packs, mut unmeasured_packs) = (0, 0, 0);
-    for reference in rows::mrp_pack_references(pool, &project, MRP_MEDIA_TYPE, since).await? {
+    for reference in rows::mrp_pack_references(repo, &project, MRP_MEDIA_TYPE, since).await? {
         match pack_tokens(&storage, reference.as_deref()).await {
             Some(tokens) => {
                 verification_tokens += tokens;
@@ -433,7 +433,7 @@ pub async fn factory_metrics(
         };
 
     let card = crate::rate_card::load(&state.repo).await;
-    let spend = tack_db::repo::rate_card::spend_by_model(pool, &project, since).await?;
+    let spend = tack_db::repo::rate_card::spend_by_model(repo, &project, since).await?;
     let (mut cost, mut unpriced) = (0.0, 0);
     let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
     if let Some(card) = &card {

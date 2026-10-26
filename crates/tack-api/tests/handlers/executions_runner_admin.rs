@@ -1776,8 +1776,7 @@ async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_di
 async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_of_the_day() {
     let (app, repo, item_id) = setup().await;
     let project = project_of(&repo, &item_id).await;
-    tack_db::repo::budgets::put(
-        repo.pool(),
+    repo.put_project_budgets(
         &project,
         &tack_db::repo::budgets::ProjectBudgets {
             tokens_per_day: Some(1_000_000),
@@ -1928,8 +1927,7 @@ async fn the_item_carries_started_by_and_team_from_its_newest_request() {
 async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_sets_one() {
     let (app, repo, item_id) = setup().await;
     let project = project_of(&repo, &item_id).await;
-    tack_db::repo::budgets::put(
-        repo.pool(),
+    repo.put_project_budgets(
         &project,
         &tack_db::repo::budgets::ProjectBudgets {
             provisional_tokens_per_run: None,

@@ -428,7 +428,9 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
     assert_eq!(keyid.as_deref(), Some(KEY_ID));
 
     // G sees the revert; the next tick takes the domain one level down.
-    tack_db::repo::pull_requests::mark_reverted(b.state.repo.pool(), "acme/widgets", 7, Some(9))
+    b.state
+        .repo
+        .mark_pull_request_reverted("acme/widgets", 7, Some(9))
         .await
         .unwrap();
     tick(&b.state).await;
@@ -841,7 +843,9 @@ async fn a_demotion_to_l3_switches_auto_start_off() {
 
     // The project had already dropped a level when this merge is reverted: L4 to L3.
     seed::project_autonomy_level(&b.state.repo, &b.project_id, "L4").await;
-    tack_db::repo::pull_requests::mark_reverted(b.state.repo.pool(), "acme/widgets", 7, Some(9))
+    b.state
+        .repo
+        .mark_pull_request_reverted("acme/widgets", 7, Some(9))
         .await
         .unwrap();
     tick(&b.state).await;

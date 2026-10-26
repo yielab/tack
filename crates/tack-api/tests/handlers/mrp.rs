@@ -589,9 +589,10 @@ async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_ren
     let gh = fake_github(1).await;
     let root = tempfile::tempdir().unwrap();
     let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_none(), "completion opened a pull request");
     assert!(gh.received_requests().await.unwrap().is_empty());
 
@@ -601,10 +602,11 @@ async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_ren
         review["pull_request_url"],
         "https://github.com/acme/widgets/pull/7"
     );
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap()
-        .expect("the pull request was recorded");
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap()
+            .expect("the pull request was recorded");
     assert_eq!((stored.number, stored.state.as_str()), (7, "open"));
 
     let (status, _) = review_attempt(&app, &attempt, "accepted").await;
@@ -639,9 +641,10 @@ async fn accepting_the_pack_opens_the_pull_request_once() {
         review["pull_request_url"],
         "https://github.com/acme/widgets/pull/7"
     );
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_some());
     let (status, again) = review_attempt(&app, &attempt, "accepted").await;
     assert_eq!(status, StatusCode::OK, "{again}");
@@ -660,9 +663,10 @@ async fn rejecting_a_pushed_attempt_opens_no_pull_request() {
     let (status, review) = review_attempt(&app, &attempt, "rejected").await;
     assert_eq!(status, StatusCode::OK, "{review}");
     assert!(review.get("pull_request_url").is_none(), "{review}");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_none());
     assert!(gh.received_requests().await.unwrap().is_empty());
 }

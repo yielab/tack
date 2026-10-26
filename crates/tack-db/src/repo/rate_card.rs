@@ -1,38 +1,18 @@
 //! Where the rate card is kept (`app_meta`, key `rate_card`), and which model
 //! a run is priced as.
 
-use sqlx::{AssertSqlSafe, SqlitePool};
+use sqlx::AssertSqlSafe;
 use tack_core::rate_card::RateCard;
 
-const KEY: &str = "rate_card";
+use crate::{Repository, StoreError};
+
+pub(crate) const KEY: &str = "rate_card";
 
 /// The model a run is priced as, over `execution_attempts a` joined to
 /// `execution_requests r`: the model the agent reported, else the one the run
 /// asked for. A run on the agent's default that reported none is not priced.
 pub const RUN_MODEL_SQL: &str =
     "COALESCE(json_extract(a.actual_execution, '$.model'), r.requested_model)";
-
-/// The stored card, or `None` when the operator never entered one.
-pub async fn load(pool: &SqlitePool) -> Result<Option<RateCard>, sqlx::Error> {
-    let raw: Option<String> = sqlx::query_scalar("SELECT value FROM app_meta WHERE key = ?")
-        .bind(KEY)
-        .fetch_optional(pool)
-        .await?;
-    Ok(raw.and_then(|raw| serde_json::from_str(&raw).ok()))
-}
-
-pub async fn save(pool: &SqlitePool, card: &RateCard) -> Result<(), sqlx::Error> {
-    let value = serde_json::to_string(card).expect("a rate card serializes");
-    sqlx::query(
-        "INSERT INTO app_meta (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(KEY)
-    .bind(value)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
 
 /// One model's tokens in a repository and team, over the attempts counted.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -57,10 +37,10 @@ pub struct SpendRow {
 /// writes in `tokens_in`; any other counts under [`RUN_MODEL_SQL`] with its
 /// `tokens_in` and `tokens_out`.
 pub async fn spend_by_model(
-    pool: &SqlitePool,
+    repo: &Repository,
     project: &str,
     since: Option<&str>,
-) -> Result<Vec<SpendRow>, sqlx::Error> {
+) -> Result<Vec<SpendRow>, StoreError> {
     // The fragments are constants of this crate; only values are bound.
     let from = "FROM execution_attempts a
          JOIN execution_requests r ON r.id = a.request_id
@@ -69,7 +49,7 @@ pub async fn spend_by_model(
     let team =
         "json_extract(r.request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team')";
     let filter = "i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))";
-    sqlx::query_as(AssertSqlSafe(format!(
+    Ok(sqlx::query_as(AssertSqlSafe(format!(
         "SELECT model, repo, team,
                 COALESCE(SUM(tokens_in), 0) AS tokens_in,
                 COALESCE(SUM(cache_read), 0) AS cache_read,
@@ -102,13 +82,22 @@ pub async fn spend_by_model(
     .bind(project)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
-    .await
+    .fetch_all(repo.pool())
+    .await?)
 }
 
-impl crate::Repository {
+impl Repository {
     /// Keep `card` as the rate card, replacing the one stored.
-    pub async fn save_rate_card(&self, card: &RateCard) -> Result<(), crate::StoreError> {
-        Ok(save(self.pool(), card).await?)
+    pub async fn save_rate_card(&self, card: &RateCard) -> Result<(), StoreError> {
+        let value = serde_json::to_string(card).expect("a rate card serializes");
+        sqlx::query(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(KEY)
+        .bind(value)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 }
