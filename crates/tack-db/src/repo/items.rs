@@ -284,7 +284,7 @@ impl Repository {
         &self,
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    ) -> Result<Vec<Item>, crate::StoreError> {
         let rows = sqlx::query_as::<_, ItemRow>(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items

@@ -156,3 +156,12 @@ pub async fn latest_content_reference(
     .fetch_optional(repo.pool())
     .await?)
 }
+
+/// Whether an artifact manifest row with this row id exists.
+pub async fn artifact_row_exists(repo: &Repository, row_id: &str) -> Result<bool, StoreError> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE id=?")
+        .bind(row_id)
+        .fetch_one(repo.pool())
+        .await?;
+    Ok(count > 0)
+}

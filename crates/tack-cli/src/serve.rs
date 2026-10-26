@@ -10,7 +10,7 @@ use std::time::Duration;
 use tack_api::LocalRunnerControl;
 use tack_api::config::AppConfig;
 use tack_api::router::AppState;
-use tack_api::server::{ensure_default_workspace, prepare};
+use tack_api::server::prepare;
 use tack_api::webhook::WebhookClient;
 use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::SystemClock;
@@ -32,8 +32,8 @@ pub async fn run(
     repo::templates::seed_builtin_templates(&pool).await?;
     repo::execution::seed_builtin_profiles(&pool).await?;
 
-    let workspace_id = ensure_default_workspace(&pool).await?;
     let repo = Repository::new(pool);
+    let workspace_id = repo.ensure_default_workspace().await?;
 
     // A board from before a decision ended with its run left questions nobody can answer.
     let closed = repo
@@ -86,6 +86,16 @@ pub async fn run(
         Arc::new(state.host()),
         Duration::from_secs(state.config.github_poll_seconds),
     ));
+
+    // Announce the items due within the hour, when a webhook is there to hear it.
+    if let Some(webhook) = state.webhook.clone() {
+        tokio::spawn(tack_app::due_soon::run(
+            state.repo.clone(),
+            Arc::new(tack_protocol::SystemClock),
+            Arc::new(webhook),
+            tack_app::due_soon::INTERVAL,
+        ));
+    }
 
     tack_api::serve(state, ready_tx).await
 }
