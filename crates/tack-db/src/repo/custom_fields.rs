@@ -1,4 +1,5 @@
-use sqlx::{FromRow, SqlitePool};
+use crate::Repository;
+use sqlx::FromRow;
 use tack_core::models::*;
 use tracing::instrument;
 use uuid::Uuid;
@@ -29,9 +30,9 @@ struct CustomFieldValueRow {
 }
 
 /// Create a custom field definition for a project
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn create_field(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: Uuid,
     data: CreateCustomField,
 ) -> Result<CustomFieldDefinition, sqlx::Error> {
@@ -72,22 +73,22 @@ pub async fn create_field(
     .bind(validation)
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
-    .execute(pool)
+    .execute(repo.pool())
     .await?;
 
-    get_field(pool, id).await
+    get_field(repo, id).await
 }
 
 /// Get a custom field definition by ID
-#[instrument(skip(pool))]
-pub async fn get_field(pool: &SqlitePool, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
     let row = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
          WHERE id = ?"
     )
     .bind(id.to_string())
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
     .await?;
 
     let field_type = match row.field_type.as_str() {
@@ -139,9 +140,9 @@ pub async fn get_field(pool: &SqlitePool, id: Uuid) -> Result<CustomFieldDefinit
 }
 
 /// List all custom fields for a project
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn list_fields_for_project(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: Uuid,
 ) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
     let rows = sqlx::query_as::<_, CustomFieldRow>(
@@ -151,7 +152,7 @@ pub async fn list_fields_for_project(
          ORDER BY name ASC"
     )
     .bind(project_id.to_string())
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
 
     let fields = rows
@@ -210,9 +211,9 @@ pub async fn list_fields_for_project(
 }
 
 /// Update a custom field definition
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn update_field(
-    pool: &SqlitePool,
+    repo: &Repository,
     id: Uuid,
     data: UpdateCustomField,
 ) -> Result<CustomFieldDefinition, sqlx::Error> {
@@ -223,7 +224,7 @@ pub async fn update_field(
             .bind(name)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool)
+            .execute(repo.pool())
             .await?;
     }
 
@@ -234,7 +235,7 @@ pub async fn update_field(
         .bind(description)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     }
 
@@ -245,7 +246,7 @@ pub async fn update_field(
         .bind(required as i32)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     }
 
@@ -257,7 +258,7 @@ pub async fn update_field(
         .bind(value_str)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     }
 
@@ -267,7 +268,7 @@ pub async fn update_field(
             .bind(options_str)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool)
+            .execute(repo.pool())
             .await?;
     }
 
@@ -279,19 +280,19 @@ pub async fn update_field(
         .bind(validation_str)
         .bind(now.to_rfc3339())
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     }
 
-    get_field(pool, id).await
+    get_field(repo, id).await
 }
 
 /// Delete a custom field definition
-#[instrument(skip(pool))]
-pub async fn delete_field(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn delete_field(repo: &Repository, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM custom_field_definitions WHERE id = ?")
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     Ok(())
 }
@@ -299,9 +300,9 @@ pub async fn delete_field(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error
 // ─── Custom Field Values ─────────────────────────────────────
 
 /// Set a custom field value for an item
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn set_field_value(
-    pool: &SqlitePool,
+    repo: &Repository,
     item_id: Uuid,
     field_id: Uuid,
     value: serde_json::Value,
@@ -324,16 +325,16 @@ pub async fn set_field_value(
     .bind(now.to_rfc3339())
     .bind(&value_str)
     .bind(now.to_rfc3339())
-    .execute(pool)
+    .execute(repo.pool())
     .await?;
 
-    get_field_value(pool, item_id, field_id).await
+    get_field_value(repo, item_id, field_id).await
 }
 
 /// Get a custom field value for an item
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn get_field_value(
-    pool: &SqlitePool,
+    repo: &Repository,
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<CustomFieldValue, sqlx::Error> {
@@ -344,7 +345,7 @@ pub async fn get_field_value(
     )
     .bind(item_id.to_string())
     .bind(field_id.to_string())
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
     .await?;
 
     let value: serde_json::Value =
@@ -365,9 +366,9 @@ pub async fn get_field_value(
 }
 
 /// Get all custom field values for an item
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn get_all_field_values_for_item(
-    pool: &SqlitePool,
+    repo: &Repository,
     item_id: Uuid,
 ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
     let rows = sqlx::query_as::<_, CustomFieldValueRow>(
@@ -376,7 +377,7 @@ pub async fn get_all_field_values_for_item(
          WHERE item_id = ?",
     )
     .bind(item_id.to_string())
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
 
     let values = rows
@@ -404,24 +405,24 @@ pub async fn get_all_field_values_for_item(
 }
 
 /// Delete a custom field value
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn delete_field_value(
-    pool: &SqlitePool,
+    repo: &Repository,
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM custom_field_values WHERE item_id = ? AND field_id = ?")
         .bind(item_id.to_string())
         .bind(field_id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
     Ok(())
 }
 
 /// Every value of every item of the project.
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn field_values_for_project(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: Uuid,
 ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
     let rows = sqlx::query_as::<_, CustomFieldValueRow>(
@@ -431,7 +432,7 @@ pub async fn field_values_for_project(
          ORDER BY v.created_at, v.id",
     )
     .bind(project_id.to_string())
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
 
     Ok(rows

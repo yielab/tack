@@ -1,18 +1,20 @@
 use chrono::Utc;
-use sqlx::{Row, SqlitePool};
+use sqlx::Row;
 use tracing::instrument;
 use uuid::Uuid;
 
 use tack_core::models::Attachment;
 
+use crate::Repository;
+
 /// Repository for attachment operations
 pub struct AttachmentRepo<'a> {
-    pool: &'a SqlitePool,
+    repo: &'a Repository,
 }
 
 impl<'a> AttachmentRepo<'a> {
-    pub fn new(pool: &'a SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(repo: &'a Repository) -> Self {
+        Self { repo }
     }
 
     /// Create a new attachment record
@@ -39,7 +41,7 @@ impl<'a> AttachmentRepo<'a> {
         .bind(&storage_path)
         .bind(size_bytes as i64)
         .bind(&uploaded_at)
-        .execute(self.pool)
+        .execute(self.repo.pool())
         .await?;
 
         Ok(Attachment {
@@ -61,7 +63,7 @@ impl<'a> AttachmentRepo<'a> {
              FROM attachments WHERE id = ?",
         )
         .bind(id.to_string())
-        .fetch_optional(self.pool)
+        .fetch_optional(self.repo.pool())
         .await?;
 
         Ok(row.map(|r| Attachment {
@@ -83,7 +85,7 @@ impl<'a> AttachmentRepo<'a> {
              FROM attachments WHERE item_id = ? ORDER BY uploaded_at DESC",
         )
         .bind(item_id.to_string())
-        .fetch_all(self.pool)
+        .fetch_all(self.repo.pool())
         .await?;
 
         Ok(rows
@@ -105,7 +107,7 @@ impl<'a> AttachmentRepo<'a> {
     pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("DELETE FROM attachments WHERE id = ?")
             .bind(id.to_string())
-            .execute(self.pool)
+            .execute(self.repo.pool())
             .await?;
 
         Ok(result.rows_affected() > 0)

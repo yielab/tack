@@ -987,3 +987,9 @@ pub async fn execution_event_removed(repo: &Repository, row_id: &str) {
         .await
         .expect("seed execution_events removal");
 }
+
+/// Closes the store's connection pool, so every later call on `repo` (or on a
+/// clone of it, which shares the pool) fails the way a lost database does.
+pub async fn pool_closed(repo: &Repository) {
+    repo.pool().close().await;
+}
