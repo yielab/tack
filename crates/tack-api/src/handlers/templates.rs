@@ -370,7 +370,7 @@ pub async fn save_project_as_template(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Snapshot custom field definitions (strip per-project ids so they become template-level)
-    let field_defs = repo::custom_fields::list_fields_for_project(state.pool(), project_id)
+    let field_defs = repo::custom_fields::list_fields_for_project(&state.repo, project_id)
         .await
         .unwrap_or_default();
 

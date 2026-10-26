@@ -132,18 +132,18 @@ impl Repository {
         project_id: Uuid,
         data: CreateCustomField,
     ) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::create_field(self.pool(), project_id, data).await
+        custom_fields::create_field(self, project_id, data).await
     }
 
     pub async fn get_field(&self, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::get_field(self.pool(), id).await
+        custom_fields::get_field(self, id).await
     }
 
     pub async fn list_fields_for_project(
         &self,
         project_id: Uuid,
     ) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
-        custom_fields::list_fields_for_project(self.pool(), project_id).await
+        custom_fields::list_fields_for_project(self, project_id).await
     }
 
     pub async fn update_field(
@@ -151,11 +151,11 @@ impl Repository {
         id: Uuid,
         data: UpdateCustomField,
     ) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::update_field(self.pool(), id, data).await
+        custom_fields::update_field(self, id, data).await
     }
 
     pub async fn delete_field(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        custom_fields::delete_field(self.pool(), id).await
+        custom_fields::delete_field(self, id).await
     }
 
     pub async fn set_field_value(
@@ -164,7 +164,7 @@ impl Repository {
         field_id: Uuid,
         value: serde_json::Value,
     ) -> Result<CustomFieldValue, sqlx::Error> {
-        custom_fields::set_field_value(self.pool(), item_id, field_id, value).await
+        custom_fields::set_field_value(self, item_id, field_id, value).await
     }
 
     pub async fn get_field_value(
@@ -172,21 +172,21 @@ impl Repository {
         item_id: Uuid,
         field_id: Uuid,
     ) -> Result<CustomFieldValue, sqlx::Error> {
-        custom_fields::get_field_value(self.pool(), item_id, field_id).await
+        custom_fields::get_field_value(self, item_id, field_id).await
     }
 
     pub async fn get_all_field_values_for_item(
         &self,
         item_id: Uuid,
     ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
-        custom_fields::get_all_field_values_for_item(self.pool(), item_id).await
+        custom_fields::get_all_field_values_for_item(self, item_id).await
     }
 
     pub async fn field_values_for_project(
         &self,
         project_id: Uuid,
     ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
-        custom_fields::field_values_for_project(self.pool(), project_id).await
+        custom_fields::field_values_for_project(self, project_id).await
     }
 
     pub async fn delete_field_value(
@@ -194,7 +194,7 @@ impl Repository {
         item_id: Uuid,
         field_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        custom_fields::delete_field_value(self.pool(), item_id, field_id).await
+        custom_fields::delete_field_value(self, item_id, field_id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -209,23 +209,23 @@ impl Repository {
         storage_path: String,
         size_bytes: u64,
     ) -> Result<Attachment, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+        let repo = attachments::AttachmentRepo::new(self);
         repo.create_attachment(item_id, filename, mime_type, storage_path, size_bytes)
             .await
     }
 
     pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+        let repo = attachments::AttachmentRepo::new(self);
         repo.get_attachment(id).await
     }
 
     pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+        let repo = attachments::AttachmentRepo::new(self);
         repo.list_attachments(item_id).await
     }
 
     pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+        let repo = attachments::AttachmentRepo::new(self);
         repo.delete_attachment(id).await
     }
 }

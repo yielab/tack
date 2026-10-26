@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 use tack_api::handlers::websocket::BoardEvent;
 use tack_api::{AppState, config::AppConfig, router::build_router};
+use tack_db::Repository;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -18,14 +19,13 @@ async fn setup() -> (axum::Router, Uuid) {
     (app, pid)
 }
 
-/// A test app built the same way `common::test_app` is, with the pool handed
-/// back so a test can sever it mid-test (`common::test_app` doesn't expose
-/// it) — used to pin the database-failure branches on the routes below that
+/// A test app built the same way `common::test_app` is, with the repository
+/// handed back so a test can sever its database mid-test (`common::test_app`
+/// doesn't expose it) — used to pin the database-failure branches on the routes below that
 /// have no existence pre-check to catch a closed pool first.
-async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
+async fn setup_with_repo() -> (Router, Repository) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
-    let pool = repo.pool().clone();
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let config = AppConfig {
@@ -33,14 +33,14 @@ async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
         ..AppConfig::default()
     };
     let state = AppState {
-        repo,
+        repo: repo.clone(),
         config,
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
     };
-    (crate::common::with_default_host(build_router(state)), pool)
+    (crate::common::with_default_host(build_router(state)), repo)
 }
 
 async fn create_field(app: &axum::Router, project_id: Uuid, body: Value) -> Value {
@@ -348,17 +348,17 @@ async fn delete_field_value_removes_it() {
 
 /// `list_fields`, `delete_field`, `get_all_field_values` and
 /// `delete_field_value` each make their database call with no existence
-/// pre-check to catch a failure first — closing the pool out from under a
+/// pre-check to catch a failure first — closing the database out from under a
 /// live router pins that every one reports 500, not a hang or a panic.
 #[tokio::test]
 async fn db_failure_on_routes_without_a_precheck_is_500() {
-    let (app, pool) = setup_with_pool().await;
+    let (app, repo) = setup_with_repo().await;
     let pid = common::create_project(&app, "P", "software").await;
     let field = create_field(&app, pid, json!({"name":"Score","field_type":"number"})).await;
     let fid = field["id"].as_str().unwrap().to_owned();
     let iid = common::create_item(&app, pid, "Item").await;
 
-    pool.close().await;
+    tack_test_support::seed::pool_closed(&repo).await;
 
     let cases = [
         ("GET", format!("/api/projects/{pid}/custom-fields")),

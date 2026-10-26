@@ -167,7 +167,7 @@ pub async fn upload_attachment(
 
     // Create attachment record in database
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .create_attachment(item_id, filename, content_type, relative_path, size_bytes)
@@ -207,7 +207,7 @@ pub async fn download_attachment(
 
     // Get attachment record
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .get_attachment(attachment_id)
@@ -291,7 +291,7 @@ pub async fn list_attachments(
         .ok_or_else(|| ApiError::NotFound(format!("Item {} not found", item_id)))?;
 
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachments = attachment_repo.list_attachments(item_id).await?;
 
@@ -329,7 +329,7 @@ pub async fn delete_attachment(
 
     // Get attachment record
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .get_attachment(attachment_id)

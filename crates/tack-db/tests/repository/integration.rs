@@ -697,7 +697,7 @@ async fn create_and_list_custom_fields() {
     let project = common::make_project(&repo, ws_id).await;
     use tack_db::repo::custom_fields;
 
-    let field1 = custom_fields::create_field(repo.pool(), project.id, text_field("Customer"))
+    let field1 = custom_fields::create_field(&repo, project.id, text_field("Customer"))
         .await
         .unwrap();
     assert_eq!(field1.name, "Customer");
@@ -705,14 +705,14 @@ async fn create_and_list_custom_fields() {
     assert!(!field1.required);
 
     let select = select_field("Priority Level", &["Low", "Medium", "High"]);
-    let field2 = custom_fields::create_field(repo.pool(), project.id, select)
+    let field2 = custom_fields::create_field(&repo, project.id, select)
         .await
         .unwrap();
     assert_eq!(field2.field_type, CustomFieldType::Select);
     assert!(field2.required);
     assert_eq!(field2.options.as_ref().unwrap().len(), 3);
 
-    let fields = custom_fields::list_fields_for_project(repo.pool(), project.id)
+    let fields = custom_fields::list_fields_for_project(&repo, project.id)
         .await
         .unwrap();
     assert_eq!(fields.len(), 2);
@@ -726,21 +726,20 @@ async fn custom_field_value_upsert() {
     let item = common::make_item(&repo, &project).await;
     use tack_db::repo::custom_fields;
 
-    let field = custom_fields::create_field(repo.pool(), project.id, text_field("Customer"))
+    let field = custom_fields::create_field(&repo, project.id, text_field("Customer"))
         .await
         .unwrap();
 
     // `set_field_value` upserts and returns the freshly-reloaded row, so its
     // own return value already proves the write landed — no separate get.
-    let pool = repo.pool();
     let value =
-        custom_fields::set_field_value(pool, item.id, field.id, serde_json::json!("Acme Corp"))
+        custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Acme Corp"))
             .await
             .unwrap();
     assert_eq!(value.value, serde_json::json!("Acme Corp"));
 
     let updated =
-        custom_fields::set_field_value(pool, item.id, field.id, serde_json::json!("Updated Corp"))
+        custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Updated Corp"))
             .await
             .unwrap();
     assert_eq!(updated.value, serde_json::json!("Updated Corp"));
@@ -755,27 +754,20 @@ async fn custom_field_cascade_delete() {
 
     use tack_db::repo::custom_fields;
 
-    let field = custom_fields::create_field(repo.pool(), project.id, text_field("Test Field"))
+    let field = custom_fields::create_field(&repo, project.id, text_field("Test Field"))
         .await
         .unwrap();
 
     // Set value
-    custom_fields::set_field_value(
-        repo.pool(),
-        item.id,
-        field.id,
-        serde_json::json!("Test Value"),
-    )
-    .await
-    .unwrap();
-
-    // Delete field - should cascade delete values
-    custom_fields::delete_field(repo.pool(), field.id)
+    custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Test Value"))
         .await
         .unwrap();
 
+    // Delete field - should cascade delete values
+    custom_fields::delete_field(&repo, field.id).await.unwrap();
+
     // Value should be gone
-    let result = custom_fields::get_field_value(repo.pool(), item.id, field.id).await;
+    let result = custom_fields::get_field_value(&repo, item.id, field.id).await;
     assert!(result.is_err());
 }
 
