@@ -36,5 +36,7 @@ mod execution_transitions_completion;
 mod integration;
 #[path = "repository/rate_card.rs"]
 mod rate_card;
+#[path = "repository/store_conventions.rs"]
+mod store_conventions;
 #[path = "repository/version_concurrency.rs"]
 mod version_concurrency;

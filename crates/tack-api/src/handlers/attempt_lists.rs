@@ -19,6 +19,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tack_db::StoreError;
+use tack_db::queries::{execution_decisions, execution_requests};
 use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
 
@@ -46,9 +48,7 @@ async fn execution_request_exists(
     state: &OperatorExecutionState,
     request_id: &str,
 ) -> Result<bool, (StatusCode, Json<Value>)> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_requests WHERE id = ?)")
-        .bind(request_id)
-        .fetch_one(state.repo.pool())
+    execution_requests::execution_request_exists(&state.repo, request_id)
         .await
         .map_err(|_| {
             error(
@@ -238,18 +238,17 @@ pub async fn list_execution_attempt_decisions(
             json!({"resource": "execution_request"}),
         ));
     }
-    let decisions = state
-        .repo
-        .list_execution_decisions_for_attempt_number(&request_id, attempt_number)
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not list decisions",
-                json!({}),
-            )
-        })?;
+    let decisions =
+        execution_decisions::decisions_of_attempt(&state.repo, &request_id, attempt_number)
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not list decisions",
+                    json!({}),
+                )
+            })?;
     let Some(decisions) = decisions else {
         return Err(error(
             StatusCode::NOT_FOUND,
@@ -342,14 +341,6 @@ pub async fn review_execution_attempt(
             json!({"field": "verdict"}),
         ));
     }
-    let internal = |_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not record the review",
-            json!({}),
-        )
-    };
     if !execution_request_exists(&state, &request_id).await? {
         return Err(error(
             StatusCode::NOT_FOUND,
@@ -358,41 +349,37 @@ pub async fn review_execution_attempt(
             json!({"resource": "execution_request"}),
         ));
     }
-    let attempt_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
-    )
-    .bind(&request_id)
-    .bind(attempt_number)
-    .fetch_optional(state.repo.pool())
-    .await
-    .map_err(internal)?;
-    let Some(attempt_id) = attempt_id else {
-        return Err(error(
-            StatusCode::NOT_FOUND,
-            StableErrorCode::NotFound,
-            "Attempt does not exist",
-            json!({"resource": "execution_attempt"}),
-        ));
-    };
     let reviewed_at = chrono::Utc::now().to_rfc3339();
-    let inserted = sqlx::query(
-        "INSERT OR IGNORE INTO attempt_reviews (attempt_id, verdict, note, reviewed_at) VALUES (?, ?, ?, ?)",
-    )
-    .bind(&attempt_id)
-    .bind(&input.verdict)
-    .bind(&input.note)
-    .bind(&reviewed_at)
-    .execute(state.repo.pool())
-    .await
-    .map_err(internal)?;
-    if inserted.rows_affected() == 0 {
-        return Err(error(
-            StatusCode::CONFLICT,
-            StableErrorCode::Conflict,
-            "This attempt already has a verdict",
-            json!({"reason": "already_reviewed"}),
-        ));
-    }
+    let attempt_id = state
+        .repo
+        .record_attempt_review(
+            &request_id,
+            attempt_number,
+            &input.verdict,
+            input.note.as_deref(),
+            &reviewed_at,
+        )
+        .await
+        .map_err(|failure| match failure {
+            StoreError::NotFound => error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Attempt does not exist",
+                json!({"resource": "execution_attempt"}),
+            ),
+            StoreError::Conflict(reason) => error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "This attempt already has a verdict",
+                json!({"reason": reason}),
+            ),
+            StoreError::Sql(_) => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not record the review",
+                json!({}),
+            ),
+        })?;
     let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
         ("accepted", Some(app)) => {
             let storage = super::runner_protocol::artifact_storage::ArtifactStorage::new(format!(

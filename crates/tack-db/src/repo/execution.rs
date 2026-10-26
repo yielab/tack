@@ -9,6 +9,9 @@ use tracing::instrument;
 
 use super::Repository;
 
+mod review;
+pub mod state;
+
 #[derive(Debug, Clone)]
 pub struct NewRunner<'a> {
     pub id: &'a str,
@@ -471,31 +474,6 @@ pub struct ExecutionArtifactRow {
     pub content_reference: Option<String>,
     pub metadata: String,
     pub created_at: String,
-}
-
-/// Every column `execution_decisions` carries for one row. `options`,
-/// `metadata`, `answer` and `resolved_by` stay raw JSON-string/`Option`
-/// columns here, matching `ExecutionArtifactRow.metadata`'s convention —
-/// the caller (an API handler) owns parsing them into a typed response,
-/// this crate does not depend on the wire schema.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExecutionDecisionRow {
-    pub id: String,
-    pub attempt_id: String,
-    pub decision_id: String,
-    pub kind: String,
-    pub state: String,
-    pub prompt: String,
-    pub options: String,
-    pub metadata: String,
-    pub answer: Option<String>,
-    pub expires_at: Option<String>,
-    pub resolved_at: Option<String>,
-    pub resolved_by: Option<String>,
-    pub recommendation: Option<String>,
-    pub viewed_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
 /// Outcome of [`Repository::set_execution_artifact_content_reference`].
@@ -3693,65 +3671,6 @@ impl Repository {
         .bind(decision_id)
         .fetch_optional(self.pool())
         .await
-    }
-
-    /// Every decision raised against one specific attempt (identified by its
-    /// parent request id + 1-based attempt number, matching how
-    /// [`Repository::list_events_for_attempt_number`] resolves the same
-    /// pair), oldest first. `Ok(None)` means no attempt with that number
-    /// exists for this request — distinct from `Ok(Some(vec![]))`, an
-    /// attempt that has raised no decisions yet. Backs `GET
-    /// /api/executions/{request_id}/attempts/{attempt_number}/decisions`.
-    /// Read-only and reachable from the operator surface — distinct from
-    /// [`Self::create_execution_decision`] (runner-credential-only) and
-    /// decision *resolution* (`handlers::decisions`, gated separately behind
-    /// `TACK_EXECUTION_DECISION_TOKEN`).
-    #[instrument(skip(self))]
-    pub async fn list_execution_decisions_for_attempt_number(
-        &self,
-        request_id: &str,
-        attempt_number: i64,
-    ) -> Result<Option<Vec<ExecutionDecisionRow>>, sqlx::Error> {
-        let attempt_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
-        )
-        .bind(request_id)
-        .bind(attempt_number)
-        .fetch_optional(self.pool())
-        .await?;
-        let Some(attempt_id) = attempt_id else {
-            return Ok(None);
-        };
-        let rows = sqlx::query(
-            "SELECT id, attempt_id, decision_id, kind, state, prompt, options, metadata, \
-             answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at \
-             FROM execution_decisions WHERE attempt_id = ? ORDER BY created_at",
-        )
-        .bind(&attempt_id)
-        .fetch_all(self.pool())
-        .await?;
-        Ok(Some(
-            rows.into_iter()
-                .map(|row| ExecutionDecisionRow {
-                    id: row.get("id"),
-                    attempt_id: row.get("attempt_id"),
-                    decision_id: row.get("decision_id"),
-                    kind: row.get("kind"),
-                    state: row.get("state"),
-                    prompt: row.get("prompt"),
-                    options: row.get("options"),
-                    metadata: row.get("metadata"),
-                    answer: row.get("answer"),
-                    expires_at: row.get("expires_at"),
-                    resolved_at: row.get("resolved_at"),
-                    resolved_by: row.get("resolved_by"),
-                    recommendation: row.get("recommendation"),
-                    viewed_at: row.get("viewed_at"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                })
-                .collect(),
-        ))
     }
 
     // ─── Runtime retention and observability ───────────────────────────────

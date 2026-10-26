@@ -1,4 +1,6 @@
+pub mod error;
 pub mod migrations;
+pub mod queries;
 pub mod repo;
 
 use std::str::FromStr;
@@ -6,6 +8,7 @@ use std::str::FromStr;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use tracing::info;
 
+pub use error::StoreError;
 pub use repo::Repository;
 
 /// Initialize the database connection pool with WAL mode.

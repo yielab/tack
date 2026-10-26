@@ -4,6 +4,7 @@ use serde_json::json;
 use tracing::error;
 
 use tack_core::CoreError;
+use tack_db::StoreError;
 use tack_db::repo::dependencies::DependencyError;
 
 /// Unified API error type that maps to HTTP status codes.
@@ -54,6 +55,9 @@ pub enum ApiError {
 
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
+
+    #[error("{0}")]
+    Store(#[from] StoreError),
 
     #[error("{0}")]
     Core(#[from] CoreError),
@@ -123,6 +127,17 @@ impl IntoResponse for ApiError {
                     "Internal server error".into(),
                 )
             }
+            ApiError::Store(err) => match err {
+                StoreError::NotFound => (StatusCode::NOT_FOUND, err.to_string()),
+                StoreError::Conflict(_) => (StatusCode::CONFLICT, err.to_string()),
+                StoreError::Sql(err) => {
+                    error!(error = %err, "Database error");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal server error".into(),
+                    )
+                }
+            },
             ApiError::Internal(err) => {
                 error!(error = %err, "Internal error");
                 (
@@ -188,6 +203,26 @@ mod tests {
         assert_eq!(
             gone,
             "The roles section could not be written, so nothing was created."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_store_error_maps_to_the_status_the_store_raised() {
+        let (status, message) = message_of(StoreError::NotFound.into()).await;
+        assert_eq!(
+            (status, message.as_str()),
+            (StatusCode::NOT_FOUND, "not found")
+        );
+        let (status, message) =
+            message_of(StoreError::Conflict("already_reviewed".into()).into()).await;
+        assert_eq!(
+            (status, message.as_str()),
+            (StatusCode::CONFLICT, "conflict: already_reviewed")
+        );
+        let (status, message) = message_of(StoreError::Sql(sqlx::Error::RowNotFound).into()).await;
+        assert_eq!(
+            (status, message.as_str()),
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
         );
     }
 }

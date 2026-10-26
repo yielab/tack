@@ -18,6 +18,8 @@ use tack_core::{
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
+pub mod seed;
+
 mod poll;
 pub use poll::{poll_until, poll_until_sync};
 
