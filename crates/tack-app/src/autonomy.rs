@@ -174,6 +174,85 @@ fn ceiling_of(
         .ok_or_else(|| format!("Team {name} is not reported yet by this computer"))
 }
 
+/// What the harness a request asked for is called when it is docket's.
+const DOCKET: &str = "docket";
+
+/// A request's own cap on its autonomy, when it carries one ("Run again at L3").
+fn requested_cap(snapshot: &Value) -> Option<Level> {
+    snapshot.get("autonomy")?.as_str()?.parse().ok()
+}
+
+/// The level the board tells docket a claimed task may run at: the project's level now, lowered
+/// to what the team's ceiling allows and to the request's own cap. `None` when the harness is not
+/// docket, or the team's ceiling is unknown and the request set no cap; the key is then left out.
+pub(crate) async fn level_to_send(
+    repo: &Repository,
+    attempt_id: &str,
+    snapshot: &Value,
+) -> Option<Level> {
+    if snapshot["requested_harness_kind"].as_str() != Some(DOCKET) {
+        return None;
+    }
+    let cap = requested_cap(snapshot);
+    let inputs = queries::autonomy::attempt_ceiling_inputs(repo, attempt_id)
+        .await
+        .ok()??;
+    let ceiling = ceiling_of(
+        &inputs.capability_snapshot,
+        inputs.harness_kind.as_deref(),
+        inputs.team.as_deref(),
+    );
+    let Ok(ceiling) = ceiling else {
+        return cap;
+    };
+    let context = queries::autonomy::attempt_context(repo, attempt_id)
+        .await
+        .ok()??;
+    let project = queries::autonomy::project_settings(repo, &context.project_id)
+        .await
+        .ok()??
+        .level;
+    [Some(project), ceiling, cap].into_iter().flatten().min()
+}
+
+/// Whether "Run again at L3" may be pressed on an attempt that ended asking for a person, and
+/// the reason when it may not: only a docket run can be narrowed, to a level it did not already
+/// run at, by a team that is not attended already.
+pub async fn rerun_at_l3(repo: &Repository, attempt_id: &str) -> (bool, Option<String>) {
+    let no = |reason: &str| (false, Some(reason.to_owned()));
+    let Ok(Some(context)) = queries::autonomy::attempt_context(repo, attempt_id).await else {
+        return no("The run could not be read");
+    };
+    let snapshot: Value = serde_json::from_str(&context.request_snapshot).unwrap_or(Value::Null);
+    if snapshot["requested_harness_kind"].as_str() != Some(DOCKET) {
+        return no("Only a docket run can be narrowed to L3");
+    }
+    if requested_cap(&snapshot) == Some(Level::L3) {
+        return no("This run already ran at L3");
+    }
+    match queries::autonomy::project_settings(repo, &context.project_id).await {
+        Ok(Some(settings)) if settings.level == Level::L3 => {
+            return no("This project is already at L3");
+        }
+        Ok(Some(_)) => {}
+        _ => return no("The project's level could not be read"),
+    }
+    let Ok(Some(inputs)) = queries::autonomy::attempt_ceiling_inputs(repo, attempt_id).await else {
+        return no("The run could not be read");
+    };
+    match ceiling_of(
+        &inputs.capability_snapshot,
+        inputs.harness_kind.as_deref(),
+        inputs.team.as_deref(),
+    ) {
+        Err(sentence) => (false, Some(sentence)),
+        Ok(Some(Level::L3)) => {
+            no("The team that ran this is already attended: it cannot be narrowed")
+        }
+        Ok(_) => (true, None),
+    }
+}
+
 fn fail(reason: &str) -> Check {
     Check::Fail(reason.to_owned())
 }

@@ -56,6 +56,14 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
     denominator: 100,
     value: 0.1,
   },
+  attempts: 100,
+  decisions: 10,
+  decided_alone: 25,
+  decided_alone_rate: {
+    numerator: 25,
+    denominator: 100,
+    value: 0.25,
+  },
   human_minutes_per_decision: {
     measured: 0,
     null_reason: 'not_measured',
@@ -168,6 +176,39 @@ describe('FactoryMetrics', () => {
     // It should also show the inputs
     expect(container.textContent).toContain('decisions');
     expect(container.textContent).toContain('attempts');
+  });
+
+  it('shows what the agent decided alone beside the escalation rate, never inside it', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const card = (title: string) =>
+      [...container.querySelectorAll('h2')].find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
+    // The person-answered figure keeps its own count: 10 decisions in 100 attempts.
+    expect(card('Escalation rate')).toContain('10.0%');
+    expect(card('Escalation rate')).toContain('10 decisions / 100 attempts');
+    expect(card('Escalation rate')).not.toContain('25');
+    // The policy-answered figure is a tile of its own: 25 attempts of 100.
+    expect(card('Decided alone')).toContain('25.0%');
+    expect(card('Decided alone')).toContain('25 attempts / 100 attempts');
+  });
+
+  it('says a decided-alone rate with nothing to count is not measured, never 0', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      attempts: 0,
+      decided_alone: 0,
+      decided_alone_rate: { numerator: 0, denominator: 0, value: null, null_reason: 'denominator_zero' },
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const card = [...container.querySelectorAll('h2')].find((h) => h.textContent === 'Decided alone')?.parentElement?.textContent ?? '';
+    expect(card).toContain('Not measured');
+    expect(card).not.toContain('0.0%');
   });
 
   it('counts read as words: one decision, one pack', async () => {

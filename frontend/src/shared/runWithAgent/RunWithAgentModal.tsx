@@ -356,6 +356,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       idempotencyKey: form.idempotencyKey,
       verify: verifyConfigured() ? form.verify : undefined,
       pushBranch: pushConfigured() ? form.pushBranch : undefined,
+      autonomy: props.autonomy,
     };
   };
 
@@ -434,6 +435,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
         }
       >
         <form class="space-y-6" onSubmit={submit}>
+          <Show when={props.autonomy}>
+            <p data-testid="run-autonomy-note" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              This run is attended ({props.autonomy}): where docket would have settled a question by itself, it asks you.
+            </p>
+          </Show>
           <RunFlow
             form={form}
             setForm={setForm}

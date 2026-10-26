@@ -144,6 +144,11 @@ pub struct FactoryMetrics {
     /// decisions ÷ attempts.
     pub escalation_rate: Ratio,
     pub human_minutes_per_decision: HumanMinutes,
+    /// Attempts with at least one escalation the agent's policy settled itself, and no
+    /// person was asked: a count apart from `decisions`, which only a person's answer makes.
+    pub decided_alone: i64,
+    /// decided_alone ÷ attempts.
+    pub decided_alone_rate: Ratio,
     pub human_minutes_per_mrp: HumanMinutes,
     pub verification_tax: VerificationTax,
     /// Packs produced in the window and not yet reviewed.
@@ -527,6 +532,8 @@ pub async fn factory_metrics(
         decisions: totals.decisions,
         escalation_rate: ratio(totals.decisions, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_decision: human_minutes(&decision_waits),
+        decided_alone: totals.decided_alone,
+        decided_alone_rate: ratio(totals.decided_alone, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_mrp: human_minutes(&mrp_waits),
         verification_tax: VerificationTax {
             ratio: ratio(

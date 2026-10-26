@@ -3135,6 +3135,11 @@ export interface components {
             state: string;
             url: string;
         };
+        /** @description The "Run again at L3" button's state: `reason` says why it is disabled, `null` when enabled. */
+        AttemptRerun: {
+            enabled: boolean;
+            reason?: string | null;
+        };
         /** @description An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`. */
         AttemptReview: {
             note?: string | null;
@@ -3183,6 +3188,7 @@ export interface components {
             model_provenance?: null | components["schemas"]["ModelProvenance"];
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
+            rerun_at_l3?: null | components["schemas"]["AttemptRerun"];
             review?: null | components["schemas"]["AttemptReview"];
             runner_id: string;
             /**
@@ -3588,6 +3594,12 @@ export interface components {
              *     default, the implementer, and records which in `metadata.profile_source`.
              */
             agent_profile_id?: string | null;
+            /**
+             * @description The most autonomy this run may have: `L3`, `L4` or `L5`. The board lowers it further to the
+             *     project's level and the team's ceiling when a docket runner claims the run, and never raises
+             *     it; absent, those two decide. `L3` is "Run again at L3". Any other value is `invalid_request`.
+             */
+            autonomy?: string | null;
             /**
              * @description A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
              *     `null`: no limit for this run even when the profile has one; a positive integer: that
@@ -4046,6 +4058,14 @@ export interface components {
              *     rate. Absent without a rate card.
              */
             cost_usd?: number | null;
+            /**
+             * Format: int64
+             * @description Attempts with at least one escalation the agent's policy settled itself, and no
+             *     person was asked: a count apart from `decisions`, which only a person's answer makes.
+             */
+            decided_alone: number;
+            /** @description decided_alone ÷ attempts. */
+            decided_alone_rate: components["schemas"]["Ratio"];
             /** Format: int64 */
             decisions: number;
             /**

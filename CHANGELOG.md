@@ -26,6 +26,16 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **A run that needed a person is its own outcome.** An attempt of the docket agent that ends because a
+  tool call needs a person shows "Needs a person" with docket's sentence and offers **Run again at L3**,
+  which opens the Run dialog for the same task with the run attended from the start; it is disabled, with
+  its reason, when the project is already at L3 or the team cannot be narrowed, and it never starts by itself.
+  `POST /api/executions` takes an optional `autonomy` (`L3`, `L4` or `L5`), and the claim hands a docket
+  runner the level the run may have: the project's level lowered to its team's ceiling and to that cap.
+- **Factory metrics count what the agent decided alone.** A new **Decided alone** card gives the runs in
+  which docket's own policy settled at least one question, and their rate over runs, beside the escalation
+  rate and the human minutes, which still count only questions a person answered.
+
 - **The Run dialog follows the profile.** Pressing a profile picks the agent it is written for and says
   so when that replaces the task's; profiles you made are listed first with their "delivers" line, the
   built-in ones apart; a profile that runs no commands says "No install: this profile runs no commands";

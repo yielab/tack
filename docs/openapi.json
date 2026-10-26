@@ -7543,6 +7543,24 @@
           }
         }
       },
+      "AttemptRerun": {
+        "type": "object",
+        "description": "The \"Run again at L3\" button's state: `reason` says why it is disabled, `null` when enabled.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AttemptReview": {
         "type": "object",
         "description": "An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.",
@@ -7688,6 +7706,17 @@
           },
           "request_id": {
             "type": "string"
+          },
+          "rerun_at_l3": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttemptRerun",
+                "description": "The \"Run again at L3\" button's state; present only on an attempt that ended asking for a\nperson (`terminal_reason.code` of `needs_human`)."
+              }
+            ]
           },
           "review": {
             "oneOf": [
@@ -8946,6 +8975,13 @@
               "null"
             ],
             "description": "Omitted, the server picks one: run settings, the item's role, the project's\ndefault, the implementer, and records which in `metadata.profile_source`."
+          },
+          "autonomy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The most autonomy this run may have: `L3`, `L4` or `L5`. The board lowers it further to the\nproject's level and the team's ceiling when a docket runner claims the run, and never raises\nit; absent, those two decide. `L3` is \"Run again at L3\". Any other value is `invalid_request`."
           },
           "budgets": {
             "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."
@@ -10227,6 +10263,8 @@
           "decisions",
           "escalation_rate",
           "human_minutes_per_decision",
+          "decided_alone",
+          "decided_alone_rate",
           "human_minutes_per_mrp",
           "verification_tax",
           "mrp_produced",
@@ -10276,6 +10314,15 @@
             ],
             "format": "double",
             "description": "Tokens priced by the rate card, plus the human minutes at its hour\nrate. Absent without a rate card."
+          },
+          "decided_alone": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attempts with at least one escalation the agent's policy settled itself, and no\nperson was asked: a count apart from `decisions`, which only a person's answer makes."
+          },
+          "decided_alone_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "decided_alone ÷ attempts."
           },
           "decisions": {
             "type": "integer",

@@ -365,7 +365,9 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     }
   }
   let badge: AttemptOutcome['badge'] = null;
-  if (state === 'succeeded') {
+  if (state === 'failed' && reason.code === 'needs_human') {
+    badge = { label: 'Needs a person', tone: 'warning' };
+  } else if (state === 'succeeded') {
     const patch = (Array.isArray(reason.artifacts) ? reason.artifacts : []).find(
       (a) => a && typeof a === 'object' && (a as { kind?: unknown }).kind === 'patch',
     ) as { size_bytes?: unknown } | undefined;

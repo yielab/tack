@@ -73,6 +73,16 @@ export default function FactoryMetrics() {
             {(m) => <HumanMinutesCard humanMinutes={m.human_minutes_per_decision} />}
           </MetricCard>
 
+          <MetricCard title="Decided alone" data={metrics()!}>
+            {(m) => (
+              <RatioCard
+                ratio={m.decided_alone_rate}
+                details={`${count(m.decided_alone, 'attempt')} / ${count(m.attempts, 'attempt')}`}
+                subtext="Escalations the agent's own policy settled; no person was asked, and none is in the figures above."
+              />
+            )}
+          </MetricCard>
+
           <MetricCard title="Human minutes per pack review" data={metrics()!}>
             {(m) => <HumanMinutesCard humanMinutes={m.human_minutes_per_mrp} />}
           </MetricCard>

@@ -371,6 +371,25 @@ pub enum Approvals {
     Ask,
 }
 
+/// How much a run may settle without a person: `L3` has one decide, `L5` the least. The same
+/// three names as a project's autonomy level; on the wire they are `"L3"`, `"L4"` and `"L5"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum AutonomyLevel {
+    L3,
+    L4,
+    L5,
+}
+
+impl AutonomyLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AutonomyLevel::L3 => "L3",
+            AutonomyLevel::L4 => "L4",
+            AutonomyLevel::L5 => "L5",
+        }
+    }
+}
+
 /// A requested tool/network policy snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionPolicy {
@@ -459,6 +478,13 @@ const WRITE_TOOLS: [&str; 7] = [
 const READ_ONLY_PROFILE_KINDS: [&str; 3] = ["reviewer", "researcher", "planner"];
 
 impl ExecutionRequestSnapshot {
+    /// The most autonomy the board allows this run, when it said (the `autonomy` key of
+    /// `additional`): the project's level lowered to its team's ceiling. Absent means the board
+    /// named none, and a value that is not one of the three levels reads as absent.
+    pub fn autonomy(&self) -> Option<AutonomyLevel> {
+        serde_json::from_value(self.additional.get("autonomy")?.clone()).ok()
+    }
+
     /// Whether this run is expected to change the repository, so that a run which
     /// reports success and delivers no change did not do its work. One owner of the
     /// rule, for every harness. In this order:

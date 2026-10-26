@@ -19,6 +19,7 @@ import {
 } from './attemptFormat';
 import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
+import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
 import RunWithAgentModal from './RunWithAgentModal';
 import { parseRunLog } from './runLog';
@@ -316,6 +317,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 onCreated={props.onCreated}
               />
             )}
+          </Show>
+
+          <Show when={kind() === 'failed' && needsAPerson(attempt())}>
+            <RerunAtL3
+              attempt={attempt()!}
+              itemId={props.itemId}
+              itemTitle={props.itemTitle}
+              projectId={props.projectId}
+              onCreated={props.onCreated}
+            />
           </Show>
 
           <div class="flex flex-wrap items-center gap-2 pt-1">

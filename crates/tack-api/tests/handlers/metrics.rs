@@ -414,6 +414,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     assert_eq!(status, StatusCode::OK, "{e}");
     for ratio in [
         &e["escalation_rate"],
+        &e["decided_alone_rate"],
         &e["verification_tax"]["ratio"],
         &e["mrp_acceptance_rate"],
         &e["lights_off_rate"],
@@ -738,4 +739,111 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     );
     // The harness's own figure is never summed.
     assert!(!m.to_string().contains("9.99"), "{m}");
+}
+
+// An escalation the agent's policy settled itself leaves the person-answered figures where they
+// were and raises its own count: attempts with such an event, once each however many it has, over
+// all attempts; a project with none says 0.
+#[tokio::test]
+async fn an_escalation_decided_alone_is_counted_beside_decisions_and_never_inside() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let app = crate::common::with_default_host(build_router(AppState {
+        repo: repo.clone(),
+        config: AppConfig {
+            api_token: Some(TOKEN.into()),
+            database_url: "sqlite::memory:".into(),
+            storage_dir: root.path().to_string_lossy().into_owned(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx,
+        webhook: None,
+        local_runner: None,
+    }));
+    let (project_id, item) = project_with_item(&repo, workspace_id, "decided alone").await;
+    let (other_id, other_item) = project_with_item(&repo, workspace_id, "another").await;
+    seed::statement(
+        &repo,
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'da', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+        &[],
+    )
+    .await;
+    for (request, item) in [("Q1", &item), ("Q2", &item), ("Q3", &other_item)] {
+        seed::statement(
+            &repo,
+            "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+               request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+               repository_snapshot, permission_policy, metadata, created_at, updated_at)
+             VALUES (?, ?, 's', ?, 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}',
+               '2026-09-10T08:00:00Z', '2026-09-10T08:00:00Z')",
+            &[request, item, request],
+        )
+        .await;
+    }
+    for (attempt, request) in [("Q1a1", "Q1"), ("Q2a1", "Q2"), ("Q3a1", "Q3")] {
+        seed::statement(
+            &repo,
+            "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+               lease_issued_at, lease_expires_at, created_at, updated_at)
+             VALUES (?, ?, 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
+               '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z')",
+            &[attempt, request],
+        )
+        .await;
+    }
+    // One person-answered decision, 10 minutes from the view.
+    seed::statement(
+        &repo,
+        "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, created_at,
+           updated_at, viewed_at, resolved_at)
+         VALUES ('D1', 'Q1a1', 'D1', 'choice', 'p', '2026-09-10T09:50:00Z', '2026-09-10T09:50:00Z',
+           '2026-09-10T10:00:00Z', '2026-09-10T10:10:00Z')",
+        &[],
+    )
+    .await;
+    let headers = [("authorization", "Bearer g1a-metrics-token")];
+    let metrics = |id: Uuid| {
+        let app = app.clone();
+        async move {
+            let uri = format!("/api/projects/{id}/metrics/factory");
+            let (status, m) = common::send(&app, "GET", &uri, Value::Null, &headers).await;
+            assert_eq!(status, StatusCode::OK, "{m}");
+            m
+        }
+    };
+
+    let before = metrics(project_id).await;
+    assert_eq!(before["decided_alone"], 0);
+    close(&before["decided_alone_rate"]["value"], 0.0);
+    assert_eq!(before["escalation_rate"]["numerator"], 1);
+
+    // Q2a1 decided two alone, Q1a1 one beside its person's answer; another project's one is not ours.
+    for (attempt, kind, sequence) in [
+        ("Q2a1", "escalation.decided", 1),
+        ("Q2a1", "escalation.decided", 2),
+        ("Q1a1", "escalation.decided", 1),
+        ("Q3a1", "escalation.decided", 1),
+        ("Q2a1", "agent.hop_finished", 3),
+    ] {
+        seed::execution_event_of_kind(&repo, attempt, kind, sequence, "2026-09-10T09:30:00Z").await;
+    }
+    let after = metrics(project_id).await;
+    assert_eq!(after["decided_alone"], 2, "{after}");
+    assert_eq!(after["decided_alone_rate"]["numerator"], 2);
+    assert_eq!(after["decided_alone_rate"]["denominator"], 2);
+    close(&after["decided_alone_rate"]["value"], 1.0);
+    // What a person answered is untouched, and no decision row appeared.
+    assert_eq!(after["decisions"], before["decisions"]);
+    assert_eq!(after["escalation_rate"], before["escalation_rate"]);
+    assert_eq!(
+        after["human_minutes_per_decision"],
+        before["human_minutes_per_decision"]
+    );
+    close(&after["human_minutes_per_decision"]["median_minutes"], 10.0);
+    let other = metrics(other_id).await;
+    assert_eq!(other["decided_alone"], 1);
 }

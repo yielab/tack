@@ -130,6 +130,7 @@ shows a figure, or **Not measured** with its reason when there is nothing to mea
 |---|---|
 | **Escalation rate** | How often a run needed you: questions asked divided by runs |
 | **Human minutes per decision** | The median and the slowest tenth of the time a question waited for your answer, counted from when someone first opened it (or from when it was asked, if nobody opened it first) |
+| **Decided alone** | Runs in which the agent's own policy settled at least one question without asking you, divided by runs; they are not counted in the escalation rate or the human minutes |
 | **Human minutes per pack review** | The same wait for a merge-readiness pack and its verdict |
 | **Pack acceptance rate** | Accepted packs divided by reviewed packs, with how many are still unreviewed |
 | **Verification tax (tokens)** | Tokens spent on verification and rework, divided by tokens spent on first attempts |
