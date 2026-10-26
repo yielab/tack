@@ -608,3 +608,100 @@ pub async fn pending_decision(
         .expect("seed decision insert");
     assert!(written, "the seeded decision must land");
 }
+
+// ─── runner-protocol fixtures ───────────────────────────────────────────────
+
+/// Sets how many runs a runner can hold at all and how many it can still take.
+pub async fn agent_runner_capacity(
+    repo: &Repository,
+    runner_id: &str,
+    total_capacity: i64,
+    available_capacity: i64,
+) {
+    sqlx::query("UPDATE agent_runners SET total_capacity = ?, available_capacity = ? WHERE id = ?")
+        .bind(total_capacity)
+        .bind(available_capacity)
+        .bind(runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed agent_runners capacity");
+}
+
+/// Marks a decision resolved by an operator, with `answer` and `resolved_by` as raw JSON text,
+/// every timestamp being `at`.
+pub async fn execution_decision_resolved(
+    repo: &Repository,
+    attempt_id: &str,
+    decision_id: &str,
+    answer: &str,
+    resolved_by: &str,
+    at: &str,
+) {
+    sqlx::query(
+        "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? \
+         WHERE attempt_id=? AND decision_id=?",
+    )
+    .bind(answer)
+    .bind(at)
+    .bind(resolved_by)
+    .bind(at)
+    .bind(attempt_id)
+    .bind(decision_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_decisions resolved");
+}
+
+/// A Merge-Readiness Pack artifact of `attempt_id` whose verified content is stored at
+/// `content_reference`.
+pub async fn execution_pack_artifact(
+    repo: &Repository,
+    attempt_id: &str,
+    artifact_id: &str,
+    content_reference: &str,
+    created_at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_artifacts \
+         (id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, content_reference, created_at) \
+         VALUES (?, ?, ?, 'mrp', 'mrp.json', 'application/vnd.tack.mrp+json', 1, 'x', ?, ?)",
+    )
+    .bind(format!("art_row_{}", Uuid::new_v4()))
+    .bind(attempt_id)
+    .bind(artifact_id)
+    .bind(content_reference)
+    .bind(created_at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_artifacts pack");
+}
+
+/// Sets the status a project moves an item to when a run leaves evidence.
+pub async fn project_on_finish_status(repo: &Repository, project_id: &str, status: &str) {
+    sqlx::query("UPDATE projects SET on_finish_status = ? WHERE id = ?")
+        .bind(status)
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects on_finish_status");
+}
+
+/// Replaces the stored snapshot (raw text, valid or not) of an `execution_requests` row.
+pub async fn execution_request_snapshot(repo: &Repository, request_id: &str, snapshot: &str) {
+    sqlx::query("UPDATE execution_requests SET request_snapshot = ? WHERE id = ?")
+        .bind(snapshot)
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests snapshot");
+}
+
+/// Sets how many follow-ups a rejected run of this project's items may start.
+pub async fn project_verify_loop_max_attempts(repo: &Repository, project_id: &str, cap: i64) {
+    sqlx::query("UPDATE projects SET verify_loop_max_attempts = ? WHERE id = ?")
+        .bind(cap)
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects verify_loop_max_attempts");
+}

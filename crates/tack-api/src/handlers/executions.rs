@@ -119,15 +119,6 @@ fn error(
     )
 }
 
-#[derive(Clone)]
-pub(crate) struct FixedExecutionClock(pub(crate) DateTime<Utc>);
-
-impl Clock for FixedExecutionClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
-
 fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
     headers
         .get("x-tack-principal")
@@ -142,21 +133,6 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
                 json!({}),
             )
         })
-}
-
-/// Rebuilds a `Value` so every object passes through `FromIterator`: key
-/// order can then never affect a serialized comparison.
-pub(crate) fn canonical_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, canonical_json(value)))
-                .collect(),
-        ),
-        value => value,
-    }
 }
 
 fn parse_rfc3339(raw: &str) -> Option<DateTime<Utc>> {

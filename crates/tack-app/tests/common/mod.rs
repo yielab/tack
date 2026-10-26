@@ -146,3 +146,36 @@ pub async fn enqueue(world: &World, key: &str) -> String {
         .expect("enqueue");
     request_id
 }
+
+/// An attempt of `RUNNER_ID` that is leased and then running, under its first fence.
+pub struct Running {
+    pub request_id: String,
+    pub attempt_id: String,
+    pub fence: i64,
+}
+
+/// Enqueues a request, claims it and puts the attempt in `running`.
+pub async fn running_attempt(world: &World, key: &str) -> Running {
+    let request_id = enqueue(world, key).await;
+    let claimed = tack_app::runs::claim::claim(
+        &world.repo,
+        &world.clock,
+        RUNNER_ID,
+        &format!("claim-{key}"),
+        chrono::Duration::seconds(60),
+    )
+    .await
+    .expect("claim")
+    .expect("work");
+    tack_test_support::seed::execution_attempt_state(
+        &world.repo,
+        &claimed.lease.attempt_id,
+        tack_protocol::execution::ExecutionState::Running,
+    )
+    .await;
+    Running {
+        request_id,
+        attempt_id: claimed.lease.attempt_id,
+        fence: claimed.lease.fencing_token,
+    }
+}

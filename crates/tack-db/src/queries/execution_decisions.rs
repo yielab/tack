@@ -54,20 +54,52 @@ pub async fn decisions_of_attempt(
     Ok(Some(rows))
 }
 
-/// One decision of an attempt, identified by the attempt's id and the decision's own id, or
-/// `None` when the attempt has no such decision.
+const DECISION_COLUMNS: &str = "id, attempt_id, decision_id, kind, state, prompt, options, metadata, \
+     answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at";
+
+/// One decision of an attempt, or `None` when the attempt raised no decision with this id.
 pub async fn decision_of_attempt(
     repo: &Repository,
     attempt_id: &str,
     decision_id: &str,
 ) -> Result<Option<DecisionRow>, StoreError> {
-    Ok(sqlx::query_as::<_, DecisionRow>(
-        "SELECT id, attempt_id, decision_id, kind, state, prompt, options, metadata, \
-         answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at \
-         FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?",
-    )
+    Ok(sqlx::query_as::<_, DecisionRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {DECISION_COLUMNS} FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?"
+    )))
     .bind(attempt_id)
     .bind(decision_id)
     .fetch_optional(repo.pool())
     .await?)
+}
+
+/// The decisions of an attempt that changed after `after` (an RFC 3339 timestamp), oldest
+/// change first.
+pub async fn decisions_changed_since(
+    repo: &Repository,
+    attempt_id: &str,
+    after: &str,
+) -> Result<Vec<DecisionRow>, StoreError> {
+    Ok(
+        sqlx::query_as::<_, DecisionRow>(sqlx::AssertSqlSafe(format!(
+            "SELECT {DECISION_COLUMNS} FROM execution_decisions \
+         WHERE attempt_id = ? AND updated_at > ? ORDER BY updated_at ASC"
+        )))
+        .bind(attempt_id)
+        .bind(after)
+        .fetch_all(repo.pool())
+        .await?,
+    )
+}
+
+/// How many decisions an attempt has raised.
+pub async fn decision_count_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<i64, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT COUNT(*) FROM execution_decisions WHERE attempt_id = ?")
+            .bind(attempt_id)
+            .fetch_one(repo.pool())
+            .await?,
+    )
 }

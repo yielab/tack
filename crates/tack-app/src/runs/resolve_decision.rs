@@ -5,6 +5,7 @@ use tack_db::repo::execution::DecisionSettlement;
 use tack_protocol::Clock;
 
 use crate::AppError;
+use crate::runs::start_run::canonical_json;
 
 /// What came of an answer to a decision. A rejection is a value, not an error: the caller maps
 /// each to its own response.
@@ -137,20 +138,6 @@ pub async fn resolve_decision(
 /// the same answer compare equal.
 fn canonical_string(value: &Value) -> String {
     serde_json::to_string(&canonical_json(value.clone())).unwrap_or_default()
-}
-
-/// Rebuilds a `Value` so every object passes through `FromIterator`.
-fn canonical_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, canonical_json(value)))
-                .collect(),
-        ),
-        value => value,
-    }
 }
 
 #[cfg(test)]
