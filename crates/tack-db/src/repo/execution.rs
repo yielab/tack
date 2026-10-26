@@ -5,6 +5,7 @@
 mod review;
 pub mod state;
 
+mod admin;
 mod artifacts;
 mod claim;
 mod completion;
@@ -14,6 +15,7 @@ mod events;
 mod recovery;
 mod shared;
 
+pub use admin::*;
 pub use artifacts::*;
 pub use claim::*;
 pub use completion::*;

@@ -21,9 +21,11 @@ use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_db::{
-    Repository, init_pool, migrations,
+    Repository,
+    queries::agent_runners,
     repo::execution::{EnrollmentToken, NewRunner},
 };
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
@@ -58,15 +60,8 @@ impl Fixture {
         // Must run before anything else in every test — see
         // `log_capture.rs`'s doc comment for the race this closes.
         ensure_global_log_capture_installed();
-        let pool = init_pool("sqlite::memory:").await.expect("pool");
-        migrations::run_all(&pool).await.expect("migrations");
-        let repo = Repository::new(pool);
-        let workspace = Uuid::new_v4();
-        sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C2', '{}')")
-            .bind(workspace.to_string())
-            .execute(repo.pool())
-            .await
-            .expect("workspace");
+        let repo = setup_test_db().await;
+        create_test_workspace(&repo).await;
 
         let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
         let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
@@ -107,19 +102,19 @@ impl Fixture {
     }
 
     async fn credential_hash_of(&self, runner_id: &str) -> String {
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(runner_id)
-            .fetch_one(self.repo.pool())
+        agent_runners::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
+            .expect("runner")
+            .credential_hash
     }
 
     async fn runner_name(&self, runner_id: &str) -> String {
-        sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
-            .bind(runner_id)
-            .fetch_one(self.repo.pool())
+        agent_runners::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
+            .expect("runner")
+            .name
     }
 }
 
@@ -479,17 +474,7 @@ async fn concurrent_refresh_rotations_exactly_one_wins() {
     // before the other is even polled, so the loser sees a plain
     // `unauthorized` (already-rotated hash) rather than the `conflict` this
     // test exists to prove.
-    let mut holder = fx
-        .repo
-        .pool()
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .expect("hold the runner row");
-    sqlx::query("UPDATE agent_runners SET updated_at=updated_at WHERE id=?")
-        .bind(RUNNER_ID)
-        .execute(&mut *holder)
-        .await
-        .expect("no-op hold write");
+    let holder = seed::agent_runner_row_held(&fx.repo, RUNNER_ID).await;
 
     let app_a = fx.app.clone();
     let app_b = fx.app.clone();
@@ -510,7 +495,7 @@ async fn concurrent_refresh_rotations_exactly_one_wins() {
     for _ in 0..512 {
         tokio::task::yield_now().await;
     }
-    holder.commit().await.expect("release the hold");
+    holder.release().await;
 
     let results = [
         task_a.await.expect("rotation task a did not panic"),

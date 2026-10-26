@@ -20,8 +20,8 @@ use axum::http::{HeaderMap, StatusCode, header};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
 use tack_db::Repository;
+use tack_db::queries::agent_runners;
 use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 /// A runner identity resolved from an authenticated bearer credential. This
@@ -144,20 +144,16 @@ pub async fn authenticate(
         ));
     };
     let hash = credential_hash(token);
-    let row = sqlx::query(
-        "SELECT id, state, revoked_at, credential_expires_at FROM agent_runners WHERE credential_hash = ? LIMIT 1",
-    )
-    .bind(&hash)
-    .fetch_optional(repo.pool())
-    .await
-    .map_err(|_| {
-        protocol_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not verify runner credential",
-            json!({}),
-        )
-    })?;
+    let row = agent_runners::runner_by_credential_hash(repo, &hash)
+        .await
+        .map_err(|_| {
+            protocol_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not verify runner credential",
+                json!({}),
+            )
+        })?;
     let Some(row) = row else {
         return Err(protocol_error(
             StatusCode::UNAUTHORIZED,
@@ -166,9 +162,9 @@ pub async fn authenticate(
             json!({}),
         ));
     };
-    let runner_id: String = row.get("id");
-    let state: String = row.get("state");
-    let revoked_at: Option<String> = row.get("revoked_at");
+    let runner_id = row.id;
+    let state = row.state;
+    let revoked_at = row.revoked_at;
     if revoked_at.is_some() || state == "revoked" {
         return Err(protocol_error(
             StatusCode::FORBIDDEN,
@@ -185,7 +181,7 @@ pub async fn authenticate(
             json!({}),
         ));
     }
-    let expires_at: Option<String> = row.get("credential_expires_at");
+    let expires_at = row.credential_expires_at;
     if let Some(expires_at) = expires_at {
         let expires_at = DateTime::parse_from_rfc3339(&expires_at)
             .map(|value| value.with_timezone(&Utc))
