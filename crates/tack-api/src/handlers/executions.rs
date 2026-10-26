@@ -116,15 +116,6 @@ fn error(
     )
 }
 
-#[derive(Clone)]
-pub(crate) struct FixedExecutionClock(pub(crate) DateTime<Utc>);
-
-impl Clock for FixedExecutionClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
-
 fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
     headers
         .get("x-tack-principal")

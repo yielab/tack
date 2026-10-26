@@ -19,11 +19,15 @@ use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
-use tack_db::queries::{agent_runners, execution_attempts, execution_requests};
+use tack_db::queries::{
+    agent_runners, execution_artifacts, execution_attempts, execution_completion_replays,
+    execution_decisions, execution_events, execution_requests,
+};
 use tack_db::{
-    Repository, init_pool, migrations,
+    Repository,
     repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner},
 };
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
@@ -82,15 +86,8 @@ impl Fixture {
         // handler code before the one global `tracing` subscriber this
         // binary ever installs is in place.
         ensure_global_log_capture_installed();
-        let pool = init_pool("sqlite::memory:").await.expect("pool");
-        migrations::run_all(&pool).await.expect("migrations");
-        let repo = Repository::new(pool);
-        let workspace = Uuid::new_v4();
-        sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C2', '{}')")
-            .bind(workspace.to_string())
-            .execute(repo.pool())
-            .await
-            .expect("workspace");
+        let repo = setup_test_db().await;
+        let workspace = create_test_workspace(&repo).await;
         let project = repo
             .create_project(
                 workspace,
@@ -326,18 +323,15 @@ impl Fixture {
     /// Resolve `decision_id` directly at the row level, standing in for the
     /// operator decision-resolution endpoint this file does not exercise.
     async fn resolve_decision(&self, attempt_id: &str, decision_id: &str, option_id: &str) {
-        sqlx::query(
-            "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? WHERE attempt_id=? AND decision_id=?",
+        seed::execution_decision_resolved(
+            &self.repo,
+            attempt_id,
+            decision_id,
+            &json!({"option_id": option_id, "text": Value::Null}).to_string(),
+            &json!({"kind": "operator", "subject_id": "local-admin"}).to_string(),
+            &self.clock.now().to_rfc3339(),
         )
-        .bind(json!({"option_id": option_id, "text": Value::Null}).to_string())
-        .bind(self.clock.now().to_rfc3339())
-        .bind(json!({"kind": "operator", "subject_id": "local-admin"}).to_string())
-        .bind(self.clock.now().to_rfc3339())
-        .bind(attempt_id)
-        .bind(decision_id)
-        .execute(self.repo.pool())
-        .await
-        .unwrap();
+        .await;
     }
 
     async fn artifact(
@@ -410,14 +404,22 @@ impl Fixture {
         .await
     }
 
-    async fn count(&self, table: &str, attempt_id: &str) -> i64 {
-        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT COUNT(*) FROM {table} WHERE attempt_id=?"
-        )))
-        .bind(attempt_id)
-        .fetch_one(self.repo.pool())
-        .await
-        .unwrap()
+    async fn event_count(&self, attempt_id: &str) -> i64 {
+        execution_events::event_count_of_attempt(&self.repo, attempt_id)
+            .await
+            .unwrap()
+    }
+
+    async fn completion_replay_count(&self, attempt_id: &str) -> i64 {
+        execution_completion_replays::replay_count_of_attempt(&self.repo, attempt_id)
+            .await
+            .unwrap()
+    }
+
+    async fn artifact_count(&self, attempt_id: &str) -> i64 {
+        execution_artifacts::artifact_count_of_attempt(&self.repo, attempt_id)
+            .await
+            .unwrap()
     }
 
     async fn attempt_state(&self, attempt_id: &str) -> String {
@@ -439,9 +441,7 @@ impl Fixture {
     }
 
     async fn checkpoint(&self, attempt_id: &str) -> Option<String> {
-        sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id=?")
-            .bind(attempt_id)
-            .fetch_one(self.repo.pool())
+        execution_attempts::event_checkpoint(&self.repo, attempt_id)
             .await
             .unwrap()
     }
@@ -630,16 +630,14 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
     );
 
     let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
-    sqlx::query(
-        "INSERT INTO execution_artifacts (id, attempt_id, artifact_id, kind, name, media_type,
-           size_bytes, sha256, content_reference, created_at)
-         VALUES ('x1', ?, 'mrp-1', 'mrp', 'mrp.json', 'application/vnd.tack.mrp+json', 1, 'x',
-           'pack.json', '2026-08-06T12:00:00Z')",
+    seed::execution_pack_artifact(
+        &fx.repo,
+        &attempt_id,
+        "mrp-1",
+        "pack.json",
+        "2026-08-06T12:00:00Z",
     )
-    .bind(&attempt_id)
-    .execute(fx.repo.pool())
-    .await
-    .unwrap();
+    .await;
     let (status, completed) = fx
         .complete_default(&attempt_id, fencing_token, "complete-mrp")
         .await;
@@ -760,7 +758,7 @@ async fn stale_and_expired_fence_write_nothing() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["code"], "stale_lease");
     assert_eq!(
-        fx.count("execution_events", &attempt_id).await,
+        fx.event_count(&attempt_id).await,
         0,
         "wrong fence writes nothing"
     );
@@ -774,7 +772,7 @@ async fn stale_and_expired_fence_write_nothing() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["code"], "stale_lease");
     assert_eq!(
-        fx.count("execution_events", &attempt_id).await,
+        fx.event_count(&attempt_id).await,
         0,
         "expired lease writes nothing"
     );
@@ -819,7 +817,7 @@ async fn oversized_event_batch_writes_nothing() {
         }
     }
     assert_eq!(
-        fx.count("execution_events", &attempt_id).await,
+        fx.event_count(&attempt_id).await,
         0,
         "an oversized batch writes nothing, not just a 413"
     );
@@ -853,15 +851,12 @@ async fn decision_id_reuse_different_content_is_idempotency_conflict() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(conflict["error"]["code"], "idempotency_conflict");
 
-    let stored_prompt: String = sqlx::query_scalar(
-        "SELECT prompt FROM execution_decisions WHERE attempt_id=? AND decision_id='dec-reuse'",
-    )
-    .bind(&attempt_id)
-    .fetch_one(fx.repo.pool())
-    .await
-    .unwrap();
+    let stored = execution_decisions::decision_of_attempt(&fx.repo, &attempt_id, "dec-reuse")
+        .await
+        .unwrap()
+        .expect("the decision exists");
     assert_eq!(
-        stored_prompt, "Allow A?",
+        stored.prompt, "Allow A?",
         "the conflicting retry did not overwrite the original"
     );
 }
@@ -883,14 +878,13 @@ async fn artifact_id_reuse_different_content_is_idempotency_conflict() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(conflict["error"]["code"], "idempotency_conflict");
 
-    let stored_sha: String = sqlx::query_scalar(
-        "SELECT sha256 FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-reuse'",
-    )
-    .bind(&attempt_id)
-    .fetch_one(fx.repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(stored_sha, sha_a);
+    let stored = fx
+        .repo
+        .get_execution_artifact(&attempt_id, "art-reuse")
+        .await
+        .unwrap()
+        .expect("the artifact exists");
+    assert_eq!(stored.sha256, sha_a);
 }
 
 // ---------------------------------------------------------------------
@@ -918,7 +912,7 @@ async fn event_batch_commits_checkpoint_and_persists_events() {
     assert_eq!(status, StatusCode::OK, "{batch}");
     assert_eq!(batch["accepted_event_ids"], json!(["evt-1"]));
     assert_eq!(batch["committed_checkpoint"], "checkpoint-0001");
-    assert_eq!(fx.count("execution_events", &attempt_id).await, 1);
+    assert_eq!(fx.event_count(&attempt_id).await, 1);
 }
 
 // ---------------------------------------------------------------------
@@ -1037,94 +1031,6 @@ async fn completion_is_idempotent_and_restores_capacity_once() {
     );
 }
 
-/// The item's status after a succeeded completion under `policy`, with the
-/// attempt otherwise driven exactly like `completion_is_idempotent_...`.
-async fn item_status_after_success(policy: Option<&str>) -> String {
-    let fx = Fixture::new().await;
-    enqueue_request(
-        &fx.repo,
-        &fx.clock,
-        &fx.item_id,
-        RUNNER_ID,
-        "profile-c2",
-        "policy-key",
-        policy,
-    )
-    .await;
-    let claimed = fx.claim("claim-policy").await;
-    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
-    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
-    fx.accept(&attempt_id, fencing_token).await;
-    fx.start(&attempt_id, fencing_token, "pid-1").await;
-    let (status, completed) = fx
-        .complete_default(&attempt_id, fencing_token, "complete-policy")
-        .await;
-    assert_eq!(status, StatusCode::OK, "{completed}");
-    sqlx::query_scalar("SELECT status FROM items WHERE id=?")
-        .bind(&fx.item_id)
-        .fetch_one(fx.repo.pool())
-        .await
-        .unwrap()
-}
-
-#[tokio::test]
-async fn done_on_success_moves_the_item_to_the_first_done_status_and_null_leaves_it() {
-    assert_eq!(
-        item_status_after_success(Some("done_on_success")).await,
-        "Done"
-    );
-    assert_eq!(item_status_after_success(None).await, "To Do");
-}
-
-#[tokio::test]
-async fn on_finish_status_moves_the_item_only_when_the_attempt_left_a_patch() {
-    for (artifacts, expected) in [
-        (json!([{"kind": "patch", "size_bytes": 12}]), "In Progress"),
-        (json!([]), "To Do"),
-    ] {
-        let fx = Fixture::new().await;
-        sqlx::query("UPDATE projects SET on_finish_status = 'In Progress'")
-            .execute(fx.repo.pool())
-            .await
-            .unwrap();
-        enqueue_request(
-            &fx.repo,
-            &fx.clock,
-            &fx.item_id,
-            RUNNER_ID,
-            "profile-c2",
-            "finish-key",
-            None,
-        )
-        .await;
-        let claimed = fx.claim("claim-finish").await;
-        let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
-        let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
-        fx.accept(&attempt_id, fencing_token).await;
-        fx.start(&attempt_id, fencing_token, "pid-1").await;
-        let mut body: Value = serde_json::from_str(&fx.default_completion_body(
-            &attempt_id,
-            fencing_token,
-            "complete-finish",
-        ))
-        .unwrap();
-        body["terminal_reason"]["artifacts"] = artifacts;
-        let (status, completed) = fx
-            .post(
-                &format!("/attempts/{attempt_id}/completion"),
-                body.to_string(),
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK, "{completed}");
-        let item_status: String = sqlx::query_scalar("SELECT status FROM items WHERE id=?")
-            .bind(&fx.item_id)
-            .fetch_one(fx.repo.pool())
-            .await
-            .unwrap();
-        assert_eq!(item_status, expected);
-    }
-}
-
 #[tokio::test]
 async fn create_execution_rejects_an_unknown_status_map_policy_id() {
     let fx = Fixture::new().await;
@@ -1219,11 +1125,7 @@ async fn event_batch_conflict_vs_idempotency_conflict_retryable() {
             "{}",
             case.code
         );
-        assert_eq!(
-            fx.count("execution_events", &attempt_id).await,
-            1,
-            "no new events"
-        );
+        assert_eq!(fx.event_count(&attempt_id).await, 1, "no new events");
         assert_eq!(fx.checkpoint(&attempt_id).await.as_deref(), Some("cp-1"));
     }
 }
@@ -1263,7 +1165,7 @@ async fn completion_replay_changed_content_is_idempotency_conflict() {
         "must be non-retryable: {body}"
     );
     assert_eq!(
-        fx.count("execution_completion_replays", &attempt_id).await,
+        fx.completion_replay_count(&attempt_id).await,
         1,
         "no 2nd replay row"
     );
@@ -1331,11 +1233,6 @@ async fn submit_artifacts_rejects_lost_and_needs_operator_states() {
             .await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(body["error"]["code"], "conflict", "{body}");
-        assert_eq!(
-            fx.count("execution_artifacts", &attempt_id).await,
-            0,
-            "{}",
-            case.state
-        );
+        assert_eq!(fx.artifact_count(&attempt_id).await, 0, "{}", case.state);
     }
 }

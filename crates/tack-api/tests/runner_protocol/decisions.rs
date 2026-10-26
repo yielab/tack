@@ -16,14 +16,18 @@ use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
+    queries::execution_attempts,
+    queries::execution_decisions::{self, DecisionRow},
+    queries::execution_requests,
     repo::execution::{
         NewAgentProfile, NewDecision, NewExecutionRequest, NewRunner, RequestSelection,
     },
 };
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::{create_test_workspace, seed};
 use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-f1";
@@ -78,12 +82,7 @@ async fn setup() -> (Repository, FakeClock, String) {
 async fn seed_workspace(pool: sqlx::SqlitePool) -> (Repository, FakeClock, String) {
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'F1', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
+    let workspace = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace,
@@ -224,11 +223,7 @@ async fn claim_running_attempt(
         .await
         .expect("claim")
         .expect("work available");
-    sqlx::query("UPDATE execution_attempts SET state='running' WHERE id=?")
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .expect("bump to running");
+    seed::execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
     claim.lease.attempt_id
 }
 
@@ -277,37 +272,18 @@ fn two_options() -> Value {
 }
 
 async fn decision_row(repo: &Repository, attempt_id: &str, decision_id: &str) -> DecisionRow {
-    let row = sqlx::query(
-        "SELECT state, answer, resolved_at, resolved_by, updated_at FROM execution_decisions WHERE attempt_id=? AND decision_id=?",
-    )
-    .bind(attempt_id)
-    .bind(decision_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    DecisionRow {
-        state: row.get("state"),
-        answer: row.get("answer"),
-        resolved_at: row.get("resolved_at"),
-        resolved_by: row.get("resolved_by"),
-        updated_at: row.get("updated_at"),
-    }
-}
-
-struct DecisionRow {
-    state: String,
-    answer: Option<String>,
-    resolved_at: Option<String>,
-    resolved_by: Option<String>,
-    updated_at: String,
+    execution_decisions::decision_of_attempt(repo, attempt_id, decision_id)
+        .await
+        .unwrap()
+        .expect("the decision exists")
 }
 
 async fn item_status(repo: &Repository, item_id: &str) -> String {
-    sqlx::query_scalar("SELECT status FROM items WHERE id=?")
-        .bind(item_id)
-        .fetch_one(repo.pool())
+    repo.get_item(Uuid::parse_str(item_id).unwrap())
         .await
         .unwrap()
+        .expect("the item exists")
+        .status
 }
 
 /// The test suite's configured `TACK_EXECUTION_DECISION_TOKEN` — every test
@@ -1052,16 +1028,21 @@ async fn concurrent_resolves_serialize_to_exactly_one_winner() {
 }
 
 async fn attempt_and_request_state(repo: &Repository, attempt_id: &str) -> (String, String) {
-    let row = sqlx::query(
-        "SELECT a.state AS attempt_state, r.state AS request_state \
-         FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
-         WHERE a.id = ?",
+    let attempt_state = execution_attempts::attempt_state(repo, attempt_id)
+        .await
+        .unwrap()
+        .expect("the attempt exists");
+    let request_id = execution_attempts::request_id_of_attempt(repo, attempt_id)
+        .await
+        .unwrap();
+    let request_state = execution_requests::request_state(repo, &request_id)
+        .await
+        .unwrap()
+        .expect("the request exists");
+    (
+        attempt_state.as_str().to_owned(),
+        request_state.as_str().to_owned(),
     )
-    .bind(attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    (row.get("attempt_state"), row.get("request_state"))
 }
 
 #[tokio::test]
@@ -1141,11 +1122,7 @@ async fn expiry_resumes_the_attempt_like_a_resolution_does() {
 
     // The periodic sweep settles the rest the same way, one attempt at a
     // time: a still-pending decision keeps its attempt waiting.
-    sqlx::query("UPDATE agent_runners SET total_capacity = 3, available_capacity = 2 WHERE id = ?")
-        .bind(RUNNER_ID)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    seed::agent_runner_capacity(&repo, RUNNER_ID, 3, 2).await;
     let swept = claim_running_attempt(&repo, &clock, &item_id, "expire-sweep").await;
     seed_decision(
         &repo,

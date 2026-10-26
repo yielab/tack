@@ -22,8 +22,8 @@ use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
 use tack_db::{Repository, init_pool, migrations};
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
-use uuid::Uuid;
 
 pub const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
@@ -36,38 +36,34 @@ pub fn distinctive_temp_dir(label: &str) -> tempfile::TempDir {
         .expect("temporary directory")
 }
 
-pub async fn app_in_memory(storage_dir: &std::path::Path) -> (axum::Router, sqlx::SqlitePool) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    build_app(pool, storage_dir, "sqlite::memory:".to_string()).await
+pub async fn app_in_memory(storage_dir: &std::path::Path) -> (axum::Router, Repository) {
+    build_app(
+        setup_test_db().await,
+        storage_dir,
+        "sqlite::memory:".to_string(),
+    )
+    .await
 }
 
 pub async fn app_file_backed(
     db_path: &std::path::Path,
     storage_dir: &std::path::Path,
-) -> (axum::Router, sqlx::SqlitePool) {
+) -> (axum::Router, Repository) {
     let url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
     let pool = init_pool(&url).await.expect("file-backed pool");
     migrations::run_all(&pool).await.expect("migrations");
-    build_app(pool, storage_dir, url).await
+    build_app(Repository::new(pool), storage_dir, url).await
 }
 
 async fn build_app(
-    pool: sqlx::SqlitePool,
+    repo: Repository,
     storage_dir: &std::path::Path,
     database_url: String,
-) -> (axum::Router, sqlx::SqlitePool) {
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'G2Audit', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
+) -> (axum::Router, Repository) {
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
-        repo: Repository::new(pool.clone()),
+        repo: repo.clone(),
         config: AppConfig {
             database_url,
             storage_dir: storage_dir.to_string_lossy().into_owned(),
@@ -78,7 +74,7 @@ async fn build_app(
         webhook: None,
         local_runner: None,
     };
-    (crate::common::with_default_host(build_router(state)), pool)
+    (crate::common::with_default_host(build_router(state)), repo)
 }
 
 pub async fn put_content(

@@ -90,7 +90,7 @@ impl Clock for FixedClock {
 
 /// Rebuilds a `Value` so every object passes through `FromIterator`: key
 /// order can then never affect a serialized comparison.
-fn canonical_json(value: Value) -> Value {
+pub(crate) fn canonical_json(value: Value) -> Value {
     match value {
         Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
         Value::Object(values) => Value::Object(

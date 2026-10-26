@@ -319,6 +319,29 @@ impl Repository {
         Ok(CompletionResult::Committed(response))
     }
 
+    /// Stores what a runner reported when it started the agent (`report` is JSON text) on the
+    /// attempt it holds under `fencing_token`. Nothing is written for an attempt another runner
+    /// or fence holds.
+    pub async fn record_start_report(
+        &self,
+        runner_id: &str,
+        attempt_id: &str,
+        fencing_token: i64,
+        report: &str,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE execution_attempts SET start_report=? \
+             WHERE id=? AND runner_id=? AND fencing_token=?",
+        )
+        .bind(report)
+        .bind(attempt_id)
+        .bind(runner_id)
+        .bind(fencing_token)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
     /// Persist the two runner start acknowledgements with natural idempotency.
     /// Workspace facts are immutable once preparation is accepted; observing
     /// a process is the only transition that may add `process_id`. The
