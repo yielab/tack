@@ -1,8 +1,8 @@
 # Phase 79: the crates say what depends on what, and the SQL lives in one place
 
 **Executes:** [ADR 0087](../adr/0087-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
-(proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26** on branch `phase-79-impl`;
-waits on the maintainer's review and merge.
+(accepted 2026-10-26; proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26**; waits on the
+maintainer's merge into `develop`.
 
 **Done when:** `tack-runner` compiles without `sqlx` or `libsqlite3-sys` in its dependency tree;
 no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/src` names
@@ -100,8 +100,8 @@ with `wrappers` for `sqlx` and for `axum` when task E2 makes both true.
 
 ### Agents
 
-- Worktree from `develop`, never from `main`; `PATH=/home/ox/.cargo/bin:$PATH`;
-  `CARGO_TARGET_DIR` under `/home/ox/tack-agent-targets/<id>`; `--build-jobs 4 --test-threads 4`;
+- Worktree from `develop`, never from `main`; `PATH=$HOME/.cargo/bin:$PATH`;
+  `CARGO_TARGET_DIR` under `/var/tmp/tack-agent-targets/<id>`; `--build-jobs 4 --test-threads 4`;
   `renice` applied from outside.
 - Sequential tasks reuse one worktree and one `CARGO_TARGET_DIR`; only tasks that run abreast
   get their own, and at most three target directories exist at once. A fresh target directory is
