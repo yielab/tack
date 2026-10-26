@@ -1,9 +1,45 @@
 # Phase 80: a run that waits on a person, and one record for every wait
 
-**Status: proposed 2026-10-25; re-read the same day against Phase 79's task list. Nothing here is
-started.** One card is ready now: A. B is deferred until someone proposes replacing polling. E is
-cut. C, D, F and G are `BLOCKED` on docket cards, each with the trigger that releases it, and run
-as two waves split by layer, not by card, with one recapture of the fixtures per docket build.
+**Status: docket closed its Phase 51 on 2026-10-26 (next section). Cards C, D, F and G are released and G is folded into D; card A is built on `phase-80-impl` and RS1 reworks where it reads the deadline. B is deferred and E is cut. Before that: proposed 2026-10-25 with one card ready.**
+
+## What changed on 2026-10-26: docket closed its Phase 51
+
+**Read this section first; where it disagrees with the text below, it wins.** docket's `develop`
+(`/home/ox/Sites/rack-cli`, version 0.2.0-beta.6, unreleased, commits `2d42ed50`..`9954b4f8`) closed
+its Phase 51: every pause is one durable *escalation* record, `POST /escalations/<id>` is the only
+route that settles one, and the retired routes now answer `404`. `specs/api/operator-api.spec.md`
+(sections "Escalations", "Re-attaching after a restart", "Check changed") is the contract; read it,
+never edit docket. What this does to the plan:
+
+| Before | Now |
+|---|---|
+| Cards C, D, F, G "BLOCKED on docket" | **Released.** P51-2/4/5 (record, list, one answer route), P51-3 (event family), P51-8 (`autonomy`, `failureKind: needs_human`) and P51-9 (old shapes removed) are in docket's tree |
+| "Every docket name is a proposal" | The names below are docket's own now; Tack's `not_answered` stays Tack's |
+| G runs last, after docket removes the old shapes | **G folds into D**: docket already removed them, so Tack's adapter against docket `develop` is *broken today* for every question (`GET /approvals`, `POST /approvals/<token>`, `POST /tasks/<id>/answer` are 404, the trace events `approval_requested`, `question_asked`, `input_requested`, `input_answered`, `input_expired` no longer exist) |
+| Fallback for a docket without escalations | **None.** docket beta.6 is unreleased and the rule is "negotiated, not pinned, no interims": the probe asks `GET /escalations?since=0`; a `404` is the sentence "needs docket 0.2.0-beta.6 with the escalation record". `apiVersion` is still `"6"` on both shapes, so the version number cannot tell them apart |
+| Card A reads `expiresAt` from the task view's question and from `GET /approvals` | Both are gone. The wait's deadline is the pending escalation's `expiresAt` (and its `onExpiry`); `blocked` + `blockedReason: input_expired` is in docket's spec, so that name is confirmed, only `not_answered` is Tack's |
+
+**What the retired shapes map to** (docket's table, `operator-api.spec.md` "Escalations"): `GET /approvals` and the
+inbox's `needsYou` items → `GET /escalations?since=<seq>&task=<id>` (each record has `id`, `kind`,
+`prompt`, `options[]`, `recommendation`, `requestedSchema`, `expiresAt`, `onExpiry`, `policy`, `level`,
+`state`, `seq`, `affordances`) and `GET /inbox`'s `escalations` and `decided`; answers →
+`POST /escalations/<id>` with `{optionId, content?, actor?}` (`approve_once`, `approve_task`, `deny`,
+`decline`); trace events → `escalation_asked`, `escalation_delivered`, `escalation_resolved`,
+`escalation_expired`, `escalation_decided`; `POST /tasks/<pod>` takes `autonomy` (`L3|L4|L5`, narrows
+only, `422` above the pod profile's ceiling); `failureKind: "needs_human"` ends a task at L5 whose
+tool call needs approval, final until `retry`.
+
+**Tasks, sliced by file and run in this order** (one worktree per row; R and BS may run together; RS1 waits on R;
+RS2 follows RS1 in the same worktree):
+
+| Id | Does | Owns |
+|---|---|---|
+| R | Recapture. `scripts/capture-docket-fixtures.sh` stops capturing the retired routes and captures `GET /escalations`, `POST /escalations/<id>` (accepted, unknown id, already settled), the inbox with `escalations[]`/`decided`, and a task view with `escalation`; shapes it cannot produce without a model are copied from docket's own `operator-v2` fixtures (read-only) and marked `constructed` with the docket commit | the script, `fixtures/docket/v5/` and its `README.md` |
+| RS1 | Cards D + G + A's rework, runner side: one reader of escalations (cursor `since` kept beside the trace cursor), one `Question` builder, one answer route; the three question builders, the two `Pending` variants, `GET /approvals` and the task-view lookup are deleted; probe asks `GET /escalations?since=0`; the wait's deadline is the pending escalation's `expiresAt` | `harness/docket.rs`, `docket/{client,probe}.rs`, `tests/fake_docket/`, `tests/docket_v5.rs`, runs-and-teams guide step |
+| RS2 | Cards C + F, runner side: `autonomy` in the task body (only when the escalation route probed, narrowed to the team's ceiling), `needs_human` ends `failed` with code `needs_human`, a stale probe on `422`, and a timeline line for every `escalation_*` event, `escalation_decided` as kind `escalation.decided` | `harness/docket.rs` (`finish`, `hop_progress`), `docket/task.rs`, the fake, `docket_v5.rs` |
+| BS | Cards C + F, board side: the snapshot carries the level to send, the run card offers "Run again at L3" on code `needs_human` (disabled with its reason otherwise), the factory metrics count executions that docket decided alone (events of kind `escalation.decided`) beside, never inside, `escalation_rate` and `human_minutes_per_decision` | the request snapshot (`tack-protocol`), `tack-db/src/queries/` metrics, `tack-api/src/handlers/metrics.rs`, `frontend/src/features/dashboard/FactoryMetrics.tsx` and the run card, `./scripts/regen-generated.sh` |
+
+One gate on the merged tree: `.githooks/pre-push`. The live proof, `scripts/docket-prill-e2e.sh`, is the maintainer's to rerun against docket `develop` once the gate passes.
 
 **Why a phase of its own, and how it sits beside Phase 79.** Phase 79 changes structure and no
 behaviour; this phase changes what the docket adapter does and is gated by a partner's acceptance.
