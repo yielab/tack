@@ -705,3 +705,110 @@ pub async fn project_verify_loop_max_attempts(repo: &Repository, project_id: &st
         .await
         .expect("seed projects verify_loop_max_attempts");
 }
+
+// ─── the automatic merge ────────────────────────────────────────────────────
+
+/// Sets a project's autonomy level.
+pub async fn project_autonomy_level(repo: &Repository, project_id: &str, level: &str) {
+    sqlx::query("UPDATE projects SET autonomy_level = ? WHERE id = ?")
+        .bind(level)
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects autonomy_level");
+}
+
+/// Makes a project merge a finished run when its task moves to Done.
+pub async fn project_merge_on_done(repo: &Repository, project_id: &str) {
+    sqlx::query("UPDATE projects SET merge_on_done = 1 WHERE id = ?")
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects merge_on_done");
+}
+
+/// Marks an item as finished now.
+pub async fn item_completed(repo: &Repository, item_id: &str) {
+    sqlx::query("UPDATE items SET completed_at = datetime('now') WHERE id = ?")
+        .bind(item_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed items completed_at");
+}
+
+/// Names the docket team a request's resolved profile asks for.
+pub async fn execution_request_team(repo: &Repository, request_id: &str, team: &str) {
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', ?) WHERE id = ?",
+    )
+    .bind(team)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests team");
+}
+
+/// Marks a request's snapshot as started over MCP.
+pub async fn execution_request_origin(repo: &Repository, request_id: &str, origin: &str) {
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.origin', ?) WHERE id = ?",
+    )
+    .bind(origin)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests origin");
+}
+
+/// Replaces the capability snapshot a runner reported.
+pub async fn agent_runner_capabilities(repo: &Repository, runner_id: &str, snapshot: &str) {
+    sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = ?")
+        .bind(snapshot)
+        .bind(runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed agent_runners capability_snapshot");
+}
+
+/// Plants an active runner that reported `snapshot`.
+pub async fn agent_runner_reporting(repo: &Repository, runner_id: &str, snapshot: &str) {
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, capability_snapshot, protocol_version, created_at, updated_at) VALUES (?, 'ru', 'h', ?, 1, 'now', 'now')",
+    )
+    .bind(runner_id)
+    .bind(snapshot)
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_runners");
+}
+
+/// Plants an agent profile whose docket team is `team`.
+pub async fn agent_profile_for_team(repo: &Repository, profile_id: &str, name: &str, team: &str) {
+    sqlx::query(
+        "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) VALUES (?, ?, 'x', ?, '{}', 'now', 'now')",
+    )
+    .bind(profile_id)
+    .bind(name)
+    .bind(serde_json::json!({"docket": {"team": team}}).to_string())
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_profiles");
+}
+
+/// Plants a role of a project running `profile_id`.
+pub async fn role_running(
+    repo: &Repository,
+    role_id: &str,
+    project_id: &str,
+    name: &str,
+    profile_id: &str,
+) {
+    sqlx::query("INSERT INTO roles (id, project_id, name, agent_profile_id) VALUES (?, ?, ?, ?)")
+        .bind(role_id)
+        .bind(project_id)
+        .bind(name)
+        .bind(profile_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed roles");
+}

@@ -26,3 +26,12 @@ pub async fn day_room(
 ) -> Result<Option<crate::repo::budgets::DayRoom>, StoreError> {
     Ok(crate::repo::budgets::day_room(repo.pool(), project_id, now).await?)
 }
+
+/// The merges Tack made on its own for the project since 00:00 UTC.
+pub async fn auto_merges_today(
+    repo: &Repository,
+    project_id: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, StoreError> {
+    Ok(crate::repo::budgets::auto_merges_today(repo.pool(), project_id, now).await?)
+}

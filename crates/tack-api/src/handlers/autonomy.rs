@@ -249,7 +249,7 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
     let reported: Vec<_> = store::active_runner_snapshots(pool)
         .await?
         .iter()
-        .flat_map(|snapshot| crate::autonomy::harnesses_of(snapshot))
+        .flat_map(|snapshot| tack_app::autonomy::harnesses_of(snapshot))
         .flat_map(|harness| harness.teams.unwrap_or_default())
         .collect();
     let mut lines = Vec::new();
@@ -259,7 +259,7 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
             continue;
         }
         let known = reported.iter().find(|t| t.name == team);
-        let attended = known.filter(|t| crate::autonomy::is_attended(t));
+        let attended = known.filter(|t| tack_app::autonomy::is_attended(t));
         let (profile, caps_at, fix) = match (known, attended) {
             (None, _) => (
                 "unknown".to_owned(),

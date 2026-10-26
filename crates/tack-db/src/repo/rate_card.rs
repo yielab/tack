@@ -105,3 +105,10 @@ pub async fn spend_by_model(
     .fetch_all(pool)
     .await
 }
+
+impl crate::Repository {
+    /// Keep `card` as the rate card, replacing the one stored.
+    pub async fn save_rate_card(&self, card: &RateCard) -> Result<(), crate::StoreError> {
+        Ok(save(self.pool(), card).await?)
+    }
+}

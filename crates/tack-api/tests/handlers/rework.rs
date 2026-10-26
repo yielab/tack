@@ -14,9 +14,8 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::Repository;
 use tower::ServiceExt;
-use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
 const WITH_STEPS: &str =
@@ -40,15 +39,8 @@ struct Board {
 }
 
 async fn board(storage: &std::path::Path, loop_cap: i64) -> Board {
-    let pool = init_pool("sqlite::memory:").await.unwrap();
-    migrations::run_all(&pool).await.unwrap();
-    let workspace_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'L', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    let repo = Repository::new(pool);
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -103,12 +95,12 @@ async fn board(storage: &std::path::Path, loop_cap: i64) -> Board {
         )
         .await
         .unwrap();
-    sqlx::query("UPDATE projects SET verify_loop_max_attempts = ? WHERE id = ?")
-        .bind(loop_cap)
-        .bind(project.id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    tack_test_support::seed::project_verify_loop_max_attempts(
+        &repo,
+        &project.id.to_string(),
+        loop_cap,
+    )
+    .await;
     Board {
         app,
         repo,
@@ -191,14 +183,12 @@ async fn claim_next(b: &Board, first: &ClaimedAttempt) -> ClaimedAttempt {
 }
 
 async fn follow_ups(b: &Board, original: &str) -> Vec<(String, String, String)> {
-    sqlx::query_as(
-        "SELECT id, metadata, request_snapshot FROM execution_requests \
-         WHERE json_extract(metadata, '$.rework_of') = ? ORDER BY created_at, rowid",
-    )
-    .bind(original)
-    .fetch_all(b.repo.pool())
-    .await
-    .unwrap()
+    tack_db::queries::execution_requests::follow_ups_of_request(&b.repo, original)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.id, row.metadata, row.request_snapshot))
+        .collect()
 }
 
 /// The row: loop cap, the first pack, and optionally a second run (its pack,
@@ -291,11 +281,12 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
                     "{}: the first run made its follow-up",
                     row.name
                 );
-                sqlx::query("UPDATE execution_requests SET state = 'cancelled' WHERE id = ?")
-                    .bind(&made[0].0)
-                    .execute(b.repo.pool())
-                    .await
-                    .unwrap();
+                tack_test_support::seed::execution_request_state(
+                    &b.repo,
+                    &made[0].0,
+                    tack_protocol::execution::ExecutionState::Cancelled,
+                )
+                .await;
                 let snapshot: Value = serde_json::from_str(&made[0].2).unwrap();
                 let (status, created, _) = common::send_with_raw(
                     &b.app,
@@ -346,14 +337,11 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
         }
         if row.name == "loop" {
             let snapshot: Value = serde_json::from_str(&made[0].2).unwrap();
-            let original: Value = sqlx::query_scalar::<_, String>(
-                "SELECT request_snapshot FROM execution_requests WHERE id = ?",
-            )
-            .bind(&a1.request_id)
-            .fetch_one(b.repo.pool())
-            .await
-            .map(|text| serde_json::from_str(&text).unwrap())
-            .unwrap();
+            let original: Value =
+                tack_db::queries::execution_requests::request_snapshot(&b.repo, &a1.request_id)
+                    .await
+                    .map(|text| serde_json::from_str(&text.unwrap()).unwrap())
+                    .unwrap();
             assert_eq!(snapshot["item_id"], b.item_id);
             for field in [
                 "agent_profile_id",
@@ -391,13 +379,13 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
                 serde_json::from_str::<Value>(&made[0].1).unwrap()["rework_base"],
                 "tack/attempt-1"
             );
-            let queued: String =
-                sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
-                    .bind(&made[0].0)
-                    .fetch_one(b.repo.pool())
-                    .await
-                    .unwrap();
-            assert_eq!(queued, "queued");
+            let queued = tack_db::queries::execution_requests::request_state(&b.repo, &made[0].0)
+                .await
+                .unwrap();
+            assert_eq!(
+                queued,
+                Some(tack_protocol::execution::ExecutionState::Queued)
+            );
         }
     }
 }

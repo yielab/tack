@@ -2390,8 +2390,12 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
         .unwrap()
         .expect("item version");
 
-    tack_api::auto_start::tick(&state).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.host())
+        .await
+        .unwrap();
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.host())
+        .await
+        .unwrap();
 
     let started = requests_of(&repo, &item_id).await;
     assert_eq!(started.len(), 1, "{started:?}");
@@ -2428,7 +2432,9 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     seed::project_auto_start_max_open(&repo, &project_id.to_string(), 1).await;
     let next = add_item(&repo, project_id, "next").await;
     add_role(&repo, &next, "QA", Some("profile-c1")).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.host())
+        .await
+        .unwrap();
     assert!(requests_of(&repo, &next).await.is_empty());
     assert_eq!(status_of(&repo, &next).await, "To Do");
 }
@@ -2440,7 +2446,9 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {
     add_profile_with_policy(&repo, "profile-net", &json!({"network": true})).await;
     let research = add_item(&repo, project_id, "research").await;
     add_role(&repo, &research, "Research", Some("profile-net")).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.host())
+        .await
+        .unwrap();
     assert_eq!(requests_of(&repo, &research).await.len(), 1);
     assert_eq!(network_of(&repo, &research).await, Some(true));
 }

@@ -84,3 +84,16 @@ pub async fn profile_candidates(repo: &Repository) -> Result<Vec<ProfileCandidat
             .await?,
     )
 }
+
+/// The stored `tool_policy` text of a profile, `None` when it has none or the profile is gone.
+pub async fn tool_policy(
+    repo: &Repository,
+    profile_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT tool_policy FROM agent_profiles WHERE id = ?")
+            .bind(profile_id)
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}

@@ -789,17 +789,6 @@ pub(crate) async fn resolve_profile(
         .map_err(refused)
 }
 
-/// Where a run that names no selector goes: its profile's fleet, else the only online runner
-/// (the only active one when none is online).
-pub(crate) async fn default_selector(
-    repo: &Repository,
-    fleet_id: Option<String>,
-) -> Result<(String, String), (StatusCode, Json<Value>)> {
-    start_run::default_selector(repo, fleet_id)
-        .await
-        .map_err(refused)
-}
-
 /// Enqueues a request whose profile and repository are already resolved. Also
 /// the entry for server-built requests that have no HTTP body to validate.
 pub(crate) async fn enqueue_resolved(
@@ -1155,7 +1144,7 @@ pub async fn list_execution_attempts(
     let mut merges = std::collections::HashMap::new();
     for attempt in &attempts {
         let (enabled, reason) = match &state.app {
-            Some(app) => crate::merge::button(app, &attempt.id).await,
+            Some(app) => tack_app::merge::button(&app.repo, &app.host(), &attempt.id).await,
             None => (
                 false,
                 Some("Merging is not available on this board".to_owned()),
@@ -1318,11 +1307,13 @@ pub async fn merge_attempt(
             json!({"resource": "execution_attempt"}),
         ));
     };
-    match crate::merge::attempt(
-        app,
+    match tack_app::merge::attempt(
+        &app.repo,
+        state.clock.as_ref(),
+        &app.host(),
         &attempt_id,
         tack_core::autonomy::Trigger::Button,
-        crate::merge::FactsExtra::default(),
+        tack_app::merge::FactsExtra::default(),
     )
     .await
     {

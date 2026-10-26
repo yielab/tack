@@ -161,6 +161,22 @@ pub async fn run_limit_inputs(
     .await?)
 }
 
+/// The tasks of the project that have a request still occupying a run: queued, leased,
+/// preparing, running or waiting for a decision.
+pub async fn items_with_an_open_request(
+    repo: &Repository,
+    project_id: &str,
+) -> Result<Vec<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT r.item_id FROM execution_requests r JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ?
+           AND r.state IN ('queued','leased','preparing','running','waiting_decision')",
+    )
+    .bind(project_id)
+    .fetch_all(repo.pool())
+    .await?)
+}
+
 /// The request an attempt belongs to, as the follow-up of a rejected run needs it.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct RequestOfAttempt {
@@ -255,4 +271,41 @@ pub async fn rework_cap_of_item(
     .fetch_optional(repo.pool())
     .await?;
     Ok(cap.flatten())
+
+}
+
+/// A request a failed verification queued after another.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct FollowUp {
+    pub id: String,
+    pub metadata: String,
+    pub request_snapshot: String,
+}
+
+/// The requests that rework `request_id`, oldest first.
+pub async fn follow_ups_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Vec<FollowUp>, StoreError> {
+    Ok(sqlx::query_as(
+        "SELECT id, metadata, request_snapshot FROM execution_requests \
+         WHERE json_extract(metadata, '$.rework_of') = ? ORDER BY created_at, rowid",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?)
+}
+
+/// The agent profile a request ran, `None` when it names none or the request is gone.
+pub async fn agent_profile_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT agent_profile_id FROM execution_requests WHERE id = ?")
+            .bind(request_id)
+            .fetch_optional(repo.pool())
+            .await?
+            .flatten(),
+    )
 }
