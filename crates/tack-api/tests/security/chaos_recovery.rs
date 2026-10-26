@@ -12,6 +12,8 @@ use crate::common;
 use axum::http::StatusCode;
 use chaos_common::*;
 use serde_json::{Value, json};
+use tack_db::Repository;
+use tack_db::queries::execution_attempts;
 
 // =======================================================================
 // 1. Stale fence: every attempt-scoped mutation checked here rejects a
@@ -112,12 +114,9 @@ async fn assert_stale_rejected(app: &axum::Router, path: &str, body: Value, hdr:
 }
 
 async fn assert_no_heartbeat_recorded(pool: &sqlx::SqlitePool, attempt_id: &str) {
-    let last: Option<String> =
-        sqlx::query_scalar("SELECT last_heartbeat_at FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let last = execution_attempts::last_heartbeat_at(&Repository::new(pool.clone()), attempt_id)
+        .await
+        .unwrap();
     assert_eq!(last, None, "a stale-fenced heartbeat must not be recorded");
 }
 

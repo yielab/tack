@@ -625,7 +625,7 @@ fn pending_enroll_token(clock: &FakeClock) -> EnrollmentToken<'static> {
 }
 
 /// Redeems the fixed `hash:enroll-crash` enrollment token.
-async fn redeem(fixture: &Fixture) -> Result<RedeemEnrollmentResult, sqlx::Error> {
+async fn redeem(fixture: &Fixture) -> Result<RedeemEnrollmentResult, tack_db::StoreError> {
     fixture
         .repo
         .redeem_enrollment_token(

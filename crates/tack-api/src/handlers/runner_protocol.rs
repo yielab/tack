@@ -32,24 +32,25 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 use sqlx::Row;
+use tack_app::AppError;
+use tack_app::runs::enroll::{Enrolled, Enrollment};
+use tack_app::runs::heartbeat::{Beat, Heartbeat, ReportedLease};
+use tack_app::runs::observe_recovery::{Observation, RecoveryObserved};
+use tack_app::runs::refresh::{Refresh, Refreshed};
+use tack_db::StoreError;
 use tack_db::{
     Repository,
     repo::execution::{
         ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
         AttemptTransitionResult, CancellationObservation, CancellationObservationInput,
-        ClaimedExecution, Completion, CompletionResult, CredentialRotationResult, EventApplyResult,
-        EventBatch, HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision, NewEvent,
-        NewExecutionRequest, RecoveryDisposition as DbRecoveryDisposition,
-        RecoveryObservation as DbRecoveryObservation, RecoveryObservationInput,
-        RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
+        ClaimedExecution, Completion, CompletionResult, EventApplyResult, EventBatch, NewArtifact,
+        NewDecision, NewEvent, NewExecutionRequest,
     },
 };
-use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
 use tack_protocol::execution::{
     ActualExecution, AttemptId, EmbeddedCapabilitySnapshot, ExecutionState, ProtocolVersion,
-    RecoveryDisposition as TackRecoveryDisposition, RecoveryKey,
-    RecoveryObservation as TackRecoveryObservation, RecoveryObservationRequest,
-    RecoveryObservationResponse, StableErrorCode, TransitionActor, Usage, validate_transition,
+    RecoveryKey, RecoveryObservationRequest, RecoveryObservationResponse, StableErrorCode,
+    TransitionActor, Usage, validate_transition,
 };
 use uuid::Uuid;
 
@@ -311,10 +312,6 @@ const ARTIFACT_UPLOAD_WINDOW_SECONDS: i64 = 600;
 const ARTIFACT_FENCING_TOKEN_HEADER: &str = "x-tack-fencing-token";
 /// Not fixed by any fixture: a reasonable no-work poll backoff hint.
 const NO_WORK_RETRY_AFTER_MS: u64 = 5_000;
-/// Not fixed by any fixture: how long an issued/rotated runner credential
-/// remains valid before a runner must call `/refresh` with
-/// `rotate_credential: true`.
-const CREDENTIAL_LIFETIME_DAYS: i64 = 90;
 
 // ---------------------------------------------------------------------
 // Shared request parsing helpers.
@@ -437,17 +434,6 @@ fn internal_error(message: &str) -> runner_auth::ProtocolErrorResponse {
     )
 }
 
-/// Whether a `sqlx::Error` is a unique-constraint violation, as opposed to
-/// any other database-level fault — mirrors
-/// `runner_admin.rs::is_unique_violation` (that copy is private to its own
-/// module, so this is a local twin rather than a shared import) so a name
-/// collision maps to `conflict` and everything else stays `internal_error`.
-fn is_unique_violation(error: &sqlx::Error) -> bool {
-    error
-        .as_database_error()
-        .is_some_and(|db_error| db_error.is_unique_violation())
-}
-
 fn generate_raw_credential() -> String {
     format!("runner_credential_{}", Uuid::new_v4())
 }
@@ -553,58 +539,48 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
     let capability_snapshot_json = serde_json::to_string(&capabilities)
         .map_err(|_| internal_error("Could not encode capabilities"))?;
 
-    let now = state.clock.now();
     let raw_credential = generate_raw_credential();
     let credential_hash_value = runner_auth::credential_hash(&raw_credential);
-    let credential_expires_at = now + Duration::days(CREDENTIAL_LIFETIME_DAYS);
     let token_hash = runner_auth::credential_hash(&enrollment_token);
 
-    let redeemed = state
-        .repo
-        .redeem_enrollment_token(
-            &token_hash,
-            &credential_hash_value,
-            credential_expires_at,
-            &runner_version,
-            &runner_name,
-            &labels_json,
+    let enrolled = tack_app::runs::enroll::enroll(
+        &state.repo,
+        state.clock.as_ref(),
+        Enrollment {
+            token_hash: &token_hash,
+            credential_hash: &credential_hash_value,
+            runner_version: &runner_version,
+            runner_name: &runner_name,
+            labels_json: &labels_json,
             total_capacity,
             available_capacity,
-            &capability_snapshot_json,
-            1,
-            state.clock.as_ref(),
-        )
-        .await
-        .map_err(|err| {
-            // A collision on `agent_runners`'s `UNIQUE` `name` column
-            // gets the frozen `conflict` outcome
-            // (`docs/contracts/runner-v1/errors/conflict.json`), never an
-            // unhandled 500 — the same classification
-            // `runner_admin.rs::create_pending_runner` already applies to the
-            // sibling INSERT. Nothing else this statement writes carries a
-            // uniqueness constraint, so every other failure stays
-            // `internal_error`. The `redeem_enrollment_token` UPDATE no
-            // longer writes the self-reported `runner_name` into `name` (see
-            // that function's doc comment), so this branch is not reachable
-            // through today's public API; it is kept as the same
-            // defense-in-depth the sibling admin route relies on, in case a
-            // future migration adds another unique column this statement
-            // touches.
-            if is_unique_violation(&err) {
-                tracing::warn!("enrollment rejected: runner name already in use");
-                protocol_error(
-                    StatusCode::CONFLICT,
-                    StableErrorCode::Conflict,
-                    "A runner with this name is already enrolled",
-                    json!({}),
-                )
-            } else {
-                internal_error("Could not redeem enrollment token")
-            }
-        })?;
+            capability_snapshot_json: &capability_snapshot_json,
+        },
+    )
+    .await
+    .map_err(|failure| match failure {
+        // A collision on a unique column of `agent_runners` gets the frozen `conflict`
+        // outcome (`docs/contracts/runner-v1/errors/conflict.json`), never an unhandled 500.
+        // Redeeming no longer writes the self-reported `runner_name`, so this is defense in
+        // depth against a future unique column the statement touches.
+        AppError::Conflict(_) | AppError::Store(StoreError::Conflict(_)) => {
+            tracing::warn!("enrollment rejected: runner name already in use");
+            protocol_error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "A runner with this name is already enrolled",
+                json!({}),
+            )
+        }
+        _ => internal_error("Could not redeem enrollment token"),
+    })?;
 
-    match redeemed {
-        RedeemEnrollmentResult::Redeemed(runner_id) => {
+    match enrolled {
+        Enrolled::Runner {
+            runner_id,
+            credential_expires_at,
+            server_time,
+        } => {
             tracing::info!(runner_id = %runner_id, "runner enrolled");
             Ok(Json(json!({
                 "protocol_version": 1,
@@ -613,10 +589,10 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
                 "credential_expires_at": credential_expires_at.to_rfc3339(),
                 "heartbeat_interval_seconds": LIMITS.heartbeat_interval_seconds,
                 "lease_duration_seconds": LIMITS.lease_duration_seconds,
-                "server_time": now.to_rfc3339(),
+                "server_time": server_time.to_rfc3339(),
             })))
         }
-        RedeemEnrollmentResult::InvalidOrExpired => {
+        Enrolled::InvalidToken => {
             tracing::warn!("enrollment token rejected: invalid, expired, or already used");
             Err(protocol_error(
                 StatusCode::UNAUTHORIZED,
@@ -632,22 +608,13 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 // Capability refresh. Runner-bearer authenticated; hashes and (optionally)
 // rotates the runner credential.
 //
-// Credential rotation (`rotate_credential: true`) uses
-// `Repository::rotate_runner_credential` — a compare-and-set keyed on the
-// *authenticated* credential hash (`principal.credential_hash`). Without
-// that predicate, two concurrent or
-// retried rotations both authenticate against the same still-valid old
-// hash and silently last-writer-wins, leaving the loser holding/caching a
-// credential the server already discarded (recoverable only via a fresh
-// operator-issued enrollment token).
-//
-// The capability/profile fields (`runner_version`, `name`, `labels`,
-// `capability_snapshot`) have no dedicated repository method (only
-// enrollment and revocation do), so they remain a direct `Repository::pool()`
-// write — the same precedent `runner_admin.rs` uses for tables with no
-// wrapper — run *after* the credential CAS succeeds (or, on the
-// non-rotating branch, unconditionally). Ordering the CAS first means a
-// rejected rotation (`HashMismatch`) never touches the capability columns.
+// Credential rotation (`rotate_credential: true`) is a compare-and-set keyed on the
+// *authenticated* credential hash (`principal.credential_hash`). Without that predicate, two
+// concurrent or retried rotations both authenticate against the same still-valid old hash and
+// silently last-writer-wins, leaving the loser holding/caching a credential the server already
+// discarded (recoverable only via a fresh operator-issued enrollment token). The rotation and
+// the capability write live in `tack_app::runs::refresh`; a rejected rotation never touches the
+// capability columns.
 //
 // A losing rotation can fail at *either* of two points, and both
 // must answer the same retryable `conflict`, not `unauthorized`. The later
@@ -696,26 +663,6 @@ fn reclassify_refresh_auth_error(
     )
 }
 
-/// A failed capability UPDATE: a unique-constraint violation is a `conflict`
-/// naming the column the database reports, never a bare 500.
-fn refresh_update_error(error: sqlx::Error) -> runner_auth::ProtocolErrorResponse {
-    match error.as_database_error() {
-        Some(db_error) if db_error.is_unique_violation() => {
-            tracing::warn!(error = %db_error.message(), "runner refresh rejected: unique column");
-            protocol_error(
-                StatusCode::CONFLICT,
-                StableErrorCode::Conflict,
-                &format!(
-                    "Another runner already holds this value ({})",
-                    db_error.message()
-                ),
-                json!({}),
-            )
-        }
-        _ => internal_error("Could not update runner capabilities"),
-    }
-}
-
 pub async fn refresh(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
@@ -742,128 +689,66 @@ pub async fn refresh(
     let capability_snapshot_json = serde_json::to_string(&capabilities)
         .map_err(|_| internal_error("Could not encode capabilities"))?;
 
-    let now_s = now.to_rfc3339();
-    let revoked_error = || {
-        protocol_error(
+    let raw_credential = rotate_credential.then(generate_raw_credential);
+    let new_credential_hash = raw_credential.as_deref().map(runner_auth::credential_hash);
+    let refreshed = tack_app::runs::refresh::refresh(
+        &state.repo,
+        state.clock.as_ref(),
+        Refresh {
+            runner_id: &principal.runner_id,
+            presented_credential_hash: &principal.credential_hash,
+            runner_version: &runner_version,
+            labels_json: &labels_json,
+            capability_snapshot_json: &capability_snapshot_json,
+            new_credential_hash: new_credential_hash.as_deref(),
+        },
+    )
+    .await
+    .map_err(|failure| match failure {
+        // A unique-constraint violation is a `conflict` naming the column the database
+        // reports, never a bare 500.
+        AppError::Store(StoreError::Conflict(message)) => {
+            tracing::warn!(error = %message, "runner refresh rejected: unique column");
+            protocol_error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                &format!("Another runner already holds this value ({message})"),
+                json!({}),
+            )
+        }
+        _ => internal_error("Could not update runner capabilities"),
+    })?;
+
+    match refreshed {
+        Refreshed::Accepted {
+            credential_expires_at,
+            accepted_at,
+        } => {
+            tracing::info!(runner_id = %principal.runner_id, rotated = rotate_credential, "runner capability refresh accepted");
+            Ok(Json(json!({
+                "protocol_version": 1,
+                "runner_id": principal.runner_id,
+                "runner_credential": raw_credential,
+                "credential_expires_at": credential_expires_at.to_rfc3339(),
+                "accepted_at": accepted_at.to_rfc3339(),
+            })))
+        }
+        // The compare-and-set cannot tell a lost rotation race from a runner revoked between
+        // authentication and the write, so both answer the retryable `conflict`; a retry
+        // re-authenticates and surfaces `runner_revoked` itself if that was the cause.
+        Refreshed::CredentialChanged => Err(protocol_error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            "The runner credential changed before this rotation committed",
+            json!({"runner_id": principal.runner_id}),
+        )),
+        Refreshed::Revoked => Err(protocol_error(
             StatusCode::FORBIDDEN,
             StableErrorCode::RunnerRevoked,
             "The runner credential has been revoked",
             json!({"runner_id": principal.runner_id}),
-        )
-    };
-
-    let (raw_credential, credential_expires_at) = if rotate_credential {
-        let raw = generate_raw_credential();
-        let hash = runner_auth::credential_hash(&raw);
-        let expires = now + Duration::days(CREDENTIAL_LIFETIME_DAYS);
-        let rotation = state
-            .repo
-            .rotate_runner_credential(
-                &principal.runner_id,
-                &principal.credential_hash,
-                &hash,
-                expires,
-                state.clock.as_ref(),
-            )
-            .await
-            .map_err(|_| internal_error("Could not rotate runner credential"))?;
-        match rotation {
-            CredentialRotationResult::Rotated(_) => {}
-            CredentialRotationResult::HashMismatch => {
-                // `HashMismatch` covers both "another rotation already won
-                // the compare-and-set race" and "the runner is no longer
-                // active/was revoked between authentication and this write"
-                // (see `CredentialRotationResult`'s own doc comment in
-                // tack-db) — the CAS predicate cannot distinguish which.
-                // Mapped to `conflict`, not `runner_revoked`: the plain,
-                // non-rotating branch below already has a distinct, more
-                // precise `runner_revoked` error for the case it can
-                // actually prove (its own row-affected check), and
-                // collapsing a merely-lost race into "you were revoked"
-                // would repeat the exact anti-pattern the
-                // IdempotencyConflict/Conflict split eliminates elsewhere in
-                // this file. The message below is a near-literal match for
-                // docs/contracts/runner-v1/errors/conflict.json — "The
-                // resource changed before this operation committed",
-                // `retryable: true`. A caller that retries (rotating or
-                // not) re-authenticates fresh against the current
-                // credential and will itself surface `runner_revoked` if
-                // that was the real cause, so no information is lost by not
-                // disambiguating synchronously here.
-                return Err(protocol_error(
-                    StatusCode::CONFLICT,
-                    StableErrorCode::Conflict,
-                    "The runner credential changed before this rotation committed",
-                    json!({"runner_id": principal.runner_id}),
-                ));
-            }
-        }
-        let updated = sqlx::query(
-            "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \
-             WHERE id=? AND state='active' AND revoked_at IS NULL",
-        )
-        .bind(&runner_version)
-        .bind(&labels_json)
-        .bind(&capability_snapshot_json)
-        .bind(&now_s)
-        .bind(&principal.runner_id)
-        .execute(state.repo.pool())
-        .await
-        .map_err(refresh_update_error)?;
-        if updated.rows_affected() != 1 {
-            // The credential CAS above already proved the row was active
-            // and non-revoked at that instant; the only way this second,
-            // narrower write (`state='active' AND revoked_at IS NULL`) can
-            // now affect zero rows is a revoke landing in the brief window
-            // between the two statements, so `revoked_error()` remains
-            // precise here.
-            return Err(revoked_error());
-        }
-        (Some(raw), expires)
-    } else {
-        let row = sqlx::query(
-            "SELECT credential_expires_at FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
-        )
-        .bind(&principal.runner_id)
-        .fetch_optional(state.repo.pool())
-        .await
-        .map_err(|_| internal_error("Could not read runner credential expiry"))?;
-        let Some(row) = row else {
-            return Err(revoked_error());
-        };
-        let expires_raw: Option<String> = row.get("credential_expires_at");
-        let expires = match expires_raw {
-            Some(raw) => DateTime::parse_from_rfc3339(&raw)
-                .map(|value| value.with_timezone(&Utc))
-                .map_err(|_| internal_error("Stored credential expiry is corrupt"))?,
-            None => now,
-        };
-        let updated = sqlx::query(
-            "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \
-             WHERE id=? AND state='active' AND revoked_at IS NULL",
-        )
-        .bind(&runner_version)
-        .bind(&labels_json)
-        .bind(&capability_snapshot_json)
-        .bind(&now_s)
-        .bind(&principal.runner_id)
-        .execute(state.repo.pool())
-        .await
-        .map_err(refresh_update_error)?;
-        if updated.rows_affected() != 1 {
-            return Err(revoked_error());
-        }
-        (None, expires)
-    };
-
-    tracing::info!(runner_id = %principal.runner_id, rotated = rotate_credential, "runner capability refresh accepted");
-    Ok(Json(json!({
-        "protocol_version": 1,
-        "runner_id": principal.runner_id,
-        "runner_credential": raw_credential,
-        "credential_expires_at": credential_expires_at.to_rfc3339(),
-        "accepted_at": now.to_rfc3339(),
-    })))
+        )),
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -902,39 +787,17 @@ pub async fn claim(
         ));
     }
 
-    // The pure `tack_orch::scheduler` decides
-    // *which* selector-eligible queued request (if any) this runner should
-    // attempt, against live capacity/heartbeat/label/harness/model data —
-    // replacing the pre-Wave-4 naive `ORDER BY created_at LIMIT 1` match.
-    // This is a separate, read-only query pass ahead of the fenced claim
-    // transaction (`tack-db` cannot depend on `tack-orch`; see
-    // `RequestSelection`'s doc comment in `crates/tack-db/src/repo/execution.rs`
-    // for the full reasoning) — the claim transaction below still
-    // re-validates the chosen id is genuinely `queued` and eligible before
-    // leasing it, so a decision that raced against a concurrent claim simply
-    // yields "no work" this round rather than a double lease.
-    let scheduled_request_id = choose_request_for_runner(
+    // `tack_app::runs::claim` asks the pure scheduler which queued request this runner should
+    // attempt, then takes the fenced claim, which re-checks that choice before leasing it.
+    let claimed = tack_app::runs::claim::claim(
         &state.repo,
+        state.clock.as_ref(),
         &principal.runner_id,
-        now,
-        &SchedulingPolicy::default(),
+        &claim_request_id,
+        Duration::seconds(LIMITS.lease_duration_seconds),
     )
     .await
-    .map_err(|_| internal_error("Could not evaluate scheduling candidates"))?;
-
-    let attempt_id = format!("att_{}", Uuid::new_v4());
-    let claimed = state
-        .repo
-        .claim_execution_idempotent_with_snapshot(
-            &principal.runner_id,
-            &claim_request_id,
-            &attempt_id,
-            Duration::seconds(LIMITS.lease_duration_seconds),
-            state.clock.as_ref(),
-            RequestSelection::Scheduled(scheduled_request_id.as_deref()),
-        )
-        .await
-        .map_err(|_| internal_error("Could not claim work"))?;
+    .map_err(|_| internal_error("Could not claim work"))?;
 
     match claimed {
         Some(ClaimedExecution {
@@ -1000,14 +863,6 @@ pub async fn claim(
 // Heartbeat.
 // ---------------------------------------------------------------------
 
-struct PreparedLease {
-    attempt_id: String,
-    fencing_token: i64,
-    state: String,
-    journal_state: String,
-    last_event_checkpoint: Option<String>,
-}
-
 pub async fn heartbeat(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
@@ -1028,10 +883,10 @@ pub async fn heartbeat(
             LIMITS.active_attempts_per_heartbeat_max,
         ));
     }
-    let prepared: Vec<PreparedLease> = active_attempts
+    let leases: Vec<ReportedLease> = active_attempts
         .iter()
-        .map(|entry| -> runner_auth::ProtocolResult<PreparedLease> {
-            Ok(PreparedLease {
+        .map(|entry| -> runner_auth::ProtocolResult<ReportedLease> {
+            Ok(ReportedLease {
                 attempt_id: as_str(entry, "attempt_id")?.to_owned(),
                 fencing_token: as_i64(entry, "fencing_token")?,
                 state: as_str(entry, "state")?.to_owned(),
@@ -1043,52 +898,41 @@ pub async fn heartbeat(
             })
         })
         .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
-    let leases: Vec<HeartbeatLease> = prepared
-        .iter()
-        .map(|prepared| HeartbeatLease {
-            attempt_id: &prepared.attempt_id,
-            fencing_token: prepared.fencing_token,
-            state: &prepared.state,
-            journal_state: &prepared.journal_state,
-            last_event_checkpoint: prepared.last_event_checkpoint.as_deref(),
-        })
-        .collect();
 
-    let result = state
-        .repo
-        .heartbeat_batch(
-            &principal.runner_id,
-            &heartbeat_id,
+    let result = tack_app::runs::heartbeat::heartbeat(
+        &state.repo,
+        state.clock.as_ref(),
+        Beat {
+            runner_id: &principal.runner_id,
+            heartbeat_id: &heartbeat_id,
             sent_at,
             available_capacity,
-            &leases,
-            Duration::seconds(LIMITS.lease_duration_seconds),
-            state.clock.as_ref(),
-        )
-        .await
-        .map_err(|_| internal_error("Could not record heartbeat"))?;
+            leases: &leases,
+            lease_duration: Duration::seconds(LIMITS.lease_duration_seconds),
+        },
+    )
+    .await
+    .map_err(|_| internal_error("Could not record heartbeat"))?;
 
     match result {
-        HeartbeatBatchResult::Accepted(resp) | HeartbeatBatchResult::Replayed(resp) => {
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "heartbeat_id": resp.heartbeat_id,
-                "accepted_at": resp.accepted_at.to_rfc3339(),
-                "lease_results": resp.leases.iter().map(|lease| json!({
-                    "attempt_id": lease.attempt_id,
-                    "fencing_token": lease.fencing_token,
-                    "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
-                    "cancellation_requested": lease.cancellation_requested,
-                })).collect::<Vec<_>>(),
-            })))
-        }
-        HeartbeatBatchResult::Conflict => Err(protocol_error(
+        Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => Ok(Json(json!({
+            "protocol_version": 1,
+            "heartbeat_id": resp.heartbeat_id,
+            "accepted_at": resp.accepted_at.to_rfc3339(),
+            "lease_results": resp.leases.iter().map(|lease| json!({
+                "attempt_id": lease.attempt_id,
+                "fencing_token": lease.fencing_token,
+                "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
+                "cancellation_requested": lease.cancellation_requested,
+            })).collect::<Vec<_>>(),
+        }))),
+        Heartbeat::IdempotencyConflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
             "The heartbeat_id was already used with different content",
             json!({"heartbeat_id": heartbeat_id}),
         )),
-        HeartbeatBatchResult::StaleLease(id) => Err(stale_lease(&id)),
+        Heartbeat::StaleLease(id) => Err(stale_lease(&id)),
     }
 }
 
@@ -2705,32 +2549,25 @@ pub async fn observe_recovery(
     let fencing_token = request.fencing_token.0 as i64;
     let details_json = serde_json::to_string(&request.details)
         .map_err(|_| internal_error("Could not encode details"))?;
-    let observation = match request.observation {
-        TackRecoveryObservation::ProcessStopped => DbRecoveryObservation::ProcessStopped,
-        TackRecoveryObservation::ProcessRunning => DbRecoveryObservation::ProcessRunning,
-        TackRecoveryObservation::Ambiguous => DbRecoveryObservation::Ambiguous,
-    };
 
-    let result = state
-        .repo
-        .recover_attempt(
-            RecoveryObservationInput {
-                runner_id: &principal.runner_id,
-                attempt_id: request.attempt_id.as_str(),
-                fencing_token,
-                recovery_key: request.recovery_key.as_str(),
-                observation,
-                details: &details_json,
-            },
-            state.clock.as_ref(),
-        )
-        .await
-        .map_err(|_| internal_error("Could not record recovery observation"))?;
+    let observed = tack_app::runs::observe_recovery::observe_recovery(
+        &state.repo,
+        state.clock.as_ref(),
+        Observation {
+            runner_id: &principal.runner_id,
+            attempt_id: request.attempt_id.as_str(),
+            fencing_token,
+            recovery_key: request.recovery_key.as_str(),
+            observation: request.observation,
+            details_json: &details_json,
+        },
+    )
+    .await
+    .map_err(|_| internal_error("Could not record recovery observation"))?;
 
-    let (resp, replayed) = match result {
-        RecoveryObservationResult::Applied(resp) => (resp, false),
-        RecoveryObservationResult::Replayed(resp) => (resp, true),
-        RecoveryObservationResult::Conflict => {
+    let recovered = match observed {
+        RecoveryObserved::Recorded(recovered) => recovered,
+        RecoveryObserved::IdempotencyConflict => {
             return Err(protocol_error(
                 StatusCode::CONFLICT,
                 StableErrorCode::IdempotencyConflict,
@@ -2738,22 +2575,17 @@ pub async fn observe_recovery(
                 json!({"recovery_key": request.recovery_key.as_str()}),
             ));
         }
-        RecoveryObservationResult::Stale => return Err(stale_lease(&attempt_id)),
+        RecoveryObserved::Stale => return Err(stale_lease(&attempt_id)),
     };
-    let disposition = match resp.disposition {
-        DbRecoveryDisposition::SafePreSpawnRequeue => TackRecoveryDisposition::SafePreSpawnRequeue,
-        DbRecoveryDisposition::NeedsOperator => TackRecoveryDisposition::NeedsOperator,
-        DbRecoveryDisposition::AlreadyTerminal => TackRecoveryDisposition::AlreadyTerminal,
-    };
-    let committed_at = DateTime::parse_from_rfc3339(&resp.committed_at)
+    let committed_at = DateTime::parse_from_rfc3339(&recovered.committed_at)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|_| internal_error("Stored committed_at is corrupt"))?;
     let response = RecoveryObservationResponse {
         protocol_version: ProtocolVersion::v1(),
-        attempt_id: AttemptId::new(resp.attempt_id),
-        recovery_key: RecoveryKey::new(resp.recovery_key),
-        disposition,
-        replayed,
+        attempt_id: AttemptId::new(recovered.attempt_id),
+        recovery_key: RecoveryKey::new(recovered.recovery_key),
+        disposition: recovered.disposition,
+        replayed: recovered.replayed,
         committed_at,
         additional: Default::default(),
     };
