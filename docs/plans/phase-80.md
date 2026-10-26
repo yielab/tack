@@ -1,6 +1,6 @@
 # Phase 80: a run that waits on a person, and one record for every wait
 
-**Status: docket closed its Phase 51 on 2026-10-26 (next section). Cards C, D, F and G are released and G is folded into D; card A is built on `phase-80-impl` and RS1 reworks where it reads the deadline. B is deferred and E is cut. Before that: proposed 2026-10-25 with one card ready.**
+**Status: built 2026-10-26 on branch `phase-80-impl`, on top of Phase 79; not merged. docket closed its Phase 51 that day (next section), so cards A, C, D, F and G were all built, G folded into D, through the tasks R, RS1, RS2 and BS. B is deferred and E is cut. Proposed 2026-10-25 with one card ready.**
 
 ## What changed on 2026-10-26: docket closed its Phase 51
 
@@ -382,3 +382,26 @@ with the old routes gone.
   `constructed` fixture.
 - Names above were read on 2026-10-25 in the tree of `phase-79-architecture` (`develop` plus Phase 79's
   documents, no Phase 79 code). Phase 79 may move modules; run `rg -n` before trusting a path.
+
+---
+
+## What the execution found (2026-10-26)
+
+- Tasks ran as R (recapture), RS1 (reader, answer route, deletions), BS (board side, in parallel with R) and RS2
+  (autonomy, `needs_human`, timeline). Full suite 1517 passed, `.githooks/pre-push` passed on the merged tree with
+  Phase 79 and its cleanup.
+- docket's `apiVersion` is still `"6"` on both shapes, so Tack asks `GET /escalations?since=0` and fails with a
+  sentence when it answers 404; there is no fallback and no version number to compare.
+- The saved `since` is the highest `seq` below the first pending record, not `next`: a runner restarted while a
+  question is open must read it again, or with no `expiresAt` it would wait for ever.
+- The fixtures now hold real captures of a pending escalation, its answers (200, 404, 409, 422, 400), a
+  `needs_human` task and a `decided` escalation, taken with no model. A consult or input answer cannot be made without
+  a model, so those are `constructed` from docket's own `operator-v2` fixtures and say so.
+- A cancelled held task leaves its escalation `resolved` with `resolution: null`.
+- docket's `escalation_decided` event carries no label and no rationale, so the timeline reads
+  "decided alone: option deny (policy deny, level L5)".
+- A docket 422 above the autonomy ceiling fails the attempt with docket's text; there is no probe cache to mark stale.
+- Decisions left to the maintainer: (1) a project at the default L3 now sends `autonomy: L3`, so a lights-out team
+  runs attended; (2) a lights-out team with unmet requirements counts as attended (L3 at most); (3) a question with
+  no `expiresAt` holds its run until answered, resolved by docket or stopped; (4) rerun `scripts/docket-prill-e2e.sh`
+  against docket's `develop`.

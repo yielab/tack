@@ -63,10 +63,10 @@ plan or the page named beside it.
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
   ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
   end-to-end scenario with two teams and a rework is still to write.
-- docket's draft of one record for every wait for a person (not accepted yet): four of
-  [Phase 80](#phase-80--a-run-that-waits-on-a-person-and-one-record-for-every-wait)'s five cards
-  wait on it, each on a named docket card; the fifth, a run that waits on a person is not
-  cancelled, is ready now.
+- Phase 80, built 2026-10-26 on branch `phase-80-impl` (not merged): a docket run waits on a person
+  without burning its time, and Tack follows docket's one escalation record. What is open: the live
+  proof (`scripts/docket-prill-e2e.sh`) against docket's `develop`, and the three decisions the plan
+  lists.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -167,23 +167,25 @@ last run).
 
 ## Phase 80 — a run that waits on a person, and one record for every wait
 
-**Status:** proposed 2026-10-25; nothing is started. **Plan:**
+**Status:** built 2026-10-26 on branch `phase-80-impl`, on top of Phase 79; not merged. **Plan:**
 [`docs/plans/phase-80.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-80.md).
 
-A docket run parked on a question is cancelled when the attempt's own time passes, and the run reads
-as a timeout. docket's maintainers have drafted a phase that turns every wait for a person (a tool
-approval, a consultation, an input step) into one record, an escalation; the draft is not accepted,
-so every name in it is a proposal. A phase of its own because it changes what the docket adapter
-does and is gated by a partner, while Phase 79 changes structure only; the two share no files
-beyond a path rename, so its first card runs beside Phase 79, not after it.
+A docket run parked on a question was cancelled when the attempt's own time passed, and the run read
+as a timeout. docket then closed its own phase (2026-10-26, version 0.2.0-beta.6, unreleased): every
+wait for a person is one escalation record, one route answers it, and the old routes answer 404.
+That made the adapter fail for every question, so the whole phase was built against the real docket:
 
-One card is ready now: the clock of a task that waits on a person stops. Four wait on a named
-docket card and run as two slices per docket build, runner side and board side, after one
-recapture of the fixtures: the autonomy level sent on each task, one reader and one answer route
-for escalations, what docket decided alone shown on the timeline and in the metrics, and the
-removal of the old shapes once docket removes them. The polling measurement is deferred until
-someone proposes a replacement, since nothing can replace it today (Tack has no inbound
-endpoint); the A2A client was cut, since the one answer route removes its trigger.
+- the clock of a task that waits on a person stops; it ends only at the question's own expiry
+  (`not_answered`) or when docket expires it;
+- one reader of escalations and one answer route; the three question shapes, the two answer paths and
+  the inbox reads are gone, and the probe asks for the escalation record instead of a version number;
+- the autonomy level goes on each task, never above the team's ceiling; a task docket ends as
+  `needs_human` has its own outcome, and the run card offers "Run again at L3";
+- every escalation event is a line on the timeline, and the factory metrics count what docket decided
+  alone beside, never inside, what a person answered.
+
+The polling measurement stays deferred (nothing can replace polling while Tack has no inbound
+endpoint) and the A2A client was cut (the one answer route removes its trigger).
 
 ---
 
