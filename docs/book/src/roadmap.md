@@ -160,8 +160,8 @@ directory.
 
 What is open: the review and merge of the branch, and the points the maintainer decides, listed
 in §8 of the plan (the `Host` trait that stays until the last callers move, four shared test
-fixtures that keep a dead-code allowance, the `cargo deny` advisories that arrived since the
-last run, and the draft Reddit post that still says six crates).
+fixtures that keep a dead-code allowance, and the `cargo deny` advisories that arrived since the
+last run).
 
 ---
 
