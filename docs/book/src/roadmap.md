@@ -133,8 +133,9 @@ time each group of steps took (a step has no time).
 
 ## Phase 79 — the crates say what depends on what
 
-**Status:** proposed 2026-10-20, from an architecture audit of `develop` the same day; revised
-2026-10-25 after an audit of the plan itself. Waits on the maintainer's "continúa". **ADR:** 0087.
+**Status:** built 2026-10-26 on branch `phase-79-impl` (proposed 2026-10-20 from an architecture
+audit of `develop`, revised 2026-10-25 after an audit of the plan itself); the full suite and the
+pre-push gate pass; awaiting the maintainer's review and merge. **ADR:** 0087.
 **Plan:** [`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
 
 The runner, the process that holds credentials, compiles SQLite because the types it shares with
@@ -157,11 +158,10 @@ merged the SQL pass and the use-case pass into one visit per file, so the four b
 files are read once, not twice, and made sequential tasks share one worktree and build
 directory.
 
-What is open, in order: the graph check and `tack-protocol` (three tasks); two conventions
-tasks and the split of the execution store; a fan-out of thirteen file-sized tasks, three
-abreast, that take each file out of `sqlx` and out of the handlers in one visit; the close that
-bans `sqlx` and `axum` outside their crates; shape; the documents. The task list with each
-task's scope, input and done-when command is §5 of the plan.
+What is open: the review and merge of the branch, and the points the maintainer decides, listed
+in §8 of the plan (the `Host` trait that stays until the last callers move, four shared test
+fixtures that keep a dead-code allowance, the `cargo deny` advisories that arrived since the
+last run, and the draft Reddit post that still says six crates).
 
 ---
 

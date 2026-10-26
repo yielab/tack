@@ -1,7 +1,8 @@
 # Phase 79: the crates say what depends on what, and the SQL lives in one place
 
 **Executes:** [ADR 0087](../adr/0087-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
-(proposed 2026-10-20, revised 2026-10-25). Waits on the maintainer's "continúa".
+(proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26** on branch `phase-79-impl`;
+waits on the maintainer's review and merge.
 
 **Done when:** `tack-runner` compiles without `sqlx` or `libsqlite3-sys` in its dependency tree;
 no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/src` names
@@ -10,7 +11,8 @@ no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/
 `.githooks/pre-push`; the full suite passes once, on the merged tree, with no test duplicated
 across old and new locations.
 
-**Status (2026-10-25):** proposed, revised after an audit of the 2026-10-20 draft. Nothing built.
+**Status (2026-10-26):** built, every task of §5 committed on `phase-79-impl`; the full suite
+(1 505 tests) and `.githooks/pre-push` pass on the merged tree. What the execution found is in §8.
 What the audit changed is in §7; the two companion guides in Spanish
 ([`phase-79-guia.md`](phase-79-guia.md), [`phase-79-desde-cero.md`](phase-79-desde-cero.md))
 still describe the first draft's ports and fakes and are teaching material, not instructions.
@@ -657,3 +659,61 @@ costs a full build of the workspace before its first edit.
   `merge`, which use it.
 - **Evidence corrected**: ~8 mirrors, not 18; some of the 20 state literals are
   `RecoveryDisposition`; `ExecutionState` has no `as_str`/`FromStr` yet.
+
+## 8. What the execution found (2026-10-26)
+
+The tasks ran as written except where a measurement or the compiler disagreed. Each item is a
+fact a reviewer should know, not a defect.
+
+- **`Host`, one trait, not zero.** Moving `auto_start`, `merge`, `autonomy` and `github_sync`
+  into `tack-app` needed ten calls back into code that still lives in `tack-api` (the GitHub
+  token and API, prill's attestation, the artifact store, the websocket broadcast, the secret
+  store). They sit behind `tack_app::host::Host`, implemented once in `tack-api/src/host.rs`.
+  It is not a store trait: the store is still the concrete `Repository`. D7 and D8 each made a
+  trait of their own; the merge folded them into this one. `ci_state` and `merge_pull_request`
+  only forward to `tack_app::github_sync` and can go once `tack-app` is given the API base URL
+  another way. `due_soon` has its own one-method sink for the webhook, which is an outgoing
+  event, not a call back.
+- **177 `Repository` signatures changed to `StoreError`.** Deleting `ApiError::Database` made the
+  compiler list every public method that still returned `sqlx::Error`; the plan counted only the
+  handler sites. The change is mechanical and the suite did not move.
+- **`Repository::pool()` is behind a cargo feature, `raw-pool`,** enabled only by
+  `tack-test-support`, because `pub(crate)` cannot serve a second crate. Cargo unifies features,
+  so the gate is `check-crate-graph.sh` (fails on `.pool()` or `sqlx` outside `tack-db` and
+  `tack-test-support`) and the `deny.toml` bans, not the visibility.
+- **`axum` is allowed through `tack-api` and `tack-runner`** (the latter as a dev-dependency, for
+  the fake docket), not `tack-cli`, which has no axum dependency.
+- **Two edges the §3 table did not have were removed:** `tack-cli -> tack-orch` was unused, and
+  `tack-api -> tack-orch` served one rule, now `tack_app::scheduler_wiring::runner_is_online`.
+- **Task 4.3 had nothing to move.** The three `shared/` files only named `features/` in
+  comments; the two new architecture-test cases are the whole change.
+- **Three `*Schema` mirrors were not 8 but 5 plus 3:** five in `handlers/executions.rs` went in
+  1.1; of the three in `openapi.rs`, two went with D6 and `DecisionAnswerSchema` stays, because
+  the handler echoes the operator's JSON as sent (extra keys, `"text": null` versus absent).
+  The generated spec lost the nullability of `Measurement<f64>.value`: utoipa 5 ignores field
+  attributes on a generic parameter. The wire is unchanged and the frontend has its own type.
+- **D11's three files sum to 661 lines, not under 400.** What is left needs `tack-runner` types
+  and the API's `utoipa` attributes; moving it needs a `tack-app -> tack-runner` edge that would
+  make `tack-api` link the runner. The 400 was an unmeasured estimate.
+- **Four test-fixture modules keep `#![allow(dead_code)]`:** `tack-api/tests/common`,
+  `tack-app/tests/common`, `tack-app/tests/support` and `h3_checkout`'s `mod fake_docket`. Each is
+  compiled into several test binaries that use different subsets. Zero would need one module per
+  binary.
+- **The two retention and health loops lost their stop signal.** `ExecutionRuntime::stop` used to
+  join them; they now follow the `run` shape and die with the process. A purge batch is one
+  transaction, so a drop rolls it back.
+- **Small behaviour differences, all on failure paths:** a few 500 messages now name the use case
+  rather than the internal step; corrupt stored state text is a decode error (500) where some
+  paths answered 409 or fell through to `Conflict`; the websocket `ItemUpdated` for a status
+  move is sent after the rework enqueue instead of before; creating a profile and placing it in
+  a fleet are one transaction instead of two statements.
+- **`cargo deny check advisories` fails on advisories published since the last run** (an
+  unsound `AsyncFd::new`, certificate-trust issues); `bans`, `licenses` and `sources` pass. Not
+  caused by this phase and not touched.
+- **Conflicts were the cost of the fan-out, not of the design.** Every parallel branch appended
+  to the same registries (`queries/mod.rs`, `seed.rs`, `runs/mod.rs`, `serve.rs`), and three
+  branches created the same helper twice. Three merge runs resolved them by hand. A rule for a
+  next time: one task per registry owner, or append helpers only after a `grep` (the later
+  prompts said so and the conflicts shrank).
+- **The `git stash` is shared by every worktree**; an agent's merge ran a post-merge hook that
+  built while another agent's stash sat on top. Agents do not use it.
