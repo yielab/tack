@@ -413,7 +413,7 @@ impl LocalRunnerControl for RunningRunner {
 async fn a_test_run_is_filed_under_one_hidden_project_and_pinned_to_the_runner() {
     let repo = setup_test_db().await;
     let workspace_id = create_test_workspace(&repo).await;
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .unwrap();
     seed::agent_runner(&repo, "runner-test", "2026-01-01T00:00:00Z").await;

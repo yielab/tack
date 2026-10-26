@@ -29,10 +29,10 @@ pub async fn run(
 
     let pool = init_pool(&config.database_url).await?;
     migrations::run_all(&pool).await?;
-    repo::templates::seed_builtin_templates(&Repository::new(pool.clone())).await?;
-    repo::execution::seed_builtin_profiles(&pool).await?;
-
     let repo = Repository::new(pool);
+    repo::templates::seed_builtin_templates(&repo).await?;
+    repo::execution::seed_builtin_profiles(&repo).await?;
+
     let workspace_id = repo.ensure_default_workspace().await?;
 
     // A board from before a decision ended with its run left questions nobody can answer.

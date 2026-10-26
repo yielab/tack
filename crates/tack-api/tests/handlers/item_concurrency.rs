@@ -14,7 +14,6 @@ use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::router::{AppState, build_router};
-use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -22,17 +21,8 @@ use uuid::Uuid;
 // ─── Helpers (mirrors security/board_drag_wip_race.rs) ─────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'CI Workspace', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
 
     let (tx, _rx) = broadcast::channel(16);
     let config = AppConfig {
@@ -40,7 +30,7 @@ async fn app_with_state() -> (Router, AppState) {
         ..AppConfig::default()
     };
     let state = AppState {
-        repo: Repository::new(pool),
+        repo,
         config,
         workspace_id,
         broadcast_tx: tx,
@@ -539,12 +529,12 @@ async fn before_update_failure_cannot_partially_apply_patch() {
     // but before SQLite applies the one generated UPDATE. It is a deterministic
     // failure injection: the old field-by-field implementation would already
     // have committed earlier fields at this point.
-    sqlx::query(
+    tack_test_support::seed::statement(
+        &state.repo,
         "CREATE TRIGGER fail_atomic_item_patch BEFORE UPDATE ON items WHEN NEW.title = 'Blocked' BEGIN SELECT RAISE(ABORT, 'injected before-update failure'); END",
+        &[],
     )
-    .execute(state.repo.pool())
-    .await
-    .unwrap();
+    .await;
     let failed = req(
         &app,
         Method::PATCH,

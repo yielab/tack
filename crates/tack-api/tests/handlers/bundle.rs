@@ -11,23 +11,17 @@ use tack_api::handlers::websocket::BoardEvent;
 use tack_api::{AppState, config::AppConfig, router::build_router};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
-use uuid::Uuid;
 
 /// An app whose board has its built-in profiles and templates, as a started server does.
 pub(crate) async fn app() -> Router {
     let repo = tack_test_support::setup_test_db().await;
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .expect("built-in profiles");
     tack_db::repo::templates::seed_builtin_templates(&repo)
         .await
         .expect("built-in templates");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'CI', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("insert workspace");
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let config = AppConfig {
         database_url: "sqlite::memory:".to_string(),
