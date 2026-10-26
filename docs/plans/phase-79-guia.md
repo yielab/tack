@@ -1,5 +1,8 @@
 # Guía de la Fase 79, para quien está aprendiendo
 
+> **Nota (2026-10-26):** el árbol construido difiere del primer borrador que esta guía describe.
+> Lo que se encontró al ejecutar el plan está en [`phase-79.md`](phase-79.md), §8.
+
 > **Nota (2026-10-25):** el plan fue revisado tras una auditoría. Ya no lleva puertos sobre el
 > almacén, fakes en memoria ni suite de contrato: los casos de uso reciben `&Repository` y
 > `&dyn Clock`, y cada test sigue corriendo sobre SQLite en memoria. Las secciones de esta guía

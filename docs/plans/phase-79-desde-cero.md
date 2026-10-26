@@ -1,5 +1,8 @@
 # Construir Tack desde cero
 
+> **Nota (2026-10-26):** el árbol construido difiere del primer borrador que esta guía describe.
+> Lo que se encontró al ejecutar el plan está en [`phase-79.md`](phase-79.md), §8.
+
 > **Nota (2026-10-25):** el plan de la Fase 79 fue revisado tras una auditoría y ya no lleva
 > puertos sobre el almacén, fakes en memoria ni suite de contrato; los casos de uso reciben
 > `&Repository` y `&dyn Clock`, y los tests corren sobre SQLite en memoria. Donde esta guía

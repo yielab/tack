@@ -170,7 +170,7 @@ cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated
 
 Three more contracts under `docs/contracts/` are held the same way, each by tests that read
 its committed example: `brief-v1` (`crates/tack-core/src/brief/tests.rs`), `mrp-v1`
-(`crates/tack-core/tests/mrp_contract.rs`, with its four fixtures) and `evidence-v1`
+(`crates/tack-protocol/tests/mrp_contract.rs`, with its four fixtures) and `evidence-v1`
 (`crates/tack-runner/tests/evidence_contract.rs`, which also pins the example's bytes). Change
 the example first, then the type.
 
