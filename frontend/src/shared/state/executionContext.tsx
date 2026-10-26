@@ -9,9 +9,9 @@ import { createExecutionStore, createExecutionRealtime, type ExecutionStore } fr
 // kind of "one fetch, shared via context" problem.
 //
 // Deliberately placed under `shared/state/`, not `shared/execution/**`
-// (that module's own boundary) and not `frontend/src/features/execution/**`
-// (`architecture.test.ts` forbids one `features/*` importing another
-// `features/*` — Board/item-detail/Sprint all need this, so it has to live
+// (that module's own boundary) and not under the execution feature
+// (`architecture.test.ts` forbids one feature importing another
+// feature — Board/item-detail/Sprint all need this, so it has to live
 // in `shared/*` regardless of which feature "owns" the execution domain
 // conceptually; see `shared/runWithAgent/`'s own header comment for the
 // fuller reasoning).
