@@ -16,8 +16,8 @@ pub mod server;
 pub mod webhook;
 
 // Re-export commonly used items
-pub use handlers::local_runner::{
-    LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
-};
 pub use router::AppState;
 pub use server::serve;
+pub use tack_app::local_runner::{
+    LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
+};

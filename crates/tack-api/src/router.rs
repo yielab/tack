@@ -17,7 +17,6 @@ use tack_db::Repository;
 
 use crate::config::AppConfig;
 use crate::debug;
-use crate::handlers::local_runner::LocalRunnerControl;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
@@ -31,6 +30,7 @@ use crate::middleware::{
     set_session_cookie,
 };
 use crate::webhook::WebhookClient;
+use tack_app::local_runner::LocalRunnerControl;
 
 /// Shared application state passed to all handlers.
 #[derive(Clone)]

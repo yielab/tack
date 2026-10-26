@@ -308,3 +308,29 @@ pub async fn agent_profile_of_request(
             .flatten(),
     )
 }
+
+/// What a request was queued with, as its columns hold it.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct RequestInputsRow {
+    pub selector_id: String,
+    pub repository_snapshot: String,
+    pub requested_model: Option<String>,
+    pub permission_policy: String,
+    pub agent_profile_id: String,
+    pub timeout_seconds: i64,
+}
+
+/// The selector, repository, model, permissions, profile and timeout of one request, or `None`
+/// when no request has this id.
+pub async fn request_inputs(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<RequestInputsRow>, StoreError> {
+    Ok(sqlx::query_as(
+        "SELECT selector_id, repository_snapshot, requested_model, permission_policy,
+                agent_profile_id, timeout_seconds FROM execution_requests WHERE id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}

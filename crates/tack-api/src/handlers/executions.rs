@@ -32,8 +32,8 @@ use tack_app::AppError;
 use tack_app::runs::cancel_run::{Cancellation, cancel_run};
 use tack_app::runs::requeue::requeue;
 use tack_app::runs::start_run::{
-    self, LimitSource, Refusal, RunRequest, Started, compose_instructions, enqueue_run,
-    profile_source_label, start_run, unset_tokens,
+    self, LimitSource, Refusal, RunRequest, Started, compose_instructions, profile_source_label,
+    start_run, unset_tokens,
 };
 
 /// Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape
@@ -721,7 +721,7 @@ async fn run_limits_of(
 }
 
 /// A refusal of the run use cases, as the operator API's error envelope.
-fn refused(refusal: Refusal) -> (StatusCode, Json<Value>) {
+pub(crate) fn refused(refusal: Refusal) -> (StatusCode, Json<Value>) {
     error(
         StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         refusal.code,
@@ -787,28 +787,6 @@ pub(crate) async fn resolve_profile(
     start_run::resolve_profile(repo, item, project, explicit)
         .await
         .map_err(refused)
-}
-
-/// Enqueues a request whose profile and repository are already resolved. Also
-/// the entry for server-built requests that have no HTTP body to validate.
-pub(crate) async fn enqueue_resolved(
-    state: OperatorExecutionState,
-    headers: HeaderMap,
-    input: CreateExecution,
-    profile: Value,
-    repository_snapshot: Value,
-) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    enqueue_run(
-        &state.repo,
-        state.clock.as_ref(),
-        &principal(&headers)?,
-        input.into(),
-        profile,
-        repository_snapshot,
-    )
-    .await
-    .map(created)
-    .map_err(refused)
 }
 
 #[utoipa::path(

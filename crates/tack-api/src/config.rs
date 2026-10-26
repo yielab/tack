@@ -116,7 +116,7 @@ pub struct AppConfig {
     /// The env/CLI-flag default for whether the in-process embedded runner
     /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
     /// toggle (`PUT /api/local-runner`) overrides it in `app_meta` from
-    /// then on — see `handlers::local_runner::effective_local_runner_enabled`.
+    /// then on — see `tack_app::local_runner::effective_enabled`.
     #[serde(default)]
     pub local_runner_enable: bool,
 

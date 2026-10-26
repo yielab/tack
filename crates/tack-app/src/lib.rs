@@ -32,6 +32,7 @@ pub mod due_soon;
 mod error;
 pub mod github_sync;
 pub mod host;
+pub mod local_runner;
 pub mod merge;
 pub mod remote_backup;
 pub mod runs;

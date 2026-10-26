@@ -8,7 +8,6 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 
 use crate::config::AppConfig;
-use crate::handlers::local_runner::effective_local_runner_enabled;
 use crate::router::{AppState, build_router};
 
 /// Everything that happens before the database opens: the tracing subscriber, the
@@ -120,7 +119,11 @@ pub async fn serve(
     // posture of `--with-runner` itself.
     if let Some(control) = &local_runner
         && state_for_local_runner.config.binds_loopback()
-        && effective_local_runner_enabled(&state_for_local_runner).await
+        && tack_app::local_runner::effective_enabled(
+            &state_for_local_runner.repo,
+            state_for_local_runner.config.local_runner_enable,
+        )
+        .await
     {
         control.start().await?;
     }
