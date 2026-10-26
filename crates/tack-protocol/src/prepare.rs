@@ -60,15 +60,6 @@ impl PrepareSetting {
         }
     }
 
-    /// The value to store; the inverse of [`from_stored`](Self::from_stored).
-    pub fn to_stored(&self) -> Option<String> {
-        match self {
-            Self::Detect => None,
-            Self::Off => Some(String::new()),
-            Self::Replace { command } => Some(command.clone()),
-        }
-    }
-
     /// What runs for a repository whose root holds `root_files`, or why nothing does.
     pub fn resolve<S: AsRef<str>>(&self, root_files: &[S]) -> Resolution {
         match self {

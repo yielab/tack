@@ -18,12 +18,12 @@ pub use capabilities::{
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{
-    ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, ArtifactId, AttemptId,
-    AttemptSnapshot, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId, DecisionId,
-    EnvironmentValue, EventId, ExecutionError, ExecutionRequestId, ExecutionRequestSnapshot,
-    ExecutionState, FencingToken, HarnessKind, IdempotencyKey, ItemId, Measurement,
-    MeasurementSource, PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion,
-    RecoveryDetails, RecoveryDisposition, RecoveryJournalState, RecoveryKey, RecoveryObservation,
-    RecoveryObservationRequest, RecoveryObservationResponse, RepositorySnapshot, RunnerId,
-    RunnerSelector, StableErrorCode, UnknownVariant, Usage, WorkspaceId,
+    ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,
+    CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId, EnvironmentValue,
+    ExecutionError, ExecutionRequestId, ExecutionRequestSnapshot, ExecutionState, FencingToken,
+    HarnessKind, IdempotencyKey, ItemId, Measurement, MeasurementSource, PermissionPolicy,
+    ProtocolError, ProtocolErrorEnvelope, ProtocolVersion, RecoveryDetails, RecoveryDisposition,
+    RecoveryJournalState, RecoveryKey, RecoveryObservation, RecoveryObservationRequest,
+    RecoveryObservationResponse, RepositorySnapshot, RunnerId, RunnerSelector, StableErrorCode,
+    UnknownVariant, Usage, WorkspaceId,
 };

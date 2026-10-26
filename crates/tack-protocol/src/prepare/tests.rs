@@ -64,14 +64,6 @@ fn the_stored_value_reads_as_detect_off_or_replace() {
 }
 
 #[test]
-fn a_setting_stores_what_it_was_read_from() {
-    for stored in [None, Some(""), Some("make deps")] {
-        let setting = PrepareSetting::from_stored(stored);
-        assert_eq!(setting.to_stored().as_deref(), stored);
-    }
-}
-
-#[test]
 fn detect_runs_what_the_lockfile_implies() {
     assert_eq!(
         PrepareSetting::Detect.resolve(&["pnpm-lock.yaml"]),
