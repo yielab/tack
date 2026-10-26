@@ -15,18 +15,26 @@ and the tour should be corrected to match.
 **Project structure:**
 ```
 crates/
-├── tack-core/     Pure business logic (no I/O)
-├── tack-db/       SQLite persistence layer
-├── tack-orch/     The neutral runner-v1 execution domain (execution/), the
-│                  deterministic scheduler and model-policy resolver, and the
-│                  execution domain's own retention/observability/provenance
-│                  background modules
-├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve)
+├── tack-protocol/ The runner-v1 contract the server and the runner share: execution types,
+│                  lifecycle, capabilities, usage provenance, the merge-readiness pack
+│                  (mrp), the prepare step, one Clock. No I/O
+├── tack-core/     Pure business logic (no I/O): planning and runs policy
+├── tack-orch/     The pure runs domain that is not protocol: the runner scheduler and
+│                  the model-policy resolver, over plain values
+├── tack-db/       SQLite persistence: the only crate that names sqlx. repo/ (commands),
+│                  queries/ (read models), StoreError, migrations
+├── tack-app/      The application layer: the runs use cases (runs/), every background
+│                  tick, the scheduler's and model policy's live wiring, the embedded
+│                  runner's module, AppError
+├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve) — the only crate
+│                  that names axum
 ├── tack-runner/   Pull-based execution runner — its own binary; owns local
 │                  credentials, workspace, journal, the harness subprocess and the
 │                  connection to the docket daemon
-├── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
-└── tack-test-support/  Test helpers shared by the other crates' tests
+├── tack-cli/      The single `tack` binary — runs the server (tack serve, the
+│                  composition root) and the CLI client
+└── tack-test-support/  Test helpers shared by the other crates' tests: setup_test_db(),
+                   seed, ControllableClock, fixtures
 
 crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; excluded
                        from this workspace (own Cargo.toml/lockfile) so Tauri's GTK/WebKit
@@ -52,49 +60,63 @@ docs/                Documentation
 
 ## Crate Boundaries & Responsibilities
 
-**tack-core** (pure, zero I/O):
+The edges between crates are the table `scripts/check-crate-graph.sh --print` prints, and the check
+fails on any normal dependency it does not list. `scripts/arch-facts.sh` prints that table with the
+current crate, route, migration and test counts; quote those counts from it, never from this page.
+
+**tack-protocol** (the contract; depends on nothing in the workspace):
+- The neutral runner-v1 types (`execution/`: request, attempt, event, artifact and decision types), the attempt lifecycle (`lifecycle::validate_transition`) and capability negotiation, both the server's handlers and `tack-runner` build on
+- `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
+- `mrp.rs`: the `mrp-v1` merge-readiness pack, its types, validation and pull-request rendering, as plain data; `prepare.rs`: the prepare step
+- The one `Clock` trait and `SystemClock`; `utoipa` is behind an `openapi` feature
+- Every dollar-valued field across the runs crates is named `*_usd_estimated` — token counts are the primary, trustworthy measure; absent usage is a typed "not measured", never a fabricated `0`
+
+**tack-core** (pure, zero I/O; depends on `tack-protocol`):
 - Domain models: `Project`, `Item`, `Sprint`, `Role`, `Comment`, `Dependency`, etc.
 - Workflow engine: validates transitions, enforces WIP limits, provides presets
 - Vocabulary system: customizable term mapping per project
 - Dependency graph: DAG with cycle detection (DFS-based)
 - Error types: typed domain errors (`CoreError`)
-- Item briefs (`brief.rs`) and the `mrp-v1` merge-readiness pack (`mrp.rs`): types, validation and Markdown rendering, as plain data
+- Item briefs (`brief.rs`): types, validation and Markdown rendering, as plain data
 - The merge policy (`autonomy.rs`): `Level`, `Facts`, `Hold` and the pure `evaluate`, including the team's ceiling (`Hold::HarnessCeiling`)
 - Which profile a run gets (`run_defaults.rs`, `resolve`) and which waiting tasks a project starts (`auto_start.rs`, `pick`), both pure
 - Recurrence (`recurrence.rs`: when the next copy of a repeating task is due) and the rate card (`rate_card.rs`)
 - The project file (`outline.rs`, `outline/bundle.rs`): the types of every section, `resolve` for items, `check` for a whole file against a board and `to_bundle` for the export
 
-**tack-db**:
-- SQLite via `sqlx` (async)
-- 92 migrations (`grep -oE '"[0-9]{3}_[a-zA-Z0-9_]+"' crates/tack-db/src/migrations.rs | sort -u | wc -l`; the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
-- Repository pattern: CRUD for all entities in `repo/` submodules
-- Auto-runs migrations on startup
-- Database is created automatically if missing
+**tack-orch** (pure; depends on `tack-protocol` and `tack-core`; no database, no clock, no I/O):
+- `scheduler/`: a decision library over plain values — given a candidate pool of runners (health/capacity/labels/declared harness support) and a request (exact runner or fleet selector, required harness, optional model, priority), it returns a selected runner or a typed reason none qualify; it never grants the authoritative lease, only the repository's fenced claim does that. `select::select_runner` decides one request; `batch::schedule` orders several by priority then FIFO fairness. It matches the agent, not the model: a model string is the agent's own and is never compared with a list, and a request that names no model reaches an agent that requires one only to be told "<agent> needs a model named"
+- `model_policy/`: a run's model — the request's own, otherwise the project's default model when the run uses the project's default agent, otherwise none (the agent chooses)
+- The live callers that read rows and write the outcome are `tack-app`'s `scheduler_wiring` and `model_policy_wiring`
 
-**tack-orch** (the runner-v1 execution domain — depends only on `tack-core` and `tack-db`; must never depend on `tack-api`, the dependency points inward, `tack-api` depends on this crate to run the scheduler/retention/observability tasks and expose the execution routes):
+**tack-db** (the only crate that names `sqlx`; depends on `tack-protocol` and `tack-core`):
+- SQLite via `sqlx` (async), behind `StoreError` (`NotFound`, `Conflict`, `Sql`): no `sqlx` type crosses the crate's edge
+- Migrations (`migrations.rs`; `scripts/arch-facts.sh` prints how many, and the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
+- **Commands are `Repository` methods**, one directory or file per aggregate under `repo/` (`items.rs`, `projects.rs`, `execution/`, …). **Read models are functions in `queries/`**, one file per table, one `pub async fn` per question the rest of the program asks of it, each taking the `Repository` and returning a row struct under the columns' names
+- A state read from a row is converted to its typed enum at this crate's edge
+- `Repository::pool()` exists publicly only behind the `raw-pool` feature, which only `tack-test-support` enables; `scripts/check-crate-graph.sh` fails on any `.pool()` or `sqlx` use outside `tack-db` and `tack-test-support`, and the bans `scripts/gen-deny-toml.sh` writes into `deny.toml` name the same two crates
+- Auto-runs migrations on startup; the database is created automatically if missing
 
-- `execution/`: the neutral, transport-free runner-v1 protocol domain (request/attempt/event/artifact/decision types) that both `tack-api`'s handlers and `tack-runner` build on
-- `scheduler/`: a pure, I/O-free decision library — given a candidate pool of runners (health/capacity/labels/declared harness support) and a request (exact runner or fleet selector, required harness, optional model, priority), it returns a selected runner or a typed reason none qualify; it never grants the authoritative lease, only the repository's fenced claim does that. `select::select_runner` decides one request; `batch::schedule` orders several by priority then FIFO fairness; `wiring` is the live `tack-db`-backed caller. It matches the agent, not the model: a model string is the agent's own and is never compared with a list, and a request that names no model reaches an agent that requires one only to be told "<agent> needs a model named"
-- `model_policy/`: a run's model — the request's own, otherwise the project's default model when the run uses the project's default agent, otherwise none (the agent chooses) — pure resolution plus a `wiring` module that fetches the project's default
-- `execution_retention.rs`: a cancellable background sweep that purges stale/terminal execution rows, with an injectable clock and a real stop signal
-- `execution_observability.rs`: a periodic, **id-free** fleet health snapshot (runner/queue/lease/event state counts, bounded to the domain's small closed vocabularies) plus stuck/ambiguous alerts — never labeled by attempt, request or runner id
-- `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
-- Every dollar-valued field across this crate is named `*_usd_estimated` — token counts are the primary, trustworthy measure; absent usage is a typed "not measured", never a fabricated `0`
+**tack-app** (the application layer; depends on `tack-protocol`, `tack-core`, `tack-orch` and `tack-db`; names `reqwest`, never `axum` or `sqlx`):
+- **Use cases** in `runs/`, one file per verb (`claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, …): `pub async fn <verb>(repo: &Repository, clock: &dyn Clock, <args>) -> Result<T, AppError>`. They hold the rules a handler used to hold (idempotency keys, fencing checks, `validate_transition`); a handler extracts, calls, maps the error and responds. A test of a rule calls the use case on `setup_test_db()`
+- **Ticks**: every background loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with `tick()`, one pass that tests call with a fake clock so nothing sleeps, and `run()`, the loop that waits, ticks and logs a failed pass. The autonomy pass (`autonomy::tick`, with `merge.rs`) runs after each GitHub poll. `tack-cli/src/serve.rs` does the `tokio::spawn(tack_app::<module>::run(..))`; the HTTP server starts none of them
+- **`host::Host`** is the one trait through which `tack-app` calls back into things that still live in `tack-api`; `tack-api` implements it over its own state, and a method goes away when the thing it reaches moves into this crate. Its methods: `github_token`, `ci_state`, `resolve_secret`, `pull_request_observed`, `merge_pull_request`, `open_pull_request`, `apply_mrp_accepted`, `verify_attestation`, `read_artifact` and `item_moved`
+- `scheduler_wiring` and `model_policy_wiring` (the live callers of `tack-orch`), `local_runner` (the embedded runner as the rest of Tack sees it: the `LocalRunnerControl` seam the routes call, its preference, folder checks and the supervisor that keeps one runner process alive) and `AppError`
 
-**tack-api** (library — does not build its own binary):
-- Axum HTTP server with 96 documented paths (`python3 -c "import json; print(len(json.load(open('docs/openapi.json'))['paths']))"`) + 1 WebSocket not in the spec — includes the operator execution/fleet surface and the 14 `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative; re-run the count above rather than trusting this number after the next handler change.
+**tack-api** (library — does not build its own binary; the only crate that names `axum`; depends on `tack-protocol`, `tack-core`, `tack-db` and `tack-app`):
+- Axum HTTP server. The documented paths are the `paths` of `docs/openapi.json` (`scripts/arch-facts.sh` prints how many), plus 1 WebSocket not in the spec — includes the operator execution/fleet surface and the `/api/runner/v1` runner-protocol paths. `docs/openapi.json` is generated and authoritative
 - **Two authentication surfaces, separated structurally.** Operator routes live under `/api` behind `require_token`. Runner routes are nested as a _sibling_ of `/api` on the outer router, so they never traverse the operator auth layer at all — deliberately not an exemption-list entry, which a later edit could quietly widen. Each runner handler authenticates its own hashed bearer credential via `handlers/runner_protocol/runner_auth.rs`.
 - `x-tack-principal` is **overwritten from server config** by `middleware::inject_operator_principal` and never read from the request. Operator idempotency is scoped by principal, so a trusted header would let one caller collide with another's requests.
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
-- Request handlers in `handlers/` (per entity)
+- Request handlers in `handlers/` (per entity): they extract, call a `tack-app` use case or a `tack-db` method, map the error and respond
 - Config loading: TOML + env vars
-- Error mapping: `CoreError` → HTTP status codes
+- Error mapping: `CoreError`, `StoreError` and `AppError` → `ApiError` → HTTP status codes (`ApiError` wraps `StoreError`, which is why this crate names `tack-db`)
+- `host.rs` is the implementation of `tack_app::host::Host` over `AppState`
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON, YAML and CSV formats
 - Project file, outline and CSV import (`handlers/outline.rs`): the format and its checks are `tack_core::outline` and `outline::bundle::check`; items are written in one transaction (`Repository::create_outline_items`), the other sections one by one, and a failed section answers `ApiError::SectionFailed`. Export of the same file is `export?scope=bundle` (`handlers/export.rs`, `to_bundle`); templates are the same file without items (`handlers/templates.rs`)
-- Automatic work, each its own background task: the auto-start tick (`auto_start.rs`, every `TACK_AUTO_START_SECONDS`, which picks waiting tasks with `tack_core::auto_start::pick` and enqueues them through `handlers/executions.rs::create_as` under the principal `auto_start`), and the autonomy tick (`autonomy.rs`, `merge.rs`) that merges and demotes by `tack_core::autonomy::evaluate`, reading the team's ceiling from the runner's live capability at merge time
+- The automatic work (the auto-start tick, and the autonomy tick that merges and demotes by `tack_core::autonomy::evaluate`) lives in `tack-app` (`auto_start.rs`, `autonomy.rs`, `merge.rs`) and reads the team's ceiling from the runner's live capability at merge time; the auto-start tick enqueues through the `start_run` use case under the principal `auto_start`
 
 **tack-runner** (the pull-based execution runner — its own binary, separate from `tack`):
 - Polls the Tack API's `/api/runner/v1` surface: enroll, refresh capabilities, claim, heartbeat, accept, start, stream events, poll decisions, submit artifacts, complete, and report cancellation/recovery observations
@@ -110,11 +132,11 @@ docs/                Documentation
 - Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`. docket is tested against an in-process fake of its API (`tests/fake_docket/`); no test runs a real docket
 
 **tack-cli** (the single `tack` binary):
-- `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
+- `tack` with no subcommand (or `tack serve`) starts the server + web UI — the primary, UI-first entry point. `serve.rs` is the composition root: it opens the database, builds the `Repository` and the `AppState`, calls `tack_api::serve()` and spawns each `tack_app::<module>::run(..)` loop
 - CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
 - `tack branch <item-id>` — derives/creates a git branch from an item (`git.rs`)
-- Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
+- Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly. Only `serve.rs` names `tack-db`, to build the `Repository` it hands to the server and the loops
 
 **frontend** (SolidJS + TypeScript):
 - Responsive SPA on a **two-axis design-token system**: mode (`.dark` class) × palette (`data-palette` attr) → Harbor (default)/Teal/Clay/Graphite × light/dark, switched in Settings → Display & accessibility, alongside text size (the root font size; all text is in rem), desktop zoom, a high-legibility font and reduced motion (`shared/state/display.ts`). All colors come from `--color-*` tokens in `index.css`; components never use raw hex. WCAG AA, axe-gated in CI. Fonts: Bricolage Grotesque (display) + Figtree (body) + JetBrains Mono, and Atkinson Hyperlegible Next as the high-legibility option (self-hosted via `@fontsource`). See `docs/book/src/developer/frontend.md`.
@@ -126,7 +148,6 @@ docs/                Documentation
 - Global search (Ctrl+/)
 - Toast notifications
 - Skeleton loading screens
-- Status: 100% complete (all core features working)
 
 ## Key Design Patterns
 
@@ -152,9 +173,9 @@ docs/                Documentation
 
 ## Database Schema Highlights
 
-- **92 migrations** tracked in the `_migrations` table — see `GET /api/health`'s `migrations_applied` for the live count rather than trusting this number (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests; 088 adds a role's profile and a profile's fleet; 089 a task's recurrence; 090 a project's auto-start; 091 the roles, profiles and automation a template carries; 092 drops dollars per day)
+- **Migrations** are tracked in the `_migrations` table — `scripts/arch-facts.sh` prints how many, and `GET /api/health`'s `migrations_applied` is the live count (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests; 088 adds a role's profile and a profile's fleet; 089 a task's recurrence; 090 a project's auto-start; 091 the roles, profiles and automation a template carries; 092 drops dollars per day)
 - Migrations are transactional with ordered-prefix and checksum enforcement; 037/038's copy/verify/swap rebuild and 064–073's table drops each run behind an automatic pre-upgrade `VACUUM INTO` snapshot
-- **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. 16 sites in `repo/execution.rs` hit this (`grep -c 'begin_with("BEGIN IMMEDIATE")' crates/tack-db/src/repo/execution.rs`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
+- **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. The sites in `repo/execution/` hit this (`grep -rn 'BEGIN IMMEDIATE' crates/tack-db/src`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
 - **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
 - **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)
@@ -193,7 +214,7 @@ All routes follow RESTful conventions:
 - `/api/items/{id}/brief` (GET/PUT/DELETE) — an item's brief: acceptance criteria, constraints, definition of done, risk (3 endpoints). It travels in project export and import and is rendered into the instructions a harness receives
 - `/api/executions/{request_id}/attempts/{n}/mrp` (GET), `.../mrp/viewed` and `.../mrp/review` — an attempt's merge-readiness pack, the mark that a person opened it, and the human verdict (the first verdict wins)
 - `/api/projects/{id}/metrics/factory` — the project's factory metrics: every ratio with the counts behind it, and a reason when it cannot be measured; optional `since`
-- `/api/runner/v1/*` — **Runner protocol**, 14 paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
+- `/api/runner/v1/*` — **Runner protocol**, the paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
 
 Query parameters support filtering, pagination, and search.
 
@@ -294,6 +315,9 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 
 - **Unit tests** in `tack-core` for business logic (workflow, dependencies, vocabulary)
 - **Integration tests** in `tack-db` for repository operations (require SQLite)
+- **Use-case tests** in `tack-app` call a use case or a `tick()` directly on `setup_test_db()` and a fake clock, with no router and no sleeping
+- **Pure policy tests** in `tack-orch` (scheduler, model policy) and the runner-v1 contract pins in `tack-protocol` need no database
+- **Seeding and reading**: a test plants rows with `tack_test_support::seed` and reads them with `tack_db::queries::`, so a test that checks a route's answer never names SQL
 - **Handler tests** in `tack-api` use in-memory databases
 - **docket** is proved against `crates/tack-runner/tests/fake_docket/`, an in-process fake of its HTTP API
 - **Frontend unit tests** in `frontend/src/**/*.test.tsx` (Vitest + jsdom)
@@ -326,8 +350,8 @@ frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
 
 1. Define model in `tack-core/src/models.rs`
 2. Add migration in `tack-db/src/migrations.rs`
-3. Create repository module in `tack-db/src/repo/`
-4. Add handler in `tack-api/src/handlers/`
+3. Create repository module in `tack-db/src/repo/` (commands) and, for reads, a file in `tack-db/src/queries/`
+4. Put any rule that is more than extract-and-respond in a `tack-app` use case; add the handler in `tack-api/src/handlers/`
 5. Register routes in `tack-api/src/router.rs`
 6. Add DTOs for create/update operations
 
