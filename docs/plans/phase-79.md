@@ -34,7 +34,7 @@ Every number below came from a command; re-run it before trusting it.
 | Modules moving to `tack-protocol` import I/O or `tack_core` | no; one line, `execution/types.rs:283`, names `tack_core::prepare`, which moves too | `grep -n 'tack_core\|tack_db\|sqlx' crates/tack-orch/src/execution/*.rs crates/tack-orch/src/usage_provenance.rs crates/tack-core/src/{mrp,prepare}.rs` |
 | Root re-exports in `tack-orch/src/lib.rs` | none; every use is `tack_orch::<module>::` | `grep -n '^pub use' crates/tack-orch/src/lib.rs` |
 | Equivalent `Clock` traits (`fn now(&self) -> DateTime<Utc>`) | 3: `ExecutionClock` (db), `RetentionClock`, `ObservabilityClock` (orch); the runner's uses `SystemTime` and stays | `grep -rn 'trait .*Clock' crates --include='*.rs'` |
-| Hand-kept doc mirrors in `tack-api` | ~8 `*Schema` types in `handlers/executions.rs`; the earlier "18" counted real `*Snapshot`/`*Outcome` types | `grep -rhoE 'pub (struct\|enum) \w+Schema\b' crates/tack-api/src \| sort -u` |
+| Hand-kept doc mirrors in `tack-api` | 5 `*Schema` types in `handlers/executions.rs` (removed in 1.1) and 3 in `openapi.rs` that mirror `ResolveDecisionResponse`, whose `answer`/`resolved_by` are untyped `Value` (they go with D6); the earlier "18" counted real `*Snapshot`/`*Outcome` types | `grep -rhoE 'pub (struct\|enum) \w+Schema\b' crates/tack-api/src \| sort -u` |
 | `Repository` methods | 27 forwarding wrappers in `repo.rs`; 188 `pub async fn` in `repo/*.rs`, 18 of them free functions taking a pool | `grep -c 'pub async fn' crates/tack-db/src/repo.rs crates/tack-db/src/repo/*.rs` |
 | `repo/execution.rs` | 4 087 lines, 57 methods, 28 transactions | `wc -l`, `grep -c '    pub async fn'`, `grep -c 'BEGIN IMMEDIATE\|\.begin()'` |
 | `tokio::spawn` in `tack-api/src` | 13; **4 are ticks** (`server.rs`: github poll, auto-start, backup, hourly sweep); the rest are websocket send/recv, fire-and-forget in `comments`/`items`, `execution_runtime`, `prill_store`, `webhook` | `grep -rn 'tokio::spawn' crates/tack-api/src --include='*.rs' \| grep -v tests` |
@@ -42,7 +42,7 @@ Every number below came from a command; re-run it before trusting it.
 | Path edges `cargo metadata` reports | 12 normal + 6 `dev` (every crate → `tack-test-support`) | `cargo metadata --format-version 1 --no-deps \| jq -r '.packages[] \| .name as $n \| .dependencies[] \| select(.path != null) \| [$n, .name, (.kind // "normal")] \| @tsv'` |
 | Test speed | the slowest binary in the suite finishes in ~6 s; every db and api test runs on `sqlite::memory:` with all migrations | `.config/nextest.toml`, `docs/TESTING.md` §layers |
 | Frontend: features importing `shared/runWithAgent`, `shared/execution`, `shared/agents` | 7 features (agents 13 files, settings 4, item-detail 2, board, list, sprints, table) | `grep -rlE "shared/(runWithAgent\|execution\|agents)" frontend/src/features \| cut -d/ -f3 \| sort \| uniq -c` |
-| Frontend: `shared/` files importing `features/` | 3: `state/itemEvents.ts`, `state/executionContext.tsx`, `agents/FirstRunBanner.tsx` | `grep -rl "features/" frontend/src/shared --include='*.ts*'` |
+| Frontend: `shared/` files importing `features/` | 0 real imports; 3 files (`state/itemEvents.ts`, `state/executionContext.tsx`, `agents/FirstRunBanner.tsx`) only named `features/` in comments, which the grep also counts | `grep -rl "features/" frontend/src/shared --include='*.ts*'` |
 | `cli/src/main.rs`, `runner/src/engine.rs` | 3 054 and 2 611 lines | `wc -l` |
 | `decision-token` at the repo root | untracked and not ignored | `git check-ignore decision-token` (exits 1) |
 | `tack.db*`, `tack.toml`, `logs/`, `storage/` | all already ignored | `git check-ignore -v tack.db tack.toml logs storage` |
@@ -335,7 +335,7 @@ Done when: `cargo check --workspace --all-targets` is clean;
 `cargo nextest run --workspace -E 'rdeps(tack-protocol)'` passes;
 `cargo tree -p tack-runner -e normal --prefix none | grep -cE '^(sqlx|libsqlite3-sys|tack-db|tack-orch) '` → 0;
 `grep -rn 'trait .*Clock' crates --include='*.rs' | grep -v target` → exactly `tack-protocol/src/clock.rs` and `tack-runner/src/clock.rs`;
-`grep -rhoE 'pub (struct|enum) \w+Schema\b' crates/tack-api/src | wc -l` → 0;
+`grep -rhoE 'pub (struct|enum) \w+Schema\b' crates/tack-api/src | wc -l` → 3 (the `openapi.rs` ones, D6);
 `cargo nextest list --workspace | wc -l` equal to before.
 
 Tighten: `tack-runner` → `"tack-core tack-protocol"`; every other row gains `tack-protocol`;
@@ -492,8 +492,8 @@ cargo machete > /tmp/machete.txt || true
   `cfg(feature)` false positive goes in `[package.metadata.cargo-machete] ignored`).
   Done when `cargo clippy --workspace --all-targets -- -D warnings` is clean, `cargo machete`
   prints nothing, and `grep -rc 'allow(dead_code)\|allow(unused' $(git ls-files 'crates/**/*.rs') | grep -v ':0' | wc -l` → 0.
-- 4.3 frontend: the three `shared/` files that import `features/` (§1) stop doing so: move the
-  file into the feature that owns it, or pass the value in. `shared/runWithAgent`, `shared/execution`
+- 4.3 frontend (done: the three files only named `features/` in comments, so nothing moved; the
+  work was rewording them and the two test cases below): `shared/` files stop importing `features/`. `shared/runWithAgent`, `shared/execution`
   and `shared/agents` **stay in `shared/`**: seven features import them and the architecture
   test forbids a feature importing another. `src/architecture.test.ts` grows two cases: no
   `shared/*` file imports from `features/*`; imports through the `@/` alias count. Done when
