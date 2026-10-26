@@ -14,7 +14,6 @@ pub mod openapi;
 pub mod prill;
 pub mod prill_store;
 pub mod rate_card;
-pub mod remote_backup;
 pub mod router;
 pub mod server;
 pub mod webhook;

@@ -11,7 +11,7 @@ declare -A ALLOW=(
   [tack-app]="tack-core tack-db tack-orch tack-protocol"
   [tack-api]="tack-app tack-core tack-db tack-orch tack-protocol"
   [tack-runner]="tack-core tack-protocol"
-  [tack-cli]="tack-api tack-db tack-runner tack-orch tack-protocol"
+  [tack-cli]="tack-api tack-app tack-db tack-runner tack-orch tack-protocol"
   [tack-test-support]="tack-core tack-db tack-protocol"
 )
 if [ "${1:-}" = "--print" ]; then for k in "${!ALLOW[@]}"; do echo "$k -> ${ALLOW[$k]:-(none)}"; done | sort; exit 0; fi
