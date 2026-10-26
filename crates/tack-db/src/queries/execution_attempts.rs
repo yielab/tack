@@ -55,3 +55,13 @@ pub async fn operator_requeues_of_attempt(
     .fetch_one(repo.pool())
     .await?)
 }
+
+/// Whether an attempt with this id exists.
+pub async fn attempt_exists(repo: &Repository, attempt_id: &str) -> Result<bool, StoreError> {
+    let found: Option<String> =
+        sqlx::query_scalar("SELECT id FROM execution_attempts WHERE id = ?")
+            .bind(attempt_id)
+            .fetch_optional(repo.pool())
+            .await?;
+    Ok(found.is_some())
+}

@@ -14,8 +14,11 @@ use axum::{
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::Row;
-use tack_db::{Repository, repo::execution::RunnerListingRow};
+use tack_db::queries::{
+    agent_profiles, attempt_reviews, autonomy, budgets, execution_attempts, execution_requests,
+    pull_requests,
+};
+use tack_db::{Repository, StoreError, repo::execution::RunnerListingRow};
 use tack_orch::scheduler::select::SchedulingPolicy;
 use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
@@ -708,35 +711,18 @@ fn limit_source(snapshot: &Value, harness_kind: Option<&str>, day_room: Option<i
 /// The limit of each listed request, read from its stored snapshot and the agent that ran it, and
 /// what is left of its project's daily limit (for a run with no limit of its own).
 async fn run_limits_of(
-    pool: &sqlx::SqlitePool,
+    repo: &Repository,
     ids: &[String],
     now: DateTime<Utc>,
-) -> Result<std::collections::HashMap<String, RunLimit>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT r.id,
-                json_extract(r.request_snapshot, '$.budgets') AS budgets,
-                json_extract(r.request_snapshot, '$.metadata.limit_source') AS source,
-                json_extract(r.request_snapshot, '$.resolved_agent_profile.name') AS profile,
-                i.project_id AS project_id,
-                COALESCE((SELECT json_extract(a.actual_execution, '$.harness_kind')
-                            FROM execution_attempts a
-                           WHERE a.request_id = r.id AND a.actual_execution IS NOT NULL
-                           ORDER BY a.attempt_number DESC LIMIT 1),
-                         r.requested_harness_kind) AS harness_kind
-           FROM execution_requests r
-           JOIN items i ON i.id = r.item_id
-          WHERE r.id IN (SELECT value FROM json_each(?))",
-    )
-    .bind(json!(ids).to_string())
-    .fetch_all(pool)
-    .await?;
-    let used = tack_db::repo::budgets::counted_by_request(pool, ids).await?;
+) -> Result<std::collections::HashMap<String, RunLimit>, StoreError> {
+    let rows = execution_requests::run_limit_inputs(repo, ids).await?;
+    let used = budgets::counted_by_request(repo, ids).await?;
     let mut rooms: std::collections::HashMap<String, Option<i64>> =
         std::collections::HashMap::new();
     for row in &rows {
-        let project: String = row.get("project_id");
-        if let std::collections::hash_map::Entry::Vacant(slot) = rooms.entry(project.clone()) {
-            let room = tack_db::repo::budgets::day_room(pool, &project, now)
+        if let std::collections::hash_map::Entry::Vacant(slot) = rooms.entry(row.project_id.clone())
+        {
+            let room = budgets::day_room(repo, &row.project_id, now)
                 .await?
                 .map(|day| day.room);
             slot.insert(room);
@@ -745,19 +731,15 @@ async fn run_limits_of(
     Ok(rows
         .iter()
         .map(|row| {
-            let budgets: Option<String> = row.get("budgets");
             let snapshot = json!({
-                "budgets": budgets.and_then(|b| serde_json::from_str::<Value>(&b).ok()).unwrap_or(Value::Null),
-                "metadata": {"limit_source": row.get::<Option<String>, _>("source")},
-                "resolved_agent_profile": {"name": row.get::<Option<String>, _>("profile")},
+                "budgets": row.budgets.as_deref().and_then(|b| serde_json::from_str::<Value>(b).ok()).unwrap_or(Value::Null),
+                "metadata": {"limit_source": row.source},
+                "resolved_agent_profile": {"name": row.profile},
             });
-            let kind: Option<String> = row.get("harness_kind");
-            let id: String = row.get("id");
-            let project: String = row.get("project_id");
-            let day_room = rooms.get(&project).copied().flatten();
-            let mut limit = limit_source(&snapshot, kind.as_deref(), day_room);
-            limit.used = used.get(&id).and_then(|n| u64::try_from(*n).ok());
-            (id, limit)
+            let day_room = rooms.get(&row.project_id).copied().flatten();
+            let mut limit = limit_source(&snapshot, row.harness_kind.as_deref(), day_room);
+            limit.used = used.get(&row.id).and_then(|n| u64::try_from(*n).ok());
+            (row.id.clone(), limit)
         })
         .collect())
 }
@@ -905,16 +887,14 @@ pub async fn list_executions(
     let now = state.clock.now();
     let runners = queued_runners(&state.repo, rows.iter().any(|row| row.state == "queued")).await?;
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
-    let mut limits = run_limits_of(state.repo.pool(), &ids, now)
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not read the runs' limits",
-                json!({}),
-            )
-        })?;
+    let mut limits = run_limits_of(&state.repo, &ids, now).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not read the runs' limits",
+            json!({}),
+        )
+    })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| ExecutionSummary {
@@ -1046,8 +1026,9 @@ pub async fn get_execution(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
-    let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?")
-        .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
+    let row = execution_requests::request_detail(&state.repo, &request_id)
+        .await
+        .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1064,13 +1045,10 @@ pub async fn get_execution(
         ));
     };
     let now = state.clock.now();
-    let request_state: String = row.get("state");
-    let waiting_reason: Option<String> = row.get("waiting_reason");
-    let selector_kind: String = row.get("selector_kind");
-    let selector_id: String = row.get("selector_id");
+    let request_state = row.state;
     let runners = queued_runners(&state.repo, request_state == "queued").await?;
-    let request_id: String = row.get("id");
-    let limit = run_limits_of(state.repo.pool(), std::slice::from_ref(&request_id), now)
+    let request_id = row.id;
+    let limit = run_limits_of(&state.repo, std::slice::from_ref(&request_id), now)
         .await
         .map_err(|_| {
             error(
@@ -1086,20 +1064,20 @@ pub async fn get_execution(
         protocol_version: 1,
         request_id,
         limit,
-        item_id: row.get("item_id"),
+        item_id: row.item_id,
         state: request_state.clone(),
-        cancellation_requested_at: row.get("cancellation_requested_at"),
-        created_at: row.get("created_at"),
-        instructions: row.get("instructions"),
+        cancellation_requested_at: row.cancellation_requested_at,
+        created_at: row.created_at,
+        instructions: row.instructions,
         waiting_reason: queued_reason(
             &request_state,
-            waiting_reason,
-            &selector_kind,
-            &selector_id,
+            row.waiting_reason,
+            &row.selector_kind,
+            &row.selector_id,
             &runners,
             now,
         ),
-        waiting_since: row.get("waiting_since"),
+        waiting_since: row.waiting_since,
     }))
 }
 
@@ -1130,9 +1108,7 @@ pub async fn list_execution_attempts(
     // which lives on `execution_requests`, not on any one attempt row.
     // Same not-found semantics as a plain `EXISTS(...)` check, one query
     // instead of two.
-    let request_row = sqlx::query("SELECT requested_model FROM execution_requests WHERE id = ?")
-        .bind(&request_id)
-        .fetch_optional(state.repo.pool())
+    let requested_model = execution_requests::requested_model_of_request(&state.repo, &request_id)
         .await
         .map_err(|_| {
             error(
@@ -1142,7 +1118,7 @@ pub async fn list_execution_attempts(
                 json!({}),
             )
         })?;
-    let Some(request_row) = request_row else {
+    let Some(requested_model) = requested_model else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
@@ -1150,7 +1126,6 @@ pub async fn list_execution_attempts(
             json!({"resource": "execution_request"}),
         ));
     };
-    let requested_model: Option<String> = request_row.get("requested_model");
     let attempts = state
         .repo
         .list_attempts_for_request(&request_id)
@@ -1165,8 +1140,7 @@ pub async fn list_execution_attempts(
         })?;
     let mut pull_requests = std::collections::HashMap::new();
     for attempt in &attempts {
-        if let Ok(Some(pr)) =
-            tack_db::repo::pull_requests::get_for_attempt(state.repo.pool(), &attempt.id).await
+        if let Ok(Some(pr)) = pull_requests::pull_request_of_attempt(&state.repo, &attempt.id).await
         {
             pull_requests.insert(
                 attempt.id.clone(),
@@ -1180,27 +1154,23 @@ pub async fn list_execution_attempts(
     }
     let mut reviews = std::collections::HashMap::new();
     for attempt in &attempts {
-        let row: Option<(String, Option<String>, String)> = sqlx::query_as(
-            "SELECT verdict, note, reviewed_at FROM attempt_reviews WHERE attempt_id = ?",
-        )
-        .bind(&attempt.id)
-        .fetch_optional(state.repo.pool())
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not list attempt reviews",
-                json!({}),
-            )
-        })?;
-        if let Some((verdict, note, reviewed_at)) = row {
+        let row = attempt_reviews::review_of_attempt(&state.repo, &attempt.id)
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not list attempt reviews",
+                    json!({}),
+                )
+            })?;
+        if let Some(review) = row {
             reviews.insert(
                 attempt.id.clone(),
                 AttemptReview {
-                    verdict,
-                    note,
-                    reviewed_at,
+                    verdict: review.verdict,
+                    note: review.note,
+                    reviewed_at: review.reviewed_at,
                     pull_request_url: None,
                 },
             );
@@ -1215,7 +1185,7 @@ pub async fn list_execution_attempts(
                 Some("Merging is not available on this board".to_owned()),
             ),
         };
-        let merged = match tack_db::repo::autonomy::get_merge(state.repo.pool(), &attempt.id)
+        let merged = match autonomy::merge_of_attempt(&state.repo, &attempt.id)
             .await
             .map_err(|_| {
                 error(
@@ -1361,14 +1331,10 @@ pub async fn merge_attempt(
     State(state): State<OperatorExecutionState>,
     Path(attempt_id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let exists: Option<String> =
-        sqlx::query_scalar("SELECT id FROM execution_attempts WHERE id = ?")
-            .bind(&attempt_id)
-            .fetch_optional(state.repo.pool())
-            .await
-            .ok()
-            .flatten();
-    let (Some(_), Some(app)) = (exists, state.app.as_ref()) else {
+    let exists = execution_attempts::attempt_exists(&state.repo, &attempt_id)
+        .await
+        .unwrap_or(false);
+    let (true, Some(app)) = (exists, state.app.as_ref()) else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
@@ -1417,19 +1383,16 @@ pub async fn list_execution_attempt_events(
     State(state): State<OperatorExecutionState>,
     Path((request_id, attempt_number)): Path<(String, i64)>,
 ) -> Result<Json<EventListResponse>, (StatusCode, Json<Value>)> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_requests WHERE id = ?)")
-            .bind(&request_id)
-            .fetch_one(state.repo.pool())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not verify execution",
-                    json!({}),
-                )
-            })?;
+    let exists = execution_requests::execution_request_exists(&state.repo, &request_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not verify execution",
+                json!({}),
+            )
+        })?;
     if !exists {
         return Err(error(
             StatusCode::NOT_FOUND,
@@ -1692,13 +1655,9 @@ pub async fn get_item_agent_context(
         .as_ref()
         .and_then(|r| profile_source_label(&r.source));
     let profile = if let Some(resolved) = resolved {
-        let profile: Option<(String, String, String, String, String)> = sqlx::query_as(
-            "SELECT id, name, instructions, tool_policy, limits FROM agent_profiles WHERE id = ?",
-        )
-        .bind(&resolved.profile_id)
-        .fetch_optional(state.repo.pool())
-        .await
-        .map_err(|_| {
+        let profile = agent_profiles::profile_by_id(&state.repo, &resolved.profile_id)
+            .await
+            .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1706,13 +1665,13 @@ pub async fn get_item_agent_context(
                 json!({}),
             )
         })?;
-        profile.map(|(id, name, instructions, tool_policy, limits)| {
+        profile.map(|profile| {
             serde_json::json!({
-                "agent_profile_id": id,
-                "name": name,
-                "instructions": instructions,
-                "tool_policy": serde_json::from_str::<serde_json::Value>(&tool_policy).unwrap_or_default(),
-                "limits": serde_json::from_str::<serde_json::Value>(&limits).unwrap_or_else(|_| json!({})),
+                "agent_profile_id": profile.id,
+                "name": profile.name,
+                "instructions": profile.instructions,
+                "tool_policy": serde_json::from_str::<serde_json::Value>(&profile.tool_policy).unwrap_or_default(),
+                "limits": serde_json::from_str::<serde_json::Value>(&profile.limits).unwrap_or_else(|_| json!({})),
             })
         })
     } else {
@@ -1764,18 +1723,17 @@ pub async fn get_item_agent_context(
     // The profile's limit, unless the dialog has its own: a different number is the run's, none is
     // "no limit". The sentence is still `limit_source`'s, over a snapshot of the same shape.
     let profile_tokens = profile["limits"]["budgets"]["tokens"].as_u64();
-    let provisional =
-        tack_db::repo::budgets::provisional_tokens(state.repo.pool(), &project.id.to_string())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not load the project's limits",
-                    json!({}),
-                )
-            })?
-            .and_then(|n| u64::try_from(n).ok());
+    let provisional = budgets::provisional_tokens(&state.repo, &project.id.to_string())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load the project's limits",
+                json!({}),
+            )
+        })?
+        .and_then(|n| u64::try_from(n).ok());
     let (tokens, limit_from) = if query.no_limit == Some(true) {
         let (tokens, source) = unset_tokens(&profile["limits"], provisional);
         (json!(tokens), source.as_str())
@@ -1809,21 +1767,17 @@ pub async fn get_item_agent_context(
         .map(str::trim)
         .filter(|h| !h.is_empty())
         .or_else(|| profile["tool_policy"]["agent"].as_str());
-    let day_room = tack_db::repo::budgets::day_room(
-        state.repo.pool(),
-        &item.project_id.to_string(),
-        Utc::now(),
-    )
-    .await
-    .map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not load the project's limits",
-            json!({}),
-        )
-    })?
-    .map(|day| day.room);
+    let day_room = budgets::day_room(&state.repo, &item.project_id.to_string(), Utc::now())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load the project's limits",
+                json!({}),
+            )
+        })?
+        .map(|day| day.room);
     let limit = limit_source(
         &json!({
             "budgets": {"tokens": tokens},
