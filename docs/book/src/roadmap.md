@@ -63,9 +63,10 @@ plan or the page named beside it.
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
   ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
   end-to-end scenario with two teams and a rework is still to write.
-- docket's draft of one record for every wait for a person (not accepted yet): five of
-  [Phase 80](#phase-80--a-run-that-waits-on-a-person-and-one-record-for-every-wait)'s seven cards
-  wait on it, each on a named docket card.
+- docket's draft of one record for every wait for a person (not accepted yet): four of
+  [Phase 80](#phase-80--a-run-that-waits-on-a-person-and-one-record-for-every-wait)'s five cards
+  wait on it, each on a named docket card; the fifth, a run that waits on a person is not
+  cancelled, is ready now.
 - The verifier: directives learnt from a person's corrections. When the verifier proposes one,
   Tack applies an approved one to `AGENTS.md` through a pull request.
 
@@ -150,12 +151,17 @@ hide the transactions and fencing the store exists for. It also fixed four contr
 first draft could not have executed (the HTTP crate must name the database crate; the
 scheduler's wiring names `sqlx` and had no step to move; only four of thirteen spawns are
 loops; the graph table omitted the dev edges its own script reported) and re-sliced the work:
-seven scripts and twenty-four model tasks, none with more than about 1 400 lines in scope,
-where the draft had six agents and two of them facing 7 000 lines.
+four scripts and twenty-four model runs, none with more than about 1 500 lines in scope,
+where the draft had six agents and two of them facing 7 000 lines. A second re-read the same day
+merged the SQL pass and the use-case pass into one visit per file, so the four biggest handler
+files are read once, not twice, and made sequential tasks share one worktree and build
+directory.
 
-What is open, in order: Phase 0 (the graph check), Phase 1 (`tack-protocol`), Phase 2 (twelve
-tasks, the SQL), Phase 3 (seven tasks, `tack-app`), Phase 4 (shape), Phase 5 (the documents).
-The task list with each task's scope, input and done-when command is §5 of the plan.
+What is open, in order: the graph check and `tack-protocol` (three tasks); two conventions
+tasks and the split of the execution store; a fan-out of thirteen file-sized tasks, three
+abreast, that take each file out of `sqlx` and out of the handlers in one visit; the close that
+bans `sqlx` and `axum` outside their crates; shape; the documents. The task list with each
+task's scope, input and done-when command is §5 of the plan.
 
 ---
 
@@ -167,11 +173,17 @@ The task list with each task's scope, input and done-when command is §5 of the 
 A docket run parked on a question is cancelled when the attempt's own time passes, and the run reads
 as a timeout. docket's maintainers have drafted a phase that turns every wait for a person (a tool
 approval, a consultation, an input step) into one record, an escalation; the draft is not accepted,
-so every name in it is a proposal. Seven cards, in the order docket would ship what each needs. Two
-wait on nothing: the clock of a task that waits on a person stops, and the cost of polling docket is
-measured before anything replaces it. Five wait on a named docket card: the autonomy level sent on
-each task, one reader for escalations, one A2A client, what docket decided alone shown on the
-timeline and in the metrics, and the removal of the old shapes once docket removes them.
+so every name in it is a proposal. A phase of its own because it changes what the docket adapter
+does and is gated by a partner, while Phase 79 changes structure only; the two share no files
+beyond a path rename, so its first card runs beside Phase 79, not after it.
+
+One card is ready now: the clock of a task that waits on a person stops. Four wait on a named
+docket card and run as two slices per docket build, runner side and board side, after one
+recapture of the fixtures: the autonomy level sent on each task, one reader and one answer route
+for escalations, what docket decided alone shown on the timeline and in the metrics, and the
+removal of the old shapes once docket removes them. The polling measurement is deferred until
+someone proposes a replacement, since nothing can replace it today (Tack has no inbound
+endpoint); the A2A client was cut, since the one answer route removes its trigger.
 
 ---
 

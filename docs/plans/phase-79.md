@@ -60,15 +60,18 @@ a script, the one recipe section it needs, and a "done when" that is a command.
 
 One agent, one task of §5, and never more than **~800 lines of source in scope** plus the tests
 those lines reach. A handler file above that is split into two tasks by handler name, and each
-task's list names only its handlers' lines. An agent that finds itself reading a file not on its
+task's list names only its handlers' lines. A file is visited once: the agent that takes a
+file out of `sqlx` also extracts its use cases or gives its loop a `tick()` in the same run,
+because it has already read the file (§5). An agent that finds itself reading a file not on its
 list has the wrong list: it stops and reports, it does not widen. A task is finished when its
 "done when" command passes; the agent never runs the whole suite and never runs
 `.githooks/pre-push`.
 
 ### Conventions first, then the fan-out
 
-Each phase that has model tasks starts with one **conventions task** (§5: `2.0`, `3.0`): it
-writes the shared types and one worked example of each kind the recipe names. Every later task
+The fan-out starts with two **conventions tasks** (§5: `C1` for the store, `C2` for the
+application crate): they write the shared types and one worked example of each kind the recipes
+name. Every later task
 copies that example. No two agents invent the same thing.
 
 ### Tests: nothing coexists
@@ -91,13 +94,16 @@ From phase 0 on, `scripts/check-crate-graph.sh` holds a table of allowed `path` 
 among **normal** dependencies and fails on any other edge; `dev-dependencies` on
 `tack-test-support` are exempt by the script, not by the table. Each phase tightens the table in
 the same PR that makes the tightening true. `scripts/gen-deny-toml.sh` gains a `bans.deny` entry
-with `wrappers` for `sqlx` when task 2.11 makes it true, and for `axum` when phase 3 does.
+with `wrappers` for `sqlx` and for `axum` when task E2 makes both true.
 
 ### Agents
 
 - Worktree from `develop`, never from `main`; `PATH=/home/ox/.cargo/bin:$PATH`;
   `CARGO_TARGET_DIR` under `/home/ox/tack-agent-targets/<id>`; `--build-jobs 4 --test-threads 4`;
   `renice` applied from outside.
+- Sequential tasks reuse one worktree and one `CARGO_TARGET_DIR`; only tasks that run abreast
+  get their own, and at most three target directories exist at once. A fresh target directory is
+  a full build of the workspace, which costs more than most tasks.
 - No GUI, no headed browser; never the live board, `~/.docket`, `~/.config/tack/runner.toml` or a
   `tack.db`.
 - No `Co-Authored-By`; the change writes its own `CHANGELOG.md` line under `[Unreleased]`; code
@@ -114,7 +120,7 @@ Seven crates today, nine after. Two are new; none is renamed.
 | `tack-core` | domain | planning and runs policy, pure | protocol | pure logic |
 | `tack-orch` | domain | `scheduler/` and `model_policy/` **pure** (their `wiring.rs` leave in phase 3) | protocol, core | the runs domain that is not protocol; pure after phase 3 |
 | `tack-db` | adapter | every `sqlx` line in the server; `repo/<aggregate>/`, `queries/`, `StoreError`, migrations; the attempt state converted at its edge | protocol, core | the only crate allowed to name `sqlx` |
-| `tack-app` **(new)** | application | the runs use cases (`runs/`), **all five** ticks (`merge`, `auto_start`, `github_sync`, `retention`, `observability`) as `async fn tick()`, the scheduler's and model policy's wiring, the embedded runner's one module, `AppError` | protocol, core, orch, db | the only place that composes planning, runs and the store |
+| `tack-app` **(new)** | application | the runs use cases (`runs/`), **every** tick (`auto_start`, `merge`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) as `async fn tick()`, the scheduler's and model policy's wiring, the embedded runner's one module, `AppError`. It may name `reqwest` (its ticks talk to GitHub and the backup store); never `axum` or `sqlx` | protocol, core, orch, db | the only place that composes planning, runs and the store |
 | `tack-api` | adapter | axum routes, auth, websocket, OpenAPI, DTOs, `ApiError` | protocol, core, db, app | the only crate allowed to name `axum`; it names `tack-db` because `AppState.repo` is the `Repository` and `ApiError` wraps `StoreError` |
 | `tack-runner` | process | unchanged | protocol, core | never `tack-db` again |
 | `tack-cli` | binary | `serve.rs` composition (builds the `Repository`, spawns the ticks), subcommands, MCP | api, app, runner, db, protocol, core | the composition root |
@@ -351,7 +357,7 @@ the enum everywhere; `repo/execution.rs` is split by lifecycle; `tack-api` never
 | a state literal | `ExecutionState` / `RecoveryDisposition` | `tack-db` converts once per row with `as_str()` and `from_str` in `repo/execution/state.rs`; no literal outside that file |
 | `sqlx::` in a test under `tack-api/tests` | a **seed** → `tack_test_support::seed::<table>(...)`; an **assert over rows** → the new `queries::` function | no test keeps `sqlx::` |
 
-`StoreError` (`crates/tack-db/src/error.rs`, task 2.0):
+`StoreError` (`crates/tack-db/src/error.rs`, task C1):
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -365,11 +371,11 @@ pub enum StoreError {
 }
 ```
 
-`ApiError` gains `Store(#[from] StoreError)` in 2.0 (`NotFound` → 404, `Conflict` → 409, `Sql` →
-500). `ApiError::Database(sqlx::Error)` **stays until task 2.11 deletes it**, so each task merges
+`ApiError` gains `Store(#[from] StoreError)` in C1 (`NotFound` → 404, `Conflict` → 409, `Sql` →
+500). `ApiError::Database(sqlx::Error)` **stays until task E2 deletes it**, so each task merges
 on its own; the gate of the phase is the grep, not the compiler.
 
-`Repository::pool()` becomes `pub(crate)` in 2.11. Until then a handler may still call it; after,
+`Repository::pool()` becomes `pub(crate)` in E2. Until then a handler may still call it; after,
 nothing outside `tack-db` can.
 
 Script per task (the list is the whole input):
@@ -382,7 +388,7 @@ grep -lE 'sqlx::' $(git ls-files 'crates/tack-api/tests/**/*.rs') | xargs grep -
 
 Filterset while working: `-E 'binary(<the test binaries in /tmp/<task>-tests.txt>)'`.
 
-Verify after 2.11:
+Verify after E2:
 
 ```bash
 grep -rn 'sqlx' crates/tack-api/src crates/tack-api/tests crates/tack-orch/src crates/tack-cli/src crates/tack-api/Cargo.toml crates/tack-orch/Cargo.toml | wc -l   # 0
@@ -398,12 +404,13 @@ Goal: the rules of a run live in functions that take the store and a clock, not 
 handlers; every background loop is an `async fn tick()` that `tack serve` schedules; the
 embedded runner has one owner; `tack-orch` is pure.
 
-Script (task 3.0a, before the conventions agent):
+Script (C2 runs the first block; each §5 task that moves a file runs its own lines of the
+rest, after that file has no `sqlx`):
 
 ```bash
 A=crates/tack-app; mkdir -p $A/src/runs $A/tests
 # Cargo.toml: deps tack-protocol, tack-core, tack-orch, tack-db, tokio, tracing, chrono, uuid,
-# serde, serde_json, thiserror; dev-dep tack-test-support. NO axum, NO sqlx, NO reqwest.
+# serde, serde_json, thiserror, reqwest; dev-dep tack-test-support. NO axum, NO sqlx.
 # Add to workspace members.
 for m in auto_start autonomy merge execution_runtime github_sync rate_card; do
   git mv crates/tack-api/src/$m.rs $A/src/$m.rs; [ -d crates/tack-api/src/$m ] && git mv crates/tack-api/src/$m $A/src/$m
@@ -419,14 +426,14 @@ git mv crates/tack-orch/src/model_policy/wiring.rs $A/src/model_policy_wiring.rs
 sed -i '/^pub mod wiring;$/d;/^pub use wiring::/d' crates/tack-orch/src/scheduler/mod.rs crates/tack-orch/src/model_policy/mod.rs
 git mv crates/tack-orch/tests/ingestion.rs $A/tests/ingestion.rs; git mv crates/tack-orch/tests/ingestion $A/tests/ingestion
 sed -i '/^tack-db = /d' crates/tack-orch/Cargo.toml
-cargo check --workspace --all-targets --message-format short 2>&1 | grep -E '^crates/.*: error' | sort -u > /tmp/phase3-errors.txt
+cargo check --workspace --all-targets --message-format short 2>&1 | grep -E '^crates/.*: error' | sort -u
 # expected: every error is one of three kinds: a moved file names crate::AppState or an axum
 # type (it takes &Repository, &dyn Clock and plain values instead), a path the sed missed, or a
-# scheduler wiring re-export. That list is task 3.0's input.
-grep -n 'tokio::time::interval' crates/tack-api/src/server.rs      # the four loops that become ticks
+# scheduler wiring re-export. The task that moved the file fixes them.
+grep -n 'tokio::time::interval\|run_github_poll_task\|run_auto_start_task' crates/tack-api/src/server.rs   # the loops that become ticks
 ```
 
-Shape (task 3.0 writes one of each; the rest copy):
+Shape (C2 writes the error type, one use case and `serve.rs`; the rest copy):
 
 - `crates/tack-app/src/error.rs`: `AppError { NotFound, Conflict(String), InvalidTransition {
   from, to }, StaleLease { .. }, Store(#[from] StoreError), Core(#[from] CoreError) }`.
@@ -441,7 +448,7 @@ Shape (task 3.0 writes one of each; the rest copy):
   interval)` that loops over it. The tests call `tick()` with a `FakeClock`; no
   `tokio::time::sleep` in a test.
 - `crates/tack-cli/src/serve.rs` (new, ~60 lines): builds the `Repository`, the `AppState`,
-  spawns the five ticks, calls `tack_api::serve`. `tack_api::serve` no longer spawns a loop.
+  spawns every tick, calls `tack_api::serve`. `tack_api::serve` no longer spawns a loop.
   Websocket send/recv tasks and fire-and-forget spawns in handlers stay where they are: they are
   not loops.
 
@@ -452,7 +459,7 @@ JSON shape stays. A test is never in both places. `tack-cli/tests/e6_scheduler_e
 `embedded_runner_state_scoping.rs` keep running the real server: they prove `serve.rs` composes
 the same thing.
 
-Verify after 3.6:
+Verify after E2 (the same gate as Phase 2's):
 
 ```bash
 grep -rn 'tokio::time::interval' crates/tack-api/src | grep -v tests | wc -l      # 0
@@ -521,73 +528,85 @@ Verify: `scripts/check-comments.sh`, `mdbook build docs/book`,
 ## 5. The task list
 
 One row is one agent run, or one script run. **Scope** is every source file the agent may read
-or edit; its line count is what the agent will hold in context before editing. **Input** is the
-file a script made for it. **Done when** is the command. Rows with the same **group** letter
-can run in parallel in separate worktrees; rows in different groups run in the order shown.
-A row's commit names the row (`Phase 79, task 2.3a: ...`).
+or edit, with its line count: what the agent holds in context before editing. **Done when** is
+the command. Rows sharing a **group** letter run in parallel in separate worktrees, at most three
+at a time; groups run in the order shown. A row's commit names the row (`Phase 79, task D4: ...`).
 
-An agent's prompt is: its row, the recipe section its phase names (§4), and the agent rules of
+**A file is visited once.** Phase 2 (the SQL) and Phase 3 (the use cases and the ticks) are two
+recipes for one fan-out: the agent that takes a handler file out of `sqlx` also extracts its use
+cases, or gives its loop a `tick()`, in the same run, because it has already read the file. The
+two conventions tasks come first so every later task copies a pattern instead of inventing one.
+
+An agent's prompt is: its row, the recipe sections of §4 its row names, and the agent rules of
 §2. Nothing else. No agent reads §1, §6, §7, the ADR or the guides.
 
-### Group 0 and 1
-
-| Task | Kind | Scope (lines) | Input | Done when | Group |
-|---|---|---|---|---|---|
-| 0.0 | script | `.gitignore`, `scripts/check-crate-graph.sh`, `.githooks/pre-push` | — | §4 Phase 0 verify | a |
-| 1.0 | script | the Phase 1 script | — | `/tmp/phase1-errors.txt` under ~40 lines | b |
-| 1.1 | model | the files `/tmp/phase1-errors.txt` names + `tack-protocol/src/execution/types.rs` + `tack-api/src/handlers/executions.rs` (mirrors only, ~300 of its 3 023) | `/tmp/phase1-errors.txt` | Phase 1 done-when | c |
-
-### Group 2 — the SQL
-
-Each row's list comes from the per-task script in §4 Phase 2. Sites are from §1.
-
-| Task | Kind | Scope (lines) | Sites | Tests it touches | Done when | Group |
-|---|---|---|---|---|---|---|
-| 2.0 | model, **conventions** | `tack-db/src/{error.rs, lib.rs, repo.rs}`, `tack-db/src/queries/mod.rs`, `repo/execution/state.rs`, `tack-api/src/error.rs`, `tack-test-support/src/seed.rs`; one worked example of each recipe row, taken from `handlers/attempt_lists.rs` (421 lines, 5 sites) | 5 | `tests/handlers/attempt_lists*` | `attempt_lists.rs` has no `sqlx`; `StoreError`, `ApiError::Store`, `queries/`, `seed::` and the state conversion exist with one test each; `-E 'binary(handlers)'` passes | d |
-| 2.1 | model | `tack-db/src/repo/execution.rs` (4 087) → `repo/execution/{enqueue,claim,events,decisions,artifacts,recovery,completion,state}.rs`, cut along the existing `impl Repository` methods by the stage each test file names; no SQL changes | 0 | `tack-db/tests/repository/*` (unchanged) | `cargo check` clean; no file over 1 200 lines; `-E 'binary(repository)'` passes with the same count | d |
-| 2.2 | model | `handlers/runner_admin.rs` (1 394) + `handlers/runner_protocol/runner_auth.rs` | 20 | `tests/handlers/executions_runner_admin.rs` (70 sqlx), `tests/runner_protocol/enrollment.rs` | file greps → 0; its binaries pass | e |
-| 2.3a | model | `handlers/runner_protocol.rs`, handlers `enroll`, `claim`, `heartbeat`, `observe_recovery`, `renew` (~1 300 of 2 910; the list is by line range) | ~17 | `tests/runner_protocol/{lifecycle,enrollment}.rs`, `tests/security/chaos_*` | its sites → 0; `-E 'binary(runner_protocol) + binary(security)'` passes | e |
-| 2.3b | model | `handlers/runner_protocol.rs`, handlers `submit_events`, `submit_artifacts`, `put_artifact_content`, `create_decision`, `complete` (~1 400) | ~18 | `tests/runner_protocol/{artifact_events,decisions}.rs`, `tests/wiring/artifact.rs` | same, for its sites | f (after 2.3a) |
-| 2.4a | model | `handlers/executions.rs`, handlers `create_execution`, `create_as`, `cancel`, `requeue_needs_operator`, `list_execution_attempts` (~1 200 of 3 023) | ~15 | `tests/handlers/executions*.rs` (the ones naming those routes) | its sites → 0; `-E 'binary(handlers)'` passes | e |
-| 2.4b | model | `handlers/executions.rs`, `load_profile`, `get_item_agent_context`, `run_limits_of` and the rest (~1 300) | ~15 | the rest of `tests/handlers/executions*.rs`, `tests/runner_vertical_slice/repository_crash.rs` | same | f (after 2.4a) |
-| 2.5 | model | `auto_start.rs` (351), `handlers/decisions.rs` (736), `merge.rs` (382), `handlers/mrp.rs` (269), `autonomy.rs` (307) | 25 | `tests/handlers/{autonomy,mrp,merge_button,rework}.rs`, `tests/runner_protocol/decisions.rs` | its sites → 0; its binaries pass | e |
-| 2.6 | model | `remote_backup.rs` (858) + `remote_backup/tests.rs`, `handlers/backup.rs` (496) | 33 | `tests/handlers/backup*`, `remote_backup/tests.rs` | same | e |
-| 2.7 | model | `prill_store.rs` (284), `handlers/pull_requests.rs` (151), `github_sync.rs` (1 032: its 3 sites only, by line), `server.rs` (620: 3 sites), `debug.rs` (135) | 29 | `tests/handlers/{pull_requests,production_router}.rs`, `tests/wiring/execution_sweep.rs` | same | e |
-| 2.8 | model | `handlers/local_runner.rs` (600), `handlers/{templates,settings,roles,metrics,items,export}.rs` (sites only, by line) | 20 | the handler tests naming those routes | same | e |
-| 2.9 | model | `tack-orch/src/scheduler/wiring.rs`, `tack-orch/src/model_policy/wiring.rs`: their `SELECT`s go to `tack-db/src/queries/`, their signatures return `StoreError`; the files stay in `tack-orch` until phase 3 | 4 + the queries | `tack-orch/tests/scheduling/*` | `grep -rn sqlx crates/tack-orch/src` → 0; `-E 'binary(scheduling)'` passes | e |
-| 2.10 | model | the 31 test files under `tack-api/tests` still naming `sqlx::` after group e and f: each site becomes a `seed::` or a `queries::` call | — | those files | `grep -rln 'sqlx::' crates/tack-api/tests` → 0; `-E 'package(tack-api)'` passes | g |
-| 2.11 | script + 1 small model fix | delete `ApiError::Database`; `pool()` → `pub(crate)`; `sqlx` out of `tack-api/Cargo.toml` and `tack-orch/Cargo.toml`; `gen-deny-toml.sh` bans `sqlx` outside `tack-db`/`tack-test-support`; tighten the graph table | — | — | Phase 2 verify, full suite once, `pre-push` | h |
-
-Groups e: nine agents on disjoint files, at most three at a time on this machine (§2 agents).
-The 2.3 and 2.4 pairs are sequential because the two halves edit one file.
-
-### Group 3 — the use cases and the ticks
+### Structure first
 
 | Task | Kind | Scope (lines) | Done when | Group |
 |---|---|---|---|---|
-| 3.0a | script | the Phase 3 script | `/tmp/phase3-errors.txt` exists | i |
-| 3.0 | model, **conventions** | `tack-app/src/{lib.rs, error.rs}`, `tack-api/src/error.rs`; one use case (`mark_decision_viewed`, 25 lines, from `handlers/decisions.rs`) in `runs/`; one tick (`auto_start.rs`, 351) losing `AppState` and exposing `tick()`/`run()`; `tack-cli/src/serve.rs`; fix every line `/tmp/phase3-errors.txt` names in the moved files by giving them `&Repository`/`&dyn Clock` | `cargo check` clean; `serve.rs` spawns `auto_start::run`; `-E 'binary(handlers) + package(tack-cli)'` passes | j |
-| 3.1 | model | `handlers/runner_protocol.rs`, the 2.3a handlers → `runs/{enroll,claim,heartbeat,observe_recovery}.rs` | the handlers are extract/call/map; their rule tests moved to `tack-app/tests`; `-E 'binary(runner_protocol)'` passes | k |
-| 3.2 | model | `handlers/runner_protocol.rs`, the 2.3b handlers → `runs/{report_events,submit_artifacts,create_decision,complete}.rs` | same | l (after 3.1) |
-| 3.3 | model | `handlers/decisions.rs` (736) → `runs/{resolve_decision,expire_decisions}.rs` | same, `binary(runner_protocol)` for decisions | k |
-| 3.4 | model | `handlers/executions.rs`, `create_execution`, `create_as`, `cancel`, `requeue_needs_operator` → `runs/{start_run,cancel_run,requeue}.rs` | same, `binary(handlers)` | k |
-| 3.5 | model | `handlers/local_runner.rs` (600), `tack-cli/src/local_runner.rs` (552), `tack-cli/src/local_enrollment.rs` (152) → `tack-app/src/local_runner.rs` with `LocalRunnerControl`; the three keep routes and clap glue | the three old files sum under 400 lines; `embedded_runner_state_scoping` and `e6_scheduler_e2e_test` pass | k |
-| 3.6 | model | the four remaining ticks (`merge.rs` 382, `github_sync.rs` 1 032, `retention.rs`, `observability.rs`) take `tick()`/`run()` like `auto_start`; `serve.rs` spawns all five; the four `interval` loops leave `server.rs` | Phase 3 verify, full suite once, `pre-push` | m |
+| 0.0 | script | `.gitignore`, `scripts/check-crate-graph.sh`, `.githooks/pre-push` | §4 Phase 0 verify | a |
+| 1.0 | script | the Phase 1 script | `/tmp/phase1-errors.txt` under ~40 lines | b |
+| 1.1 | model | the files `/tmp/phase1-errors.txt` names; `tack-protocol/src/execution/types.rs`; the `*Schema` mirrors of `tack-api/src/handlers/executions.rs` (~300 of its 3 023 lines, by line range) | Phase 1 done-when; full suite once; `pre-push` | c |
 
-### Groups 4 and 5
+### Conventions
+
+| Task | Kind | Scope (lines) | Done when | Group |
+|---|---|---|---|---|
+| C1 | model | **store conventions:** `tack-db/src/{error.rs, lib.rs}`, `tack-db/src/queries/mod.rs`, `tack-db/src/repo/execution/state.rs` (the enum conversion), `tack-api/src/error.rs` (`ApiError::Store`), `tack-test-support/src/seed.rs`; one worked example of every row of the Phase 2 recipe, taken from `handlers/attempt_lists.rs` (421, 5 sites) and its tests | `attempt_lists.rs` has no `sqlx`; each new type and the conversion has one test; `-E 'binary(handlers) + binary(repository)'` passes | d |
+| C2 | model | **app conventions:** `crates/tack-app` created (`Cargo.toml`: protocol, core, orch, db, tokio, tracing, chrono, uuid, serde, thiserror, reqwest; dev-dep test-support; never axum or sqlx), `src/{lib.rs, error.rs}` (`AppError`, `From<AppError> for ApiError`), one use case `runs/mark_decision_viewed.rs` (25 lines, from `handlers/decisions.rs`), the tick shape as a doc comment in `lib.rs`; `tack-cli/src/serve.rs` that builds the `Repository` and the `AppState` and calls `tack_api::serve` (it spawns nothing yet: each loop moves with the task that owns its file) | `cargo check` clean; `-E 'binary(runner_protocol) + package(tack-cli)'` passes; `scripts/check-crate-graph.sh` with `tack-app` added | e (after C1) |
+| C3 | model | `tack-db/src/repo/execution.rs` (4 087) → `repo/execution/{enqueue,claim,events,decisions,artifacts,recovery,completion}.rs`, cut along the existing methods by the stage each test file names; no SQL changes | `cargo check` clean; no file over 1 200 lines; `-E 'binary(repository)'` passes with the same count | e |
+
+### The fan-out — one visit per file
+
+SQL per the Phase 2 recipe; use cases and ticks per the Phase 3 shape. Each row's site list is
+the per-task script of §4 Phase 2; "+ rules" means the row also extracts use cases, "+ tick"
+means the file moves to `tack-app` and its loop leaves `server.rs` for `serve.rs`.
+
+| Task | Scope (lines) | Sites | Also | Tests it touches | Done when | Group |
+|---|---|---|---|---|---|---|
+| D1 | `handlers/runner_admin.rs` (1 394), `handlers/runner_protocol/runner_auth.rs` | 20 | — | `tests/handlers/executions_runner_admin.rs` (70 sqlx), `tests/runner_protocol/enrollment.rs` | its sites → 0; its test files have no `sqlx`; `-E 'binary(handlers) + binary(runner_protocol)'` passes | f |
+| D2 | `handlers/runner_protocol.rs`, handlers `enroll`, `claim`, `heartbeat`, `renew`, `observe_recovery` (~1 300 of 2 910, by line range) | ~17 | + rules → `runs/{enroll,claim,heartbeat,observe_recovery}.rs` | `tests/runner_protocol/{lifecycle,enrollment}.rs`, `tests/security/chaos_*` | its sites → 0; its handlers are extract/call/map; rule tests moved to `tack-app/tests`; `-E 'binary(runner_protocol) + binary(security)'` passes | f |
+| D3 | `handlers/runner_protocol.rs`, handlers `submit_events`, `submit_artifacts`, `put_artifact_content`, `create_decision`, `complete` (~1 400) | ~18 | + rules → `runs/{report_events,submit_artifacts,create_decision,complete}.rs` | `tests/runner_protocol/{artifact_events,decisions}.rs`, `tests/wiring/artifact.rs` | same | f (may run beside D2: the only shared lines are the `use` block; the second to merge rebases) |
+| D4 | `handlers/executions.rs`, handlers `create_execution`, `create_as`, `cancel`, `requeue_needs_operator` (~1 000 of 3 023) | ~12 | + rules → `runs/{start_run,cancel_run,requeue}.rs` | `tests/handlers/executions*.rs` naming those routes | same, `binary(handlers)` | f |
+| D5 | `handlers/executions.rs`, `list_execution_attempts`, `load_profile`, `get_item_agent_context`, `run_limits_of` and the rest (~1 500) | ~18 | — (read models → `queries/`) | the rest of `tests/handlers/executions*.rs`, `tests/runner_vertical_slice/repository_crash.rs` | its sites → 0 | f (beside D4, same note) |
+| D6 | `handlers/decisions.rs` (736), `handlers/mrp.rs` (269) | 8 | + rules → `runs/{resolve_decision,expire_decisions}.rs` | `tests/runner_protocol/decisions.rs`, `tests/handlers/mrp.rs` | same | g |
+| D7 | `auto_start.rs` (351), `merge.rs` (382), `autonomy.rs` (307), `rate_card.rs` (57: its one site only; the file is routes and stays) | 21 | + tick: the three move to `tack-app`, each with `tick()`/`run()`; `serve.rs` spawns `auto_start::run`; the auto-start loop leaves `server.rs` | `tests/handlers/{autonomy,merge_button,rework}.rs`, the moved files' `tests.rs` | sites → 0; `grep -n auto_start crates/tack-api/src/server.rs` → 0; `-E 'binary(handlers) + package(tack-app)'` passes | g |
+| D8 | `github_sync.rs` (1 032), `handlers/pull_requests.rs` (151), `lib.rs`'s `run_github_poll_task` | 9 | + tick: `github_sync` moves to `tack-app` with `tick()`/`run()`; `serve.rs` spawns it; the poll task leaves `lib.rs`/`server.rs` | `tests/handlers/pull_requests.rs` | sites → 0; `grep -n github_poll crates/tack-api/src` → 0 | g |
+| D9 | `remote_backup.rs` (858) + `remote_backup/tests.rs`, `handlers/backup.rs` (496), `server.rs`'s `run_scheduled_backup` | 33 | + tick: the backup loop becomes `remote_backup::{tick,run}`; the module moves to `tack-app`; `serve.rs` spawns it when an interval is set | `remote_backup/tests.rs`, `tests/handlers/backup*` | sites → 0; `grep -n backup_interval crates/tack-api/src/server.rs` → 0 | g |
+| D10 | `prill_store.rs` (284), `debug.rs` (135), `server.rs`'s 3 sites and `check_due_soon` | 12 | + tick: `check_due_soon` becomes `tack-app/src/due_soon.rs` with `tick()`/`run()`; the hourly loop leaves `server.rs` | `tests/handlers/production_router.rs`, `tests/wiring/execution_sweep.rs` | sites → 0; `grep -rn 'tokio::time::interval' crates/tack-api/src` → 0 once D7–D10 are merged | g |
+| D11 | `handlers/local_runner.rs` (600), `tack-cli/src/local_runner.rs` (552), `tack-cli/src/local_enrollment.rs` (152) | 7 | + rules: the logic and `LocalRunnerControl` go to `tack-app/src/local_runner.rs`; the three keep routes and clap glue | `tack-cli/tests/embedded_runner_*.rs`, `e6_scheduler_e2e_test.rs` | sites → 0; the three old files sum under 400 lines; those binaries pass | g |
+| D12 | `handlers/{templates,settings,roles,metrics,items,export}.rs`, sites only, by line | 13 | — | the handler tests naming those routes | sites → 0 | g |
+| D13 | `tack-orch/src/scheduler/wiring.rs` (641), `model_policy/wiring.rs` (29), `execution_retention.rs` (238) + its `tests.rs`, `execution_observability.rs` (258) + its `tests.rs`, `tack-orch/tests/ingestion/` | 4 + the `SELECT`s | + tick: the `SELECT`s go to `tack-db/src/queries/`, signatures return `StoreError`; the four files move to `tack-app` (`scheduler_wiring.rs`, `model_policy_wiring.rs`, `retention.rs`, `observability.rs`), the two ticks expose `tick()`/`run()` and `serve.rs` spawns them; `tack-db` leaves `tack-orch/Cargo.toml` | `tack-orch/tests/scheduling/*`, the moved `ingestion/` | `grep -rln 'sqlx\|tack_db' crates/tack-orch/src` → 0; `-E 'binary(scheduling) + binary(ingestion)'` passes | g |
+
+Group f is the four biggest files, three agents abreast; group g is nine disjoint scopes, three
+abreast, in any order. D2 and D4 should land before D3 and D5 when run sequentially, so the
+second agent on each file starts from a smaller file.
+
+### Close
 
 | Task | Kind | Scope | Done when | Group |
 |---|---|---|---|---|
-| 4.1 | script | allowances removed, `/tmp/dead.txt`, `/tmp/machete.txt` | the two files exist | n |
-| 4.2 | model | the items and dependencies the two files name | §4 Phase 4 bullet 4.2 | o |
-| 4.3 | model | `frontend/src/shared/{state/itemEvents.ts, state/executionContext.tsx, agents/FirstRunBanner.tsx}`, `src/architecture.test.ts` | bullet 4.3 | o |
-| 4.4a | model | `tack-cli/src/main.rs` (3 054) → `cmd/*.rs` | bullet 4.4a | o |
-| 4.4b | model | `tack-runner/src/engine.rs` (2 611) → `engine/*.rs` | bullet 4.4b | o |
-| 5.0 | script | `scripts/arch-facts.sh` | prints five lines | p |
-| 5.1 | model | `docs/ARCHITECTURE.md` (two sections), `docs/book/src/developer/crate-tour.md`, `CHANGELOG.md` | Phase 5 verify | q |
+| E1 | model | every file under `tack-api/tests` still naming `sqlx::` after group g (`grep -rln 'sqlx::' crates/tack-api/tests`): each site becomes a `seed::` or a `queries::` call | that grep → 0; `-E 'package(tack-api)'` passes | h |
+| E2 | script + small fixes | delete `ApiError::Database`; `Repository::pool()` → `pub(crate)` (the compiler lists the callers left; each becomes a method or a query); `sqlx` out of `tack-api/Cargo.toml` and `tack-orch/Cargo.toml`; `gen-deny-toml.sh` bans `sqlx` outside `tack-db`/`tack-test-support` and `axum` outside `tack-api`/`tack-cli`; the graph table becomes §3's | the Phase 2 and Phase 3 verify blocks; full suite once; `pre-push` | i |
 
-**Totals:** 7 scripts, 24 model tasks. The largest model scope is ~1 400 lines (2.3b, 2.4b);
-the first draft's largest was ~7 800. Six of the 24 can run three abreast.
+### Shape and documents
+
+| Task | Kind | Scope | Done when | Group |
+|---|---|---|---|---|
+| 4.1 | script | allowances removed; `/tmp/dead.txt`, `/tmp/machete.txt` | the two files exist | j |
+| 4.2 | model | the items and dependencies the two files name | §4 Phase 4 bullet 4.2 | k |
+| 4.3 | model | `frontend/src/shared/{state/itemEvents.ts, state/executionContext.tsx, agents/FirstRunBanner.tsx}`, `src/architecture.test.ts` | bullet 4.3 | k |
+| 4.4a | model | `tack-cli/src/main.rs` (3 054) → `cmd/*.rs` | bullet 4.4a | k |
+| 4.4b | model | `tack-runner/src/engine.rs` (2 611) → `engine/*.rs` | bullet 4.4b | k |
+| 5.0 | script | `scripts/arch-facts.sh` | prints five lines | l |
+| 5.1 | model | `docs/ARCHITECTURE.md` (two sections), `docs/book/src/developer/crate-tour.md`, `CHANGELOG.md` | Phase 5 verify; full suite once; `pre-push` | m |
+
+**Totals:** 4 scripts, 24 model runs, three full-suite gates (after 1.1, E2, 5.1). The largest
+scope is ~1 500 lines (D5). Every handler file is read by one agent per visit and the four
+biggest are visited once, not once for the SQL and again for the rules: about 7 000 fewer lines
+read than the two-pass version, and about half the agent runs on those files. Sequential tasks
+reuse one worktree and one target directory (§2); a run that needs a fresh target directory
+costs a full build of the workspace before its first edit.
 
 ## 6. What can go wrong, and what to do
 
@@ -596,7 +615,8 @@ the first draft's largest was ~7 800. Six of the 24 can run three abreast.
 | 1.0 leaves more than ~40 errors | a sed hit something it should not have | `git checkout -- crates && git clean -fd crates/tack-protocol`, re-run one sed at a time with `cargo check` between |
 | A moved module needs `tack_core::models` | it is domain, not protocol | leave it in `tack-core`; `tack-protocol` never depends on `tack-core` |
 | `docs/openapi.json` shows a field appearing or vanishing in 1.1 | a mirror was not faithful | stop; report the field; the maintainer decides which side was right |
-| A group-2 agent needs a store method a sibling task is writing | two tasks own one aggregate | the later task waits; the earlier commits first; never two agents in one `repo/<aggregate>` file |
+| A fan-out agent needs a store method a sibling task is writing | two tasks own one aggregate | the later task waits; the earlier commits first; never two agents in one `repo/<aggregate>` file |
+| Two agents on one handler file (D2/D3, D4/D5) conflict | both edited the `use` block or a shared helper | the second to merge rebases; a helper both need moves to `tack-app` in the first to land |
 | `cargo nextest list` count drops across a task by more than its deleted tests | a test got lost in a move | `git diff --stat -M` must show `R`, not `D` + `A` |
 | A use case needs `axum::http::StatusCode` | the HTTP mapping leaked into the rule | the use case returns `AppError`; the status is `ApiError`'s business |
 | A use case wants a method only a trait could fake | the temptation of the first draft | it takes `&Repository`; the test seeds SQLite |
@@ -627,8 +647,13 @@ the first draft's largest was ~7 800. Six of the 24 can run three abreast.
   crate; `cargo check` output without `file:line`; the 2a `sed` that rewrote
   `state.repo.get_github_link(x)` into invalid code (the wrapper and the module function have
   different names). The 27 wrappers stay: they are the methods handlers call.
-- **Tasks are sliced by file, ~800 lines each, after a conventions task per phase.** The draft's
-  "six agents" put ~7 800 lines in front of one agent for PR 2b and ~7 000 for phase 3's agent
-  B.
+- **Tasks are sliced by file, after two conventions tasks, and each file is visited once.** The
+  draft's "six agents" put ~7 800 lines in front of one agent for PR 2b and ~7 000 for phase 3's
+  agent B, and read the four biggest files twice (once for the SQL, once for the rules). The
+  2026-10-25 re-read merged the two passes into one fan-out and made sequential tasks reuse one
+  worktree and target directory, since a fresh target directory is a full build.
+- **`rate_card.rs` stays in `tack-api`**: the draft moved it, but it is routes.
+- **`tack-app` may name `reqwest`**: the draft forbade it while moving `github_sync` and
+  `merge`, which use it.
 - **Evidence corrected**: ~8 mirrors, not 18; some of the 20 state literals are
   `RecoveryDisposition`; `ExecutionState` has no `as_str`/`FromStr` yet.

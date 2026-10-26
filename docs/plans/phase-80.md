@@ -1,8 +1,20 @@
 # Phase 80: a run that waits on a person, and one record for every wait
 
-**Status: proposed 2026-10-25. Nothing here is started.** Cards A and B depend on no docket card and
-can start when the maintainer says so; C to G are `BLOCKED` on docket cards, each with the trigger
-that releases it.
+**Status: proposed 2026-10-25; re-read the same day against Phase 79's task list. Nothing here is
+started.** One card is ready now: A. B is deferred until someone proposes replacing polling. E is
+cut. C, D, F and G are `BLOCKED` on docket cards, each with the trigger that releases it, and run
+as two waves split by layer, not by card, with one recapture of the fixtures per docket build.
+
+**Why a phase of its own, and how it sits beside Phase 79.** Phase 79 changes structure and no
+behaviour; this phase changes what the docket adapter does and is gated by a partner's acceptance.
+Folding one into the other would tie an unblocked refactor to docket's calendar and put behaviour
+changes inside a no-behaviour-change series. They do not compete for files: Phase 79 touches
+`tack-runner` only in a path rename (`tack_orch::execution` → `tack_protocol::execution`, four
+lines across `harness/docket*.rs`) and in the split of `engine.rs`; card A touches
+`harness/docket.rs`, `harness/mod.rs` and the fake. **A can run now, in parallel with Phase 79**, on
+its own worktree; whichever merges second rebases over a rename. Cards C and F name files Phase 79
+moves (`tack-api/src/autonomy.rs` → `tack-app`, the request snapshot → `tack-protocol`,
+`handlers/metrics.rs` loses its SQL); their paths are re-read when they are released.
 
 **Where this comes from.** docket's maintainers drafted a "Phase 51" that turns every moment docket
 stops for a person (a tool approval, a model `consult`, an `input` step, a gate that needs a human)
@@ -13,10 +25,9 @@ names. Tack probes at runtime and sends or reads a new field only when docket sa
 Phase 77 K did for `prepare`.
 
 **Done when:** a run parked on a question is neither cancelled nor timed out while a person has not
-had the chance to answer; the cost of polling docket is a number in the repository and the choice to
-keep it or replace it is written beside the number; and, once docket ships its cards, the adapter has
-one reader for questions, one way to answer, the autonomy level sent per task, what docket decided
-alone shown, and no code for the shapes docket removed.
+had the chance to answer; and, once docket ships its cards, the adapter has one reader for
+questions, one way to answer, the autonomy level sent per task, what docket decided alone shown,
+and no code for the shapes docket removed.
 
 ## What docket will offer, and which card uses it
 
@@ -26,8 +37,8 @@ alone shown, and no code for the shapes docket removed.
 | P51-2 | one record per escalation, monotonic `seq` | D reads it |
 | P51-3 | one event family `escalation_*`, an OpenTelemetry span whose duration is the wait | F |
 | P51-4 | `GET /escalations?since=<seq>` and `escalations[]` on `GET /inbox`, additive | D |
-| P51-5 | `POST /escalations/<id>` with `{optionId, content?, actor?}`; old routes stay as adapters | D (only if the id does not work on the old routes), E |
-| P51-7 | A2A binding: `message/send`, `tasks/get`, push config, agent card | E; B may adopt push config |
+| P51-5 | `POST /escalations/<id>` with `{optionId, content?, actor?}`; old routes stay as adapters | D |
+| P51-7 | A2A binding: `message/send`, `tasks/get`, push config, agent card | none (E was cut; see the card) |
 | P51-8 | `autonomy: L3\|L4\|L5` on `POST /tasks` (narrows only), `failureKind: needs_human` | C, F |
 | P51-9 | removal of the old shapes, only after Tack has moved | G |
 
@@ -44,16 +55,27 @@ alone shown, and no code for the shapes docket removed.
 | Id | Card | Owns | Waits on |
 |---|---|---|---|
 | A | **A task that waits on a person is not cancelled** | the docket adapter's `follow` and its `blocked` mapping, the fake docket | — |
-| B | **Measure polling before replacing it** | one measurement file | — |
+| B | **Measure polling before replacing it** | one measurement file | **DEFERRED** until a replacement is proposed (see the card) |
 | C | **Send the autonomy level per task** | the request snapshot, the docket task body, the run card's action | **BLOCKED on docket P51-8** |
-| D | **Read escalations, drop the workaround** | the docket adapter's question reader, fixtures | **BLOCKED on docket P51-2 and P51-4** |
-| E | **One A2A client for docket** | a new module of the docket adapter, the fake | **BLOCKED on docket P51-7**, and D |
+| D | **Read escalations, drop the workaround** | the docket adapter's question reader, the one answer route, fixtures | **BLOCKED on docket P51-2, P51-4 and P51-5** |
+| E | ~~One A2A client for docket~~ | — | **CUT 2026-10-25** (see the card) |
 | F | **Show what docket decided alone** | the timeline mapping, the factory metrics query, handler and screen | **BLOCKED on docket P51-3 and P51-8** |
-| G | **Contract guard** | fixtures, the fake, the client, the probe's floor | **BLOCKED on docket P51-9**, and C, D, E, F |
+| G | **Contract guard** | fixtures, the fake, the client, the probe's floor | **BLOCKED on docket P51-9**, and C, D, F |
 
-Waves: **1** = A, B (now). **2** = C and D, each when its docket card is released. **3** = E and F.
-**4** = G. A card changes only the files it owns; each writes its own guide paragraph and changelog
-line, there is no separate docs task. One gate, on the merged tree: `.githooks/pre-push`.
+**Waves, sized so each file is visited once per wave:**
+
+| Wave | When | Runs | Scope |
+|---|---|---|---|
+| 1 | now | **A** | `harness/docket.rs` (1 457), `harness/mod.rs` (557), `tests/fake_docket/mod.rs` (1 291), one guide step |
+| 2 | one docket build with P51-2/4/5 and P51-8 | **R** recapture: `scripts/capture-docket-fixtures.sh` once, fixtures and `README.md`, nothing else | the fixtures folder |
+| 2 | after R | **C+D+F, runner side**: one agent on `harness/docket.rs` (`follow`, `finish`'s `needs_human` arm, `next_question` over `escalations[]`, `hop_progress`'s escalation line), `harness/docket/{client,task}.rs` (the route, the `autonomy` key), `tests/fake_docket/` | ~3 200 lines; split in two by function group if a build ships P51-8 without P51-2/4 |
+| 2 | beside the runner side | **C+F, board side**: the snapshot field, the run card's "Run again at L3", `repo/metrics.rs` + `handlers/metrics.rs` + `FactoryMetrics.tsx` and its test, `regen-generated.sh` | ~1 400 lines; no file in common with the runner side |
+| 3 | docket releases P51-9 and the live proof passes | **G** | `harness/docket*.rs`, `fake_docket/`, fixtures |
+
+If docket ships its cards in separate builds, wave 2 runs once per build with the same two
+slices, each slice taking only what that build released. A card changes only the files it owns;
+each writes its own guide paragraph and changelog line, there is no separate docs task. One
+gate per wave, on the merged tree: `.githooks/pre-push`.
 
 ---
 
@@ -115,7 +137,12 @@ Run: `PATH=$HOME/.cargo/bin:$PATH cargo nextest run -p tack-runner --test docket
 
 ### B. Measure polling before replacing it
 
-**Status:** ready. **Depends on:** no docket card.
+**Status: DEFERRED 2026-10-25.** The measurement answers "keep polling or replace it", and nothing
+can replace it today: docket's `webhook` channel needs an inbound endpoint, and Tack has none on
+the runner's side nor on the board's (ADR 0071). With E cut, no card proposes a replacement. The
+measurement is run the day one is proposed, as that proposal's first step, with the threshold
+below written before the numbers. Until then the real docket run it needs (N = 20 concurrent
+attempts in a throwaway home) is cost without a decision behind it. **Depends on:** a proposal.
 
 **Measured trigger.** None yet, which is the point: a subscription replaces polling only for a
 measured cost. From the code, not yet measured: one attempt makes up to three requests a pass
@@ -217,11 +244,12 @@ prints three). `next_question` makes a `GET /tasks/<pod>/<id>` for every parked 
 keeps the last `seq` per attempt beside the trace cursor (written by rename, so a second adapter over
 the same state directory resumes), and builds one `Question` from an escalation. The task-view lookup
 is not on the path taken when `escalations[]` is present. It survives only in the fallback for a
-docket that sends none, and G deletes it. Answers keep using the existing routes; if the
-escalation's id does not work on them, this card also takes P51-5's `POST /escalations/<id>`.
+docket that sends none, and G deletes it. Answers go through P51-5's `POST /escalations/<id>` with `{optionId, content?, actor?}` as the
+one route, so the two `Pending` variants and their two bodies collapse into one; the old routes
+survive only in the fallback for a docket that sends no escalations, and G deletes them.
 
 **Non-goals.** No change to `Question` or to the decision channels; the Inbox needs no new route. No
-A2A (E). No deleting the fallback (G).
+A2A. No deleting the fallback (G).
 
 **Files.** `harness/docket.rs` (`next_question`, `Pending`), `harness/docket/client.rs` (the route),
 `fixtures/docket/v5/` and its `README.md`, `tests/fake_docket/`, `docs/book/src/developer/runs-and-teams.md`.
@@ -238,31 +266,12 @@ a second adapter over the same state directory sends the saved `since`;
 
 ### E. One A2A client for docket
 
-**Status: BLOCKED on docket P51-7** (proposed A2A binding: `message/send`, `tasks/get`, push
-configuration, an agent card), **and on D**. **Released when:** a docket build serves the agent card
-and a capture shows a task's escalation as a data part of `tasks/get` and an answer accepted as a
-data part of `message/send`.
-
-**Measured trigger.** After D the adapter still has two ways to answer with different bodies
-(`POST /approvals/<token>` with grant or deny; `POST /tasks/<id>/answer` with accept or decline and
-`content.optionId`) behind two `Pending` variants, and three question builders (D leaves them as the
-fallback).
-
-**Goal.** One path: probe the agent card first; `tasks/get` for the state, the escalation data part
-for the question (the same mapping D wrote, a second transport), `message/send` with the result data
-part to answer. The card absent means D's path, untouched. The agent card's location and the part
-types are the A2A spec's and docket's P51-7 to fix; take them from a capture.
-
-**Non-goals.** Tack does not become an A2A server. Task creation stays `POST /tasks`. Push
-configuration is B's decision, not this card's. No streaming.
-
-**Files.** a new module beside `harness/docket/client.rs`; `harness/docket.rs` (`follow`, `deliver`);
-`tests/fake_docket/` serves the card and the two methods from captures; the fixtures `README.md`.
-
-**Acceptance.** With the card, a question is read and answered with no `GET /inbox` for it and no
-`POST /approvals` or `POST /tasks/*/answer`; without it, every existing test passes untouched. The
-three builders have no caller outside the fallback. Fixtures recaptured by the script, which sends
-the new requests.
+**Status: CUT 2026-10-25.** Its trigger was "after D there are still two ways to answer"; D now
+takes P51-5's `POST /escalations/<id>` as the one answer route, so the trigger is gone. What E
+added was a second transport (agent card, `tasks/get`, `message/send`) for facts the REST routes
+already carry, with its own fixtures, fake routes and a fallback to the first transport: two paths
+to maintain until G deleted one. Tack needs A2A the day it needs push or interop with another
+agent runtime, and that is a card of its own, with its own measured trigger, when it comes.
 
 ---
 
@@ -300,10 +309,10 @@ and raises the new count; `npx vitest run` on `FactoryMetrics.test.tsx` shows bo
 ### G. Contract guard
 
 **Status: BLOCKED on docket P51-9** (proposed: removal of the old shapes, only after Tack has moved),
-**and on C, D, E and F.** **Released when:** docket releases P51-9 and the live proof,
+**and on C, D and F.** **Released when:** docket releases P51-9 and the live proof,
 `scripts/docket-prill-e2e.sh`, passes against it on the new path.
 
-**Measured trigger.** After D and E the old shapes are a fallback kept for a docket that still sends
+**Measured trigger.** After D the old shapes are a fallback kept for a docket that still sends
 them; once docket removes them the fallback is code and fixtures that nothing can exercise.
 
 **Goal.** In one change: recapture the fixtures; delete every fixture and every code path of the shapes
