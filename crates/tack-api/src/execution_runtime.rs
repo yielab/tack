@@ -174,7 +174,6 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 /// than the deletion it's bundled with. A future need to run decision
 /// expiry under different conditions must be a new, explicit flag, never a
 /// loosening of this one.
-#[allow(clippy::too_many_arguments)]
 fn spawn_artifact_and_decision_sweep(
     enabled: bool,
     repo: Repository,

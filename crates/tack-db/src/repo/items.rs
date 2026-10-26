@@ -202,39 +202,6 @@ impl Repository {
         }))
     }
 
-    /// Atomic compare-and-swap on `items.version` — the guard that actually
-    /// decides an `If-Match` race, not the string comparison a caller does
-    /// first. A caller-side "read the version, compare to the header, then
-    /// write" sequence is a classic check-then-act race: two requests can
-    /// both read version 5, both see it matches, and both go on to write —
-    /// exactly the lost update optimistic concurrency exists to catch. This
-    /// method folds the compare and the write into one
-    /// `UPDATE ... WHERE version = ?` statement, so the race is decided by
-    /// SQLite's own writer serialization (only one connection holds the
-    /// write lock at a time) rather than by two Tokio tasks interleaving
-    /// `.await` points. Of two concurrent callers racing the same
-    /// `expected_version`, exactly one `UPDATE` can match the `WHERE`
-    /// clause; the loser's `rows_affected()` comes back 0 — not a torn read
-    /// of a version someone else already moved past — and the caller
-    /// reports 412 without ever touching the item's other fields.
-    #[instrument(skip(self))]
-    pub async fn claim_item_version(
-        &self,
-        id: Uuid,
-        expected_version: i64,
-    ) -> Result<bool, StoreError> {
-        let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
-            "UPDATE items SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-        )
-        .bind(&now)
-        .bind(id.to_string())
-        .bind(expected_version)
-        .execute(self.pool())
-        .await?;
-        Ok(result.rows_affected() == 1)
-    }
-
     #[instrument(skip(self))]
     pub async fn list_items(
         &self,

@@ -1,5 +1,4 @@
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -99,30 +98,6 @@ impl DependencyGraph {
             .collect()
     }
 
-    /// Get all items that the given item directly blocks.
-    pub fn blocked_by(&self, item_id: Uuid) -> Vec<(Uuid, DependencyType)> {
-        self.edges.get(&item_id).cloned().unwrap_or_default()
-    }
-
-    /// Get all transitively blocked items (BFS from source).
-    pub fn all_downstream(&self, item_id: Uuid) -> HashSet<Uuid> {
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(item_id);
-
-        while let Some(node) = queue.pop_front() {
-            if let Some(neighbors) = self.edges.get(&node) {
-                for (neighbor, _) in neighbors {
-                    if visited.insert(*neighbor) {
-                        queue.push_back(*neighbor);
-                    }
-                }
-            }
-        }
-
-        visited
-    }
-
     /// Validate that adding an edge won't create a cycle, returning an error if it would.
     pub fn validate_new_edge(&self, source: Uuid, target: Uuid) -> Result<(), CoreError> {
         if source == target {
@@ -132,76 +107,6 @@ impl DependencyGraph {
             return Err(CoreError::DependencyCycle(target));
         }
         Ok(())
-    }
-
-    /// Topologically sorts `nodes` (Kahn's algorithm), considering only edges
-    /// whose **both** endpoints are in `nodes` — an edge to a node outside the
-    /// set contributes nothing to this ordering; the caller checks readiness
-    /// against out-of-set dependencies separately.
-    ///
-    /// Deterministic, not just "a" valid order: among nodes ready to emit at
-    /// the same time, the one earliest in the input `nodes` slice emits
-    /// first — needed because a caller (e.g. a dry-run preview) calls this
-    /// twice for the same input and needs the same answer, and this
-    /// codebase's default `HashMap`/`HashSet` order is randomized per instance.
-    ///
-    /// Returns `Err(CoreError::DependencyCycle(node))` if `nodes` cannot be
-    /// fully ordered — structurally unreachable since every edge is validated
-    /// via [`Self::validate_new_edge`] before insertion, so reaching this
-    /// branch is a real invariant violation that should fail loudly.
-    pub fn topological_order(&self, nodes: &[Uuid]) -> Result<Vec<Uuid>, CoreError> {
-        let node_set: HashSet<Uuid> = nodes.iter().copied().collect();
-        let node_index: HashMap<Uuid, usize> =
-            nodes.iter().enumerate().map(|(i, &n)| (n, i)).collect();
-
-        let mut in_degree: HashMap<Uuid, usize> = node_set.iter().map(|&n| (n, 0)).collect();
-        let mut adjacency: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-        for &n in &node_set {
-            let Some(targets) = self.edges.get(&n) else {
-                continue;
-            };
-            for (target, _) in targets {
-                if node_set.contains(target) {
-                    adjacency.entry(n).or_default().push(*target);
-                    *in_degree.entry(*target).or_insert(0) += 1;
-                }
-            }
-        }
-
-        // Min-heap keyed by each node's position in the original `nodes`
-        // slice — the deterministic tie-breaker described above.
-        let mut ready: BinaryHeap<Reverse<(usize, Uuid)>> = nodes
-            .iter()
-            .filter(|n| in_degree.get(n).copied().unwrap_or(0) == 0)
-            .map(|&n| Reverse((node_index[&n], n)))
-            .collect();
-
-        let mut order = Vec::with_capacity(node_set.len());
-        while let Some(Reverse((_, n))) = ready.pop() {
-            order.push(n);
-            if let Some(targets) = adjacency.get(&n) {
-                for &t in targets {
-                    let deg = in_degree
-                        .get_mut(&t)
-                        .expect("target has an in-degree entry");
-                    *deg -= 1;
-                    if *deg == 0 {
-                        ready.push(Reverse((node_index[&t], t)));
-                    }
-                }
-            }
-        }
-
-        if order.len() != node_set.len() {
-            let stuck = nodes
-                .iter()
-                .find(|n| !order.contains(n))
-                .copied()
-                .unwrap_or(nodes[0]);
-            return Err(CoreError::DependencyCycle(stuck));
-        }
-
-        Ok(order)
     }
 }
 

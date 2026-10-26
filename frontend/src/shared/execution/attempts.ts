@@ -91,7 +91,7 @@ export type AttemptMerge = components['schemas']['AttemptMerge'];
  * One attempt, exactly as `executions.rs`'s `AttemptSummary` serializes it.
  * `actual_execution`/`usage` stay `unknown` (untyped JSON) here for the same
  * reason the Rust struct types them as a bare `Value`: the real types
- * (`tack_orch::execution::{ActualExecution, Usage}`) live in a crate this
+ * (`tack_protocol::execution::{ActualExecution, Usage}`) live in a crate this
  * frontend has no generated bridge to yet — this file only needs enough shape
  * to drive `model_provenance`/`usage_economics` display, which are already
  * fully typed above. `terminal_reason` is typed from the generated schema.

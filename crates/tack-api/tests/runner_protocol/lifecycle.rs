@@ -382,7 +382,6 @@ impl Fixture {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn recovery_observation(
         &self,
         attempt_id: &str,
@@ -456,7 +455,6 @@ impl Fixture {
 
 /// Enqueues an execution request selecting `runner_id`, matching the frozen
 /// snapshot shape exactly (mirrors what `create_execution` normalizes).
-#[allow(clippy::too_many_arguments)]
 async fn enqueue_request(
     repo: &Repository,
     clock: &FakeClock,
@@ -578,7 +576,6 @@ fn artifact_body(
     .to_string()
 }
 
-#[allow(clippy::too_many_arguments)]
 /// A completion that carries a pack hands it to prill once: `prill record mrp
 /// --db <storage>/prill/acme__widgets.db mrp.json`, and a second try does not
 /// run prill again.

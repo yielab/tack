@@ -274,8 +274,8 @@ export function countPatchFiles(patch: string): number {
 }
 
 /** A path, or text that holds paths, as the project knows it: the runner's workspace
- *  prefix is left off, so `/var/tmp/ws-123/src/app.ts` reads `src/app.ts` and the
- *  workspace itself reads `.`. Without a workspace the text comes back as it was. */
+ *  prefix is left off, so a file under `/var/tmp/ws-123/` reads as its path inside the
+ *  project and the workspace itself reads `.`. Without a workspace the text comes back as it was. */
 export function inProject(text: string, workspace: string | null | undefined): string {
   const root = (workspace ?? '').trim().replace(/\/+$/, '');
   if (root === '' || text === '') return text;

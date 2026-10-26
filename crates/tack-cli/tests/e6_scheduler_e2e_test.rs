@@ -265,7 +265,6 @@ fn create_agent_profile(server: &ServerGuard) -> String {
     profile["agent_profile_id"].as_str().unwrap().to_owned()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_execution_args(
     item_id: &str,
     agent_profile_id: &str,
@@ -298,7 +297,6 @@ fn create_execution_args(
     args
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_execution_via_cli(
     server: &ServerGuard,
     item_id: &str,

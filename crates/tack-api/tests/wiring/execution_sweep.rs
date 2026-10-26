@@ -496,7 +496,6 @@ async fn retention_enabled_purges_a_manifest_only_artifact_row() {
 // expire_overdue_decisions via the real ExecutionRuntime.
 // ---------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
 async fn create_decision(
     repo: &Repository,
     attempt_id: &str,

@@ -1,7 +1,6 @@
 //! `items.version` (migration 034) backs `handlers::items`'s `ETag`/`If-Match`
 //! support. `update_item` and `check_and_update_parent_status` are the write
-//! paths that must bump it; `claim_item_version` is the atomic
-//! compare-and-swap the HTTP layer builds its concurrency guard on.
+//! paths that must bump it.
 
 use crate::common::{self, create_test_workspace, make_item, make_project};
 use tack_core::models::{CreateItem, ItemType, Priority, UpdateItem};
@@ -100,45 +99,4 @@ async fn check_and_update_parent_status_bumps_version() {
         after > before,
         "check_and_update_parent_status must bump version: {before} -> {after}"
     );
-}
-
-#[tokio::test]
-async fn claim_item_version_succeeds_once_and_rejects_stale_reuse() {
-    let repo = common::setup_test_db().await;
-    let ws = create_test_workspace(&repo).await;
-    let project = make_project(&repo, ws).await;
-    let item = make_item(&repo, &project).await;
-
-    let v1 = repo.get_item_version(item.id).await.unwrap().unwrap();
-    assert_eq!(v1, 1);
-
-    // First claim against the true current version succeeds and bumps it.
-    let claimed = repo.claim_item_version(item.id, v1).await.expect("db call");
-    assert!(claimed, "claiming the true current version must succeed");
-    let v2 = repo.get_item_version(item.id).await.unwrap().unwrap();
-    assert_eq!(v2, v1 + 1);
-
-    // A second claim reusing the now-stale `v1` must fail — this is the
-    // exact shape of a caller that lost a concurrent race.
-    let stale_claim = repo.claim_item_version(item.id, v1).await.expect("db call");
-    assert!(
-        !stale_claim,
-        "claiming an already-superseded version must fail, not silently re-apply"
-    );
-    // And the failed claim must not itself have moved the counter.
-    let v3 = repo.get_item_version(item.id).await.unwrap().unwrap();
-    assert_eq!(
-        v3, v2,
-        "a failed claim must be a no-op, not a partial write"
-    );
-}
-
-#[tokio::test]
-async fn claim_version_on_unknown_item_returns_false() {
-    let repo = common::setup_test_db().await;
-    let claimed = repo
-        .claim_item_version(uuid::Uuid::new_v4(), 1)
-        .await
-        .expect("db call must not error for a missing row");
-    assert!(!claimed);
 }

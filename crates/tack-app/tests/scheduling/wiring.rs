@@ -217,7 +217,6 @@ async fn enqueue_for_fleet(
 /// One row of the eligibility table below: registers a runner with the given
 /// capacity/capability/heartbeat, enqueues one request for `model_id`, and
 /// asserts whether it gets chosen.
-#[allow(clippy::too_many_arguments)]
 async fn assert_eligibility(
     case: &str,
     total: i64,

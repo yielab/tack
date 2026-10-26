@@ -44,9 +44,6 @@ opaque_id!(AttemptId, "An opaque execution attempt identity.");
 opaque_id!(ItemId, "An opaque Tack item identity.");
 opaque_id!(AgentProfileId, "An opaque agent profile identity.");
 opaque_id!(WorkspaceId, "An opaque isolated workspace identity.");
-opaque_id!(ArtifactId, "An opaque artifact identity.");
-opaque_id!(DecisionId, "An opaque decision identity.");
-opaque_id!(EventId, "An opaque event identity.");
 opaque_id!(ClaimRequestId, "An opaque claim idempotency identity.");
 opaque_id!(CompletionId, "An opaque completion idempotency identity.");
 opaque_id!(
