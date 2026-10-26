@@ -1,3 +1,4 @@
+use crate::repo::budgets::COUNTED_TOKENS_SQL;
 use crate::{Repository, StoreError};
 
 /// One agent profile as `agent_profiles` stores it. `tool_policy` and `limits`
@@ -49,13 +50,32 @@ pub async fn profile_exists(repo: &Repository, profile_id: &str) -> Result<bool,
     Ok(found.is_some())
 }
 
-/// The counted tokens of a profile's last `limit` successful, measured runs, newest first.
+/// The counted tokens (`COUNTED_TOKENS_SQL`) of a profile's last `limit` successful, measured
+/// runs, newest first. Successful: the attempt succeeded and no verdict refused it, whether a
+/// person's on the pack or the attempt, or the verifier's, which shows as the rework it asked for.
 pub async fn successful_run_tokens(
     repo: &Repository,
     profile_id: &str,
     limit: i64,
 ) -> Result<Vec<i64>, StoreError> {
-    Ok(crate::repo::metrics::profile_successful_run_tokens(repo.pool(), profile_id, limit).await?)
+    // The fragment is a constant of this crate; only values are bound.
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT {COUNTED_TOKENS_SQL}
+         FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.agent_profile_id = ? AND a.state = 'succeeded'
+           AND (json_extract(a.usage, '$.tokens_in.value') IS NOT NULL
+                OR json_extract(a.usage, '$.tokens_out.value') IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM mrp_reviews m WHERE m.attempt_id = a.id AND m.verdict = 'reject')
+           AND NOT EXISTS (SELECT 1 FROM attempt_reviews v WHERE v.attempt_id = a.id AND v.verdict = 'rejected')
+           AND NOT EXISTS (SELECT 1 FROM execution_requests w WHERE w.idempotency_key = 'rework-' || a.id)
+         ORDER BY a.created_at DESC, a.rowid DESC
+         LIMIT ?"
+    )))
+    .bind(profile_id)
+    .bind(limit)
+    .fetch_all(repo.pool())
+    .await?)
 }
 
 /// An agent profile as the profile resolver reads it: the columns that decide which profile a

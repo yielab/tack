@@ -713,7 +713,7 @@ impl Repository {
             tx.commit().await?;
             return Ok(
                 // The claim may since have given a limitless run what was left of the day
-                // (`budgets::limit_to_day_room`); the fingerprint is still the one it was sent with.
+                // (`Repository::limit_request_to_day_room`); the fingerprint is still the one it was sent with.
                 if fingerprint == input.request_fingerprint
                     && (same_request(&stored_snapshot, &request_snapshot)
                         || given_the_days_room(&stored_snapshot))

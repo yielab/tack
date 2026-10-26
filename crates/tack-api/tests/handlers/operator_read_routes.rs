@@ -11,24 +11,14 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
-use uuid::Uuid;
+use tack_db::Repository;
 
 const OPERATOR_TOKEN: &str = "e6-routes-operator-token";
 const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 async fn setup() -> (axum::Router, Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'E6 routes', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("workspace");
-    let repo = Repository::new(pool.clone());
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -242,15 +232,13 @@ async fn list_runners_fleet_filter_only_returns_members() {
     // Inserts directly (rather than through
     // `POST /runner-fleets/{fleet_id}/members`) to keep this fixture
     // focused on filtering, not fleet-membership plumbing.
-    sqlx::query(
-        "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
+    tack_test_support::seed::agent_fleet_member(
+        &_repo,
+        &fleet_id,
+        &runner_in,
+        &Utc::now().to_rfc3339(),
     )
-    .bind(&fleet_id)
-    .bind(&runner_in)
-    .bind(Utc::now().to_rfc3339())
-    .execute(_repo.pool())
-    .await
-    .expect("membership");
+    .await;
 
     let (status, filtered) = common::send(
         &app,
@@ -433,10 +421,8 @@ async fn events_reflect_a_real_batch_then_unknown_attempt_is_404() {
     assert_eq!(data[0]["kind"], "log");
     assert_eq!(data[0]["payload"]["message"], "hello from the real harness");
 
-    let events_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id = ?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
+    let events_count =
+        tack_db::queries::execution_events::event_count_of_attempt(&repo, &attempt_id)
             .await
             .unwrap();
     assert_eq!(

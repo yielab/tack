@@ -2209,8 +2209,7 @@ async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState
     repo.set_github_link(item.id, "acme/widgets", 42)
         .await
         .expect("link");
-    tack_db::repo::pull_requests::insert(
-        repo.pool(),
+    repo.record_pull_request(
         "attempt-1",
         "acme/widgets",
         7,
@@ -2303,16 +2302,17 @@ async fn github_poll_marks_a_reverted_pull_request() {
 
     let gh = MockServer::start().await;
     let state = pull_request_poll_state(gh.uri()).await;
-    tack_db::repo::pull_requests::observe(
-        state.pool(),
-        "acme/widgets",
-        7,
-        "merged",
-        Some("2026-02-02T00:00:00Z"),
-        Some("2026-02-02T00:00:00Z"),
-    )
-    .await
-    .unwrap();
+    state
+        .repo
+        .observe_pull_request(
+            "acme/widgets",
+            7,
+            "merged",
+            Some("2026-02-02T00:00:00Z"),
+            Some("2026-02-02T00:00:00Z"),
+        )
+        .await
+        .unwrap();
     Mock::given(method("GET"))
         .and(path("/repos/acme/widgets/issues"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
@@ -2387,16 +2387,17 @@ async fn mount_merged_pull_request(gh: &wiremock::MockServer, commits: &str) {
 async fn merge_seeded_pull_request(state: &tack_api::AppState) {
     let merged_at = (chrono::Utc::now() - chrono::Duration::hours(1))
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    tack_db::repo::pull_requests::observe(
-        state.pool(),
-        "acme/widgets",
-        7,
-        "merged",
-        Some(&merged_at),
-        Some(&merged_at),
-    )
-    .await
-    .unwrap();
+    state
+        .repo
+        .observe_pull_request(
+            "acme/widgets",
+            7,
+            "merged",
+            Some(&merged_at),
+            Some(&merged_at),
+        )
+        .await
+        .unwrap();
 }
 
 /// A default-branch commit saying `This reverts commit <merge_sha>` marks the

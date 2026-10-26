@@ -11,7 +11,8 @@ use tack_api::{
     router::build_router,
 };
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::Repository;
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 use uuid::Uuid;
 
 const TOKEN: &str = "g1a-metrics-token";
@@ -50,16 +51,6 @@ impl LocalRunnerControl for RunnerVerifyingWith {
     async fn verify_program(&self) -> Option<String> {
         Some(self.0.clone())
     }
-}
-
-async fn exec(pool: &sqlx::SqlitePool, sql: &'static str, binds: &[&str]) {
-    let mut q = sqlx::query(sql);
-    for b in binds {
-        q = q.bind(*b);
-    }
-    q.execute(pool)
-        .await
-        .unwrap_or_else(|e| panic!("{sql}: {e}"));
 }
 
 async fn project_with_item(repo: &Repository, workspace_id: Uuid, name: &str) -> (Uuid, String) {
@@ -117,16 +108,8 @@ fn usage(tokens_in: i64, tokens_out: i64) -> String {
 #[tokio::test]
 async fn seeded_rows_yield_the_expected_ratios() {
     let root = tempfile::tempdir().unwrap();
-    let pool = init_pool("sqlite::memory:").await.unwrap();
-    migrations::run_all(&pool).await.unwrap();
-    let workspace_id = Uuid::new_v4();
-    exec(
-        &pool,
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'G1a', '{}')",
-        &[&workspace_id.to_string()],
-    )
-    .await;
-    let repo = Repository::new(pool.clone());
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
         repo: repo.clone(),
@@ -144,8 +127,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
     let (project_id, item) = project_with_item(&repo, workspace_id, "G1a seeded").await;
     let (empty_id, _) = project_with_item(&repo, workspace_id, "G1a empty").await;
 
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
          VALUES ('run', 'g1a', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
         &[],
@@ -159,8 +142,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
         ("R3", "{}"),
         ("R4", "{}"),
     ] {
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
                request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
                repository_snapshot, permission_policy, metadata, created_at, updated_at)
@@ -226,7 +209,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
         if !usage.is_empty() {
             binds.push(&usage);
         }
-        exec(&pool, sql, &binds).await;
+        seed::statement(&repo, sql, &binds).await;
     }
     // Decisions: D1 viewed (10 min), D2 never viewed (30 min), D3 pending, D4 before the window.
     for (id, attempt, viewed, created, resolved) in [
@@ -253,8 +236,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
             Some("2026-08-20T09:05:00Z"),
         ),
     ] {
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, created_at,
                updated_at, viewed_at, resolved_at) VALUES (?, ?, ?, 'choice', 'p', ?, ?, ?, ?)",
             &[
@@ -269,8 +252,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
         )
         .await;
     }
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "UPDATE execution_decisions SET viewed_at = NULLIF(viewed_at, ''), resolved_at = NULLIF(resolved_at, '')",
         &[],
     )
@@ -296,8 +279,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join(reference), body).unwrap();
         }
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO execution_artifacts (id, attempt_id, artifact_id, kind, name, media_type,
                size_bytes, sha256, content_reference, created_at)
              VALUES (?, ?, 'mrp-1', 'report', 'mrp.json', ?, 1, 'x', NULLIF(?, ''), ?)",
@@ -312,8 +295,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
         .await;
     }
     // Reviews: R1a1 accepted after a view (5 min), R3a1 rejected unviewed (30 min); R4a1 unreviewed.
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict, viewed_at, reviewed_at) VALUES
            ('R1a1', 'mrp-1', 'accept', '2026-09-10T12:00:00Z', '2026-09-10T12:05:00Z'),
            ('R3a1', 'mrp-1', 'reject', NULL, '2026-09-11T13:30:00Z')",
@@ -328,8 +311,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
         ("R2a1", "4", "open", "2026-09-10T15:00:00Z"),
         ("R3a0", "5", "merged", "2026-08-20T10:00:00Z"),
     ] {
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO pull_requests (attempt_id, repo, number, url, state, opened_at)
              VALUES (?, 'o/r', ?, 'u', ?, ?)",
             &[attempt, number, state, opened],
@@ -453,16 +436,8 @@ async fn seeded_rows_yield_the_expected_ratios() {
 #[tokio::test]
 async fn start_triggers_and_lights_off_are_counted_from_rows() {
     let root = tempfile::tempdir().unwrap();
-    let pool = init_pool("sqlite::memory:").await.unwrap();
-    migrations::run_all(&pool).await.unwrap();
-    let workspace_id = Uuid::new_v4();
-    exec(
-        &pool,
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'P73', '{}')",
-        &[&workspace_id.to_string()],
-    )
-    .await;
-    let repo = Repository::new(pool.clone());
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
         repo: repo.clone(),
@@ -491,8 +466,8 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         .unwrap()
         .id
         .to_string();
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
          VALUES ('run', 'p73', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
         &[],
@@ -504,8 +479,8 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         ("R2", &first, r#"{"rework_of":"R1"}"#),
         ("R3", &second, r#"{"started_by":"auto_start"}"#),
     ] {
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
                request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
                repository_snapshot, permission_policy, metadata, created_at, updated_at)
@@ -516,8 +491,8 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         .await;
     }
     for (attempt, request) in [("R1a", "R1"), ("R2a", "R2"), ("R3a", "R3")] {
-        exec(
-            &pool,
+        seed::statement(
+            &repo,
             "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
                lease_issued_at, lease_expires_at, created_at, updated_at)
              VALUES (?, ?, 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
@@ -526,8 +501,8 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         )
         .await;
     }
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, created_at,
            updated_at, resolved_at)
          VALUES ('D1', 'R1a', 'D1', 'choice', 'p', '2026-09-10T09:10:00Z', '2026-09-10T09:10:00Z',
@@ -536,8 +511,8 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
     )
     .await;
     let project = project_id.to_string();
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO tack_merges (attempt_id, project_id, trigger, checked_at, merged_at) VALUES
            ('R2a', ?, 'button', '2026-09-10T10:00:00Z', '2026-09-10T10:00:00Z'),
            ('R3a', ?, 'auto', '2026-09-10T11:00:00Z', '2026-09-10T11:00:00Z')",
@@ -593,16 +568,8 @@ fn fake_prill(dir: &std::path::Path) -> String {
 #[tokio::test]
 async fn quality_is_prills_and_cost_is_the_rate_cards() {
     let root = tempfile::tempdir().unwrap();
-    let pool = init_pool("sqlite::memory:").await.unwrap();
-    migrations::run_all(&pool).await.unwrap();
-    let workspace_id = Uuid::new_v4();
-    exec(
-        &pool,
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'P', '{}')",
-        &[&workspace_id.to_string()],
-    )
-    .await;
-    let repo = Repository::new(pool.clone());
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = |program: String| AppState {
         repo: repo.clone(),
@@ -619,15 +586,15 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
         local_runner: None,
     };
     let (project_id, item) = project_with_item(&repo, workspace_id, "P").await;
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
          VALUES ('run', 'p', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
         &[],
     )
     .await;
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
            request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
            repository_snapshot, permission_policy, metadata, requested_model, created_at, updated_at)
@@ -637,8 +604,8 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     )
     .await;
     let used = usage(1_000_000, 100_000);
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
            lease_issued_at, lease_expires_at, created_at, updated_at, usage)
          VALUES ('A1', 'R1', 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
@@ -646,8 +613,8 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
         &[&used],
     )
     .await;
-    exec(
-        &pool,
+    seed::statement(
+        &repo,
         "INSERT INTO pull_requests (attempt_id, repo, number, url, state, opened_at)
          VALUES ('A1', 'o/r', 1, 'u', 'merged', '2026-09-10T13:00:00Z')",
         &[],

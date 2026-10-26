@@ -10,7 +10,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use tack_core::autonomy::{Domain, Level};
-use tack_db::repo::autonomy::{self as store, Settings};
+use tack_db::queries;
+use tack_db::repo::autonomy::Settings;
 use tack_db::repo::budgets::{self, ProjectBudgets};
 
 use crate::error::{ApiError, ApiResult};
@@ -241,12 +242,11 @@ pub async fn get_autonomy(
 /// Every team the project's roles run: attended ones cap at L3 with the runner's fix,
 /// lights-out ones carry neither, and one no runner reports is `unknown` and capped.
 async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
-    let pool = state.repo.pool();
-    let profiles = store::role_profile_teams(pool, project_id).await?;
+    let profiles = queries::autonomy::role_profile_teams(&state.repo, project_id).await?;
     if profiles.iter().all(|(_, team)| team.is_none()) {
         return Ok(Vec::new());
     }
-    let reported: Vec<_> = store::active_runner_snapshots(pool)
+    let reported: Vec<_> = queries::autonomy::active_runner_snapshots(&state.repo)
         .await?
         .iter()
         .flat_map(|snapshot| tack_app::autonomy::harnesses_of(snapshot))
@@ -289,11 +289,12 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
 
 /// The settings as they stand, with everything only the board can read.
 async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettings> {
-    let mut settings: AutonomySettings = store::get_settings(state.repo.pool(), project_id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
-        .into();
-    let counts = store::domain_counts(state.repo.pool(), project_id).await?;
+    let mut settings: AutonomySettings =
+        queries::autonomy::project_settings(&state.repo, project_id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
+            .into();
+    let counts = queries::autonomy::domain_counts(&state.repo, project_id).await?;
     for domain in &mut settings.domains {
         if let Some((merged, undone)) = counts.get(&domain.name) {
             (domain.merged, domain.undone) = (*merged, *undone);
@@ -332,7 +333,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
     }
     settings.teams = teams;
     settings.automatic_merge_blocked_by = blocked;
-    if let Some(day) = budgets::day_room(state.repo.pool(), project_id, Utc::now()).await? {
+    if let Some(day) = queries::budgets::day_room(&state.repo, project_id, Utc::now()).await? {
         settings.day_counted = Some(day.counted);
         settings.day_reserved = Some(day.reserved);
         settings.day_room = Some(day.room);
@@ -361,7 +362,11 @@ pub async fn put_autonomy(
     Json(input): Json<AutonomySettings>,
 ) -> ApiResult<Json<AutonomySettings>> {
     let settings = settings_of(input)?;
-    if !store::put_settings(state.repo.pool(), &id.to_string(), &settings).await? {
+    if !state
+        .repo
+        .put_autonomy_settings(&id.to_string(), &settings)
+        .await?
+    {
         return Err(ApiError::NotFound("Project not found".into()));
     }
     Ok(Json(current(&state, &id.to_string()).await?))

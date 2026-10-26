@@ -32,7 +32,8 @@ use tack_core::outline::{
     parse_due_date, parse_project_type,
 };
 use tack_core::vocabulary::vocabulary_for_type;
-use tack_db::repo::autonomy as store;
+use tack_db::StoreError;
+use tack_db::queries;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -518,6 +519,15 @@ fn parsed<T: serde::de::DeserializeOwned>(word: &str) -> ApiResult<T> {
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("\"{word}\": {e}")))
 }
 
+/// Names the section a failed store call belonged to; what the file wrote before it stays.
+fn at<E: Into<StoreError>>(section: &'static str) -> impl Fn(E) -> ApiError {
+    move |source| ApiError::SectionFailed {
+        section,
+        kept: true,
+        source: source.into(),
+    }
+}
+
 fn uuid_of(id: &str) -> ApiResult<Uuid> {
     Uuid::parse_str(id).map_err(|e| ApiError::Internal(anyhow::anyhow!("{id}: {e}")))
 }
@@ -530,13 +540,6 @@ async fn write_profiles(
     rows: &[Upsert<BundleProfile>],
 ) -> ApiResult<HashMap<String, String>> {
     let repo = &state.repo;
-    let at = |section: &'static str| {
-        move |source| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
     let mut profile_ids: HashMap<String, String> = board
         .profiles
         .iter()
@@ -609,13 +612,6 @@ async fn write_automation(
     profile_ids: &HashMap<String, String>,
 ) -> ApiResult<()> {
     let repo = &state.repo;
-    let at = |section: &'static str| {
-        move |source| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
     let mut update = UpdateProject {
         repository: auto.repository.clone().map(Some),
         default_branch: auto.default_branch.clone().map(Some),
@@ -653,7 +649,7 @@ async fn write_automation(
 
     if let Some(asked) = &auto.autonomy {
         let id = project_id.to_string();
-        let mut settings = store::get_settings(repo.pool(), &id)
+        let mut settings = queries::autonomy::project_settings(repo, &id)
             .await
             .map_err(at("automation"))?
             .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
@@ -689,7 +685,7 @@ async fn write_automation(
         if let Some(merge) = asked.merge_on_done {
             settings.merge_on_done = merge;
         }
-        store::put_settings(repo.pool(), &id, &settings)
+        repo.put_autonomy_settings(&id, &settings)
             .await
             .map_err(at("automation"))?;
     }
@@ -710,13 +706,6 @@ async fn write(
 ) -> ApiResult<OutlineResult> {
     let repo = &state.repo;
     let project_id = project.id;
-    let at = |section: &'static str| {
-        move |source| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
 
     if is_new {
         let mut vocabulary = vocabulary_for_type(&project.project_type);

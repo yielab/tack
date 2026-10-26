@@ -603,7 +603,7 @@ pub async fn create_execution(
 /// ran it: the latest attempt's, else the one requested. docket stops its own task at the limit and
 /// the runner stops Claude Code and opencode when their counted tokens reach it; every other agent
 /// is measured, and says so. `day_room` is what is left of the project's daily token limit, when it
-/// has one: a run with no limit of its own gets that when it is claimed (`budgets::limit_to_day_room`).
+/// has one: a run with no limit of its own gets that when it is claimed (`Repository::limit_request_to_day_room`).
 fn limit_source(snapshot: &Value, harness_kind: Option<&str>, day_room: Option<i64>) -> RunLimit {
     let tokens = snapshot["budgets"]["tokens"].as_u64().filter(|n| *n > 0);
     let source = match (tokens, snapshot["metadata"]["limit_source"].as_str()) {

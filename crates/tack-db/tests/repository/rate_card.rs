@@ -99,7 +99,7 @@ async fn spend_by_model_splits_an_attempt_that_used_two_models() {
     }
 
     let project = project.id.to_string();
-    let mut got = spend_by_model(repo.pool(), &project, None).await.unwrap();
+    let mut got = spend_by_model(&repo, &project, None).await.unwrap();
     got.sort_by(|a, b| a.model.cmp(&b.model));
     let row =
         |model: &str, team: Option<&str>, tokens_in, cache_read, tokens_out, attempts| SpendRow {
@@ -123,7 +123,7 @@ async fn spend_by_model_splits_an_attempt_that_used_two_models() {
     );
 
     // The window is on the attempt's creation.
-    let later = spend_by_model(repo.pool(), &project, Some("2026-10-15T00:00:00Z"))
+    let later = spend_by_model(&repo, &project, Some("2026-10-15T00:00:00Z"))
         .await
         .unwrap();
     assert!(later.is_empty(), "{later:?}");
