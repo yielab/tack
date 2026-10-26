@@ -1,4 +1,4 @@
-//! The calls this harness makes to docket's operator API (version 5), one
+//! The calls this harness makes to docket's operator API (version 5 or 6), one
 //! function per route. Each returns the status and the JSON body as docket
 //! sent them; reading them is the caller's work. The token is read from its
 //! file on every call, so a daemon restarted with a new one needs no restart
@@ -153,25 +153,20 @@ impl Client {
         self.send(Method::GET, &["traces", pod], query, None).await
     }
 
-    /// `GET /inbox`.
-    pub async fn inbox(&self) -> Result<Reply, String> {
-        self.send(Method::GET, &["inbox"], &[], None).await
+    /// `GET /escalations?since=<seq>`, narrowed to one task when `task` names it: every
+    /// record past `since`, whatever its state, and `next`, the highest `seq` returned.
+    pub async fn escalations(&self, since: u64, task: Option<&str>) -> Result<Reply, String> {
+        let since = since.to_string();
+        let mut query = vec![("since", since.as_str())];
+        if let Some(task) = task {
+            query.push(("task", task));
+        }
+        self.send(Method::GET, &["escalations"], &query, None).await
     }
 
-    /// `GET /approvals`: the pending records, with each one's tool, action and options.
-    pub async fn pending_approvals(&self) -> Result<Reply, String> {
-        self.send(Method::GET, &["approvals"], &[], None).await
-    }
-
-    /// `POST /approvals/<token>`.
-    pub async fn approve(&self, token: &str, body: Value) -> Result<Reply, String> {
-        self.send(Method::POST, &["approvals", token], &[], Some(body))
-            .await
-    }
-
-    /// `POST /tasks/<id>/answer`.
-    pub async fn answer(&self, task: &str, body: Value) -> Result<Reply, String> {
-        self.send(Method::POST, &["tasks", task, "answer"], &[], Some(body))
+    /// `POST /escalations/<id>`: the one route that settles a pause.
+    pub async fn resolve(&self, id: &str, body: Value) -> Result<Reply, String> {
+        self.send(Method::POST, &["escalations", id], &[], Some(body))
             .await
     }
 }

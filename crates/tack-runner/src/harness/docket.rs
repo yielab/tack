@@ -1,11 +1,12 @@
 //! docket as a harness: a daemon the runner talks to over HTTP, not a process
 //! it spawns. [`DocketAdapter`] implements [`HarnessAdapter`] and
-//! [`HarnessProbe`] directly against docket's operator API (version 5): it
-//! posts the attempt as a task to the team the profile names, follows the
-//! task's hops on the trace, carries docket's approvals and questions to the
-//! person, and names the finished branch's commit in the user's repository, where
-//! the evidence, the verifier and the push read it. The runner makes no copy of
-//! the code for a docket run.
+//! [`HarnessProbe`] directly against docket's operator API (version 5 or 6, with
+//! the escalation record): it posts the attempt as a task to the team the
+//! profile names, follows the task's hops on the trace, carries docket's
+//! escalations (every approval and question) to the person, and names the
+//! finished branch's commit in the user's repository, where the evidence, the
+//! verifier and the push read it. The runner makes no copy of the code for a
+//! docket run.
 //!
 //! What the API and the fake that stands in for it are built on is in
 //! `fixtures/docket/v5/README.md`.
@@ -127,8 +128,9 @@ fn capabilities() -> FeatureCapabilities {
         ),
         decisions: capability(
             CapabilitySupport::Supported,
-            "a tool call docket's policy gates, and a question a step parks on, reach the \
-             person through the inbox and are answered over docket's approvals and answer routes",
+            "a tool call docket's policy gates, and a question a step parks on, are escalations \
+             docket records, which reach the person and are answered over docket's one \
+             escalation route",
         ),
         artifacts: capability(
             CapabilitySupport::Supported,
@@ -175,40 +177,18 @@ struct Live {
     wait: Option<WaitSide>,
 }
 
-/// What a person's answer will be posted as.
-enum Pending {
-    Approval {
-        token: String,
-        expires_at: Option<DateTime<Utc>>,
-    },
-    Consult {
-        task: String,
-        /// docket's id for the question.
-        question: String,
-        /// The one property the answer's text fills, and whether docket requires it.
-        property: String,
-        required: bool,
-        /// The ids of docket's own options; none when the question has none.
-        options: Vec<String>,
-        expires_at: Option<DateTime<Utc>>,
-    },
-}
-
-impl Pending {
-    /// docket's id for what is asked: the approval's token or the question's id.
-    fn docket_id(&self) -> &str {
-        match self {
-            Self::Approval { token, .. } => token,
-            Self::Consult { question, .. } => question,
-        }
-    }
-
-    /// When docket stops holding the question open, if it said.
-    fn expires_at(&self) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Approval { expires_at, .. } | Self::Consult { expires_at, .. } => *expires_at,
-        }
-    }
+/// What a person's answer will be posted as: docket's escalation and what it takes.
+struct Pending {
+    /// docket's id for the escalation, which is also the route its answer goes to.
+    escalation: String,
+    /// The ids of docket's own options.
+    options: Vec<String>,
+    /// docket offers only to decline, and the person may answer in text instead.
+    by_text: bool,
+    /// The one property the answer's text fills, and whether docket requires it.
+    property: String,
+    required: bool,
+    expires_at: Option<DateTime<Utc>>,
 }
 
 pub struct DocketAdapter {
@@ -230,7 +210,9 @@ impl DocketAdapter {
         }
     }
 
-    fn cursor_path(&self, attempt_id: &str) -> PathBuf {
+    /// Where one kind of progress for an attempt is kept: `cursor` for the trace, `since` for the
+    /// escalations.
+    fn state_path(&self, attempt_id: &str, extension: &str) -> PathBuf {
         let safe: String = attempt_id
             .chars()
             .map(|c| {
@@ -241,31 +223,42 @@ impl DocketAdapter {
                 }
             })
             .collect();
-        self.state_dir.join("docket").join(format!("{safe}.cursor"))
+        self.state_dir
+            .join("docket")
+            .join(format!("{safe}.{extension}"))
     }
 
     fn read_cursor(&self, attempt_id: &str) -> String {
-        std::fs::read_to_string(self.cursor_path(attempt_id))
+        std::fs::read_to_string(self.state_path(attempt_id, "cursor"))
             .map(|text| text.trim().to_owned())
             .unwrap_or_default()
     }
 
-    /// Written after the page it follows has been delivered, through a rename
-    /// so a crash leaves the old cursor or the new one, never half of one.
-    fn write_cursor(&self, attempt_id: &str, cursor: &str) {
-        let path = self.cursor_path(attempt_id);
+    /// The `seq` below which this attempt's escalations are all settled.
+    fn read_since(&self, attempt_id: &str) -> u64 {
+        std::fs::read_to_string(self.state_path(attempt_id, "since"))
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+            .unwrap_or(0)
+    }
+
+    /// Written after what it follows has been delivered, through a rename so a crash leaves the
+    /// old value or the new one, never half of one.
+    fn write_state(&self, attempt_id: &str, extension: &str, value: &str) {
+        let path = self.state_path(attempt_id, extension);
         let written = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
             .and_then(|()| {
-                let partial = path.with_extension("cursor.partial");
-                std::fs::write(&partial, cursor)?;
+                let partial = path.with_extension(format!("{extension}.partial"));
+                std::fs::write(&partial, value)?;
                 std::fs::rename(&partial, &path)
             });
         if written.is_err() {
             tracing::warn!(
                 harness = DESCRIPTOR.kind,
-                "the trace cursor could not be saved"
+                extension,
+                "the attempt's progress could not be saved"
             );
         }
     }
@@ -533,145 +526,8 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
     }
 }
 
-/// What the person is asked about a gated call: the tool and docket's sentence
-/// naming it, when docket gave them.
-fn approval_prompt(tool: Option<&str>, action: Option<&str>) -> String {
-    match (tool, action) {
-        (Some(tool), Some(action)) => format!("Allow {tool}? docket's policy: {action}"),
-        (Some(tool), None) => format!("Allow {tool}?"),
-        _ => "Allow a gated tool call?".to_owned(),
-    }
-}
-
-/// The question for an approval no task holds: docket's `ApprovalView`, which
-/// carries the tool and action itself.
-fn approval_question(view: &Value) -> Option<Question> {
-    let token = view["token"].as_str()?;
-    let tool = view["tool"].as_str();
-    let prompt = approval_prompt(tool, view["action"].as_str());
-    Some(approval_asking(
-        token,
-        prompt,
-        tool,
-        &view["role"],
-        &view["policy"],
-        &Value::Null,
-    ))
-}
-
-/// The question for the approval a task holds (`status: waiting_approval`,
-/// `approvalToken`). Its details are the record in `GET /approvals`; without
-/// one, the task's `reason` is all docket said. A change that edits the files
-/// its own check reads (`checkChanged`) asks about those files, not a tool call.
-fn held_approval_question(task: &Value, token: &str, record: Option<&Value>) -> Question {
-    let changed: Vec<&str> = task["checkChanged"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect();
-    if !changed.is_empty() {
-        let prompt = format!(
-            "The change edits what checks it: {}. Accept it after reading those files?",
-            changed.join(", ")
-        );
-        let options = record.map_or(&Value::Null, |record| &record["options"]);
-        return approval_asking(token, prompt, None, &task["role"], &Value::Null, options);
-    }
-    match record {
-        Some(record) => {
-            let tool = record["context"]["tool"].as_str();
-            let prompt = approval_prompt(tool, record["action"].as_str());
-            approval_asking(
-                token,
-                prompt,
-                tool,
-                &record["role"],
-                &record["policy"],
-                &record["options"],
-            )
-        }
-        None => {
-            let prompt = match task["reason"].as_str().filter(|reason| !reason.is_empty()) {
-                Some(reason) => format!("Allow a gated tool call? docket says: {reason}"),
-                None => approval_prompt(None, None),
-            };
-            approval_asking(
-                token,
-                prompt,
-                None,
-                &Value::Null,
-                &Value::Null,
-                &Value::Null,
-            )
-        }
-    }
-}
-
-/// The three answers docket's endpoint takes (`approve_once` and `approve_task`
-/// both grant), worded as the pending record words them when it is there.
-fn approval_asking(
-    token: &str,
-    prompt: String,
-    tool: Option<&str>,
-    role: &Value,
-    policy: &Value,
-    docket_options: &Value,
-) -> Question {
-    let option = |id: &str, label: &str| {
-        let wording = docket_options
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|option| option["id"] == json!(id));
-        let text = |key: &str| {
-            wording
-                .and_then(|option| option[key].as_str())
-                .filter(|text| !text.is_empty())
-                .map(str::to_owned)
-        };
-        let risks: Vec<String> = wording
-            .and_then(|option| option["risks"].as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|risk| risk.as_str().map(str::to_owned))
-            .collect();
-        DecisionOption {
-            option_id: id.to_owned(),
-            label: text("label").unwrap_or_else(|| label.to_owned()),
-            description: text("description"),
-            risks: Some(risks).filter(|risks| !risks.is_empty()),
-            estimated_tokens: None,
-        }
-    };
-    let mut metadata = serde_json::Map::new();
-    metadata.insert("tool".to_owned(), tool.into());
-    metadata.insert("role".to_owned(), role.clone());
-    metadata.insert("policy".to_owned(), policy.clone());
-    Question {
-        vendor_id: token.to_owned(),
-        kind: "approval".to_owned(),
-        prompt,
-        options: vec![
-            option("approve_once", "Allow once"),
-            option("approve_task", "Allow for this task"),
-            option("deny", "Deny"),
-        ],
-        recommendation: None,
-        metadata,
-    }
-}
-
-/// The one property a parked question asks for, which its answer fills.
-fn consult_property(question: &Value) -> String {
-    question["requestedSchema"]["properties"]
-        .as_object()
-        .and_then(|properties| properties.keys().next().cloned())
-        .unwrap_or_else(|| "answer".to_owned())
-}
-
-/// One of docket's options for a parked question, worded as docket words it.
-fn consult_option(option: &Value) -> Option<DecisionOption> {
+/// One of docket's options for an escalation, worded as docket words it.
+fn escalation_option(option: &Value) -> Option<DecisionOption> {
     let text = |key: &str| {
         option[key]
             .as_str()
@@ -695,8 +551,8 @@ fn consult_option(option: &Value) -> Option<DecisionOption> {
 }
 
 /// docket's recommendation, when it names one of the options offered.
-fn consult_recommendation(question: &Value, options: &[DecisionOption]) -> Option<Recommendation> {
-    let recommendation = question.get("recommendation")?;
+fn escalation_recommendation(record: &Value, options: &[DecisionOption]) -> Option<Recommendation> {
+    let recommendation = record.get("recommendation")?;
     let option_id = recommendation["optionId"].as_str()?;
     options
         .iter()
@@ -717,212 +573,161 @@ fn consult_recommendation(question: &Value, options: &[DecisionOption]) -> Optio
     })
 }
 
-/// The question a task parked on (`status: waiting_input`). `question` is the
-/// one docket sent: the task view's carries the `options` and `recommendation`
-/// that the inbox's leaves out. With options the person chooses among them
-/// (or declines); without, the person answers in text or declines.
-fn consult_question(task: &str, question: &Value) -> Option<(Question, Pending)> {
-    let own = |id: &str, label: &str| DecisionOption {
-        option_id: id.to_owned(),
-        label: label.to_owned(),
-        description: None,
-        risks: None,
-        estimated_tokens: None,
-    };
-    let offered: Vec<DecisionOption> = question["options"]
+/// The id Tack offers for answering in text where docket's only option is to decline.
+const TEXT_ANSWER: &str = "accept";
+
+/// The question one of docket's escalations is, and what answering it posts. The options are
+/// docket's own, in its order, so the last one is the way out; a question whose only option is to
+/// decline but which takes text is offered an answer in text beside it.
+fn escalation_question(record: &Value) -> Option<(Question, Pending)> {
+    let id = record["id"].as_str()?.to_owned();
+    let kind = record["kind"].as_str().unwrap_or("approval").to_owned();
+    let mut options: Vec<DecisionOption> = record["options"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(consult_option)
+        .filter_map(escalation_option)
         .collect();
-    let docket_ids: Vec<String> = offered
+    let docket_ids: Vec<String> = options
         .iter()
         .map(|option| option.option_id.clone())
         .collect();
-    let recommendation = consult_recommendation(question, &offered);
-    let mut options = offered;
-    if options.is_empty() {
-        options.push(own("accept", "Answer"));
-        options.push(own("decline", "Decline"));
-    } else {
-        // Whatever the person picks that is not one of docket's is a decline.
-        let id = if docket_ids.iter().any(|id| id == "decline") {
-            "tack_decline"
-        } else {
-            "decline"
+    let by_text = docket_ids.iter().all(|id| id == "decline")
+        && record["affordances"]["acceptsText"] == json!(true);
+    if by_text {
+        let own = |id: &str, label: &str| DecisionOption {
+            option_id: id.to_owned(),
+            label: label.to_owned(),
+            description: None,
+            risks: None,
+            estimated_tokens: None,
         };
-        options.push(own(id, "Decline"));
+        options = vec![own(TEXT_ANSWER, "Answer"), own("decline", "Decline")];
     }
-    let property = consult_property(question);
-    let required = question["requestedSchema"]["required"]
+    let recommendation = escalation_recommendation(record, &options);
+    // What the answer's text fills: an approval takes a reason, a question the one property
+    // its schema names.
+    let property = if matches!(kind.as_str(), "approval" | "gate" | "check_changed") {
+        "reason".to_owned()
+    } else {
+        record["requestedSchema"]["properties"]
+            .as_object()
+            .and_then(|properties| properties.keys().next().cloned())
+            .unwrap_or_else(|| "answer".to_owned())
+    };
+    let required = record["requestedSchema"]["required"]
         .as_array()
         .is_some_and(|names| names.iter().any(|name| name == &json!(property)));
-    let id = question["id"].as_str()?.to_owned();
+    let mut metadata = serde_json::Map::new();
+    for key in ["step", "role", "policy", "level"] {
+        if let Some(value) = record[key].as_str().filter(|value| !value.is_empty()) {
+            metadata.insert(key.to_owned(), value.into());
+        }
+    }
     Some((
         Question {
             vendor_id: id.clone(),
-            kind: "consult".to_owned(),
-            prompt: question["message"]
+            kind,
+            prompt: record["prompt"]
                 .as_str()
+                .filter(|prompt| !prompt.is_empty())
                 .unwrap_or("docket asks a question")
                 .to_owned(),
             options,
             recommendation,
-            metadata: serde_json::Map::new(),
+            metadata,
         },
-        Pending::Consult {
-            task: task.to_owned(),
-            question: id,
+        Pending {
+            escalation: id,
+            options: docket_ids,
+            by_text,
             property,
             required,
-            options: docket_ids,
-            expires_at: expiry(question),
+            expires_at: expiry(record),
         },
     ))
 }
 
+/// What one read of the task's escalations found.
+#[derive(Default)]
+struct Escalations {
+    /// The first one waiting for a person that has not been asked yet.
+    next: Option<(Question, Pending)>,
+    /// The held one has expired in docket's own record.
+    expired: bool,
+    /// The highest `seq` below the first record still pending: where a restarted adapter may
+    /// read from without missing a question.
+    settled_through: u64,
+}
+
 impl DocketAdapter {
-    /// What this task needs from a person, if anything and not yet asked.
-    async fn next_question(
+    /// The task's escalations past `since`, from docket's one record: the question to ask next, if
+    /// one is waiting and not yet asked, and whether the one held has expired.
+    async fn read_escalations(
         &self,
         info: &RunInfo,
+        since: u64,
         asked: &HashSet<String>,
-    ) -> Option<(Question, Pending)> {
-        let reply = self.client.inbox().await.ok().filter(|r| r.status == 200)?;
-        for item in reply.body["needsYou"].as_array().into_iter().flatten() {
-            if item["pod"] != json!(info.pod) {
-                continue;
-            }
-            if item.get("token").is_some() && item["taskId"] == json!(info.task) {
-                // An approval no task holds, which docket sends as its own item.
-                if let Some(question) = approval_question(item)
-                    && !asked.contains(&question.vendor_id)
-                {
-                    let token = question.vendor_id.clone();
-                    return Some((
-                        question,
-                        Pending::Approval {
-                            token,
-                            expires_at: expiry(item),
-                        },
-                    ));
-                }
-            } else if item["id"] != json!(info.task) {
-                continue;
-            } else if item["status"] == json!("waiting_approval")
-                && let Some(token) = item["approvalToken"].as_str()
-            {
-                // An approval the task holds is the task's own item; the tool and
-                // the policy's sentence are in the record `GET /approvals` lists.
-                if asked.contains(token) {
-                    continue;
-                }
-                let record = self.pending_approval(token).await;
-                let question = held_approval_question(item, token, record.as_ref());
-                return Some((
-                    question,
-                    Pending::Approval {
-                        token: token.to_owned(),
-                        expires_at: record.as_ref().and_then(expiry),
-                    },
-                ));
-            } else if item["status"] == json!("waiting_input")
-                && let Some(task) = item["id"].as_str()
-                && let Some(listed) = item["question"].as_object()
-                && !listed
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| asked.contains(id))
-            {
-                // The inbox's question has no options; the task view's has them.
-                let viewed = self
-                    .client
-                    .task(&info.pod, task)
-                    .await
-                    .ok()
-                    .filter(|r| r.status == 200)
-                    .map(|r| r.body["question"].clone())
-                    .filter(|question| question["id"] == item["question"]["id"]);
-                if let Some(found) =
-                    consult_question(task, viewed.as_ref().unwrap_or(&item["question"]))
-                {
-                    return Some(found);
-                }
-            }
-        }
-        None
-    }
-
-    /// The pending record for `token` in `GET /approvals`, if docket answers
-    /// and lists it.
-    async fn pending_approval(&self, token: &str) -> Option<Value> {
+        held: Option<&Pending>,
+    ) -> Option<Escalations> {
         let reply = self
             .client
-            .pending_approvals()
+            .escalations(since, Some(&info.task))
             .await
             .ok()
             .filter(|r| r.status == 200)?;
-        reply.body["pending"]
-            .as_array()?
-            .iter()
-            .find(|record| record["token"] == json!(token))
-            .cloned()
+        let listed = reply.body["escalations"].as_array()?;
+        let mut found = Escalations {
+            settled_through: since,
+            ..Escalations::default()
+        };
+        let mut open = false;
+        for record in listed {
+            let pending = record["state"] == json!("pending");
+            if let Some(held) = held
+                && record["id"] == json!(held.escalation)
+                && record["state"] == json!("expired")
+            {
+                found.expired = true;
+            }
+            if pending {
+                open = true;
+                if held.is_none()
+                    && found.next.is_none()
+                    && !record["id"].as_str().is_some_and(|id| asked.contains(id))
+                {
+                    found.next = escalation_question(record);
+                }
+            } else if !open && let Some(seq) = record["seq"].as_u64() {
+                found.settled_through = found.settled_through.max(seq);
+            }
+        }
+        Some(found)
     }
 
-    /// Posts the person's answer where docket reads it. A `409` means docket
-    /// had already resolved it, which is not a failure.
-    async fn deliver(
-        &self,
-        info: &RunInfo,
-        pending: &Pending,
-        answer: &DecisionAnswer,
-    ) -> Option<String> {
-        let reply = match pending {
-            Pending::Approval { token, .. } => {
-                let reason = answer.text.clone().unwrap_or_default();
-                let body = match answer.option_id.as_deref() {
-                    Some(option @ ("approve_once" | "approve_task")) => {
-                        json!({"action": "grant", "channel": "tack", "option": option, "reason": reason})
-                    }
-                    _ => json!({"action": "deny", "channel": "tack", "reason": reason}),
-                };
-                self.client.approve(token, body).await
-            }
-            Pending::Consult {
-                task,
-                property,
-                required,
-                options,
-                ..
-            } => {
-                let chosen = answer.option_id.as_deref();
-                // docket's own options take `optionId` inside `content` (its HTTP
-                // route reads only `pod`, `action`, `content` and `actor`).
-                let docket_option = chosen.filter(|id| options.iter().any(|own| own == id));
-                let accepts = if options.is_empty() {
-                    chosen == Some("accept")
-                } else {
-                    docket_option.is_some()
-                };
-                let body = if accepts {
-                    let mut content = serde_json::Map::new();
-                    if let Some(id) = docket_option {
-                        content.insert("optionId".to_owned(), json!(id));
-                    }
-                    let text = answer.text.as_deref().filter(|text| !text.is_empty());
-                    if text.is_some() || *required {
-                        content.insert(property.clone(), json!(text.unwrap_or_default()));
-                    }
-                    json!({"pod": info.pod, "action": "accept", "actor": "tack",
-                           "content": content})
-                } else {
-                    json!({"pod": info.pod, "action": "decline", "actor": "tack"})
-                };
-                self.client.answer(task, body).await
-            }
+    /// Posts the person's answer where docket reads it. A `409` or a `404` means docket had
+    /// already settled it, or no longer has it, which is not a failure.
+    async fn deliver(&self, pending: &Pending, answer: &DecisionAnswer) -> Option<String> {
+        let chosen = answer.option_id.as_deref();
+        let option = match chosen {
+            Some(TEXT_ANSWER) if pending.by_text => None,
+            Some(id) if pending.options.iter().any(|own| own == id) => Some(id),
+            // Whatever the person picked that docket does not offer is a refusal.
+            _ if pending.options.iter().any(|own| own == "deny") => Some("deny"),
+            _ => Some("decline"),
         };
-        match reply {
-            Ok(reply) if reply.status == 200 || reply.status == 409 => None,
+        let mut body = json!({"actor": "tack"});
+        if let Some(option) = option {
+            body["optionId"] = json!(option);
+        }
+        let text = answer.text.as_deref().filter(|text| !text.is_empty());
+        if option != Some("decline")
+            && (text.is_some() || (pending.required && option != Some("deny")))
+        {
+            body["content"] = json!({pending.property.as_str(): text.unwrap_or_default()});
+        }
+        match self.client.resolve(&pending.escalation, body).await {
+            Ok(reply) if matches!(reply.status, 200 | 404 | 409) => None,
             Ok(reply) => Some(format!("docket did not take the answer: {}", reply.error())),
             Err(why) => Some(format!("the answer could not reach docket: {why}")),
         }
@@ -1118,8 +923,12 @@ impl HarnessAdapter for DocketAdapter {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
         let team = Self::named_team(spec);
-        // The version first: a docket older than API 5 gets no task.
-        probe::status(&self.client).await.map_err(rejected)?;
+        // The version first: a docket older than API 5 gets no task, and neither does one
+        // without the escalation record, which is where every question is read from.
+        let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        probe::escalation_record(&self.client, &api)
+            .await
+            .map_err(rejected)?;
         // The default pod is made when the task starts, like any other.
         let Some(team) = team else {
             return Ok(());
@@ -1376,6 +1185,8 @@ impl DocketAdapter {
         let mut last_poll = tokio::time::Instant::now();
         let mut was_waiting = false;
         let mut cursor = self.read_cursor(&info.attempt_id);
+        // The escalations before this `seq` are settled, so docket is not asked for them again.
+        let mut since = self.read_since(&info.attempt_id);
         let mut served_model: Option<String> = None;
         // docket's ids of what was asked, and how often docket refused the answer.
         let mut asked: HashSet<String> = HashSet::new();
@@ -1414,23 +1225,32 @@ impl DocketAdapter {
                     .as_str()
                     .filter(|n| !n.is_empty() && *n != cursor)
                 {
-                    self.write_cursor(&info.attempt_id, next);
+                    self.write_state(&info.attempt_id, "cursor", next);
                     cursor = next.to_owned();
                 }
             }
 
             // Whatever needs a person.
-            if pending.is_none()
-                && let Some((mut question, ask)) = self.next_question(info, &asked).await
+            let mut expired_in_docket = false;
+            if let Some(read) = self
+                .read_escalations(info, since, &asked, pending.as_ref())
+                .await
             {
-                // A question asked again is a new decision: Tack keys a decision
-                // by the id, and the refused one is already resolved there.
-                if let Some(times) = refused.get(ask.docket_id()) {
-                    question.vendor_id = format!("{}#{times}", question.vendor_id);
+                expired_in_docket = read.expired;
+                if let Some((mut question, ask)) = read.next {
+                    // A question asked again is a new decision: Tack keys a decision
+                    // by the id, and the refused one is already resolved there.
+                    if let Some(times) = refused.get(&ask.escalation) {
+                        question.vendor_id = format!("{}#{times}", question.vendor_id);
+                    }
+                    if side.questions.try_send(question).is_ok() {
+                        asked.insert(ask.escalation.clone());
+                        pending = Some(ask);
+                    }
                 }
-                if side.questions.try_send(question).is_ok() {
-                    asked.insert(ask.docket_id().to_owned());
-                    pending = Some(ask);
+                if read.settled_through > since {
+                    since = read.settled_through;
+                    self.write_state(&info.attempt_id, "since", &since.to_string());
                 }
             }
 
@@ -1462,7 +1282,7 @@ impl DocketAdapter {
                         &task,
                         model,
                         &side.progress,
-                        pending.as_ref().and_then(Pending::expires_at),
+                        pending.as_ref().and_then(|held| held.expires_at),
                     )
                     .await);
             }
@@ -1472,14 +1292,12 @@ impl DocketAdapter {
                 deadline += now - last_poll;
             }
             (last_poll, was_waiting) = (now, waiting);
-            // Still waiting after the question's own expiry, which docket's sweep has not
-            // resolved: nobody answered. With no `expiresAt` only an answer, docket or Stop
-            // ends the wait.
-            if waiting
-                && let Some(expired) = pending
-                    .as_ref()
-                    .and_then(Pending::expires_at)
-                    .filter(|at| *at <= Utc::now())
+            // Still waiting after the escalation's own expiry, which docket's sweep has not
+            // resolved, or docket itself has marked it expired: nobody answered. With no
+            // `expiresAt` only an answer, docket or Stop ends the wait.
+            let held_expiry = pending.as_ref().and_then(|held| held.expires_at);
+            if expired_in_docket
+                || (waiting && held_expiry.is_some_and(|expired| expired <= Utc::now()))
             {
                 let _ = self
                     .client
@@ -1493,7 +1311,7 @@ impl DocketAdapter {
                     info,
                     AttemptState::Failed,
                     json!({"code": "not_answered",
-                           "message": super::not_answered(Some(expired)),
+                           "message": super::not_answered(held_expiry),
                            "task": info.task}),
                     &task,
                     served_model,
@@ -1518,12 +1336,12 @@ impl DocketAdapter {
                 () = tokio::time::sleep(POLL_INTERVAL) => {}
                 answer = side.answers.recv(), if pending.is_some() => {
                     if let (Some(answer), Some(ask)) = (answer, pending.take())
-                        && let Some(problem) = self.deliver(info, &ask, &answer).await
+                        && let Some(problem) = self.deliver(&ask, &answer).await
                     {
                         // The decision is resolved in Tack, so the run would wait on
                         // nothing: ask again while docket still holds the question.
-                        asked.remove(ask.docket_id());
-                        *refused.entry(ask.docket_id().to_owned()).or_default() += 1;
+                        asked.remove(&ask.escalation);
+                        *refused.entry(ask.escalation.clone()).or_default() += 1;
                         let _ = side.progress.try_send(Progress {
                             kind: "agent.answer_failed".to_owned(),
                             text: format!("{problem}; asking again"),

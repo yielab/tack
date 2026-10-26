@@ -25,6 +25,12 @@ fn needs_beta_6(found: &str) -> String {
     format!("needs docket 0.2.0-beta.6 (API {MIN_API_VERSION}); this docket answers API {found}")
 }
 
+fn without_escalations(found: &str) -> String {
+    format!(
+        "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API {found} without it"
+    )
+}
+
 /// Whether the answered API version is at least `minimum`.
 pub(super) fn api_at_least(api: &str, minimum: u32) -> bool {
     api.parse::<u32>().is_ok_and(|found| found >= minimum)
@@ -74,6 +80,21 @@ pub(super) async fn status(client: &Client) -> Result<Status, String> {
         version,
         api: found.to_owned(),
     })
+}
+
+/// Whether docket keeps the escalation record, which every question and approval is read from.
+/// `apiVersion` is the same with and without it, so the route decides: `GET /escalations` answers
+/// `200` or this docket cannot be used.
+pub(super) async fn escalation_record(client: &Client, api: &str) -> Result<(), String> {
+    let reply = client
+        .escalations(0, None)
+        .await
+        .map_err(|why| format!("docket is not answering at {}: {why}", client.base()))?;
+    if reply.status == 200 {
+        Ok(())
+    } else {
+        Err(without_escalations(api))
+    }
 }
 
 /// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
@@ -177,6 +198,10 @@ pub(super) async fn probe(
     };
     capability.installed_version = version.unwrap_or_default();
     capability.set_api_version(&api);
+    if let Err(why) = escalation_record(client, &api).await {
+        capability.probe_error = Some(why);
+        return capability;
+    }
     let signed_in = !models.is_empty();
     capability.sign_in = Some(SignInReport {
         state: if signed_in {

@@ -61,18 +61,18 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | Step | Call | Function |
 |---|---|---|
 | Version | `GET /status.json`; `apiVersion` must be a number, 5 or later; `prepare` is posted only from 6 | `probe::status` |
+| The escalation record | `GET /escalations?since=0` must answer `200` | `probe::escalation_record` |
 | Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each | `probe::teams` |
 | Make the team once per process | `POST /pods` with `ensure: true`, `blueprint: "software"` | `Client::ensure_pod` |
 | Post the attempt | `POST /tasks/<pod>` | `Client::enqueue_task` |
 | Read the task | `GET /tasks/<pod>/<id>` | `Client::task` |
 | Follow the hops | `GET /traces/<pod>?since=<cursor>` | `follow` |
-| Look for approvals and questions | `GET /inbox` | `next_question` |
-| Answer an approval | `POST /approvals/<token>` with `channel: "tack"` | `deliver` |
-| Answer a parked question | `POST /tasks/<id>/answer` | `deliver` |
+| Look for approvals and questions | `GET /escalations?since=<seq>&task=<id>` | `read_escalations` |
+| Answer either | `POST /escalations/<id>` with `{optionId, content?, actor: "tack"}` | `deliver` |
 | Cancel | `POST /tasks/<pod>/<id>/cancel` | `cancel` |
 | Untracked files | `GET /tasks/<pod>/<id>/diff` | `finish` |
 
-An `apiVersion` below 5, or one that is not a number, is a probe error: "needs docket 0.2.0-beta.6 (API 5); this docket answers API N". `validate` runs the probe before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
+An `apiVersion` below 5, or one that is not a number, is a probe error: "needs docket 0.2.0-beta.6 (API 5); this docket answers API N". A docket that answers the version but not `GET /escalations` is a probe error too: "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API N without it". The version number cannot tell the two apart, so the route decides. `validate` runs both checks before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
 
 From API 6, the task body carries `prepare` from the request's `repository.prepare`: a `Replace` sends its command, `Off` sends `""`, and `Detect` sends nothing, so docket uses its team's `prepare:` or the lockfile's command. A task docket settles `failed` with `failureKind: "prepare"` ends the attempt `failed` with the reason "Could not prepare the dependencies (docket): " followed by docket's own.
 
@@ -98,9 +98,9 @@ A `400` or `422` from docket makes the attempt fail with docket's text and the t
 `follow` polls every two seconds (`POLL_INTERVAL`):
 
 1. It reads the trace page since the cursor and turns `hop_started` and `hop_finished` records for this task into timeline lines. The cursor lives in `<state_dir>/docket/<attempt id>.cursor` and is written by rename after each page is delivered, so a second adapter over the same directory resumes where the first stopped.
-2. It reads the inbox. An item with a `token` for this task becomes a decision of kind `approval` (options `approve_once`, `approve_task`, `deny`). A task in `waiting_input` becomes a decision of kind `consult`: its options are docket's own (read from the task view, which the inbox's question lacks) with docket's recommendation and a decline, or Answer and Decline when the question has none. Both go through the existing decision channels, so the inbox needs no new route.
-3. It reads the task. In `done`, `failed`, `blocked` or `cancelled` it stops; a `blocked` task whose `blockedReason` is `input_expired` (proposed: no capture has the name yet) ends with `not_answered`, any other `blocked` with `blocked`. When the attempt's own timeout passes it cancels the task and ends the attempt with `timeout`, but the timeout bounds the agent's work, so the time between two polls that both saw the task in `waiting_input` or `waiting_approval` is added to the deadline. A wait has a deadline only when docket gives one: the open question's or approval's `expiresAt`, read from the record that made the question (the task view's question, the `GET /approvals` record, or the inbox item of an approval no task holds). If the task is still waiting at a poll after that time, it cancels the task and ends the attempt `failed` with `not_answered`. With no `expiresAt`, which is every consult on every capture, nothing ends the wait but an answer, docket's own resolution, or Stop.
-4. A person's answer arrives on the answer channel and is posted at once; a `409` from docket means it had already resolved and is not an error. Any other refusal is written on the timeline and the question is asked again as a new decision.
+2. It reads the task's escalations, `GET /escalations?since=<seq>&task=<id>`, docket's one record of every pause: a tool call a policy holds (`approval`), a step's question (`consult`), an `input` step, a `gate` and a change to the files that check it (`check_changed`). The first record still `pending` that was not asked becomes one decision, in docket's words: its prompt, its options in its order (the last is the way out), its recommendation. An `input` whose only option is `decline` but which takes text is offered an Answer beside Decline. The decision goes through the existing decision channels. The last `seq` below the first pending record is kept in `<state_dir>/docket/<attempt id>.since`, written by rename like the cursor, so a second adapter over the directory sends it; a pending record stays above it, which is how a runner restarted with a question open asks it again.
+3. It reads the task. In `done`, `failed`, `blocked` or `cancelled` it stops; a `blocked` task whose `blockedReason` is `input_expired` ends with `not_answered`, any other `blocked` with `blocked`. When the attempt's own timeout passes it cancels the task and ends the attempt with `timeout`, but the timeout bounds the agent's work, so the time between two polls that both saw the task in `waiting_input` or `waiting_approval` is added to the deadline. A wait has a deadline only when docket gives one: the pending escalation's `expiresAt`. If the task is still waiting at a poll after that time, or docket's record says the escalation `expired`, it cancels the task and ends the attempt `failed` with `not_answered`. With a null `expiresAt`, as on a consult that docket does not expire, nothing ends the wait but an answer, docket's own resolution, or Stop.
+4. A person's answer arrives on the answer channel and is posted at once to `POST /escalations/<id>` with the option's id and `actor: "tack"`; the text goes in `content` under the one property the record's `requestedSchema` names (`reason` for an approval, a gate or a changed check), and an `input` answered in text sends no `optionId`. An option docket does not offer is sent as `deny` where docket offers it, else `decline`. A `409` (already settled) or a `404` means docket settled it elsewhere and is not an error. Any other refusal is written on the timeline and the question is asked again as a new decision.
 
 ### The branch comes back
 
@@ -146,7 +146,7 @@ The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows come
 
 ## The fake docket
 
-There is no real docket in any test. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, written key by key from docket's published operator-API spec (version 5.0.1). Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out. The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
+There is no real docket in any test. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, answering from the captures of a real docket (API 6) with the keys it has and no others. Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out. The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
 
 To extend it:
 

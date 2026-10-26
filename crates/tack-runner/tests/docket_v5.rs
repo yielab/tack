@@ -276,6 +276,32 @@ async fn a_version_below_5_or_not_a_number_is_refused_with_the_sentence() {
     }
 }
 
+/// `apiVersion` is "6" with and without the escalation record, so the route decides.
+#[tokio::test]
+async fn a_docket_without_the_escalation_record_is_refused_with_the_sentence() {
+    let fake = pods_fake().await;
+    fake.set_api_version("6");
+    fake.without_escalations();
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let capability = adapter.probe().await;
+    let sentence = "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API 6 without it";
+    assert_eq!(capability.probe_error.as_deref(), Some(sentence));
+    assert_eq!(capability.api_version(), Some("6"));
+    let refused = adapter.validate(&spec(&scene, "attempt-1", 1)).await;
+    assert!(
+        matches!(&refused, Err(HarnessError::Rejected { reason }) if reason == sentence),
+        "{refused:?}"
+    );
+    assert!(fake.requests_to("POST", "/tasks").is_empty());
+    let asked = fake.requests_to("GET", "/escalations");
+    assert!(
+        asked.iter().all(|request| request.query == "since=0"),
+        "{asked:?}"
+    );
+}
+
 #[tokio::test]
 async fn an_api_5_run_reports_api_5_as_its_harness_version() {
     let fake = pods_fake().await;
@@ -643,6 +669,41 @@ async fn the_cursor_survives_a_second_adapter_over_the_same_state_dir() {
     );
     assert_eq!(polls.len(), 2, "one poll per adapter");
     assert!(polls[0].query.is_empty() || polls[0].query == "since=");
+}
+
+#[tokio::test]
+async fn a_second_adapter_over_the_same_state_dir_sends_the_saved_since() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::approval("tool call 'bash'"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let attempt = spec(&scene, "attempt-1", 1);
+
+    let mut first = park(&fake, &scene, &attempt).await;
+    first.question().await;
+    // While the question is open nothing is saved: a restart must find it again.
+    assert!(!scene.state.join("docket/attempt-1.since").exists());
+    first.answer(granting("approve_once")).await;
+    let (outcome, _) = first.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let saved = std::fs::read_to_string(scene.state.join("docket/attempt-1.since"))
+        .expect("the since file");
+    assert_eq!(saved.trim(), "1");
+
+    fake.script(Script::default());
+    let (_, second) = run_to_end(&adapter(&fake, &scene), &attempt).await;
+    assert!(second.is_empty(), "{second:?}");
+    let polls: Vec<_> = fake
+        .requests_to("GET", "/escalations")
+        .into_iter()
+        .filter(|request| request.query.contains("task="))
+        .collect();
+    // The same attempt keeps its idempotency key, so the second adapter follows the same task.
+    let task = fake.task_ids()[0].clone();
+    assert_eq!(polls.first().unwrap().query, format!("since=0&task={task}"));
+    assert_eq!(polls.last().unwrap().query, format!("since=1&task={task}"));
 }
 
 #[tokio::test]
@@ -1033,108 +1094,140 @@ async fn a_failed_install_fails_the_attempt_with_dockets_reason_and_no_work() {
     assert!(outcome.terminal_reason.get("head_commit").is_none());
 }
 
+/// An attempt running in the background, its questions and answers in the test's hands.
+struct Parked {
+    adapter: Arc<DocketAdapter>,
+    handle: tack_runner::client::LocalRunHandle,
+    questions: tokio::sync::mpsc::Receiver<tack_runner::client::engine::Question>,
+    answers: tokio::sync::mpsc::Sender<DecisionAnswer>,
+    progress: tokio::sync::mpsc::Receiver<tack_runner::harness::Progress>,
+    waiting: tokio::task::JoinHandle<
+        Result<tack_runner::harness::HarnessOutcome, tack_runner::client::HarnessError>,
+    >,
+}
+
+/// Starts `attempt` on the fake and waits for it in the background.
+async fn park(fake: &FakeDocket, scene: &Scene, attempt: &ExecutionSpec) -> Parked {
+    let adapter = Arc::new(adapter(fake, scene));
+    let handle = adapter.start(attempt).await.expect("starts");
+    let (questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
+    let progress = adapter.progress_channel(&handle).await.expect("progress");
+    let waiting = tokio::spawn({
+        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+        async move { adapter.wait(&handle).await }
+    });
+    Parked {
+        adapter,
+        handle,
+        questions,
+        answers,
+        progress,
+        waiting,
+    }
+}
+
+impl Parked {
+    async fn question(&mut self) -> tack_runner::client::engine::Question {
+        tokio::time::timeout(Duration::from_secs(20), self.questions.recv())
+            .await
+            .expect("a question in time")
+            .expect("a question")
+    }
+
+    async fn answer(&self, answer: DecisionAnswer) {
+        self.answers.send(answer).await.expect("answer");
+    }
+
+    /// The end of the attempt and the timeline lines it left.
+    async fn end(mut self) -> (tack_runner::harness::HarnessOutcome, Vec<(String, String)>) {
+        let outcome = tokio::time::timeout(Duration::from_secs(30), self.waiting)
+            .await
+            .expect("finishes")
+            .expect("joins")
+            .expect("outcome");
+        let mut lines = Vec::new();
+        while let Ok(step) = self.progress.try_recv() {
+            lines.push((step.kind, step.text));
+        }
+        (outcome, lines)
+    }
+}
+
+/// docket's id for the escalation the fake's one task opened, which is where its answer goes.
+fn escalation_of(fake: &FakeDocket) -> String {
+    fake.escalation_id(&fake.task_ids()[0])
+}
+
+/// The bodies posted to `POST /escalations/<id>`, in order.
+fn answers_posted(fake: &FakeDocket) -> Vec<Value> {
+    fake.requests_to("POST", "/escalations/")
+        .into_iter()
+        .map(|request| request.body)
+        .collect()
+}
+
 #[tokio::test]
-async fn an_approval_round_trip_answers_over_the_tack_channel() {
+async fn an_approval_round_trip_answers_over_the_one_route() {
     let fake = pods_fake().await;
     fake.script(Script {
         before: vec![(
             "hop_started".into(),
             hop("implementer", "local/local-model", 0),
         )],
-        gate: Gate::Approval {
-            token: "apr-1".into(),
-            tool: "bash".into(),
-            action: "tool call 'bash': needs a person; call=bash command=\"npm ci\"".into(),
-        },
+        gate: Gate::approval("tool call 'bash': needs a person; call=bash command=\"npm ci\""),
         ..Script::default()
     });
     let scene = scene();
-    let adapter = Arc::new(adapter(&fake, &scene));
-    let attempt = spec(&scene, "attempt-1", 1);
-    let handle = adapter.start(&attempt).await.expect("starts");
-    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
 
-    let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-        .await
-        .expect("a question in time")
-        .expect("a question");
+    let question = parked.question().await;
     assert_eq!(question.kind, "approval");
-    assert_eq!(question.vendor_id, "apr-1");
-    assert!(question.prompt.contains("bash"), "{}", question.prompt);
+    assert_eq!(question.vendor_id, escalation_of(&fake));
+    assert_eq!(
+        question.prompt,
+        "tool call 'bash': needs a person; call=bash command=\"npm ci\""
+    );
     let ids: Vec<_> = question
         .options
         .iter()
         .map(|o| o.option_id.as_str())
         .collect();
     assert_eq!(ids, ["approve_once", "approve_task", "deny"]);
-    answers
-        .send(DecisionAnswer {
-            option_id: Some("approve_once".to_owned()),
-            text: None,
-        })
-        .await
-        .expect("answer");
+    parked.answer(granting("approve_once")).await;
 
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
+    let (outcome, _) = parked.end().await;
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
-    let posted = fake.requests_to("POST", "/approvals/apr-1");
+    let id = escalation_of(&fake);
+    let posted = fake.requests_to("POST", &format!("/escalations/{id}"));
     assert_eq!(posted.len(), 1);
     assert_eq!(
         posted[0].body,
-        json!({"action": "grant", "channel": "tack", "option": "approve_once", "reason": ""})
+        json!({"optionId": "approve_once", "actor": "tack"})
     );
 }
 
 #[tokio::test]
-async fn a_denied_approval_posts_deny_without_an_option() {
+async fn a_denied_approval_posts_deny_with_the_reason() {
     let fake = pods_fake().await;
     fake.script(Script {
-        gate: Gate::Approval {
-            token: "apr-2".into(),
-            tool: "bash".into(),
-            action: "tool call 'bash'".into(),
-        },
+        gate: Gate::approval("tool call 'bash'"),
         ..Script::default()
     });
     let scene = scene();
-    let adapter = Arc::new(adapter(&fake, &scene));
-    let handle = adapter
-        .start(&spec(&scene, "attempt-1", 1))
-        .await
-        .expect("starts");
-    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
-    let _ = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-        .await
-        .expect("in time")
-        .expect("a question");
-    answers
-        .send(DecisionAnswer {
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    parked.question().await;
+    parked
+        .answer(DecisionAnswer {
             option_id: Some("deny".to_owned()),
             text: Some("not on this machine".to_owned()),
         })
-        .await
-        .expect("answer");
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
+        .await;
+    let (outcome, _) = parked.end().await;
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
     assert_eq!(
-        fake.requests_to("POST", "/approvals/apr-2")[0].body,
-        json!({"action": "deny", "channel": "tack", "reason": "not on this machine"})
+        answers_posted(&fake),
+        [json!({"optionId": "deny", "actor": "tack",
+                "content": {"reason": "not on this machine"}})]
     );
 }
 
@@ -1150,26 +1243,10 @@ async fn answer_the_parked_gate(
         ..Script::default()
     });
     let scene = scene();
-    let adapter = Arc::new(adapter(fake, &scene));
-    let handle = adapter
-        .start(&spec(&scene, "attempt-1", 1))
-        .await
-        .expect("starts");
-    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
-    let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-        .await
-        .expect("a question in time")
-        .expect("a question");
-    answers.send(answer).await.expect("answer");
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
+    let mut parked = park(fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    let question = parked.question().await;
+    parked.answer(answer).await;
+    let (outcome, _) = parked.end().await;
     (question, outcome.terminal_state)
 }
 
@@ -1182,29 +1259,37 @@ fn granting(option: &str) -> DecisionAnswer {
 
 const GATED_ACTION: &str = "tool call 'bash': 'ls' is not on the curated allowlist";
 
-/// docket holds the approval on the task (`waiting_approval`, `approvalToken`)
-/// and sends no approval item; the tool and the sentence are in `GET /approvals`.
+/// The poll reads the escalations of the task and the task, once each: the record that makes
+/// the question is the escalation's, with no other read for its details.
+fn reads_of_the_task_and_of_its_escalations(fake: &FakeDocket) -> (usize, usize) {
+    let record = format!("/tasks/{POD}/{}", fake.task_ids()[0]);
+    let task = fake
+        .requests_to("GET", &record)
+        .iter()
+        .filter(|request| request.path == record)
+        .count();
+    let escalations = fake
+        .requests_to("GET", "/escalations")
+        .iter()
+        .filter(|request| request.query.contains("task="))
+        .count();
+    (task, escalations)
+}
+
 #[tokio::test]
-async fn a_task_parked_for_approval_asks_with_the_tool_and_action_from_the_approvals_list() {
+async fn an_approval_asks_from_its_escalation_alone() {
     let fake = pods_fake().await;
     let (question, state) = answer_the_parked_gate(
         &fake,
-        Gate::Approval {
-            token: "apr-3".into(),
-            tool: "bash".into(),
-            action: GATED_ACTION.into(),
-        },
+        Gate::approval(GATED_ACTION),
         granting("approve_task"),
     )
     .await;
     assert_eq!(question.kind, "approval");
-    assert_eq!(question.vendor_id, "apr-3");
-    assert_eq!(
-        question.prompt,
-        format!("Allow bash? docket's policy: {GATED_ACTION}")
-    );
-    assert_eq!(question.metadata["tool"], json!("bash"));
+    assert_eq!(question.vendor_id, escalation_of(&fake));
+    assert_eq!(question.prompt, GATED_ACTION);
     assert_eq!(question.metadata["role"], json!("implementer"));
+    assert_eq!(question.metadata["policy"], json!("person"));
     let options: Vec<_> = question
         .options
         .iter()
@@ -1224,85 +1309,71 @@ async fn a_task_parked_for_approval_asks_with_the_tool_and_action_from_the_appro
         Some("Run this call and any identical one in this task.")
     );
     assert_eq!(state, AttemptState::Succeeded);
-    let posted = fake.requests_to("POST", "/approvals/apr-3");
-    assert_eq!(posted.len(), 1);
     assert_eq!(
-        posted[0].body,
-        json!({"action": "grant", "channel": "tack", "option": "approve_task", "reason": ""})
+        answers_posted(&fake),
+        [json!({"optionId": "approve_task", "actor": "tack"})]
     );
-    assert_eq!(fake.requests_to("GET", "/approvals").len(), 1);
+    assert!(fake.requests_to("GET", "/approvals").is_empty());
+    assert!(fake.requests_to("GET", "/inbox").is_empty());
+    let (task, escalations) = reads_of_the_task_and_of_its_escalations(&fake);
+    assert_eq!(task, escalations, "no read of the task but the poll's own");
 }
 
 #[tokio::test]
-async fn a_parked_task_still_asks_from_its_reason_when_the_approvals_list_fails() {
-    let fake = pods_fake().await;
-    fake.fail_approvals_list();
-    let (question, state) = answer_the_parked_gate(
-        &fake,
-        Gate::Approval {
-            token: "apr-4".into(),
-            tool: "bash".into(),
-            action: GATED_ACTION.into(),
-        },
-        DecisionAnswer {
-            option_id: Some("deny".to_owned()),
-            text: Some("no".to_owned()),
-        },
-    )
-    .await;
-    assert_eq!(question.vendor_id, "apr-4");
-    assert!(
-        question
-            .prompt
-            .contains("implementer hop parked for approval (token=apr-4)"),
-        "{}",
-        question.prompt
-    );
-    let ids: Vec<_> = question
-        .options
-        .iter()
-        .map(|o| o.option_id.as_str())
-        .collect();
-    assert_eq!(ids, ["approve_once", "approve_task", "deny"]);
-    assert_eq!(state, AttemptState::Failed);
-    assert_eq!(
-        fake.requests_to("POST", "/approvals/apr-4")[0].body,
-        json!({"action": "deny", "channel": "tack", "reason": "no"})
-    );
-}
-
-#[tokio::test]
-async fn an_approval_no_task_holds_still_asks_from_its_own_item() {
+async fn a_consult_asks_from_its_escalation_alone() {
     let fake = pods_fake().await;
     let (question, state) = answer_the_parked_gate(
         &fake,
-        Gate::UnboundApproval {
-            token: "apr-5".into(),
-            tool: "bash".into(),
-            action: "rm -rf build".into(),
+        Gate::Consult {
+            question: "Which cache should the service use?".into(),
+            property: "note".into(),
+            options: vec!["redis".into(), "memcached".into()],
         },
-        granting("approve_once"),
+        choosing("redis", None),
     )
     .await;
-    assert_eq!(question.vendor_id, "apr-5");
-    assert_eq!(question.prompt, "Allow bash? docket's policy: rm -rf build");
+    assert_eq!(question.kind, "consult");
+    assert_eq!(question.vendor_id, escalation_of(&fake));
+    assert_eq!(question.prompt, "Which cache should the service use?");
     assert_eq!(state, AttemptState::Succeeded);
-    assert_eq!(fake.requests_to("POST", "/approvals/apr-5").len(), 1);
-    assert!(
-        fake.requests_to("GET", "/approvals").is_empty(),
-        "its item already says what it is"
-    );
+    assert!(fake.requests_to("GET", "/approvals").is_empty());
+    assert!(fake.requests_to("GET", "/inbox").is_empty());
+    let (task, escalations) = reads_of_the_task_and_of_its_escalations(&fake);
+    assert_eq!(task, escalations, "no read of the task but the poll's own");
 }
 
 #[tokio::test]
-async fn the_fake_refuses_an_option_on_a_deny_as_docket_does() {
+async fn a_gate_and_a_changed_check_are_asked_and_answered_as_approvals() {
+    for kind in ["gate", "check_changed"] {
+        let fake = pods_fake().await;
+        let (question, state) = answer_the_parked_gate(
+            &fake,
+            Gate::Approval {
+                kind: kind.into(),
+                prompt: "The change edits what checks it: package.json.".into(),
+            },
+            DecisionAnswer {
+                option_id: Some("deny".to_owned()),
+                text: Some("read it first".to_owned()),
+            },
+        )
+        .await;
+        assert_eq!(question.kind, kind);
+        assert_eq!(state, AttemptState::Failed, "{kind}");
+        assert_eq!(
+            answers_posted(&fake),
+            [json!({"optionId": "deny", "actor": "tack",
+                    "content": {"reason": "read it first"}})],
+            "{kind}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_fake_refuses_as_docket_does() {
     let fake = pods_fake().await;
     fake.script(Script {
-        gate: Gate::Approval {
-            token: "apr-6".into(),
-            tool: "bash".into(),
-            action: "x".into(),
-        },
+        gate: Gate::approval("x"),
         ..Script::default()
     });
     let scene = scene();
@@ -1311,26 +1382,68 @@ async fn the_fake_refuses_an_option_on_a_deny_as_docket_does() {
         .start(&spec(&scene, "attempt-1", 1))
         .await
         .expect("starts");
-    let refused = ask(
+    let path = format!("/escalations/{}", escalation_of(&fake));
+    let sent = |body| ask(&fake, "POST", &path, Some(body));
+
+    let unknown = sent(json!({"optionId": "no-such-option", "actor": "tack"})).await;
+    assert_eq!(unknown.0, 422, "{unknown:?}");
+    assert!(
+        unknown.1["error"]
+            .as_str()
+            .unwrap()
+            .ends_with("choose one of: approve_once, approve_task, deny"),
+        "{unknown:?}"
+    );
+    assert_eq!(sent(json!({"optionId": 3})).await.0, 400);
+    let nothing = ask(
         &fake,
         "POST",
-        "/approvals/apr-6",
-        Some(json!({"action": "deny", "channel": "tack", "option": "approve_once", "reason": ""})),
+        "/escalations/esc-none",
+        Some(request_file("escalation-unknown")),
     )
     .await;
-    assert_eq!(refused.0, 400, "{refused:?}");
-    let approve = ask(
+    assert_eq!(nothing.0, 404, "{nothing:?}");
+    let taken = sent(json!({"optionId": "approve_once", "actor": "tack"})).await;
+    assert_eq!(taken.0, 200, "{taken:?}");
+    assert_eq!(taken.1["state"], json!("resolved"));
+    assert_eq!(taken.1["affordances"]["options"], json!([]));
+    let again = sent(json!({"optionId": "approve_once", "actor": "tack"})).await;
+    assert_eq!(again.0, 409, "{again:?}");
+}
+
+/// docket settled it first (a person on its own CLI, say): its `409` is not a failure and the
+/// attempt is not asked again.
+#[tokio::test]
+async fn an_answer_to_what_docket_already_settled_ends_the_wait_without_asking_again() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::approval("tool call 'bash'"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    parked.question().await;
+    let path = format!("/escalations/{}", escalation_of(&fake));
+    let elsewhere = ask(
         &fake,
         "POST",
-        "/approvals/apr-6",
-        Some(json!({"action": "approve", "channel": "tack", "reason": ""})),
+        &path,
+        Some(json!({"optionId": "approve_once", "actor": "someone-else"})),
     )
     .await;
-    assert_eq!(approve.0, 400, "{approve:?}");
+    assert_eq!(elsewhere.0, 200, "{elsewhere:?}");
+    parked.answer(granting("approve_once")).await;
+
+    let (outcome, lines) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert!(
+        lines.iter().all(|(kind, _)| kind != "agent.answer_failed"),
+        "{lines:?}"
+    );
 }
 
 #[tokio::test]
-async fn a_consult_round_trip_answers_the_parked_question() {
+async fn an_input_question_is_answered_in_text() {
     let fake = pods_fake().await;
     fake.script(Script {
         gate: Gate::Consult {
@@ -1341,42 +1454,18 @@ async fn a_consult_round_trip_answers_the_parked_question() {
         ..Script::default()
     });
     let scene = scene();
-    let adapter = Arc::new(adapter(&fake, &scene));
-    let handle = adapter
-        .start(&spec(&scene, "attempt-1", 1))
-        .await
-        .expect("starts");
-    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
 
-    let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-        .await
-        .expect("in time")
-        .expect("a question");
-    assert_eq!(question.kind, "consult");
+    let question = parked.question().await;
+    assert_eq!(question.kind, "input");
     assert_eq!(question.prompt, "Which database should the retry log use?");
-    answers
-        .send(DecisionAnswer {
-            option_id: Some("accept".to_owned()),
-            text: Some("sqlite".to_owned()),
-        })
-        .await
-        .expect("answer");
+    parked.answer(choosing("accept", Some("sqlite"))).await;
 
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
+    let (outcome, _) = parked.end().await;
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
-    let task = fake.task_ids()[0].clone();
-    let posted = fake.requests_to("POST", &format!("/tasks/{task}/answer"));
     assert_eq!(
-        posted[0].body,
-        json!({"pod": POD, "action": "accept", "content": {"database": "sqlite"}, "actor": "tack"})
+        answers_posted(&fake),
+        [json!({"actor": "tack", "content": {"database": "sqlite"}})]
     );
 }
 
@@ -1401,35 +1490,13 @@ async fn consult_run(
         ..Script::default()
     });
     let scene = scene();
-    let adapter = Arc::new(adapter(fake, &scene));
-    let handle = adapter
-        .start(&spec(&scene, "attempt-1", 1))
-        .await
-        .expect("starts");
-    let (mut questions, sender) = adapter.decision_channels(&handle).await.expect("channels");
-    let mut progress = adapter.progress_channel(&handle).await.expect("progress");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
+    let mut parked = park(fake, &scene, &spec(&scene, "attempt-1", 1)).await;
     let mut asked = Vec::new();
     for answer in answers {
-        let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-            .await
-            .expect("a question in time")
-            .expect("a question");
-        asked.push(question);
-        sender.send(answer).await.expect("answer");
+        asked.push(parked.question().await);
+        parked.answer(answer).await;
     }
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
-    let mut lines = Vec::new();
-    while let Ok(step) = progress.try_recv() {
-        lines.push((step.kind, step.text));
-    }
+    let (outcome, lines) = parked.end().await;
     (asked, lines, outcome.terminal_state)
 }
 
@@ -1440,16 +1507,8 @@ fn choosing(option: &str, text: Option<&str>) -> DecisionAnswer {
     }
 }
 
-fn answers_posted(fake: &FakeDocket) -> Vec<Value> {
-    fake.requests_to("POST", "/tasks/task-")
-        .into_iter()
-        .filter(|request| request.path.ends_with("/answer"))
-        .map(|request| request.body)
-        .collect()
-}
-
 #[tokio::test]
-async fn a_question_with_options_offers_docket_options_and_its_recommendation() {
+async fn a_question_with_options_offers_dockets_options_and_its_recommendation() {
     let fake = pods_fake().await;
     let (asked, _, state) = consult_run(
         &fake,
@@ -1465,27 +1524,30 @@ async fn a_question_with_options_offers_docket_options_and_its_recommendation() 
         .iter()
         .map(|o| o.option_id.as_str())
         .collect();
-    assert_eq!(ids, ["approve", "modify", "decline"]);
-    // The wording is docket's: label, description, risks and tokens come from the task view.
+    assert_eq!(
+        ids,
+        ["approve", "modify", "decline"],
+        "docket's, in its order"
+    );
+    // The wording is docket's, from the escalation.
+    let captured = &fixture("escalations-consult")["escalations"][0];
     assert_eq!(question.options[0].label, "Option approve");
     assert_eq!(
         question.options[0].description.as_deref(),
-        Some("Create CHANGELOG.md with the identified functions.")
+        captured["options"][0]["description"].as_str()
     );
     assert_eq!(question.options[0].estimated_tokens, None);
+    assert_eq!(question.options[2].label, "Decline");
     let recommendation = question.recommendation.as_ref().expect("recommendation");
     assert_eq!(recommendation.option_id, "approve");
-    assert!(
-        recommendation
-            .rationale
-            .as_deref()
-            .is_some_and(|text| text.contains("functions exported")),
-        "{recommendation:?}"
+    assert_eq!(
+        recommendation.rationale.as_deref(),
+        captured["recommendation"]["rationale"].as_str()
     );
 }
 
 #[tokio::test]
-async fn choosing_a_docket_option_posts_its_id_in_content_with_the_text_when_typed() {
+async fn choosing_a_docket_option_posts_it_with_the_text_when_typed() {
     let fake = pods_fake().await;
     let (_, _, state) = consult_run(
         &fake,
@@ -1496,8 +1558,8 @@ async fn choosing_a_docket_option_posts_its_id_in_content_with_the_text_when_typ
     assert_eq!(state, AttemptState::Succeeded);
     assert_eq!(
         answers_posted(&fake),
-        [json!({"pod": POD, "action": "accept", "actor": "tack",
-                "content": {"optionId": "modify", "note": "also list multiply"}})]
+        [json!({"optionId": "modify", "actor": "tack",
+                "content": {"note": "also list multiply"}})]
     );
 
     // No text, and docket does not require the property: only the option.
@@ -1510,8 +1572,7 @@ async fn choosing_a_docket_option_posts_its_id_in_content_with_the_text_when_typ
     .await;
     assert_eq!(
         answers_posted(&fake),
-        [json!({"pod": POD, "action": "accept", "actor": "tack",
-                "content": {"optionId": "approve"}})]
+        [json!({"optionId": "approve", "actor": "tack"})]
     );
 }
 
@@ -1527,7 +1588,19 @@ async fn declining_a_question_with_options_posts_a_decline() {
     assert_eq!(state, AttemptState::Failed);
     assert_eq!(
         answers_posted(&fake),
-        [json!({"pod": POD, "action": "decline", "actor": "tack"})]
+        [json!({"optionId": "decline", "actor": "tack"})]
+    );
+}
+
+#[tokio::test]
+async fn an_option_docket_does_not_offer_is_posted_as_a_refusal() {
+    let fake = pods_fake().await;
+    let (_, _, state) =
+        consult_run(&fake, &["approve", "modify"], vec![choosing("zap", None)]).await;
+    assert_eq!(state, AttemptState::Failed);
+    assert_eq!(
+        answers_posted(&fake),
+        [json!({"optionId": "decline", "actor": "tack"})]
     );
 }
 
@@ -1535,6 +1608,7 @@ async fn declining_a_question_with_options_posts_a_decline() {
 async fn a_question_without_options_is_still_answered_in_text_or_declined() {
     let fake = pods_fake().await;
     let (asked, _, _) = consult_run(&fake, &[], vec![choosing("accept", Some("sqlite"))]).await;
+    assert_eq!(asked[0].kind, "input");
     let ids: Vec<_> = asked[0]
         .options
         .iter()
@@ -1542,18 +1616,17 @@ async fn a_question_without_options_is_still_answered_in_text_or_declined() {
         .collect();
     assert_eq!(ids, ["accept", "decline"]);
     assert!(asked[0].recommendation.is_none());
-    // Its property is required, so it is sent.
+    // Its property is required, so it is sent, and docket's only option is not named.
     assert_eq!(
         answers_posted(&fake),
-        [json!({"pod": POD, "action": "accept", "actor": "tack",
-                "content": {"note": "sqlite"}})]
+        [json!({"actor": "tack", "content": {"note": "sqlite"}})]
     );
 
     let fake = pods_fake().await;
     consult_run(&fake, &[], vec![choosing("decline", None)]).await;
     assert_eq!(
         answers_posted(&fake),
-        [json!({"pod": POD, "action": "decline", "actor": "tack"})]
+        [json!({"optionId": "decline", "actor": "tack"})]
     );
 }
 
@@ -1589,45 +1662,26 @@ async fn an_answer_docket_refuses_is_asked_again_as_a_new_decision() {
 async fn an_approval_docket_refuses_is_asked_again() {
     let fake = pods_fake().await;
     fake.script(Script {
-        gate: Gate::Approval {
-            token: "apr-9".into(),
-            tool: "bash".into(),
-            action: "tool call 'bash'".into(),
-        },
+        gate: Gate::approval("tool call 'bash'"),
         ..Script::default()
     });
     fake.refuse_answers(1);
     let scene = scene();
-    let adapter = Arc::new(adapter(&fake, &scene));
-    let handle = adapter
-        .start(&spec(&scene, "attempt-1", 1))
-        .await
-        .expect("starts");
-    let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
-    let waiting = tokio::spawn({
-        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
-        async move { adapter.wait(&handle).await }
-    });
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
     let mut ids = Vec::new();
     for _ in 0..2 {
-        let question = tokio::time::timeout(Duration::from_secs(20), questions.recv())
-            .await
-            .expect("a question in time")
-            .expect("a question");
-        ids.push(question.vendor_id);
-        answers
-            .send(granting("approve_once"))
-            .await
-            .expect("answer");
+        ids.push(parked.question().await.vendor_id);
+        parked.answer(granting("approve_once")).await;
     }
-    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
-        .await
-        .expect("finishes")
-        .expect("joins")
-        .expect("outcome");
+    let (outcome, _) = parked.end().await;
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
     assert_ne!(ids[0], ids[1]);
-    assert_eq!(fake.requests_to("POST", "/approvals/apr-9").len(), 2);
+    let id = escalation_of(&fake);
+    assert_eq!(
+        fake.requests_to("POST", &format!("/escalations/{id}"))
+            .len(),
+        2
+    );
 }
 
 /// A run whose time runs out says so. A task docket holds for a person is not running, so it
@@ -1668,14 +1722,7 @@ fn the_two_waits() -> [(Gate, &'static str); 2] {
             },
             "approve",
         ),
-        (
-            Gate::Approval {
-                token: "apr-w".into(),
-                tool: "bash".into(),
-                action: "tool call 'bash'".into(),
-            },
-            "approve_once",
-        ),
+        (Gate::approval("tool call 'bash'"), "approve_once"),
     ]
 }
 
@@ -1882,6 +1929,60 @@ async fn docket_blocking_an_expired_question_ends_with_not_answered() {
     }
 }
 
+/// docket's own record says the escalation expired, before or without the task moving.
+#[tokio::test]
+async fn an_escalation_docket_marks_expired_ends_with_not_answered() {
+    for (gate, _) in the_two_waits() {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            gate,
+            expires_at: Some(in_seconds(3600)),
+            ..Script::default()
+        });
+        let scene = scene();
+        let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+        parked.question().await;
+        fake.expire_escalations();
+
+        let (outcome, _) = parked.end().await;
+        assert_eq!(outcome.terminal_state, AttemptState::Failed);
+        assert_eq!(outcome.terminal_reason["code"], json!("not_answered"));
+        let message = outcome.terminal_reason["message"]
+            .as_str()
+            .expect("a message");
+        assert!(message.contains("Nobody answered"), "{message}");
+        assert!(!message.contains("time ran out"), "{message}");
+        let task = fake.task_ids()[0].clone();
+        let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
+        assert_eq!(cancels.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_while_parked_on_an_approval_ends_cancelled() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::approval("tool call 'bash'"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    parked.question().await;
+    let evidence = parked
+        .adapter
+        .cancel(&parked.handle)
+        .await
+        .expect("cancels");
+    assert_eq!(
+        evidence.observation,
+        tack_runner::client::CancelObservation::ProcessStopped
+    );
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
+    // docket closes the escalation with no resolution, and nothing is answered.
+    assert!(answers_posted(&fake).is_empty());
+}
+
 #[tokio::test]
 async fn cancel_posts_cancel_and_the_wait_ends_cancelled() {
     let fake = pods_fake().await;
@@ -1926,11 +2027,7 @@ async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
     let fake = pods_fake().await;
     fake.script(Script {
         commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
-        gate: Gate::Approval {
-            token: "apr-1".into(),
-            tool: "bash".into(),
-            action: "tool call 'bash': needs a person".into(),
-        },
+        gate: Gate::approval("tool call 'bash': needs a person"),
         ..Script::default()
     });
     let scene = scene();
@@ -1973,7 +2070,7 @@ async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
         .await
         .expect("the held question in time")
         .expect("a question");
-    assert_eq!(question.vendor_id, "apr-1");
+    assert_eq!(question.vendor_id, escalation_of(&fake));
     answers
         .send(granting("approve_once"))
         .await
@@ -1994,7 +2091,12 @@ async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
         "pub fn retry() {}"
     );
     assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
-    assert_eq!(fake.requests_to("POST", "/approvals/apr-1").len(), 1);
+    let id = escalation_of(&fake);
+    assert_eq!(
+        fake.requests_to("POST", &format!("/escalations/{id}"))
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -2292,7 +2394,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 14] = [
+const CLIENT_ROUTES: [&str; 12] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -2303,10 +2405,8 @@ const CLIENT_ROUTES: [&str; 14] = [
     "POST /tasks/<pod>/<id>/cancel",
     "GET /tasks/<pod>/<id>/diff",
     "GET /traces/<pod>",
-    "GET /inbox",
-    "GET /approvals",
-    "POST /approvals/<token>",
-    "POST /tasks/<id>/answer",
+    "GET /escalations",
+    "POST /escalations/<id>",
 ];
 
 /// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
@@ -2362,17 +2462,67 @@ fn every_fixture_says_whether_it_was_captured_or_constructed() {
         for key in ["route", "status", "docket", "date"] {
             assert!(found.get(key).is_some(), "{} lacks {key}:", found.name);
         }
-        if let Some(request) = found.get("request") {
+        // A constructed answer may carry its request inline, as JSON.
+        if let Some(request) = found
+            .get("request")
+            .filter(|request| !request.starts_with('{'))
+        {
             assert!(directory.join(request).exists(), "{request} is missing");
         }
         if found.state == "captured" {
             assert!(
-                found.get("docket").unwrap().contains("(API 5)"),
-                "{} was not captured from API 5",
+                found.get("docket").unwrap().contains("(API 6)"),
+                "{} was not captured from API 6",
                 found.name
             );
         }
     }
+}
+
+/// Fixtures nothing reads yet. Each is either an answer of a route Tack's client does not
+/// send (docket's inbox), or what the next pieces of the adapter read (the autonomy level,
+/// `needs_human` and the `escalation_*` trace events). Reading one removes it from here.
+const NOT_READ_YET: [&str; 13] = [
+    "inbox-busy",
+    "inbox-decided",
+    "inbox-empty",
+    "inbox-failed",
+    "inbox-waiting-consult",
+    "inbox-waiting-escalation",
+    "inbox-waiting-input",
+    "pod-lights-out",
+    "post-task-autonomy-l5",
+    "post-tasks-autonomy-above-ceiling",
+    "post-tasks-autonomy-invalid",
+    "task-failed-needs-human",
+    "traces-escalation-decided",
+];
+
+/// A fixture is read when a test or the fake names it, or when it is the request of one that
+/// is.
+#[test]
+fn no_fixture_is_left_that_nothing_reads() {
+    let sources = [
+        include_str!("docket_v5.rs"),
+        include_str!("fake_docket/mod.rs"),
+    ]
+    .concat();
+    let (mut unread, mut stale) = (Vec::new(), Vec::new());
+    for found in fake_docket::provenances() {
+        let listed = NOT_READ_YET.contains(&found.name.as_str());
+        // A listed name is named once, in the list itself.
+        let read = sources.matches(&format!("\"{}\"", found.name)).count() > usize::from(listed);
+        match (listed, read) {
+            (false, false) => unread.push(found.name),
+            (true, true) => stale.push(found.name),
+            _ => {}
+        }
+    }
+    assert!(
+        unread.is_empty(),
+        "fixtures that nothing reads: delete them with their capture, or read them: {unread:?}"
+    );
+    assert!(stale.is_empty(), "now read, so no longer listed: {stale:?}");
 }
 
 #[test]
@@ -2448,7 +2598,20 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ask(&fake, "GET", "/status.json", None).await,
     );
     get("pods-empty", ask(&fake, "GET", "/pods", None).await);
-    get("inbox-empty", ask(&fake, "GET", "/inbox", None).await);
+    get(
+        "traces-empty",
+        ask(&fake, "GET", "/traces/fab-dev", None).await,
+    );
+    get(
+        "traces-since-empty",
+        ask(
+            &fake,
+            "GET",
+            "/traces/fab-dev?since=2026-01-01T00%3A00%3A00Z%3A0",
+            None,
+        )
+        .await,
+    );
     let created = ask(
         &fake,
         "POST",
@@ -2465,6 +2628,16 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
             "POST",
             "/pods",
             Some(request_file("post-pods-existing")),
+        )
+        .await,
+    );
+    get(
+        "post-pods-created-second",
+        ask(
+            &fake,
+            "POST",
+            "/pods",
+            Some(request_file("post-pods-created-second")),
         )
         .await,
     );
@@ -2515,44 +2688,101 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ask(&fake, "GET", "/tasks/fab-dev/task-unknown", None).await,
     );
     get(
-        "approval-unknown",
+        "escalation-unknown",
         ask(
             &fake,
             "POST",
-            "/approvals/nope",
-            Some(request_file("approval-unknown")),
+            "/escalations/nope",
+            Some(request_file("escalation-unknown")),
         )
         .await,
     );
+    get(
+        "escalations-empty",
+        ask(&fake, "GET", "/escalations?since=0", None).await,
+    );
+    get(
+        "post-task-minimal",
+        ask(
+            &fake,
+            "POST",
+            "/tasks/fab-dev",
+            Some(request_file("post-task-minimal")),
+        )
+        .await,
+    );
+    // Held by a policy at its enqueue, and failing at claim once approved.
     fake.script(Script {
-        gate: Gate::Approval {
-            token: "apr-1".into(),
-            tool: "bash".into(),
-            action: "x".into(),
-        },
+        gate: Gate::approval("x"),
+        status: "failed".to_owned(),
+        failure_kind: Some("pipeline".to_owned()),
+        reason: "unknown pipeline".to_owned(),
         ..Script::default()
     });
-    let mut second = request_file("post-task-created");
-    second["idempotencyKey"] = json!("capture-attempt-2");
+    let second = request_file("post-task-gated");
     let parked = ask(&fake, "POST", "/tasks/fab-dev", Some(second)).await;
     assert_eq!(parked.0, 201, "{parked:?}");
+    get("post-task-gated", parked.clone());
+    let held = parked.1["task"].as_str().unwrap().to_owned();
+    let held_escalation = fake.escalation_id(&held);
     get(
-        "inbox-waiting-approval",
-        ask(&fake, "GET", "/inbox", None).await,
+        "task-waiting-escalation",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{held}"), None).await,
     );
     get(
-        "approvals-pending",
-        ask(&fake, "GET", "/approvals", None).await,
+        "escalations-pending",
+        ask(&fake, "GET", "/escalations?since=0", None).await,
     );
     get(
-        "answer-unknown",
+        "escalations-task-since",
+        ask(
+            &fake,
+            "GET",
+            &format!("/escalations?since=1&task={held}"),
+            None,
+        )
+        .await,
+    );
+    for (name, status, body) in [
+        (
+            "escalation-unknown-option",
+            422,
+            json!({"optionId": "no-such-option", "actor": "tack"}),
+        ),
+        ("escalation-bad-option-type", 400, json!({"optionId": 3})),
+    ] {
+        let refused = ask(
+            &fake,
+            "POST",
+            &format!("/escalations/{held_escalation}"),
+            Some(body),
+        )
+        .await;
+        assert_eq!(refused.0, status, "{name}: {refused:?}");
+        get(name, refused);
+    }
+    let accepted = ask(
+        &fake,
+        "POST",
+        &format!("/escalations/{held_escalation}"),
+        Some(request_file("escalation-accepted")),
+    )
+    .await;
+    assert_eq!(accepted.0, 200, "{accepted:?}");
+    get("escalation-accepted", accepted);
+    get(
+        "escalation-settled",
         ask(
             &fake,
             "POST",
-            "/tasks/task-unknown/answer",
-            Some(request_file("answer-unknown")),
+            &format!("/escalations/{held_escalation}"),
+            Some(request_file("escalation-settled")),
         )
         .await,
+    );
+    get(
+        "task-failed-after-escalation",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{held}"), None).await,
     );
     fake.script(Script {
         gate: Gate::Consult {
@@ -2563,7 +2793,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ..Script::default()
     });
     let mut third = request_file("post-task-created");
-    third["idempotencyKey"] = json!("capture-attempt-3");
+    third["idempotencyKey"] = json!("consult-attempt");
     // The capture's request named no pipeline, no limit and no denied tool.
     for key in ["pipeline", "maxTokens"] {
         third.as_object_mut().unwrap().remove(key);
@@ -2572,50 +2802,78 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     let asking = ask(&fake, "POST", "/tasks/fab-dev", Some(third)).await;
     assert_eq!(asking.0, 201, "{asking:?}");
     let asking_id = asking.1["task"].as_str().unwrap().to_owned();
+    let consult_path = format!("/escalations/{}", fake.escalation_id(&asking_id));
     get(
-        "task-waiting-input-options",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{asking_id}"), None).await,
-    );
-    let inbox = ask(&fake, "GET", "/inbox", None).await;
-    let listed = inbox.1["needsYou"]
-        .as_array()
-        .and_then(|items| items.iter().find(|item| item["id"] == json!(asking_id)))
-        .cloned()
-        .expect("the parked task is listed");
-    assert!(listed["question"].get("options").is_none(), "{listed}");
-    let mut inbox = inbox.1;
-    inbox["needsYou"] = json!([listed]);
-    get("inbox-waiting-input-options", (200, inbox));
-    // docket's own refusals of an accept that names no option, or one it does not have.
-    for (content, why) in [
-        (
-            json!({}),
-            "accept requires optionId when the question has options",
-        ),
-        (json!({"optionId": "zap"}), "optionId 'zap' names no option"),
-    ] {
-        let refused = ask(
+        "escalations-consult",
+        ask(
             &fake,
-            "POST",
-            &format!("/tasks/{asking_id}/answer"),
-            Some(
-                json!({"pod": "fab-dev", "action": "accept", "actor": "tack", "content": content}),
-            ),
+            "GET",
+            &format!("/escalations?since=0&task={asking_id}"),
+            None,
         )
-        .await;
-        assert_eq!((refused.0, refused.1["error"].as_str()), (422, Some(why)));
-    }
+        .await,
+    );
+    // docket's own refusal of an accept that names no option.
+    let refused = ask(&fake, "POST", &consult_path, Some(json!({"actor": "tack"}))).await;
+    assert_eq!(refused.0, 422, "{refused:?}");
     let taken = ask(
         &fake,
         "POST",
-        &format!("/tasks/{asking_id}/answer"),
-        Some(
-            json!({"pod": "fab-dev", "action": "accept", "actor": "tack",
-                    "content": {"optionId": "modify"}}),
-        ),
+        &consult_path,
+        Some(json!({"optionId": "approve", "content": {"note": "x"}, "actor": "tack"})),
     )
     .await;
     assert_eq!(taken.0, 200, "{taken:?}");
+    get("escalation-accepted-consult", taken);
+    fake.script(Script {
+        gate: Gate::Consult {
+            question: "Which one?".into(),
+            property: "answer".into(),
+            options: Vec::new(),
+        },
+        ..Script::default()
+    });
+    let mut fourth = request_file("post-task-created");
+    fourth["idempotencyKey"] = json!("capture-attempt-4");
+    let input = ask(&fake, "POST", "/tasks/fab-dev", Some(fourth)).await;
+    assert_eq!(input.0, 201, "{input:?}");
+    let input_id = input.1["task"].as_str().unwrap().to_owned();
+    get(
+        "escalations-input",
+        ask(
+            &fake,
+            "GET",
+            &format!("/escalations?since=0&task={input_id}"),
+            None,
+        )
+        .await,
+    );
+    // A cancelled task leaves its escalation resolved with no resolution.
+    fake.script(Script {
+        gate: Gate::approval("y"),
+        ..Script::default()
+    });
+    let mut fifth = request_file("post-task-created");
+    fifth["idempotencyKey"] = json!("capture-attempt-5");
+    let cancelled = ask(&fake, "POST", "/tasks/fab-dev", Some(fifth)).await;
+    let cancelled_id = cancelled.1["task"].as_str().unwrap().to_owned();
+    get(
+        "cancel-accepted",
+        ask(
+            &fake,
+            "POST",
+            &format!("/tasks/fab-dev/{cancelled_id}/cancel"),
+            Some(request_file("cancel-accepted")),
+        )
+        .await,
+    );
+    get(
+        "escalations-settled",
+        ask(&fake, "GET", "/escalations?since=0", None).await,
+    );
+    for name in ["traces-after-failure", "traces-escalation"] {
+        get(name, ask(&fake, "GET", "/traces/fab-dev", None).await);
+    }
 
     let mut wrong = Vec::new();
     for (name, answer) in &seen {

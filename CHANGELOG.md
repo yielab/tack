@@ -174,6 +174,7 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The docket agent reads every question and approval from docket's one escalation record.** A tool call docket's policy holds, a step's question, an `input` step, a gate and a change to the files that check it are each an escalation: the runner reads them from `GET /escalations`, builds one question from the record with docket's own options, recommendation and expiry, and answers through `POST /escalations/<id>`. The runner needs a docket that keeps the record (`0.2.0-beta.6` with the escalation record; a docket without it reads "needs docket 0.2.0-beta.6 with the escalation record"), and no longer reads the inbox, `GET /approvals` or the task's question. A question's deadline is the escalation's own `expiresAt`; one docket marks expired ends the run like one that passed it. A runner restarted with a question open asks it again.
 - **The runner no longer compiles the board's database code.** The runner-v1 contract (the types the board
   and a runner exchange, the attempt lifecycle, the merge-readiness pack and the prepare step) is its own
   crate, `tack-protocol`, and the runner builds on that and on `tack-core` only.
