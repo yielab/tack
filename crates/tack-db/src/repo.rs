@@ -20,6 +20,7 @@ pub mod sprints;
 pub mod templates;
 pub mod workspaces;
 
+use crate::StoreError;
 use sqlx::SqlitePool;
 use tack_core::models::*;
 use uuid::Uuid;
@@ -72,28 +73,28 @@ impl Repository {
         &self,
         project_id: Uuid,
         data: CreateBoard,
-    ) -> Result<Board, sqlx::Error> {
-        boards::create_board(self.pool(), project_id, data).await
+    ) -> Result<Board, StoreError> {
+        boards::create_board(self, project_id, data).await
     }
 
-    pub async fn get_board(&self, id: Uuid) -> Result<Board, sqlx::Error> {
-        boards::get_board(self.pool(), id).await
+    pub async fn get_board(&self, id: Uuid) -> Result<Board, StoreError> {
+        boards::get_board(self, id).await
     }
 
-    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, sqlx::Error> {
-        boards::get_default_board(self.pool(), project_id).await
+    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, StoreError> {
+        boards::get_default_board(self, project_id).await
     }
 
-    pub async fn list_boards(&self, project_id: Uuid) -> Result<Vec<Board>, sqlx::Error> {
-        boards::list_boards(self.pool(), project_id).await
+    pub async fn list_boards(&self, project_id: Uuid) -> Result<Vec<Board>, StoreError> {
+        boards::list_boards(self, project_id).await
     }
 
-    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, sqlx::Error> {
-        boards::update_board(self.pool(), id, data).await
+    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, StoreError> {
+        boards::update_board(self, id, data).await
     }
 
-    pub async fn delete_board(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        boards::delete_board(self.pool(), id).await
+    pub async fn delete_board(&self, id: Uuid) -> Result<(), StoreError> {
+        boards::delete_board(self, id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -103,23 +104,23 @@ impl Repository {
     pub async fn create_template(
         &self,
         data: CreateProjectTemplate,
-    ) -> Result<ProjectTemplate, sqlx::Error> {
-        templates::create_template(self.pool(), data).await
+    ) -> Result<ProjectTemplate, StoreError> {
+        templates::create_template(self, data).await
     }
 
-    pub async fn get_template(&self, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
-        templates::get_template(self.pool(), id).await
+    pub async fn get_template(&self, id: Uuid) -> Result<ProjectTemplate, StoreError> {
+        templates::get_template(self, id).await
     }
 
     pub async fn list_templates(
         &self,
         project_type: Option<ProjectType>,
-    ) -> Result<Vec<ProjectTemplate>, sqlx::Error> {
-        templates::list_templates(self.pool(), project_type).await
+    ) -> Result<Vec<ProjectTemplate>, StoreError> {
+        templates::list_templates(self, project_type).await
     }
 
-    pub async fn delete_template(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        templates::delete_template(self.pool(), id).await
+    pub async fn delete_template(&self, id: Uuid) -> Result<(), StoreError> {
+        templates::delete_template(self, id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────

@@ -45,7 +45,7 @@ pub async fn create_board(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    repo::boards::create_board(state.pool(), project_id, data)
+    repo::boards::create_board(&state.repo, project_id, data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -71,7 +71,7 @@ pub async fn list_boards(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<Board>>, StatusCode> {
-    repo::boards::list_boards(state.pool(), project_id)
+    repo::boards::list_boards(&state.repo, project_id)
         .await
         .map(Json)
         .map_err(|e| {
@@ -98,7 +98,7 @@ pub async fn get_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Board>, StatusCode> {
-    repo::boards::get_board(state.pool(), id)
+    repo::boards::get_board(&state.repo, id)
         .await
         .map(Json)
         .map_err(|e| {
@@ -130,7 +130,7 @@ pub async fn update_board(
     data.validate()
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
-    repo::boards::update_board(state.pool(), id, data)
+    repo::boards::update_board(&state.repo, id, data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -156,7 +156,7 @@ pub async fn delete_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    repo::boards::delete_board(state.pool(), id)
+    repo::boards::delete_board(&state.repo, id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| {
@@ -198,7 +198,7 @@ pub async fn get_board_view(
     Path(id): Path<Uuid>,
 ) -> Result<Json<BoardViewResponse>, StatusCode> {
     // Get the board
-    let board = repo::boards::get_board(state.pool(), id)
+    let board = repo::boards::get_board(&state.repo, id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, board_id = %id, "Board not found");

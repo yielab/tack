@@ -19,7 +19,7 @@ pub(crate) async fn app() -> Router {
     tack_db::repo::execution::seed_builtin_profiles(repo.pool())
         .await
         .expect("built-in profiles");
-    tack_db::repo::templates::seed_builtin_templates(repo.pool())
+    tack_db::repo::templates::seed_builtin_templates(&repo)
         .await
         .expect("built-in templates");
     let workspace_id = Uuid::new_v4();

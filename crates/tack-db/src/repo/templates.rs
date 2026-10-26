@@ -1,5 +1,7 @@
+use super::Repository;
+use crate::StoreError;
 use serde_json::json;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::FromRow;
 use tack_core::models::*;
 use tack_core::outline::{BundleAutomation, BundleAutonomy, BundleProfile, BundleRole};
 use tack_core::workflow::WorkflowConfig;
@@ -25,11 +27,11 @@ struct TemplateRow {
 }
 
 /// Create a new project template
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn create_template(
-    pool: &SqlitePool,
+    repo: &Repository,
     data: CreateProjectTemplate,
-) -> Result<ProjectTemplate, sqlx::Error> {
+) -> Result<ProjectTemplate, StoreError> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -73,23 +75,24 @@ pub async fn create_template(
     )
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
-    .execute(pool)
+    .execute(repo.pool())
     .await?;
 
-    get_template(pool, id).await
+    get_template(repo, id).await
 }
 
 /// Get a template by ID
-#[instrument(skip(pool))]
-pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate, StoreError> {
     let row = sqlx::query_as::<_, TemplateRow>(
         "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
     .bind(id.to_string())
-    .fetch_one(pool)
-    .await?;
+    .fetch_optional(repo.pool())
+    .await?
+    .ok_or(StoreError::NotFound)?;
 
     let vocabulary: serde_json::Value =
         serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
@@ -129,11 +132,11 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
 }
 
 /// List all templates, optionally filtered by project type
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn list_templates(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_type: Option<ProjectType>,
-) -> Result<Vec<ProjectTemplate>, sqlx::Error> {
+) -> Result<Vec<ProjectTemplate>, StoreError> {
     let rows = if let Some(ptype) = project_type {
         let type_str = ptype.to_string();
 
@@ -144,7 +147,7 @@ pub async fn list_templates(
              ORDER BY is_builtin DESC, name ASC"
         )
         .bind(type_str)
-        .fetch_all(pool)
+        .fetch_all(repo.pool())
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
@@ -152,7 +155,7 @@ pub async fn list_templates(
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
-        .fetch_all(pool)
+        .fetch_all(repo.pool())
         .await?
     };
 
@@ -202,11 +205,11 @@ pub async fn list_templates(
 }
 
 /// Delete a template (only non-builtin templates can be deleted)
-#[instrument(skip(pool))]
-pub async fn delete_template(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn delete_template(repo: &Repository, id: Uuid) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM project_templates WHERE id = ? AND is_builtin = 0")
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
 
     Ok(())
@@ -352,8 +355,8 @@ fn builtin_choice(name: &str, options: &[&str]) -> CustomFieldDefinition {
 /// Safe to call on every startup — inserts are skipped by template name, so
 /// multiple built-ins can share a `ProjectType` (e.g. the construction
 /// verticals all reuse `ProjectType::Construction`).
-#[instrument(skip(pool))]
-pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError> {
     use tack_core::{
         vocabulary::vocabulary_for_type,
         workflow::{
@@ -585,7 +588,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
             "SELECT EXISTS(SELECT 1 FROM project_templates WHERE name = ? AND is_builtin = 1)",
         )
         .bind(spec.name)
-        .fetch_one(pool)
+        .fetch_one(repo.pool())
         .await?;
 
         if exists {
@@ -642,7 +645,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         )
         .bind(now.to_rfc3339())
         .bind(now.to_rfc3339())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
 
         tracing::info!(

@@ -74,7 +74,7 @@ pub async fn create_template(
     }
 
     Ok(Json(
-        repo::templates::create_template(state.pool(), data).await?,
+        repo::templates::create_template(&state.repo, data).await?,
     ))
 }
 
@@ -95,7 +95,7 @@ pub async fn list_templates(
     State(state): State<AppState>,
     Query(params): Query<ListTemplatesQuery>,
 ) -> Result<Json<Vec<ProjectTemplate>>, StatusCode> {
-    repo::templates::list_templates(state.pool(), params.project_type)
+    repo::templates::list_templates(&state.repo, params.project_type)
         .await
         .map(Json)
         .map_err(|e| {
@@ -122,7 +122,7 @@ pub async fn get_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProjectTemplate>, StatusCode> {
-    repo::templates::get_template(state.pool(), id)
+    repo::templates::get_template(&state.repo, id)
         .await
         .map(Json)
         .map_err(|e| {
@@ -148,7 +148,7 @@ pub async fn delete_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    repo::templates::delete_template(state.pool(), id)
+    repo::templates::delete_template(&state.repo, id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| {
@@ -179,7 +179,7 @@ pub(crate) async fn build_project_from_template(
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
     // Get the template
-    let template = repo::templates::get_template(state.pool(), template_id)
+    let template = repo::templates::get_template(&state.repo, template_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, template_id = %template_id, "Template not found");
@@ -281,7 +281,7 @@ pub(crate) async fn build_project_from_template(
             is_default: Some(idx == 0), // First board is default
         };
 
-        repo::boards::create_board(state.pool(), project.id, board_data)
+        repo::boards::create_board(&state.repo, project.id, board_data)
             .await
             .map_err(|e| {
                 tracing::warn!(error = %e, board_name = %board_template.name, "Failed to create board from template");
@@ -393,7 +393,7 @@ pub async fn save_project_as_template(
         .collect();
 
     // Snapshot boards — columns are derived from workflow statuses
-    let boards = repo::boards::list_boards(state.pool(), project_id)
+    let boards = repo::boards::list_boards(&state.repo, project_id)
         .await
         .unwrap_or_default();
 
@@ -510,7 +510,7 @@ pub async fn save_project_as_template(
         automation: bundle.automation,
     };
 
-    repo::templates::create_template(state.pool(), template_data)
+    repo::templates::create_template(&state.repo, template_data)
         .await
         .map(Json)
         .map_err(|e| {

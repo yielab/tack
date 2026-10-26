@@ -616,7 +616,7 @@ async fn create_and_get_template() {
         automation: None,
     };
 
-    let template = templates::create_template(repo.pool(), template_data)
+    let template = templates::create_template(&repo, template_data)
         .await
         .unwrap();
 
@@ -624,9 +624,7 @@ async fn create_and_get_template() {
     assert_eq!(template.project_type, ProjectType::Software);
     assert!(!template.is_builtin);
 
-    let fetched = templates::get_template(repo.pool(), template.id)
-        .await
-        .unwrap();
+    let fetched = templates::get_template(&repo, template.id).await.unwrap();
     assert_eq!(fetched.name, "My Software Template");
 }
 
@@ -637,20 +635,18 @@ async fn list_templates_with_filter() {
 
     // Create templates of different types
     let software = template_input("Software Template", ProjectType::Software);
-    templates::create_template(repo.pool(), software)
-        .await
-        .unwrap();
+    templates::create_template(&repo, software).await.unwrap();
     let construction = template_input("Construction Template", ProjectType::Construction);
-    templates::create_template(repo.pool(), construction)
+    templates::create_template(&repo, construction)
         .await
         .unwrap();
 
     // List all templates
-    let all = templates::list_templates(repo.pool(), None).await.unwrap();
+    let all = templates::list_templates(&repo, None).await.unwrap();
     assert_eq!(all.len(), 2);
 
     // Filter by type
-    let software_only = templates::list_templates(repo.pool(), Some(ProjectType::Software))
+    let software_only = templates::list_templates(&repo, Some(ProjectType::Software))
         .await
         .unwrap();
     assert_eq!(software_only.len(), 1);
@@ -665,7 +661,7 @@ async fn delete_template_not_builtin() {
     use tack_db::repo::templates;
 
     let user_template = templates::create_template(
-        repo.pool(),
+        &repo,
         CreateProjectTemplate {
             name: "User Template".into(),
             description: None,
@@ -683,12 +679,12 @@ async fn delete_template_not_builtin() {
     .unwrap();
 
     // Should be able to delete user template
-    templates::delete_template(repo.pool(), user_template.id)
+    templates::delete_template(&repo, user_template.id)
         .await
         .unwrap();
 
     // Verify deleted
-    let result = templates::get_template(repo.pool(), user_template.id).await;
+    let result = templates::get_template(&repo, user_template.id).await;
     assert!(result.is_err());
 }
 
@@ -793,19 +789,17 @@ async fn create_and_list_boards() {
     use tack_db::repo::boards;
 
     let main = board_input("Main Board", BoardGrouping::Status, true);
-    let board1 = boards::create_board(repo.pool(), project.id, main)
-        .await
-        .unwrap();
+    let board1 = boards::create_board(&repo, project.id, main).await.unwrap();
     assert_eq!(board1.name, "Main Board");
     assert!(board1.is_default);
 
     let priority = board_input("Priority View", BoardGrouping::Priority, false);
-    let board2 = boards::create_board(repo.pool(), project.id, priority)
+    let board2 = boards::create_board(&repo, project.id, priority)
         .await
         .unwrap();
     assert!(!board2.is_default);
 
-    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
     assert_eq!(all_boards.len(), 2);
 }
 
@@ -818,22 +812,16 @@ async fn default_board_management() {
 
     // Create first board as default, then create a second and make it default.
     let one = board_input("Board 1", BoardGrouping::Status, true);
-    let board1 = boards::create_board(repo.pool(), project.id, one)
-        .await
-        .unwrap();
+    let board1 = boards::create_board(&repo, project.id, one).await.unwrap();
     let two = board_input("Board 2", BoardGrouping::Priority, true);
-    let board2 = boards::create_board(repo.pool(), project.id, two)
-        .await
-        .unwrap();
+    let board2 = boards::create_board(&repo, project.id, two).await.unwrap();
 
     // Board 1 should no longer be default; board 2 should be.
-    let board1_updated = boards::get_board(repo.pool(), board1.id).await.unwrap();
+    let board1_updated = boards::get_board(&repo, board1.id).await.unwrap();
     assert!(!board1_updated.is_default);
     assert!(board2.is_default);
 
-    let default = boards::get_default_board(repo.pool(), project.id)
-        .await
-        .unwrap();
+    let default = boards::get_default_board(&repo, project.id).await.unwrap();
     assert_eq!(default.unwrap().id, board2.id);
 }
 
@@ -854,13 +842,13 @@ async fn board_grouping_types() {
 
     for (name, grouping) in groupings {
         let input = board_input(name, grouping, false);
-        let board = boards::create_board(repo.pool(), project.id, input)
+        let board = boards::create_board(&repo, project.id, input)
             .await
             .unwrap();
         assert_eq!(board.name, name);
     }
 
-    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
     assert_eq!(all_boards.len(), 4);
 }
 
