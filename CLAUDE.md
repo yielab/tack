@@ -51,6 +51,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 - **The live proof passes (2026-10-18):** `scripts/docket-prill-e2e.sh`, 9 of 9 against docket
   develop and prill on the local model, inside docket's sandbox with a read-only toolchain grant.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
+- **Proposed 2026-10-26:** Phase 81 (`docs/plans/phase-81.md`, no ADR) — what an audit of the tree
+  with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
+  docket or prill; the three meet only in the local `scripts/docket-prill-e2e.sh` and its `--check`.
+  A card runs only the tests of what it touched; the full suites run once per round.
 - **The maintainer's:** the release, and the Wave 0 items of `docs/plans/phase-65.md` and
   `docs/plans/phase-69.md`. Closed plans live in `docs/closed-cycles/plans/`.
 

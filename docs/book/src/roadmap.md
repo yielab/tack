@@ -82,6 +82,10 @@ plan or the page named beside it.
 - Only docket reports a running agent's steps on its timeline; Codex, Claude Code and opencode
   need their tool lines captured from the real programs first.
 
+**What the 2026-10-26 audit found** (tests, structure, code design, screens, and the local suite
+of Tack, docket and prill) is [Phase 81](#phase-81--what-the-audit-found), sliced for Sonnet and
+Haiku agents.
+
 **Everything else that is open** is in [Phase 78](#phase-78--one-pass-over-what-is-still-open) below:
 what the desktop app's first runs found, the board screen audit, the earlier gaps that are a
 fix, and the item screen's new design, ordered so each screen and each module is changed once.
@@ -186,6 +190,38 @@ That made the adapter fail for every question, so the whole phase was built agai
 
 The polling measurement stays deferred (nothing can replace polling while Tack has no inbound
 endpoint) and the A2A client was cut (the one answer route removes its trigger).
+
+---
+
+## Phase 81 — what the audit found
+
+**Status:** proposed 2026-10-26, from an audit of the tree with Phases 79 and 80 built (tests,
+structure, code design, screens, and the seams with docket and prill). No ADR. **Plan:**
+[`docs/plans/phase-81.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-81.md).
+
+**The rule it keeps:** CI never needs docket or prill. CI tests Tack's code with the fake docket,
+the fake prill and captured fixtures; everything that talks to the real programs is one local
+command, `scripts/docket-prill-e2e.sh`, with a `--check` mode that diffs the captures and prill's
+contracts. Today's live suite cannot pass: its question test expects a sentence Tack no longer
+writes and passes when nothing is asked, and its only check of docket is a version number docket
+kept through a breaking change.
+
+| Id | Card | Model | Waits on |
+|---|---|---|---|
+| A | The local suite of the three can pass and says what it proved | Sonnet | C |
+| B | Background work has one owner and stops: one loop per job, all stopped on shutdown, one purge of run events, and the board move and rework inside the completion's transaction | Sonnet | — |
+| C | The docket and prill adapters read typed answers and say things plainly: no lock held across a network call, structs for docket's answers, shared event kinds, plain timeline text, a fake at API 6, fixtures re-copied from prill | Sonnet | — |
+| D | CI and the gate check what the docs say: no port picked by bind-and-drop, no fixed waits, smoke in CI, Vitest in the hook, one coverage formula | Sonnet | B |
+| S | Screens show errors, plain words and disabled controls: an error boundary, no false empty states, no prill, variable or command on screen, `Button` with a reason | Sonnet | — |
+| R | The run surface: a level only reaches docket and is never dropped in silence, labels for the escalation events, one "needs a person" state, levels in words, a link per run | Sonnet | S |
+| H | The routes, tools and upgrade nobody tests, including a beta.9 database migrated to now | Haiku | — |
+| E | The execution store is typed: ids, token and state from the protocol, guards built from the lifecycle, a typed run request | Sonnet | Round 1 |
+| F | One wire format and one error model: protocol structs on both sides, a code on every error, no panic on a corrupt row | Sonnet | E |
+| I, J, K | Optional: one UI kit and tokens; `Host` split and config read once; the item apart from its read model | Haiku, Sonnet | S, R; F; J |
+
+Rounds: **1** = B, C, D, S, R, A, H, at most two building at once; **2** = E then F; **3**, if
+wanted, = I, J, K. While a card works it runs only the tests of what it touched; the full suites run
+once per round on the merged tree, and the local suite of the three after Round 1 and at the end.
 
 ---
 
