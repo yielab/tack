@@ -11,9 +11,10 @@ use tack_db::repo::autonomy::{self as ledger, MergeRow};
 use tack_db::repo::pull_requests;
 use tack_protocol::mrp::MergeDecision;
 
-use crate::github_sync::{ci_state, github_token_for_project, merge_pull_request};
+use crate::handlers::pull_requests::github_token_for_project;
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use crate::router::AppState;
+use tack_app::github_sync::{ci_state, merge_pull_request};
 
 /// What only the caller can gather: the checks the automatic merge adds and the
 /// facts the ledger keeps. The default is what a person's trigger needs, which

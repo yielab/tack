@@ -407,11 +407,12 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
     let Ok(Some(proj)) = state.repo.get_project(item.project_id).await else {
         return;
     };
-    let Some(token) = crate::github_sync::github_token_for_project(state, item.project_id).await
+    let Some(token) =
+        crate::handlers::pull_requests::github_token_for_project(state, item.project_id).await
     else {
         return;
     };
-    let Some(closed) = crate::github_sync::state_change(
+    let Some(closed) = tack_app::github_sync::state_change(
         proj.workflow.is_done_status(old_status),
         proj.workflow.is_done_status(&item.status),
     ) else {
@@ -421,7 +422,7 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
     let base = state.config.github_api_base.clone();
     tokio::spawn(async move {
         if let Err(e) =
-            crate::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
+            tack_app::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
         {
             tracing::warn!(repo = %repo, issue = number, error = %e, "GitHub status push failed");
         }

@@ -68,3 +68,19 @@ pub async fn list_links_for_repo(
         })
         .collect())
 }
+
+impl crate::Repository {
+    /// Record the `updated_at` of the GitHub issue an item's link was last synced against.
+    pub async fn mark_github_link_synced(
+        &self,
+        item_id: Uuid,
+        synced_at: &str,
+    ) -> Result<(), crate::StoreError> {
+        sqlx::query("UPDATE github_links SET synced_at = ? WHERE item_id = ?")
+            .bind(synced_at)
+            .bind(item_id.to_string())
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+}

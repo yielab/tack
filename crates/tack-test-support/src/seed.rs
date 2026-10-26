@@ -472,3 +472,38 @@ pub async fn tack_merge_auto(repo: &Repository, attempt_id: &str, project_id: &s
         .await
         .expect("seed tack_merges");
 }
+
+/// One bare `agent_runners` row, created and updated at `at`.
+pub async fn agent_runner(repo: &Repository, runner_id: &str, at: &str) {
+    sqlx::query(
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at) VALUES (?, 'p', 'h', 1, ?, ?)",
+    )
+    .bind(runner_id)
+    .bind(at)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_runners");
+}
+
+/// One bare `execution_requests` row for `item_id` aimed at `runner_id`, created at `at`.
+pub async fn execution_request(
+    repo: &Repository,
+    request_id: &str,
+    item_id: &str,
+    runner_id: &str,
+    at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, request_fingerprint, selector_kind, selector_id, agent_profile_snapshot, repository_snapshot, permission_policy, metadata, created_at, updated_at) VALUES (?, ?, 's', ?, 'f', 'exact_runner', ?, '{}', '{}', '{}', '{}', ?, ?)",
+    )
+    .bind(request_id)
+    .bind(item_id)
+    .bind(request_id)
+    .bind(runner_id)
+    .bind(at)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests");
+}

@@ -5,6 +5,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tack_api::LocalRunnerControl;
 use tack_api::config::AppConfig;
@@ -60,6 +61,18 @@ pub async fn run(
         webhook,
         local_runner,
     };
+
+    // Inbound GitHub poll: returns at once when polling is off or no token is set.
+    tokio::spawn(tack_app::github_sync::run(
+        state.repo.clone(),
+        Arc::new(tack_protocol::SystemClock),
+        tack_app::github_sync::Settings {
+            github_token: state.config.github_token.clone(),
+            api_base: state.config.github_api_base.clone(),
+        },
+        Arc::new(state.clone()),
+        Duration::from_secs(state.config.github_poll_seconds),
+    ));
 
     tack_api::serve(state, ready_tx).await
 }

@@ -154,3 +154,61 @@ pub async fn set_red_ci_at(
     .await?;
     Ok(result.rows_affected() > 0)
 }
+
+impl crate::Repository {
+    /// Record the pull request an attempt opened. A second call for the same attempt, or for a
+    /// number already stored, changes nothing.
+    pub async fn record_pull_request(
+        &self,
+        attempt_id: &str,
+        repo: &str,
+        number: i64,
+        url: &str,
+        opened_at: &str,
+    ) -> Result<(), crate::StoreError> {
+        Ok(insert(self.pool(), attempt_id, repo, number, url, opened_at).await?)
+    }
+
+    /// Write what GitHub reports for a stored pull request; whether a row changed.
+    pub async fn observe_pull_request(
+        &self,
+        repo: &str,
+        number: i64,
+        state: &str,
+        merged_at: Option<&str>,
+        closed_at: Option<&str>,
+    ) -> Result<bool, crate::StoreError> {
+        Ok(observe(self.pool(), repo, number, state, merged_at, closed_at).await?)
+    }
+
+    /// Mark a stored merged pull request as reverted, by PR `by_number` or, when `None`, by a
+    /// commit that has no pull request; whether it was merged.
+    pub async fn mark_pull_request_reverted(
+        &self,
+        repo: &str,
+        number: i64,
+        by_number: Option<i64>,
+    ) -> Result<bool, crate::StoreError> {
+        Ok(mark_reverted(self.pool(), repo, number, by_number).await?)
+    }
+
+    /// Store the merge commit of a pull request that has none yet.
+    pub async fn set_pull_request_merge_sha(
+        &self,
+        repo: &str,
+        number: i64,
+        merge_sha: &str,
+    ) -> Result<bool, crate::StoreError> {
+        Ok(set_merge_sha(self.pool(), repo, number, merge_sha).await?)
+    }
+
+    /// Record when CI on a pull request's merge commit was first seen red.
+    pub async fn set_pull_request_red_ci_at(
+        &self,
+        repo: &str,
+        number: i64,
+        at: &str,
+    ) -> Result<bool, crate::StoreError> {
+        Ok(set_red_ci_at(self.pool(), repo, number, at).await?)
+    }
+}
