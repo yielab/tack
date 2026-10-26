@@ -227,7 +227,6 @@ rec health GET /health yes "the daemon supervision asks only for the status" --n
 rec status-empty GET /status.json yes "no team yet, so no agents" --no-auth; expect 200 status
 rec unauthorized GET /pods no "a request without the bearer token" --no-auth; expect 401 unauthorized
 rec pods-empty GET /pods yes "no team yet"; expect 200 pods
-rec inbox-empty GET /inbox yes "nothing needs a person"; expect 200 inbox
 rec traces-empty GET /traces/fab-dev no "a team that does not exist yet has no events, and no error"; expect 200 traces
 rec escalations-empty GET '/escalations?since=0' yes "the probe: nothing is waiting, and next equals since"; expect 200 escalations-empty
 
@@ -307,7 +306,6 @@ rec task-diff-failed GET "/tasks/fab-dev/$TASK_ID/diff" yes "the diff of a task 
 rec task-cancel-finished POST "/tasks/fab-dev/$TASK_ID/cancel" yes "cancel of a task that has ended" --body '{"reason":"the capture"}'; expect 409 cancel
 sleep 2
 rec traces-after-failure GET /traces/fab-dev yes "the events of the tasks refused at claim, a second after the last (docket holds back the newest second)"; expect 200 traces
-rec inbox-failed GET /inbox yes "the failed task is in the inbox's failed list"; expect 200 inbox-failed
 
 # ── Routes for tasks docket does not know ─────────────────────────────────────
 rec task-unknown GET /tasks/fab-dev/task-unknown yes "a task docket does not know"; expect 404 task-unknown
@@ -352,7 +350,6 @@ rec escalations-pending GET '/escalations?since=0' yes "one pending escalation o
 NEXT=$(jq -r '.next' <<<"$LAST_BODY")
 rec escalations-task-since GET "/escalations?since=$NEXT&task=$GATED_ID" yes "the cursor and the task filter together: nothing newer, next equal to since"; expect 200 escalations-since
 [ "$(jq '.escalations | length' <<<"$LAST_BODY")" = 0 ] || die "the cursor returned a record: $LAST_BODY"
-rec inbox-waiting-escalation GET /inbox yes "the held task is in needsYou with its escalation id, and escalations[] carries the record"; expect 200 inbox-waiting
 rec task-waiting-escalation GET "/tasks/fab-dev/$GATED_ID" yes "a task waiting on an escalation: escalations lists the ids opened for it, and the keys of the retired shapes are gone"; expect 200 task-waiting
 
 OPTIONAL_KEYS=content rec escalation-unknown POST /escalations/esc-000000000000 yes "an answer to an escalation docket does not know" \
@@ -406,7 +403,6 @@ wait_for fab-lights "$L5_ID" failed
 rec task-failed-needs-human GET "/tasks/fab-lights/$L5_ID" yes "a task at L5 whose pipeline asks a person: failed, failureKind needs_human, no hop ran"; expect 200 task-needs-human
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = needs_human ] || die "the task failed, but not needs_human: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
-rec inbox-decided GET /inbox yes "the inbox after both tasks: the failed needs_human task, and decided, the pauses the team settled alone"; expect 200 inbox-decided
 rec escalations-settled GET '/escalations?since=0' yes "every record whatever its state: one resolved by a person, one closed by a cancel, one decided by the level"; expect 200 escalations-settled
 sleep 2
 rec traces-escalation-decided GET /traces/fab-lights yes "the events of the L5 task: escalation_decided"; expect 200 traces-decided

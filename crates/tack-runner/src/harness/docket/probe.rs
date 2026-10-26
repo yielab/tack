@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use tack_protocol::execution::{
-    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamReport, TeamViolation,
+    AutonomyLevel, DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource,
+    ModelsReport, SignInReport, SignInState, TeamReport, TeamViolation,
 };
 
 use super::client::Client;
@@ -97,6 +97,47 @@ pub(super) async fn escalation_record(client: &Client, api: &str) -> Result<(), 
     }
 }
 
+/// One team as docket reports it: its profile with the violations, and the folders its sandbox
+/// reads. `listed_profile` is the name `GET /pods` gave, used when the team's own report has none.
+async fn team(
+    client: &Client,
+    name: &str,
+    listed_profile: Option<&str>,
+) -> Result<TeamReport, String> {
+    let report = client.pod(name).await?;
+    if report.status != 200 {
+        return Err(report.error());
+    }
+    let profile = &report.body["profile"];
+    Ok(TeamReport {
+        name: name.to_owned(),
+        profile: profile["name"]
+            .as_str()
+            .or(listed_profile)
+            .unwrap_or_default()
+            .to_owned(),
+        violations: profile["violations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|violation| TeamViolation {
+                requirement: violation["requirement"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+                fix: violation["fix"].as_str().unwrap_or_default().to_owned(),
+            })
+            .collect(),
+        // An older docket sends no key; that stays unknown rather than becoming "none".
+        read_only: report.body["readOnly"].as_array().map(|paths| {
+            paths
+                .iter()
+                .filter_map(|path| path.as_str().map(str::to_owned))
+                .collect()
+        }),
+    })
+}
+
 /// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
 pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     let list = client.pods().await?;
@@ -105,43 +146,21 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     }
     let mut teams = Vec::new();
     for pod in list.body["pods"].as_array().into_iter().flatten() {
-        let Some(name) = pod["name"].as_str() else {
-            continue;
-        };
-        let report = client.pod(name).await?;
-        if report.status != 200 {
-            return Err(report.error());
+        if let Some(name) = pod["name"].as_str() {
+            teams.push(team(client, name, pod["profile"].as_str()).await?);
         }
-        let profile = &report.body["profile"];
-        teams.push(TeamReport {
-            name: name.to_owned(),
-            profile: profile["name"]
-                .as_str()
-                .or_else(|| pod["profile"].as_str())
-                .unwrap_or_default()
-                .to_owned(),
-            violations: profile["violations"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|violation| TeamViolation {
-                    requirement: violation["requirement"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned(),
-                    fix: violation["fix"].as_str().unwrap_or_default().to_owned(),
-                })
-                .collect(),
-            // An older docket sends no key; that stays unknown rather than becoming "none".
-            read_only: report.body["readOnly"].as_array().map(|paths| {
-                paths
-                    .iter()
-                    .filter_map(|path| path.as_str().map(str::to_owned))
-                    .collect()
-            }),
-        });
     }
     Ok(teams)
+}
+
+/// The most autonomy a task sent to `pod` may ask for: `L5` for a team that can run without a
+/// person, `L3` for any other, and for one whose profile cannot be read, since `L3` is admitted
+/// everywhere.
+pub(super) async fn autonomy_ceiling(client: &Client, pod: &str) -> AutonomyLevel {
+    match team(client, pod, None).await {
+        Ok(team) if !capped(&team) => AutonomyLevel::L5,
+        _ => AutonomyLevel::L3,
+    }
 }
 
 /// A team that needs a person during a run: attended, or with a violation.

@@ -1,9 +1,0 @@
-constructed
-route: GET /inbox
-status: 200
-tack-sends: yes
-built-from: docket's tests/fixtures/operator-v2/inbox-consult.json, copied with its placeholders and pod name replaced
-source: tests/fixtures/operator-v2/inbox-consult.json at 9954b4f8
-docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
-date: 2026-10-26
-note: a task waiting_input on a consult: its needsYou item names the escalation, and escalations[] carries the record. not captured, because docket sends it only while a model runs or a person answers one; every key is one docket writes, the values are made up, or come from the capture or the recording it is built from.

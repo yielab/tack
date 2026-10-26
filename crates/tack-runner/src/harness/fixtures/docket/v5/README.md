@@ -34,7 +34,7 @@ are rewritten to fixed values. The bearer token is read from the file docket wri
 never printed or recorded; the script fails if it finds the token in a capture.
 
 A `constructed` file is an answer docket only sends while a model runs or a person answers (a
-finished task, a hop's trace event, a pending consult or input, an inbox with everything in it).
+finished task, a hop's trace event, a pending consult or input).
 Its keys are the ones docket writes, and its provenance names the exact source: a file of
 docket's own `tests/fixtures/operator-v2/` (recorded from a real run on a fake model), a section
 of `specs/api/operator-api.spec.md`, or a model in docket's source, always with docket's commit.
@@ -46,7 +46,8 @@ by the script); a constructed file is replaced by a capture when the script can 
 
 - It answers each route from its file, with this run's names and numbers put in. It has the
   keys docket has and no others; `the_fake_answers_with_the_keys_of_the_captures` compares them.
-- It checks a request body against the captured requests Tack sends. A key none of them has,
+- It checks a request body against the requests Tack sends that the files hold: the captured
+  ones, and the one constructed answer that carries its request inline. A key none of them has,
   or one every one of them has that this one lacks (apart from `optional-keys`), is a `400`
   naming it. docket itself ignores unknown keys, so the fake is stricter than docket here, on
   purpose: a field docket does not read is a bug in Tack that docket would not report.
@@ -63,33 +64,6 @@ by the script); a constructed file is replaced by a capture when the script can 
   `{"status": "ok", "apiVersion", "dispatch"}`.
 - docket accepts a blank description, any priority and unknown keys without comment, and fills a
   brief out to the whole document.
-- A held task and an escalation exist without a model: see "Where a pause comes from without a
-  model".
-- A task's view no longer carries `source`, `claimId`, `approvalToken`, `pregrants` or
-  `gateOverridePipelineIndex`; it carries `autonomy`, `escalations`, `pipelineSource`,
-  `gateApplied`, `usage` and `tokenBudget` when they apply. A pod's queue counts are `pending`,
-  `running`, `waitingApproval`, `waitingInput`, `blocked`, `failed`, `done`, `cancelled` (no
-  `completed`).
-- `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event
-  is empty, so the script waits two seconds before each one.
-- A held task and an escalation exist without a model: see "Where a pause comes from without a
-  model".
-- A task's view no longer carries `source`, `claimId`, `approvalToken`, `pregrants` or
-  `gateOverridePipelineIndex`; it carries `autonomy`, `escalations`, `pipelineSource`,
-  `gateApplied`, `usage` and `tokenBudget` when they apply. A pod's queue counts are `pending`,
-  `running`, `waitingApproval`, `waitingInput`, `blocked`, `failed`, `done`, `cancelled` (no
-  `completed`).
-- `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event
-  is empty, so the script waits two seconds before each one.
-- A held task and an escalation exist without a model: see "Where a pause comes from without a
-  model".
-- A task's view no longer carries `source`, `claimId`, `approvalToken`, `pregrants` or
-  `gateOverridePipelineIndex`; it carries `autonomy`, `escalations`, `pipelineSource`,
-  `gateApplied`, `usage` and `tokenBudget` when they apply. A pod's queue counts are `pending`,
-  `running`, `waitingApproval`, `waitingInput`, `blocked`, `failed`, `done`, `cancelled` (no
-  `completed`).
-- `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event
-  is empty, so the script waits two seconds before each one.
 - A held task and an escalation exist without a model: see "Where a pause comes from without a
   model".
 - A task's view no longer carries `source`, `claimId`, `approvalToken`, `pregrants` or
@@ -139,21 +113,18 @@ a docket without the record.
   resolved record has a resolution.
 - **Where a waiting task shows it.** The task's own record lists the ids opened for it in
   `escalations` (`task-waiting-escalation`, captured); a finished task keeps them
-  (`task-failed-after-escalation`). `GET /inbox` shows the one a task waits on as the
-  `escalation` of its `needsYou` item and carries the pending records in `escalations[]`
-  (`inbox-waiting-escalation`, captured; `inbox-waiting-consult` and `inbox-waiting-input`,
-  constructed from docket's own recordings). The inbox's `decided` lists, newest first and at most
-  twenty, the pauses the team settled alone, and is absent while there are none
-  (`inbox-decided`, captured). An approval's `apr-` token is not an address: no answer and no
-  request carries it, except the trace event `approval_granted`, which the script redacts.
-- **The inbox's task items are the same shape everywhere**: `id`, `pod`, `status`, `a2aState`,
-  `reason`, `description`, `priority`, `createdAt`, `updatedAt`, `escalation`, `brief` (the keys
-  `question` and `approvalToken` of the earlier shape are gone).
+  (`task-failed-after-escalation`). docket's `GET /inbox` carries the same records, and the
+  pauses the team settled alone in `decided`, but Tack reads only `GET /escalations` and the
+  task, so no inbox answer is kept. An approval's `apr-` token is not an address: no answer and
+  no request carries it, except the trace event `approval_granted`, which the script redacts.
 - **The trace events** are `escalation_asked`, `escalation_delivered`, `escalation_resolved`,
   `escalation_expired` and `escalation_decided`; the capture holds the real `escalation_asked`
   and `escalation_resolved` of an answered approval (`traces-escalation`) and the
-  `escalation_decided` of an L5 task (`traces-escalation-decided`). The old `approval_required`
-  and `approval_resumed` still appear beside them.
+  `escalation_decided` of an L5 task (`traces-escalation-decided`). Every payload is
+  `{escalation, kind, task, step, policy, askedAt}` plus `level`; `escalation_decided` adds
+  `by: "policy"` and `optionId`, and carries no rationale or label, so Tack's timeline line names
+  the option id and the policy. The old `approval_required` and `approval_resumed` still appear
+  beside them.
 
 ## Where a pause comes from without a model
 
@@ -169,8 +140,8 @@ diff (`check_changed`), and none is reachable here. Two are, and the script reco
   makes its profile met (sandbox on, its network cut, an external gate on the implementer step)
   and queues a task with `autonomy: "L5"` whose first step is an `approval`. docket asks nobody:
   it records a *decided* escalation (`level: "L5"`, `policy: "deny"`, `state: "decided"`) and
-  fails the task before any hop with `failureKind: "needs_human"` (`task-failed-needs-human`,
-  `inbox-decided`). Before the profile is met the same task fails `dispatch_refused` with the
+  fails the task before any hop with `failureKind: "needs_human"` (`task-failed-needs-human`).
+  Before the profile is met the same task fails `dispatch_refused` with the
   profile's unmet requirements as `reason`; that answer is not kept.
 - **`autonomy`** is a key of `POST /tasks/<pod>`: `L3`, `L4` or `L5`, narrowing only. Above the
   pod profile's ceiling is `422` naming the ceiling (`post-tasks-autonomy-above-ceiling`, an
@@ -212,13 +183,6 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `escalations-task-since` | `GET /escalations` | 200 | captured |
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
-| `inbox-busy` | `GET /inbox` | 200 | constructed |
-| `inbox-decided` | `GET /inbox` | 200 | captured |
-| `inbox-empty` | `GET /inbox` | 200 | captured |
-| `inbox-failed` | `GET /inbox` | 200 | captured |
-| `inbox-waiting-consult` | `GET /inbox` | 200 | constructed |
-| `inbox-waiting-escalation` | `GET /inbox` | 200 | captured |
-| `inbox-waiting-input` | `GET /inbox` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |

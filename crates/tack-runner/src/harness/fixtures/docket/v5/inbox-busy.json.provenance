@@ -1,9 +1,0 @@
-constructed
-route: GET /inbox
-status: 200
-tack-sends: yes
-built-from: inbox-consult.json's task item and view (docket's own recorded fixture), the captured task item and view of inbox-waiting-escalation.json, the captured decided record of inbox-decided.json, and the consult task item turned into a running one (status running, a2aState WORKING, reason and escalation null)
-source: docs/contracts/operator-v2/inbox.schema.json (needsYou, failed, doneSince, running, next, escalations, decided) at 9954b4f8; specs/api/operator-api.spec.md "Escalations"
-docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
-date: 2026-10-26
-note: an inbox with everything in it at once: two waiting tasks (a consult and an approval), a running one, and a decided record. not captured, because docket sends it only while a model runs or a person answers one; every key is one docket writes, the values are made up, or come from the capture or the recording it is built from. The three tasks and two pending escalations have the ids ending 0, 1 and 2 so they can be told apart.

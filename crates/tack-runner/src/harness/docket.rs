@@ -87,6 +87,9 @@ const PROGRESS_BUFFER: usize = 256;
 const WRONG_WORKSPACE: &str =
     "the docket team works on a branch of your folder; choose that under Settings → Automation";
 
+/// What a person reads when docket ended a task for needing a person and gave no sentence.
+const NEEDS_A_PERSON: &str = "docket stopped the task because a step needed a person and the task ran at a level that asks nobody";
+
 /// The task states in which docket will do nothing more by itself.
 fn terminal(status: &str) -> bool {
     matches!(status, "done" | "failed" | "blocked" | "cancelled")
@@ -526,6 +529,46 @@ fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
     }
 }
 
+/// The timeline line an `escalation_*` record makes. `escalation_delivered` says only that a
+/// channel carried a notification, which the line for the question already tells.
+fn escalation_progress(event_type: &str, payload: &Value) -> Option<Progress> {
+    let kind = payload["kind"].as_str().unwrap_or("approval");
+    let option = payload["optionId"].as_str().unwrap_or("none");
+    let (name, text) = match event_type {
+        "escalation_asked" => (
+            "escalation.asked",
+            format!(
+                "docket asked ({kind}): {}",
+                payload["prompt"].as_str().unwrap_or("it names no question")
+            ),
+        ),
+        "escalation_resolved" => (
+            "escalation.resolved",
+            format!("{kind} answered: option {option}"),
+        ),
+        "escalation_expired" => (
+            "escalation.expired",
+            format!("{kind} expired: nobody answered"),
+        ),
+        "escalation_decided" => {
+            let mut why = format!("policy {}", payload["policy"].as_str().unwrap_or("unnamed"));
+            if let Some(level) = payload["level"].as_str() {
+                why.push_str(&format!(", level {level}"));
+            }
+            (
+                "escalation.decided",
+                format!("decided alone: option {option} ({why})"),
+            )
+        }
+        _ => return None,
+    };
+    Some(Progress {
+        kind: name.to_owned(),
+        text,
+        usage: None,
+    })
+}
+
 /// One of docket's options for an escalation, worded as docket words it.
 fn escalation_option(option: &Value) -> Option<DecisionOption> {
     let text = |key: &str| {
@@ -880,6 +923,14 @@ impl DocketAdapter {
                 AttemptState::Failed,
                 json!({"code": "blocked", "message": why, "task": info.task}),
             ),
+            // At L5 a tool call needed approval and docket asks nobody; the task is final until
+            // someone retries it, so the attempt ends here and nothing queues it again.
+            _ if task["failureKind"] == "needs_human" => (
+                AttemptState::Failed,
+                json!({"code": "needs_human",
+                       "message": if why.is_empty() { NEEDS_A_PERSON } else { why },
+                       "task": info.task}),
+            ),
             // The install failed before any hop; docket's reason names the command and its output.
             _ if task["failureKind"] == "prepare" => (
                 AttemptState::Failed,
@@ -986,12 +1037,19 @@ impl HarnessAdapter for DocketAdapter {
         };
         // The answered version decides which fields the task body may carry.
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        // The board's level, never above what the team's profile admits. `validate` has already
+        // seen the escalation record, which comes with the field.
+        let autonomy = match request.autonomy() {
+            Some(level) => Some(level.min(probe::autonomy_ceiling(&self.client, &pod).await)),
+            None => None,
+        };
         let body = task::body(
             request,
             &attempt_id,
             spec.work.lease.attempt_number,
             &base_ref,
             probe::api_at_least(&api, probe::PREPARE_API_VERSION),
+            autonomy,
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
             tracing::warn!(why, "docket could not be reached to post the task");
@@ -1215,7 +1273,8 @@ impl DocketAdapter {
                     {
                         served_model = Some(model.to_owned());
                     }
-                    if let Some(step) = hop_progress(kind, payload)
+                    if let Some(step) =
+                        hop_progress(kind, payload).or_else(|| escalation_progress(kind, payload))
                         && side.progress.try_send(step).is_err()
                     {
                         tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");

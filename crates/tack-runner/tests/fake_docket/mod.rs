@@ -117,9 +117,9 @@ struct KeySpec {
     required: Option<BTreeSet<String>>,
 }
 
-/// The request keys of every route, from the captured requests Tack sends: any
-/// key one of them has is allowed, and a key every one of them has is required
-/// unless a provenance lists it as optional.
+/// The request keys of every route, from the requests Tack sends that a provenance holds, as a
+/// captured file or as inline JSON on a constructed one: any key one of them has is allowed, and
+/// a key every one of them has is required unless a provenance lists it as optional.
 fn request_keys() -> HashMap<String, KeySpec> {
     let mut routes: HashMap<String, KeySpec> = HashMap::new();
     let mut optional: HashMap<String, BTreeSet<String>> = HashMap::new();
@@ -127,10 +127,15 @@ fn request_keys() -> HashMap<String, KeySpec> {
         let (Some(route), Some(request)) = (found.get("route"), found.get("request")) else {
             continue;
         };
-        if found.state != "captured" || found.get("tack-sends") != Some("yes") {
+        let inline = request.starts_with('{');
+        if found.get("tack-sends") != Some("yes") || (found.state != "captured" && !inline) {
             continue;
         }
-        let text = std::fs::read_to_string(fixtures_dir().join(request)).expect("request");
+        let text = if inline {
+            request.to_owned()
+        } else {
+            std::fs::read_to_string(fixtures_dir().join(request)).expect("request")
+        };
         let Ok(Value::Object(body)) = serde_json::from_str::<Value>(&text) else {
             continue;
         };
@@ -152,14 +157,6 @@ fn request_keys() -> HashMap<String, KeySpec> {
     for (route, spec) in &mut routes {
         if let (Some(required), Some(optional)) = (&mut spec.required, optional.get(route)) {
             required.retain(|key| !optional.contains(key));
-        }
-    }
-    // The spec lets an answer carry `content` (and an `input` take nothing else), and docket
-    // sends one only while a model runs, so no capture shows either.
-    if let Some(spec) = routes.get_mut("POST /escalations/<id>") {
-        spec.allowed.insert("content".to_owned());
-        if let Some(required) = spec.required.as_mut() {
-            required.remove("optionId");
         }
     }
     routes
@@ -277,6 +274,9 @@ struct Pod {
     /// What `readOnly` answers instead of the capture's: `Some(None)` leaves the key out, as
     /// docket did before it granted the sandbox a toolchain.
     read_only: Option<Option<Vec<String>>>,
+    /// The most autonomy docket admits for the team when that is not what its profile says, as
+    /// after the profile was changed since a client read it.
+    ceiling: Option<String>,
 }
 
 struct World {
@@ -362,8 +362,15 @@ impl FakeDocket {
                     .map(|(requirement, fix)| ((*requirement).to_owned(), (*fix).to_owned()))
                     .collect(),
                 read_only: None,
+                ceiling: None,
             },
         );
+    }
+
+    /// Makes docket admit at most `level` for the team whatever its profile says.
+    pub fn set_ceiling(&self, name: &str, level: &str) {
+        let mut world = self.shared.lock().unwrap();
+        world.pods.get_mut(name).expect("a pod added first").ceiling = Some(level.to_owned());
     }
 
     /// What the pod's `readOnly` answers: the folders its sandbox reads, `[]` for none, or
@@ -686,6 +693,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: None,
+            ceiling: None,
         },
     );
     reply(201, fixture_with("post-pods-created", &[("fab-dev", name)]))
@@ -759,11 +767,35 @@ fn check_task_body(body: &Value) -> Option<Response> {
     None
 }
 
+/// `autonomy` is `L3`, `L4` or `L5` (`400` otherwise), and no higher than the team's ceiling
+/// (`422` naming it): `L3` for an attended profile, `L5` for a lights-out one.
+fn check_autonomy(pod: &Pod, body: &Value) -> Option<Response> {
+    let asked = body.get("autonomy")?;
+    let rank = |level: &str| ["L3", "L4", "L5"].iter().position(|known| *known == level);
+    let Some(asked) = asked.as_str().filter(|level| rank(level).is_some()) else {
+        return Some(refusal("post-tasks-autonomy-invalid", &[]));
+    };
+    let ceiling = pod
+        .ceiling
+        .as_deref()
+        .unwrap_or(if pod.profile == "lights-out" {
+            "L5"
+        } else {
+            "L3"
+        });
+    (rank(asked) > rank(ceiling)).then(|| {
+        refusal(
+            "post-tasks-autonomy-above-ceiling",
+            &[("L5", asked), ("L3", ceiling), ("attended", &pod.profile)],
+        )
+    })
+}
+
 fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
-    if !state.pods.contains_key(pod) {
+    let Some(team) = state.pods.get(pod) else {
         return refusal("post-tasks-unknown-pod", &[("no-such-team", pod)]);
-    }
-    if let Some(refused) = check_task_body(body) {
+    };
+    if let Some(refused) = check_task_body(body).or_else(|| check_autonomy(team, body)) {
         return refused;
     }
     if let Some(key) = body["idempotencyKey"].as_str()
@@ -971,6 +1003,9 @@ fn task_record(task: &Task) -> Value {
         task.gate_open && matches!(task.status.as_str(), "waiting_input" | "waiting_approval");
     let mut record = fixture(match task.status.as_str() {
         _ if parked => "task-waiting-escalation",
+        "failed" if task.script.failure_kind.as_deref() == Some("needs_human") => {
+            "task-failed-needs-human"
+        }
         "done" => "task-done",
         "blocked" if task.script.blocked_reason.is_some() => "task-blocked-input-expired",
         "failed" | "blocked" if task.escalation.is_some() => "task-failed-after-escalation",
@@ -1002,6 +1037,9 @@ fn task_record(task: &Task) -> Value {
                 record.as_object_mut().expect("record").remove(key);
             }
         }
+    }
+    if let Some(level) = body.get("autonomy") {
+        record["autonomy"] = level.clone();
     }
     if let Some(id) = &task.escalation {
         record["escalations"] = json!([id]);

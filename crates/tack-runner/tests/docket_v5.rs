@@ -517,6 +517,8 @@ async fn the_task_body_is_the_specs_example_key_by_key() {
         .as_str()
         .to_owned();
     let sent = posted[0].body.to_string();
+    // The snapshot names no level, so the task carries none and docket applies its own default.
+    assert!(posted[0].body.get("autonomy").is_none(), "{sent}");
     assert!(!sent.contains("## The brief"), "{sent}");
     assert_eq!(sent.matches("Build succeeds").count(), 1, "{sent}");
     assert_eq!(
@@ -592,6 +594,223 @@ async fn a_422_fails_the_attempt_with_the_bodys_text_and_posts_nothing_again() {
         "the body's error is on the timeline: {steps:?}"
     );
     assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
+}
+
+/// The spec as the board sends it when it names a level for the run.
+fn at_level(mut spec: ExecutionSpec, level: &str) -> ExecutionSpec {
+    spec.work
+        .request
+        .additional
+        .insert("autonomy".to_owned(), json!(level));
+    spec
+}
+
+/// The `autonomy` the task body carried when a run at `asked` was posted to a team with this
+/// profile and these unmet requirements.
+async fn autonomy_sent(profile: &str, violations: &[(&str, &str)], asked: &str) -> Option<String> {
+    let fake = FakeDocket::start().await;
+    fake.add_pod(POD, profile, violations);
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    run_to_end(&adapter, &at_level(spec(&scene, "attempt-1", 1), asked)).await;
+    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    assert_eq!(posted.len(), 1);
+    posted[0].body["autonomy"].as_str().map(str::to_owned)
+}
+
+#[tokio::test]
+async fn the_level_the_board_names_is_sent_as_the_tasks_autonomy() {
+    for asked in ["L3", "L4", "L5"] {
+        assert_eq!(
+            autonomy_sent("lights-out", &[], asked).await.as_deref(),
+            Some(asked)
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_attended_team_never_gets_above_l3() {
+    for asked in ["L3", "L4", "L5"] {
+        assert_eq!(
+            autonomy_sent("attended", &[], asked).await.as_deref(),
+            Some("L3"),
+            "asked {asked}"
+        );
+    }
+}
+
+/// docket's own report of a lights-out team that has not met its profile: the profile says
+/// `lights-out`, and the unmet requirements keep it from running without a person.
+#[tokio::test]
+async fn a_lights_out_team_that_has_not_met_its_profile_is_held_to_l3() {
+    let report = fixture("pod-lights-out");
+    let violations: Vec<(String, String)> = report["profile"]["violations"]
+        .as_array()
+        .expect("violations")
+        .iter()
+        .map(|violation| {
+            (
+                violation["requirement"].as_str().unwrap().to_owned(),
+                violation["fix"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert!(!violations.is_empty(), "the capture names what is unmet");
+    let unmet: Vec<(&str, &str)> = violations
+        .iter()
+        .map(|(requirement, fix)| (requirement.as_str(), fix.as_str()))
+        .collect();
+    assert_eq!(
+        autonomy_sent("lights-out", &unmet, "L5").await.as_deref(),
+        Some("L3")
+    );
+}
+
+#[tokio::test]
+async fn a_level_below_the_ceiling_is_kept() {
+    assert_eq!(
+        autonomy_sent("lights-out", &[], "L4").await.as_deref(),
+        Some("L4")
+    );
+}
+
+#[tokio::test]
+async fn a_422_above_the_ceiling_fails_the_attempt_with_dockets_text_and_posts_nothing_again() {
+    let fake = pods_fake().await;
+    // The profile read says lights-out; docket's ceiling is lower by the time the task arrives.
+    fake.set_ceiling(POD, "L3");
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let (outcome, steps) =
+        run_to_end(&adapter, &at_level(spec(&scene, "attempt-1", 1), "L5")).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    let sentence = "autonomy L5 is above this pod's ceiling L3 (profile lights-out); set the pod profile to lights-out for L5";
+    assert_eq!(outcome.terminal_reason["code"], json!("rejected"));
+    assert_eq!(outcome.terminal_reason["message"], json!(sentence));
+    assert!(steps.iter().any(|(_, text)| text == sentence), "{steps:?}");
+    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].body["autonomy"], json!("L5"));
+}
+
+#[tokio::test]
+async fn the_fake_refuses_an_autonomy_as_docket_does() {
+    let fake = FakeDocket::start().await;
+    fake.add_pod(POD, "attended", &[]);
+    // The refused requests are docket's own, which carry only a description and the level; a
+    // body Tack could send carries the level they name.
+    for (name, status) in [
+        ("post-tasks-autonomy-above-ceiling", 422),
+        ("post-tasks-autonomy-invalid", 400),
+    ] {
+        let mut body = request_file("post-task-created");
+        body["autonomy"] = request_file(name)["autonomy"].clone();
+        let (answered, answer) = ask(&fake, "POST", "/tasks/fab-dev", Some(body)).await;
+        assert_eq!(answered, status, "{name}: {answer:?}");
+        assert_eq!(answer, fixture(name), "{name}");
+    }
+    assert!(fake.task_ids().is_empty());
+}
+
+#[tokio::test]
+async fn a_needs_human_task_ends_the_attempt_with_that_code_and_dockets_sentence() {
+    let captured = fixture("task-failed-needs-human");
+    let sentence = captured["reason"].as_str().expect("a sentence").to_owned();
+    assert_eq!(captured["failureKind"], json!("needs_human"));
+
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("needs_human".to_owned()),
+        reason: sentence.clone(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let (outcome, _) = run_to_end(&adapter, &at_level(spec(&scene, "attempt-1", 1), "L5")).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("needs_human"));
+    assert_eq!(outcome.terminal_reason["message"], json!(sentence));
+    assert_eq!(
+        fake.requests_to("POST", "/tasks/fab-dev").len(),
+        1,
+        "nothing queues the task again by itself"
+    );
+    assert!(
+        fake.requests_to("POST", "/tasks/fab-dev/").is_empty(),
+        "no cancel and no retry either"
+    );
+}
+
+/// The payloads of the events of one kind in a captured page of the trace.
+fn captured_events(name: &str, event_type: &str) -> Vec<Value> {
+    fixture(name)["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter_map(|line| serde_json::from_str::<Value>(line.as_str()?).ok())
+        .filter(|event| event["event_type"] == json!(event_type))
+        .map(|event| event["payload"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn every_escalation_event_but_a_delivery_is_a_timeline_line() {
+    let asked = captured_events("traces-escalation", "escalation_asked").remove(0);
+    let resolved = captured_events("traces-escalation", "escalation_resolved").remove(0);
+    let decided = captured_events("traces-escalation-decided", "escalation_decided").remove(0);
+    // docket's spec gives the other two; they are the captured payloads with what the spec adds.
+    let mut delivered = asked.clone();
+    delivered["channel"] = json!("telegram");
+    let mut expired = asked.clone();
+    expired["by"] = json!("timeout");
+    let fake = pods_fake().await;
+    fake.script(Script {
+        before: vec![
+            ("escalation_asked".to_owned(), asked.clone()),
+            ("escalation_delivered".to_owned(), delivered),
+            ("escalation_resolved".to_owned(), resolved),
+            ("escalation_expired".to_owned(), expired),
+            ("escalation_decided".to_owned(), decided),
+        ],
+        ..Script::default()
+    });
+    let scene = scene();
+
+    let (_, steps) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    let escalations: Vec<(String, String)> = steps
+        .into_iter()
+        .filter(|(kind, _)| kind.starts_with("escalation."))
+        .collect();
+    assert_eq!(
+        escalations,
+        [
+            (
+                "escalation.asked".to_owned(),
+                format!(
+                    "docket asked (approval): {}",
+                    asked["prompt"].as_str().unwrap()
+                )
+            ),
+            (
+                "escalation.resolved".to_owned(),
+                "approval answered: option approve_once".to_owned()
+            ),
+            (
+                "escalation.expired".to_owned(),
+                "approval expired: nobody answered".to_owned()
+            ),
+            (
+                "escalation.decided".to_owned(),
+                "decided alone: option deny (policy deny, level L5)".to_owned()
+            ),
+        ]
+    );
 }
 
 /// docket refusing the team itself (its answer to `POST /pods`) ends the
@@ -2479,24 +2698,9 @@ fn every_fixture_says_whether_it_was_captured_or_constructed() {
     }
 }
 
-/// Fixtures nothing reads yet. Each is either an answer of a route Tack's client does not
-/// send (docket's inbox), or what the next pieces of the adapter read (the autonomy level,
-/// `needs_human` and the `escalation_*` trace events). Reading one removes it from here.
-const NOT_READ_YET: [&str; 13] = [
-    "inbox-busy",
-    "inbox-decided",
-    "inbox-empty",
-    "inbox-failed",
-    "inbox-waiting-consult",
-    "inbox-waiting-escalation",
-    "inbox-waiting-input",
-    "pod-lights-out",
-    "post-task-autonomy-l5",
-    "post-tasks-autonomy-above-ceiling",
-    "post-tasks-autonomy-invalid",
-    "task-failed-needs-human",
-    "traces-escalation-decided",
-];
+/// Fixtures nothing reads yet; a capture the adapter has not caught up with is listed here
+/// until a test reads it, and the check below says when one is no longer unread.
+const NOT_READ_YET: [&str; 0] = [];
 
 /// A fixture is read when a test or the fake names it, or when it is the request of one that
 /// is.
@@ -2647,6 +2851,11 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ask(&fake, "GET", "/pods/fab-dev", None).await,
     );
     get("pod-unknown", ask(&fake, "GET", "/pods/nope", None).await);
+    fake.add_pod("fab-lights", "lights-out", &[]);
+    get(
+        "pod-lights-out",
+        ask(&fake, "GET", "/pods/fab-lights", None).await,
+    );
     get("status", ask(&fake, "GET", "/status.json", None).await);
 
     fake.script(Script {
@@ -2870,6 +3079,23 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     get(
         "escalations-settled",
         ask(&fake, "GET", "/escalations?since=0", None).await,
+    );
+    // A task at the level docket refuses to ask anybody at ends `needs_human`.
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("needs_human".to_owned()),
+        reason: "approval required".to_owned(),
+        ..Script::default()
+    });
+    let mut at_l5 = request_file("post-task-autonomy-l5");
+    at_l5["idempotencyKey"] = json!("capture-attempt-l5");
+    let lights_out = ask(&fake, "POST", "/tasks/fab-dev", Some(at_l5)).await;
+    assert_eq!(lights_out.0, 201, "{lights_out:?}");
+    let l5_id = lights_out.1["task"].as_str().unwrap().to_owned();
+    get("post-task-autonomy-l5", lights_out);
+    get(
+        "task-failed-needs-human",
+        ask(&fake, "GET", &format!("/tasks/fab-dev/{l5_id}"), None).await,
     );
     for name in ["traces-after-failure", "traces-escalation"] {
         get(name, ask(&fake, "GET", "/traces/fab-dev", None).await);

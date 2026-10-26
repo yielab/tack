@@ -35,6 +35,14 @@ automation a template carries, and the removal of dollars per day.
 - **Factory metrics count what the agent decided alone.** A new **Decided alone** card gives the runs in
   which docket's own policy settled at least one question, and their rate over runs, beside the escalation
   rate and the human minutes, which still count only questions a person answered.
+- **The docket agent sends the run's autonomy level.** The task goes to docket with `autonomy` when the
+  board named a level, lowered to what the team's profile admits: a team that is not `lights-out`, or has
+  an unmet requirement, is asked for `L3` at most. A docket that refuses the level answers `422` with its
+  own sentence, and the attempt fails with it. A task docket ends with `needs_human` ends the attempt
+  `failed` with the code `needs_human` and docket's sentence; nothing queues it again by itself.
+- **The timeline shows every escalation.** Each question docket opens, each answer a person gave, each
+  one that expired and each one docket's policy settled alone is a line on the run's timeline
+  ("decided alone: option deny (policy deny, level L5)"); a notification delivered is not.
 
 - **The Run dialog follows the profile.** Pressing a profile picks the agent it is written for and says
   so when that replaces the task's; profiles you made are listed first with their "delivers" line, the
