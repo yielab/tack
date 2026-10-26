@@ -274,9 +274,6 @@ struct Pod {
     /// What `readOnly` answers instead of the capture's: `Some(None)` leaves the key out, as
     /// docket did before it granted the sandbox a toolchain.
     read_only: Option<Option<Vec<String>>>,
-    /// The most autonomy docket admits for the team when that is not what its profile says, as
-    /// after the profile was changed since a client read it.
-    ceiling: Option<String>,
 }
 
 struct World {
@@ -362,15 +359,8 @@ impl FakeDocket {
                     .map(|(requirement, fix)| ((*requirement).to_owned(), (*fix).to_owned()))
                     .collect(),
                 read_only: None,
-                ceiling: None,
             },
         );
-    }
-
-    /// Makes docket admit at most `level` for the team whatever its profile says.
-    pub fn set_ceiling(&self, name: &str, level: &str) {
-        let mut world = self.shared.lock().unwrap();
-        world.pods.get_mut(name).expect("a pod added first").ceiling = Some(level.to_owned());
     }
 
     /// What the pod's `readOnly` answers: the folders its sandbox reads, `[]` for none, or
@@ -693,7 +683,6 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: None,
-            ceiling: None,
         },
     );
     reply(201, fixture_with("post-pods-created", &[("fab-dev", name)]))
@@ -775,14 +764,11 @@ fn check_autonomy(pod: &Pod, body: &Value) -> Option<Response> {
     let Some(asked) = asked.as_str().filter(|level| rank(level).is_some()) else {
         return Some(refusal("post-tasks-autonomy-invalid", &[]));
     };
-    let ceiling = pod
-        .ceiling
-        .as_deref()
-        .unwrap_or(if pod.profile == "lights-out" {
-            "L5"
-        } else {
-            "L3"
-        });
+    let ceiling = if pod.profile == "lights-out" {
+        "L5"
+    } else {
+        "L3"
+    };
     (rank(asked) > rank(ceiling)).then(|| {
         refusal(
             "post-tasks-autonomy-above-ceiling",

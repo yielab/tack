@@ -475,9 +475,9 @@ const WRITE_TOOLS: [&str; 7] = [
 const READ_ONLY_PROFILE_KINDS: [&str; 3] = ["reviewer", "researcher", "planner"];
 
 impl ExecutionRequestSnapshot {
-    /// The most autonomy the board allows this run, when it said (the `autonomy` key of
-    /// `additional`): the project's level lowered to its team's ceiling. Absent means the board
-    /// named none, and a value that is not one of the three levels reads as absent.
+    /// The autonomy level a person asked this run to have, when the board said (the `autonomy`
+    /// key of `additional`). Absent means none was asked for, and a value that is not one of the
+    /// three levels reads as absent.
     pub fn autonomy(&self) -> Option<AutonomyLevel> {
         serde_json::from_value(self.additional.get("autonomy")?.clone()).ok()
     }

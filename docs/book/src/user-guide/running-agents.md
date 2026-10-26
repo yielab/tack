@@ -269,8 +269,9 @@ twice the old one. Change it or press **Run**.
 
 A docket run that ended because the agent needed a person shows "Needs a person" and the agent's own
 sentence, and offers **Run again at L3**: the same task, run attended from the start, started only when you
-press it. The button is disabled, with its reason, when the project is already at L3 or the team cannot be
-narrowed.
+press it. The button is disabled, with its reason, when the run did not use docket or already ran at L3.
+Whether the team may run attended or alone is docket's own decision, not the project's merge level; if docket
+refuses the level, the run fails with docket's sentence.
 
 Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 

@@ -41,8 +41,8 @@ pub struct RunRequest {
     pub status_map_policy_id: Option<String>,
     pub verify: Option<bool>,
     pub push_branch: Option<bool>,
-    /// The most autonomy this run may have (`L3`, `L4` or `L5`): a cap the board lowers further
-    /// at claim, never raises. "Run again at L3" sets `L3`.
+    /// The autonomy level a docket run is asked for (`L3`, `L4` or `L5`), sent as it is.
+    /// "Run again at L3" sets `L3`; absent, docket decides.
     pub autonomy: Option<String>,
     /// `mcp` marks a run an agent started through `tack mcp`.
     pub origin: Option<String>,

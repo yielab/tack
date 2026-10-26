@@ -233,18 +233,19 @@ task body can therefore not be `level_for`'s; the path-derived level stays a mer
 
 **Goal.**
 
-1. The request snapshot carries the level to send: the project's level at claim time, lowered to
-   what `ceiling_of` reports for the profile's team, so a normal run never meets the `422`. The
-   task body sends it only when docket says it accepts the field.
+1. The request snapshot carries `autonomy` only when the run was created with an explicit level
+   (`POST /api/executions {autonomy}`, "Run again at L3"), and then the level as it is. A run with no
+   level carries none, whatever the project's level, the team's ceiling or the profile: lights-out is
+   docket's own concept and Tack does not second-guess it. The task body sends it only when docket says
+   it accepts the field.
 2. A `422` above the ceiling is still docket's text and the attempt fails with it (the existing
    rule); it also marks the probe stale and asks for a fresh one.
 3. `failureKind: needs_human` is its own outcome, not a plain failure: the attempt ends `failed`
    with code `needs_human` and docket's sentence, and the run card offers "Run again at L3" (an
-   attended run), disabled with its reason when the team or the field cannot be narrowed. It never
+   attended run), disabled with its reason when the run did not use docket or already ran at L3. It never
    re-queues by itself.
-4. Until P51-8 lands, `ceiling_of` and the merge hold are unchanged. When it lands, the pod's
-   profile read by the probe is the one source for both the request and the hold; delete the second
-   computation then, not before.
+4. `ceiling_of` and the merge hold are unchanged: the ceiling is a fact about the merge, and the
+   request no longer reads it.
 
 **Non-goals.** No change to `level_for`, to `evaluate`, or to how a revert demotes the project level
 (`demote` stays Tack's). No new setting.
@@ -255,8 +256,8 @@ optional key); `harness/docket.rs` `finish` (the `needs_human` arm); `tack-api/s
 failure kind.
 
 **Acceptance.** `the_task_body_is_the_specs_example_key_by_key` gains `autonomy` among its optional
-keys and checks it is absent on an older API; a project at L4 on an attended team sends `L3`, on a
-lights-out team `L4`; the fake answers `422` above the ceiling and the attempt fails with its text;
+keys and checks it is absent on an older API; a level a person asked for is sent as it is, whatever
+the project's level or the team, and a run with none sends none; the fake answers `422` above the ceiling and the attempt fails with its text;
 a `needs_human` task gives code `needs_human` and the run card test finds "Run again at L3". Fixtures
 are recaptured with `scripts/capture-docket-fixtures.sh` against that docket build.
 
@@ -401,7 +402,8 @@ with the old routes gone.
 - docket's `escalation_decided` event carries no label and no rationale, so the timeline reads
   "decided alone: option deny (policy deny, level L5)".
 - A docket 422 above the autonomy ceiling fails the attempt with docket's text; there is no probe cache to mark stale.
-- Decisions left to the maintainer: (1) a project at the default L3 now sends `autonomy: L3`, so a lights-out team
-  runs attended; (2) a lights-out team with unmet requirements counts as attended (L3 at most); (3) a question with
-  no `expiresAt` holds its run until answered, resolved by docket or stopped; (4) rerun `scripts/docket-prill-e2e.sh`
-  against docket's `develop`.
+- Decided by the maintainer 2026-10-26: lights-out is L5 and docket's own; Tack sends `autonomy` only when a
+  person asks for a level (Run again at L3), never from the project's merge level.
+- Accepted 2026-10-26: a question with no `expiresAt` holds its run until answered, resolved by docket or
+  stopped.
+- Still the maintainer's: rerun `scripts/docket-prill-e2e.sh` against docket's `develop`.

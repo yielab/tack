@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 
 use chrono::Utc;
 use tack_protocol::execution::{
-    AutonomyLevel, DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource,
-    ModelsReport, SignInReport, SignInState, TeamReport, TeamViolation,
+    DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
+    SignInReport, SignInState, TeamReport, TeamViolation,
 };
 
 use super::client::Client;
@@ -151,16 +151,6 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
         }
     }
     Ok(teams)
-}
-
-/// The most autonomy a task sent to `pod` may ask for: `L5` for a team that can run without a
-/// person, `L3` for any other, and for one whose profile cannot be read, since `L3` is admitted
-/// everywhere.
-pub(super) async fn autonomy_ceiling(client: &Client, pod: &str) -> AutonomyLevel {
-    match team(client, pod, None).await {
-        Ok(team) if !capped(&team) => AutonomyLevel::L5,
-        _ => AutonomyLevel::L3,
-    }
 }
 
 /// A team that needs a person during a run: attended, or with a violation.

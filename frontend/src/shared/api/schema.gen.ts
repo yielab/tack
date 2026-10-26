@@ -3595,9 +3595,9 @@ export interface components {
              */
             agent_profile_id?: string | null;
             /**
-             * @description The most autonomy this run may have: `L3`, `L4` or `L5`. The board lowers it further to the
-             *     project's level and the team's ceiling when a docket runner claims the run, and never raises
-             *     it; absent, those two decide. `L3` is "Run again at L3". Any other value is `invalid_request`.
+             * @description The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.
+             *     Absent, docket decides from the team's profile; the project's level is never sent. `L3` is
+             *     "Run again at L3". Any other value is `invalid_request`.
              */
             autonomy?: string | null;
             /**

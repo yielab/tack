@@ -29,16 +29,16 @@ automation a template carries, and the removal of dollars per day.
 - **A run that needed a person is its own outcome.** An attempt of the docket agent that ends because a
   tool call needs a person shows "Needs a person" with docket's sentence and offers **Run again at L3**,
   which opens the Run dialog for the same task with the run attended from the start; it is disabled, with
-  its reason, when the project is already at L3 or the team cannot be narrowed, and it never starts by itself.
+  its reason, when the run did not use docket or already ran at L3, and it never starts by itself.
   `POST /api/executions` takes an optional `autonomy` (`L3`, `L4` or `L5`), and the claim hands a docket
-  runner the level the run may have: the project's level lowered to its team's ceiling and to that cap.
+  runner that level as it is; a run created with none carries none.
 - **Factory metrics count what the agent decided alone.** A new **Decided alone** card gives the runs in
   which docket's own policy settled at least one question, and their rate over runs, beside the escalation
   rate and the human minutes, which still count only questions a person answered.
-- **The docket agent sends the run's autonomy level.** The task goes to docket with `autonomy` when the
-  board named a level, lowered to what the team's profile admits: a team that is not `lights-out`, or has
-  an unmet requirement, is asked for `L3` at most. A docket that refuses the level answers `422` with its
-  own sentence, and the attempt fails with it. A task docket ends with `needs_human` ends the attempt
+- **The docket agent sends the run's autonomy level.** The task goes to docket with `autonomy` only when a
+  person asked for a level ("Run again at L3"), exactly as asked; the project's merge level is never turned
+  into it, and docket decides from the team's profile otherwise. A docket that refuses the level answers
+  `422` with its own sentence, and the attempt fails with it. A task docket ends with `needs_human` ends the attempt
   `failed` with the code `needs_human` and docket's sentence; nothing queues it again by itself.
 - **The timeline shows every escalation.** Each question docket opens, each answer a person gave, each
   one that expired and each one docket's policy settled alone is a line on the run's timeline

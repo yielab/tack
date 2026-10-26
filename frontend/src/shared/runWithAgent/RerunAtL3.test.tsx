@@ -53,8 +53,8 @@ describe('Run again at L3', () => {
     expect(modal.last?.autonomy).toBe('L3');
   });
 
-  it("is disabled with the board's reason when the run cannot be narrowed, and starts nothing", () => {
-    const reason = 'This project is already at L3';
+  it("is disabled with the board's reason when the run cannot be run again at L3, and starts nothing", () => {
+    const reason = 'This run already ran at L3';
     const c = mount({ attempt: attempt({ rerun_at_l3: { enabled: false, reason } }) });
     expect(button(c).disabled).toBe(true);
     expect(button(c).title).toBe(reason);

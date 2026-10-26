@@ -134,8 +134,8 @@ fn priority(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
 
 /// The body of `POST /tasks/<pod>` for one attempt. `base_ref` is the branch
 /// or commit the task starts from; `sends_prepare` says this docket reads the `prepare` field.
-/// `autonomy` is the level the task's pauses are decided at, already narrowed to the team's
-/// ceiling; docket's own default applies when there is none.
+/// `autonomy` is the level a person asked this run for, sent as it is; docket decides when there
+/// is none.
 pub(super) fn body(
     request: &ExecutionRequestSnapshot,
     attempt_id: &str,

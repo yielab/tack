@@ -111,24 +111,23 @@ fn docket_runner(at: chrono::DateTime<chrono::Utc>) -> String {
     snapshot.to_string()
 }
 
-/// A docket task is claimed with the project's level lowered to its team's ceiling, or to the
-/// cap the request carries; the key is absent when the harness is not docket, or when the team is
-/// one the computer does not report and the request set no cap.
+/// A docket task is claimed with the level the request was created with, as it is, and with none
+/// when no level was asked for: neither the project's level, nor the team that will run it, nor
+/// the harness's ceiling decides. The key is absent when the harness is not docket.
 #[tokio::test]
-async fn a_docket_claim_carries_the_project_level_lowered_to_the_team_and_the_request() {
-    // (harness, project level, team, request's own cap, the level sent)
+async fn a_docket_claim_carries_only_the_level_a_person_asked_for() {
+    // (harness, project level, team, the level the request was created with, the level sent)
     let cases = [
-        ("docket", "L4", Some("reviewers"), None, Some("L3")),
-        ("docket", "L4", Some("writers"), None, Some("L4")),
-        ("docket", "L5", Some("writers"), None, Some("L5")),
-        ("docket", "L3", Some("writers"), None, Some("L3")),
-        ("docket", "L5", Some("writers"), Some("L4"), Some("L4")),
+        ("docket", "L3", Some("writers"), None, None),
+        ("docket", "L4", Some("reviewers"), None, None),
+        ("docket", "L5", Some("writers"), None, None),
+        ("docket", "L5", Some("fab-dev"), None, None),
         ("docket", "L5", Some("writers"), Some("L3"), Some("L3")),
-        ("docket", "L4", Some("fab-dev"), None, None),
-        ("docket", "L4", Some("fab-dev"), Some("L3"), Some("L3")),
+        ("docket", "L3", Some("reviewers"), Some("L4"), Some("L4")),
+        ("docket", "L3", Some("fab-dev"), Some("L5"), Some("L5")),
         ("codex", "L5", None, Some("L3"), None),
     ];
-    for (harness, level, team, cap, expected) in cases {
+    for (harness, level, team, asked, expected) in cases {
         let world = world().await;
         let request_id = enqueue(&world, "level-key").await;
         let repo = &world.repo;
@@ -143,8 +142,8 @@ async fn a_docket_claim_carries_the_project_level_lowered_to_the_team_and_the_re
         if let Some(team) = team {
             seed::execution_request_team(repo, &request_id, team).await;
         }
-        if let Some(cap) = cap {
-            seed::execution_request_autonomy(repo, &request_id, cap).await;
+        if let Some(asked) = asked {
+            seed::execution_request_autonomy(repo, &request_id, asked).await;
         }
 
         let claimed = claim(repo, &world.clock, RUNNER_ID, "claim-level", LEASE)
@@ -152,8 +151,8 @@ async fn a_docket_claim_carries_the_project_level_lowered_to_the_team_and_the_re
             .expect("claim")
             .expect("work");
         let sent = claimed.request_snapshot["autonomy"].as_str();
-        assert_eq!(sent, expected, "{harness} {level} {team:?} {cap:?}");
-        // The stored request keeps only what was asked for; a replay says the same.
+        assert_eq!(sent, expected, "{harness} {level} {team:?} {asked:?}");
+        // A replay says the same.
         let replay = claim(repo, &world.clock, RUNNER_ID, "claim-level", LEASE)
             .await
             .expect("claim")

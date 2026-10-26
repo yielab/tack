@@ -872,33 +872,46 @@ async fn a_demotion_to_l3_switches_auto_start_off() {
     );
 }
 
-/// "Run again at L3" is offered on an attempt that ended asking for a person, enabled for a
-/// docket run whose team can be narrowed and disabled, with its reason, otherwise; no other
-/// attempt carries it. The run it creates carries the L3 cap, and any other level name is refused.
+/// "Run again at L3" is offered on an attempt that ended asking for a person: enabled for a docket
+/// run that did not already run at L3, whatever the project's level or the team, and disabled,
+/// with its reason, otherwise; no other attempt carries it.
 #[tokio::test]
 async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_cannot() {
-    // (project level, team, the button's reason, or none when it is enabled)
+    // (harness, project level, team, the level the run was created with, the button's reason, or
+    // none when it is enabled)
     let cases = [
-        ("L4", Some("writers"), None),
-        ("L4", Some("reviewers"), Some("already attended")),
-        ("L3", Some("writers"), Some("This project is already at L3")),
+        ("docket", "L3", Some("writers"), None, None),
+        ("docket", "L4", Some("reviewers"), None, None),
+        ("docket", "L5", Some("fab-dev"), None, None),
+        ("docket", "L4", Some("writers"), Some("L4"), None),
         (
+            "docket",
             "L4",
-            Some("fab-dev"),
-            Some("Team fab-dev is not reported yet"),
+            Some("writers"),
+            Some("L3"),
+            Some("already ran at L3"),
+        ),
+        (
+            "codex",
+            "L4",
+            None,
+            None,
+            Some("Only a docket run can be run again"),
         ),
     ];
-    for (level, team, reason) in cases {
+    for (harness, level, team, asked, reason) in cases {
         let root = tempfile::tempdir().unwrap();
         let prill = fake_prill(root.path());
         let b = board(root.path(), None, &prill).await;
         let repo = &b.state.repo;
         let a = request_and_claim(&b.app, &b.item_id, "rerun", None).await;
         seed::project_autonomy_level(repo, &b.project_id, level).await;
-        seed::execution_request_harness(repo, &a.request_id, "docket").await;
-        seed::agent_runner_capabilities(repo, &a.runner_id, &reviewers_snapshot("docket")).await;
+        seed::execution_request_harness(repo, &a.request_id, harness).await;
         if let Some(team) = team {
             seed::execution_request_team(repo, &a.request_id, team).await;
+        }
+        if let Some(asked) = asked {
+            seed::execution_request_autonomy(repo, &a.request_id, asked).await;
         }
         let needs_human =
             r#"{"code":"needs_human","message":"docket needs a person to approve a tool call"}"#;
@@ -918,12 +931,12 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
         assert_eq!(
             button["enabled"],
             reason.is_none(),
-            "{level} {team:?}: {list}"
+            "{harness} {level} {team:?} {asked:?}: {list}"
         );
         match reason {
             Some(words) => {
                 let said = button["reason"].as_str().unwrap_or_default();
-                assert!(said.contains(words), "{level} {team:?}: {said:?}");
+                assert!(said.contains(words), "{harness} {level} {team:?}: {said:?}");
             }
             None => assert!(button["reason"].is_null(), "{list}"),
         }
@@ -949,7 +962,7 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
 }
 
 #[tokio::test]
-async fn a_run_created_at_l3_keeps_that_cap_and_another_level_name_is_refused() {
+async fn a_run_created_at_l3_keeps_that_level_and_another_level_name_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let prill = fake_prill(root.path());
     let b = board(root.path(), None, &prill).await;

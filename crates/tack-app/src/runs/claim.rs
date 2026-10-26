@@ -12,7 +12,7 @@ use crate::scheduler_wiring::choose_request_for_runner;
 /// is nothing this runner may take. Idempotent on `claim_request_id`: a replay returns the
 /// lease the first call issued. The scheduler only chooses; the claim itself re-checks that the
 /// choice is still queued and eligible, so a choice that lost a race yields `None`, never a
-/// second lease. A docket task's snapshot carries the autonomy level it may run at, or none.
+/// second lease. A docket task's snapshot carries the autonomy level a person asked for, or none.
 pub async fn claim(
     repo: &Repository,
     clock: &dyn Clock,
@@ -37,11 +37,8 @@ pub async fn claim(
     let Some(mut claimed) = claimed else {
         return Ok(None);
     };
-    // The level a docket task may run at is read now, from the project and the runner that
-    // took it; the request keeps only the cap a person asked for.
-    let level =
-        crate::autonomy::level_to_send(repo, &claimed.lease.attempt_id, &claimed.request_snapshot)
-            .await;
+    // Only a level a person asked for reaches docket, as it is; the project's level never does.
+    let level = crate::autonomy::level_to_send(&claimed.request_snapshot);
     if let Some(object) = claimed.request_snapshot.as_object_mut() {
         match level {
             Some(level) => object.insert("autonomy".to_owned(), level.to_string().into()),

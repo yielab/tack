@@ -606,79 +606,50 @@ fn at_level(mut spec: ExecutionSpec, level: &str) -> ExecutionSpec {
 }
 
 /// The `autonomy` the task body carried when a run at `asked` was posted to a team with this
-/// profile and these unmet requirements.
-async fn autonomy_sent(profile: &str, violations: &[(&str, &str)], asked: &str) -> Option<String> {
+/// profile; `None` asked leaves the snapshot without one.
+async fn autonomy_sent(profile: &str, asked: Option<&str>) -> Option<String> {
     let fake = FakeDocket::start().await;
-    fake.add_pod(POD, profile, violations);
+    fake.add_pod(POD, profile, &[]);
     let scene = scene();
     let adapter = adapter(&fake, &scene);
-    run_to_end(&adapter, &at_level(spec(&scene, "attempt-1", 1), asked)).await;
+    let spec = spec(&scene, "attempt-1", 1);
+    let spec = match asked {
+        Some(level) => at_level(spec, level),
+        None => spec,
+    };
+    run_to_end(&adapter, &spec).await;
     let posted = fake.requests_to("POST", "/tasks/fab-dev");
     assert_eq!(posted.len(), 1);
     posted[0].body["autonomy"].as_str().map(str::to_owned)
 }
 
+/// The level the snapshot carries goes to docket exactly as it is, whatever the team: docket
+/// decides what the team may do alone.
 #[tokio::test]
-async fn the_level_the_board_names_is_sent_as_the_tasks_autonomy() {
-    for asked in ["L3", "L4", "L5"] {
-        assert_eq!(
-            autonomy_sent("lights-out", &[], asked).await.as_deref(),
-            Some(asked)
-        );
+async fn the_level_a_person_asked_for_is_sent_verbatim_whatever_the_team() {
+    for profile in ["lights-out", "attended"] {
+        // Docket refuses L4 and L5 for an attended team itself; the body is the same either way.
+        for asked in ["L3", "L4", "L5"] {
+            assert_eq!(
+                autonomy_sent(profile, Some(asked)).await.as_deref(),
+                Some(asked),
+                "{profile} asked {asked}"
+            );
+        }
     }
 }
 
 #[tokio::test]
-async fn an_attended_team_never_gets_above_l3() {
-    for asked in ["L3", "L4", "L5"] {
-        assert_eq!(
-            autonomy_sent("attended", &[], asked).await.as_deref(),
-            Some("L3"),
-            "asked {asked}"
-        );
+async fn a_snapshot_with_no_level_sends_none_whatever_the_team() {
+    for profile in ["lights-out", "attended"] {
+        assert_eq!(autonomy_sent(profile, None).await, None, "{profile}");
     }
 }
 
-/// docket's own report of a lights-out team that has not met its profile: the profile says
-/// `lights-out`, and the unmet requirements keep it from running without a person.
 #[tokio::test]
-async fn a_lights_out_team_that_has_not_met_its_profile_is_held_to_l3() {
-    let report = fixture("pod-lights-out");
-    let violations: Vec<(String, String)> = report["profile"]["violations"]
-        .as_array()
-        .expect("violations")
-        .iter()
-        .map(|violation| {
-            (
-                violation["requirement"].as_str().unwrap().to_owned(),
-                violation["fix"].as_str().unwrap().to_owned(),
-            )
-        })
-        .collect();
-    assert!(!violations.is_empty(), "the capture names what is unmet");
-    let unmet: Vec<(&str, &str)> = violations
-        .iter()
-        .map(|(requirement, fix)| (requirement.as_str(), fix.as_str()))
-        .collect();
-    assert_eq!(
-        autonomy_sent("lights-out", &unmet, "L5").await.as_deref(),
-        Some("L3")
-    );
-}
-
-#[tokio::test]
-async fn a_level_below_the_ceiling_is_kept() {
-    assert_eq!(
-        autonomy_sent("lights-out", &[], "L4").await.as_deref(),
-        Some("L4")
-    );
-}
-
-#[tokio::test]
-async fn a_422_above_the_ceiling_fails_the_attempt_with_dockets_text_and_posts_nothing_again() {
-    let fake = pods_fake().await;
-    // The profile read says lights-out; docket's ceiling is lower by the time the task arrives.
-    fake.set_ceiling(POD, "L3");
+async fn a_422_above_dockets_ceiling_fails_the_attempt_with_dockets_text_and_posts_nothing_again() {
+    let fake = FakeDocket::start().await;
+    fake.add_pod(POD, "attended", &[]);
     let scene = scene();
     let adapter = adapter(&fake, &scene);
 
@@ -686,10 +657,13 @@ async fn a_422_above_the_ceiling_fails_the_attempt_with_dockets_text_and_posts_n
         run_to_end(&adapter, &at_level(spec(&scene, "attempt-1", 1), "L5")).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    let sentence = "autonomy L5 is above this pod's ceiling L3 (profile lights-out); set the pod profile to lights-out for L5";
+    let sentence = fixture("post-tasks-autonomy-above-ceiling")["error"]
+        .as_str()
+        .expect("docket's sentence")
+        .to_owned();
     assert_eq!(outcome.terminal_reason["code"], json!("rejected"));
     assert_eq!(outcome.terminal_reason["message"], json!(sentence));
-    assert!(steps.iter().any(|(_, text)| text == sentence), "{steps:?}");
+    assert!(steps.iter().any(|(_, text)| *text == sentence), "{steps:?}");
     let posted = fake.requests_to("POST", "/tasks/fab-dev");
     assert_eq!(posted.len(), 1);
     assert_eq!(posted[0].body["autonomy"], json!("L5"));

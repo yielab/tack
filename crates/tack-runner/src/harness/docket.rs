@@ -1037,19 +1037,13 @@ impl HarnessAdapter for DocketAdapter {
         };
         // The answered version decides which fields the task body may carry.
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
-        // The board's level, never above what the team's profile admits. `validate` has already
-        // seen the escalation record, which comes with the field.
-        let autonomy = match request.autonomy() {
-            Some(level) => Some(level.min(probe::autonomy_ceiling(&self.client, &pod).await)),
-            None => None,
-        };
         let body = task::body(
             request,
             &attempt_id,
             spec.work.lease.attempt_number,
             &base_ref,
             probe::api_at_least(&api, probe::PREPARE_API_VERSION),
-            autonomy,
+            request.autonomy(),
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
             tracing::warn!(why, "docket could not be reached to post the task");

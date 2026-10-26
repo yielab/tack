@@ -63,7 +63,6 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | Version | `GET /status.json`; `apiVersion` must be a number, 5 or later; `prepare` is posted only from 6 | `probe::status` |
 | The escalation record | `GET /escalations?since=0` must answer `200` | `probe::escalation_record` |
 | Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each | `probe::teams` |
-| The ceiling of one team | `GET /pods/<pod>`, only when the request names a level | `probe::autonomy_ceiling` |
 | Make the team once per process | `POST /pods` with `ensure: true`, `blueprint: "software"` | `Client::ensure_pod` |
 | Post the attempt | `POST /tasks/<pod>` | `Client::enqueue_task` |
 | Read the task | `GET /tasks/<pod>/<id>` | `Client::task` |
@@ -87,9 +86,9 @@ From API 6, the task body carries `prepare` from the request's `repository.prepa
 - `baseRef` is the commit the request's base revision names in the repository, or the `rework_base` branch for a rework.
 - `maxTokens` comes from the request's token budget. `restrictions` carries `deniedTools` from `tool_policy.docket.denied_tools` and `network: "none"` when the run has the network off. A restriction can only narrow what the team already has (ADR 0077).
 - `pipeline` is read from `tool_policy.docket.pipeline_by_type` by item type. `priority` and `trusted` are sent when the request's metadata carries them.
-- `autonomy` is sent only when the request snapshot names a level (`ExecutionRequestSnapshot::autonomy`), and never above the team's ceiling: `probe::autonomy_ceiling` reads the team's profile with `probe::capped`, so a team that is not `lights-out`, or has an unmet requirement, gets `L3` at most, and a profile that cannot be read is treated the same, because `L3` is admitted everywhere. A snapshot with no level sends no key and docket applies its own default. The probe is read live each time, so there is no cached ceiling to mark stale when docket answers `422`; the runner's next report reads it again.
+- `autonomy` is sent exactly as the request snapshot carries it (`ExecutionRequestSnapshot::autonomy`), and only then. The board puts it in the snapshot only when the run was created with an explicit level (`POST /api/executions {autonomy}`, the "Run again at L3" action): `tack_app::autonomy::level_to_send` never derives it from the project's merge level, the team's ceiling or the profile, and a non-docket harness gets none. A snapshot with no level sends no key, and docket decides from the pod's profile and its requirements, since lights-out is docket's own concept. The runner reads no team's profile to narrow it; a level above what the team admits is answered with a `422`, which fails the attempt (below).
 
-A `400` or `422` from docket makes the attempt fail with docket's text (the sentence a `422` above the team's ceiling carries is one of them) and the task is never posted again. The process id is `<pod>/<task id>`, which is how `reconcile` finds the pod after a restart.
+A `400` or `422` from docket makes the attempt fail with docket's text (the sentence a `422` above docket's ceiling carries is one of them) and the task is never posted again. The process id is `<pod>/<task id>`, which is how `reconcile` finds the pod after a restart.
 
 ### Which team
 

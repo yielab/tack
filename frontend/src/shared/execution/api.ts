@@ -108,7 +108,7 @@ export interface CreateExecutionInput {
   verify?: boolean;
   /** `false` declines the runner's branch push for this run; never enables one. */
   push_branch?: boolean;
-  /** The most autonomy this run may have; the board lowers it further and never raises it.
+  /** The level a docket run is asked for, sent as it is; absent, docket decides.
    *  `L3` is "Run again at L3". */
   autonomy?: 'L3' | 'L4' | 'L5';
   /** The one model string the agent is asked to use, passed verbatim; absent, the project default or the agent's own. */
